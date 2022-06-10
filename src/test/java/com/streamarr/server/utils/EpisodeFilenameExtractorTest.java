@@ -31,17 +31,19 @@ public class EpisodeFilenameExtractorTest {
         @TestFactory
         Stream<DynamicNode> tests() {
             return Stream.of(
+                new TestCase("when given path, title, and S01E01 format separated by '-'", "/media/Foo/Foo-S01E01", "Foo", 1, 1),
+                new TestCase("when given path, title, and S01E01 format separated by ' - '", "/media/Foo - S04E011", "Foo", 4, 11),
+                new TestCase("when given path, title, and S01x01 format", "/media/Foo/Foo s01x01", "Foo", 1, 1),
+                new TestCase("when given path, title containing year, and S01E01 format", "/media/Foo (2019)/Season 4/Foo 2019.S04E03", "Foo 2019", 4, 3),
+                new TestCase("when given path, title containing year surrounded by parenthesis, and S01E01 format", "/media/Foo (2019)/Season 4/Foo (2019).S04E03", "Foo (2019)", 4, 3),
+
+                new TestCase("when given windows path, title, and S01E01 format separated by '-'", "D:\\\\media\\\\Foo-S01E01", "Foo", 1, 1),
+                new TestCase("when given windows path, title, and S01E01 format separated by ' - '", "D:\\\\media\\\\Foo - S04E011", "Foo", 4, 11),
+                new TestCase("when given windows path, title, and S01x01 format", "D:\\\\media\\\\Foo\\\\Foo s01x01", "Foo", 1, 1),
+                new TestCase("when given windows path, title containing year, and S01E01 format", "D:\\\\media\\\\Foo (2019)\\\\Season 4\\\\Foo 2019.S04E03", "Foo 2019", 4, 3),
+                new TestCase("when given windows path, title containing year surrounded by parenthesis, and S01E01 format", "D:\\\\media\\\\Foo (2019)\\\\Season 4\\\\Foo (2019).S04E03", "Foo (2019)", 4, 3),
+
                 // TODO: Name these
-                new TestCase("...0", "/media/Foo/Foo-S01E01", "Foo", 1, 1),
-                new TestCase("...0", "/media/Foo - S04E011", "Foo", 4, 11),
-                new TestCase("...0", "/media/Foo/Foo s01x01", "Foo", 1, 1),
-                new TestCase("...0", "/media/Foo (2019)/Season 4/Foo (2019).S04E03", "Foo (2019)", 4, 3),
-
-                new TestCase("...1", "D:\\\\media\\\\Foo\\\\Foo-S01E01", "Foo", 1, 1),
-                new TestCase("...1", "D:\\\\media\\\\Foo - S04E011", "Foo", 4, 11),
-                new TestCase("...1", "D:\\\\media\\\\Foo\\\\Foo s01x01", "Foo", 1, 1),
-                new TestCase("...1", "D:\\\\media\\\\Foo (2019)\\\\Season 4\\\\Foo (2019).S04E03", "Foo (2019)", 4, 3),
-
                 new TestCase("...21", "/Season 2/Elementary - 02x03-04-15 - Ep Name", "Elementary", 2, 3),
                 new TestCase("...22", "/Season 2/Elementary - 02x03 - 02x04 - 02x15 - Ep Name", "Elementary", 2, 3),
                 new TestCase("...23", "/Season 02/Elementary - 02x03 - x04 - x15 - Ep Name", "Elementary", 2, 3),
@@ -56,6 +58,7 @@ public class EpisodeFilenameExtractorTest {
                 new TestCase("...3", "/Season 1/seriesname S01xE02 blah", "seriesname", 1, 2),
 
                 new TestCase("...4", "/server/anything_s01e02", "anything", 1, 2),
+
                 new TestCase("...4", "/server/anything_s1e2", "anything", 1, 2),
                 new TestCase("...4", "/server/anything_s01.e02", "anything", 1, 2),
                 new TestCase("...4", "/server/anything_1x02", "anything", 1, 2),
@@ -69,7 +72,6 @@ public class EpisodeFilenameExtractorTest {
                 new TestCase("...63", "/The Wonder Years/The.Wonder.Years.S04.PDTV.x264-JCH/The Wonder Years s04e07 Christmas Party NTSC PDTV.avi", "The Wonder Years", 4, 7),
                 new TestCase("...64", "/Foo/The.Series.Name.S01E04.WEBRip.x264-Baz[Bar]/the.series.name.s01e04.webrip.x264-Baz[Bar].mkv", "the.series.name", 1, 4),
                 new TestCase("...65", "Love.Death.and.Robots.S01.1080p.NF.WEB-DL.DDP5.1.x264-NTG/Love.Death.and.Robots.S01E01.Sonnies.Edge.1080p.NF.WEB-DL.DDP5.1.x264-NTG.mkv", "Love.Death.and.Robots", 1, 1)
-
             ).map(testCase -> DynamicTest.dynamicTest(
                 testCase.name(),
                 () -> {
@@ -94,13 +96,11 @@ public class EpisodeFilenameExtractorTest {
         @TestFactory
         Stream<DynamicNode> tests() {
             return Stream.of(
-                // TODO: Name these
-
                 // TODO: Fix...
-//                new TestCase("...6", "[YuiSubs] Tensura Nikki - Tensei Shitara Slime Datta Ken/[YuiSubs] Tensura Nikki - Tensei Shitara Slime Datta Ken - 12 (NVENC H.265 1080p).mkv", "Tensura Nikki - Tensei Shitara Slime Datta Ken", 12)
-//                new TestCase("...6", "[Baz-Bar]Foo - 01 - 12[1080p][Multiple Subtitle]/[Baz-Bar] Foo - 05 [1080p][Multiple Subtitle].mkv", "Foo", 5)
-                new TestCase("special", "[tag] Foo - 1", "Foo", 1),
-                new TestCase("...64", "[Baz-Bar]Foo - [1080p][Multiple Subtitle]/[Baz-Bar] Foo - 05 [1080p][Multiple Subtitle].mkv", "Foo", 5)
+//                new TestCase("failing 1", "[YuiSubs] Tensura Nikki - Tensei Shitara Slime Datta Ken/[YuiSubs] Tensura Nikki - Tensei Shitara Slime Datta Ken - 12 (NVENC H.265 1080p).mkv", "Tensura Nikki - Tensei Shitara Slime Datta Ken", 12)
+//                new TestCase("failing 2", "[Baz-Bar]Foo - 01 - 12[1080p][Multiple Subtitle]/[Baz-Bar] Foo - 05 [1080p][Multiple Subtitle].mkv", "Foo", 5)
+                new TestCase("when given tag before title and episode separated by dash", "[tag] Foo - 1", "Foo", 1),
+                new TestCase("when given title and episode containing many tags", "[Baz-Bar]Foo - [1080p][Multiple Subtitle]/[Baz-Bar] Foo - 05 [1080p][Multiple Subtitle].mkv", "Foo", 5)
             ).map(testCase -> DynamicTest.dynamicTest(
                 testCase.name(),
                 () -> {
@@ -125,9 +125,7 @@ public class EpisodeFilenameExtractorTest {
         @TestFactory
         Stream<DynamicNode> tests() {
             return Stream.of(
-                // TODO: Name these
-                new TestCase("...1", "/server/anything_1996.11.14", "anything", LocalDate.of(1996, 11, 14))
-
+                new TestCase("when given title and YYYY-MM-dd date format", "/server/anything_1996.11.14", "anything", LocalDate.of(1996, 11, 14))
             ).map(testCase -> DynamicTest.dynamicTest(
                 testCase.name(),
                 () -> {
@@ -151,13 +149,11 @@ public class EpisodeFilenameExtractorTest {
         @TestFactory
         Stream<DynamicNode> tests() {
             return Stream.of(
-                // TODO: Name these
-
                 // TODO: Fix
-//                new TestCase("...5.5", "Series/4-12 - The Woman.mp4", 4, 12)
-                new TestCase("...1", "Series/4x12 - The Woman", 4, 12),
-                new TestCase("...2", "1-12 episode title", 1, 12),
-                new TestCase("...3", "/server/Temp/S01E02 foo", 1, 2)
+//                new TestCase("failing", "Series/4-12 - The Woman.mp4", 4, 12)
+                new TestCase("when given SxE format", "Series/4x12 - The Woman", 4, 12),
+                new TestCase("when given S-E format", "1-12 episode title", 1, 12),
+                new TestCase("when given S01E01 format", "/server/Temp/S01E02 foo", 1, 2)
             ).map(testCase -> DynamicTest.dynamicTest(
                 testCase.name(),
                 () -> {
@@ -182,9 +178,7 @@ public class EpisodeFilenameExtractorTest {
         @TestFactory
         Stream<DynamicNode> tests() {
             return Stream.of(
-                // TODO: Name these
-                new TestCase("...1", "Season 02/Elementary - 02x03x04x15 - Ep Name.mp4", 15)
-
+                new TestCase("when given filename containing multiple episodes", "Season 02/Elementary - 02x03x04x15 - Ep Name.mp4", 15)
             ).map(testCase -> DynamicTest.dynamicTest(
                 testCase.name(),
                 () -> {
@@ -192,6 +186,29 @@ public class EpisodeFilenameExtractorTest {
 
                     assertThat(result.getEndingEpisodeNumber().orElseThrow()).isEqualTo(testCase.endingEpisode());
                     assertTrue(result.isSuccess());
+                })
+            );
+        }
+    }
+
+    @Nested
+    @DisplayName("Should fail extraction")
+    public class ExtractionFailureTests {
+
+        record TestCase(String name, String filename) {
+        }
+
+        @TestFactory
+        Stream<DynamicNode> tests() {
+            return Stream.of(
+                new TestCase("when given season number above 2500", "/server/failure_s2501e01"),
+                new TestCase("when given season number between 200 - 1927", "/server/failure_s201e01")
+            ).map(testCase -> DynamicTest.dynamicTest(
+                testCase.name(),
+                () -> {
+                    var result = episodeFilenameExtractor.extract(testCase.filename());
+
+                    assertThat(result).isEmpty();
                 })
             );
         }
