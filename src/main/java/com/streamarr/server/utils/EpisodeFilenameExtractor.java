@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.regex.Matcher;
 
 @Component
@@ -64,20 +65,20 @@ public class EpisodeFilenameExtractor {
         }
 
         if (regexContainer.isNamed()) {
-
-            var seasonNumber = attemptSeasonNumberExtractionFromNamedGroup(match);
+            
             var episodeNumber = attemptEpisodeNumberExtractionFromNamedGroup(match);
-            var endingEpsiodeNumber = attemptEndingEpisodeNumberExtraction(match);
+            var seasonNumber = attemptSeasonNumberExtractionFromNamedGroup(match);
+            var endingEpisodeNumber = attemptEndingEpisodeNumberExtraction(match);
             var seriesName = attemptSeriesNameExtraction(match);
 
             // TODO: what if we don't have a season number? Is that possible?
             // TODO: helper?
-            var success = episodeNumber > 0 && isValidSeasonNumber(seasonNumber);
+            var success = episodeNumber.isPresent() && (seasonNumber.isEmpty() || isValidSeasonNumber(seasonNumber.getAsInt()));
 
             return Optional.of(EpisodePathResult.builder()
                 .seasonNumber(seasonNumber)
                 .episodeNumber(episodeNumber)
-                .endingEpisodeNumber(endingEpsiodeNumber)
+                .endingEpisodeNumber(endingEpisodeNumber)
                 .seriesName(seriesName)
                 .success(success)
                 .build());
@@ -88,7 +89,7 @@ public class EpisodeFilenameExtractor {
 
         // TODO: what if we don't have a season number? Is that possible?
         // TODO: helper?
-        var success = episodeNumber > 0 && isValidSeasonNumber(seasonNumber);
+        var success = episodeNumber.isPresent() && (seasonNumber.isEmpty() || isValidSeasonNumber(seasonNumber.getAsInt()));
 
         return Optional.of(EpisodePathResult.builder()
             .seasonNumber(seasonNumber)
@@ -97,31 +98,33 @@ public class EpisodeFilenameExtractor {
             .build());
     }
 
-    private int attemptSeasonNumberExtractionFromNamedGroup(Matcher match) {
+    private OptionalInt attemptSeasonNumberExtractionFromNamedGroup(Matcher match) {
         try {
             var seasonNumber = match.group("seasonnumber");
             if (StringUtils.isNotBlank(seasonNumber)) {
-                return Integer.parseInt(seasonNumber);
+                return OptionalInt.of(Integer.parseInt(seasonNumber));
             }
         } catch (IllegalArgumentException ignored) {
+            return OptionalInt.empty();
         }
 
-        return 0;
+        return OptionalInt.empty();
     }
 
-    private int attemptEpisodeNumberExtractionFromNamedGroup(Matcher match) {
+    private OptionalInt attemptEpisodeNumberExtractionFromNamedGroup(Matcher match) {
         try {
             var episodeNumber = match.group("epnumber");
             if (StringUtils.isNotBlank(episodeNumber)) {
-                return Integer.parseInt(episodeNumber);
+                return OptionalInt.of(Integer.parseInt(episodeNumber));
             }
         } catch (IllegalArgumentException ignored) {
+            return OptionalInt.empty();
         }
 
-        return 0;
+        return OptionalInt.empty();
     }
 
-    private int attemptEndingEpisodeNumberExtraction(Matcher match) {
+    private OptionalInt attemptEndingEpisodeNumberExtraction(Matcher match) {
         try {
             var endingEpisodeNumber = match.group("endingepnumber");
             if (StringUtils.isNotBlank(endingEpisodeNumber)) {
@@ -133,46 +136,48 @@ public class EpisodeFilenameExtractor {
 
                 // TODO: implement this nasty stuff....
                 if (true) {
-                    return endingEpisodeNumberInt;
+                    return OptionalInt.of(endingEpisodeNumberInt);
                 }
             }
         } catch (IllegalArgumentException ignored) {
+            return OptionalInt.empty();
         }
 
-        return 0;
+        return OptionalInt.empty();
     }
 
     private String attemptSeriesNameExtraction(Matcher match) {
         try {
             return match.group("seriesname");
         } catch (IllegalArgumentException ignored) {
+            return null;
         }
-
-        return null;
     }
 
-    private int attemptSeasonNumberExtractionFromGroupIndex(Matcher match) {
+    private OptionalInt attemptSeasonNumberExtractionFromGroupIndex(Matcher match) {
         var seasonNumber = match.group(1);
         if (StringUtils.isNotBlank(seasonNumber)) {
             try {
-                return Integer.parseInt(seasonNumber);
+                return OptionalInt.of(Integer.parseInt(seasonNumber));
             } catch (NumberFormatException ignored) {
+                return OptionalInt.empty();
             }
         }
 
-        return 0;
+        return OptionalInt.empty();
     }
 
-    private int attemptEpisodeNumberExtractionFromGroupIndex(Matcher match) {
+    private OptionalInt attemptEpisodeNumberExtractionFromGroupIndex(Matcher match) {
         var episodeNumber = match.group(2);
         if (StringUtils.isNotBlank(episodeNumber)) {
             try {
-                return Integer.parseInt(episodeNumber);
+                return OptionalInt.of(Integer.parseInt(episodeNumber));
             } catch (NumberFormatException ignored) {
+                return OptionalInt.empty();
             }
         }
 
-        return 0;
+        return OptionalInt.empty();
     }
 
     // Invalidate match when the season is 200 through 1927 or above 2500
@@ -214,12 +219,12 @@ public class EpisodeFilenameExtractor {
                 info.setSeriesName(result.get().getSeriesName());
             }
 
-            if (info.getEndingEpisodeNumber() == 0 && info.getEpisodeNumber() > 0) {
+            if (info.getEndingEpisodeNumber().isEmpty() && info.getEpisodeNumber().isPresent()) {
                 info.setEndingEpisodeNumber(result.get().getEndingEpisodeNumber());
             }
 
             if (StringUtils.isNotBlank(info.getSeriesName())
-                && (info.getEpisodeNumber() == 0 || info.getEndingEpisodeNumber() > 0)) {
+                && (info.getEpisodeNumber().isEmpty() || info.getEndingEpisodeNumber().isPresent())) {
                 break;
             }
         }

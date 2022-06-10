@@ -22,7 +22,7 @@ public class EpisodeFilenameExtractorTest {
     private final EpisodeFilenameExtractor episodeFilenameExtractor = new EpisodeFilenameExtractor(episodeRegexConfig);
 
     @Nested
-    @DisplayName("Should successfully extract ...")
+    @DisplayName("Should successfully extract title, season, and episode")
     public class SuccessfulExtractionTests {
 
         record TestCase(String name, String filename, String title, int season, int episode) {
@@ -64,40 +64,19 @@ public class EpisodeFilenameExtractorTest {
                 new TestCase("...5", "/server/The Walking Dead 4x01", "The Walking Dead", 4, 1),
                 new TestCase("...5", "Series/LA X, Pt. 1_s06e32", "LA X, Pt. 1", 6, 32),
 
-                // TODO: Move these to another nested class
-                // TODO: Fix, should be returning null, getting empty string...
-                //new TestCase("...5.5", "/server/Temp/S01E02 foo", null, 1, 2),
-                new TestCase("...5.5", "Series/4x12 - The Woman", null, 4, 12),
-
-                new TestCase("special", "[tag] Foo - 1", "Foo", 0, 1),
-                new TestCase("special2", "1-12 episode title", null, 1, 12),
-
-                // TODO: Fix
-                //new TestCase("...5.5", "Series/4-12 - The Woman.mp4", null, 4, 12),
-
-                // TODO: RESUME HERE...
-                new TestCase("...6", "/server/the_simpsons-s02e01_18536.mp4", "the_simpsons", 2, 1),
-                new TestCase("...6", "/Season 25/The Simpsons.S25E09.Steal this episode.mp4", "The Simpsons", 25, 9),
-                new TestCase("...6", "/The Wonder Years/The.Wonder.Years.S04.PDTV.x264-JCH/The Wonder Years s04e07 Christmas Party NTSC PDTV.avi", "The Wonder Years", 4, 7),
-
-
-                // TODO: should this have a null/ optional instead of "0" for season?
-                new TestCase("...6", "[Baz-Bar]Foo - [1080p][Multiple Subtitle]/[Baz-Bar] Foo - 05 [1080p][Multiple Subtitle].mkv", "Foo", 0, 5),
-                // TODO: Fix...
-//                new TestCase("...6", "[YuiSubs] Tensura Nikki - Tensei Shitara Slime Datta Ken/[YuiSubs] Tensura Nikki - Tensei Shitara Slime Datta Ken - 12 (NVENC H.265 1080p).mkv", "Tensura Nikki - Tensei Shitara Slime Datta Ken", 0, 12),
-//                new TestCase("...6", "[Baz-Bar]Foo - 01 - 12[1080p][Multiple Subtitle]/[Baz-Bar] Foo - 05 [1080p][Multiple Subtitle].mkv", "Foo", 0, 5),
-
-                new TestCase("...6", "/Foo/The.Series.Name.S01E04.WEBRip.x264-Baz[Bar]/the.series.name.s01e04.webrip.x264-Baz[Bar].mkv", "the.series.name", 1, 4),
-                new TestCase("...6", "Love.Death.and.Robots.S01.1080p.NF.WEB-DL.DDP5.1.x264-NTG/Love.Death.and.Robots.S01E01.Sonnies.Edge.1080p.NF.WEB-DL.DDP5.1.x264-NTG.mkv", "Love.Death.and.Robots", 1, 1)
-
+                new TestCase("...61", "/server/the_simpsons-s02e01_18536.mp4", "the_simpsons", 2, 1),
+                new TestCase("...62", "/Season 25/The Simpsons.S25E09.Steal this episode.mp4", "The Simpsons", 25, 9),
+                new TestCase("...63", "/The Wonder Years/The.Wonder.Years.S04.PDTV.x264-JCH/The Wonder Years s04e07 Christmas Party NTSC PDTV.avi", "The Wonder Years", 4, 7),
+                new TestCase("...64", "/Foo/The.Series.Name.S01E04.WEBRip.x264-Baz[Bar]/the.series.name.s01e04.webrip.x264-Baz[Bar].mkv", "the.series.name", 1, 4),
+                new TestCase("...65", "Love.Death.and.Robots.S01.1080p.NF.WEB-DL.DDP5.1.x264-NTG/Love.Death.and.Robots.S01E01.Sonnies.Edge.1080p.NF.WEB-DL.DDP5.1.x264-NTG.mkv", "Love.Death.and.Robots", 1, 1)
 
             ).map(testCase -> DynamicTest.dynamicTest(
                 testCase.name(),
                 () -> {
                     var result = episodeFilenameExtractor.extract(testCase.filename()).orElseThrow();
 
-                    assertThat(result.getEpisodeNumber()).isEqualTo(testCase.episode());
-                    assertThat(result.getSeasonNumber()).isEqualTo(testCase.season());
+                    assertThat(result.getEpisodeNumber().orElseThrow()).isEqualTo(testCase.episode());
+                    assertThat(result.getSeasonNumber().orElseThrow()).isEqualTo(testCase.season());
                     assertThat(result.getSeriesName()).isEqualTo(testCase.title());
                     assertTrue(result.isSuccess());
                 })
@@ -106,24 +85,28 @@ public class EpisodeFilenameExtractorTest {
     }
 
     @Nested
-    @DisplayName("Should successfully extract date with title ..")
-    public class SuccessfulDateExtractionTests {
+    @DisplayName("Should successfully extract title and episode")
+    public class SuccessfulEpisodeTests {
 
-        record TestCase(String name, String filename, String title) {
+        record TestCase(String name, String filename, String title, int episode) {
         }
 
         @TestFactory
         Stream<DynamicNode> tests() {
             return Stream.of(
                 // TODO: Name these
-                new TestCase("...1", "/server/anything_1996.11.14", "anything")
-
+                new TestCase("special", "[tag] Foo - 1", "Foo", 1),
+                new TestCase("...64", "[Baz-Bar]Foo - [1080p][Multiple Subtitle]/[Baz-Bar] Foo - 05 [1080p][Multiple Subtitle].mkv", "Foo", 5)
+                // TODO: Fix...
+//                new TestCase("...6", "[YuiSubs] Tensura Nikki - Tensei Shitara Slime Datta Ken/[YuiSubs] Tensura Nikki - Tensei Shitara Slime Datta Ken - 12 (NVENC H.265 1080p).mkv", "Tensura Nikki - Tensei Shitara Slime Datta Ken", 12)
+//                new TestCase("...6", "[Baz-Bar]Foo - 01 - 12[1080p][Multiple Subtitle]/[Baz-Bar] Foo - 05 [1080p][Multiple Subtitle].mkv", "Foo", 5)
             ).map(testCase -> DynamicTest.dynamicTest(
                 testCase.name(),
                 () -> {
                     var result = episodeFilenameExtractor.extract(testCase.filename()).orElseThrow();
 
-                    assertThat(result.getDate()).isEqualTo(LocalDate.of(1996, 11, 14));
+                    assertThat(result.getSeasonNumber()).isEmpty();
+                    assertThat(result.getEpisodeNumber().orElseThrow()).isEqualTo(testCase.episode());
                     assertThat(result.getSeriesName()).isEqualTo(testCase.title());
                     assertTrue(result.isSuccess());
                 })
@@ -132,7 +115,67 @@ public class EpisodeFilenameExtractorTest {
     }
 
     @Nested
-    @DisplayName("Should successfully extract multiple episodes from title ...")
+    @DisplayName("Should successfully extract title and date")
+    public class SuccessfulDateExtractionTests {
+
+        record TestCase(String name, String filename, String title, LocalDate date) {
+        }
+
+        @TestFactory
+        Stream<DynamicNode> tests() {
+            return Stream.of(
+                // TODO: Name these
+                new TestCase("...1", "/server/anything_1996.11.14", "anything", LocalDate.of(1996, 11, 14))
+
+            ).map(testCase -> DynamicTest.dynamicTest(
+                testCase.name(),
+                () -> {
+                    var result = episodeFilenameExtractor.extract(testCase.filename()).orElseThrow();
+
+                    assertThat(result.getDate()).isEqualTo(testCase.date());
+                    assertThat(result.getSeriesName()).isEqualTo(testCase.title());
+                    assertTrue(result.isSuccess());
+                })
+            );
+        }
+    }
+
+    @Nested
+    @DisplayName("Should successfully extract season and episode, no title")
+    public class SuccessfulSeasonEpisodeTests {
+
+        record TestCase(String name, String filename, int season, int episode) {
+        }
+
+        @TestFactory
+        Stream<DynamicNode> tests() {
+            return Stream.of(
+                // TODO: Name these
+                new TestCase("...5.5", "Series/4x12 - The Woman", 4, 12),
+                new TestCase("special2", "1-12 episode title", 1, 12)
+
+                // TODO: Fix
+//                new TestCase("...5.5", "Series/4-12 - The Woman.mp4", 4, 12)
+
+                // TODO: Fix, should be returning null, getting empty string...
+//                new TestCase("...5.5", "/server/Temp/S01E02 foo", 1, 2)
+
+            ).map(testCase -> DynamicTest.dynamicTest(
+                testCase.name(),
+                () -> {
+                    var result = episodeFilenameExtractor.extract(testCase.filename()).orElseThrow();
+
+                    assertThat(result.getEpisodeNumber().orElseThrow()).isEqualTo(testCase.episode());
+                    assertThat(result.getSeasonNumber().orElseThrow()).isEqualTo(testCase.season());
+                    assertThat(result.getSeriesName()).isNull();
+                    assertTrue(result.isSuccess());
+                })
+            );
+        }
+    }
+
+    @Nested
+    @DisplayName("Should successfully extract multiple episodes")
     public class SuccessfulMultiEpisodeExtractionTests {
 
         record TestCase(String name, String filename, int endingEpisode) {
@@ -149,7 +192,7 @@ public class EpisodeFilenameExtractorTest {
                 () -> {
                     var result = episodeFilenameExtractor.extract(testCase.filename()).orElseThrow();
 
-                    assertThat(result.getEndingEpisodeNumber()).isEqualTo(testCase.endingEpisode());
+                    assertThat(result.getEndingEpisodeNumber().orElseThrow()).isEqualTo(testCase.endingEpisode());
                     assertTrue(result.isSuccess());
                 })
             );
