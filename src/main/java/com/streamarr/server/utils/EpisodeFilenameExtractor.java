@@ -68,8 +68,8 @@ public class EpisodeFilenameExtractor {
 
             var episodeNumber = getIntFromGroup(match, "epnumber");
             var seasonNumber = getIntFromGroup(match, "seasonnumber");
-            var endingEpisodeNumber = attemptEndingEpisodeNumberExtraction(match);
-            var seriesName = attemptSeriesNameExtraction(match);
+            var endingEpisodeNumber = getAndValidateEndingEpisodeNumber(match);
+            var seriesName = extractSeriesName(match);
 
             return Optional.of(EpisodePathResult.builder()
                 .seasonNumber(seasonNumber)
@@ -90,7 +90,7 @@ public class EpisodeFilenameExtractor {
             .build());
     }
 
-    private OptionalInt attemptEndingEpisodeNumberExtraction(Matcher match) {
+    private OptionalInt getAndValidateEndingEpisodeNumber(Matcher match) {
         var endingEpisodeNumber = getIntFromGroup(match, "endingepnumber");
         // Will only set EndingEpisodeNumber if the captured number is not followed by additional numbers
         // or a 'p' or 'i' as what you would get with a pixel resolution specification.
@@ -104,7 +104,7 @@ public class EpisodeFilenameExtractor {
         }
     }
 
-    private String attemptSeriesNameExtraction(Matcher match) {
+    private String extractSeriesName(Matcher match) {
         try {
             var seriesName = match.group("seriesname");
             return StringUtils.isBlank(seriesName) ? null : seriesName;
