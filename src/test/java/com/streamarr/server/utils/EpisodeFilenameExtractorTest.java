@@ -95,11 +95,12 @@ public class EpisodeFilenameExtractorTest {
         Stream<DynamicNode> tests() {
             return Stream.of(
                 // TODO: Name these
-                new TestCase("special", "[tag] Foo - 1", "Foo", 1),
-                new TestCase("...64", "[Baz-Bar]Foo - [1080p][Multiple Subtitle]/[Baz-Bar] Foo - 05 [1080p][Multiple Subtitle].mkv", "Foo", 5)
+
                 // TODO: Fix...
 //                new TestCase("...6", "[YuiSubs] Tensura Nikki - Tensei Shitara Slime Datta Ken/[YuiSubs] Tensura Nikki - Tensei Shitara Slime Datta Ken - 12 (NVENC H.265 1080p).mkv", "Tensura Nikki - Tensei Shitara Slime Datta Ken", 12)
 //                new TestCase("...6", "[Baz-Bar]Foo - 01 - 12[1080p][Multiple Subtitle]/[Baz-Bar] Foo - 05 [1080p][Multiple Subtitle].mkv", "Foo", 5)
+                new TestCase("special", "[tag] Foo - 1", "Foo", 1),
+                new TestCase("...64", "[Baz-Bar]Foo - [1080p][Multiple Subtitle]/[Baz-Bar] Foo - 05 [1080p][Multiple Subtitle].mkv", "Foo", 5)
             ).map(testCase -> DynamicTest.dynamicTest(
                 testCase.name(),
                 () -> {
@@ -151,15 +152,12 @@ public class EpisodeFilenameExtractorTest {
         Stream<DynamicNode> tests() {
             return Stream.of(
                 // TODO: Name these
-                new TestCase("...5.5", "Series/4x12 - The Woman", 4, 12),
-                new TestCase("special2", "1-12 episode title", 1, 12)
 
                 // TODO: Fix
 //                new TestCase("...5.5", "Series/4-12 - The Woman.mp4", 4, 12)
-
-                // TODO: Fix, should be returning null, getting empty string...
-//                new TestCase("...5.5", "/server/Temp/S01E02 foo", 1, 2)
-
+                new TestCase("...1", "Series/4x12 - The Woman", 4, 12),
+                new TestCase("...2", "1-12 episode title", 1, 12),
+                new TestCase("...3", "/server/Temp/S01E02 foo", 1, 2)
             ).map(testCase -> DynamicTest.dynamicTest(
                 testCase.name(),
                 () -> {

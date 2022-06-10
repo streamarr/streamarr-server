@@ -65,7 +65,7 @@ public class EpisodeFilenameExtractor {
         }
 
         if (regexContainer.isNamed()) {
-            
+
             var episodeNumber = attemptEpisodeNumberExtractionFromNamedGroup(match);
             var seasonNumber = attemptSeasonNumberExtractionFromNamedGroup(match);
             var endingEpisodeNumber = attemptEndingEpisodeNumberExtraction(match);
@@ -148,7 +148,9 @@ public class EpisodeFilenameExtractor {
 
     private String attemptSeriesNameExtraction(Matcher match) {
         try {
-            return match.group("seriesname");
+            var seriesName = match.group("seriesname");
+
+            return StringUtils.isBlank(seriesName) ? null : seriesName;
         } catch (IllegalArgumentException ignored) {
             return null;
         }
@@ -198,7 +200,7 @@ public class EpisodeFilenameExtractor {
 
         var multipleEpisodeRegexContainerSet = episodeRegexConfig.getMultipleEpisodeRegexContainerList();
 
-        if (StringUtils.isEmpty(result.getSeriesName())) {
+        if (StringUtils.isBlank(result.getSeriesName())) {
             multipleEpisodeRegexContainerSet.addAll(0, episodeRegexConfig.getStandardRegexContainerList().stream()
                 .filter(EpisodeRegexContainer::isNamed)
                 .toList());
@@ -215,7 +217,7 @@ public class EpisodeFilenameExtractor {
                 continue;
             }
 
-            if (StringUtils.isEmpty(info.getSeriesName()) && StringUtils.isNotBlank(result.get().getSeriesName())) {
+            if (StringUtils.isBlank(info.getSeriesName()) && StringUtils.isNotBlank(result.get().getSeriesName())) {
                 info.setSeriesName(result.get().getSeriesName());
             }
 
