@@ -50,6 +50,7 @@ public class EpisodeFilenameExtractor {
 
         if (regexContainer.isDateRegex()) {
 
+            // TODO: Replace with getIntFromGroup()
             var year = Integer.parseInt(match.group("year"));
             var month = Integer.parseInt(match.group("month"));
             var day = Integer.parseInt(match.group("day"));
@@ -65,8 +66,8 @@ public class EpisodeFilenameExtractor {
 
         if (regexContainer.isNamed()) {
 
-            var episodeNumber = attemptEpisodeNumberExtractionFromNamedGroup(match);
-            var seasonNumber = attemptSeasonNumberExtractionFromNamedGroup(match);
+            var episodeNumber = getIntFromGroup(match, "epnumber");
+            var seasonNumber = getIntFromGroup(match, "seasonnumber");
             var endingEpisodeNumber = attemptEndingEpisodeNumberExtraction(match);
             var seriesName = attemptSeriesNameExtraction(match);
 
@@ -79,8 +80,8 @@ public class EpisodeFilenameExtractor {
                 .build());
         }
 
-        var seasonNumber = attemptSeasonNumberExtractionFromGroupIndex(match);
-        var episodeNumber = attemptEpisodeNumberExtractionFromGroupIndex(match);
+        var seasonNumber = getIntFromGroup(match, 1);
+        var episodeNumber = getIntFromGroup(match, 2);
 
         return Optional.of(EpisodePathResult.builder()
             .seasonNumber(seasonNumber)
@@ -89,36 +90,16 @@ public class EpisodeFilenameExtractor {
             .build());
     }
 
-    private OptionalInt attemptSeasonNumberExtractionFromNamedGroup(Matcher match) {
-        try {
-            return getIntFromGroup(match, "seasonnumber");
-        } catch (IllegalArgumentException ignored) {
-            return OptionalInt.empty();
-        }
-    }
-
-    private OptionalInt attemptEpisodeNumberExtractionFromNamedGroup(Matcher match) {
-        try {
-            return getIntFromGroup(match, "epnumber");
-        } catch (IllegalArgumentException ignored) {
-            return OptionalInt.empty();
-        }
-    }
-
     private OptionalInt attemptEndingEpisodeNumberExtraction(Matcher match) {
-        try {
-            var endingEpisodeNumber = getIntFromGroup(match, "endingepnumber");
-            // Will only set EndingEpisodeNumber if the captured number is not followed by additional numbers
-            // or a 'p' or 'i' as what you would get with a pixel resolution specification.
-            // It avoids erroneous parsing of something like "series-s09e14-1080p.mkv" as a multi-episode from E14 to E108
+        var endingEpisodeNumber = getIntFromGroup(match, "endingepnumber");
+        // Will only set EndingEpisodeNumber if the captured number is not followed by additional numbers
+        // or a 'p' or 'i' as what you would get with a pixel resolution specification.
+        // It avoids erroneous parsing of something like "series-s09e14-1080p.mkv" as a multi-episode from E14 to E108
 
-            // TODO: implement this nasty stuff....
-            if (true) {
-                return endingEpisodeNumber;
-            } else {
-                return OptionalInt.empty();
-            }
-        } catch (IllegalArgumentException ignored) {
+        // TODO: implement this nasty stuff....
+        if (true) {
+            return endingEpisodeNumber;
+        } else {
             return OptionalInt.empty();
         }
     }
@@ -132,39 +113,31 @@ public class EpisodeFilenameExtractor {
         }
     }
 
-    private OptionalInt attemptSeasonNumberExtractionFromGroupIndex(Matcher match) {
-        try {
-            return getIntFromGroup(match, 1);
-        } catch (NumberFormatException ignored) {
-            return OptionalInt.empty();
-        }
-    }
-
-    private OptionalInt attemptEpisodeNumberExtractionFromGroupIndex(Matcher match) {
-        try {
-            return getIntFromGroup(match, 2);
-        } catch (NumberFormatException ignored) {
-            return OptionalInt.empty();
-        }
-    }
-
     private OptionalInt getIntFromGroup(Matcher match, String groupName) {
-        var result = match.group(groupName);
-        if (StringUtils.isNotBlank(result)) {
-            return attemptStringToIntConversion(result);
+        try {
+            return stringToOptionalIntConverter(match.group(groupName));
+        } catch (IllegalArgumentException ignored) {
+            return OptionalInt.empty();
         }
-        return OptionalInt.empty();
     }
 
     private OptionalInt getIntFromGroup(Matcher match, int groupIndex) {
-        var result = match.group(groupIndex);
-        if (StringUtils.isNotBlank(result)) {
-            return attemptStringToIntConversion(result);
+        try {
+            return stringToOptionalIntConverter(match.group(groupIndex));
+        } catch (IllegalArgumentException ignored) {
+            return OptionalInt.empty();
         }
-        return OptionalInt.empty();
     }
 
-    private OptionalInt attemptStringToIntConversion(String input) {
+    private OptionalInt stringToOptionalIntConverter(String input) {
+        if (StringUtils.isBlank(input)) {
+            return OptionalInt.empty();
+        }
+
+        return tryStringToOptionalIntConversion(input);
+    }
+
+    private OptionalInt tryStringToOptionalIntConversion(String input) {
         try {
             return OptionalInt.of(Integer.parseInt(input));
         } catch (NumberFormatException ignore) {
