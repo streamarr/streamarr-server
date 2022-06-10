@@ -1,0 +1,15 @@
+type Rating {
+    id: ID!
+    createdBy: ID!
+    createdOn: String!
+    lastModifiedBy: ID
+    lastModifiedOn: String!
+    source: String!
+    value: String!
+}
+
+input RatingInput {
+    source: String!
+    value: String!
+    userId: String!
+}

@@ -1,0 +1,15 @@
+type Movie {
+    id: ID!
+    createdBy: ID!
+    createdOn: String!
+    lastModifiedBy: ID
+    lastModifiedOn: String!
+    title: String
+    artwork: String
+    contentRating: String
+    releases: [Release]!
+    studios: [Company]!
+    cast: [Person]!
+    ratings: [Rating]!
+    reviews: [Review]!
+}

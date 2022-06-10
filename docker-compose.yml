@@ -1,0 +1,15 @@
+version: "3.7"
+
+services:
+
+  postgres:
+    build:
+      context: .
+      dockerfile: pg-Dockerfile
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: streamarr

@@ -1,0 +1,16 @@
+spring:
+  flyway:
+    table: schema_history
+    enabled: true
+
+  profiles:
+    active: dev
+
+dgs:
+  graphql:
+    graphiql:
+      enabled: false
+
+tmdb:
+  api:
+    key: "5351726ee5668fb921afd988d23022ee"

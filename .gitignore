@@ -3,6 +3,13 @@ target/
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
+out/
+*.log
+build.properties
+lsp/**
+
+### Mac ###
+**/.DS_Store
 
 ### STS ###
 .apt_generated
@@ -12,6 +19,7 @@ target/
 .settings
 .springBeans
 .sts4-cache
+.attach_pid*
 
 ### IntelliJ IDEA ###
 .idea
@@ -31,3 +39,16 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Maven ###
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+
+### jEnv ###
+.java-version

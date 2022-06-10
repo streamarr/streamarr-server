@@ -1,0 +1,4 @@
+type Release {
+    id: ID!
+    path: String!
+}
