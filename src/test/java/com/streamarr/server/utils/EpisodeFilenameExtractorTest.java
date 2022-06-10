@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.TestFactory;
 
 import java.time.LocalDate;
+import java.util.OptionalInt;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -97,8 +98,8 @@ public class EpisodeFilenameExtractorTest {
         Stream<DynamicNode> tests() {
             return Stream.of(
                 // TODO: Fix...
-//                new TestCase("failing 1", "[YuiSubs] Tensura Nikki - Tensei Shitara Slime Datta Ken/[YuiSubs] Tensura Nikki - Tensei Shitara Slime Datta Ken - 12 (NVENC H.265 1080p).mkv", "Tensura Nikki - Tensei Shitara Slime Datta Ken", 12)
-//                new TestCase("failing 2", "[Baz-Bar]Foo - 01 - 12[1080p][Multiple Subtitle]/[Baz-Bar] Foo - 05 [1080p][Multiple Subtitle].mkv", "Foo", 5)
+//                new TestCase("failing 1", "[YuiSubs] Tensura Nikki - Tensei Shitara Slime Datta Ken/[YuiSubs] Tensura Nikki - Tensei Shitara Slime Datta Ken - 12 (NVENC H.265 1080p).mkv", "Tensura Nikki - Tensei Shitara Slime Datta Ken", 12),
+//                new TestCase("failing 2", "[Baz-Bar]Foo - 01 - 12[1080p][Multiple Subtitle]/[Baz-Bar] Foo - 05 [1080p][Multiple Subtitle].mkv", "Foo", 5),
                 new TestCase("when given tag before title and episode separated by dash", "[tag] Foo - 1", "Foo", 1),
                 new TestCase("when given title and episode containing many tags", "[Baz-Bar]Foo - [1080p][Multiple Subtitle]/[Baz-Bar] Foo - 05 [1080p][Multiple Subtitle].mkv", "Foo", 5)
             ).map(testCase -> DynamicTest.dynamicTest(
@@ -169,22 +170,24 @@ public class EpisodeFilenameExtractorTest {
     }
 
     @Nested
-    @DisplayName("Should successfully extract multiple episodes")
+    @DisplayName("Should extract ending episode")
     public class SuccessfulMultiEpisodeExtractionTests {
 
-        record TestCase(String name, String filename, int endingEpisode) {
+        record TestCase(String name, String filename, OptionalInt endingEpisode) {
         }
 
         @TestFactory
         Stream<DynamicNode> tests() {
             return Stream.of(
-                new TestCase("when given filename containing multiple episodes", "Season 02/Elementary - 02x03x04x15 - Ep Name.mp4", 15)
+                new TestCase("when given filename containing multiple episodes", "Season 02/Elementary - 02x03x04x15 - Ep Name.mp4", OptionalInt.of(15)),
+                // TODO: Should this be in it's own nested?
+                new TestCase("shouldn't extract 1080p", "/series-s09e14-1080p.mkv", OptionalInt.empty())
             ).map(testCase -> DynamicTest.dynamicTest(
                 testCase.name(),
                 () -> {
                     var result = episodeFilenameExtractor.extract(testCase.filename()).orElseThrow();
 
-                    assertThat(result.getEndingEpisodeNumber().orElseThrow()).isEqualTo(testCase.endingEpisode());
+                    assertThat(result.getEndingEpisodeNumber()).isEqualTo(testCase.endingEpisode());
                     assertTrue(result.isSuccess());
                 })
             );

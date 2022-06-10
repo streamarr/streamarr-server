@@ -68,7 +68,7 @@ public class EpisodeFilenameExtractor {
 
             var episodeNumber = getIntFromGroup(match, "epnumber");
             var seasonNumber = getIntFromGroup(match, "seasonnumber");
-            var endingEpisodeNumber = getAndValidateEndingEpisodeNumber(match);
+            var endingEpisodeNumber = getAndValidateEndingEpisodeNumber(name, match);
             var seriesName = extractSeriesName(match);
 
             return Optional.of(EpisodePathResult.builder()
@@ -90,18 +90,30 @@ public class EpisodeFilenameExtractor {
             .build());
     }
 
-    private OptionalInt getAndValidateEndingEpisodeNumber(Matcher match) {
+    private OptionalInt getAndValidateEndingEpisodeNumber(String name, Matcher match) {
         var endingEpisodeNumber = getIntFromGroup(match, "endingepnumber");
+
+        if (endingEpisodeNumber.isEmpty()) {
+            return OptionalInt.empty();
+        }
+
+        var endingNumberGroupEndIndex = match.end("endingepnumber");
+        
         // Will only set EndingEpisodeNumber if the captured number is not followed by additional numbers
         // or a 'p' or 'i' as what you would get with a pixel resolution specification.
         // It avoids erroneous parsing of something like "series-s09e14-1080p.mkv" as a multi-episode from E14 to E108
-
-        // TODO: implement this nasty stuff....
-        if (true) {
+        if (endingNumberGroupEndIndex >= name.length() || !containsChar("0123456789iIpP", name.charAt(endingNumberGroupEndIndex))) {
             return endingEpisodeNumber;
-        } else {
-            return OptionalInt.empty();
         }
+
+        return OptionalInt.empty();
+    }
+
+    public boolean containsChar(String s, char search) {
+        if (s.length() == 0)
+            return false;
+        else
+            return s.charAt(0) == search || containsChar(s.substring(1), search);
     }
 
     private String extractSeriesName(Matcher match) {
