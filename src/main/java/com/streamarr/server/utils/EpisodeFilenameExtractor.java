@@ -44,7 +44,6 @@ public class EpisodeFilenameExtractor {
 
         var match = regexContainer.getRegex().matcher(name);
 
-        // TODO: look for other regex expressions that rely on partial match...
         if (!match.matches()) {
             return Optional.empty();
         }
@@ -71,85 +70,62 @@ public class EpisodeFilenameExtractor {
             var endingEpisodeNumber = attemptEndingEpisodeNumberExtraction(match);
             var seriesName = attemptSeriesNameExtraction(match);
 
-            // TODO: what if we don't have a season number? Is that possible?
-            // TODO: helper?
-            var success = episodeNumber.isPresent() && (seasonNumber.isEmpty() || isValidSeasonNumber(seasonNumber.getAsInt()));
-
             return Optional.of(EpisodePathResult.builder()
                 .seasonNumber(seasonNumber)
                 .episodeNumber(episodeNumber)
                 .endingEpisodeNumber(endingEpisodeNumber)
                 .seriesName(seriesName)
-                .success(success)
+                .success(validationSuccess(episodeNumber, seasonNumber))
                 .build());
         }
 
         var seasonNumber = attemptSeasonNumberExtractionFromGroupIndex(match);
         var episodeNumber = attemptEpisodeNumberExtractionFromGroupIndex(match);
 
-        // TODO: what if we don't have a season number? Is that possible?
-        // TODO: helper?
-        var success = episodeNumber.isPresent() && (seasonNumber.isEmpty() || isValidSeasonNumber(seasonNumber.getAsInt()));
-
         return Optional.of(EpisodePathResult.builder()
             .seasonNumber(seasonNumber)
             .episodeNumber(episodeNumber)
-            .success(success)
+            .success(validationSuccess(episodeNumber, seasonNumber))
             .build());
     }
 
     private OptionalInt attemptSeasonNumberExtractionFromNamedGroup(Matcher match) {
         try {
-            var seasonNumber = match.group("seasonnumber");
-            if (StringUtils.isNotBlank(seasonNumber)) {
-                return OptionalInt.of(Integer.parseInt(seasonNumber));
-            }
+            return getIntFromGroup(match, "seasonnumber");
         } catch (IllegalArgumentException ignored) {
             return OptionalInt.empty();
         }
-
-        return OptionalInt.empty();
     }
 
     private OptionalInt attemptEpisodeNumberExtractionFromNamedGroup(Matcher match) {
         try {
-            var episodeNumber = match.group("epnumber");
-            if (StringUtils.isNotBlank(episodeNumber)) {
-                return OptionalInt.of(Integer.parseInt(episodeNumber));
-            }
+            return getIntFromGroup(match, "epnumber");
         } catch (IllegalArgumentException ignored) {
             return OptionalInt.empty();
         }
-
-        return OptionalInt.empty();
     }
 
     private OptionalInt attemptEndingEpisodeNumberExtraction(Matcher match) {
         try {
-            var endingEpisodeNumber = match.group("endingepnumber");
-            if (StringUtils.isNotBlank(endingEpisodeNumber)) {
-                // Will only set EndingEpisodeNumber if the captured number is not followed by additional numbers
-                // or a 'p' or 'i' as what you would get with a pixel resolution specification.
-                // It avoids erroneous parsing of something like "series-s09e14-1080p.mkv" as a multi-episode from E14 to E108
+            var endingEpisodeNumber = getIntFromGroup(match, "endingepnumber");
+            // Will only set EndingEpisodeNumber if the captured number is not followed by additional numbers
+            // or a 'p' or 'i' as what you would get with a pixel resolution specification.
+            // It avoids erroneous parsing of something like "series-s09e14-1080p.mkv" as a multi-episode from E14 to E108
 
-                var endingEpisodeNumberInt = Integer.parseInt(endingEpisodeNumber);
-
-                // TODO: implement this nasty stuff....
-                if (true) {
-                    return OptionalInt.of(endingEpisodeNumberInt);
-                }
+            // TODO: implement this nasty stuff....
+            if (true) {
+                return endingEpisodeNumber;
+            } else {
+                return OptionalInt.empty();
             }
         } catch (IllegalArgumentException ignored) {
             return OptionalInt.empty();
         }
-
-        return OptionalInt.empty();
     }
 
     private String attemptSeriesNameExtraction(Matcher match) {
         try {
             var seriesName = match.group("seriesname");
-
             return StringUtils.isBlank(seriesName) ? null : seriesName;
         } catch (IllegalArgumentException ignored) {
             return null;
@@ -157,29 +133,47 @@ public class EpisodeFilenameExtractor {
     }
 
     private OptionalInt attemptSeasonNumberExtractionFromGroupIndex(Matcher match) {
-        var seasonNumber = match.group(1);
-        if (StringUtils.isNotBlank(seasonNumber)) {
-            try {
-                return OptionalInt.of(Integer.parseInt(seasonNumber));
-            } catch (NumberFormatException ignored) {
-                return OptionalInt.empty();
-            }
+        try {
+            return getIntFromGroup(match, 1);
+        } catch (NumberFormatException ignored) {
+            return OptionalInt.empty();
         }
-
-        return OptionalInt.empty();
     }
 
     private OptionalInt attemptEpisodeNumberExtractionFromGroupIndex(Matcher match) {
-        var episodeNumber = match.group(2);
-        if (StringUtils.isNotBlank(episodeNumber)) {
-            try {
-                return OptionalInt.of(Integer.parseInt(episodeNumber));
-            } catch (NumberFormatException ignored) {
-                return OptionalInt.empty();
-            }
+        try {
+            return getIntFromGroup(match, 2);
+        } catch (NumberFormatException ignored) {
+            return OptionalInt.empty();
         }
+    }
 
+    private OptionalInt getIntFromGroup(Matcher match, String groupName) {
+        var result = match.group(groupName);
+        if (StringUtils.isNotBlank(result)) {
+            return attemptStringToIntConversion(result);
+        }
         return OptionalInt.empty();
+    }
+
+    private OptionalInt getIntFromGroup(Matcher match, int groupIndex) {
+        var result = match.group(groupIndex);
+        if (StringUtils.isNotBlank(result)) {
+            return attemptStringToIntConversion(result);
+        }
+        return OptionalInt.empty();
+    }
+
+    private OptionalInt attemptStringToIntConversion(String input) {
+        try {
+            return OptionalInt.of(Integer.parseInt(input));
+        } catch (NumberFormatException ignore) {
+            return OptionalInt.empty();
+        }
+    }
+
+    private boolean validationSuccess(OptionalInt episodeNumber, OptionalInt seasonNumber) {
+        return episodeNumber.isPresent() && (seasonNumber.isEmpty() || isValidSeasonNumber(seasonNumber.getAsInt()));
     }
 
     // Invalidate match when the season is 200 through 1927 or above 2500
