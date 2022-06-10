@@ -11,9 +11,9 @@ public class TestController {
 
     private final VideoFileParsingService videoFileParsingService;
 
+    // TODO: Delete. Using for executing some logic.
     @PostMapping("/test")
     public void test() {
         videoFileParsingService.parsePaths();
     }
-
 }

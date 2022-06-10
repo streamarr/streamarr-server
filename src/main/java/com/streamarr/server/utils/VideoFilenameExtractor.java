@@ -17,8 +17,7 @@ public class VideoFilenameExtractor {
         }
     }
 
-    // Should we DI these regex patterns?
-    // https://regex101.com/delete/JvBK11bV6W7YIRpwBTxci6AB
+    // TODO: We should also DI these regex patterns
     private final static List<Pattern> EXTRACTION_REGEXES = List.of(
         Pattern.compile("(.*[^_\\,\\.\\-])[_\\.\\(\\)\\[\\]\\-](19[0-9]{2}|20[0-9]{2})(?![0-9]+|\\W[0-9]{2}\\W[0-9]{2})([ _\\,\\.\\(\\)\\[\\]\\-][^0-9]|).*(19[0-9]{2}|20[0-9]{2})*"),
         Pattern.compile("(.*[^_\\,\\.\\-])[ _\\.\\(\\)\\[\\]\\-]+(19[0-9]{2}|20[0-9]{2})(?![0-9]+|\\W[0-9]{2}\\W[0-9]{2})([ _\\,\\.\\(\\)\\[\\]\\-][^0-9]|).*(19[0-9]{2}|20[0-9]{2})*")

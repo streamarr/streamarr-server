@@ -11,5 +11,4 @@ public class TmdbGenres {
 
     private int id;
     private String name;
-
 }

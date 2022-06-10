@@ -5,8 +5,8 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.repositories.MovieRepository;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.stereotype.Service;
+import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
 import java.util.Set;
@@ -34,15 +34,15 @@ public class TheMovieDatabaseService {
     public TmdbMovie waitAndPrintMovieMetadata() {
         var movie = getMovieMetadata("122906").block();
 
-        // What about system actions? Like this will be...
+        // TODO: Implement concept of a User
         var fakeUserId = UUID.randomUUID();
 
-        // This will NOT work without a cascade clause. Will these be separate calls? Do I want to manage them alone?
+        // TODO: This will NOT work without a cascade clause. Do I even want JPA, how about JOOQ?
         Set<Company> companies = movie.getProductionCompanies().stream().map(company ->
-            Company.builder()
-                .name(company.getName())
-                .createdBy(fakeUserId)
-                .build())
+                Company.builder()
+                    .name(company.getName())
+                    .createdBy(fakeUserId)
+                    .build())
             .collect(Collectors.toSet());
 
         movieRepository.save(Movie.builder()

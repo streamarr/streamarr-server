@@ -19,6 +19,7 @@ public class VideoFileParsingService {
     private final VideoExtensionValidator videoExtensionValidator;
     private final VideoFilenameExtractor cleanTitleExtractor;
 
+    // TODO: Just playing around with file parsing, TBD.
     public void parsePaths() {
 
         try {

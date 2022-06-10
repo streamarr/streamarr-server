@@ -46,5 +46,4 @@ public class TmdbMovie {
     @JsonProperty("production_countries")
     private List<TmdbProductionCountries> productionCountries;
     private List<TmdbGenres> genres;
-
 }

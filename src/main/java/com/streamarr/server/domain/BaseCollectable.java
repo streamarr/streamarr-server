@@ -17,5 +17,4 @@ import javax.persistence.InheritanceType;
 public class BaseCollectable extends BaseEntity<BaseCollectable> implements Collectable {
 
     private String title;
-
 }

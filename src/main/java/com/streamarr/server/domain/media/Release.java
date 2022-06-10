@@ -18,7 +18,6 @@ public class Release extends BaseEntity<Release> {
 
     private UUID movieId;
 
-    // File? or List<File>?
+    // TODO: Type -> File? or List<File>?
     private String path;
-
 }

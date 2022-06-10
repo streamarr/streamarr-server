@@ -16,5 +16,4 @@ public class TmdbProductionCompanies {
     private String logoPath;
     @JsonProperty("origin_country")
     private String originCountry;
-
 }

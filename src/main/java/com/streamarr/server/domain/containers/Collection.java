@@ -1,7 +1,6 @@
 package com.streamarr.server.domain.containers;
 
 import com.streamarr.server.domain.BaseCollectable;
-
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -21,5 +20,4 @@ public class Collection extends BaseCollectable {
 
     @OneToMany
     private Set<BaseCollectable> items = new HashSet<>();
-
 }

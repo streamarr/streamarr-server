@@ -26,17 +26,17 @@ import java.util.Set;
 @NoArgsConstructor
 public class Movie extends BaseCollectable {
 
-    // URI? URL?
+    // TODO: Store these locally? What about the intermediate state when we only have a URL?
     private String artwork;
 
-    // ENUM? Example: "PG", "R"
+    // TODO: ENUM or String? Example: "PG", "R"
     private String contentRating;
 
+    // TODO: Is Set applicable? Do we care about order? List?
     @OneToMany(fetch = FetchType.LAZY, mappedBy = "movieId")
     private Set<Release> releases = new HashSet<>();
 
-    // Should the below be inside a Metadata object? Part of a base entity?
-    // @Builder.Default?
+    // TODO: Should the below be inside a Metadata object?
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
         name = "movie_company",
@@ -49,7 +49,7 @@ public class Movie extends BaseCollectable {
         name = "movie_person",
         joinColumns = @JoinColumn(name = "movie_id"),
         inverseJoinColumns = @JoinColumn(name = "person_id"))
-    // Can a person appear more than once? Voice for 2 characters?
+    // TODO: Question: Can a person appear more than once? Voice for 2 characters? Is a Set applicable?
     private Set<Person> cast = new HashSet<>();
 
     @OneToMany(fetch = FetchType.LAZY, mappedBy = "movieId")
@@ -57,5 +57,4 @@ public class Movie extends BaseCollectable {
 
     @OneToMany(fetch = FetchType.LAZY, mappedBy = "movieId")
     private Set<Review> reviews = new HashSet<>();
-
 }

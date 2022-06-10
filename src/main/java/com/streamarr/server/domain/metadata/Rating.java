@@ -21,5 +21,4 @@ public class Rating extends BaseEntity<Rating> {
     private String source;
 
     private String value;
-
 }

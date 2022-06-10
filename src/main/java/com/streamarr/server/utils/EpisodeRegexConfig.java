@@ -184,6 +184,7 @@ public class EpisodeRegexConfig {
 //            .build()
     ));
 
+    // TODO: Do we care about case sensitivity here?
     private final List<EpisodeRegexContainer> multipleEpisodeRegexContainerList = new ArrayList<>(List.of(
         EpisodeRegexContainer.builder()
             .expression(".*(\\\\|\\/)[sS]?(?<seasonnumber>[0-9]{1,4})[xX](?<epnumber>[0-9]{1,3})((-| - )[0-9]{1,4}[eExX](?<endingepnumber>[0-9]{1,3}))+[^\\\\\\/]*$")
@@ -226,12 +227,4 @@ public class EpisodeRegexConfig {
             .isNamed(true)
             .build()
     ));
-
-//
-//    VideoFileExtensions = extensions
-//        .Distinct(StringComparer.OrdinalIgnoreCase)
-//        .ToArray();
-//
-//    Compile();
-
 }

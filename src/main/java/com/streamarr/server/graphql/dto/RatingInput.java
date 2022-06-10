@@ -15,5 +15,4 @@ public class RatingInput {
     private String userId;
     private String source;
     private String value;
-
 }

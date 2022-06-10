@@ -24,5 +24,4 @@ public class Person extends BaseEntity<Person> {
 
     @ManyToMany(mappedBy = "cast", fetch = FetchType.LAZY)
     private Set<Movie> movies = new HashSet<>();
-
 }

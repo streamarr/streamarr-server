@@ -1,14 +1,15 @@
 package com.streamarr.server.services.library;
 
-// MovieManagementService?
-// MovieLibraryManagementService?
+
 public class MovieManagementService {
 
-    // Multiple Methods:
-    //     matchMovieFromFileInfo() -> name / year
+    // TODO: Turn pseudocode into real code...
+
+    // Class has multiple methods:
+    //     matchMovieFromFileInfo(FileInfo info) -> name / year
     //     refreshMovieById()
 
-    // TODO: matchMovieFromFileInfo(FileInfo info)
+    // TODO: Logic for matchMovieFromFileInfo(FileInfo info)
     // We've determined this is a new file, filename has been parsed. Going to attempt to create a new movie.
 
     // Searching TMDB, or another service -> [MATCHING]

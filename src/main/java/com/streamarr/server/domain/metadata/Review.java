@@ -19,5 +19,4 @@ public class Review extends BaseEntity<Review> {
     private UUID movieId;
 
     private String author;
-
 }
