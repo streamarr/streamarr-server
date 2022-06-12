@@ -17,7 +17,7 @@ public class EpisodeFilenameExtractor {
     private final EpisodeRegexConfig episodeRegexConfig;
 
     public Optional<EpisodePathResult> extract(String filename) {
-        // TODO: Can any of this be generic and reused with fillAdditional?
+        // TODO: Should any of this be generic and reused with fillAdditional?
         var optionalResult = episodeRegexConfig.getStandardRegexContainerList().stream()
             .map(regexContainer -> attemptMatch(filename, regexContainer))
             .filter(episodePathResult -> episodePathResult.isPresent() && episodePathResult.get().isSuccess())
@@ -186,8 +186,6 @@ public class EpisodeFilenameExtractor {
             .trim();
     }
 
-
-    // TODO: Rename?
     private void fillAdditional(String filename, EpisodePathResult result) {
 
         var multipleEpisodeRegexContainerSet = episodeRegexConfig.getMultipleEpisodeRegexContainerList();
