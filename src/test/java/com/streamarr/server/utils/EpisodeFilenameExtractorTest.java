@@ -97,9 +97,8 @@ public class EpisodeFilenameExtractorTest {
         @TestFactory
         Stream<DynamicNode> tests() {
             return Stream.of(
-                // TODO: Fix...
-//                new TestCase("failing 1", "[YuiSubs] Tensura Nikki - Tensei Shitara Slime Datta Ken/[YuiSubs] Tensura Nikki - Tensei Shitara Slime Datta Ken - 12 (NVENC H.265 1080p).mkv", "Tensura Nikki - Tensei Shitara Slime Datta Ken", 12),
-//                new TestCase("failing 2", "[Baz-Bar]Foo - 01 - 12[1080p][Multiple Subtitle]/[Baz-Bar] Foo - 05 [1080p][Multiple Subtitle].mkv", "Foo", 5),
+                new TestCase("when given multiple tags in path and tricky filename", "[YuiSubs] Tensura Nikki - Tensei Shitara Slime Datta Ken/[YuiSubs] Tensura Nikki - Tensei Shitara Slime Datta Ken - 12 (NVENC H.265 1080p).mkv", "Tensura Nikki - Tensei Shitara Slime Datta Ken", 12),
+                new TestCase("when given multiple tags in path and tricky numbering", "[Baz-Bar]Foo - 01 - 12[1080p][Multiple Subtitle]/[Baz-Bar] Foo - 05 [1080p][Multiple Subtitle].mkv", "Foo", 5),
                 new TestCase("when given tag before title and episode separated by dash", "[tag] Foo - 1", "Foo", 1),
                 new TestCase("when given title and episode containing many tags", "[Baz-Bar]Foo - [1080p][Multiple Subtitle]/[Baz-Bar] Foo - 05 [1080p][Multiple Subtitle].mkv", "Foo", 5)
             ).map(testCase -> DynamicTest.dynamicTest(

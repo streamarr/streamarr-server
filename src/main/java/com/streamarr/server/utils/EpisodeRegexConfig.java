@@ -57,7 +57,7 @@ public class EpisodeRegexConfig {
         // Warning; Causes false positives for triple-digit episode names
         EpisodeRegexContainer.builder()
             // Extracts seriesName, episodeNumber. Ex -> "[tag] Foo - 1"
-            .expression(".*?(\\[.*?\\])+.*?(?<seriesname>[\\w\\s]+?)[\\s_]*-[\\s_]*(?<epnumber>[0-9]+).*$")
+            .expression(".*[\\\\\\/]?.*?(\\[.*?\\])+.*?(?<seriesname>[-\\w\\s]+?)[\\s_]*-[\\s_]*(?<epnumber>[0-9]+).*$")
             .exampleMatch("[tag] Foo - 1")
             .isNamed(true)
             .build(),
