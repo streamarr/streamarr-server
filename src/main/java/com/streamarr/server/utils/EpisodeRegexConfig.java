@@ -61,7 +61,18 @@ public class EpisodeRegexConfig {
             .exampleMatch("[tag] Foo - 1")
             .isNamed(true)
             .build(),
-
+        EpisodeRegexContainer.builder()
+            // TODO: this one isn't very reliable during testing... Putting it near the bottom for better results?
+            // /server/anything_102.mp4
+            // /server/james.corden.2017.04.20.anne.hathaway.720p.hdtv.x264-crooks.mkv
+            // /server/anything_1996.11.14.mp4
+            // TODO: Currently requires path... Do we want this?
+            .expression(".*[\\\\/._ -](?<seriesname>(?![0-9]+[0-9][0-9])([^\\\\\\/_])*)[\\\\\\/._ -](?<seasonnumber>[0-9]+)(?<epnumber>[0-9][0-9](?:(?:[a-i]|\\.[1-9])(?![0-9]))?).*$")
+            .exampleMatch("/server/anything_102")
+            .isNamed(true)
+            .isOptimistic(true)
+            .supportsAbsoluteEpisodeNumbers(false)
+            .build(),
         // TODO: Is this covered in unit tests or actually used?
         EpisodeRegexContainer.builder()
             // Maybe extracts part number. Ex -> "/season 1/title_part_1.avi"
@@ -70,14 +81,12 @@ public class EpisodeRegexConfig {
             .exampleMatch("/season 1/title_part_1.avi")
             .supportsAbsoluteEpisodeNumbers(true)
             .build(),
-
         EpisodeRegexContainer.builder()
             // Extracts episodeNumber and optionally endingEpisodeNumber. Ex -> "Episode 16", "Episode 16 - Title"
             .expression("[Ee]pisode (?<epnumber>[0-9]+)(-(?<endingepnumber>[0-9]+))?[^\\\\\\/]*$")
             .exampleMatch("Episode 16")
             .isNamed(true)
             .build(),
-
         EpisodeRegexContainer.builder()
             // Extracts seasonNumber and episodeNumber. Ex -> "/season 1/2x1 foo"
             // TODO: Currently requires path... Do we want this?
@@ -152,18 +161,6 @@ public class EpisodeRegexConfig {
             .isOptimistic(true)
             .build(),
         EpisodeRegexContainer.builder()
-            // TODO: this one isn't very reliable during testing... Putting it near the bottom for better results?
-            // /server/anything_102.mp4
-            // /server/james.corden.2017.04.20.anne.hathaway.720p.hdtv.x264-crooks.mkv
-            // /server/anything_1996.11.14.mp4
-            // TODO: Currently requires path... Do we want this?
-            .expression(".*[\\\\/._ -](?<seriesname>(?![0-9]+[0-9][0-9])([^\\\\\\/_])*)[\\\\\\/._ -](?<seasonnumber>[0-9]+)(?<epnumber>[0-9][0-9](?:(?:[a-i]|\\.[1-9])(?![0-9]))?).*$")
-            .exampleMatch("/server/anything_102")
-            .isNamed(true)
-            .isOptimistic(true)
-            .supportsAbsoluteEpisodeNumbers(false)
-            .build(),
-        EpisodeRegexContainer.builder()
             // Extracts seriesName and seasonNumber. Ex -> "the show/season 1", "the show/s01"
             .expression("(.*(\\\\|\\/))*(?<seriesname>.+)\\/[Ss](eason)?[\\. _\\-]*(?<seasonnumber>[0-9]+)")
             .exampleMatch("the show/season 1")
@@ -175,13 +172,6 @@ public class EpisodeRegexConfig {
             .exampleMatch("the show S01")
             .isNamed(true)
             .build()
-
-        // TODO: Duplicate?
-//        EpisodeRegexContainer.builder()
-//            .expression(".*[\\\\\\/][^\\\\\\/]* (?<epnumber>[0-9]{1,3})(-(?<endingepnumber>[0-9]{2,3}))*[^\\\\\\/]*$")
-//            .isNamed(true)
-//            .isOptimistic(true)
-//            .build()
     ));
 
     // TODO: Do we care about case sensitivity here?

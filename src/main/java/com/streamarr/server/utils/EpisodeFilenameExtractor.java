@@ -49,7 +49,7 @@ public class EpisodeFilenameExtractor {
         if (!match.matches()) {
             return Optional.empty();
         }
-
+        
         if (regexContainer.isDateRegex()) {
 
             // TODO: Replace with getIntFromGroup()?
