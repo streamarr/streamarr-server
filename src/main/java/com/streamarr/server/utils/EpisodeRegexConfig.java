@@ -125,7 +125,7 @@ public class EpisodeRegexConfig {
             .build(),
         EpisodeRegexContainer.builder()
             // Extracts seasonNumber and episodeNumber. Ex -> "1-12 episode title, 1-12.avi"
-            .expression("([0-9]+)-([0-9]+).*")
+            .expression(".*([0-9]+)-([0-9]+).*$")
             .exampleMatch("1-12 episode title")
             .build(),
         EpisodeRegexContainer.builder()
