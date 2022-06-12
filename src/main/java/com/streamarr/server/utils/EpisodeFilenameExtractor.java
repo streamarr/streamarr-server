@@ -16,10 +16,10 @@ public class EpisodeFilenameExtractor {
 
     private final EpisodeRegexConfig episodeRegexConfig;
 
-    public Optional<EpisodePathResult> extract(String input) {
+    public Optional<EpisodePathResult> extract(String filename) {
         // TODO: Can any of this be generic and reused with fillAdditional?
         var optionalResult = episodeRegexConfig.getStandardRegexContainerList().stream()
-            .map(regexContainer -> attemptMatch(input, regexContainer))
+            .map(regexContainer -> attemptMatch(filename, regexContainer))
             .filter(episodePathResult -> episodePathResult.isPresent() && episodePathResult.get().isSuccess())
             .findFirst()
             .flatMap(i -> i);
@@ -28,27 +28,29 @@ public class EpisodeFilenameExtractor {
             return optionalResult;
         }
 
-        if (StringUtils.isBlank(optionalResult.get().getSeriesName()) && (optionalResult.get().getEpisodeNumber().isPresent() || optionalResult.get().getEndingEpisodeNumber().isEmpty())) {
-            fillAdditional(input, optionalResult.get());
+        var episodePathResult = optionalResult.get();
+
+        if (isMissingInfo(episodePathResult)) {
+            fillAdditional(filename, episodePathResult);
         }
 
         // TODO: clean this up, make it immutable?
-        if (StringUtils.isNotBlank(optionalResult.get().getSeriesName())) {
-            var cleanedName = cleanSeriesName(optionalResult.get().getSeriesName());
+        if (StringUtils.isNotBlank(episodePathResult.getSeriesName())) {
+            var cleanedName = cleanSeriesName(episodePathResult.getSeriesName());
 
-            optionalResult.get().setSeriesName(cleanedName);
+            episodePathResult.setSeriesName(cleanedName);
         }
 
         return optionalResult;
     }
 
-    private Optional<EpisodePathResult> attemptMatch(String name, EpisodeRegexContainer regexContainer) {
+    private Optional<EpisodePathResult> attemptMatch(String filename, EpisodeRegexContainer regexContainer) {
         // This is a hack to handle wmc naming
         if (regexContainer.isDateRegex()) {
-            name = name.replace('_', '-');
+            filename = filename.replace('_', '-');
         }
 
-        var match = regexContainer.getRegex().matcher(name);
+        var match = regexContainer.getRegex().matcher(filename);
 
         if (!match.matches()) {
             return Optional.empty();
@@ -74,7 +76,7 @@ public class EpisodeFilenameExtractor {
 
             var episodeNumber = getIntFromGroup(match, "epnumber");
             var seasonNumber = getIntFromGroup(match, "seasonnumber");
-            var endingEpisodeNumber = getAndValidateEndingEpisodeNumber(name, match);
+            var endingEpisodeNumber = getAndValidateEndingEpisodeNumber(filename, match);
             var seriesName = getSeriesName(match);
 
             return Optional.of(EpisodePathResult.builder()
@@ -82,7 +84,7 @@ public class EpisodeFilenameExtractor {
                 .episodeNumber(episodeNumber)
                 .endingEpisodeNumber(endingEpisodeNumber)
                 .seriesName(seriesName)
-                .success(validationSuccess(episodeNumber, seasonNumber))
+                .success(isValidResult(episodeNumber, seasonNumber))
                 .build());
         }
 
@@ -92,11 +94,11 @@ public class EpisodeFilenameExtractor {
         return Optional.of(EpisodePathResult.builder()
             .seasonNumber(seasonNumber)
             .episodeNumber(episodeNumber)
-            .success(validationSuccess(episodeNumber, seasonNumber))
+            .success(isValidResult(episodeNumber, seasonNumber))
             .build());
     }
 
-    private OptionalInt getAndValidateEndingEpisodeNumber(String name, Matcher match) {
+    private OptionalInt getAndValidateEndingEpisodeNumber(String filename, Matcher match) {
         var endingEpisodeNumber = getIntFromGroup(match, "endingepnumber");
 
         if (endingEpisodeNumber.isEmpty()) {
@@ -108,7 +110,7 @@ public class EpisodeFilenameExtractor {
         // Will only set EndingEpisodeNumber if the captured number is not followed by additional numbers
         // or a 'p' or 'i' as what you would get with a pixel resolution specification.
         // It avoids erroneous parsing of something like "series-s09e14-1080p.mkv" as a multi-episode from E14 to E108
-        if (endingNumberGroupEndIndex >= name.length() || !containsChar("0123456789iIpP", name.charAt(endingNumberGroupEndIndex))) {
+        if (endingNumberGroupEndIndex >= filename.length() || !containsChar("0123456789iIpP", filename.charAt(endingNumberGroupEndIndex))) {
             return endingEpisodeNumber;
         }
 
@@ -163,7 +165,7 @@ public class EpisodeFilenameExtractor {
         }
     }
 
-    private boolean validationSuccess(OptionalInt episodeNumber, OptionalInt seasonNumber) {
+    private boolean isValidResult(OptionalInt episodeNumber, OptionalInt seasonNumber) {
         return episodeNumber.isPresent() && (seasonNumber.isEmpty() || isValidSeasonNumber(seasonNumber.getAsInt()));
     }
 
@@ -174,6 +176,10 @@ public class EpisodeFilenameExtractor {
         return (seasonNumber < 200 || seasonNumber >= 1928) && seasonNumber <= 2500;
     }
 
+    private boolean isMissingInfo(EpisodePathResult result) {
+        return StringUtils.isBlank(result.getSeriesName()) && (result.getEpisodeNumber().isPresent() || result.getEndingEpisodeNumber().isEmpty());
+    }
+
     private String cleanSeriesName(String input) {
         return input.trim()
             .replaceAll("[_.-]*$", "")
@@ -182,7 +188,7 @@ public class EpisodeFilenameExtractor {
 
 
     // TODO: Rename?
-    private void fillAdditional(String path, EpisodePathResult result) {
+    private void fillAdditional(String filename, EpisodePathResult result) {
 
         var multipleEpisodeRegexContainerSet = episodeRegexConfig.getMultipleEpisodeRegexContainerList();
 
@@ -192,20 +198,20 @@ public class EpisodeFilenameExtractor {
                 .toList());
         }
 
-        fillAdditional(path, result, multipleEpisodeRegexContainerSet);
+        fillAdditional(filename, result, multipleEpisodeRegexContainerSet);
     }
 
-    private void fillAdditional(String path, EpisodePathResult info, List<EpisodeRegexContainer> expressions) {
+    private void fillAdditional(String filename, EpisodePathResult result, List<EpisodeRegexContainer> expressions) {
         expressions.stream()
-            .map(regexContainer -> attemptMatch(path, regexContainer))
+            .map(regexContainer -> attemptMatch(filename, regexContainer))
             .filter(episodePathResult -> episodePathResult.isPresent() && episodePathResult.get().isSuccess())
-            .forEach(result -> {
-                if (StringUtils.isBlank(info.getSeriesName()) && StringUtils.isNotBlank(result.get().getSeriesName())) {
-                    info.setSeriesName(result.get().getSeriesName());
+            .forEach(newResult -> {
+                if (StringUtils.isBlank(result.getSeriesName()) && StringUtils.isNotBlank(newResult.get().getSeriesName())) {
+                    result.setSeriesName(newResult.get().getSeriesName());
                 }
 
-                if (info.getEndingEpisodeNumber().isEmpty() && info.getEpisodeNumber().isPresent()) {
-                    info.setEndingEpisodeNumber(result.get().getEndingEpisodeNumber());
+                if (result.getEndingEpisodeNumber().isEmpty() && result.getEpisodeNumber().isPresent()) {
+                    result.setEndingEpisodeNumber(newResult.get().getEndingEpisodeNumber());
                 }
             });
     }
