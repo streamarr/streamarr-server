@@ -54,15 +54,14 @@ public class EpisodeRegexConfig {
             .exampleMatch("foo 02x03")
             .supportsAbsoluteEpisodeNumbers(true)
             .build(),
-        // Warning; Causes false positives for triple-digit episode names
         EpisodeRegexContainer.builder()
+            // Warning; Causes false positives for triple-digit episode names
             // Extracts seriesName, episodeNumber. Ex -> "[tag] Foo - 1"
             .expression(".*[\\\\\\/]?.*?(\\[.*?\\])+.*?(?<seriesname>[-\\w\\s]+?)[\\s_]*-[\\s_]*(?<epnumber>[0-9]+).*$")
             .exampleMatch("[tag] Foo - 1")
             .isNamed(true)
             .build(),
         EpisodeRegexContainer.builder()
-            // TODO: this one isn't very reliable during testing... Putting it near the bottom for better results?
             // /server/anything_102.mp4
             // /server/james.corden.2017.04.20.anne.hathaway.720p.hdtv.x264-crooks.mkv
             // /server/anything_1996.11.14.mp4

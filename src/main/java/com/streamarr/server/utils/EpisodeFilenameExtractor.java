@@ -24,12 +24,16 @@ public class EpisodeFilenameExtractor {
             .findFirst()
             .flatMap(i -> i);
 
-        if (optionalResult.isPresent() && (StringUtils.isBlank(optionalResult.get().getSeriesName()) && (optionalResult.get().getEpisodeNumber().isPresent() || optionalResult.get().getEndingEpisodeNumber().isEmpty()))) {
+        if (optionalResult.isEmpty()) {
+            return optionalResult;
+        }
+
+        if (StringUtils.isBlank(optionalResult.get().getSeriesName()) && (optionalResult.get().getEpisodeNumber().isPresent() || optionalResult.get().getEndingEpisodeNumber().isEmpty())) {
             fillAdditional(input, optionalResult.get());
         }
 
         // TODO: clean this up, make it immutable?
-        if (optionalResult.isPresent() && StringUtils.isNotBlank(optionalResult.get().getSeriesName())) {
+        if (StringUtils.isNotBlank(optionalResult.get().getSeriesName())) {
             var cleanedName = cleanSeriesName(optionalResult.get().getSeriesName());
 
             optionalResult.get().setSeriesName(cleanedName);
