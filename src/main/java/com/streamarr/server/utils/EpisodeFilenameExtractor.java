@@ -71,7 +71,7 @@ public class EpisodeFilenameExtractor {
             var episodeNumber = getIntFromGroup(match, "epnumber");
             var seasonNumber = getIntFromGroup(match, "seasonnumber");
             var endingEpisodeNumber = getAndValidateEndingEpisodeNumber(name, match);
-            var seriesName = extractSeriesName(match);
+            var seriesName = getSeriesName(match);
 
             return Optional.of(EpisodePathResult.builder()
                 .seasonNumber(seasonNumber)
@@ -118,7 +118,7 @@ public class EpisodeFilenameExtractor {
             return s.charAt(0) == search || containsChar(s.substring(1), search);
     }
 
-    private String extractSeriesName(Matcher match) {
+    private String getSeriesName(Matcher match) {
         try {
             var seriesName = match.group("seriesname");
             return StringUtils.isBlank(seriesName) ? null : seriesName;
@@ -176,7 +176,7 @@ public class EpisodeFilenameExtractor {
             .trim();
     }
 
-    // TODO: Rename, terrible
+    // TODO: Rename?
     private void fillAdditional(String path, EpisodePathResult result) {
 
         var multipleEpisodeRegexContainerSet = episodeRegexConfig.getMultipleEpisodeRegexContainerList();
