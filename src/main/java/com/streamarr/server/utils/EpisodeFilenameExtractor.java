@@ -192,13 +192,13 @@ public class EpisodeFilenameExtractor {
     private EpisodePathResult fillAdditionalInfo(String filename, EpisodePathResult result, List<EpisodeRegexContainer> expressions) {
         EpisodePathResult.EpisodePathResultBuilder builder = result.toBuilder();
 
-        for (var i : expressions) {
-            var newResult = attemptMatch(filename, i);
+        for (var expression : expressions) {
+            var newResult = attemptMatch(filename, expression);
 
             if (newResult.isEmpty() || !newResult.get().isSuccess()) {
                 continue;
             }
-            
+
             if (StringUtils.isBlank(result.getSeriesName()) && StringUtils.isNotBlank(newResult.get().getSeriesName())) {
                 builder.seriesName(newResult.get().getSeriesName());
             }
