@@ -49,10 +49,8 @@ public class EpisodeFilenameExtractorTest {
 
                 new TestCase("when given season with 4 digits in 0000x00 format", "/Season 2009/seriesname 2009x02 blah", "seriesname", 2009, 2),
                 new TestCase("when given season with 4 digits in S0000E00 format", "/Season 2009/seriesname S2009E02 blah", "seriesname", 2009, 2),
-
-                // TODO: fix... incorrectly parses series name
-//                new TestCase("when given season with 4 digits in S0000x00 format", "/Season 2009/seriesname S2009x02 blah", "seriesname", 2009, 2),
-//                new TestCase("when given season with 4 digits in S0000xE00 format", "/Season 2009/seriesname S2009xE02 blah", "seriesname", 2009, 2),
+                new TestCase("when given season with 4 digits in S0000x00 format", "/Season 2009/seriesname S2009x02 blah", "seriesname", 2009, 2),
+                new TestCase("when given season with 4 digits in S0000xE00 format", "/Season 2009/seriesname S2009xE02 blah", "seriesname", 2009, 2),
 
                 new TestCase("when given filename containing path, series name, and S00E00 format separated by '_'", "/server/anything_s01e02", "anything", 1, 2),
                 new TestCase("when given filename containing path, series name, and S0E0 format separated by '_'", "/server/anything_s1e2", "anything", 1, 2),
@@ -78,35 +76,6 @@ public class EpisodeFilenameExtractorTest {
                     assertThat(result.getSeasonNumber().orElseThrow()).isEqualTo(testCase.season());
                     assertThat(result.getEpisodeNumber().orElseThrow()).isEqualTo(testCase.episode());
                     assertThat(result.getEndingEpisodeNumber()).isEmpty();
-                    assertThat(result.getDate()).isNull();
-                    assertThat(result.isSuccess()).isTrue();
-                })
-            );
-        }
-    }
-
-    @Nested
-    @DisplayName("Should successfully extract only episode")
-    public class SuccessfulEpisodeTests {
-
-        record TestCase(String name, String filename, int episode) {
-        }
-
-        @TestFactory
-        Stream<DynamicNode> tests() {
-            return Stream.of(
-                new TestCase("when given path, with episode name, and 0/00 format", "Season 1/02 - blah.avi", 2),
-                new TestCase("when given path, with extra number in episode name, and 0/00 format ", "Season 2/02 - blah 14 blah.avi", 2),
-                new TestCase("when given path, with extra number in episode name (variation 2), and 0/00 format", "Season 1/02 - blah-02 a.avi", 2),
-                new TestCase("when given path and 0/00 format", "Season 2/02.avi", 2)
-            ).map(testCase -> DynamicTest.dynamicTest(
-                testCase.name(),
-                () -> {
-                    var result = episodeFilenameExtractor.extract(testCase.filename()).orElseThrow();
-
-                    assertThat(result.getEpisodeNumber().orElseThrow()).isEqualTo(testCase.episode());
-                    assertThat(result.getSeasonNumber()).isEmpty();
-                    assertThat(result.getSeriesName()).isNull();
                     assertThat(result.getDate()).isNull();
                     assertThat(result.isSuccess()).isTrue();
                 })
@@ -197,7 +166,12 @@ public class EpisodeFilenameExtractorTest {
                 new TestCase("when given path and 00x00 format", "Season 1/01x02 blah.avi", 1, 2),
                 new TestCase("when given path and S00x00 format", "Season 1/S01x02 blah.avi", 1, 2),
                 new TestCase("when given path and S00E00 format", "Season 1/S01E02 blah.avi", 1, 2),
-                new TestCase("when given path and S00xE00 format", "Season 1/S01xE02 blah.avi", 1, 2)
+                new TestCase("when given path and S00xE00 format", "Season 1/S01xE02 blah.avi", 1, 2),
+
+                new TestCase("when given path, with episode name, and 0/00 format", "Season 1/02 - blah.avi", 1, 2),
+                new TestCase("when given path, with extra number in episode name, and 0/00 format ", "Season 2/02 - blah 14 blah.avi", 2, 2),
+                new TestCase("when given path, with extra number in episode name (variation 2), and 0/00 format", "Season 1/02 - blah-02 a.avi", 1, 2),
+                new TestCase("when given path and 0/00 format", "Season 2/02.avi", 2, 2)
             ).map(testCase -> DynamicTest.dynamicTest(
                 testCase.name(),
                 () -> {
@@ -251,16 +225,12 @@ public class EpisodeFilenameExtractorTest {
 
                 new TestCase("when given basic filename containing series name and two episodes separated by '-', expected to early exit in extract()", "/Season 1/foo 03-06", "foo", 6),
 
-                // TODO: fix... returns empty optional?
-//                new TestCase("1", "Season 1/02-03 - blah.avi", null, 3),
-//                new TestCase("2", "Season 2/02-04 - blah 14 blah.avi", null, 4),
-//                new TestCase("3", "Season 1/02-05 - blah-02 a.avi", null, 5),
+                new TestCase("when given filename containing episode name and two episodes separated by '-'", "Season 1/02-03 - blah.avi", null, 3),
+                new TestCase("when given filename containing tricky double episode name and two episodes separated by '-'", "Season 2/02-04 - blah 14 blah.avi", null, 4),
+                new TestCase("when given filename containing tricky episode name and multiple episodes separated by '-'", "Season 1/02-05 - blah-02 a.avi", null, 5),
+                new TestCase("when given filename containing multiple episodes separated by '-'", "Season 2/02-04.avi", null, 4),
 
-                // TODO: name below
-                new TestCase("4", "Season 2/02-04.avi", null, 4),
-                new TestCase("5", "Season 1/MOONLIGHTING_s01e01-e04.mkv", "MOONLIGHTING", 4),
-                new TestCase("6", "Season 1/MOONLIGHTING_s01e01-e04", "MOONLIGHTING", 4)
-
+                new TestCase("when given filename containing uppercase series name and multiple episodes separated by '-'", "Season 1/MOONLIGHTING_s01e01-e04", "MOONLIGHTING", 4)
             ).map(testCase -> DynamicTest.dynamicTest(
                 testCase.name(),
                 () -> {

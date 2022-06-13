@@ -65,8 +65,7 @@ public class EpisodeRegexConfig {
             // /server/anything_102.mp4
             // /server/james.corden.2017.04.20.anne.hathaway.720p.hdtv.x264-crooks.mkv
             // /server/anything_1996.11.14.mp4
-            // TODO: Currently requires path... Do we want this?
-            .expression(".*[\\\\/._ -](?<seriesname>(?![0-9]+[0-9][0-9])([^\\\\\\/_])*)[\\\\\\/._ -](?<seasonnumber>[0-9]+)(?<epnumber>[0-9][0-9](?:(?:[a-i]|\\.[1-9])(?![0-9]))?).*$")
+            .expression("^.*?(?!.*\\/)(?<seriesname>(?![0-9]+[0-9][0-9])([^\\\\\\\\\\\\/_])*)[\\\\\\\\\\\\/._ -](?<seasonnumber>[0-9]+)(?<epnumber>[0-9][0-9](?:(?:[a-i]|\\\\.[1-9])(?![0-9]))?)([._ -][^\\\\\\/]*)?$")
             .exampleMatch("/server/anything_102")
             .isNamed(true)
             .isOptimistic(true)
@@ -99,6 +98,13 @@ public class EpisodeRegexConfig {
             .expression(".*(\\\\|\\/)[sS](?<seasonnumber>[0-9]+)[x,X]?[eE](?<epnumber>[0-9]+)[^\\\\\\/]*$")
             .exampleMatch("/season 1/s2xe1 foo")
             .isNamed(true)
+            .build(),
+        EpisodeRegexContainer.builder()
+            // Extracts seasonNumber and episodeNumber. Ex -> "/season 01/02 episode title"
+            .expression(".*[Ss]eason[\\._ ](?<seasonnumber>[0-9]+)[\\\\\\/](?<epnumber>[0-9]{1,3})([^\\\\\\/]*)$")
+            .exampleMatch("/season 01/02 episode title")
+            .isNamed(true)
+            .isOptimistic(true)
             .build(),
         EpisodeRegexContainer.builder()
             // Extracts seriesName, seasonNumber, and episodeNumber. Ex -> "/server/the_simpsons-s02x01_18536"
@@ -148,14 +154,6 @@ public class EpisodeRegexConfig {
             // TODO: Currently requires path... Do we want this?
             .expression(".*[\\\\\\/][^\\\\\\/]* - (?<epnumber>[0-9]{1,3})(-(?<endingepnumber>[0-9]{2,3}))*[^\\\\\\/]*$")
             .exampleMatch("/blah - 01")
-            .isNamed(true)
-            .isOptimistic(true)
-            .build(),
-        EpisodeRegexContainer.builder()
-            // Extracts seasonNumber and episodeNumber. Ex -> "/season 01/02 episode title"
-            // TODO: Currently requires explicit "season" path... Do we want this?
-            .expression(".*[Ss]eason[\\._ ](?<seasonnumber>[0-9]+)[\\\\\\/](?<epnumber>[0-9]{1,3})([^\\\\\\/]*)$")
-            .exampleMatch("/season 01/02 episode title")
             .isNamed(true)
             .isOptimistic(true)
             .build(),
