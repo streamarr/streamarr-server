@@ -17,7 +17,6 @@ public class EpisodeFilenameExtractor {
     private final EpisodeRegexConfig episodeRegexConfig;
 
     public Optional<EpisodePathResult> extract(String filename) {
-        // TODO: Should any of this be generic and reused with fillAdditional?
         var optionalResult = episodeRegexConfig.getStandardRegexContainerList().stream()
             .map(regexContainer -> attemptMatch(filename, regexContainer))
             .filter(episodePathResult -> episodePathResult.isPresent() && episodePathResult.get().isSuccess())
@@ -34,9 +33,7 @@ public class EpisodeFilenameExtractor {
             return optionalResult;
         }
 
-        fillAdditionalInfo(filename, episodePathResult);
-
-        return optionalResult;
+        return Optional.of(fillAdditionalInfo(filename, episodePathResult));
     }
 
     private Optional<EpisodePathResult> attemptMatch(String filename, EpisodeRegexContainer regexContainer) {
@@ -68,7 +65,6 @@ public class EpisodeFilenameExtractor {
         }
 
         if (regexContainer.isNamed()) {
-
             var episodeNumber = getIntFromGroup(match, "epnumber");
             var seasonNumber = getIntFromGroup(match, "seasonnumber");
             var endingEpisodeNumber = getAndValidateEndingEpisodeNumber(filename, match);
@@ -102,9 +98,9 @@ public class EpisodeFilenameExtractor {
 
         var endingNumberGroupEndIndex = match.end("endingepnumber");
 
-        // Will only set EndingEpisodeNumber if the captured number is not followed by additional numbers
-        // or a 'p' or 'i' as what you would get with a pixel resolution specification.
-        // It avoids erroneous parsing of something like "series-s09e14-1080p.mkv" as a multi-episode from E14 to E108
+        // Will only return value if the captured number is not followed by additional numbers
+        // or a 'p' or 'i' as what one would get with a pixel resolution specification.
+        // It avoids erroneous parsing of something like "series-s09e14-1080p.mkv" as a multi-episode from E14 to E108.
         if (endingNumberGroupEndIndex >= filename.length() || !containsChar("0123456789iIpP", filename.charAt(endingNumberGroupEndIndex))) {
             return endingEpisodeNumber;
         }
@@ -139,7 +135,7 @@ public class EpisodeFilenameExtractor {
     private OptionalInt getIntFromGroup(Matcher match, int groupIndex) {
         try {
             return stringToOptionalIntConverter(match.group(groupIndex));
-        } catch (IllegalArgumentException ignored) {
+        } catch (IndexOutOfBoundsException ignored) {
             return OptionalInt.empty();
         }
     }
@@ -164,15 +160,14 @@ public class EpisodeFilenameExtractor {
         return episodeNumber.isPresent() && (seasonNumber.isEmpty() || isValidSeasonNumber(seasonNumber.getAsInt()));
     }
 
-    // Invalidate match when the season is 200 through 1927 or above 2500
-    // because it is an error unless the TV show is intentionally using false season numbers.
-    // It avoids erroneous parsing of something like "Series Special (1920x1080).mkv" as being season 1920 episode 1080.
+    // Invalidate the match when the season is 200 through 1927 or above 2500
+    // It avoids erroneous parsing of something like "Series Special (1920x1080).mkv" as being season 1920, episode 1080.
     private boolean isValidSeasonNumber(int seasonNumber) {
         return (seasonNumber < 200 || seasonNumber >= 1928) && seasonNumber <= 2500;
     }
 
     private boolean isMissingInfo(EpisodePathResult result) {
-        return StringUtils.isBlank(result.getSeriesName()) && (result.getEpisodeNumber().isPresent() || result.getEndingEpisodeNumber().isEmpty());
+        return StringUtils.isBlank(result.getSeriesName()) || (result.getEpisodeNumber().isPresent() && result.getEndingEpisodeNumber().isEmpty());
     }
 
     private String cleanSeriesName(String input) {
@@ -181,7 +176,7 @@ public class EpisodeFilenameExtractor {
             .trim();
     }
 
-    private void fillAdditionalInfo(String filename, EpisodePathResult result) {
+    private EpisodePathResult fillAdditionalInfo(String filename, EpisodePathResult result) {
 
         var multipleEpisodeRegexContainerSet = episodeRegexConfig.getMultipleEpisodeRegexContainerList();
 
@@ -191,21 +186,36 @@ public class EpisodeFilenameExtractor {
                 .toList());
         }
 
-        fillAdditionalInfo(filename, result, multipleEpisodeRegexContainerSet);
+        return fillAdditionalInfo(filename, result, multipleEpisodeRegexContainerSet);
     }
 
-    private void fillAdditionalInfo(String filename, EpisodePathResult result, List<EpisodeRegexContainer> expressions) {
-        expressions.stream()
-            .map(regexContainer -> attemptMatch(filename, regexContainer))
-            .filter(episodePathResult -> episodePathResult.isPresent() && episodePathResult.get().isSuccess())
-            .forEach(newResult -> {
-                if (StringUtils.isBlank(result.getSeriesName()) && StringUtils.isNotBlank(newResult.get().getSeriesName())) {
-                    result.setSeriesName(newResult.get().getSeriesName());
-                }
+    private EpisodePathResult fillAdditionalInfo(String filename, EpisodePathResult result, List<EpisodeRegexContainer> expressions) {
+        EpisodePathResult.EpisodePathResultBuilder builder = result.toBuilder();
 
-                if (result.getEndingEpisodeNumber().isEmpty() && result.getEpisodeNumber().isPresent()) {
-                    result.setEndingEpisodeNumber(newResult.get().getEndingEpisodeNumber());
-                }
-            });
+        for (var i : expressions) {
+            var newResult = attemptMatch(filename, i);
+
+            if (newResult.isEmpty() || !newResult.get().isSuccess()) {
+                continue;
+            }
+            
+            if (StringUtils.isBlank(result.getSeriesName()) && StringUtils.isNotBlank(newResult.get().getSeriesName())) {
+                builder.seriesName(newResult.get().getSeriesName());
+            }
+
+            if (result.getEndingEpisodeNumber().isEmpty() && result.getEpisodeNumber().isPresent()) {
+                builder.endingEpisodeNumber(newResult.get().getEndingEpisodeNumber());
+            }
+
+            if (isDoneFillingInfo(result)) {
+                break;
+            }
+        }
+
+        return builder.build();
+    }
+
+    private boolean isDoneFillingInfo(EpisodePathResult result) {
+        return StringUtils.isNotBlank(result.getSeriesName()) && (result.getEpisodeNumber().isEmpty() || result.getEndingEpisodeNumber().isPresent());
     }
 }

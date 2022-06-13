@@ -9,7 +9,7 @@ import java.util.OptionalInt;
 
 @Getter
 @Setter
-@Builder
+@Builder(toBuilder = true)
 public class EpisodePathResult {
 
     @Builder.Default
