@@ -30,16 +30,11 @@ public class EpisodeFilenameExtractor {
 
         var episodePathResult = optionalResult.get();
 
-        if (isMissingInfo(episodePathResult)) {
-            fillAdditional(filename, episodePathResult);
+        if (!isMissingInfo(episodePathResult)) {
+            return optionalResult;
         }
 
-        // TODO: clean this up, make it immutable?
-        if (StringUtils.isNotBlank(episodePathResult.getSeriesName())) {
-            var cleanedName = cleanSeriesName(episodePathResult.getSeriesName());
-
-            episodePathResult.setSeriesName(cleanedName);
-        }
+        fillAdditionalInfo(filename, episodePathResult);
 
         return optionalResult;
     }
@@ -127,7 +122,7 @@ public class EpisodeFilenameExtractor {
     private String getSeriesName(Matcher match) {
         try {
             var seriesName = match.group("seriesname");
-            return StringUtils.isBlank(seriesName) ? null : seriesName;
+            return StringUtils.isBlank(seriesName) ? null : cleanSeriesName(seriesName);
         } catch (IllegalArgumentException ignored) {
             return null;
         }
@@ -186,7 +181,7 @@ public class EpisodeFilenameExtractor {
             .trim();
     }
 
-    private void fillAdditional(String filename, EpisodePathResult result) {
+    private void fillAdditionalInfo(String filename, EpisodePathResult result) {
 
         var multipleEpisodeRegexContainerSet = episodeRegexConfig.getMultipleEpisodeRegexContainerList();
 
@@ -196,10 +191,10 @@ public class EpisodeFilenameExtractor {
                 .toList());
         }
 
-        fillAdditional(filename, result, multipleEpisodeRegexContainerSet);
+        fillAdditionalInfo(filename, result, multipleEpisodeRegexContainerSet);
     }
 
-    private void fillAdditional(String filename, EpisodePathResult result, List<EpisodeRegexContainer> expressions) {
+    private void fillAdditionalInfo(String filename, EpisodePathResult result, List<EpisodeRegexContainer> expressions) {
         expressions.stream()
             .map(regexContainer -> attemptMatch(filename, regexContainer))
             .filter(episodePathResult -> episodePathResult.isPresent() && episodePathResult.get().isSuccess())
