@@ -17,6 +17,7 @@ public class EpisodeFilenameExtractor {
     private final EpisodeRegexConfig episodeRegexConfig;
 
     public Optional<EpisodePathResult> extract(String filename) {
+        // TODO: Should the matching logic be in another class?
         var optionalResult = episodeRegexConfig.getStandardRegexContainerList().stream()
             .map(regexContainer -> attemptMatch(filename, regexContainer))
             .filter(episodePathResult -> episodePathResult.isPresent() && episodePathResult.get().isSuccess())
@@ -29,7 +30,7 @@ public class EpisodeFilenameExtractor {
 
         var episodePathResult = optionalResult.get();
 
-        if (!isMissingInfo(episodePathResult)) {
+        if (isNotMissingInfo(episodePathResult)) {
             return optionalResult;
         }
 
@@ -67,7 +68,7 @@ public class EpisodeFilenameExtractor {
         if (regexContainer.isNamed()) {
             var episodeNumber = getIntFromGroup(match, "epnumber");
             var seasonNumber = getIntFromGroup(match, "seasonnumber");
-            var endingEpisodeNumber = getAndValidateEndingEpisodeNumber(filename, match);
+            var endingEpisodeNumber = getAndValidateEndingEpisodeNumber(filename, episodeNumber, match);
             var seriesName = getSeriesName(match);
 
             return Optional.of(EpisodePathResult.builder()
@@ -89,10 +90,14 @@ public class EpisodeFilenameExtractor {
             .build());
     }
 
-    private OptionalInt getAndValidateEndingEpisodeNumber(String filename, Matcher match) {
+    private OptionalInt getAndValidateEndingEpisodeNumber(String filename, OptionalInt episodeNumber, Matcher match) {
         var endingEpisodeNumber = getIntFromGroup(match, "endingepnumber");
 
         if (endingEpisodeNumber.isEmpty()) {
+            return endingEpisodeNumber;
+        }
+
+        if (isDuplicateEpisodeAndEndingEpisode(episodeNumber, endingEpisodeNumber)) {
             return OptionalInt.empty();
         }
 
@@ -166,9 +171,6 @@ public class EpisodeFilenameExtractor {
         return (seasonNumber < 200 || seasonNumber >= 1928) && seasonNumber <= 2500;
     }
 
-    private boolean isMissingInfo(EpisodePathResult result) {
-        return StringUtils.isBlank(result.getSeriesName()) || (result.getEpisodeNumber().isPresent() && result.getEndingEpisodeNumber().isEmpty());
-    }
 
     private String cleanSeriesName(String input) {
         return input.trim()
@@ -193,21 +195,27 @@ public class EpisodeFilenameExtractor {
         EpisodePathResult.EpisodePathResultBuilder builder = result.toBuilder();
 
         for (var expression : expressions) {
-            var newResult = attemptMatch(filename, expression);
+            var newResultOptional = attemptMatch(filename, expression);
 
-            if (newResult.isEmpty() || !newResult.get().isSuccess()) {
+            if (newResultOptional.isEmpty() || !newResultOptional.get().isSuccess()) {
                 continue;
             }
 
-            if (StringUtils.isBlank(result.getSeriesName()) && StringUtils.isNotBlank(newResult.get().getSeriesName())) {
-                builder.seriesName(newResult.get().getSeriesName());
+            var newResult = newResultOptional.get();
+
+            if (StringUtils.isBlank(result.getSeriesName()) && StringUtils.isNotBlank(newResult.getSeriesName())) {
+                builder.seriesName(newResult.getSeriesName());
+            }
+
+            if (isDuplicateEpisodeAndEndingEpisode(result.getEpisodeNumber(), newResult.getEndingEpisodeNumber())) {
+                continue;
             }
 
             if (result.getEndingEpisodeNumber().isEmpty() && result.getEpisodeNumber().isPresent()) {
-                builder.endingEpisodeNumber(newResult.get().getEndingEpisodeNumber());
+                builder.endingEpisodeNumber(newResult.getEndingEpisodeNumber());
             }
 
-            if (isDoneFillingInfo(result)) {
+            if (isNotMissingInfo(result)) {
                 break;
             }
         }
@@ -215,7 +223,13 @@ public class EpisodeFilenameExtractor {
         return builder.build();
     }
 
-    private boolean isDoneFillingInfo(EpisodePathResult result) {
-        return StringUtils.isNotBlank(result.getSeriesName()) && (result.getEpisodeNumber().isEmpty() || result.getEndingEpisodeNumber().isPresent());
+    private boolean isDuplicateEpisodeAndEndingEpisode(OptionalInt episodeNumber, OptionalInt endingEpisodeNumber) {
+        return (episodeNumber.isPresent() && endingEpisodeNumber.isPresent())
+            && (episodeNumber.getAsInt() == endingEpisodeNumber.getAsInt());
+    }
+
+    private boolean isNotMissingInfo(EpisodePathResult result) {
+        return StringUtils.isNotBlank(result.getSeriesName())
+            && result.getEndingEpisodeNumber().isPresent();
     }
 }
