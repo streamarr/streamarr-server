@@ -1,6 +1,5 @@
 package com.streamarr.server.domain.media;
 
-import com.streamarr.server.domain.BaseEntity;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -14,10 +13,8 @@ import java.util.UUID;
 @SuperBuilder
 @AllArgsConstructor
 @NoArgsConstructor
-public class Release extends BaseEntity<Release> {
+public class MovieFile extends MediaFile {
 
     private UUID movieId;
-
-    // TODO: Type -> File? or List<File>?
-    private String path;
+    // TODO: join back to Movie? join to Library?
 }

@@ -34,7 +34,7 @@ public class Movie extends BaseCollectable {
 
     // TODO: Is Set applicable? Do we care about order? List?
     @OneToMany(fetch = FetchType.LAZY, mappedBy = "movieId")
-    private Set<Release> releases = new HashSet<>();
+    private Set<MovieFile> files = new HashSet<>();
 
     // TODO: Should the below be inside a Metadata object?
     @ManyToMany(fetch = FetchType.LAZY)

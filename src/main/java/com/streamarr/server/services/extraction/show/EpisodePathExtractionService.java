@@ -1,18 +1,23 @@
-package com.streamarr.server.utils;
+package com.streamarr.server.services.extraction.show;
 
+import com.streamarr.server.services.extraction.MediaExtractor;
+import com.streamarr.server.utils.EpisodePathResult;
+import com.streamarr.server.utils.EpisodeRegexConfig;
+import com.streamarr.server.utils.EpisodeRegexContainer;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
-import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-@Component
+@Service
 @RequiredArgsConstructor
-public class EpisodeFilenameExtractor {
+public class EpisodePathExtractionService implements MediaExtractor<EpisodePathResult> {
 
     private final EpisodeRegexConfig episodeRegexConfig;
 
@@ -38,46 +43,62 @@ public class EpisodeFilenameExtractor {
     }
 
     private Optional<EpisodePathResult> attemptMatch(String filename, EpisodeRegexContainer regexContainer) {
-        // This is a hack to handle wmc naming
-        if (regexContainer.isDateRegex()) {
-            filename = filename.replace('_', '-');
-        }
+        return switch (regexContainer) {
+            case EpisodeRegexContainer.DateRegex d -> attemptDateMatch(d.regex(), filename);
+            case EpisodeRegexContainer.NamedGroupRegex d -> attemptNamedMatch(d.regex(), filename);
+            case EpisodeRegexContainer.IndexedGroupRegex d -> attemptIndexedMatch(d.regex(), filename);
+        };
+    }
 
-        var match = regexContainer.getRegex().matcher(filename);
+    private Optional<EpisodePathResult> attemptDateMatch(Pattern pattern, String filename) {
+        // This is a hack to handle wmc naming
+        filename = filename.replace('_', '-');
+
+        var match = pattern.matcher(filename);
 
         if (!match.matches()) {
             return Optional.empty();
         }
 
-        if (regexContainer.isDateRegex()) {
+        var year = Integer.parseInt(match.group("year"));
+        var month = Integer.parseInt(match.group("month"));
+        var day = Integer.parseInt(match.group("day"));
 
-            // TODO: Replace with getIntFromGroup()?
-            var year = Integer.parseInt(match.group("year"));
-            var month = Integer.parseInt(match.group("month"));
-            var day = Integer.parseInt(match.group("day"));
+        var parsedDate = LocalDate.of(year, month, day);
 
-            var parsedDate = LocalDate.of(year, month, day);
+        return Optional.of(EpisodePathResult.builder()
+            .date(parsedDate)
+            .success(true)
+            .onlyDate(true)
+            .build());
+    }
 
-            return Optional.of(EpisodePathResult.builder()
-                .date(parsedDate)
-                .success(true)
-                .onlyDate(true)
-                .build());
+    private Optional<EpisodePathResult> attemptNamedMatch(Pattern pattern, String filename) {
+        var match = pattern.matcher(filename);
+
+        if (!match.matches()) {
+            return Optional.empty();
         }
 
-        if (regexContainer.isNamed()) {
-            var episodeNumber = getIntFromGroup(match, "epnumber");
-            var seasonNumber = getIntFromGroup(match, "seasonnumber");
-            var endingEpisodeNumber = getAndValidateEndingEpisodeNumber(filename, episodeNumber, match);
-            var seriesName = getSeriesName(match);
+        var episodeNumber = getIntFromGroup(match, "epnumber");
+        var seasonNumber = getIntFromGroup(match, "seasonnumber");
+        var endingEpisodeNumber = getAndValidateEndingEpisodeNumber(filename, episodeNumber, match);
+        var seriesName = getSeriesName(match);
 
-            return Optional.of(EpisodePathResult.builder()
-                .seasonNumber(seasonNumber)
-                .episodeNumber(episodeNumber)
-                .endingEpisodeNumber(endingEpisodeNumber)
-                .seriesName(seriesName)
-                .success(isValidResult(episodeNumber, seasonNumber))
-                .build());
+        return Optional.of(EpisodePathResult.builder()
+            .seasonNumber(seasonNumber)
+            .episodeNumber(episodeNumber)
+            .endingEpisodeNumber(endingEpisodeNumber)
+            .seriesName(seriesName)
+            .success(isValidResult(episodeNumber, seasonNumber))
+            .build());
+    }
+
+    private Optional<EpisodePathResult> attemptIndexedMatch(Pattern pattern, String filename) {
+        var match = pattern.matcher(filename);
+
+        if (!match.matches()) {
+            return Optional.empty();
         }
 
         var seasonNumber = getIntFromGroup(match, 1);
@@ -113,7 +134,7 @@ public class EpisodeFilenameExtractor {
         return OptionalInt.empty();
     }
 
-    public boolean containsChar(String s, char search) {
+    private boolean containsChar(String s, char search) {
         if (s.length() == 0)
             return false;
         else
@@ -184,7 +205,7 @@ public class EpisodeFilenameExtractor {
 
         if (StringUtils.isBlank(result.getSeriesName())) {
             multipleEpisodeRegexContainerSet.addAll(0, episodeRegexConfig.getStandardRegexContainerList().stream()
-                .filter(EpisodeRegexContainer::isNamed)
+                .filter(EpisodeRegexContainer.NamedGroupRegex.class::isInstance)
                 .toList());
         }
 

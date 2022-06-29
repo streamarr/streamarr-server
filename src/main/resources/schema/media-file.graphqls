@@ -1,0 +1,6 @@
+interface MediaFile {
+    id: ID!
+    filename: String!
+    path: String!
+    size: String!
+}

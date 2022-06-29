@@ -1,0 +1,34 @@
+type Library {
+    id: ID!
+    createdBy: String!
+    createdOn: String!
+    lastModifiedBy: String
+    lastModifiedOn: String!
+    name: String
+    filepath: String!
+    refreshStartedOn: String
+    refreshCompletedOn: String
+    status: LibraryStatus!
+    backend: LibraryBackend!
+    type: MediaType!
+    items: [Media]!
+}
+
+enum LibraryStatus {
+    SCANNING
+    HEALTHY
+    UNHEALTHY
+}
+
+enum LibraryBackend {
+    LOCAL
+    REMOTE
+}
+
+enum MediaType {
+    MOVIE
+    SERIES
+    OTHER
+}
+
+union Media = Movie

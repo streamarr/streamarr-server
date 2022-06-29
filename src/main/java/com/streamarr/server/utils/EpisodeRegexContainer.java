@@ -1,38 +1,64 @@
 package com.streamarr.server.utils;
 
 import lombok.Builder;
-import lombok.Getter;
-import lombok.NonNull;
 
 import java.util.regex.Pattern;
 
-@Getter
-public class EpisodeRegexContainer {
+public sealed interface EpisodeRegexContainer {
+    String expression();
 
-    @NonNull
-    private final String expression;
-    private final Pattern regex;
-    private final String exampleMatch;
+    String exampleMatch();
 
-    private final boolean isDateRegex;
-    private final boolean isOptimistic;
-    private final boolean isNamed;
-    private final boolean supportsAbsoluteEpisodeNumbers;
+    Pattern regex();
 
-    @Builder
-    public EpisodeRegexContainer(@NonNull String expression,
-                                 String exampleMatch,
-                                 boolean isDateRegex,
-                                 boolean isOptimistic,
-                                 boolean isNamed,
-                                 boolean supportsAbsoluteEpisodeNumbers) {
-        this.expression = expression;
-        this.exampleMatch = exampleMatch;
-        this.isDateRegex = isDateRegex;
-        this.isOptimistic = isOptimistic;
-        this.isNamed = isNamed;
-        this.supportsAbsoluteEpisodeNumbers = supportsAbsoluteEpisodeNumbers;
+    record DateRegex(String expression, String exampleMatch, Pattern regex) implements EpisodeRegexContainer {
+        @Builder
+        public DateRegex {
+        }
 
-        this.regex = Pattern.compile(expression);
+        public static DateRegexBuilder builder() {
+            return new DateRegexBuilder() {
+                @Override
+                public DateRegex build() {
+                    var obj = super.build();
+
+                    return new DateRegex(obj.expression, obj.exampleMatch, Pattern.compile(obj.expression));
+                }
+            };
+        }
+    }
+
+    record NamedGroupRegex(String expression, String exampleMatch, Pattern regex) implements EpisodeRegexContainer {
+        @Builder
+        public NamedGroupRegex {
+        }
+
+        public static NamedGroupRegexBuilder builder() {
+            return new NamedGroupRegexBuilder() {
+                @Override
+                public NamedGroupRegex build() {
+                    var obj = super.build();
+
+                    return new NamedGroupRegex(obj.expression, obj.exampleMatch, Pattern.compile(obj.expression));
+                }
+            };
+        }
+    }
+
+    record IndexedGroupRegex(String expression, String exampleMatch, Pattern regex) implements EpisodeRegexContainer {
+        @Builder
+        public IndexedGroupRegex {
+        }
+
+        public static IndexedGroupRegexBuilder builder() {
+            return new IndexedGroupRegexBuilder() {
+                @Override
+                public IndexedGroupRegex build() {
+                    var obj = super.build();
+
+                    return new IndexedGroupRegex(obj.expression, obj.exampleMatch, Pattern.compile(obj.expression));
+                }
+            };
+        }
     }
 }

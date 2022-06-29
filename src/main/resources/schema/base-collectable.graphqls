@@ -1,0 +1,8 @@
+interface BaseCollectable {
+    id: ID!
+    createdBy: String!
+    createdOn: String!
+    lastModifiedBy: String
+    lastModifiedOn: String!
+    title: String
+}

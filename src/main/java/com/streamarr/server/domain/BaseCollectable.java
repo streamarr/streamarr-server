@@ -7,6 +7,7 @@ import lombok.experimental.SuperBuilder;
 import javax.persistence.Entity;
 import javax.persistence.Inheritance;
 import javax.persistence.InheritanceType;
+import java.util.UUID;
 
 
 @Entity
@@ -15,6 +16,8 @@ import javax.persistence.InheritanceType;
 @SuperBuilder
 @NoArgsConstructor
 public class BaseCollectable extends BaseEntity<BaseCollectable> implements Collectable {
+
+    private UUID libraryId;
 
     private String title;
 }

@@ -1,7 +1,7 @@
-package com.streamarr.server.services;
+package com.streamarr.server.services.library.video;
 
+import com.streamarr.server.services.extraction.video.VideoFilenameExtractionService;
 import com.streamarr.server.utils.VideoExtensionValidator;
-import com.streamarr.server.utils.VideoFilenameExtractor;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.io.FilenameUtils;
 import org.springframework.stereotype.Service;
@@ -14,10 +14,10 @@ import java.nio.file.Paths;
 
 @Service
 @RequiredArgsConstructor
-public class VideoFileParsingService {
+public class VideoResolutionService {
 
     private final VideoExtensionValidator videoExtensionValidator;
-    private final VideoFilenameExtractor cleanTitleExtractor;
+    private final VideoFilenameExtractionService cleanTitleExtractor;
 
     // TODO: Just playing around with file parsing, TBD.
     public void parsePaths() {
@@ -40,9 +40,11 @@ public class VideoFileParsingService {
             throw new RuntimeException("Unsupported movie file type.");
         }
 
+        System.out.println(file.getAbsolutePath());
+
         var baseName = getBaseName(file);
 
-        var optionalResult = cleanTitleExtractor.extractAndClean(baseName);
+        var optionalResult = cleanTitleExtractor.extract(baseName);
 
         if (optionalResult.isEmpty()) {
             throw new RuntimeException("Unable to parse filename.");

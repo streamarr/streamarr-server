@@ -21,9 +21,9 @@ public class EpisodeRegexConfigTest {
 
         return episodeRegexConfig.getStandardRegexContainerList().stream()
             .map(regexContainer -> DynamicTest.dynamicTest(
-                "testing example: " + regexContainer.getExampleMatch(),
+                "testing example: " + regexContainer.exampleMatch(),
                 () -> {
-                    assertTrue(regexContainer.getRegex().matcher(regexContainer.getExampleMatch()).matches());
+                    assertTrue(regexContainer.regex().matcher(regexContainer.exampleMatch()).matches());
                 }
             ));
     }

@@ -1,13 +1,13 @@
-type Movie {
+type Movie implements BaseCollectable {
     id: ID!
-    createdBy: ID!
+    createdBy: String!
     createdOn: String!
-    lastModifiedBy: ID
+    lastModifiedBy: String
     lastModifiedOn: String!
     title: String
     artwork: String
     contentRating: String
-    releases: [Release]!
+    files: [MediaFile]!
     studios: [Company]!
     cast: [Person]!
     ratings: [Rating]!
