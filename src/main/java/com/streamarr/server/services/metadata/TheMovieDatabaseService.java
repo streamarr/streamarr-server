@@ -3,7 +3,7 @@ package com.streamarr.server.services.metadata;
 import com.streamarr.server.domain.external.tmdb.TmdbMovie;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.metadata.Company;
-import com.streamarr.server.repositories.MovieRepository;
+import com.streamarr.server.repositories.movie.MovieRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;

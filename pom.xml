@@ -23,6 +23,7 @@
         <lombok.version>1.18.24</lombok.version>
         <postgresql.version>42.4.0</postgresql.version>
         <methvin-directory-watcher>0.15.1</methvin-directory-watcher>
+        <jooq.version>3.17.1</jooq.version>
     </properties>
     <dependencies>
         <dependency>
@@ -63,6 +64,11 @@
         </dependency>
 
         <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jooq</artifactId>
+        </dependency>
+
+        <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
             <scope>provided</scope>
@@ -84,8 +90,8 @@
         </dependency>
 
         <dependency>
-            <groupId>javax.persistence</groupId>
-            <artifactId>javax.persistence-api</artifactId>
+            <groupId>com.netflix.graphql.dgs</groupId>
+            <artifactId>graphql-dgs-pagination</artifactId>
         </dependency>
 
         <dependency>
@@ -101,6 +107,11 @@
         <dependency>
             <groupId>io.methvin</groupId>
             <artifactId>directory-watcher</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.jooq</groupId>
+            <artifactId>jooq-meta-extensions-hibernate</artifactId>
         </dependency>
 
         <dependency>
@@ -168,6 +179,11 @@
                 <version>${methvin-directory-watcher}</version>
             </dependency>
 
+            <dependency>
+                <groupId>org.jooq</groupId>
+                <artifactId>jooq-meta-extensions-hibernate</artifactId>
+                <version>${jooq.version}</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -307,7 +323,55 @@
                     <compilerArgs>--enable-preview</compilerArgs>
                 </configuration>
             </plugin>
+            <plugin>
+                <groupId>org.jooq</groupId>
+                <artifactId>jooq-codegen-maven</artifactId>
+                <version>${jooq.version}</version>
+                <executions>
+                    <execution>
+                        <id>generate-postgres</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                    </execution>
+                </executions>
+
+                <configuration>
+                    <jdbc>
+                        <driver>org.postgresql.Driver</driver>
+                        <url>jdbc:postgresql://localhost:5432/streamarr</url>
+                        <user>admin</user>
+                        <password>pass</password>
+                    </jdbc>
+                    <generator>
+                        <database>
+                            <name>org.jooq.meta.postgres.PostgresDatabase</name>
+                            <includes>.*</includes>
+                            <inputSchema>public</inputSchema>
+                            <!--                            <name>org.jooq.meta.extensions.jpa.JPADatabase</name>-->
+                            <properties>
+                                <property>
+                                    <key>packages</key>
+                                    <value>com.streamarr.server.domain</value>
+                                </property>
+                            </properties>
+                            <includes>.*</includes>
+                        </database>
+                        <generate>
+                            <pojos>true</pojos>
+                            <pojosEqualsAndHashCode>true</pojosEqualsAndHashCode>
+                            <javaTimeTypes>true</javaTimeTypes>
+                            <fluentSetters>true</fluentSetters>
+                        </generate>
+                        <target>
+                            <packageName>com.streamarr.server.db</packageName>
+                            <directory>target/generated-sources/jooq</directory>
+                        </target>
+                    </generator>
+                </configuration>
+            </plugin>
+
         </plugins>
     </build>
-
 </project>

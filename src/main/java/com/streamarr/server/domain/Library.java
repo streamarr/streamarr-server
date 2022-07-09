@@ -37,6 +37,8 @@ public class Library extends BaseEntity<Library> {
     @Enumerated(EnumType.STRING)
     private MediaType type;
 
+    // Library should only contain a single type
+    // TODO: Relay spec pagination
     @OneToMany(fetch = FetchType.LAZY, mappedBy = "libraryId")
     private Set<BaseCollectable> items = new HashSet<>();
 

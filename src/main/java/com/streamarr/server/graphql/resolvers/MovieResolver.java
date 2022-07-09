@@ -6,7 +6,7 @@ import com.netflix.graphql.dgs.DgsTypeResolver;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.MovieFile;
-import com.streamarr.server.repositories.MovieRepository;
+import com.streamarr.server.repositories.movie.MovieRepository;
 import lombok.RequiredArgsConstructor;
 
 import java.util.Optional;

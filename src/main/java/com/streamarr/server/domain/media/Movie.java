@@ -24,7 +24,7 @@ import java.util.Set;
 @SuperBuilder
 @AllArgsConstructor
 @NoArgsConstructor
-public class Movie extends BaseCollectable {
+public class Movie extends BaseCollectable<Movie> {
 
     // TODO: Store these locally? What about the intermediate state when we only have a URL?
     private String artwork;

@@ -15,7 +15,7 @@ import java.util.UUID;
 @Getter
 @SuperBuilder
 @NoArgsConstructor
-public class BaseCollectable extends BaseEntity<BaseCollectable> implements Collectable {
+public abstract class BaseCollectable<T extends BaseCollectable<T>> extends BaseEntity<T> implements Collectable {
 
     private UUID libraryId;
 
