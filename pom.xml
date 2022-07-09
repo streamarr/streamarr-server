@@ -368,9 +368,14 @@
                     </execution>
                 </executions>
                 <configuration>
+                    <!--suppress UnresolvedMavenProperty -->
                     <driver>${spring.datasource.driverClassName}</driver>
+                    <!--suppress UnresolvedMavenProperty -->
                     <url>${spring.datasource.url}</url>
+                    <!--suppress UnresolvedMavenProperty -->
                     <user>${spring.datasource.username}</user>
+                    <!--suppress UnresolvedMavenProperty -->
+
                     <password>${spring.datasource.password}</password>
                     <baselineOnMigrate>true</baselineOnMigrate>
                     <table>schema_history</table>
@@ -398,9 +403,13 @@
                 </executions>
                 <configuration>
                     <jdbc>
+                        <!--suppress UnresolvedMavenProperty -->
                         <driver>${spring.datasource.driverClassName}</driver>
+                        <!--suppress UnresolvedMavenProperty -->
                         <url>${spring.datasource.url}</url>
+                        <!--suppress UnresolvedMavenProperty -->
                         <user>${spring.datasource.username}</user>
+                        <!--suppress UnresolvedMavenProperty -->
                         <password>${spring.datasource.password}</password>
                     </jdbc>
                     <generator>
