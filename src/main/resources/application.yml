@@ -2,6 +2,10 @@ spring:
   flyway:
     table: schema_history
     enabled: true
+  datasource:
+    url: jdbc:postgresql://localhost:5432/streamarr
+    username: admin
+    password: pass
 
   profiles:
     active: dev
