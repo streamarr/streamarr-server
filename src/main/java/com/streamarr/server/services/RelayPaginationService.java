@@ -91,24 +91,6 @@ public class RelayPaginationService {
         return pageSize;
     }
 
-    public <T> void pruneListByLimitGivenDirection(List<T> list, int limit, PaginationDirection direction) {
-        if (list.size() - 1 <= limit) {
-            return;
-        }
-
-        if (direction.equals(PaginationDirection.REVERSE)) {
-            list.remove(0);
-            return;
-        }
-
-        list.remove(list.size() - 1);
-    }
-
-    // limit = 1
-    // 0 - no results = emptyConnection / line 117
-    // 1 - only the cursor = emptyConnection() / line 152
-    // 2 - the cursor plus 1 result = 1 result
-    // 3 - the cursor plus 1 result & 1 extra = 1 result / 1 pruned
     public <T> Connection<T> buildConnection(List<Edge<? extends BaseEntity<?>>> edges, PaginationOptions options, Optional<UUID> cursorId) {
 
         if (edges.size() == 0) {
@@ -120,8 +102,7 @@ public class RelayPaginationService {
 
         var isListLargerThanLimit = edges.size() - 1 > limit;
 
-        // TODO: should we use subList() here?
-        pruneListByLimitGivenDirection(edges, limit, direction);
+        edges = pruneListByLimitGivenDirection(edges, limit, direction);
 
         // TODO: can we actually reach this?
         if (edges.size() == 0) {
@@ -142,15 +123,14 @@ public class RelayPaginationService {
                 var node = edges.get(0).getNode();
 
                 hasPreviousPage = node.getId().equals(cursorId.get());
-                edges.remove(0);
+                edges = edges.subList(1, edges.size());
             } else {
                 var node = edges.get(edges.size() - 1).getNode();
 
                 hasNextPage = node.getId().equals(cursorId.get());
-                edges.remove(edges.size() - 1);
+                edges = edges.subList(0, edges.size() - 1);
             }
 
-            // TODO: We should hit this case when only the cursor is returned
             if (edges.size() == 0) {
                 return emptyConnection();
             }
@@ -172,5 +152,18 @@ public class RelayPaginationService {
     private <T> Connection<T> emptyConnection() {
         PageInfo pageInfo = new DefaultPageInfo(null, null, false, false);
         return new DefaultConnection<>(Collections.emptyList(), pageInfo);
+    }
+
+    private <T> List<T> pruneListByLimitGivenDirection(List<T> list, int limit, PaginationDirection direction) {
+        if (list.size() - 1 <= limit) {
+            return list;
+        }
+
+        if (direction.equals(PaginationDirection.REVERSE)) {
+            return list.subList(1, list.size());
+
+        }
+
+        return list.subList(0, list.size() - 1);
     }
 }
