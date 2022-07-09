@@ -188,6 +188,7 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>${maven-compiler-plugin.version}</version>
             </dependency>
+
         </dependencies>
     </dependencyManagement>
 
@@ -313,17 +314,19 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.0.0-M7</version>
+                <version>2.22.2</version>
                 <configuration>
-                    <argLine>--enable-preview</argLine>
+                    <!--suppress UnresolvedMavenProperty -->
+                    <argLine>${surefire.jacoco.args} --enable-preview</argLine>
                 </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-failsafe-plugin</artifactId>
-                <version>3.0.0-M7</version>
+                <version>2.22.2</version>
                 <configuration>
-                    <argLine>--enable-preview</argLine>
+                    <!--suppress UnresolvedMavenProperty -->
+                    <argLine>${failsafe.jacoco.args} --enable-preview</argLine>
                 </configuration>
                 <executions>
                     <execution>
@@ -347,7 +350,6 @@
                         </goals>
                     </execution>
                 </executions>
-
                 <configuration>
                     <jdbc>
                         <driver>org.postgresql.Driver</driver>
@@ -360,19 +362,9 @@
                             <name>org.jooq.meta.postgres.PostgresDatabase</name>
                             <includes>.*</includes>
                             <inputSchema>public</inputSchema>
-                            <properties>
-                                <property>
-                                    <key>packages</key>
-                                    <value>com.streamarr.server.domain</value>
-                                </property>
-                            </properties>
-                            <includes>.*</includes>
                         </database>
                         <generate>
-                            <pojos>true</pojos>
-                            <pojosEqualsAndHashCode>true</pojosEqualsAndHashCode>
-                            <javaTimeTypes>true</javaTimeTypes>
-                            <fluentSetters>true</fluentSetters>
+                            <pojos>false</pojos>
                         </generate>
                         <target>
                             <packageName>com.streamarr.server.db</packageName>
