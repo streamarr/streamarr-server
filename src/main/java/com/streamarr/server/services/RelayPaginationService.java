@@ -48,7 +48,7 @@ public class RelayPaginationService {
             .build();
     }
 
-    public PaginationDirection getDirection(String after, String before) {
+    private PaginationDirection getDirection(String after, String before) {
 
         var afterIsBlank = StringUtils.isBlank(after);
         var beforeIsBlank = StringUtils.isBlank(before);
@@ -61,7 +61,7 @@ public class RelayPaginationService {
             PaginationDirection.REVERSE : PaginationDirection.FORWARD;
     }
 
-    public Optional<String> getCursor(String after, String before) {
+    private Optional<String> getCursor(String after, String before) {
 
         var afterIsBlank = StringUtils.isBlank(after);
         var beforeIsBlank = StringUtils.isBlank(before);
@@ -73,21 +73,19 @@ public class RelayPaginationService {
         return afterIsBlank ? Optional.of(before) : Optional.of(after);
     }
 
-    public int getLimit(int first, int last, PaginationDirection direction) {
-
-        // TODO: Should not request with both first and last simultaneously.
-
-        return direction.equals(PaginationDirection.REVERSE) ? validateGreaterThanZeroButLessThanMax("last", last) : validateGreaterThanZeroButLessThanMax("first", first);
+    private int getLimit(int first, int last, PaginationDirection direction) {
+        return direction.equals(PaginationDirection.REVERSE) ?
+            validateGreaterThanZeroButLessThanMax("last", last) : validateGreaterThanZeroButLessThanMax("first", first);
     }
 
     private int validateGreaterThanZeroButLessThanMax(String fieldName, int pageSize) {
 
         if (pageSize <= 0) {
-            throw new RuntimeException(fieldName + " must be greater than zero");
+            throw new RuntimeException(fieldName + " must be greater than zero.");
         }
 
         if (pageSize > MAX_PAGE_SIZE) {
-            throw new RuntimeException(fieldName + " must be less than " + MAX_PAGE_SIZE);
+            throw new RuntimeException(fieldName + " must be less than " + MAX_PAGE_SIZE + ".");
         }
 
         return pageSize;
@@ -111,8 +109,6 @@ public class RelayPaginationService {
     // 1 - only the cursor = emptyConnection() / line 152
     // 2 - the cursor plus 1 result = 1 result
     // 3 - the cursor plus 1 result & 1 extra = 1 result / 1 pruned
-
-    // Param should only be of BaseEntity extension
     public <T> Connection<T> buildConnection(List<Edge<? extends BaseEntity<?>>> edges, PaginationOptions options, Optional<UUID> cursorId) {
 
         if (edges.size() == 0) {
@@ -143,12 +139,12 @@ public class RelayPaginationService {
 
         if (cursorId.isPresent()) {
             if (direction.equals(PaginationDirection.FORWARD)) {
-                var node = (BaseEntity<?>) edges.get(0).getNode();
+                var node = edges.get(0).getNode();
 
                 hasPreviousPage = node.getId().equals(cursorId.get());
                 edges.remove(0);
             } else {
-                var node = (BaseEntity<?>) edges.get(edges.size() - 1).getNode();
+                var node = edges.get(edges.size() - 1).getNode();
 
                 hasNextPage = node.getId().equals(cursorId.get());
                 edges.remove(edges.size() - 1);
@@ -177,5 +173,4 @@ public class RelayPaginationService {
         PageInfo pageInfo = new DefaultPageInfo(null, null, false, false);
         return new DefaultConnection<>(Collections.emptyList(), pageInfo);
     }
-
 }
