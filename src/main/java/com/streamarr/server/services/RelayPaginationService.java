@@ -104,11 +104,6 @@ public class RelayPaginationService {
 
         edges = pruneListByLimitGivenDirection(edges, limit, direction);
 
-        // TODO: can we actually reach this?
-        if (edges.size() == 0) {
-            return emptyConnection();
-        }
-
         var hasPreviousPage = false;
         var hasNextPage = false;
 
