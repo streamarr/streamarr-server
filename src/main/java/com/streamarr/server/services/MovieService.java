@@ -36,15 +36,15 @@ public class MovieService {
             filter = buildDefaultMovieFilter();
         }
 
-        var options = relayPaginationService.getPaginationOptions(first, after, last, before);
+        var paginationOptions = relayPaginationService.getPaginationOptions(first, after, last, before);
 
-        if (options.getCursor().isEmpty()) {
-            return getFirstMoviesAsConnection(options, filter);
+        if (paginationOptions.getCursor().isEmpty()) {
+            return getFirstMoviesAsConnection(paginationOptions, filter);
         }
 
-        var mediaOptions = cursorUtil.decodeMediaCursor(options);
+        var mediaOptionsFromCursor = cursorUtil.decodeMediaCursor(paginationOptions);
 
-        return usingCursorGetMoviesAsConnection(mediaOptions);
+        return usingCursorGetMoviesAsConnection(mediaOptionsFromCursor);
     }
 
     private MediaFilter buildDefaultMovieFilter() {
