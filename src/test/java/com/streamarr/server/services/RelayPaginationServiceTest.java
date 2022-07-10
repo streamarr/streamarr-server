@@ -178,6 +178,32 @@ public class RelayPaginationServiceTest {
     }
 
     @Test
+    @DisplayName("Should build connection of one when limited by one given multiple results in non-seek result list.")
+    void shouldBuildConnectionOfOneWhenLimitedByOneGivenMultipleResultsInNonSeekList() {
+
+        List<Edge<? extends BaseEntity<?>>> edges = List.of(
+            new DefaultEdge<>(Movie.builder().build(), new DefaultConnectionCursor("cursor")),
+            new DefaultEdge<>(Movie.builder().build(), new DefaultConnectionCursor("cursor"))
+        );
+
+        var options = PaginationOptions.builder()
+            .cursor(Optional.empty())
+            .paginationDirection(PaginationDirection.FORWARD)
+            .limit(1)
+            .build();
+
+        Optional<UUID> cursorId = Optional.empty();
+
+        var connection = relayPaginationService.buildConnection(edges, options, cursorId);
+
+        assertThat(connection.getEdges().size()).isEqualTo(1);
+        assertThat(connection.getPageInfo().getEndCursor()).isEqualTo(edges.get(0).getCursor());
+        assertThat(connection.getPageInfo().getStartCursor()).isEqualTo(edges.get(0).getCursor());
+        assertThat(connection.getPageInfo().isHasNextPage()).isTrue();
+        assertThat(connection.getPageInfo().isHasPreviousPage()).isFalse();
+    }
+
+    @Test
     @DisplayName("Should build connection with empty edges when paginating forward given empty list")
     void shouldBuildEmptyConnectionWhenPaginatingForwardGivenEmptyList() {
 

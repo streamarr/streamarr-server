@@ -6,6 +6,7 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.graphql.cursor.MediaPaginationOptions;
+import com.streamarr.server.graphql.cursor.PaginationOptions;
 import com.streamarr.server.repositories.movie.MovieRepository;
 import graphql.relay.Connection;
 import graphql.relay.DefaultEdge;
@@ -32,30 +33,31 @@ public class MovieService {
         MediaFilter filter) {
 
         if (filter == null) {
-            // Default filter if one isn't provided
-            filter = MediaFilter.builder().build();
+            filter = buildDefaultMovieFilter();
         }
 
         var options = relayPaginationService.getPaginationOptions(first, after, last, before);
 
         if (options.getCursor().isEmpty()) {
-            var mediaOptions = MediaPaginationOptions.builder()
-                .paginationOptions(options)
-                .mediaFilter(filter)
-                .build();
-
-            var movies = movieRepository.findFirstWithFilter(mediaOptions);
-            var edges = mapItemsToEdges(movies, mediaOptions);
-
-            return relayPaginationService.buildConnection(edges, mediaOptions.getPaginationOptions(), mediaOptions.getCursorId());
+            return getFirstMoviesAsConnection(options, filter);
         }
 
-        // Extract id and sort values from cursor.
         var mediaOptions = cursorUtil.decodeMediaCursor(options);
 
-        // TODO: validate cursor. Shouldn't be able to use a stale cursor...
+        return usingCursorGetMoviesAsConnection(mediaOptions);
+    }
 
-        var movies = movieRepository.seekWithFilter(mediaOptions);
+    private MediaFilter buildDefaultMovieFilter() {
+        return MediaFilter.builder().build();
+    }
+
+    private Connection<? extends BaseCollectable<?>> getFirstMoviesAsConnection(PaginationOptions options, MediaFilter filter) {
+        var mediaOptions = MediaPaginationOptions.builder()
+            .paginationOptions(options)
+            .mediaFilter(filter)
+            .build();
+
+        var movies = movieRepository.findFirstWithFilter(mediaOptions);
         var edges = mapItemsToEdges(movies, mediaOptions);
 
         return relayPaginationService.buildConnection(edges, mediaOptions.getPaginationOptions(), mediaOptions.getCursorId());
@@ -77,5 +79,14 @@ public class MovieService {
             case TITLE -> movie.getTitle();
             case ADDED -> movie.getCreatedOn();
         };
+    }
+
+    private Connection<? extends BaseCollectable<?>> usingCursorGetMoviesAsConnection(MediaPaginationOptions options) {
+        // TODO: validate cursor. Shouldn't be able to use a stale cursor...
+
+        var movies = movieRepository.seekWithFilter(options);
+        var edges = mapItemsToEdges(movies, options);
+
+        return relayPaginationService.buildConnection(edges, options.getPaginationOptions(), options.getCursorId());
     }
 }

@@ -99,19 +99,9 @@ public class RelayPaginationService {
 
         var limit = options.getLimit();
         var direction = options.getPaginationDirection();
-
-        var isListLargerThanLimit = edges.size() - 1 > limit;
-
-        edges = pruneListByLimitGivenDirection(edges, limit, direction);
-
+        
         var hasPreviousPage = false;
         var hasNextPage = false;
-
-        if (direction.equals(PaginationDirection.FORWARD)) {
-            hasNextPage = isListLargerThanLimit;
-        } else {
-            hasPreviousPage = isListLargerThanLimit;
-        }
 
         if (cursorId.isPresent()) {
             if (direction.equals(PaginationDirection.FORWARD)) {
@@ -130,6 +120,16 @@ public class RelayPaginationService {
                 return emptyConnection();
             }
         }
+
+        var isListLargerThanLimit = edges.size() > limit;
+
+        if (direction.equals(PaginationDirection.FORWARD)) {
+            hasNextPage = isListLargerThanLimit;
+        } else {
+            hasPreviousPage = isListLargerThanLimit;
+        }
+
+        edges = pruneListByLimitGivenDirection(edges, limit, direction);
 
         var firstEdge = edges.get(0);
         var lastEdge = edges.get(edges.size() - 1);
@@ -150,7 +150,7 @@ public class RelayPaginationService {
     }
 
     private <T> List<T> pruneListByLimitGivenDirection(List<T> list, int limit, PaginationDirection direction) {
-        if (list.size() - 1 <= limit) {
+        if (list.size() <= limit) {
             return list;
         }
 
