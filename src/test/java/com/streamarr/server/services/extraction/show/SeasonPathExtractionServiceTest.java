@@ -21,30 +21,29 @@ public class SeasonPathExtractionServiceTest {
     @DisplayName("Should successfully extract season number")
     public class SuccessfulExtractionTests {
 
-        record TestCase(String name, String filename, int seasonNumber, boolean isSeasonDirectory) {
+        record TestCase(String filename, int seasonNumber, boolean isSeasonDirectory) {
         }
 
         @TestFactory
         Stream<DynamicNode> tests() {
             return Stream.of(
-
-                new TestCase("1", "/Drive/Season 1", 1, true),
-                new TestCase("1", "/Drive/Season 2", 2, true),
-                new TestCase("1", "/Drive/Season 02", 2, true),
-                new TestCase("1", "/Drive/Seinfeld/S02", 2, true),
-                new TestCase("1", "/Drive/Seinfeld/2", 2, true),
-                new TestCase("1", "/Drive/Season 2009", 2009, true),
-                new TestCase("1", "/Drive/Season1", 1, true),
-                new TestCase("1", "The Wonder Years/The.Wonder.Years.S04.PDTV.x264-JCH", 4, true),
-                new TestCase("1", "/Drive/Season 7 (2016)", 7, false),
-                new TestCase("1", "/Drive/Staffel 7 (2016)", 7, false),
-                new TestCase("1", "/Drive/Stagione 7 (2016)", 7, false),
-                new TestCase("1", "/Drive/3.Staffel", 3, false),
-                new TestCase("1", "/Drive/extras", 0, true),
-                new TestCase("1", "/Drive/specials", 0, true)
+                new TestCase("/Drive/Season 1", 1, true),
+                new TestCase("/Drive/Season 2", 2, true),
+                new TestCase("/Drive/Season 02", 2, true),
+                new TestCase("/Drive/Seinfeld/S02", 2, true),
+                new TestCase("/Drive/Seinfeld/2", 2, true),
+                new TestCase("/Drive/Season 2009", 2009, true),
+                new TestCase("/Drive/Season1", 1, true),
+                new TestCase("The Wonder Years/The.Wonder.Years.S04.PDTV.x264-JCH", 4, true),
+                new TestCase("/Drive/Season 7 (2016)", 7, false),
+                new TestCase("/Drive/Staffel 7 (2016)", 7, false),
+                new TestCase("/Drive/Stagione 7 (2016)", 7, false),
+                new TestCase("/Drive/3.Staffel", 3, false),
+                new TestCase("/Drive/extras", 0, true),
+                new TestCase("/Drive/specials", 0, true)
 
             ).map(testCase -> DynamicTest.dynamicTest(
-                testCase.name(),
+                testCase.filename(),
                 () -> {
                     var result = seasonPathExtractionService.extract(testCase.filename()).orElseThrow();
 
@@ -59,19 +58,18 @@ public class SeasonPathExtractionServiceTest {
     @DisplayName("Should fail to extract season number")
     public class UnsuccessfulExtractionTests {
 
-        record TestCase(String name, String filename, boolean isSeasonDirectory) {
+        record TestCase(String filename, boolean isSeasonDirectory) {
         }
 
         @TestFactory
         Stream<DynamicNode> tests() {
             return Stream.of(
-
-                new TestCase("1", "/Drive/Season (8)", false),
-                new TestCase("2", "/Drive/s06e05", false),
-                new TestCase("3", "/Drive/The.Legend.of.Condor.Heroes.2017.V2.web-dl.1080p.h264.aac-hdctv", false)
+                new TestCase("/Drive/Season (8)", false),
+                new TestCase("/Drive/s06e05", false),
+                new TestCase("/Drive/The.Legend.of.Condor.Heroes.2017.V2.web-dl.1080p.h264.aac-hdctv", false)
 
             ).map(testCase -> DynamicTest.dynamicTest(
-                testCase.name(),
+                testCase.filename(),
                 () -> {
                     var result = seasonPathExtractionService.extract(testCase.filename()).orElseThrow();
 
