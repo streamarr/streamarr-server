@@ -1,6 +1,7 @@
 package com.streamarr.server.services;
 
 import com.streamarr.server.domain.BaseEntity;
+import com.streamarr.server.graphql.cursor.InvalidCursorException;
 import com.streamarr.server.graphql.cursor.PaginationDirection;
 import com.streamarr.server.graphql.cursor.PaginationOptions;
 import graphql.relay.Connection;
@@ -99,7 +100,7 @@ public class RelayPaginationService {
 
         var limit = options.getLimit();
         var direction = options.getPaginationDirection();
-        
+
         var hasPreviousPage = false;
         var hasNextPage = false;
 
@@ -160,5 +161,14 @@ public class RelayPaginationService {
         }
 
         return list.subList(0, list.size() - 1);
+    }
+
+    public <T> void validateCursorField(String fieldName, T prior, T current) {
+        if (prior.equals(current)) {
+            return;
+        }
+
+        throw new InvalidCursorException("Prior query " + fieldName + " was '" + prior + "'" +
+            " but new query " + fieldName + " is '" + current + "'");
     }
 }

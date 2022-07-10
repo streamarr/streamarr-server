@@ -44,6 +44,8 @@ public class MovieService {
 
         var mediaOptionsFromCursor = cursorUtil.decodeMediaCursor(paginationOptions);
 
+        validateDecodedCursorAgainstFilter(mediaOptionsFromCursor, filter);
+
         return usingCursorGetMoviesAsConnection(mediaOptionsFromCursor);
     }
 
@@ -82,11 +84,16 @@ public class MovieService {
     }
 
     private Connection<? extends BaseCollectable<?>> usingCursorGetMoviesAsConnection(MediaPaginationOptions options) {
-        // TODO: validate cursor. Shouldn't be able to use a stale cursor...
-
         var movies = movieRepository.seekWithFilter(options);
         var edges = mapItemsToEdges(movies, options);
 
         return relayPaginationService.buildConnection(edges, options.getPaginationOptions(), options.getCursorId());
+    }
+
+    private void validateDecodedCursorAgainstFilter(MediaPaginationOptions decodedOptions, MediaFilter filter) {
+        var previousFilter = decodedOptions.getMediaFilter();
+
+        relayPaginationService.validateCursorField("sortBy", previousFilter.getSortBy(), filter.getSortBy());
+        relayPaginationService.validateCursorField("sortDirection", previousFilter.getSortDirection(), filter.getSortDirection());
     }
 }
