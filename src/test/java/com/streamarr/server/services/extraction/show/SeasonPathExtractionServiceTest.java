@@ -1,6 +1,5 @@
 package com.streamarr.server.services.extraction.show;
 
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.DynamicNode;
 import org.junit.jupiter.api.DynamicTest;
@@ -19,7 +18,7 @@ public class SeasonPathExtractionServiceTest {
     private final SeasonPathExtractionService seasonPathExtractionService = new SeasonPathExtractionService();
 
     @Nested
-    @DisplayName("Should successfully extract series number")
+    @DisplayName("Should successfully extract season number")
     public class SuccessfulExtractionTests {
 
         record TestCase(String name, String filename, int seasonNumber, boolean isSeasonDirectory) {
@@ -57,9 +56,7 @@ public class SeasonPathExtractionServiceTest {
     }
 
     @Nested
-    // TODO: FIX
-    @Disabled
-    @DisplayName("Should fail to extract series number")
+    @DisplayName("Should fail to extract season number")
     public class UnsuccessfulExtractionTests {
 
         record TestCase(String name, String filename, boolean isSeasonDirectory) {
@@ -70,15 +67,15 @@ public class SeasonPathExtractionServiceTest {
             return Stream.of(
 
                 new TestCase("1", "/Drive/Season (8)", false),
-                new TestCase("1", "/Drive/s06e05", false),
-                new TestCase("1", "/Drive/The.Legend.of.Condor.Heroes.2017.V2.web-dl.1080p.h264.aac-hdctv", false)
+                new TestCase("2", "/Drive/s06e05", false),
+                new TestCase("3", "/Drive/The.Legend.of.Condor.Heroes.2017.V2.web-dl.1080p.h264.aac-hdctv", false)
 
             ).map(testCase -> DynamicTest.dynamicTest(
                 testCase.name(),
                 () -> {
                     var result = seasonPathExtractionService.extract(testCase.filename()).orElseThrow();
 
-                    assertThat(result.seasonNumber().isEmpty()).isTrue();
+                    assertThat(result.seasonNumber()).isEmpty();
                     assertThat(result.isSeasonFolder()).isEqualTo(testCase.isSeasonDirectory());
                 })
             );

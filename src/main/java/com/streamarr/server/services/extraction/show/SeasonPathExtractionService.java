@@ -52,7 +52,6 @@ public class SeasonPathExtractionService implements MediaExtractor<SeasonPathExt
             }
         }
 
-        // TODO: Should we avoid un-needed parsing here? ie. "season"
         if (path.startsWith("s")) {
             var result = evaluatePathForOptimisticShortName(path);
 
@@ -72,7 +71,7 @@ public class SeasonPathExtractionService implements MediaExtractor<SeasonPathExt
 
         return partsEvaluationResult.orElseGet(() -> Result.builder()
             .seasonNumber(OptionalInt.empty())
-            .isSeasonFolder(true)
+            .isSeasonFolder(false)
             .build());
     }
 
@@ -178,7 +177,7 @@ public class SeasonPathExtractionService implements MediaExtractor<SeasonPathExt
         if (numericStart == -1) {
             return Optional.of(Result.builder()
                 .seasonNumber(OptionalInt.empty())
-                .isSeasonFolder(isSeasonFolder)
+                .isSeasonFolder(false)
                 .build());
         }
 
