@@ -124,6 +124,7 @@ public class LibraryManagementService {
             .mapAsyncUnordered(12, this::searchForMovie)
             .map(result -> {
                 if (result.getLeft() == null) {
+                    System.out.println("Couldn't parse title for: " + result.getRight().getFilename());
                     return "Title not found.";
                 }
 
@@ -134,7 +135,7 @@ public class LibraryManagementService {
                 return "Not found.";
             })
             .log("error logging")
-            .runForeach(System.out::println, actorSystem)
+            .run(actorSystem)
             .whenComplete((action, fail) -> {
                 var completeTime = Instant.now();
                 var runTime = Duration.between(startTime, completeTime);
