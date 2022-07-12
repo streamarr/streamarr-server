@@ -6,7 +6,6 @@ import akka.http.javadsl.common.EntityStreamingSupport;
 import akka.http.javadsl.common.JsonEntityStreamingSupport;
 import akka.http.javadsl.marshallers.jackson.Jackson;
 import akka.http.javadsl.model.HttpRequest;
-import akka.http.javadsl.model.HttpResponse;
 import akka.http.javadsl.model.Query;
 import akka.http.javadsl.model.Uri;
 import akka.http.javadsl.unmarshalling.Unmarshaller;
@@ -126,12 +125,9 @@ public class LibraryManagementService {
             .mapAsyncUnordered(2, file -> probeFile(library, file))
             .filter(this::filterOutMatchedMediaFiles)
             .mapAsyncUnordered(3, this::searchForMovie)
-            .flatMapConcat(pair -> pair.getLeft().entity().getDataBytes()
-                .via(support.framingDecoder())
-                .mapAsync(1, bytes -> unmarshal.unmarshal(bytes, actorSystem)))
             .map(result -> {
-                if (result.getResults().size() > 0) {
-                    return result.getResults().get(0).getTitle();
+                if (result.getLeft().getResults().size() > 0) {
+                    return result.getLeft().getResults().get(0).getTitle();
                 }
 
                 return "Not found.";
@@ -287,7 +283,7 @@ public class LibraryManagementService {
             .build());
     }
 
-    private CompletionStage<ImmutablePair<HttpResponse, MediaFile>> searchForMovie(MediaFile movieFile) {
+    private CompletionStage<ImmutablePair<TmdbSearchResults, MediaFile>> searchForMovie(MediaFile movieFile) {
         var result = videoFilenameExtractionService.extract(movieFile.getFilename());
 
         if (result.isEmpty()) {
@@ -298,11 +294,21 @@ public class LibraryManagementService {
             return CompletableFuture.failedStage(new RuntimeException("Skipping empty title"));
         }
 
+        Unmarshaller<ByteString, TmdbSearchResults> unmarshal = Jackson.byteStringUnmarshaller(TmdbSearchResults.class);
+        JsonEntityStreamingSupport support = EntityStreamingSupport.json(Int.MaxValue());
+
         var uri = Uri.create("https://api.themoviedb.org/3/search/movie").query(Query.create(Pair.create("query", result.get().title()), Pair.create("year", result.get().year()), Pair.create("api_key", tmdbApiKey)));
 
         return Http.get(actorSystem)
             .singleRequest(HttpRequest.GET(uri.toString()))
-            .thenApply(req -> ImmutablePair.of(req, movieFile));
+            .thenCompose(response ->
+                response.entity().getDataBytes()
+                    .via(support.framingDecoder())
+                    .mapAsync(1, bytes -> unmarshal.unmarshal(bytes, actorSystem))
+                    .runReduce((a, b) -> a, actorSystem)
+                    .thenApply((a) -> ImmutablePair.of(a, movieFile))
+            );
+
     }
 
     private ImmutablePair<TmdbSearchResults, MediaFile> searchForMovieSync(MediaFile movieFile) {
