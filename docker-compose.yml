@@ -22,4 +22,4 @@ services:
     environment:
       JAVA_OPTS: --enable-preview
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/streamarr
-
+      SPRING_JPA_PROPERTIES_HIBERNATE_SHOW_SQL: false

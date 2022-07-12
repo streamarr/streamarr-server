@@ -289,7 +289,7 @@ public class LibraryManagementService {
         var result = videoFilenameExtractionService.extract(movieFile.getFilename());
 
         if (result.isEmpty()) {
-            return CompletableFuture.failedStage(new RuntimeException("Failed to extract information from filename"));
+            return CompletableFuture.completedFuture(ImmutablePair.of(null, movieFile));
         }
 
         if (StringUtils.isEmpty(result.get().title())) {
