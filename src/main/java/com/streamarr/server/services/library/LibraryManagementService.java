@@ -111,9 +111,6 @@ public class LibraryManagementService {
             throw new RuntimeException("Failed to access library filepath.");
         }
 
-        Unmarshaller<ByteString, TmdbSearchResults> unmarshal = Jackson.byteStringUnmarshaller(TmdbSearchResults.class);
-        JsonEntityStreamingSupport support = EntityStreamingSupport.json(Int.MaxValue());
-
         Source.fromJavaStream(() -> Files.walk(rootPath))
             .filter(Files::isRegularFile)
             .map(Path::toFile)
@@ -124,7 +121,7 @@ public class LibraryManagementService {
             })
             .mapAsyncUnordered(1, file -> probeFile(library, file))
             .filter(this::filterOutMatchedMediaFiles)
-            .mapAsyncUnordered(30, this::searchForMovie)
+            .mapAsyncUnordered(10, this::searchForMovie)
             .map(result -> {
                 if (result.getLeft() == null) {
                     return "Title not found.";
@@ -137,7 +134,8 @@ public class LibraryManagementService {
                 return "Not found.";
             })
             .log("error logging")
-            .runForeach(System.out::println, actorSystem).whenComplete((action, fail) -> {
+            .runForeach(System.out::println, actorSystem)
+            .whenComplete((action, fail) -> {
                 var completeTime = Instant.now();
                 var runTime = Duration.between(startTime, completeTime);
 
