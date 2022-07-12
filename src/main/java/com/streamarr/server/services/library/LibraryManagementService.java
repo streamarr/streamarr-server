@@ -128,7 +128,14 @@ public class LibraryManagementService {
             .flatMapConcat(pair -> pair.getLeft().entity().getDataBytes()
                 .via(support.framingDecoder())
                 .mapAsync(1, bytes -> unmarshal.unmarshal(bytes, actorSystem)))
-            .map(result -> result.getResults().get(0).getTitle())
+            .map(result -> {
+
+                if (result.getResults().size() > 0) {
+                    return result.getResults().get(0).getTitle();
+                }
+
+                return "Not found.";
+            })
             .runForeach(System.out::println, actorSystem).whenComplete((action, fail) -> {
                 var completeTime = Instant.now();
                 var runTime = Duration.between(startTime, completeTime);
@@ -196,7 +203,14 @@ public class LibraryManagementService {
                 .map(file -> probeMovieSync(library, file))
                 .filter(this::filterOutMatchedMediaFiles)
                 .map(this::searchForMovieSync)
-                .map(pair -> pair.getLeft().getResults().get(0).getTitle())
+                .map(pair -> {
+
+                    if (pair.getLeft().getResults().size() > 0) {
+                        return pair.getLeft().getResults().get(0).getTitle();
+                    }
+
+                    return "Not found.";
+                })
                 .forEach(System.out::println);
         } catch (IOException ex) {
             log.error("Failed to refresh library", ex);
