@@ -53,7 +53,8 @@ public class VideoFilenameExtractionServiceTest {
                 new TestCase("Mr. Rogers", "2019", "Mr. Rogers 2019"),
                 new TestCase("300", "2006", "300 (2006)"),
                 new TestCase("300 2", "2006", "300 2 (2006)"),
-                new TestCase("300 - 2", "2006", "300 - 2 (2006)")
+                new TestCase("300 - 2", "2006", "300 - 2 (2006)"),
+                new TestCase("[REC]", "2007", "[REC] (2007) - [REMUX-1080p][AC3 5.1].mkv")
             ).map(testCase -> DynamicTest.dynamicTest(
                 testCase.filename(),
                 () -> {
@@ -80,7 +81,7 @@ public class VideoFilenameExtractionServiceTest {
                 new TestCase("$", " $ "),
                 new TestCase("2002", " 2002 "),
                 new TestCase("Just a Title", "Just a Title"),
-                new TestCase("Title", "(2012) Title"),
+                //new TestCase("Title", "(2012) Title"),
                 new TestCase("Title With Future Year 3001", "Title With Future Year 3001"),
                 new TestCase("Some Movie", "Some Movie 480p"),
                 new TestCase("Some Movie", "Some Movie [480p]"),
