@@ -119,7 +119,7 @@ public class LibraryManagementService {
 
                 return videoExtensionValidator.validate(extension);
             })
-            .mapAsyncUnordered(1, file -> probeFile(library, file))
+            .map(file -> probeMovieSync(library, file))
             .filter(this::filterOutMatchedMediaFiles)
             .mapAsyncUnordered(1, this::searchForMovie)
             .map(result -> {
