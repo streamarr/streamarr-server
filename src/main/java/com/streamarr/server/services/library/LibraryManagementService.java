@@ -126,10 +126,10 @@ public class LibraryManagementService {
             .filter(this::filterOutMatchedMediaFiles)
             .mapAsyncUnordered(3, this::searchForMovie)
             .map(result -> {
-                if (pair.getLeft() == null) {
+                if (result.getLeft() == null) {
                     return "Title not found.";
                 }
-                
+
                 if (result.getLeft().getResults().size() > 0) {
                     return result.getLeft().getResults().get(0).getTitle();
                 }
