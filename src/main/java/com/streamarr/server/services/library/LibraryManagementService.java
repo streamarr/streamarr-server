@@ -26,6 +26,7 @@ import com.streamarr.server.utils.VideoExtensionValidator;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.time.DurationFormatUtils;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.slf4j.Logger;
@@ -204,6 +205,9 @@ public class LibraryManagementService {
                 .filter(this::filterOutMatchedMediaFiles)
                 .map(this::searchForMovieSync)
                 .map(pair -> {
+                    if (pair.getLeft() == null) {
+                        return "Title not found.";
+                    }
 
                     if (pair.getLeft().getResults().size() > 0) {
                         return pair.getLeft().getResults().get(0).getTitle();
@@ -290,6 +294,10 @@ public class LibraryManagementService {
             return CompletableFuture.failedStage(new RuntimeException("Failed to extract information from filename"));
         }
 
+        if (StringUtils.isEmpty(result.get().title())) {
+            return CompletableFuture.failedStage(new RuntimeException("Skipping empty title"));
+        }
+
         var uri = Uri.create("https://api.themoviedb.org/3/search/movie").query(Query.create(Pair.create("query", result.get().title()), Pair.create("year", result.get().year()), Pair.create("api_key", tmdbApiKey)));
 
         return Http.get(actorSystem)
@@ -302,6 +310,10 @@ public class LibraryManagementService {
 
         if (result.isEmpty()) {
             throw new RuntimeException("Failed to extract information from filename");
+        }
+
+        if (StringUtils.isEmpty(result.get().title())) {
+            return ImmutablePair.of(null, movieFile);
         }
 
         return ImmutablePair.of(theMovieDatabaseService.searchAndWait(result.get().title(), result.get().year()), movieFile);
