@@ -17,3 +17,10 @@
 #### Step 4 - Start Streamarr Server
 
 `./mvnw spring-boot:run`
+
+### To build docker image
+
+`./mvnw spring-boot:build-image`
+
+Image will look like:
+'docker.io/library/server:0.0.1-SNAPSHOT'

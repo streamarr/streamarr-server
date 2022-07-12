@@ -6,6 +6,7 @@ import lombok.NoArgsConstructor;
 import lombok.experimental.SuperBuilder;
 
 import javax.persistence.MappedSuperclass;
+import java.util.UUID;
 
 @Getter
 @SuperBuilder
@@ -13,8 +14,8 @@ import javax.persistence.MappedSuperclass;
 @MappedSuperclass
 public class MediaFile extends BaseEntity<MediaFile> {
 
+    private UUID libraryId;
     private String filename;
-    private String path;
+    private String filepath;
     private long size;
-    // TODO: duration?
 }

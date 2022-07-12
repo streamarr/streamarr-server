@@ -1,17 +1,11 @@
 package com.streamarr.server.services.metadata;
 
-import com.streamarr.server.domain.external.tmdb.TmdbMovie;
-import com.streamarr.server.domain.media.Movie;
-import com.streamarr.server.domain.metadata.Company;
+import com.streamarr.server.domain.external.tmdb.TmdbSearchResults;
 import com.streamarr.server.repositories.movie.MovieRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
-
-import java.util.Set;
-import java.util.UUID;
-import java.util.stream.Collectors;
 
 
 @Service
@@ -31,36 +25,18 @@ public class TheMovieDatabaseService {
         this.tmdbApiKey = tmdbApiKey;
     }
 
-    public TmdbMovie waitAndPrintMovieMetadata() {
-        var movie = getMovieMetadata("122906").block();
+    public TmdbSearchResults searchAndWait(String title, String year) {
+        var results = getMovieMetadata(title, year).block();
 
-        // TODO: Implement concept of a User
-        var fakeUserId = UUID.randomUUID();
-
-        // TODO: This will NOT work without a cascade clause. Do I even want JPA, how about JOOQ?
-        Set<Company> companies = movie.getProductionCompanies().stream().map(company ->
-                Company.builder()
-                    .name(company.getName())
-                    .createdBy(fakeUserId)
-                    .build())
-            .collect(Collectors.toSet());
-
-        movieRepository.save(Movie.builder()
-            .artwork(movie.getPosterPath())
-            .createdBy(fakeUserId)
-            .contentRating(String.valueOf(movie.getVoteAverage()))
-            .studios(companies)
-            .build());
-
-        return movie;
+        return results;
     }
 
-    private Mono<TmdbMovie> getMovieMetadata(String movieId) {
+    private Mono<TmdbSearchResults> getMovieMetadata(String title, String year) {
         return getWebClient()
             .get()
-            .uri("/movie/{movieId}?api_key={apiKey}&language=en-US", movieId, tmdbApiKey)
+            .uri("/search/movie?query={title}&year={year}&api_key={apiKey}&language=en-US", title, year, tmdbApiKey)
             .retrieve()
-            .bodyToMono(TmdbMovie.class);
+            .bodyToMono(TmdbSearchResults.class);
     }
 
     private WebClient getWebClient() {

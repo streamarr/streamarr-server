@@ -16,5 +16,5 @@ import java.util.UUID;
 public class MovieFile extends MediaFile {
 
     private UUID movieId;
-    // TODO: join back to Movie? join to Library?
+    // TODO: join back to Movie?
 }

@@ -1,10 +1,15 @@
 package com.streamarr.server.domain;
 
 import com.streamarr.server.domain.media.MediaType;
+import com.vladmihalcea.hibernate.type.basic.PostgreSQLEnumType;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 import lombok.experimental.SuperBuilder;
+import org.hibernate.annotations.Type;
+import org.hibernate.annotations.TypeDef;
+import org.hibernate.annotations.TypeDefs;
 
 import javax.persistence.Entity;
 import javax.persistence.EnumType;
@@ -17,9 +22,16 @@ import java.util.Set;
 
 @Entity
 @Getter
+@Setter
 @SuperBuilder
 @AllArgsConstructor
 @NoArgsConstructor
+@TypeDefs({
+    @TypeDef(
+        name = "pgsql_enum",
+        typeClass = PostgreSQLEnumType.class
+    )
+})
 public class Library extends BaseEntity<Library> {
 
     private String filepath;
@@ -29,12 +41,15 @@ public class Library extends BaseEntity<Library> {
     private Instant refreshCompletedOn;
 
     @Enumerated(EnumType.STRING)
+    @Type(type = "pgsql_enum")
     private LibraryStatus status;
 
     @Enumerated(EnumType.STRING)
+    @Type(type = "pgsql_enum")
     private LibraryBackend backend;
 
     @Enumerated(EnumType.STRING)
+    @Type(type = "pgsql_enum")
     private MediaType type;
 
     // Library should only contain a single type

@@ -2,6 +2,7 @@ package com.streamarr.server.graphql.resolvers;
 
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsData;
+import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.DgsTypeResolver;
 import com.netflix.graphql.dgs.InputArgument;
@@ -11,6 +12,7 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.MovieService;
+import com.streamarr.server.services.library.LibraryManagementService;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
 import lombok.RequiredArgsConstructor;
@@ -23,11 +25,22 @@ import java.util.UUID;
 public class LibraryResolver {
 
     private final LibraryRepository libraryRepository;
+    private final LibraryManagementService libraryManagementService;
     private final MovieService movieService;
+
+    @DgsMutation
+    public boolean refreshLibrary(String id, boolean async) {
+        if (async) {
+            libraryManagementService.refreshLibrary(UUID.fromString(id));
+            return true;
+        } else {
+            libraryManagementService.refreshLibrarySync(UUID.fromString(id));
+            return true;
+        }
+    }
 
     @DgsQuery
     public Optional<Library> library(String id) {
-
         return libraryRepository.findById(UUID.fromString(id));
     }
 
