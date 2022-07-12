@@ -124,7 +124,7 @@ public class LibraryManagementService {
             })
             .mapAsyncUnordered(1, file -> probeFile(library, file))
             .filter(this::filterOutMatchedMediaFiles)
-            .mapAsyncUnordered(3, this::searchForMovie)
+            .mapAsyncUnordered(30, this::searchForMovie)
             .map(result -> {
                 if (result.getLeft() == null) {
                     return "Title not found.";
