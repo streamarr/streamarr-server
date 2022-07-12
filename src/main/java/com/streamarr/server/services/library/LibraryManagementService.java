@@ -31,6 +31,7 @@ import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.slf4j.Logger;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import scala.Int;
 
 import java.io.File;
 import java.io.IOException;
@@ -112,7 +113,7 @@ public class LibraryManagementService {
         }
 
         Unmarshaller<ByteString, TmdbSearchResults> unmarshal = Jackson.byteStringUnmarshaller(TmdbSearchResults.class);
-        JsonEntityStreamingSupport support = EntityStreamingSupport.json();
+        JsonEntityStreamingSupport support = EntityStreamingSupport.json(Int.MaxValue());
 
         Source.fromJavaStream(() -> Files.walk(rootPath))
             .filter(Files::isRegularFile)
