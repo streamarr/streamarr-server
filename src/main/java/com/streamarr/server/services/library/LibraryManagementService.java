@@ -129,13 +129,13 @@ public class LibraryManagementService {
                 .via(support.framingDecoder())
                 .mapAsync(1, bytes -> unmarshal.unmarshal(bytes, actorSystem)))
             .map(result -> {
-
                 if (result.getResults().size() > 0) {
                     return result.getResults().get(0).getTitle();
                 }
 
                 return "Not found.";
             })
+            .log("error logging")
             .runForeach(System.out::println, actorSystem).whenComplete((action, fail) -> {
                 var completeTime = Instant.now();
                 var runTime = Duration.between(startTime, completeTime);
