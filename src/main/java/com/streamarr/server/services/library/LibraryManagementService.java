@@ -126,6 +126,10 @@ public class LibraryManagementService {
             .filter(this::filterOutMatchedMediaFiles)
             .mapAsyncUnordered(3, this::searchForMovie)
             .map(result -> {
+                if (pair.getLeft() == null) {
+                    return "Title not found.";
+                }
+                
                 if (result.getLeft().getResults().size() > 0) {
                     return result.getLeft().getResults().get(0).getTitle();
                 }
@@ -291,7 +295,7 @@ public class LibraryManagementService {
         }
 
         if (StringUtils.isEmpty(result.get().title())) {
-            return CompletableFuture.failedStage(new RuntimeException("Skipping empty title"));
+            return CompletableFuture.completedFuture(ImmutablePair.of(null, movieFile));
         }
 
         Unmarshaller<ByteString, TmdbSearchResults> unmarshal = Jackson.byteStringUnmarshaller(TmdbSearchResults.class);
