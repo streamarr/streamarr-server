@@ -24,7 +24,6 @@ import com.streamarr.server.services.extraction.video.VideoFilenameExtractionSer
 import com.streamarr.server.services.metadata.TheMovieDatabaseService;
 import com.streamarr.server.utils.VideoExtensionValidator;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.time.DurationFormatUtils;
@@ -265,7 +264,7 @@ public class LibraryManagementService {
             return movieFileRepository.save(MovieFile.builder()
                 .filename(file.getName())
                 .filepath(file.getAbsolutePath())
-                .size(FileUtils.sizeOf(file))
+                .size(file.length())
                 .libraryId(library.getId())
                 .build());
         });
@@ -282,7 +281,7 @@ public class LibraryManagementService {
         return movieFileRepository.save(MovieFile.builder()
             .filename(file.getName())
             .filepath(file.getAbsolutePath())
-            .size(FileUtils.sizeOf(file))
+            .size(file.length())
             .libraryId(library.getId())
             .build());
     }
