@@ -301,7 +301,14 @@ public class LibraryManagementService {
         Unmarshaller<ByteString, TmdbSearchResults> unmarshal = Jackson.byteStringUnmarshaller(TmdbSearchResults.class);
         JsonEntityStreamingSupport support = EntityStreamingSupport.json(Int.MaxValue());
 
-        var uri = Uri.create("https://api.themoviedb.org/3/search/movie").query(Query.create(Pair.create("query", result.get().title()), Pair.create("year", result.get().year()), Pair.create("api_key", tmdbApiKey)));
+        Query query;
+        if (StringUtils.isEmpty(result.get().year())) {
+            query = Query.create(Pair.create("query", result.get().title()), Pair.create("api_key", tmdbApiKey));
+        } else {
+            query = Query.create(Pair.create("query", result.get().title()), Pair.create("year", result.get().year()), Pair.create("api_key", tmdbApiKey));
+        }
+
+        var uri = Uri.create("https://api.themoviedb.org/3/search/movie").query(query);
 
         return Http.get(actorSystem)
             .singleRequest(HttpRequest.GET(uri.toString()))
