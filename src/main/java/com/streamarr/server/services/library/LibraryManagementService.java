@@ -10,6 +10,7 @@ import akka.http.javadsl.model.Query;
 import akka.http.javadsl.model.Uri;
 import akka.http.javadsl.unmarshalling.Unmarshaller;
 import akka.japi.Pair;
+import akka.stream.javadsl.Sink;
 import akka.stream.javadsl.Source;
 import akka.util.ByteString;
 import com.streamarr.server.domain.Library;
@@ -22,6 +23,8 @@ import com.streamarr.server.repositories.movie.MovieFileRepository;
 import com.streamarr.server.services.extraction.video.VideoFilenameExtractionService;
 import com.streamarr.server.services.metadata.TheMovieDatabaseService;
 import com.streamarr.server.utils.VideoExtensionValidator;
+import io.vertx.core.CompositeFuture;
+import io.vertx.core.Future;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -42,6 +45,7 @@ import java.time.Instant;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
+import java.util.stream.Collectors;
 
 
 // TODO: Implement, inspiration here https://gitlab.com/olaris/olaris-server/-/blob/develop/metadata/managers/library.go
@@ -119,31 +123,39 @@ public class LibraryManagementService {
             })
             .map(file -> probeMovieSync(library, file))
             .filter(this::filterOutMatchedMediaFiles)
-            .map(vertx ? this::searchForMovieVertx : this::searchForMovie)
-            .mapAsync(1, result -> result.thenApply(res -> {
+            .map(this::searchForMovieVertx)
+            .map(result -> result.compose(res -> {
                     if (res.getLeft() == null) {
                         System.out.println("Couldn't parse title for: " + res.getRight().getFilename());
-                        return "Title not found.";
+                        return Future.succeededFuture("Title not found.");
                     }
 
                     if (res.getLeft().getResults().size() > 0) {
-                        return res.getLeft().getResults().get(0).getTitle();
+                        return Future.succeededFuture(res.getLeft().getResults().get(0).getTitle());
                     }
 
-                    return "Not found.";
+                    return Future.succeededFuture("Not found.");
                 })
             )
             .log("error logging")
-            .runForeach(System.out::println, actorSystem)
+            .runWith(Sink.seq(), actorSystem)
             .whenComplete((action, fail) -> {
                 var completeTime = Instant.now();
                 var runTime = Duration.between(startTime, completeTime);
 
-                log.info("Completed refresh in: " + DurationFormatUtils.formatDuration(runTime.toMillis(), "**mm:ss:SS**", true) + ".");
+                var test = action.stream().map(f -> (Future) f).collect(Collectors.toList());
 
-                library.setStatus(LibraryStatus.HEALTHY);
-                library.setRefreshCompletedOn(completeTime);
-                libraryRepository.save(library);
+                CompositeFuture.all(test).onComplete(ar -> {
+                    if (ar.succeeded()) {
+                        log.info("Completed refresh in: " + DurationFormatUtils.formatDuration(runTime.toMillis(), "**mm:ss:SS**", true) + ".");
+
+                        library.setStatus(LibraryStatus.HEALTHY);
+                        library.setRefreshCompletedOn(completeTime);
+                        libraryRepository.save(library);
+                    }
+                });
+
+
             });
 
 
@@ -220,18 +232,18 @@ public class LibraryManagementService {
             );
     }
 
-    private CompletionStage<ImmutablePair<TmdbSearchResults, MediaFile>> searchForMovieVertx(MediaFile movieFile) {
+    private Future<ImmutablePair<TmdbSearchResults, MediaFile>> searchForMovieVertx(MediaFile movieFile) {
         var result = videoFilenameExtractionService.extract(movieFile.getFilename());
 
         if (result.isEmpty()) {
-            return CompletableFuture.completedFuture(ImmutablePair.of(null, movieFile));
+            return Future.succeededFuture(ImmutablePair.of(null, movieFile));
         }
 
         if (StringUtils.isEmpty(result.get().title())) {
-            return CompletableFuture.completedFuture(ImmutablePair.of(null, movieFile));
+            return Future.succeededFuture(ImmutablePair.of(null, movieFile));
         }
 
-        return theMovieDatabaseService.searchForMovie(result.get()).thenApply(res -> ImmutablePair.of(res.body(), movieFile));
+        return theMovieDatabaseService.searchForMovie(result.get()).compose(res -> Future.succeededFuture(ImmutablePair.of(res.body(), movieFile)));
     }
 
     private MediaFile probeEpisode() {

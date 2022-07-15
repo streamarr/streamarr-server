@@ -16,8 +16,6 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.web.util.UriBuilder;
 import org.springframework.web.util.UriComponentsBuilder;
 
-import java.util.concurrent.CompletionStage;
-
 
 @Service
 public class TheMovieDatabaseService {
@@ -34,7 +32,7 @@ public class TheMovieDatabaseService {
         this.tmdbApiKey = tmdbApiKey;
     }
 
-    public CompletionStage<HttpResponse<TmdbSearchResults>> searchForMovie(VideoFilenameExtractionService.Result result) {
+    public Future<HttpResponse<TmdbSearchResults>> searchForMovie(VideoFilenameExtractionService.Result result) {
         var query = new LinkedMultiValueMap<String, String>();
 
         query.add("query", result.title());
@@ -43,7 +41,7 @@ public class TheMovieDatabaseService {
             query.add("year", result.year());
         }
 
-        return searchForMovieRequest(query).toCompletionStage();
+        return searchForMovieRequest(query);
     }
 
     private Future<HttpResponse<TmdbSearchResults>> searchForMovieRequest(MultiValueMap<String, String> query) {
