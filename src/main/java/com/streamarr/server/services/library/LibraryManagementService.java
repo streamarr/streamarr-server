@@ -119,7 +119,7 @@ public class LibraryManagementService {
             })
             .map(file -> probeMovieSync(library, file))
             .filter(this::filterOutMatchedMediaFiles)
-            .mapAsyncUnordered(12, vertx ? this::searchForMovieVertx : this::searchForMovie)
+            .mapAsync(1, vertx ? this::searchForMovieVertx : this::searchForMovie)
             .map(result -> {
                 if (result.getLeft() == null) {
                     System.out.println("Couldn't parse title for: " + result.getRight().getFilename());
