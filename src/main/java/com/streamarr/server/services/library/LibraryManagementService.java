@@ -247,7 +247,9 @@ public class LibraryManagementService {
             return Future.succeededFuture(ImmutablePair.of(null, movieFile));
         }
 
-        return theMovieDatabaseService.searchForMovie(result.get()).compose(res -> Future.succeededFuture(ImmutablePair.of(res.body(), movieFile)));
+        return theMovieDatabaseService.searchForMovie(result.get())
+            .onFailure(fail -> log.error("Couldn't handle search req: " + fail.getMessage()))
+            .compose(res -> Future.succeededFuture(ImmutablePair.of(res.body(), movieFile)));
     }
 
     private MediaFile probeEpisode() {
