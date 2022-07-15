@@ -1,47 +1,68 @@
 package com.streamarr.server.services.metadata;
 
+import com.streamarr.server.config.vertx.VertxWebClientProvider;
 import com.streamarr.server.domain.external.tmdb.TmdbSearchResults;
-import com.streamarr.server.repositories.movie.MovieRepository;
+import com.streamarr.server.services.extraction.video.VideoFilenameExtractionService;
+import io.vertx.core.Future;
+import io.vertx.core.buffer.Buffer;
+import io.vertx.ext.web.client.HttpResponse;
+import io.vertx.ext.web.client.WebClient;
+import io.vertx.ext.web.codec.BodyCodec;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.web.reactive.function.client.WebClient;
-import reactor.core.publisher.Mono;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
+import org.springframework.web.util.UriBuilder;
+import org.springframework.web.util.UriComponentsBuilder;
+
+import java.util.concurrent.CompletionStage;
 
 
 @Service
 public class TheMovieDatabaseService {
 
-    private final WebClient.Builder webClientBuilder;
-    private final MovieRepository movieRepository;
+    private final VertxWebClientProvider vertxWebClientProvider;
     private final String tmdbApiKey;
 
     public TheMovieDatabaseService(
-        WebClient.Builder webClientBuilder,
-        MovieRepository movieRepository,
-        @Value("${tmdb.api.key:}") String tmdbApiKey
+        VertxWebClientProvider vertxWebClientProvider,
+        @Value("${tmdb.api.key:}")
+        String tmdbApiKey
     ) {
-        this.webClientBuilder = webClientBuilder;
-        this.movieRepository = movieRepository;
+        this.vertxWebClientProvider = vertxWebClientProvider;
         this.tmdbApiKey = tmdbApiKey;
     }
 
-    public TmdbSearchResults searchAndWait(String title, String year) {
-        var results = getMovieMetadata(title, year).block();
+    public CompletionStage<HttpResponse<TmdbSearchResults>> searchForMovie(VideoFilenameExtractionService.Result result) {
+        var query = new LinkedMultiValueMap<String, String>();
 
-        return results;
+        query.add("query", result.title());
+
+        if (StringUtils.isNotBlank(result.year())) {
+            query.add("year", result.year());
+        }
+
+        return searchForMovieRequest(query).toCompletionStage();
     }
 
-    private Mono<TmdbSearchResults> getMovieMetadata(String title, String year) {
-        return getWebClient()
-            .get()
-            .uri("/search/movie?query={title}&year={year}&api_key={apiKey}&language=en-US", title, year, tmdbApiKey)
-            .retrieve()
-            .bodyToMono(TmdbSearchResults.class);
+    private Future<HttpResponse<TmdbSearchResults>> searchForMovieRequest(MultiValueMap<String, String> query) {
+        var uri = baseUrl().path("/search/movie").queryParams(query).queryParam("api_key", tmdbApiKey).build();
+
+        return getWebClient().getAbs(uri.toString()).as(BodyCodec.json(TmdbSearchResults.class)).send();
+    }
+
+    private Future<HttpResponse<Buffer>> searchForShowRequest(MultiValueMap<String, String> query) {
+        var uri = baseUrl().path("/search/tv").queryParams(query).queryParam("api_key", tmdbApiKey).build();
+
+        return getWebClient().getAbs(uri.toString()).send();
+    }
+
+    private UriBuilder baseUrl() {
+        return UriComponentsBuilder.fromHttpUrl("https://api.themoviedb.org/3");
     }
 
     private WebClient getWebClient() {
-        return webClientBuilder
-            .baseUrl("https://api.themoviedb.org/3")
-            .build();
+        return vertxWebClientProvider.createHttpClient();
     }
 }

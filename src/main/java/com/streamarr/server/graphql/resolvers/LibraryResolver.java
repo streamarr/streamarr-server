@@ -29,14 +29,10 @@ public class LibraryResolver {
     private final MovieService movieService;
 
     @DgsMutation
-    public boolean refreshLibrary(String id, boolean async) {
-        if (async) {
-            libraryManagementService.refreshLibrary(UUID.fromString(id));
-            return true;
-        } else {
-            libraryManagementService.refreshLibrarySync(UUID.fromString(id));
-            return true;
-        }
+    public boolean refreshLibrary(String id, boolean vertx) {
+        libraryManagementService.refreshLibrary(UUID.fromString(id), vertx);
+        return true;
+
     }
 
     @DgsQuery
