@@ -10,8 +10,6 @@ import akka.http.javadsl.model.Query;
 import akka.http.javadsl.model.Uri;
 import akka.http.javadsl.unmarshalling.Unmarshaller;
 import akka.japi.Pair;
-import akka.stream.javadsl.Sink;
-import akka.stream.javadsl.Source;
 import akka.util.ByteString;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
@@ -36,6 +34,7 @@ import org.springframework.stereotype.Service;
 import scala.Int;
 
 import java.io.File;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
@@ -113,51 +112,50 @@ public class LibraryManagementService {
             throw new RuntimeException("Failed to access library filepath.");
         }
 
-        Source.fromJavaStream(() -> Files.walk(rootPath))
-            .filter(Files::isRegularFile)
-            .map(Path::toFile)
-            .filter(file -> {
-                var extension = getExtension(file);
+        try {
+            var list = Files.walk(rootPath)
+                .filter(Files::isRegularFile)
+                .map(Path::toFile)
+                .filter(file -> {
+                    var extension = getExtension(file);
 
-                return videoExtensionValidator.validate(extension);
-            })
-            .map(file -> probeMovieSync(library, file))
-            .filter(this::filterOutMatchedMediaFiles)
-            .map(this::searchForMovieVertx)
-            .map(result -> result.compose(res -> {
-                    if (res.getLeft() == null) {
-                        System.out.println("Couldn't parse title for: " + res.getRight().getFilename());
-                        return Future.succeededFuture("Title not found.");
-                    }
-
-                    if (res.getLeft().getResults().size() > 0) {
-                        System.out.println(res.getLeft().getResults().get(0).getTitle());
-                        return Future.succeededFuture(res.getLeft().getResults().get(0).getTitle());
-                    }
-
-                    return Future.succeededFuture("Not found.");
+                    return videoExtensionValidator.validate(extension);
                 })
-            )
-            .log("error logging")
-            .runWith(Sink.seq(), actorSystem)
-            .whenComplete((action, fail) -> {
+                .map(file -> probeMovieSync(library, file))
+                .filter(this::filterOutMatchedMediaFiles)
+                .map(this::searchForMovieVertx)
+                .map(result -> result.compose(res -> {
+                        if (res.getLeft() == null) {
+                            System.out.println("Couldn't parse title for: " + res.getRight().getFilename());
+                            return Future.succeededFuture("Title not found.");
+                        }
 
+                        if (res.getLeft().getResults().size() > 0) {
+                            return Future.succeededFuture(res.getLeft().getResults().get(0).getTitle());
+                        }
 
-                var test = action.stream().map(f -> (Future) f).collect(Collectors.toList());
+                        return Future.succeededFuture("Not found.");
+                    })
+                ).toList();
 
-                CompositeFuture.all(test).onComplete(ar -> {
-                    if (ar.succeeded()) {
-                        var completeTime = Instant.now();
-                        var runTime = Duration.between(startTime, completeTime);
-                        
-                        log.info("Completed refresh in: " + DurationFormatUtils.formatDuration(runTime.toMillis(), "**mm:ss:SS**", true) + ".");
+            var test = list.stream().map(f -> (Future) f).collect(Collectors.toList());
 
-                        library.setStatus(LibraryStatus.HEALTHY);
-                        library.setRefreshCompletedOn(completeTime);
-                        libraryRepository.save(library);
-                    }
-                });
+            CompositeFuture.all(test).onComplete(ar -> {
+                if (ar.succeeded()) {
+                    var completeTime = Instant.now();
+                    var runTime = Duration.between(startTime, completeTime);
+
+                    log.info("Completed refresh in: " + DurationFormatUtils.formatDuration(runTime.toMillis(), "**mm:ss:SS**", true) + ".");
+
+                    library.setStatus(LibraryStatus.HEALTHY);
+                    library.setRefreshCompletedOn(completeTime);
+                    libraryRepository.save(library);
+                }
             });
+
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
 
 
         // DEFINITION: "media file" an entity that describes the file and
