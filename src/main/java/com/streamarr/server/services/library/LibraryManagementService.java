@@ -119,18 +119,22 @@ public class LibraryManagementService {
             })
             .map(file -> probeMovieSync(library, file))
             .filter(this::filterOutMatchedMediaFiles)
-            .mapAsync(1, vertx ? this::searchForMovieVertx : this::searchForMovie)
+            .map(vertx ? this::searchForMovieVertx : this::searchForMovie)
             .map(result -> {
-                if (result.getLeft() == null) {
-                    System.out.println("Couldn't parse title for: " + result.getRight().getFilename());
-                    return "Title not found.";
-                }
 
-                if (result.getLeft().getResults().size() > 0) {
-                    return result.getLeft().getResults().get(0).getTitle();
-                }
+                return result.thenApply(res -> {
+                    if (res.getLeft() == null) {
+                        System.out.println("Couldn't parse title for: " + res.getRight().getFilename());
+                        return "Title not found.";
+                    }
 
-                return "Not found.";
+                    if (res.getLeft().getResults().size() > 0) {
+                        return res.getLeft().getResults().get(0).getTitle();
+                    }
+
+                    return "Not found.";
+                });
+
             })
             .log("error logging")
             .run(actorSystem)
