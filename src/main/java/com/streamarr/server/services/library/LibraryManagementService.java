@@ -129,6 +129,7 @@ public class LibraryManagementService {
                     }
 
                     if (res.getLeft().getResults().size() > 0) {
+                        System.out.println(res.getLeft().getResults().get(0).getTitle());
                         return res.getLeft().getResults().get(0).getTitle();
                     }
 
