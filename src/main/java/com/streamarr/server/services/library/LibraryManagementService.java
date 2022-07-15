@@ -141,13 +141,15 @@ public class LibraryManagementService {
             .log("error logging")
             .runWith(Sink.seq(), actorSystem)
             .whenComplete((action, fail) -> {
-                var completeTime = Instant.now();
-                var runTime = Duration.between(startTime, completeTime);
+
 
                 var test = action.stream().map(f -> (Future) f).collect(Collectors.toList());
 
                 CompositeFuture.all(test).onComplete(ar -> {
                     if (ar.succeeded()) {
+                        var completeTime = Instant.now();
+                        var runTime = Duration.between(startTime, completeTime);
+                        
                         log.info("Completed refresh in: " + DurationFormatUtils.formatDuration(runTime.toMillis(), "**mm:ss:SS**", true) + ".");
 
                         library.setStatus(LibraryStatus.HEALTHY);
@@ -155,8 +157,6 @@ public class LibraryManagementService {
                         libraryRepository.save(library);
                     }
                 });
-
-
             });
 
 
