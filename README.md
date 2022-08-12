@@ -1,4 +1,6 @@
-# streamarr-server
+<p align="center">
+    <img src="https://github.com/streamarr/streamarr-ux/blob/main/branding/assets/streamarr-logo-text.svg" width="425" alt="Streamarr logo">
+</p>
 
 ### Running in development:
 
