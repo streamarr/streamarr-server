@@ -43,20 +43,30 @@ public class VideoFilenameExtractionService implements MediaExtractor<VideoFilen
 
             var matchResult = matcher.toMatchResult();
 
+            if (StringUtils.isBlank(matchResult.group(1))) {
+                return Optional.empty();
+            }
+
             return Optional.of(Result.builder()
                 .title(cleanTitle(matchResult.group(1)))
                 .year(cleanYear(matchResult.group(2)))
                 .build());
         }
 
+        var cleanedInput = cleanTitle(input);
+
+        if (StringUtils.isBlank(cleanedInput)) {
+            return Optional.empty();
+        }
+
         return Optional.of(Result.builder()
-            .title(cleanTitle(input))
+            .title(cleanedInput)
             .build());
     }
 
     private String cleanTitle(String rawTitle) {
         var cleanTitle = rawTitle.trim();
-        
+
         cleanTitle = removeExclusions(cleanTitle);
 
         cleanTitle = removeTags(cleanTitle);

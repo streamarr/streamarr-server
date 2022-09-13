@@ -1,6 +1,7 @@
 package com.streamarr.server.services.metadata;
 
 import com.streamarr.server.config.vertx.VertxWebClientProvider;
+import com.streamarr.server.domain.external.tmdb.TmdbMovie;
 import com.streamarr.server.domain.external.tmdb.TmdbSearchResults;
 import com.streamarr.server.services.extraction.video.VideoFilenameExtractionService;
 import io.vertx.core.Future;
@@ -42,6 +43,12 @@ public class TheMovieDatabaseService {
         }
 
         return searchForMovieRequest(query);
+    }
+
+    public Future<HttpResponse<TmdbMovie>> getMovieMetadata(String movieId) {
+        var uri = baseUrl().path("/movie/").path(movieId).queryParam("api_key", tmdbApiKey).build();
+
+        return getWebClient().getAbs(uri.toString()).as(BodyCodec.json(TmdbMovie.class)).send();
     }
 
     private Future<HttpResponse<TmdbSearchResults>> searchForMovieRequest(MultiValueMap<String, String> query) {

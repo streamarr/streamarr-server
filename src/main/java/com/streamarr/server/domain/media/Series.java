@@ -1,12 +1,12 @@
 package com.streamarr.server.domain.media;
 
 import com.streamarr.server.domain.BaseCollectable;
+import jakarta.persistence.Entity;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.experimental.SuperBuilder;
 
-import javax.persistence.Entity;
 
 @Entity
 @Getter

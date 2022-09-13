@@ -1,4 +1,6 @@
-CREATE TABLE movie_file
+CREATE TYPE media_file_status AS ENUM ('UNMATCHED', 'FILENAME_PARSING_FAILED', 'MEDIA_SEARCH_FAILED', 'FAILED_METADATA_ENRICHMENT', 'MATCHED');
+
+CREATE TABLE media_file
 (
     id               UUID                     NOT NULL DEFAULT public.uuid_generate_v4(),
     created_on       TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
@@ -8,12 +10,13 @@ CREATE TABLE movie_file
     filename         TEXT                     NOT NULL,
     filepath         TEXT                     NOT NULL,
     size             BIGINT                   NOT NULL,
-    movie_id         UUID,
+    media_id         UUID,
     library_id       UUID                     NOT NULL,
+    status           media_file_status        NOT NULL,
     CONSTRAINT movie_file_pkey PRIMARY KEY (id),
-    CONSTRAINT fk_movie FOREIGN KEY (movie_id) REFERENCES movie (id),
+    CONSTRAINT fk_base_collectable FOREIGN KEY (media_id) REFERENCES base_collectable (id),
     CONSTRAINT fk_library FOREIGN KEY (library_id) REFERENCES library (id)
 );
 
 CREATE UNIQUE INDEX movie_file_filepath_idx
-    ON movie_file (filepath);
+    ON media_file (filepath);

@@ -16,6 +16,8 @@ public class TmdbMovie {
     private boolean adult;
     @JsonProperty("backdrop_path")
     private String backdropPath;
+    @JsonProperty("belongs_to_collection")
+    private Object belongsToCollection;
     private long budget;
     private String homepage;
     @JsonProperty("imdb_id")
@@ -24,6 +26,7 @@ public class TmdbMovie {
     private String originalLanguage;
     @JsonProperty("original_title")
     private String originalTitle;
+    private String title;
     private String overview;
     private double popularity;
     @JsonProperty("poster_path")

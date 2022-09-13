@@ -5,6 +5,9 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.graphql.cursor.MediaPaginationOptions;
 import com.streamarr.server.graphql.cursor.PaginationDirection;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+import jakarta.persistence.Query;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
 import org.jooq.SortField;
@@ -22,6 +25,8 @@ import static org.jooq.impl.DSL.row;
 public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
 
     private final DSLContext context;
+    @PersistenceContext
+    private final EntityManager entityManager;
 
     public List<Movie> seekWithFilter(MediaPaginationOptions options) {
 
@@ -40,18 +45,17 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
 
         var fields = Arrays.stream(orderByColumns).map(SortField::$field).collect(Collectors.toList());
 
-        var results = context.select()
+        var query = context.select()
             .from(Tables.MOVIE)
             .innerJoin(Tables.BASE_COLLECTABLE)
             .on(Tables.MOVIE.ID.eq(Tables.BASE_COLLECTABLE.ID))
             // Reverses seek based on sort order
             .where(filter.getSortDirection().equals(SortOrder.DESC) ? row(fields).lessOrEqual(seekValues) : row(fields).greaterOrEqual(seekValues))
             .orderBy(orderByColumns)
-//            .seekAfter(seekValues)
             // N+2 (Allows us to efficiently check if there are items before AND after N)
-            .limit(options.getPaginationOptions().getLimit() + 2)
-            .fetchInto(Movie.class);
+            .limit(options.getPaginationOptions().getLimit() + 2);
 
+        var results = nativeQuery(entityManager, query, Movie.class);
 
         if (shouldReverse) {
             Collections.reverse(results);
@@ -72,14 +76,15 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
 
         var orderByColumns = new SortField[]{buildOrderBy(options.getMediaFilter()), Tables.BASE_COLLECTABLE.ID.sort(SortOrder.DEFAULT)};
 
-        // TODO: reuse logic from above?
-        return context.select()
+        // TODO: reuse any logic from above?
+        var query = context.select()
             .from(Tables.MOVIE)
             .innerJoin(Tables.BASE_COLLECTABLE)
             .on(Tables.MOVIE.ID.eq(Tables.BASE_COLLECTABLE.ID))
             .orderBy(orderByColumns)
-            .limit(options.getPaginationOptions().getLimit() + 1)
-            .fetchInto(Movie.class);
+            .limit(options.getPaginationOptions().getLimit() + 1);
+
+        return nativeQuery(entityManager, query, Movie.class);
     }
 
     private SortField<?> buildOrderBy(MediaFilter filter) {
@@ -89,5 +94,21 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
             case TITLE -> Tables.BASE_COLLECTABLE.TITLE.sort(direction);
             case ADDED -> Tables.BASE_COLLECTABLE.CREATED_ON.sort(direction);
         };
+    }
+
+    // TODO: Move to helper class
+    public static <E> List<E> nativeQuery(EntityManager em, org.jooq.Query query, Class<E> type) {
+
+        // Extract the SQL statement from the jOOQ query:
+        Query result = em.createNativeQuery(query.getSQL(), type);
+
+        // Extract the bind values from the jOOQ query:
+        List<Object> values = query.getBindValues();
+        for (int i = 0; i < values.size(); i++) {
+            result.setParameter(i + 1, values.get(i));
+        }
+
+        // There's an unsafe cast here, but we can be sure that we'll get the right type from JPA
+        return result.getResultList();
     }
 }

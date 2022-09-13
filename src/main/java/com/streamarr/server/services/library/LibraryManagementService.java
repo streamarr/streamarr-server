@@ -1,51 +1,35 @@
 package com.streamarr.server.services.library;
 
-import akka.actor.ActorSystem;
-import akka.http.javadsl.Http;
-import akka.http.javadsl.common.EntityStreamingSupport;
-import akka.http.javadsl.common.JsonEntityStreamingSupport;
-import akka.http.javadsl.marshallers.jackson.Jackson;
-import akka.http.javadsl.model.HttpRequest;
-import akka.http.javadsl.model.Query;
-import akka.http.javadsl.model.Uri;
-import akka.http.javadsl.unmarshalling.Unmarshaller;
-import akka.japi.Pair;
-import akka.stream.javadsl.Sink;
-import akka.stream.javadsl.Source;
-import akka.util.ByteString;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.external.tmdb.TmdbSearchResults;
 import com.streamarr.server.domain.media.MediaFile;
-import com.streamarr.server.domain.media.MovieFile;
+import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.domain.media.MediaType;
+import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.repositories.LibraryRepository;
-import com.streamarr.server.repositories.movie.MovieFileRepository;
+import com.streamarr.server.repositories.movie.MediaFileRepository;
+import com.streamarr.server.repositories.movie.MovieRepository;
 import com.streamarr.server.services.extraction.video.VideoFilenameExtractionService;
 import com.streamarr.server.services.metadata.TheMovieDatabaseService;
 import com.streamarr.server.utils.VideoExtensionValidator;
-import io.vertx.core.CompositeFuture;
 import io.vertx.core.Future;
+import io.vertx.ext.web.client.HttpResponse;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.time.DurationFormatUtils;
-import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.slf4j.Logger;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import scala.Int;
 
 import java.io.File;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.time.Duration;
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionStage;
-import java.util.stream.Collectors;
 
 
 // TODO: Implement, inspiration here https://gitlab.com/olaris/olaris-server/-/blob/develop/metadata/managers/library.go
@@ -54,14 +38,12 @@ import java.util.stream.Collectors;
 public class LibraryManagementService {
 
     private final VideoExtensionValidator videoExtensionValidator;
-    @Value("${tmdb.api.key:}")
-    private String tmdbApiKey;
     private final VideoFilenameExtractionService videoFilenameExtractionService;
 
     private final TheMovieDatabaseService theMovieDatabaseService;
     private final LibraryRepository libraryRepository;
-    private final MovieFileRepository movieFileRepository;
-    private final ActorSystem actorSystem;
+    private final MediaFileRepository mediaFileRepository;
+    private final MovieRepository movieRepository;
     private final Logger log;
 
     public void addLibrary() {
@@ -79,7 +61,7 @@ public class LibraryManagementService {
         // delete "Library" entity
     }
 
-    public void refreshLibrary(UUID libraryId, boolean vertx) {
+    public void refreshLibrary(UUID libraryId) {
         var optionalLibrary = libraryRepository.findById(libraryId);
 
         if (optionalLibrary.isEmpty()) {
@@ -101,10 +83,14 @@ public class LibraryManagementService {
         library.setRefreshStartedOn(startTime);
         libraryRepository.save(library);
 
-        Path rootPath;
-        try {
-            rootPath = Paths.get(library.getFilepath());
-        } catch (InvalidPathException ex) {
+        try (var stream = Files.walk(Paths.get(library.getFilepath()))) {
+
+            stream
+                .filter(Files::isRegularFile)
+                .map(Path::toFile)
+                .forEach(file -> processFile(library, file));
+
+        } catch (InvalidPathException | IOException ex) {
             library.setStatus(LibraryStatus.UNHEALTHY);
             libraryRepository.save(library);
 
@@ -112,56 +98,6 @@ public class LibraryManagementService {
 
             throw new RuntimeException("Failed to access library filepath.");
         }
-
-        Source.fromJavaStream(() -> Files.walk(rootPath))
-            .filter(Files::isRegularFile)
-            .map(Path::toFile)
-            .filter(file -> {
-                var extension = getExtension(file);
-
-                return videoExtensionValidator.validate(extension);
-            })
-            .map(file -> probeMovieSync(library, file))
-            .filter(this::filterOutMatchedMediaFiles)
-            .map(this::searchForMovieVertx)
-            .map(result -> result.compose(res -> {
-                    if (res.getLeft() == null) {
-                        System.out.println("Couldn't parse title for: " + res.getRight().getFilename());
-                        return Future.succeededFuture("Title not found.");
-                    }
-
-                    if (res.getLeft().getResults().size() > 0) {
-                        return Future.succeededFuture(res.getLeft().getResults().get(0).getTitle());
-                    }
-
-                    return Future.succeededFuture("Not found.");
-                })
-            )
-            .map(f -> f.onSuccess(System.out::println))
-            .log("error logging")
-            .runWith(Sink.seq(), actorSystem)
-            .whenComplete((action, fail) -> {
-
-                var test = action.stream().map(f -> (Future) f).collect(Collectors.toList());
-
-                CompositeFuture.all(test).onComplete(ar -> {
-                    var completeTime = Instant.now();
-                    var runTime = Duration.between(startTime, completeTime);
-
-                    if (ar.succeeded()) {
-                        log.info("Completed refresh in: " + DurationFormatUtils.formatDuration(runTime.toMillis(), "**mm:ss:SS**", true) + ".");
-
-                        library.setStatus(LibraryStatus.HEALTHY);
-                        library.setRefreshCompletedOn(completeTime);
-                        libraryRepository.save(library);
-                    }
-
-                    if (ar.failed()) {
-                        log.error("failed", ar.cause());
-                    }
-                });
-            });
-
 
         // DEFINITION: "media file" an entity that describes the file and
         // serves as an intermediate step until we can resolve metadata and link to parent (ex. Movie).
@@ -172,29 +108,73 @@ public class LibraryManagementService {
         // get metadata using "media file".
     }
 
+    private void processFile(Library library, File file) {
+
+        if (isInvalidFileExtension(file)) {
+            return;
+        }
+
+        var mediaFile = probeFile(library, file);
+
+        if (isAlreadyMatched(mediaFile)) {
+            return;
+        }
+
+        var mediaInformationResult = extractInformationFromMediaFile(library.getType(), mediaFile);
+
+        // TODO: Should this ever retry? Manual resolution
+        if (mediaInformationResult.isEmpty()) {
+            mediaFile.setStatus(MediaFileStatus.FILENAME_PARSING_FAILED);
+            mediaFileRepository.save(mediaFile);
+
+            return;
+        }
+
+        var searchResult = searchForMedia(mediaInformationResult.get());
+
+        // TODO: Network, retry automatically? Will this error if no results are found?
+        searchResult.onFailure(handler -> {
+            mediaFile.setStatus(MediaFileStatus.MEDIA_SEARCH_FAILED);
+            mediaFileRepository.save(mediaFile);
+
+            // TODO: Better log
+            log.error("Failed search for media");
+        });
+
+        searchResult.onSuccess(handler -> {
+            // TODO: Better way to get result from array? Do we need to handle no results here?
+            var firstResult = handler.body().getResults().get(0);
+            enrichMediaMetadata(library, mediaFile, firstResult.getId());
+        });
+    }
+
+    private boolean isInvalidFileExtension(File file) {
+        var extension = getExtension(file);
+
+        return !videoExtensionValidator.validate(extension);
+    }
+
+    private String getExtension(File file) {
+        return FilenameUtils.getExtension(file.getName());
+    }
+
     private MediaFile probeFile(Library library, File file) {
         return switch (library.getType()) {
-            case MOVIE -> probeMovieSync(library, file);
+            case MOVIE -> probeMovie(library, file);
             case SERIES, OTHER -> null;
         };
     }
 
-    private <T> boolean filterOutMatchedMediaFiles(T file) {
-        return switch (file) {
-            case MovieFile movieFile -> movieFile.getMovieId() == null;
-            default -> throw new IllegalStateException("Unexpected value: " + file);
-        };
-    }
-
-    private MediaFile probeMovieSync(Library library, File file) {
-        var optionalMovieFile = movieFileRepository.findFirstByFilepath(file.getAbsolutePath());
+    private MediaFile probeMovie(Library library, File file) {
+        var optionalMovieFile = mediaFileRepository.findFirstByFilepath(file.getAbsolutePath());
 
         if (optionalMovieFile.isPresent()) {
-            log.info("MovieFile id: " + optionalMovieFile.get().getMovieId() + " already exists, not adding again.");
+            log.info("MediaFile id: " + optionalMovieFile.get().getId() + " already exists, not adding again.");
             return optionalMovieFile.get();
         }
 
-        return movieFileRepository.save(MovieFile.builder()
+        return mediaFileRepository.save(MediaFile.builder()
+            .status(MediaFileStatus.UNMATCHED)
             .filename(file.getName())
             .filepath(file.getAbsolutePath())
             .size(file.length())
@@ -202,63 +182,71 @@ public class LibraryManagementService {
             .build());
     }
 
-    private CompletionStage<ImmutablePair<TmdbSearchResults, MediaFile>> searchForMovie(MediaFile movieFile) {
-        var result = videoFilenameExtractionService.extract(movieFile.getFilename());
-
-        if (result.isEmpty()) {
-            return CompletableFuture.completedFuture(ImmutablePair.of(null, movieFile));
-        }
-
-        if (StringUtils.isEmpty(result.get().title())) {
-            return CompletableFuture.completedFuture(ImmutablePair.of(null, movieFile));
-        }
-
-        Unmarshaller<ByteString, TmdbSearchResults> unmarshal = Jackson.byteStringUnmarshaller(TmdbSearchResults.class);
-        JsonEntityStreamingSupport support = EntityStreamingSupport.json(Int.MaxValue());
-
-        Query query;
-        if (StringUtils.isEmpty(result.get().year())) {
-            query = Query.create(Pair.create("query", result.get().title()), Pair.create("api_key", tmdbApiKey));
-        } else {
-            query = Query.create(Pair.create("query", result.get().title()), Pair.create("year", result.get().year()), Pair.create("api_key", tmdbApiKey));
-        }
-
-        var uri = Uri.create("https://api.themoviedb.org/3/search/movie").query(query);
-
-        return Http.get(actorSystem)
-            .singleRequest(HttpRequest.GET(uri.toString()))
-            .thenCompose(response ->
-                response.entity().getDataBytes()
-                    .via(support.framingDecoder())
-                    .mapAsync(1, bytes -> unmarshal.unmarshal(bytes, actorSystem))
-                    .runReduce((a, b) -> a, actorSystem)
-                    .thenApply((a) -> ImmutablePair.of(a, movieFile))
-            );
-    }
-
-    private Future<ImmutablePair<TmdbSearchResults, MediaFile>> searchForMovieVertx(MediaFile movieFile) {
-        var result = videoFilenameExtractionService.extract(movieFile.getFilename());
-
-        if (result.isEmpty()) {
-            return Future.succeededFuture(ImmutablePair.of(null, movieFile));
-        }
-
-        if (StringUtils.isEmpty(result.get().title())) {
-            return Future.succeededFuture(ImmutablePair.of(null, movieFile));
-        }
-
-        return theMovieDatabaseService.searchForMovie(result.get())
-            .onFailure(fail -> log.error("Couldn't handle search req: " + fail.getMessage()))
-            .compose(res -> Future.succeededFuture(ImmutablePair.of(res.body(), movieFile)));
-    }
-
     private MediaFile probeEpisode() {
         return null;
         // TODO: implement
     }
 
-    private String getExtension(File file) {
-        return FilenameUtils.getExtension(file.getName());
+    private boolean isAlreadyMatched(MediaFile file) {
+        return file.getStatus().equals(MediaFileStatus.MATCHED);
+    }
+
+    private Optional<VideoFilenameExtractionService.Result> extractInformationFromMediaFile(MediaType libraryType, MediaFile mediaFile) {
+        return switch (libraryType) {
+            case MOVIE -> extractInformationAsMovieFile(mediaFile);
+            default -> throw new IllegalStateException("Unexpected value: " + mediaFile);
+        };
+    }
+
+    private Optional<VideoFilenameExtractionService.Result> extractInformationAsMovieFile(MediaFile mediaFile) {
+        var result = videoFilenameExtractionService.extract(mediaFile.getFilename());
+
+        if (result.isEmpty() || StringUtils.isEmpty(result.get().title())) {
+            return Optional.empty();
+        }
+
+        return result;
+    }
+
+    private <T> Future<HttpResponse<TmdbSearchResults>> searchForMedia(T information) {
+        return switch (information) {
+            case VideoFilenameExtractionService.Result result -> theMovieDatabaseService.searchForMovie(result);
+            default -> throw new IllegalStateException("Unexpected value: " + information);
+        };
+    }
+
+    private void enrichMediaMetadata(Library library, MediaFile mediaFile, int id) {
+        switch (library.getType()) {
+            case MOVIE -> enrichMovieMetadata(library, mediaFile, String.valueOf(id));
+            default -> throw new IllegalStateException("Unexpected value: " + mediaFile);
+        }
+        ;
+    }
+
+    private void enrichMovieMetadata(Library library, MediaFile mediaFile, String id) {
+        var movieResult = theMovieDatabaseService.getMovieMetadata(String.valueOf(id));
+
+        movieResult.onFailure(handler -> {
+            // TODO: Better log
+            log.error("Failed to enrich movie.", handler.getCause());
+        });
+
+        movieResult.onSuccess(handler -> {
+            var movieResponse = handler.body();
+
+            // TODO: Fix Hibernate cascade?
+            var movie = movieRepository.save(Movie.builder()
+                .libraryId(library.getId())
+                .tmdbId(String.valueOf(movieResponse.getId()))
+                .title(movieResponse.getTitle())
+                .build());
+
+            mediaFile.setStatus(MediaFileStatus.MATCHED);
+            mediaFile.setMediaId(movie.getId());
+
+            mediaFileRepository.save(mediaFile);
+
+        });
     }
 
     private void deleteMissingMediaFiles() {

@@ -2,6 +2,11 @@ package com.streamarr.server.domain;
 
 import com.streamarr.server.domain.media.MediaType;
 import com.vladmihalcea.hibernate.type.basic.PostgreSQLEnumType;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.OneToMany;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -11,11 +16,6 @@ import org.hibernate.annotations.Type;
 import org.hibernate.annotations.TypeDef;
 import org.hibernate.annotations.TypeDefs;
 
-import javax.persistence.Entity;
-import javax.persistence.EnumType;
-import javax.persistence.Enumerated;
-import javax.persistence.FetchType;
-import javax.persistence.OneToMany;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.Set;
@@ -41,15 +41,15 @@ public class Library extends BaseEntity<Library> {
     private Instant refreshCompletedOn;
 
     @Enumerated(EnumType.STRING)
-    @Type(type = "pgsql_enum")
+    @Type(PostgreSQLEnumType.class)
     private LibraryStatus status;
 
     @Enumerated(EnumType.STRING)
-    @Type(type = "pgsql_enum")
+    @Type(PostgreSQLEnumType.class)
     private LibraryBackend backend;
 
     @Enumerated(EnumType.STRING)
-    @Type(type = "pgsql_enum")
+    @Type(PostgreSQLEnumType.class)
     private MediaType type;
 
     // Library should only contain a single type

@@ -14,6 +14,8 @@ dgs:
   graphql:
     graphiql:
       enabled: false
+    introspection:
+      enabled: false
 
 tmdb:
   api:

@@ -1,6 +1,0 @@
-type MovieFile implements MediaFile {
-    id: ID!
-    filename: String!
-    path: String!
-    size: String!
-}
