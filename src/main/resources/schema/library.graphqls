@@ -1,0 +1,70 @@
+type Library {
+    id: ID!
+    createdBy: String!
+    createdOn: String!
+    lastModifiedBy: String
+    lastModifiedOn: String!
+    name: String
+    filepath: String!
+    refreshStartedOn: String
+    refreshCompletedOn: String
+    status: LibraryStatus!
+    backend: LibraryBackend!
+    type: MediaType!
+    items(first: Int
+          after: String
+          last: Int
+          before: String
+          filter: Filter): MediaConnection!
+}
+
+enum LibraryStatus {
+    SCANNING
+    HEALTHY
+    UNHEALTHY
+}
+
+enum LibraryBackend {
+    LOCAL
+    REMOTE
+}
+
+enum MediaType {
+    MOVIE
+    SERIES
+    OTHER
+}
+
+enum OrderMoviesBy {
+    TITLE
+    ADDED
+}
+
+enum SortOrder {
+    ASC
+    DESC
+}
+
+input Filter {
+    sortBy: OrderMoviesBy
+    sortDirection: SortOrder
+}
+
+type MediaConnection {
+    edges: [MediaEdge]
+    pageInfo: PageInfo
+}
+
+type MediaEdge {
+    node: Media
+    cursor: String
+}
+
+type PageInfo {
+    hasPreviousPage: Boolean!
+    hasNextPage: Boolean!
+    startCursor: String
+    endCursor: String
+}
+
+union Media = Movie

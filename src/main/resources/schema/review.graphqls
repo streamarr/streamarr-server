@@ -1,0 +1,4 @@
+type Review {
+    id: ID!
+    author: String!
+}

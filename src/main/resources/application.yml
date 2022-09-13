@@ -1,0 +1,22 @@
+spring:
+  flyway:
+    table: schema_history
+    enabled: true
+  datasource:
+    url: jdbc:postgresql://localhost:5432/streamarr
+    username: admin
+    password: pass
+
+  profiles:
+    active: dev
+
+dgs:
+  graphql:
+    graphiql:
+      enabled: false
+    introspection:
+      enabled: false
+
+tmdb:
+  api:
+    key: "5351726ee5668fb921afd988d23022ee"

@@ -1,0 +1,27 @@
+version: "3.7"
+
+services:
+
+  postgres:
+    build:
+      context: .
+      dockerfile: pg-Dockerfile
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: streamarr
+
+  streamarr-server:
+    image: docker.io/library/server:0.0.1-SNAPSHOT
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      JAVA_OPTS: --enable-preview
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/streamarr
+      SPRING_JPA_PROPERTIES_HIBERNATE_SHOW_SQL: false
+    volumes:
+      - /mpool/media/clean/movies:/mpool/media/clean/movies
