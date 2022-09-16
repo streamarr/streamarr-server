@@ -1,6 +1,7 @@
 package com.streamarr.server.services.metadata;
 
 import com.streamarr.server.config.vertx.VertxWebClientProvider;
+import com.streamarr.server.domain.external.tmdb.TmdbCredits;
 import com.streamarr.server.domain.external.tmdb.TmdbMovie;
 import com.streamarr.server.domain.external.tmdb.TmdbSearchResults;
 import com.streamarr.server.services.extraction.video.VideoFilenameExtractionService;
@@ -51,6 +52,18 @@ public class TheMovieDatabaseService {
         return getWebClient().getAbs(uri.toString()).as(BodyCodec.json(TmdbMovie.class)).send();
     }
 
+    public Future<HttpResponse<Buffer>> getImage(String imagePath) {
+        var uri = baseImageUrl().path("/original/").path(imagePath).build();
+
+        return getWebClient().getAbs(uri.toString()).send();
+    }
+
+    public Future<HttpResponse<TmdbCredits>> getMovieCreditsMetadata(String movieId) {
+        var uri = baseUrl().path("/movie/").path(movieId).path("/credits").queryParam("api_key", tmdbApiKey).build();
+
+        return getWebClient().getAbs(uri.toString()).as(BodyCodec.json(TmdbCredits.class)).send();
+    }
+
     private Future<HttpResponse<TmdbSearchResults>> searchForMovieRequest(MultiValueMap<String, String> query) {
         var uri = baseUrl().path("/search/movie").queryParams(query).queryParam("api_key", tmdbApiKey).build();
 
@@ -65,6 +78,10 @@ public class TheMovieDatabaseService {
 
     private UriBuilder baseUrl() {
         return UriComponentsBuilder.fromHttpUrl("https://api.themoviedb.org/3");
+    }
+
+    private UriBuilder baseImageUrl() {
+        return UriComponentsBuilder.fromHttpUrl("https://image.tmdb.org/t/p");
     }
 
     private WebClient getWebClient() {

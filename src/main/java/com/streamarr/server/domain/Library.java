@@ -13,8 +13,6 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.experimental.SuperBuilder;
 import org.hibernate.annotations.Type;
-import org.hibernate.annotations.TypeDef;
-import org.hibernate.annotations.TypeDefs;
 
 import java.time.Instant;
 import java.util.HashSet;
@@ -26,18 +24,14 @@ import java.util.Set;
 @SuperBuilder
 @AllArgsConstructor
 @NoArgsConstructor
-@TypeDefs({
-    @TypeDef(
-        name = "pgsql_enum",
-        typeClass = PostgreSQLEnumType.class
-    )
-})
 public class Library extends BaseEntity<Library> {
 
     private String filepath;
+
     private String name;
 
     private Instant refreshStartedOn;
+
     private Instant refreshCompletedOn;
 
     @Enumerated(EnumType.STRING)
@@ -48,13 +42,11 @@ public class Library extends BaseEntity<Library> {
     @Type(PostgreSQLEnumType.class)
     private LibraryBackend backend;
 
+    // Library should only contain a single type
     @Enumerated(EnumType.STRING)
     @Type(PostgreSQLEnumType.class)
     private MediaType type;
 
-    // Library should only contain a single type
-    // TODO: Relay spec pagination
     @OneToMany(fetch = FetchType.LAZY, mappedBy = "libraryId")
-    private Set<BaseCollectable> items = new HashSet<>();
-
+    private Set<BaseCollectable<?>> items = new HashSet<>();
 }

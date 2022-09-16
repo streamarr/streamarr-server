@@ -7,13 +7,18 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.repositories.movie.MediaFileRepository;
 import com.streamarr.server.repositories.movie.MovieRepository;
 import com.streamarr.server.services.extraction.video.VideoFilenameExtractionService;
+import com.streamarr.server.services.metadata.ImageThumbnailWorkerVerticle;
 import com.streamarr.server.services.metadata.TheMovieDatabaseService;
 import com.streamarr.server.utils.VideoExtensionValidator;
 import io.vertx.core.Future;
+import io.vertx.core.Vertx;
+import io.vertx.core.buffer.Buffer;
 import io.vertx.ext.web.client.HttpResponse;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.io.FilenameUtils;
@@ -29,7 +34,9 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 
 // TODO: Implement, inspiration here https://gitlab.com/olaris/olaris-server/-/blob/develop/metadata/managers/library.go
@@ -44,7 +51,9 @@ public class LibraryManagementService {
     private final LibraryRepository libraryRepository;
     private final MediaFileRepository mediaFileRepository;
     private final MovieRepository movieRepository;
+    private final PersonRepository personRepository;
     private final Logger log;
+    private final Vertx vertx;
 
     public void addLibrary() {
         // validate
@@ -226,19 +235,18 @@ public class LibraryManagementService {
     private void enrichMovieMetadata(Library library, MediaFile mediaFile, String id) {
         var movieResult = theMovieDatabaseService.getMovieMetadata(String.valueOf(id));
 
-        movieResult.onFailure(handler -> {
-            // TODO: Better log
-            log.error("Failed to enrich movie.", handler.getCause());
-        });
+        var fs = vertx.fileSystem();
 
-        movieResult.onSuccess(handler -> {
-            var movieResponse = handler.body();
+        movieResult.onSuccess(m -> {
+
+            var tmdbMovie = m.body();
 
             // TODO: Fix Hibernate cascade?
+            // TODO: Mapper
             var movie = movieRepository.save(Movie.builder()
                 .libraryId(library.getId())
-                .tmdbId(String.valueOf(movieResponse.getId()))
-                .title(movieResponse.getTitle())
+                .tmdbId(String.valueOf(tmdbMovie.getId()))
+                .title(tmdbMovie.getTitle())
                 .build());
 
             mediaFile.setStatus(MediaFileStatus.MATCHED);
@@ -246,6 +254,35 @@ public class LibraryManagementService {
 
             mediaFileRepository.save(mediaFile);
 
+            theMovieDatabaseService.getMovieCreditsMetadata(id).andThen(r -> {
+                var creditsResponse = r.result().body();
+
+                // TODO: tmdb unique id? external id? save() will work better for duplicates...
+                var people = personRepository.saveAll(creditsResponse.getCast()
+                    .stream()
+                    .map(credit -> Person.builder().name(credit.getName()).build())
+                    .collect(Collectors.toList()));
+
+                // TODO: Add instead of replace?
+                movie.setCast(Set.copyOf(people));
+
+                movieRepository.save(movie);
+            });
+
+            theMovieDatabaseService.getImage(m.body().getPosterPath())
+                .compose(r -> {
+                    var imageBuffer = r.body();
+
+                    vertx.eventBus()
+                        .request(ImageThumbnailWorkerVerticle.IMAGE_THUMBNAIL_PROCESSOR, imageBuffer)
+                        .compose(i -> fs.writeFile("/Users/stuckya/Downloads/Test/Images/" + movie.getId().toString() + "-poster-200px.jpg", (Buffer) i.body()))
+                        .onSuccess(i -> log.info("wrote thumbnail"))
+                        .onFailure(i -> log.error("failed to write thumbnail", i));
+
+                    return fs.writeFile("/Users/stuckya/Downloads/Test/Images/" + movie.getId().toString() + "-poster.jpg", imageBuffer);
+                })
+                .onSuccess(r -> log.info("wrote file"))
+                .onFailure(r -> log.error("failed to write file", r));
         });
     }
 
