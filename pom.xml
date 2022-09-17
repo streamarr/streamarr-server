@@ -33,7 +33,7 @@
         <hibernate-reactive.version>1.1.7.Final</hibernate-reactive.version>
         <smallrye-reactive.version>2.26.0</smallrye-reactive.version>
         <scram.version>2.1</scram.version>
-        
+
         <zonky.embedded.db.spring.test.version>2.1.2</zonky.embedded.db.spring.test.version>
         <zonky.embedded.postgres.version>2.0.1</zonky.embedded.postgres.version>
         <zonky.embedded.postgres.binaries.bom.version>14.4.0</zonky.embedded.postgres.binaries.bom.version>
@@ -468,95 +468,106 @@
                     </execution>
                 </executions>
             </plugin>
-            <plugin>
-                <groupId>it.ozimov</groupId>
-                <artifactId>yaml-properties-maven-plugin</artifactId>
-                <version>${yaml-properties-maven-plugin.version}</version>
-                <executions>
-                    <execution>
-                        <phase>initialize</phase>
-                        <goals>
-                            <goal>read-project-properties</goal>
-                        </goals>
-                        <configuration>
-                            <files>
-                                <file>src/main/resources/application.yml</file>
-                            </files>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
-                <groupId>org.flywaydb</groupId>
-                <artifactId>flyway-maven-plugin</artifactId>
-                <version>${flyway.version}</version>
-                <executions>
-                    <execution>
-                        <phase>generate-sources</phase>
-                        <goals>
-                            <goal>migrate</goal>
-                        </goals>
-                    </execution>
-                </executions>
-                <configuration>
-                    <!--suppress UnresolvedMavenProperty -->
-                    <driver>${spring.datasource.driverClassName}</driver>
-                    <!--suppress UnresolvedMavenProperty -->
-                    <url>${spring.datasource.url}</url>
-                    <!--suppress UnresolvedMavenProperty -->
-                    <user>${spring.datasource.username}</user>
-                    <!--suppress UnresolvedMavenProperty -->
-                    <password>${spring.datasource.password}</password>
-                    <baselineOnMigrate>true</baselineOnMigrate>
-                    <table>schema_history</table>
-                    <schemas>
-                        <schema>public</schema>
-                    </schemas>
-                    <locations>
-                        <location>filesystem:src/main/resources/db/migration</location>
-                    </locations>
-                </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.jooq</groupId>
-                <artifactId>jooq-codegen-maven</artifactId>
-                <version>${jooq.version}</version>
-                <executions>
-                    <execution>
-                        <id>generate-postgres</id>
-                        <phase>generate-sources</phase>
-                        <goals>
-                            <goal>generate</goal>
-                        </goals>
-                    </execution>
-                </executions>
-                <configuration>
-                    <jdbc>
-                        <!--suppress UnresolvedMavenProperty -->
-                        <driver>${spring.datasource.driverClassName}</driver>
-                        <!--suppress UnresolvedMavenProperty -->
-                        <url>${spring.datasource.url}</url>
-                        <!--suppress UnresolvedMavenProperty -->
-                        <user>${spring.datasource.username}</user>
-                        <!--suppress UnresolvedMavenProperty -->
-                        <password>${spring.datasource.password}</password>
-                    </jdbc>
-                    <generator>
-                        <database>
-                            <name>org.jooq.meta.postgres.PostgresDatabase</name>
-                            <includes>.*</includes>
-                            <inputSchema>public</inputSchema>
-                        </database>
-                        <generate>
-                            <pojos>false</pojos>
-                        </generate>
-                        <target>
-                            <packageName>com.streamarr.server.db</packageName>
-                            <directory>target/generated-sources/jooq</directory>
-                        </target>
-                    </generator>
-                </configuration>
-            </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>generate-jooq-code</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>it.ozimov</groupId>
+                        <artifactId>yaml-properties-maven-plugin</artifactId>
+                        <version>${yaml-properties-maven-plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <phase>initialize</phase>
+                                <goals>
+                                    <goal>read-project-properties</goal>
+                                </goals>
+                                <configuration>
+                                    <files>
+                                        <file>src/main/resources/application.yml</file>
+                                    </files>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.flywaydb</groupId>
+                        <artifactId>flyway-maven-plugin</artifactId>
+                        <version>${flyway.version}</version>
+                        <executions>
+                            <execution>
+                                <phase>generate-sources</phase>
+                                <goals>
+                                    <goal>migrate</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <!--suppress UnresolvedMavenProperty -->
+                            <driver>${spring.datasource.driverClassName}</driver>
+                            <!--suppress UnresolvedMavenProperty -->
+                            <url>${spring.datasource.url}</url>
+                            <!--suppress UnresolvedMavenProperty -->
+                            <user>${spring.datasource.username}</user>
+                            <!--suppress UnresolvedMavenProperty -->
+                            <password>${spring.datasource.password}</password>
+                            <baselineOnMigrate>true</baselineOnMigrate>
+                            <table>schema_history</table>
+                            <schemas>
+                                <schema>public</schema>
+                            </schemas>
+                            <locations>
+                                <location>filesystem:src/main/resources/db/migration</location>
+                            </locations>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.jooq</groupId>
+                        <artifactId>jooq-codegen-maven</artifactId>
+                        <version>${jooq.version}</version>
+                        <executions>
+                            <execution>
+                                <id>generate-postgres</id>
+                                <phase>generate-sources</phase>
+                                <goals>
+                                    <goal>generate</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <jdbc>
+                                <!--suppress UnresolvedMavenProperty -->
+                                <driver>${spring.datasource.driverClassName}</driver>
+                                <!--suppress UnresolvedMavenProperty -->
+                                <url>${spring.datasource.url}</url>
+                                <!--suppress UnresolvedMavenProperty -->
+                                <user>${spring.datasource.username}</user>
+                                <!--suppress UnresolvedMavenProperty -->
+                                <password>${spring.datasource.password}</password>
+                            </jdbc>
+                            <generator>
+                                <database>
+                                    <name>org.jooq.meta.postgres.PostgresDatabase</name>
+                                    <includes>.*</includes>
+                                    <inputSchema>public</inputSchema>
+                                </database>
+                                <generate>
+                                    <pojos>false</pojos>
+                                </generate>
+                                <target>
+                                    <packageName>com.streamarr.server.jooq.generated</packageName>
+                                    <directory>src/main/java</directory>
+                                </target>
+                            </generator>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+
 </project>

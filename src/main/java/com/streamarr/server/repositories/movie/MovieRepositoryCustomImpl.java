@@ -1,10 +1,10 @@
 package com.streamarr.server.repositories.movie;
 
-import com.streamarr.server.db.Tables;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.graphql.cursor.MediaPaginationOptions;
 import com.streamarr.server.graphql.cursor.PaginationDirection;
+import com.streamarr.server.jooq.generated.Tables;
 import io.smallrye.mutiny.vertx.UniHelper;
 import io.vertx.core.Future;
 import lombok.RequiredArgsConstructor;
