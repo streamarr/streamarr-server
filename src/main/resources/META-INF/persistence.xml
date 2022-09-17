@@ -1,0 +1,45 @@
+<persistence xmlns="http://xmlns.jcp.org/xml/ns/persistence"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xsi:schemaLocation="http://xmlns.jcp.org/xml/ns/persistence http://xmlns.jcp.org/xml/ns/persistence/persistence_2_2.xsd"
+             version="2.2">
+
+    <persistence-unit name="streamarrPU">
+        <provider>org.hibernate.reactive.provider.ReactivePersistenceProvider</provider>
+
+        <class>com.streamarr.server.domain.Library</class>
+        <class>com.streamarr.server.domain.media.Movie</class>
+        <class>com.streamarr.server.domain.media.MediaFile</class>
+        <class>com.streamarr.server.domain.metadata.Company</class>
+        <class>com.streamarr.server.domain.metadata.Person</class>
+        <class>com.streamarr.server.domain.metadata.Rating</class>
+        <class>com.streamarr.server.domain.metadata.Review</class>
+
+        <properties>
+
+            <!-- PostgreSQL -->
+            <property name="javax.persistence.jdbc.url"
+                      value="jdbc:postgresql://localhost:5432/streamarr"/>
+
+            <!-- Credentials -->
+            <property name="javax.persistence.jdbc.user"
+                      value="admin"/>
+            <property name="javax.persistence.jdbc.password"
+                      value="pass"/>
+
+            <!-- The Vert.x SQL Client connection pool size -->
+            <property name="hibernate.connection.pool_size"
+                      value="10"/>
+
+            <!-- SQL statement logging -->
+            <property name="hibernate.show_sql" value="true"/>
+            <property name="hibernate.format_sql" value="true"/>
+            <property name="hibernate.highlight_sql" value="true"/>
+
+            <property name="hibernate.physical_naming_strategy"
+                      value="org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy"/>
+
+        </properties>
+
+    </persistence-unit>
+
+</persistence>

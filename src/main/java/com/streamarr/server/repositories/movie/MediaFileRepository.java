@@ -8,7 +8,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Repository
-public interface MediaFileRepository extends JpaRepository<MediaFile, UUID> {
+public interface MediaFileRepository extends JpaRepository<MediaFile, UUID>, MediaFileRepositoryCustom {
 
     Optional<MediaFile> findFirstByFilepath(String filepath);
 }

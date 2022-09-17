@@ -20,7 +20,9 @@ import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.ext.web.client.HttpResponse;
+import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import lombok.Setter;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
@@ -34,9 +36,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 
 // TODO: Implement, inspiration here https://gitlab.com/olaris/olaris-server/-/blob/develop/metadata/managers/library.go
@@ -144,7 +144,7 @@ public class LibraryManagementService {
         // TODO: Network, retry automatically? Will this error if no results are found?
         searchResult.onFailure(handler -> {
             mediaFile.setStatus(MediaFileStatus.MEDIA_SEARCH_FAILED);
-            mediaFileRepository.save(mediaFile);
+            mediaFileRepository.saveAsync(mediaFile);
 
             // TODO: Better log
             log.error("Failed search for media");
@@ -237,42 +237,49 @@ public class LibraryManagementService {
 
         var fs = vertx.fileSystem();
 
-        movieResult.onSuccess(m -> {
+        var movieCtx = new MovieContext();
 
-            var tmdbMovie = m.body();
+        movieResult.compose(t -> {
+            var tmdbMovie = t.body();
 
-            // TODO: Fix Hibernate cascade?
-            // TODO: Mapper
-            var movie = movieRepository.save(Movie.builder()
+            movieCtx.setPosterPath(tmdbMovie.getPosterPath());
+            movieCtx.setBackdropPath(tmdbMovie.getBackdropPath());
+
+            return movieRepository.saveAsync(Movie.builder()
                 .libraryId(library.getId())
                 .tmdbId(String.valueOf(tmdbMovie.getId()))
                 .title(tmdbMovie.getTitle())
                 .build());
+        }).onComplete(m -> {
+
+            var movie = m.result();
 
             mediaFile.setStatus(MediaFileStatus.MATCHED);
             mediaFile.setMediaId(movie.getId());
 
-            mediaFileRepository.save(mediaFile);
+            movie.getFiles().add(mediaFile);
 
-            theMovieDatabaseService.getMovieCreditsMetadata(id).andThen(r -> {
+            // Get and add people.
+            theMovieDatabaseService.getMovieCreditsMetadata(id).onComplete(r -> {
                 var creditsResponse = r.result().body();
 
-                // TODO: tmdb unique id? external id? save() will work better for duplicates...
-                var people = personRepository.saveAll(creditsResponse.getCast()
+                var movieCast = movie.getCast();
+
+                // TODO: tmdb unique id? external id?
+                creditsResponse.getCast()
                     .stream()
                     .map(credit -> Person.builder().name(credit.getName()).build())
-                    .collect(Collectors.toList()));
+                    .forEach(movieCast::add);
 
-                // TODO: Add instead of replace?
-                movie.setCast(Set.copyOf(people));
+                movieRepository.saveAsync(movie);
+            }).onFailure(f -> movieRepository.saveAsync(movie));
 
-                movieRepository.save(movie);
-            });
-
-            theMovieDatabaseService.getImage(m.body().getPosterPath())
+            // Get and save posters.
+            theMovieDatabaseService.getImage(movieCtx.getPosterPath())
                 .compose(r -> {
                     var imageBuffer = r.body();
 
+                    // TODO: Improve this to handle multiple images and multiple thumbnails...
                     vertx.eventBus()
                         .request(ImageThumbnailWorkerVerticle.IMAGE_THUMBNAIL_PROCESSOR, imageBuffer)
                         .compose(i -> fs.writeFile("/Users/stuckya/Downloads/Test/Images/" + movie.getId().toString() + "-poster-200px.jpg", (Buffer) i.body()))
@@ -281,8 +288,8 @@ public class LibraryManagementService {
 
                     return fs.writeFile("/Users/stuckya/Downloads/Test/Images/" + movie.getId().toString() + "-poster.jpg", imageBuffer);
                 })
-                .onSuccess(r -> log.info("wrote file"))
-                .onFailure(r -> log.error("failed to write file", r));
+                .onSuccess(r -> log.info("Wrote original image"))
+                .onFailure(r -> log.error("Failed to write file:", r));
         });
     }
 
@@ -290,5 +297,12 @@ public class LibraryManagementService {
         // get all items in library
         // locate files in FS
         // cleanup if file cannot be located.
+    }
+
+    @Getter
+    @Setter
+    public class MovieContext {
+        private String posterPath;
+        private String backdropPath;
     }
 }

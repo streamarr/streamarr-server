@@ -1,10 +1,6 @@
 package com.streamarr.server.domain.media;
 
 import com.streamarr.server.domain.BaseEntity;
-import com.vladmihalcea.hibernate.type.basic.PostgreSQLEnumType;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -12,6 +8,9 @@ import lombok.Setter;
 import lombok.experimental.SuperBuilder;
 import org.hibernate.annotations.Type;
 
+import javax.persistence.Entity;
+import javax.persistence.EnumType;
+import javax.persistence.Enumerated;
 import java.util.UUID;
 
 @Entity
@@ -24,7 +23,7 @@ public class MediaFile extends BaseEntity<MediaFile> {
 
     private UUID mediaId;
     @Enumerated(EnumType.STRING)
-    @Type(PostgreSQLEnumType.class)
+    @Type(type = "pgsql_enum")
     private MediaFileStatus status;
     private UUID libraryId;
     private String filename;

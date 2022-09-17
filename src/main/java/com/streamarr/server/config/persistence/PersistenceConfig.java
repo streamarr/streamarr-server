@@ -1,10 +1,12 @@
-package com.streamarr.server.config.persistance;
+package com.streamarr.server.config.persistence;
 
+import org.hibernate.reactive.mutiny.Mutiny;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.domain.AuditorAware;
 import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
 
+import javax.persistence.Persistence;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -23,6 +25,12 @@ public class PersistenceConfig {
     @Bean
     public AuditorAware<UUID> auditorAware() {
         return new AuditorAwareImpl();
+    }
+
+    @Bean
+    public Mutiny.SessionFactory sessionFactory() {
+        return Persistence.createEntityManagerFactory("streamarrPU")
+            .unwrap(Mutiny.SessionFactory.class);
     }
 
 }
