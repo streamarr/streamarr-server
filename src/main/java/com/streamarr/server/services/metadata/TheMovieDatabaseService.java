@@ -4,7 +4,7 @@ import com.streamarr.server.config.vertx.VertxWebClientProvider;
 import com.streamarr.server.domain.external.tmdb.TmdbCredits;
 import com.streamarr.server.domain.external.tmdb.TmdbMovie;
 import com.streamarr.server.domain.external.tmdb.TmdbSearchResults;
-import com.streamarr.server.services.extraction.video.VideoFilenameExtractionService;
+import com.streamarr.server.services.extraction.video.VideoFileMetadata;
 import io.vertx.core.Future;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.ext.web.client.HttpResponse;
@@ -34,13 +34,13 @@ public class TheMovieDatabaseService {
         this.tmdbApiKey = tmdbApiKey;
     }
 
-    public Future<HttpResponse<TmdbSearchResults>> searchForMovie(VideoFilenameExtractionService.Result result) {
+    public Future<HttpResponse<TmdbSearchResults>> searchForMovie(VideoFileMetadata videoFileMetadata) {
         var query = new LinkedMultiValueMap<String, String>();
 
-        query.add("query", result.title());
+        query.add("query", videoFileMetadata.title());
 
-        if (StringUtils.isNotBlank(result.year())) {
-            query.add("year", result.year());
+        if (StringUtils.isNotBlank(videoFileMetadata.year())) {
+            query.add("year", videoFileMetadata.year());
         }
 
         return searchForMovieRequest(query);

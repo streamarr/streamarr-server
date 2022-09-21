@@ -1,26 +1,42 @@
 package com.streamarr.server.services;
 
-import io.zonky.test.db.AutoConfigureEmbeddedDatabase;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.utility.DockerImageName;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest
 @Tag("IntegrationTest")
 @DisplayName("Movie Service Integration Tests")
-@AutoConfigureEmbeddedDatabase(
-    type = AutoConfigureEmbeddedDatabase.DatabaseType.POSTGRES,
-    refresh = AutoConfigureEmbeddedDatabase.RefreshMode.AFTER_EACH_TEST_METHOD,
-    provider = AutoConfigureEmbeddedDatabase.DatabaseProvider.ZONKY
-)
+@Testcontainers
 public class MovieServiceIT {
 
     @Autowired
     private MovieService movieService;
+
+    @Container
+    static PostgreSQLContainer<?> postgresqlContainer = new PostgreSQLContainer<>(DockerImageName.parse("postgres:14.3-alpine"))
+        .withDatabaseName("streamarr")
+        .withUsername("foo")
+        .withPassword("secret");
+
+    @DynamicPropertySource
+    static void sqlProperties(DynamicPropertyRegistry registry) {
+        postgresqlContainer.start();
+
+        registry.add("spring.datasource.url", postgresqlContainer::getJdbcUrl);
+        registry.add("spring.datasource.username", postgresqlContainer::getUsername);
+        registry.add("spring.datasource.password", postgresqlContainer::getPassword);
+    }
 
     @Test
     @DisplayName("Should limit first set of results to one when given 'first' argument and no cursor")
@@ -70,4 +86,5 @@ public class MovieServiceIT {
 
         assertThat(movie1.getNode().getId()).isEqualTo(movie2.getNode().getId());
     }
+
 }

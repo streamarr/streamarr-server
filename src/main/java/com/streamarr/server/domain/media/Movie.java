@@ -30,7 +30,7 @@ import java.util.Set;
 @NoArgsConstructor
 public class Movie extends BaseCollectable<Movie> {
 
-    // TODO: Should this actually be imdbId?
+    // TODO: Should this actually be imdbId or "externalId"?
     private String tmdbId;
 
     // TODO: Store these locally? What about the intermediate state when we only have a URL?
@@ -64,4 +64,8 @@ public class Movie extends BaseCollectable<Movie> {
 
     @OneToMany(fetch = FetchType.LAZY, mappedBy = "movieId")
     private Set<Review> reviews = new HashSet<>();
+
+    public void addPersonToCast(Person person) {
+        cast.add(person);
+    }
 }

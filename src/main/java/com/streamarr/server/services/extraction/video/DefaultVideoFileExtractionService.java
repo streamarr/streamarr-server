@@ -2,7 +2,6 @@ package com.streamarr.server.services.extraction.video;
 
 import com.streamarr.server.services.extraction.MediaExtractor;
 import io.micrometer.core.instrument.util.StringUtils;
-import lombok.Builder;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -10,14 +9,7 @@ import java.util.Optional;
 import java.util.regex.Pattern;
 
 @Service
-public class VideoFilenameExtractionService implements MediaExtractor<VideoFilenameExtractionService.Result> {
-
-    // TODO: Rename
-    public record Result(String title, String year) {
-        @Builder
-        public Result {
-        }
-    }
+public class DefaultVideoFileExtractionService implements MediaExtractor<VideoFileMetadata> {
 
     // TODO: We should also DI these regex patterns
     private final static List<Pattern> EXTRACTION_REGEXES = List.of(
@@ -27,7 +19,7 @@ public class VideoFilenameExtractionService implements MediaExtractor<VideoFilen
     private final static Pattern TAG_REGEX = Pattern.compile("^\\s*\\[[^\\]]+\\](?!\\.\\w+$)\\s*(?<cleaned>.+)");
     private final static Pattern KNOWN_WORD_EXCLUSIONS_REGEX = Pattern.compile("[ _\\,\\.\\(\\)\\[\\]\\-](3d|sbs|tab|hsbs|htab|mvc|HDR|HDC|UHD|UltraHD|4k|ac3|dts|custom|dc|divx|divx5|dsr|dsrip|dutch|dvd|dvdrip|dvdscr|dvdscreener|screener|dvdivx|cam|fragment|fs|hdtv|hdrip|hdtvrip|internal|limited|multisubs|ntsc|ogg|ogm|pal|pdtv|proper|repack|rerip|retail|cd[1-9]|r3|r5|bd5|bd|se|svcd|swedish|german|read.nfo|nfofix|unrated|ws|telesync|ts|telecine|tc|brrip|bdrip|480p|480i|576p|576i|720p|720i|1080p|1080i|2160p|hrhd|hrhdtv|hddvd|bluray|blu-ray|x264|x265|h264|xvid|xvidvd|xxx|www.www|AAC|DTS|\\[.*\\])([ _\\,\\.\\(\\)\\[\\]\\-]|$)", Pattern.CASE_INSENSITIVE);
 
-    public Optional<Result> extract(String input) {
+    public Optional<VideoFileMetadata> extract(String input) {
 
         if (StringUtils.isBlank(input)) {
             return Optional.empty();
@@ -47,7 +39,7 @@ public class VideoFilenameExtractionService implements MediaExtractor<VideoFilen
                 return Optional.empty();
             }
 
-            return Optional.of(Result.builder()
+            return Optional.of(VideoFileMetadata.builder()
                 .title(cleanTitle(matchResult.group(1)))
                 .year(cleanYear(matchResult.group(2)))
                 .build());
@@ -59,7 +51,7 @@ public class VideoFilenameExtractionService implements MediaExtractor<VideoFilen
             return Optional.empty();
         }
 
-        return Optional.of(Result.builder()
+        return Optional.of(VideoFileMetadata.builder()
             .title(cleanedInput)
             .build());
     }

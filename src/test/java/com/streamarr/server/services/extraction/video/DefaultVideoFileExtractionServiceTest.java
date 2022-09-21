@@ -14,10 +14,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Tag("UnitTest")
-@DisplayName("Video Filename Extractor Tests")
-public class VideoFilenameExtractionServiceTest {
+@DisplayName("Default Video File Extraction Tests")
+public class DefaultVideoFileExtractionServiceTest {
 
-    private final VideoFilenameExtractionService videoFilenameExtractionService = new VideoFilenameExtractionService();
+    private final DefaultVideoFileExtractionService defaultVideoFileExtractionService = new DefaultVideoFileExtractionService();
 
     @Nested
     @DisplayName("Should successfully extract both title and year from filename")
@@ -58,7 +58,7 @@ public class VideoFilenameExtractionServiceTest {
             ).map(testCase -> DynamicTest.dynamicTest(
                 testCase.filename(),
                 () -> {
-                    var result = videoFilenameExtractionService.extract(testCase.filename());
+                    var result = defaultVideoFileExtractionService.extract(testCase.filename());
 
                     assertThat(result.orElseThrow().title()).isEqualTo(testCase.title());
                     assertThat(result.orElseThrow().year()).isEqualTo(testCase.year());
@@ -99,7 +99,7 @@ public class VideoFilenameExtractionServiceTest {
             ).map(testCase -> DynamicTest.dynamicTest(
                 testCase.filename(),
                 () -> {
-                    var result = videoFilenameExtractionService.extract(testCase.filename());
+                    var result = defaultVideoFileExtractionService.extract(testCase.filename());
 
                     assertThat(result.orElseThrow().title()).isEqualTo(testCase.title());
                     assertThat(result.orElseThrow().year()).isNull();
@@ -124,7 +124,7 @@ public class VideoFilenameExtractionServiceTest {
             ).map(testCase -> DynamicTest.dynamicTest(
                 testCase.name(),
                 () -> {
-                    var result = videoFilenameExtractionService.extract(testCase.input());
+                    var result = defaultVideoFileExtractionService.extract(testCase.input());
 
                     assertTrue(result.isEmpty());
                 })

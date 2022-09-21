@@ -174,6 +174,24 @@
         </dependency>
 
         <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
             <groupId>io.vertx</groupId>
             <artifactId>vertx-junit5</artifactId>
             <scope>test</scope>
@@ -182,18 +200,6 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>io.zonky.test</groupId>
-            <artifactId>embedded-database-spring-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>io.zonky.test</groupId>
-            <artifactId>embedded-postgres</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -301,23 +307,11 @@
             </dependency>
 
             <dependency>
-                <groupId>io.zonky.test.postgres</groupId>
-                <artifactId>embedded-postgres-binaries-bom</artifactId>
-                <version>${zonky.embedded.postgres.binaries.bom.version}</version>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers-bom</artifactId>
+                <version>1.17.3</version>
                 <type>pom</type>
                 <scope>import</scope>
-            </dependency>
-
-            <dependency>
-                <groupId>io.zonky.test</groupId>
-                <artifactId>embedded-database-spring-test</artifactId>
-                <version>${zonky.embedded.db.spring.test.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>io.zonky.test</groupId>
-                <artifactId>embedded-postgres</artifactId>
-                <version>${zonky.embedded.postgres.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

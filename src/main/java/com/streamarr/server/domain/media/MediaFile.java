@@ -29,4 +29,18 @@ public class MediaFile extends BaseEntity<MediaFile> {
     private String filename;
     private String filepath;
     private long size;
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+
+        MediaFile that = (MediaFile) o;
+
+        return filepath != null && filepath.equals(that.getFilepath());
+    }
 }

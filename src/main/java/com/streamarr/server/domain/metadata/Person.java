@@ -24,4 +24,18 @@ public class Person extends BaseEntity<Person> {
 
     @ManyToMany(mappedBy = "cast", fetch = FetchType.LAZY)
     private Set<Movie> movies = new HashSet<>();
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+
+        Person that = (Person) o;
+
+        return name != null && name.equals(that.getName());
+    }
 }

@@ -1,6 +1,6 @@
 package com.streamarr.server.services.library.video;
 
-import com.streamarr.server.services.extraction.video.VideoFilenameExtractionService;
+import com.streamarr.server.services.extraction.video.DefaultVideoFileExtractionService;
 import com.streamarr.server.utils.VideoExtensionValidator;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.io.FilenameUtils;
@@ -17,7 +17,7 @@ import java.nio.file.Paths;
 public class VideoResolutionService {
 
     private final VideoExtensionValidator videoExtensionValidator;
-    private final VideoFilenameExtractionService cleanTitleExtractor;
+    private final DefaultVideoFileExtractionService cleanTitleExtractor;
 
     // TODO: Just playing around with file parsing, TBD.
     public void parsePaths() {
