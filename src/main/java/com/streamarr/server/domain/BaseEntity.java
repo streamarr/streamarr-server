@@ -1,23 +1,24 @@
 package com.streamarr.server.domain;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.EntityListeners;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.MappedSuperclass;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.experimental.SuperBuilder;
+import org.hibernate.annotations.Type;
 import org.springframework.data.annotation.CreatedBy;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedBy;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
+import javax.persistence.Column;
+import javax.persistence.EntityListeners;
+import javax.persistence.GeneratedValue;
+import javax.persistence.GenerationType;
+import javax.persistence.Id;
+import javax.persistence.MappedSuperclass;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -39,6 +40,7 @@ public abstract class BaseEntity<T extends BaseEntity<T>> {
     @CreatedBy
     private UUID createdBy;
 
+    @Type(type = "com.streamarr.server.config.persistence.TimestampWithTimezone")
     @Column(updatable = false)
     @Setter(value = AccessLevel.PROTECTED)
     @CreatedDate
@@ -47,6 +49,7 @@ public abstract class BaseEntity<T extends BaseEntity<T>> {
     @LastModifiedBy
     private UUID lastModifiedBy;
 
+    @Type(type = "com.streamarr.server.config.persistence.TimestampWithTimezone")
     @Setter(value = AccessLevel.PROTECTED)
     @LastModifiedDate
     private Instant lastModifiedOn;

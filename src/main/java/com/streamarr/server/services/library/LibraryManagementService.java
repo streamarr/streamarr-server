@@ -7,18 +7,28 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.domain.metadata.Company;
+import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.repositories.LibraryRepository;
-import com.streamarr.server.repositories.movie.MediaFileRepository;
-import com.streamarr.server.repositories.movie.MovieRepository;
-import com.streamarr.server.services.extraction.video.VideoFilenameExtractionService;
+import com.streamarr.server.repositories.media.MediaFileRepository;
+import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.services.metadata.ImageThumbnailWorkerVerticle;
 import com.streamarr.server.services.metadata.TheMovieDatabaseService;
+import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
+import com.streamarr.server.services.parsers.video.VideoFileMetadata;
 import com.streamarr.server.utils.VideoExtensionValidator;
 import io.vertx.core.Future;
+import io.vertx.core.Vertx;
+import io.vertx.core.buffer.Buffer;
+import io.vertx.core.shareddata.SharedData;
 import io.vertx.ext.web.client.HttpResponse;
+import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import lombok.Setter;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
+import org.springframework.beans.factory.InitializingBean;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
@@ -30,21 +40,29 @@ import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 
 // TODO: Implement, inspiration here https://gitlab.com/olaris/olaris-server/-/blob/develop/metadata/managers/library.go
 @Service
 @RequiredArgsConstructor
-public class LibraryManagementService {
+public class LibraryManagementService implements InitializingBean {
 
     private final VideoExtensionValidator videoExtensionValidator;
-    private final VideoFilenameExtractionService videoFilenameExtractionService;
+    private final DefaultVideoFileMetadataParser defaultVideoFileMetadataParser;
 
     private final TheMovieDatabaseService theMovieDatabaseService;
     private final LibraryRepository libraryRepository;
     private final MediaFileRepository mediaFileRepository;
     private final MovieRepository movieRepository;
     private final Logger log;
+    private final Vertx vertx;
+    private SharedData sharedData;
+
+    public void afterPropertiesSet() {
+        sharedData = vertx.sharedData();
+    }
 
     public void addLibrary() {
         // validate
@@ -83,14 +101,20 @@ public class LibraryManagementService {
         library.setRefreshStartedOn(startTime);
         libraryRepository.save(library);
 
+        var filesToMatchCounter = new AtomicInteger(0);
+
         try (var stream = Files.walk(Paths.get(library.getFilepath()))) {
 
+            // TODO: count and save to JOB table or something?
             stream
                 .filter(Files::isRegularFile)
                 .map(Path::toFile)
-                .forEach(file -> processFile(library, file));
+                .forEach(file -> {
+                    processFile(library, file, filesToMatchCounter);
+                });
 
         } catch (InvalidPathException | IOException ex) {
+
             library.setStatus(LibraryStatus.UNHEALTHY);
             libraryRepository.save(library);
 
@@ -108,7 +132,7 @@ public class LibraryManagementService {
         // get metadata using "media file".
     }
 
-    private void processFile(Library library, File file) {
+    private void processFile(Library library, File file, AtomicInteger counter) {
 
         if (isInvalidFileExtension(file)) {
             return;
@@ -119,6 +143,9 @@ public class LibraryManagementService {
         if (isAlreadyMatched(mediaFile)) {
             return;
         }
+
+        // Count files to match
+        counter.getAndIncrement();
 
         var mediaInformationResult = extractInformationFromMediaFile(library.getType(), mediaFile);
 
@@ -134,11 +161,11 @@ public class LibraryManagementService {
 
         // TODO: Network, retry automatically? Will this error if no results are found?
         searchResult.onFailure(handler -> {
-            mediaFile.setStatus(MediaFileStatus.MEDIA_SEARCH_FAILED);
-            mediaFileRepository.save(mediaFile);
+            mediaFile.setStatus(MediaFileStatus.SEARCH_FAILED);
+            mediaFileRepository.saveAsync(mediaFile);
 
             // TODO: Better log
-            log.error("Failed search for media");
+            log.error("Failed to identify media in search.");
         });
 
         searchResult.onSuccess(handler -> {
@@ -191,15 +218,15 @@ public class LibraryManagementService {
         return file.getStatus().equals(MediaFileStatus.MATCHED);
     }
 
-    private Optional<VideoFilenameExtractionService.Result> extractInformationFromMediaFile(MediaType libraryType, MediaFile mediaFile) {
+    private Optional<VideoFileMetadata> extractInformationFromMediaFile(MediaType libraryType, MediaFile mediaFile) {
         return switch (libraryType) {
             case MOVIE -> extractInformationAsMovieFile(mediaFile);
             default -> throw new IllegalStateException("Unexpected value: " + mediaFile);
         };
     }
 
-    private Optional<VideoFilenameExtractionService.Result> extractInformationAsMovieFile(MediaFile mediaFile) {
-        var result = videoFilenameExtractionService.extract(mediaFile.getFilename());
+    private Optional<VideoFileMetadata> extractInformationAsMovieFile(MediaFile mediaFile) {
+        var result = defaultVideoFileMetadataParser.extract(mediaFile.getFilename());
 
         if (result.isEmpty() || StringUtils.isEmpty(result.get().title())) {
             return Optional.empty();
@@ -210,7 +237,7 @@ public class LibraryManagementService {
 
     private <T> Future<HttpResponse<TmdbSearchResults>> searchForMedia(T information) {
         return switch (information) {
-            case VideoFilenameExtractionService.Result result -> theMovieDatabaseService.searchForMovie(result);
+            case VideoFileMetadata videoFileMetadata -> theMovieDatabaseService.searchForMovie(videoFileMetadata);
             default -> throw new IllegalStateException("Unexpected value: " + information);
         };
     }
@@ -226,26 +253,92 @@ public class LibraryManagementService {
     private void enrichMovieMetadata(Library library, MediaFile mediaFile, String id) {
         var movieResult = theMovieDatabaseService.getMovieMetadata(String.valueOf(id));
 
-        movieResult.onFailure(handler -> {
-            // TODO: Better log
-            log.error("Failed to enrich movie.", handler.getCause());
-        });
+        var fs = vertx.fileSystem();
+        var movieCtx = new MovieContext();
 
-        movieResult.onSuccess(handler -> {
-            var movieResponse = handler.body();
+        movieResult.onComplete(t -> {
 
-            // TODO: Fix Hibernate cascade?
-            var movie = movieRepository.save(Movie.builder()
-                .libraryId(library.getId())
-                .tmdbId(String.valueOf(movieResponse.getId()))
-                .title(movieResponse.getTitle())
-                .build());
+            sharedData.getLocalLock(id, res -> {
+                if (res.succeeded()) {
+                    var lock = res.result();
 
-            mediaFile.setStatus(MediaFileStatus.MATCHED);
-            mediaFile.setMediaId(movie.getId());
+                    var tmdbMovie = t.result().body();
 
-            mediaFileRepository.save(mediaFile);
+                    movieCtx.setPosterPath(tmdbMovie.getPosterPath());
+                    movieCtx.setBackdropPath(tmdbMovie.getBackdropPath());
 
+                    movieRepository.findByTmdbId(id)
+                        .compose(e -> {
+
+                            // no movie found, creating new one
+                            if (e == null) {
+                                return movieRepository.saveAsync(Movie.builder()
+                                    .libraryId(library.getId())
+                                    .tmdbId(String.valueOf(tmdbMovie.getId()))
+                                    .title(tmdbMovie.getTitle())
+                                    .studios(tmdbMovie.getProductionCompanies().stream()
+                                        .map(c -> Company.builder()
+                                            .name(c.getName())
+                                            .build())
+                                        .collect(Collectors.toSet()))
+                                    .build());
+                            }
+
+                            return Future.succeededFuture(e);
+                        }).onComplete(m -> {
+
+                            lock.release();
+
+                            var movie = m.result();
+
+                            // TODO: Find a better way around lifting up errors here?...
+                            if (movie == null) {
+                                log.error("movie was null");
+                                return;
+                            }
+
+                            // TODO: Do I still need this?
+                            mediaFile.setStatus(MediaFileStatus.MATCHED);
+
+                            movie.addFile(mediaFile);
+
+                            // Get and add people.
+                            theMovieDatabaseService.getMovieCreditsMetadata(id).onComplete(r -> {
+                                var creditsResponse = r.result().body();
+
+                                // TODO: Do I need to update Entity, tmdb unique id?
+                                creditsResponse.getCast()
+                                    .stream()
+                                    .map(credit -> Person.builder().name(credit.getName()).build())
+                                    .forEach(movie::addPersonToCast);
+
+                                movieRepository.saveAsync(movie);
+                            }).onFailure(f -> movieRepository.saveAsync(movie));
+
+                            // Get and save posters.
+                            theMovieDatabaseService.getImage(movieCtx.getPosterPath())
+                                .compose(r -> {
+                                    var imageBuffer = r.body();
+
+                                    // TODO: Improve this to handle multiple images and multiple thumbnails...
+                                    vertx.eventBus()
+                                        .request(ImageThumbnailWorkerVerticle.IMAGE_THUMBNAIL_PROCESSOR, imageBuffer)
+                                        .compose(i -> fs.writeFile("/Users/stuckya/Downloads/Test/Images/" + movie.getId().toString() + "-poster-200px.jpg", (Buffer) i.body()))
+                                        .onSuccess(i -> log.info("wrote thumbnail"))
+                                        .onFailure(i -> log.error("failed to write thumbnail", i));
+
+                                    return fs.writeFile("/Users/stuckya/Downloads/Test/Images/" + movie.getId().toString() + "-poster.jpg", imageBuffer);
+                                })
+                                .onSuccess(r -> log.info("Wrote original image"))
+                                .onFailure(r -> log.error("Failed to write file:", r));
+                        }).onFailure(ex -> {
+                            lock.release();
+                            log.error("failed to save movie", ex);
+                        });
+                } else {
+                    log.info("failed to get lock", res.cause());
+                }
+            });
         });
     }
 
@@ -253,5 +346,12 @@ public class LibraryManagementService {
         // get all items in library
         // locate files in FS
         // cleanup if file cannot be located.
+    }
+
+    @Getter
+    @Setter
+    public class MovieContext {
+        private String posterPath;
+        private String backdropPath;
     }
 }

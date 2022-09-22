@@ -3,7 +3,7 @@ package com.streamarr.server.graphql.resolvers;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.streamarr.server.domain.media.Movie;
-import com.streamarr.server.repositories.movie.MovieRepository;
+import com.streamarr.server.repositories.media.MovieRepository;
 import lombok.RequiredArgsConstructor;
 
 import java.util.Optional;

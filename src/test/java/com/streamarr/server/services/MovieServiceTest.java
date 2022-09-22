@@ -7,7 +7,7 @@ import com.streamarr.server.graphql.cursor.MediaPaginationOptions;
 import com.streamarr.server.graphql.cursor.OrderMoviesBy;
 import com.streamarr.server.graphql.cursor.PaginationDirection;
 import com.streamarr.server.graphql.cursor.PaginationOptions;
-import com.streamarr.server.repositories.movie.MovieRepository;
+import com.streamarr.server.repositories.media.MovieRepository;
 import graphql.relay.DefaultConnectionCursor;
 import org.apache.commons.lang3.reflect.FieldUtils;
 import org.jooq.SortOrder;

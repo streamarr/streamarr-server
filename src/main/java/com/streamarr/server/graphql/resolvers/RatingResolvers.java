@@ -7,7 +7,6 @@ import com.netflix.graphql.dgs.InputArgument;
 import com.streamarr.server.domain.metadata.Rating;
 import com.streamarr.server.graphql.dto.RatingInput;
 import com.streamarr.server.repositories.RatingRepository;
-import graphql.schema.DataFetchingEnvironment;
 import lombok.RequiredArgsConstructor;
 
 import java.util.Optional;
@@ -20,7 +19,7 @@ public class RatingResolvers {
     private final RatingRepository ratingRepository;
 
     @DgsMutation
-    public Rating addRating(@InputArgument("input") RatingInput ratingInput, DataFetchingEnvironment dfe) {
+    public Rating addRating(@InputArgument("input") RatingInput ratingInput) {
 
         return ratingRepository.save(Rating.builder()
             .createdBy(UUID.fromString(ratingInput.getUserId()))

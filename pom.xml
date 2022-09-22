@@ -5,7 +5,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.0.0-M4</version>
+        <version>2.7.3</version>
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     <groupId>com.streamarr</groupId>
@@ -18,7 +18,7 @@
 
         <apache-commons-lang.version>3.12.0</apache-commons-lang.version>
         <apache-commons-io.version>2.11.0</apache-commons-io.version>
-        <dgs-graphql.version>5.3.0-SNAPSHOT</dgs-graphql.version>
+        <dgs-graphql.version>5.2.1</dgs-graphql.version>
         <reactor.version>3.4.22</reactor.version>
         <flyway.version>8.5.13</flyway.version>
         <lombok.version>1.18.24</lombok.version>
@@ -27,31 +27,17 @@
         <jooq.version>3.17.3</jooq.version>
         <maven-compiler-plugin.version>3.10.1</maven-compiler-plugin.version>
         <yaml-properties-maven-plugin.version>1.1.3</yaml-properties-maven-plugin.version>
-        <hibernate-types.version>2.19.0</hibernate-types.version>
+        <hibernate-types.version>2.19.2</hibernate-types.version>
         <vertx.version>4.3.3</vertx.version>
+        <thumbnailator.version>0.4.17</thumbnailator.version>
+        <hibernate-reactive.version>1.1.7.Final</hibernate-reactive.version>
+        <smallrye-reactive.version>2.26.0</smallrye-reactive.version>
+        <scram.version>2.1</scram.version>
 
         <zonky.embedded.db.spring.test.version>2.1.2</zonky.embedded.db.spring.test.version>
         <zonky.embedded.postgres.version>2.0.1</zonky.embedded.postgres.version>
         <zonky.embedded.postgres.binaries.bom.version>14.4.0</zonky.embedded.postgres.binaries.bom.version>
     </properties>
-
-    <repositories>
-        <repository>
-            <id>repository.spring.milestone</id>
-            <name>Spring Milestone Repository</name>
-            <url>https://repo.spring.io/milestone</url>
-        </repository>
-    </repositories>
-    <pluginRepositories>
-        <pluginRepository>
-            <id>spring-milestones</id>
-            <name>Spring Milestones</name>
-            <url>https://repo.spring.io/milestone</url>
-            <snapshots>
-                <enabled>false</enabled>
-            </snapshots>
-        </pluginRepository>
-    </pluginRepositories>
 
     <dependencies>
         <dependency>
@@ -147,7 +133,7 @@
 
         <dependency>
             <groupId>com.vladmihalcea</groupId>
-            <artifactId>hibernate-types-60</artifactId>
+            <artifactId>hibernate-types-55</artifactId>
         </dependency>
 
         <dependency>
@@ -156,20 +142,64 @@
         </dependency>
 
         <dependency>
+            <groupId>io.vertx</groupId>
+            <artifactId>vertx-pg-client</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>io.smallrye.reactive</groupId>
+            <artifactId>smallrye-mutiny-vertx-core</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>net.coobird</groupId>
+            <artifactId>thumbnailator</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.hibernate.reactive</groupId>
+            <artifactId>hibernate-reactive-core</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.hibernate</groupId>
+            <artifactId>hibernate-jpamodelgen</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>com.ongres.scram</groupId>
+            <artifactId>client</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>io.vertx</groupId>
+            <artifactId>vertx-junit5</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>io.zonky.test</groupId>
-            <artifactId>embedded-database-spring-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>io.zonky.test</groupId>
-            <artifactId>embedded-postgres</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -234,14 +264,40 @@
 
             <dependency>
                 <groupId>com.vladmihalcea</groupId>
-                <artifactId>hibernate-types-60</artifactId>
+                <artifactId>hibernate-types-55</artifactId>
                 <version>${hibernate-types.version}</version>
             </dependency>
 
             <dependency>
                 <groupId>io.vertx</groupId>
-                <artifactId>vertx-web-client</artifactId>
+                <artifactId>vertx-stack-depchain</artifactId>
                 <version>${vertx.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <dependency>
+                <groupId>io.smallrye.reactive</groupId>
+                <artifactId>smallrye-mutiny-vertx-core</artifactId>
+                <version>${smallrye-reactive.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>net.coobird</groupId>
+                <artifactId>thumbnailator</artifactId>
+                <version>${thumbnailator.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.hibernate.reactive</groupId>
+                <artifactId>hibernate-reactive-core</artifactId>
+                <version>${hibernate-reactive.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.ongres.scram</groupId>
+                <artifactId>client</artifactId>
+                <version>${scram.version}</version>
             </dependency>
 
             <dependency>
@@ -251,23 +307,11 @@
             </dependency>
 
             <dependency>
-                <groupId>io.zonky.test.postgres</groupId>
-                <artifactId>embedded-postgres-binaries-bom</artifactId>
-                <version>${zonky.embedded.postgres.binaries.bom.version}</version>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers-bom</artifactId>
+                <version>1.17.3</version>
                 <type>pom</type>
                 <scope>import</scope>
-            </dependency>
-
-            <dependency>
-                <groupId>io.zonky.test</groupId>
-                <artifactId>embedded-database-spring-test</artifactId>
-                <version>${zonky.embedded.db.spring.test.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>io.zonky.test</groupId>
-                <artifactId>embedded-postgres</artifactId>
-                <version>${zonky.embedded.postgres.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
@@ -298,7 +342,7 @@
                 <version>0.8.8</version>
                 <configuration>
                     <excludes>
-                        <exclude>**/com/streamarr/server/db/**</exclude>
+                        <exclude>**/com/streamarr/server/jooq/generated/**</exclude>
                     </excludes>
                 </configuration>
                 <executions>
@@ -418,95 +462,106 @@
                     </execution>
                 </executions>
             </plugin>
-            <plugin>
-                <groupId>it.ozimov</groupId>
-                <artifactId>yaml-properties-maven-plugin</artifactId>
-                <version>${yaml-properties-maven-plugin.version}</version>
-                <executions>
-                    <execution>
-                        <phase>initialize</phase>
-                        <goals>
-                            <goal>read-project-properties</goal>
-                        </goals>
-                        <configuration>
-                            <files>
-                                <file>src/main/resources/application.yml</file>
-                            </files>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
-                <groupId>org.flywaydb</groupId>
-                <artifactId>flyway-maven-plugin</artifactId>
-                <version>${flyway.version}</version>
-                <executions>
-                    <execution>
-                        <phase>generate-sources</phase>
-                        <goals>
-                            <goal>migrate</goal>
-                        </goals>
-                    </execution>
-                </executions>
-                <configuration>
-                    <!--suppress UnresolvedMavenProperty -->
-                    <driver>${spring.datasource.driverClassName}</driver>
-                    <!--suppress UnresolvedMavenProperty -->
-                    <url>${spring.datasource.url}</url>
-                    <!--suppress UnresolvedMavenProperty -->
-                    <user>${spring.datasource.username}</user>
-                    <!--suppress UnresolvedMavenProperty -->
-                    <password>${spring.datasource.password}</password>
-                    <baselineOnMigrate>true</baselineOnMigrate>
-                    <table>schema_history</table>
-                    <schemas>
-                        <schema>public</schema>
-                    </schemas>
-                    <locations>
-                        <location>filesystem:src/main/resources/db/migration</location>
-                    </locations>
-                </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.jooq</groupId>
-                <artifactId>jooq-codegen-maven</artifactId>
-                <version>${jooq.version}</version>
-                <executions>
-                    <execution>
-                        <id>generate-postgres</id>
-                        <phase>generate-sources</phase>
-                        <goals>
-                            <goal>generate</goal>
-                        </goals>
-                    </execution>
-                </executions>
-                <configuration>
-                    <jdbc>
-                        <!--suppress UnresolvedMavenProperty -->
-                        <driver>${spring.datasource.driverClassName}</driver>
-                        <!--suppress UnresolvedMavenProperty -->
-                        <url>${spring.datasource.url}</url>
-                        <!--suppress UnresolvedMavenProperty -->
-                        <user>${spring.datasource.username}</user>
-                        <!--suppress UnresolvedMavenProperty -->
-                        <password>${spring.datasource.password}</password>
-                    </jdbc>
-                    <generator>
-                        <database>
-                            <name>org.jooq.meta.postgres.PostgresDatabase</name>
-                            <includes>.*</includes>
-                            <inputSchema>public</inputSchema>
-                        </database>
-                        <generate>
-                            <pojos>false</pojos>
-                        </generate>
-                        <target>
-                            <packageName>com.streamarr.server.db</packageName>
-                            <directory>target/generated-sources/jooq</directory>
-                        </target>
-                    </generator>
-                </configuration>
-            </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>generate-jooq-code</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>it.ozimov</groupId>
+                        <artifactId>yaml-properties-maven-plugin</artifactId>
+                        <version>${yaml-properties-maven-plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <phase>initialize</phase>
+                                <goals>
+                                    <goal>read-project-properties</goal>
+                                </goals>
+                                <configuration>
+                                    <files>
+                                        <file>src/main/resources/application.yml</file>
+                                    </files>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.flywaydb</groupId>
+                        <artifactId>flyway-maven-plugin</artifactId>
+                        <version>${flyway.version}</version>
+                        <executions>
+                            <execution>
+                                <phase>generate-sources</phase>
+                                <goals>
+                                    <goal>migrate</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <!--suppress UnresolvedMavenProperty -->
+                            <driver>${spring.datasource.driverClassName}</driver>
+                            <!--suppress UnresolvedMavenProperty -->
+                            <url>${spring.datasource.url}</url>
+                            <!--suppress UnresolvedMavenProperty -->
+                            <user>${spring.datasource.username}</user>
+                            <!--suppress UnresolvedMavenProperty -->
+                            <password>${spring.datasource.password}</password>
+                            <baselineOnMigrate>true</baselineOnMigrate>
+                            <table>schema_history</table>
+                            <schemas>
+                                <schema>public</schema>
+                            </schemas>
+                            <locations>
+                                <location>filesystem:src/main/resources/db/migration</location>
+                            </locations>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.jooq</groupId>
+                        <artifactId>jooq-codegen-maven</artifactId>
+                        <version>${jooq.version}</version>
+                        <executions>
+                            <execution>
+                                <id>generate-postgres</id>
+                                <phase>generate-sources</phase>
+                                <goals>
+                                    <goal>generate</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <jdbc>
+                                <!--suppress UnresolvedMavenProperty -->
+                                <driver>${spring.datasource.driverClassName}</driver>
+                                <!--suppress UnresolvedMavenProperty -->
+                                <url>${spring.datasource.url}</url>
+                                <!--suppress UnresolvedMavenProperty -->
+                                <user>${spring.datasource.username}</user>
+                                <!--suppress UnresolvedMavenProperty -->
+                                <password>${spring.datasource.password}</password>
+                            </jdbc>
+                            <generator>
+                                <database>
+                                    <name>org.jooq.meta.postgres.PostgresDatabase</name>
+                                    <includes>.*</includes>
+                                    <inputSchema>public</inputSchema>
+                                </database>
+                                <generate>
+                                    <pojos>false</pojos>
+                                </generate>
+                                <target>
+                                    <packageName>com.streamarr.server.jooq.generated</packageName>
+                                    <directory>src/main/java</directory>
+                                </target>
+                            </generator>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+
 </project>
