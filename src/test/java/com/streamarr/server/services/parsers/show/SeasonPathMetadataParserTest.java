@@ -1,4 +1,4 @@
-package com.streamarr.server.services.extraction.show;
+package com.streamarr.server.services.parsers.show;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.DynamicNode;
@@ -13,9 +13,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @Tag("UnitTest")
 @DisplayName("Season Path Extraction Tests")
-public class SeasonPathExtractionServiceTest {
+public class SeasonPathMetadataParserTest {
 
-    private final SeasonPathExtractionService seasonPathExtractionService = new SeasonPathExtractionService();
+    private final SeasonPathMetadataParser seasonPathMetadataParser = new SeasonPathMetadataParser();
 
     @Nested
     @DisplayName("Should successfully extract season number")
@@ -45,7 +45,7 @@ public class SeasonPathExtractionServiceTest {
             ).map(testCase -> DynamicTest.dynamicTest(
                 testCase.filename(),
                 () -> {
-                    var result = seasonPathExtractionService.extract(testCase.filename()).orElseThrow();
+                    var result = seasonPathMetadataParser.extract(testCase.filename()).orElseThrow();
 
                     assertThat(result.seasonNumber().orElseThrow()).isEqualTo(testCase.seasonNumber());
                     assertThat(result.isSeasonFolder()).isEqualTo(testCase.isSeasonDirectory());
@@ -71,7 +71,7 @@ public class SeasonPathExtractionServiceTest {
             ).map(testCase -> DynamicTest.dynamicTest(
                 testCase.filename(),
                 () -> {
-                    var result = seasonPathExtractionService.extract(testCase.filename()).orElseThrow();
+                    var result = seasonPathMetadataParser.extract(testCase.filename()).orElseThrow();
 
                     assertThat(result.seasonNumber()).isEmpty();
                     assertThat(result.isSeasonFolder()).isEqualTo(testCase.isSeasonDirectory());

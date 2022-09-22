@@ -1,4 +1,4 @@
-package com.streamarr.server.repositories.movie;
+package com.streamarr.server.repositories.media;
 
 import com.streamarr.server.domain.media.MediaFile;
 import io.smallrye.mutiny.vertx.UniHelper;

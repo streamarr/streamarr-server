@@ -1,4 +1,4 @@
-package com.streamarr.server.services.extraction.video;
+package com.streamarr.server.services.parsers.video;
 
 
 import org.junit.jupiter.api.DisplayName;
@@ -14,10 +14,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Tag("UnitTest")
-@DisplayName("Default Video File Extraction Tests")
-public class DefaultVideoFileExtractionServiceTest {
+@DisplayName("Default Video File Metadata Parsing Tests")
+public class DefaultVideoFileMetadataParserTest {
 
-    private final DefaultVideoFileExtractionService defaultVideoFileExtractionService = new DefaultVideoFileExtractionService();
+    private final DefaultVideoFileMetadataParser defaultVideoFileMetadataParser = new DefaultVideoFileMetadataParser();
 
     @Nested
     @DisplayName("Should successfully extract both title and year from filename")
@@ -58,7 +58,7 @@ public class DefaultVideoFileExtractionServiceTest {
             ).map(testCase -> DynamicTest.dynamicTest(
                 testCase.filename(),
                 () -> {
-                    var result = defaultVideoFileExtractionService.extract(testCase.filename());
+                    var result = defaultVideoFileMetadataParser.extract(testCase.filename());
 
                     assertThat(result.orElseThrow().title()).isEqualTo(testCase.title());
                     assertThat(result.orElseThrow().year()).isEqualTo(testCase.year());
@@ -99,7 +99,7 @@ public class DefaultVideoFileExtractionServiceTest {
             ).map(testCase -> DynamicTest.dynamicTest(
                 testCase.filename(),
                 () -> {
-                    var result = defaultVideoFileExtractionService.extract(testCase.filename());
+                    var result = defaultVideoFileMetadataParser.extract(testCase.filename());
 
                     assertThat(result.orElseThrow().title()).isEqualTo(testCase.title());
                     assertThat(result.orElseThrow().year()).isNull();
@@ -124,7 +124,7 @@ public class DefaultVideoFileExtractionServiceTest {
             ).map(testCase -> DynamicTest.dynamicTest(
                 testCase.name(),
                 () -> {
-                    var result = defaultVideoFileExtractionService.extract(testCase.input());
+                    var result = defaultVideoFileMetadataParser.extract(testCase.input());
 
                     assertTrue(result.isEmpty());
                 })

@@ -1,7 +1,6 @@
-package com.streamarr.server.services.extraction.show;
+package com.streamarr.server.services.parsers.show;
 
-import com.streamarr.server.services.extraction.MediaExtractor;
-import com.streamarr.server.utils.EpisodePathResult;
+import com.streamarr.server.services.parsers.MetadataParser;
 import com.streamarr.server.utils.EpisodeRegexConfig;
 import com.streamarr.server.utils.EpisodeRegexContainer;
 import lombok.RequiredArgsConstructor;
@@ -17,12 +16,11 @@ import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
-public class EpisodePathExtractionService implements MediaExtractor<EpisodePathResult> {
+public class EpisodePathMetadataParser implements MetadataParser<EpisodePathResult> {
 
     private final EpisodeRegexConfig episodeRegexConfig;
 
     public Optional<EpisodePathResult> extract(String filename) {
-        // TODO: Should the matching logic be in another class?
         var optionalResult = episodeRegexConfig.getStandardRegexContainerList().stream()
             .map(regexContainer -> attemptMatch(filename, regexContainer))
             .filter(episodePathResult -> episodePathResult.isPresent() && episodePathResult.get().isSuccess())

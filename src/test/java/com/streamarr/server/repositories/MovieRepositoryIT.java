@@ -3,7 +3,7 @@ package com.streamarr.server.repositories;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
-import com.streamarr.server.repositories.movie.MovieRepository;
+import com.streamarr.server.repositories.media.MovieRepository;
 import io.vertx.junit5.VertxExtension;
 import io.vertx.junit5.VertxTestContext;
 import org.junit.jupiter.api.DisplayName;

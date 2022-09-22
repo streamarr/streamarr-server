@@ -8,7 +8,6 @@ import java.util.Set;
 @Component
 public class VideoExtensionValidator {
 
-    // TODO: Pulled from Jellyfin... Are these correct for us? https://github.com/jellyfin/jellyfin/blob/91d6ffd731e163bf281348872c2421598fa4edb2/Emby.Naming/Common/NamingOptions.cs#L599
     private final Set<String> supportedExtensions = Set.of(
         "m4v",
         "3gp",

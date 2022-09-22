@@ -1,6 +1,6 @@
-package com.streamarr.server.services.extraction.video;
+package com.streamarr.server.services.parsers.video;
 
-import com.streamarr.server.services.extraction.MediaExtractor;
+import com.streamarr.server.services.parsers.MetadataParser;
 import io.micrometer.core.instrument.util.StringUtils;
 import org.springframework.stereotype.Service;
 
@@ -9,7 +9,7 @@ import java.util.Optional;
 import java.util.regex.Pattern;
 
 @Service
-public class DefaultVideoFileExtractionService implements MediaExtractor<VideoFileMetadata> {
+public class DefaultVideoFileMetadataParser implements MetadataParser<VideoFileMetadata> {
 
     // TODO: We should also DI these regex patterns
     private final static List<Pattern> EXTRACTION_REGEXES = List.of(

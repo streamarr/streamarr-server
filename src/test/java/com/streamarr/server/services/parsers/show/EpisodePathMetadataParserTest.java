@@ -1,8 +1,7 @@
-package com.streamarr.server.services.extraction.show;
+package com.streamarr.server.services.parsers.show;
 
 
-import com.streamarr.server.services.extraction.MediaExtractor;
-import com.streamarr.server.utils.EpisodePathResult;
+import com.streamarr.server.services.parsers.MetadataParser;
 import com.streamarr.server.utils.EpisodeRegexConfig;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.DynamicNode;
@@ -17,11 +16,11 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @Tag("UnitTest")
-@DisplayName("Episode Path Extraction Tests")
-public class EpisodePathExtractionServiceTest {
+@DisplayName("Episode Path Metadata Parsing Tests")
+public class EpisodePathMetadataParserTest {
 
     private final EpisodeRegexConfig episodeRegexConfig = new EpisodeRegexConfig();
-    private final MediaExtractor<EpisodePathResult> episodePathExtractionService = new EpisodePathExtractionService(episodeRegexConfig);
+    private final MetadataParser<EpisodePathResult> episodePathExtractionService = new EpisodePathMetadataParser(episodeRegexConfig);
 
     @Nested
     @DisplayName("Should successfully extract everything: series name, season, and episode")

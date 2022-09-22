@@ -1,4 +1,4 @@
-package com.streamarr.server.services.extraction.video;
+package com.streamarr.server.services.parsers.video;
 
 import lombok.Builder;
 

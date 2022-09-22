@@ -1,4 +1,4 @@
-package com.streamarr.server.utils;
+package com.streamarr.server.services.parsers.show;
 
 import lombok.Builder;
 import lombok.Getter;

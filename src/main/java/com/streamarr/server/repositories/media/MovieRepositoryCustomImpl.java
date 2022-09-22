@@ -1,4 +1,4 @@
-package com.streamarr.server.repositories.movie;
+package com.streamarr.server.repositories.media;
 
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Movie_;
@@ -63,12 +63,6 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
                 cb.equal(root.get(Movie_.TMDB_ID), tmdbId)
             );
         }
-
-//        return UniHelper.toFuture(sessionFactory.withSession(session -> session.createQuery(query)
-//            .getSingleResult()
-//            .call(movie -> session.fetch(movie.getFiles()))
-//            .call(movie -> session.fetch(movie.getCast()))
-//        ));
 
         return UniHelper.toFuture(sessionFactory.withSession(session -> {
             var graph = session.createEntityGraph(Movie.class);

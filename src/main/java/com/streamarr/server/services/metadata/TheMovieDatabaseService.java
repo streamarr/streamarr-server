@@ -4,7 +4,7 @@ import com.streamarr.server.config.vertx.VertxWebClientProvider;
 import com.streamarr.server.domain.external.tmdb.TmdbCredits;
 import com.streamarr.server.domain.external.tmdb.TmdbMovie;
 import com.streamarr.server.domain.external.tmdb.TmdbSearchResults;
-import com.streamarr.server.services.extraction.video.VideoFileMetadata;
+import com.streamarr.server.services.parsers.video.VideoFileMetadata;
 import io.vertx.core.Future;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.ext.web.client.HttpResponse;

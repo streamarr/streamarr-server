@@ -1,6 +1,6 @@
-package com.streamarr.server.services.extraction.show;
+package com.streamarr.server.services.parsers.show;
 
-import com.streamarr.server.services.extraction.MediaExtractor;
+import com.streamarr.server.services.parsers.MetadataParser;
 import lombok.Builder;
 import org.springframework.stereotype.Service;
 
@@ -10,7 +10,7 @@ import java.util.Optional;
 import java.util.OptionalInt;
 
 @Service
-public class SeasonPathExtractionService implements MediaExtractor<SeasonPathExtractionService.Result> {
+public class SeasonPathMetadataParser implements MetadataParser<SeasonPathMetadataParser.Result> {
 
     private static final List<String> SEASON_FOLDER_NAMES = List.of(
         "season",

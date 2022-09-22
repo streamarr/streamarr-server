@@ -10,12 +10,12 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.repositories.LibraryRepository;
-import com.streamarr.server.repositories.movie.MediaFileRepository;
-import com.streamarr.server.repositories.movie.MovieRepository;
-import com.streamarr.server.services.extraction.video.DefaultVideoFileExtractionService;
-import com.streamarr.server.services.extraction.video.VideoFileMetadata;
+import com.streamarr.server.repositories.media.MediaFileRepository;
+import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.metadata.ImageThumbnailWorkerVerticle;
 import com.streamarr.server.services.metadata.TheMovieDatabaseService;
+import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
+import com.streamarr.server.services.parsers.video.VideoFileMetadata;
 import com.streamarr.server.utils.VideoExtensionValidator;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
@@ -50,7 +50,7 @@ import java.util.stream.Collectors;
 public class LibraryManagementService implements InitializingBean {
 
     private final VideoExtensionValidator videoExtensionValidator;
-    private final DefaultVideoFileExtractionService defaultVideoFileExtractionService;
+    private final DefaultVideoFileMetadataParser defaultVideoFileMetadataParser;
 
     private final TheMovieDatabaseService theMovieDatabaseService;
     private final LibraryRepository libraryRepository;
@@ -226,7 +226,7 @@ public class LibraryManagementService implements InitializingBean {
     }
 
     private Optional<VideoFileMetadata> extractInformationAsMovieFile(MediaFile mediaFile) {
-        var result = defaultVideoFileExtractionService.extract(mediaFile.getFilename());
+        var result = defaultVideoFileMetadataParser.extract(mediaFile.getFilename());
 
         if (result.isEmpty() || StringUtils.isEmpty(result.get().title())) {
             return Optional.empty();

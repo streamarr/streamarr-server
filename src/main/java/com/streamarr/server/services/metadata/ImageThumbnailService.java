@@ -31,6 +31,7 @@ public class ImageThumbnailService {
 
             var srcImg = ImageIO.read(inputStream);
 
+            // TODO: Create multiple thumbnail sizes
             Thumbnails.of(srcImg)
                 .size(200, 200)
                 .outputFormat("jpg")

@@ -1,4 +1,4 @@
-package com.streamarr.server.repositories.movie;
+package com.streamarr.server.repositories.media;
 
 import com.streamarr.server.domain.media.MediaFile;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -11,4 +11,5 @@ import java.util.UUID;
 public interface MediaFileRepository extends JpaRepository<MediaFile, UUID>, MediaFileRepositoryCustom {
 
     Optional<MediaFile> findFirstByFilepath(String filepath);
+
 }

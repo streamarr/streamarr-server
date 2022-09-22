@@ -7,7 +7,7 @@ import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.graphql.cursor.MediaPaginationOptions;
 import com.streamarr.server.graphql.cursor.PaginationOptions;
-import com.streamarr.server.repositories.movie.MovieRepository;
+import com.streamarr.server.repositories.media.MovieRepository;
 import graphql.relay.Connection;
 import graphql.relay.DefaultEdge;
 import graphql.relay.Edge;
