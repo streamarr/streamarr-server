@@ -29,7 +29,7 @@ public class ImageThumbnailWorkerVerticleTest {
 
     @Test
     @DisplayName("Should deploy an Image Thumbnail Worker Verticle and fail request when exception thrown.")
-    public void useImageVerticleFailure(Vertx vertx, VertxTestContext testContext) {
+    void useImageVerticleFailure(Vertx vertx, VertxTestContext testContext) {
 
         vertx.deployVerticle(new ImageThumbnailWorkerVerticle(mockLog, mockImageThumbnailService), new DeploymentOptions().setWorker(true))
             .onSuccess(id -> {
@@ -51,7 +51,7 @@ public class ImageThumbnailWorkerVerticleTest {
 
     @Test
     @DisplayName("Should deploy an Image Thumbnail Worker Verticle and succeed request when bytes returned.")
-    public void useImageVerticleSuccess(Vertx vertx, VertxTestContext testContext) {
+    void useImageVerticleSuccess(Vertx vertx, VertxTestContext testContext) {
 
         vertx.deployVerticle(new ImageThumbnailWorkerVerticle(mockLog, mockImageThumbnailService), new DeploymentOptions().setWorker(true))
             .onSuccess(id -> {
