@@ -1,4 +1,4 @@
-<p align="center">
+<div align="center">
 
 <br />
 
@@ -7,11 +7,12 @@
 <br />
 <br />
 <br />
-    
-<a href="https://github.com/streamarr/streamarr-server/">
-<img alt="GPL 3.0 License" src="https://img.shields.io/badge/license-GPL--3.0-orange.svg"/>
-</a>
-</p>
+
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=streamarr_streamarr-server&metric=coverage)](https://sonarcloud.io/summary/new_code?id=streamarr_streamarr-server)
+[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=streamarr_streamarr-server&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=streamarr_streamarr-server)
+[![GPL 3.0 License](https://img.shields.io/badge/license-GPL--3.0-orange.svg)](https://github.com/streamarr/streamarr-server/blob/main/LICENSE)
+
+</div>
 
 ### Running in development:
 
