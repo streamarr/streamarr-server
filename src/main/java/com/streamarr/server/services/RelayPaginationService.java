@@ -91,7 +91,7 @@ public class RelayPaginationService {
 
         return pageSize;
     }
-
+    
     @SuppressWarnings("unchecked")
     public <T> Connection<T> buildConnection(List<Edge<? extends BaseEntity<?>>> edges, PaginationOptions options, Optional<UUID> cursorId) {
 
