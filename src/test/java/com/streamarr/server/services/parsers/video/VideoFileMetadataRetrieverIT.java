@@ -1,6 +1,7 @@
 package com.streamarr.server.services.parsers.video;
 
 import com.streamarr.server.services.parsers.MetadataParser;
+import com.streamarr.server.services.parsers.show.EpisodePathMetadataParser;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -41,5 +42,11 @@ public class VideoFileMetadataRetrieverIT {
     void shouldInjectServicesInOrder() {
         assertThat(parsers.get(0)).isInstanceOf(ExternalIdVideoFileMetadataParser.class);
         assertThat(parsers.get(1)).isInstanceOf(DefaultVideoFileMetadataParser.class);
+    }
+
+    @Test
+    @DisplayName("Should not inject parsers of incorrect type.")
+    void shouldNotInjectIncorrectParsers() {
+        parsers.forEach(p -> assertThat(p).isNotInstanceOf(EpisodePathMetadataParser.class));
     }
 }
