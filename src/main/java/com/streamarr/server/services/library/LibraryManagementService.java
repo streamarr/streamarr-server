@@ -192,7 +192,7 @@ public class LibraryManagementService implements InitializingBean {
     private MediaFile probeFile(Library library, File file) {
         return switch (library.getType()) {
             case MOVIE -> probeMovie(library, file);
-            case SERIES, OTHER -> null;
+            case SERIES, OTHER -> throw new IllegalStateException("Not yet supported.");
         };
     }
 
