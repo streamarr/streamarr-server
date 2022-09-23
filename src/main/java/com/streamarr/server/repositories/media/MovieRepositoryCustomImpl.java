@@ -144,6 +144,7 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
     }
 
     // TODO: Move to helper class
+    @SuppressWarnings("unchecked")
     public static <E> List<E> nativeQuery(EntityManager em, org.jooq.Query query, Class<E> type) {
 
         // Extract the SQL statement from the jOOQ query:
@@ -155,7 +156,6 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
             result.setParameter(i + 1, values.get(i));
         }
 
-        // There's an unsafe cast here, but we can be sure that we'll get the right type from JPA
         return result.getResultList();
     }
 }
