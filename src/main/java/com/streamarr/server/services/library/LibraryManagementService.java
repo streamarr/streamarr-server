@@ -44,14 +44,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 
-// TODO: Implement, inspiration here https://gitlab.com/olaris/olaris-server/-/blob/develop/metadata/managers/library.go
 @Service
 @RequiredArgsConstructor
 public class LibraryManagementService implements InitializingBean {
 
     private final VideoExtensionValidator videoExtensionValidator;
     private final DefaultVideoFileMetadataParser defaultVideoFileMetadataParser;
-
     private final TheMovieDatabaseService theMovieDatabaseService;
     private final LibraryRepository libraryRepository;
     private final MediaFileRepository mediaFileRepository;
@@ -163,7 +161,7 @@ public class LibraryManagementService implements InitializingBean {
 
         var searchResult = searchForMedia(mediaInformationResult.get());
 
-        // TODO: Network, retry automatically? Will this error if no results are found?
+        // TODO: Network, retry automatically? Vert.x circuit breaker?
         searchResult.onFailure(handler -> {
             mediaFile.setStatus(MediaFileStatus.SEARCH_FAILED);
             mediaFileRepository.saveAsync(mediaFile);
