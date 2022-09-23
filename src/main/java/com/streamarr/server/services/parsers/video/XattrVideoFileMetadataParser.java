@@ -7,9 +7,8 @@ import java.util.Optional;
 public class XattrVideoFileMetadataParser implements MetadataParser<VideoFileMetadata> {
 
     @Override
-    public Optional<VideoFileMetadata> extract(String filename) {
-        // TODO: Read file attributes to get data
-        // TODO: Filebot xattr ... https://github.com/IIeTp/Filebot-Xattr-Scanners-ID
+    public Optional<VideoFileMetadata> parse(String filename) {
+        // TODO: Implement, read file attributes to get data. Example: Filebot xattr ... https://github.com/IIeTp/Filebot-Xattr-Scanners-ID
         return Optional.empty();
     }
 }

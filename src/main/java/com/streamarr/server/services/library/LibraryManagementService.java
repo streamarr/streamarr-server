@@ -16,7 +16,7 @@ import com.streamarr.server.services.metadata.ImageThumbnailWorkerVerticle;
 import com.streamarr.server.services.metadata.TheMovieDatabaseService;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileMetadata;
-import com.streamarr.server.utils.VideoExtensionValidator;
+import com.streamarr.server.services.validation.VideoExtensionValidator;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
@@ -123,6 +123,8 @@ public class LibraryManagementService implements InitializingBean {
             throw new RuntimeException("Failed to access library filepath.");
         }
 
+        log.info("Scanned {} MediaFiles from Library at filepath: {}", filesToMatchCounter.get(), library.getFilepath());
+
         // DEFINITION: "media file" an entity that describes the file and
         // serves as an intermediate step until we can resolve metadata and link to parent (ex. Movie).
 
@@ -157,6 +159,8 @@ public class LibraryManagementService implements InitializingBean {
             return;
         }
 
+        log.info("Parsed filename. Title: {} and Year: {}", mediaInformationResult.get().title(), mediaInformationResult.get().year());
+
         var searchResult = searchForMedia(mediaInformationResult.get());
 
         // TODO: Network, retry automatically? Will this error if no results are found?
@@ -188,7 +192,7 @@ public class LibraryManagementService implements InitializingBean {
     private MediaFile probeFile(Library library, File file) {
         return switch (library.getType()) {
             case MOVIE -> probeMovie(library, file);
-            case SERIES, OTHER -> null;
+            case SERIES, OTHER -> throw new IllegalStateException("Not yet supported.");
         };
     }
 
@@ -226,7 +230,7 @@ public class LibraryManagementService implements InitializingBean {
     }
 
     private Optional<VideoFileMetadata> extractInformationAsMovieFile(MediaFile mediaFile) {
-        var result = defaultVideoFileMetadataParser.extract(mediaFile.getFilename());
+        var result = defaultVideoFileMetadataParser.parse(mediaFile.getFilename());
 
         if (result.isEmpty() || StringUtils.isEmpty(result.get().title())) {
             return Optional.empty();

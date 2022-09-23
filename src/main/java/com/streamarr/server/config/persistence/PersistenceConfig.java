@@ -54,14 +54,11 @@ public class PersistenceConfig {
             .forEach(metadataSources::addAnnotatedClassName);
 
         var configuration = new org.hibernate.cfg.Configuration(metadataSources);
-
         var properties = new Properties();
-
         var springJpaProperties = jpaProperties.getProperties();
 
         properties.putAll(springJpaProperties);
         properties.put(AvailableSettings.POOL_SIZE, 10);
-
         properties.put(AvailableSettings.URL, persistenceProperties.getJdbcUrl());
         properties.put(AvailableSettings.USER, persistenceProperties.getUsername());
         properties.put(AvailableSettings.PASS, persistenceProperties.getPassword());

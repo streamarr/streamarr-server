@@ -2,8 +2,10 @@ package com.streamarr.server.services.parsers.video;
 
 import lombok.Builder;
 
-// TODO: Rename
-public record VideoFileMetadata(String title, String year) {
+public record VideoFileMetadata(String title,
+                                String year,
+                                String externalId,
+                                ExternalVideoSourceType externalSource) {
     @Builder
     public VideoFileMetadata {
     }

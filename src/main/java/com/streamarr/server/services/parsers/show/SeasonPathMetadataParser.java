@@ -29,7 +29,7 @@ public class SeasonPathMetadataParser implements MetadataParser<SeasonPathMetada
         }
     }
 
-    public Optional<Result> extract(String path) {
+    public Optional<Result> parse(String path) {
         return Optional.of(getSeasonNumberFromPath(path, true, true));
     }
 
