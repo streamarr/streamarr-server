@@ -18,8 +18,10 @@
         <sonar.organization>streamarr</sonar.organization>
         <sonar.host.url>https://sonarcloud.io</sonar.host.url>
         <sonar.coverage.jacoco.xmlReportPaths>
-            ${project.reporting.outputDirectory}/jacoco-merged-test-coverage-report/jacoco.xml
+            target/site/jacoco-merged-test-coverage-report/jacoco.xml
         </sonar.coverage.jacoco.xmlReportPaths>
+        <sonar.coverage.exclusions>**/pom.xml</sonar.coverage.exclusions>
+        <sonar.test.inclusions>**/src/test/**</sonar.test.inclusions>
 
         <apache-commons-lang.version>3.12.0</apache-commons-lang.version>
         <apache-commons-io.version>2.11.0</apache-commons-io.version>
