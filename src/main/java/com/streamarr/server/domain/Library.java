@@ -9,7 +9,6 @@ import lombok.Setter;
 import lombok.experimental.SuperBuilder;
 import org.hibernate.annotations.Type;
 import org.hibernate.annotations.TypeDef;
-import org.hibernate.annotations.TypeDefs;
 
 import javax.persistence.Entity;
 import javax.persistence.EnumType;
@@ -26,12 +25,10 @@ import java.util.Set;
 @SuperBuilder
 @AllArgsConstructor
 @NoArgsConstructor
-@TypeDefs({
-    @TypeDef(
-        name = "pgsql_enum",
-        typeClass = PostgreSQLEnumType.class
-    )
-})
+@TypeDef(
+    name = "pgsql_enum",
+    typeClass = PostgreSQLEnumType.class
+)
 public class Library extends BaseEntity<Library> {
 
     private String filepath;
