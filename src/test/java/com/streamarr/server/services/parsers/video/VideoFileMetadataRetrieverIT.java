@@ -34,7 +34,7 @@ public class VideoFileMetadataRetrieverIT {
     @Test
     @DisplayName("Should inject only video file parsers and not episode file parsers")
     void shouldInjectCorrectServices() {
-        assertThat(parsers.size()).isEqualTo(2);
+        assertThat(parsers).hasSize(2);
     }
 
     @Test
