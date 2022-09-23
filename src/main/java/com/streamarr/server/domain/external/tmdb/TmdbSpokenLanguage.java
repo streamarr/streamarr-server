@@ -10,7 +10,8 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class TmdbSpokenLanguage {
 
-    private String iso_639_1;
+    @JsonProperty("iso_639_1")
+    private String iso6391;
     private String name;
     @JsonProperty("english_name")
     private String englishName;

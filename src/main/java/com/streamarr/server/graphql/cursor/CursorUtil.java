@@ -27,8 +27,8 @@ public class CursorUtil {
 
             String jsonStr = jacksonObjectMapper.writeValueAsString(mediaPaginationOptions);
             return new DefaultConnectionCursor(Base64.getEncoder().encodeToString(jsonStr.getBytes(StandardCharsets.UTF_8)));
-        } catch (Exception e) {
-            throw new RuntimeException(e);
+        } catch (Exception ex) {
+            throw new InvalidCursorException(ex.getMessage());
         }
     }
 
@@ -37,7 +37,7 @@ public class CursorUtil {
         var optionalCursor = options.getCursor();
 
         if (optionalCursor.isEmpty()) {
-            throw new RuntimeException("Cannot decode an empty cursor.");
+            throw new InvalidCursorException("Cannot decode an empty cursor.");
         }
 
         var cursor = optionalCursor.get();
@@ -49,9 +49,9 @@ public class CursorUtil {
                 .paginationOptions(options)
                 .build();
 
-        } catch (JsonProcessingException exception) {
+        } catch (JsonProcessingException ex) {
             var msg = "Could not decode cursor '" + cursor + "' into " + MediaPaginationOptions.class.getSimpleName();
-            throw new RuntimeException(msg);
+            throw new InvalidCursorException(msg);
         }
     }
 }
