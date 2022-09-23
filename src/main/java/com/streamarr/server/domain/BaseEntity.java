@@ -73,7 +73,7 @@ public abstract class BaseEntity<T extends BaseEntity<T>> {
         return getClass().hashCode();
     }
 
-    public static abstract class BaseEntityBuilder<T extends BaseEntity<T>, C extends BaseEntity<T>, B extends BaseEntityBuilder<T, C, B>> {
+    public abstract static class BaseEntityBuilder<T extends BaseEntity<T>, C extends BaseEntity<T>, B extends BaseEntityBuilder<T, C, B>> {
 
         private B createdOn(Instant createdOn) {
             throw new UnsupportedOperationException("createdOn method is unsupported");

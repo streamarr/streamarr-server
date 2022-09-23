@@ -24,17 +24,19 @@ public class VertxVerticleFactory implements VerticleFactory, ApplicationContext
 
     @Override
     public void init(Vertx vertx) {
+        // unused, we only need to implement createVerticle()
     }
 
     @Override
     public void createVerticle(String verticleName, ClassLoader classLoader, Promise<Callable<Verticle>> promise) {
-        // give the class name as verticle name
+        // use the class name as verticle name
         var clazz = VerticleFactory.removePrefix(verticleName);
         promise.complete(() -> (Verticle) applicationContext.getBean(Class.forName(clazz)));
     }
 
     @Override
     public void close() {
+        // unused, we didn't open any closeable resources
     }
 
     @Override
