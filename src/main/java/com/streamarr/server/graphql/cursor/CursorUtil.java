@@ -34,11 +34,13 @@ public class CursorUtil {
 
     public MediaPaginationOptions decodeMediaCursor(PaginationOptions options) {
 
-        if (options.getCursor().isEmpty()) {
+        var optionalCursor = options.getCursor();
+
+        if (optionalCursor.isEmpty()) {
             throw new RuntimeException("Cannot decode an empty cursor.");
         }
 
-        var cursor = options.getCursor().get();
+        var cursor = optionalCursor.get();
 
         try {
             var jsonStr = new String(Base64.getDecoder().decode(cursor));

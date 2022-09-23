@@ -43,4 +43,9 @@ public class MediaFile extends BaseEntity<MediaFile> {
 
         return filepath != null && filepath.equals(that.getFilepath());
     }
+
+    @Override
+    public int hashCode() {
+        return getClass().hashCode();
+    }
 }

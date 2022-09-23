@@ -38,4 +38,9 @@ public class Person extends BaseEntity<Person> {
 
         return name != null && name.equals(that.getName());
     }
+
+    @Override
+    public int hashCode() {
+        return getClass().hashCode();
+    }
 }
