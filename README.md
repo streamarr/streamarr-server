@@ -22,6 +22,12 @@
 
 </p>
 
+# Intro
+
+What is Streamarr? Streamarr is a modern open source media management solution.
+
+Streamarr is currently in active development with the core functionality still a WIP. We are looking for contributors.
+
 ### Running in development:
 
 #### Step 1 - Build PG Docker Image:

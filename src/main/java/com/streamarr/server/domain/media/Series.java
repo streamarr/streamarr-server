@@ -16,6 +16,5 @@ import javax.persistence.Entity;
 @NoArgsConstructor
 public class Series extends BaseCollectable<Series> {
 
-    // TODO: Store these locally? What about the intermediate state when we only have a URL?
     private String artwork;
 }

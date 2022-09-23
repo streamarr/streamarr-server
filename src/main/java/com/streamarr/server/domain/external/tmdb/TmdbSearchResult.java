@@ -13,7 +13,7 @@ import java.util.List;
 public class TmdbSearchResult {
 
     @JsonProperty("poster_path")
-    private String poster_path;
+    private String posterPath;
     private boolean adult;
     private String overview;
     @JsonProperty("release_date")

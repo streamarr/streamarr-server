@@ -33,7 +33,6 @@ public class Movie extends BaseCollectable<Movie> {
     // TODO: Should this actually be imdbId or "externalId"?
     private String tmdbId;
 
-    // TODO: Store these locally? What about the intermediate state when we only have a URL?
     private String artwork;
 
     // TODO: ENUM or String? Example: "PG", "R"

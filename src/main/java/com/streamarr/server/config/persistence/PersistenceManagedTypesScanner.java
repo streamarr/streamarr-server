@@ -61,17 +61,23 @@ public class PersistenceManagedTypesScanner {
             var readerFactory = new CachingMetadataReaderFactory(resourcePatternResolver);
 
             for (Resource resource : resources) {
-                try {
-                    var reader = readerFactory.getMetadataReader(resource);
-                    var className = reader.getClassMetadata().getClassName();
-
-                    if (matchesFilter(reader, readerFactory)) {
-                        scanResult.managedClassNames.add(className);
-                    }
-                } catch (FileNotFoundException ex) {
-                    // Ignore non-readable resource
-                }
+                scanResource(readerFactory, resource, scanResult);
             }
+        } catch (IOException ex) {
+            throw new PersistenceException("Failed to get resources", ex);
+        }
+    }
+
+    private void scanResource(CachingMetadataReaderFactory readerFactory, Resource resource, ScanResult scanResult) {
+        try {
+            var reader = readerFactory.getMetadataReader(resource);
+            var className = reader.getClassMetadata().getClassName();
+
+            if (matchesFilter(reader, readerFactory)) {
+                scanResult.managedClassNames.add(className);
+            }
+        } catch (FileNotFoundException ex) {
+            // Ignore non-readable resource
         } catch (IOException ex) {
             throw new PersistenceException("Failed to scan classpath for unlisted entity classes", ex);
         }

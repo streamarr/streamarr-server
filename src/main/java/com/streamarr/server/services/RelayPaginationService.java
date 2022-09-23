@@ -92,9 +92,10 @@ public class RelayPaginationService {
         return pageSize;
     }
 
+    @SuppressWarnings("unchecked")
     public <T> Connection<T> buildConnection(List<Edge<? extends BaseEntity<?>>> edges, PaginationOptions options, Optional<UUID> cursorId) {
 
-        if (edges.size() == 0) {
+        if (edges.isEmpty()) {
             return emptyConnection();
         }
 
@@ -117,7 +118,7 @@ public class RelayPaginationService {
                 edges = edges.subList(0, edges.size() - 1);
             }
 
-            if (edges.size() == 0) {
+            if (edges.isEmpty()) {
                 return emptyConnection();
             }
         }

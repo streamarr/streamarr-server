@@ -3,9 +3,7 @@ version: "3.7"
 services:
 
   postgres:
-    build:
-      context: .
-      dockerfile: pg-Dockerfile
+    image: postgres:14.5-alpine
     restart: always
     ports:
       - "5432:5432"
