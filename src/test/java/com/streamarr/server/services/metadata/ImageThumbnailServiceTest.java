@@ -25,7 +25,7 @@ public class ImageThumbnailServiceTest {
 
     @Test
     @DisplayName("Should successfully convert image to a thumbnail image.")
-    public void shouldConvertToThumbnail() {
+    void shouldConvertToThumbnail() {
         var imageOutput = imageThumbnailService.convertImageToThumbnails(Base64.getDecoder().decode(BASE_64_IMAGE));
 
         assertThat(imageOutput).isNotEmpty();

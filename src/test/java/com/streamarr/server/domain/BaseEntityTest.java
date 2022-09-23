@@ -12,6 +12,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Tag("UnitTest")
 @DisplayName("Base Entity Tests")
@@ -23,15 +24,15 @@ public class BaseEntityTest {
 
         @Test
         @DisplayName("Should return true when comparing the exact same instance")
-        public void shouldReturnTrueWhenComparingTheExactSameInstance() {
+        void shouldReturnTrueWhenComparingTheExactSameInstance() {
             var review = Review.builder().build();
 
-            assertThat(review.equals(review)).isTrue();
+            assertTrue(review.equals(review));
         }
 
         @Test
         @DisplayName("Should return false when object has a null ID")
-        public void shouldReturnFalseWhenObjectHasNullId() {
+        void shouldReturnFalseWhenObjectHasNullId() {
             var review1 = Review.builder().build();
             var review2 = Review.builder().build();
 
@@ -40,7 +41,7 @@ public class BaseEntityTest {
 
         @Test
         @DisplayName("Should return false when objects have different IDs")
-        public void shouldReturnFalseWhenObjectsHaveDifferentIds() {
+        void shouldReturnFalseWhenObjectsHaveDifferentIds() {
             var review1 = Review.builder().id(UUID.randomUUID()).build();
             var review2 = Review.builder().id(UUID.randomUUID()).build();
 
@@ -49,7 +50,7 @@ public class BaseEntityTest {
 
         @Test
         @DisplayName("Should return true when objects of the same runtime class have the same IDs")
-        public void shouldReturnTrueWhenObjectsOfTheSameRuntimeClassHaveTheSameIds() {
+        void shouldReturnTrueWhenObjectsOfTheSameRuntimeClassHaveTheSameIds() {
             var id = UUID.randomUUID();
             var review1 = Review.builder().id(id).build();
             var review2 = Review.builder().id(id).build();
@@ -64,7 +65,7 @@ public class BaseEntityTest {
 
         @Test
         @DisplayName("Should return correct hash code for class extension")
-        public void shouldReturnCorrectHashCodeForClassExtension() {
+        void shouldReturnCorrectHashCodeForClassExtension() {
             var review = Review.builder().build();
 
             assertThat(review.hashCode()).isEqualTo(Review.class.hashCode());
@@ -77,7 +78,7 @@ public class BaseEntityTest {
 
         @Test
         @DisplayName("Should throw exception when createdOn builder accessed")
-        public void shouldThrowExceptionWhenCreatedOnBuilderAccessed() throws Exception {
+        void shouldThrowExceptionWhenCreatedOnBuilderAccessed() throws Exception {
             var builder = Review.builder();
             var createdOnMethod = BaseEntity.BaseEntityBuilder.class.getDeclaredMethod("createdOn", Instant.class);
 
@@ -92,7 +93,7 @@ public class BaseEntityTest {
 
         @Test
         @DisplayName("Should throw exception when lastModifiedOn builder accessed")
-        public void shouldThrowExceptionWhenLastModifiedOnBuilderAccessed() throws Exception {
+        void shouldThrowExceptionWhenLastModifiedOnBuilderAccessed() throws Exception {
             var builder = Review.builder();
             var lastModifiedOnMethod = BaseEntity.BaseEntityBuilder.class.getDeclaredMethod("lastModifiedOn", Instant.class);
 

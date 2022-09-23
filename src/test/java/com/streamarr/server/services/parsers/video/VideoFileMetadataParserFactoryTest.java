@@ -30,7 +30,7 @@ public class VideoFileMetadataParserFactoryTest {
     private VideoFileMetadataParserFactory videoFileMetadataParserFactory;
 
     @BeforeEach
-    public void setup() {
+    void setup() {
         parsers.add(mockDefaultVideoFileMetadataParser);
         videoFileMetadataParserFactory = new VideoFileMetadataParserFactory(parsers);
     }
