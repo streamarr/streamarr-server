@@ -1,4 +1,4 @@
-package com.streamarr.server.utils;
+package com.streamarr.server.services.parsers.show.regex;
 
 import lombok.Getter;
 import org.springframework.stereotype.Component;
@@ -8,7 +8,7 @@ import java.util.List;
 
 @Component
 @Getter
-public class EpisodeRegexConfig {
+public class EpisodeRegexFixtures {
 
     private final List<EpisodeRegexContainer> standardRegexContainerList = new ArrayList<>(List.of(
         EpisodeRegexContainer.NamedGroupRegex.builder()

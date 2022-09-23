@@ -1,4 +1,4 @@
-package com.streamarr.server.utils;
+package com.streamarr.server.services.parsers.show.regex;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.DynamicTest;
@@ -11,15 +11,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 
 @Tag("UnitTest")
-@DisplayName("Episode Regex Config Tests")
-public class EpisodeRegexConfigTest {
+@DisplayName("Episode Regex Fixtures Tests")
+public class EpisodeRegexFixturesTest {
 
-    private final EpisodeRegexConfig episodeRegexConfig = new EpisodeRegexConfig();
+    private final EpisodeRegexFixtures episodeRegexFixtures = new EpisodeRegexFixtures();
 
     @TestFactory
     Stream<DynamicTest> dynamicTestsForStandardEpisodeRegex() {
 
-        return episodeRegexConfig.getStandardRegexContainerList().stream()
+        return episodeRegexFixtures.getStandardRegexContainerList().stream()
             .map(regexContainer -> DynamicTest.dynamicTest(
                 "testing example: " + regexContainer.exampleMatch(),
                 () -> {

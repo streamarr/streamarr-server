@@ -8,7 +8,7 @@ import java.util.Optional;
 @Service
 public class SeriesPathMetadataParser implements MetadataParser<String> {
 
-    public Optional<String> extract(String path) {
+    public Optional<String> parse(String path) {
         return Optional.of("");
     }
 }

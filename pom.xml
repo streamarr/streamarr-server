@@ -5,7 +5,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>2.7.3</version>
+        <version>2.7.4</version>
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     <groupId>com.streamarr</groupId>
@@ -18,25 +18,22 @@
 
         <apache-commons-lang.version>3.12.0</apache-commons-lang.version>
         <apache-commons-io.version>2.11.0</apache-commons-io.version>
-        <dgs-graphql.version>5.2.1</dgs-graphql.version>
-        <reactor.version>3.4.22</reactor.version>
+        <dgs-graphql.version>5.2.4</dgs-graphql.version>
+        <reactor.version>3.4.23</reactor.version>
         <flyway.version>8.5.13</flyway.version>
         <lombok.version>1.18.24</lombok.version>
         <postgresql.version>42.5.0</postgresql.version>
         <methvin-directory-watcher.version>0.16.1</methvin-directory-watcher.version>
-        <jooq.version>3.17.3</jooq.version>
+        <jooq.version>3.17.4</jooq.version>
         <maven-compiler-plugin.version>3.10.1</maven-compiler-plugin.version>
         <yaml-properties-maven-plugin.version>1.1.3</yaml-properties-maven-plugin.version>
         <hibernate-types.version>2.19.2</hibernate-types.version>
         <vertx.version>4.3.3</vertx.version>
         <thumbnailator.version>0.4.17</thumbnailator.version>
         <hibernate-reactive.version>1.1.7.Final</hibernate-reactive.version>
-        <smallrye-reactive.version>2.26.0</smallrye-reactive.version>
+        <smallrye-mutiny-vertx.version>2.26.0</smallrye-mutiny-vertx.version>
         <scram.version>2.1</scram.version>
-
-        <zonky.embedded.db.spring.test.version>2.1.2</zonky.embedded.db.spring.test.version>
-        <zonky.embedded.postgres.version>2.0.1</zonky.embedded.postgres.version>
-        <zonky.embedded.postgres.binaries.bom.version>14.4.0</zonky.embedded.postgres.binaries.bom.version>
+        <vertx-starter.version>1.4.1</vertx-starter.version>
     </properties>
 
     <dependencies>
@@ -78,6 +75,10 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-jooq</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>dev.snowdrop</groupId>
+            <artifactId>vertx-spring-boot-starter</artifactId>
         </dependency>
 
         <dependency>
@@ -215,6 +216,12 @@
             </dependency>
 
             <dependency>
+                <groupId>dev.snowdrop</groupId>
+                <artifactId>vertx-spring-boot-starter</artifactId>
+                <version>${vertx-starter.version}</version>
+            </dependency>
+
+            <dependency>
                 <groupId>org.projectlombok</groupId>
                 <artifactId>lombok</artifactId>
                 <version>${lombok.version}</version>
@@ -279,7 +286,7 @@
             <dependency>
                 <groupId>io.smallrye.reactive</groupId>
                 <artifactId>smallrye-mutiny-vertx-core</artifactId>
-                <version>${smallrye-reactive.version}</version>
+                <version>${smallrye-mutiny-vertx.version}</version>
             </dependency>
 
             <dependency>

@@ -1,10 +1,11 @@
 package com.streamarr.server.services.parsers.show;
 
 import com.streamarr.server.services.parsers.MetadataParser;
-import com.streamarr.server.utils.EpisodeRegexConfig;
-import com.streamarr.server.utils.EpisodeRegexContainer;
+import com.streamarr.server.services.parsers.show.regex.EpisodeRegexContainer;
+import com.streamarr.server.services.parsers.show.regex.EpisodeRegexFixtures;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -16,12 +17,13 @@ import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
+@Order(0)
 public class EpisodePathMetadataParser implements MetadataParser<EpisodePathResult> {
 
-    private final EpisodeRegexConfig episodeRegexConfig;
+    private final EpisodeRegexFixtures episodeRegexFixtures;
 
-    public Optional<EpisodePathResult> extract(String filename) {
-        var optionalResult = episodeRegexConfig.getStandardRegexContainerList().stream()
+    public Optional<EpisodePathResult> parse(String filename) {
+        var optionalResult = episodeRegexFixtures.getStandardRegexContainerList().stream()
             .map(regexContainer -> attemptMatch(filename, regexContainer))
             .filter(episodePathResult -> episodePathResult.isPresent() && episodePathResult.get().isSuccess())
             .findFirst()
@@ -199,10 +201,10 @@ public class EpisodePathMetadataParser implements MetadataParser<EpisodePathResu
 
     private EpisodePathResult fillAdditionalInfo(String filename, EpisodePathResult result) {
 
-        var multipleEpisodeRegexContainerSet = episodeRegexConfig.getMultipleEpisodeRegexContainerList();
+        var multipleEpisodeRegexContainerSet = episodeRegexFixtures.getMultipleEpisodeRegexContainerList();
 
         if (StringUtils.isBlank(result.getSeriesName())) {
-            multipleEpisodeRegexContainerSet.addAll(0, episodeRegexConfig.getStandardRegexContainerList().stream()
+            multipleEpisodeRegexContainerSet.addAll(0, episodeRegexFixtures.getStandardRegexContainerList().stream()
                 .filter(EpisodeRegexContainer.NamedGroupRegex.class::isInstance)
                 .toList());
         }

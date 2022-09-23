@@ -2,7 +2,7 @@ package com.streamarr.server.services.parsers.show;
 
 
 import com.streamarr.server.services.parsers.MetadataParser;
-import com.streamarr.server.utils.EpisodeRegexConfig;
+import com.streamarr.server.services.parsers.show.regex.EpisodeRegexFixtures;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.DynamicNode;
 import org.junit.jupiter.api.DynamicTest;
@@ -19,8 +19,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("Episode Path Metadata Parsing Tests")
 public class EpisodePathMetadataParserTest {
 
-    private final EpisodeRegexConfig episodeRegexConfig = new EpisodeRegexConfig();
-    private final MetadataParser<EpisodePathResult> episodePathExtractionService = new EpisodePathMetadataParser(episodeRegexConfig);
+    private final EpisodeRegexFixtures episodeRegexFixtures = new EpisodeRegexFixtures();
+    private final MetadataParser<EpisodePathResult> episodePathExtractionService = new EpisodePathMetadataParser(episodeRegexFixtures);
 
     @Nested
     @DisplayName("Should successfully extract everything: series name, season, and episode")
@@ -90,7 +90,7 @@ public class EpisodePathMetadataParserTest {
             ).map(testCase -> DynamicTest.dynamicTest(
                 testCase.filename(),
                 () -> {
-                    var result = episodePathExtractionService.extract(testCase.filename()).orElseThrow();
+                    var result = episodePathExtractionService.parse(testCase.filename()).orElseThrow();
 
                     assertThat(result.getSeriesName()).isEqualTo(testCase.seriesName());
                     assertThat(result.getSeasonNumber().orElseThrow()).isEqualTo(testCase.season());
@@ -130,7 +130,7 @@ public class EpisodePathMetadataParserTest {
             ).map(testCase -> DynamicTest.dynamicTest(
                 testCase.filename(),
                 () -> {
-                    var result = episodePathExtractionService.extract(testCase.filename()).orElseThrow();
+                    var result = episodePathExtractionService.parse(testCase.filename()).orElseThrow();
 
                     assertThat(result.getSeriesName()).isEqualTo(testCase.seriesName());
                     assertThat(result.getEpisodeNumber().orElseThrow()).isEqualTo(testCase.episode());
@@ -167,7 +167,7 @@ public class EpisodePathMetadataParserTest {
             ).map(testCase -> DynamicTest.dynamicTest(
                 testCase.filename(),
                 () -> {
-                    var result = episodePathExtractionService.extract(testCase.filename()).orElseThrow();
+                    var result = episodePathExtractionService.parse(testCase.filename()).orElseThrow();
 
                     assertThat(result.getSeriesName()).isEqualTo(testCase.seriesName());
                     assertThat(result.getDate()).isEqualTo(testCase.date());
@@ -216,7 +216,7 @@ public class EpisodePathMetadataParserTest {
             ).map(testCase -> DynamicTest.dynamicTest(
                 testCase.filename(),
                 () -> {
-                    var result = episodePathExtractionService.extract(testCase.filename()).orElseThrow();
+                    var result = episodePathExtractionService.parse(testCase.filename()).orElseThrow();
 
                     assertThat(result.getSeasonNumber().orElseThrow()).isEqualTo(testCase.season());
                     assertThat(result.getEpisodeNumber().orElseThrow()).isEqualTo(testCase.episode());
@@ -261,7 +261,7 @@ public class EpisodePathMetadataParserTest {
             ).map(testCase -> DynamicTest.dynamicTest(
                 testCase.filename(),
                 () -> {
-                    var result = episodePathExtractionService.extract(testCase.filename()).orElseThrow();
+                    var result = episodePathExtractionService.parse(testCase.filename()).orElseThrow();
 
                     assertThat(result.getSeasonNumber()).isEmpty();
                     assertThat(result.getEpisodeNumber().orElseThrow()).isEqualTo(testCase.episode());
@@ -320,7 +320,7 @@ public class EpisodePathMetadataParserTest {
             ).map(testCase -> DynamicTest.dynamicTest(
                 testCase.filename(),
                 () -> {
-                    var result = episodePathExtractionService.extract(testCase.filename()).orElseThrow();
+                    var result = episodePathExtractionService.parse(testCase.filename()).orElseThrow();
 
                     assertThat(result.getSeriesName()).isEqualTo(testCase.seriesName());
                     assertThat(result.getEndingEpisodeNumber().orElseThrow()).isEqualTo(testCase.endingEpisode());
@@ -352,7 +352,7 @@ public class EpisodePathMetadataParserTest {
             ).map(testCase -> DynamicTest.dynamicTest(
                 testCase.filename(),
                 () -> {
-                    var result = episodePathExtractionService.extract(testCase.filename()).orElseThrow();
+                    var result = episodePathExtractionService.parse(testCase.filename()).orElseThrow();
 
                     // TODO: check other properties?
                     assertThat(result.getEndingEpisodeNumber()).isEmpty();
@@ -378,7 +378,7 @@ public class EpisodePathMetadataParserTest {
             ).map(testCase -> DynamicTest.dynamicTest(
                 testCase.filename(),
                 () -> {
-                    var result = episodePathExtractionService.extract(testCase.filename());
+                    var result = episodePathExtractionService.parse(testCase.filename());
 
                     assertThat(result).isEmpty();
                 })

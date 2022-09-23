@@ -45,7 +45,7 @@ public class SeasonPathMetadataParserTest {
             ).map(testCase -> DynamicTest.dynamicTest(
                 testCase.filename(),
                 () -> {
-                    var result = seasonPathMetadataParser.extract(testCase.filename()).orElseThrow();
+                    var result = seasonPathMetadataParser.parse(testCase.filename()).orElseThrow();
 
                     assertThat(result.seasonNumber().orElseThrow()).isEqualTo(testCase.seasonNumber());
                     assertThat(result.isSeasonFolder()).isEqualTo(testCase.isSeasonDirectory());
@@ -71,7 +71,7 @@ public class SeasonPathMetadataParserTest {
             ).map(testCase -> DynamicTest.dynamicTest(
                 testCase.filename(),
                 () -> {
-                    var result = seasonPathMetadataParser.extract(testCase.filename()).orElseThrow();
+                    var result = seasonPathMetadataParser.parse(testCase.filename()).orElseThrow();
 
                     assertThat(result.seasonNumber()).isEmpty();
                     assertThat(result.isSeasonFolder()).isEqualTo(testCase.isSeasonDirectory());

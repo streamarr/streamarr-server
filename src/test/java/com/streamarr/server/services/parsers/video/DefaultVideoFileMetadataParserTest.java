@@ -54,11 +54,13 @@ public class DefaultVideoFileMetadataParserTest {
                 new TestCase("300", "2006", "300 (2006)"),
                 new TestCase("300 2", "2006", "300 2 (2006)"),
                 new TestCase("300 - 2", "2006", "300 - 2 (2006)"),
-                new TestCase("[REC]", "2007", "[REC] (2007) - [REMUX-1080p][AC3 5.1].mkv")
+                new TestCase("[REC]", "2007", "[REC] (2007) - [REMUX-1080p][AC3 5.1].mkv"),
+                new TestCase("Nope", "2022", "Nope (2022) [WEBDL-1080p][EAC3 5.1][h264]-EVO.mkv"),
+                new TestCase("3 Idiots", "2009", "3 Idiots - (2009) - [Bluray-1080p][DTS-HD MA 5.1].mkv")
             ).map(testCase -> DynamicTest.dynamicTest(
                 testCase.filename(),
                 () -> {
-                    var result = defaultVideoFileMetadataParser.extract(testCase.filename());
+                    var result = defaultVideoFileMetadataParser.parse(testCase.filename());
 
                     assertThat(result.orElseThrow().title()).isEqualTo(testCase.title());
                     assertThat(result.orElseThrow().year()).isEqualTo(testCase.year());
@@ -99,7 +101,7 @@ public class DefaultVideoFileMetadataParserTest {
             ).map(testCase -> DynamicTest.dynamicTest(
                 testCase.filename(),
                 () -> {
-                    var result = defaultVideoFileMetadataParser.extract(testCase.filename());
+                    var result = defaultVideoFileMetadataParser.parse(testCase.filename());
 
                     assertThat(result.orElseThrow().title()).isEqualTo(testCase.title());
                     assertThat(result.orElseThrow().year()).isNull();
@@ -124,7 +126,7 @@ public class DefaultVideoFileMetadataParserTest {
             ).map(testCase -> DynamicTest.dynamicTest(
                 testCase.name(),
                 () -> {
-                    var result = defaultVideoFileMetadataParser.extract(testCase.input());
+                    var result = defaultVideoFileMetadataParser.parse(testCase.input());
 
                     assertTrue(result.isEmpty());
                 })

@@ -1,4 +1,4 @@
-package com.streamarr.server.utils;
+package com.streamarr.server.services.parsers.show.regex;
 
 import lombok.Builder;
 
