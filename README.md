@@ -28,27 +28,30 @@ What is Streamarr? Streamarr is a modern open source media management solution.
 
 Streamarr is currently in active development with the core functionality still a WIP. We are looking for contributors.
 
-### Running in development:
+### Running in docker:
 
-#### Step 1 - Build PG Docker Image:
-
-`docker compose build`
-
-#### Step 2 - Start PG Docker Container:
-
-`docker compose up -d`
-
-#### Step 3 - Ensure JAVA_HOME = JDK 17 (_MACOS example_)
+#### Step 1 - Ensure JAVA_HOME = JDK 17 (_MACOS example_)
 
 `jenv local 17.0.3`
 
-#### Step 4 - Start Streamarr Server
-
-`./mvnw spring-boot:run`
-
-### To build docker image
+#### Step 2 - Build the docker image
 
 `./mvnw spring-boot:build-image`
 
-Image will look like:
-'docker.io/library/server:0.0.1-SNAPSHOT'
+Resulting image from this build command will look like:
+
+`docker.io/library/server:0.0.1-SNAPSHOT`
+
+#### Step 3 - Start PG Docker Container:
+
+`docker compose up -d`
+
+### Running locally:
+
+#### Step 1 - Ensure JAVA_HOME = JDK 17 (_MACOS example_)
+
+`jenv local 17.0.3`
+
+#### Step 2 - Start Streamarr Server
+
+`./mvnw spring-boot:run`
