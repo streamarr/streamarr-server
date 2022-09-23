@@ -7,10 +7,19 @@
 <br />
 <br />
 <br />
-    
-<a href="https://github.com/streamarr/streamarr-server/">
+
+<a href="https://github.com/streamarr/streamarr-server/blob/main/LICENSE">
 <img alt="GPL 3.0 License" src="https://img.shields.io/badge/license-GPL--3.0-orange.svg"/>
 </a>
+
+<a href="https://sonarcloud.io/summary/new_code?id=streamarr_streamarr-server">
+<img alt="Code Coverage" src="https://sonarcloud.io/api/project_badges/measure?project=streamarr_streamarr-server&metric=coverage"/>
+</a>
+
+<a href="https://sonarcloud.io/summary/new_code?id=streamarr_streamarr-server">
+<img alt="Security Rating" src="https://sonarcloud.io/api/project_badges/measure?project=streamarr_streamarr-server&metric=security_rating"/>
+</a>
+
 </p>
 
 ### Running in development:
