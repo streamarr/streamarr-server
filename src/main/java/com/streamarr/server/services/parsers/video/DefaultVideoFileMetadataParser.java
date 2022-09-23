@@ -91,7 +91,7 @@ public class DefaultVideoFileMetadataParser implements MetadataParser<VideoFileM
     }
 
     private String removeTrailingSymbols(String title) {
-        return title.replaceAll("[-]+$", "");
+        return title.replaceAll("(-$)", "");
     }
 
     private String cleanYear(String year) {
