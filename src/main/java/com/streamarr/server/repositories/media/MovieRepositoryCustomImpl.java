@@ -59,7 +59,7 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
 
         if (tmdbId != null && !tmdbId.trim().isEmpty()) {
             query.where(
-                cb.equal(root.get("tmdb_id"), tmdbId)
+                cb.equal(root.get("tmdbId"), tmdbId)
             );
         }
 
