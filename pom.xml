@@ -14,7 +14,7 @@
     <name>Streamarr-Server</name>
     <description>Streamarr, the open source media server system.</description>
     <properties>
-        <java.version>17</java.version>
+        <java.version>19</java.version>
         <sonar.projectKey>streamarr_streamarr-server</sonar.projectKey>
         <sonar.organization>streamarr</sonar.organization>
         <sonar.host.url>https://sonarcloud.io</sonar.host.url>
@@ -88,6 +88,22 @@
         <dependency>
             <groupId>dev.snowdrop</groupId>
             <artifactId>vertx-spring-boot-starter</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.github.mizosoft.methanol</groupId>
+            <artifactId>methanol</artifactId>
+            <version>1.7.0</version>
+        </dependency>
+        <dependency>
+            <groupId>com.github.mizosoft.methanol</groupId>
+            <artifactId>methanol-jackson</artifactId>
+            <version>1.7.0</version>
+        </dependency>
+        <dependency>
+            <groupId>com.google.auto.service</groupId>
+            <artifactId>auto-service-annotations</artifactId>
+            <version>1.0.1</version>
         </dependency>
 
         <dependency>
@@ -343,6 +359,13 @@
                     <compilerArgs>
                         <arg>--enable-preview</arg>
                     </compilerArgs>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>com.google.auto.service</groupId>
+                            <artifactId>auto-service</artifactId>
+                            <version>1.0.1</version>
+                        </path>
+                    </annotationProcessorPaths>
                 </configuration>
             </plugin>
             <plugin>

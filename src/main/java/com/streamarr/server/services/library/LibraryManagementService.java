@@ -255,6 +255,16 @@ public class LibraryManagementService implements InitializingBean {
     private void enrichMovieMetadata(Library library, MediaFile mediaFile, String id) {
         var movieResult = theMovieDatabaseService.getMovieMetadata(String.valueOf(id));
 
+        movieResult.onComplete(t -> {
+            log.info(t.result().body().getTitle());
+        }).onFailure(f -> {
+            log.error("Failure getting movie metadata:", f);
+        });
+    }
+
+    private void enrichMovieMetadataFull(Library library, MediaFile mediaFile, String id) {
+        var movieResult = theMovieDatabaseService.getMovieMetadata(String.valueOf(id));
+
         var fs = vertx.fileSystem();
         var movieCtx = new MovieContext();
 
