@@ -1,7 +1,6 @@
 package com.streamarr.server.repositories.media;
 
 import com.streamarr.server.domain.media.Movie;
-import com.streamarr.server.domain.media.Movie_;
 import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.graphql.cursor.MediaPaginationOptions;
 import com.streamarr.server.graphql.cursor.PaginationDirection;
@@ -60,14 +59,14 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
 
         if (tmdbId != null && !tmdbId.trim().isEmpty()) {
             query.where(
-                cb.equal(root.get(Movie_.TMDB_ID), tmdbId)
+                cb.equal(root.get("tmdb_id"), tmdbId)
             );
         }
 
         return UniHelper.toFuture(sessionFactory.withSession(session -> {
             var graph = session.createEntityGraph(Movie.class);
-            graph.addAttributeNodes(Movie_.FILES);
-            graph.addAttributeNodes(Movie_.CAST);
+            graph.addAttributeNodes("files");
+            graph.addAttributeNodes("cast");
 
             return session.createQuery(query)
                 .setPlan(graph)
