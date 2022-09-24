@@ -43,6 +43,7 @@
         <smallrye-mutiny-vertx.version>2.26.0</smallrye-mutiny-vertx.version>
         <scram.version>2.1</scram.version>
         <vertx-starter.version>1.4.1</vertx-starter.version>
+        <google-auto-service.version>1.0.1</google-auto-service.version>
     </properties>
 
     <dependencies>
@@ -363,7 +364,12 @@
                         <path>
                             <groupId>com.google.auto.service</groupId>
                             <artifactId>auto-service</artifactId>
-                            <version>1.0.1</version>
+                            <version>${google-auto-service.version}</version>
+                        </path>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
                         </path>
                     </annotationProcessorPaths>
                 </configuration>
