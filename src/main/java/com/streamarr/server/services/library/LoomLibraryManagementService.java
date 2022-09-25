@@ -36,6 +36,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 
 
@@ -204,7 +205,7 @@ public class LoomLibraryManagementService implements InitializingBean {
         return result;
     }
 
-    private <T> HttpResponse<TmdbSearchResults> searchForMedia(T information, HttpClient client) throws IOException, InterruptedException {
+    private <T> HttpResponse<TmdbSearchResults> searchForMedia(T information, HttpClient client) throws InterruptedException, ExecutionException {
         return switch (information) {
             case VideoFileMetadata videoFileMetadata ->
                 theMovieDatabaseService.searchForMovie(videoFileMetadata, client);
