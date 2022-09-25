@@ -137,6 +137,12 @@ public class LoomLibraryManagementService implements InitializingBean {
 
         try {
             var searchResult = searchForMedia(mediaInformationResult.get(), client);
+
+            if (searchResult.body().getResults().isEmpty()) {
+                log.error("Empty search results for Title: {}", mediaInformationResult.get().title());
+                return;
+            }
+            
             var firstResult = searchResult.body().getResults().get(0);
 
             enrichMediaMetadata(library, mediaFile, firstResult.getId(), client);
