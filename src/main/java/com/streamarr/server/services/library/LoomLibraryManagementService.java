@@ -94,7 +94,7 @@ public class LoomLibraryManagementService implements InitializingBean {
 
             HttpClient client = Methanol.newBuilder()
                 .version(HttpClient.Version.HTTP_1_1)
-                .connectTimeout(Duration.ofSeconds(5))
+                .connectTimeout(Duration.ofSeconds(10))
                 .executor(httpClientExecutorService)
                 .build();
 
@@ -139,10 +139,12 @@ public class LoomLibraryManagementService implements InitializingBean {
             var searchResult = searchForMedia(mediaInformationResult.get(), client);
 
             if (searchResult.body().getResults().isEmpty()) {
+                // Our flag means death?
+                // The king of comedy
                 log.error("Empty search results for Title: {}", mediaInformationResult.get().title());
                 return;
             }
-            
+
             var firstResult = searchResult.body().getResults().get(0);
 
             enrichMediaMetadata(library, mediaFile, firstResult.getId(), client);
