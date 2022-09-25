@@ -1,5 +1,6 @@
 package com.streamarr.server.services.library;
 
+import com.github.mizosoft.methanol.Methanol;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.external.tmdb.TmdbSearchResults;
@@ -91,7 +92,8 @@ public class LoomLibraryManagementService implements InitializingBean {
              var executor = Executors.newVirtualThreadPerTaskExecutor();
              var stream = Files.walk(Paths.get(library.getFilepath()))) {
 
-            HttpClient client = HttpClient.newBuilder()
+            HttpClient client = Methanol.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(Duration.ofSeconds(5))
                 .executor(httpClientExecutorService)
                 .build();
