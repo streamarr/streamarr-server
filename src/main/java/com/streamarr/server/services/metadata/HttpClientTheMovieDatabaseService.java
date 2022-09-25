@@ -18,7 +18,6 @@ import java.io.IOException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.util.concurrent.ExecutionException;
 
 
 @Service
@@ -36,7 +35,7 @@ public class HttpClientTheMovieDatabaseService {
         this.log = log;
     }
 
-    public HttpResponse<TmdbSearchResults> searchForMovie(VideoFileMetadata videoFileMetadata, HttpClient client) throws InterruptedException, ExecutionException {
+    public HttpResponse<TmdbSearchResults> searchForMovie(VideoFileMetadata videoFileMetadata, HttpClient client) throws IOException, InterruptedException {
         var query = new LinkedMultiValueMap<String, String>();
 
         query.add("query", videoFileMetadata.title());
@@ -48,7 +47,7 @@ public class HttpClientTheMovieDatabaseService {
         return searchForMovieRequest(query, client);
     }
 
-    public HttpResponse<TmdbMovie> getMovieMetadata(String movieId, HttpClient client) throws InterruptedException, ExecutionException {
+    public HttpResponse<TmdbMovie> getMovieMetadata(String movieId, HttpClient client) throws IOException, InterruptedException {
         var uri = baseUrl().path("/movie/").path(movieId).queryParam("api_key", tmdbApiKey).build();
 
         var request = HttpRequest.newBuilder()
@@ -56,7 +55,7 @@ public class HttpClientTheMovieDatabaseService {
             .GET()
             .build();
 
-        return client.sendAsync(request, new JsonBodyHandler<>(TmdbMovie.class)).get();
+        return client.send(request, new JsonBodyHandler<>(TmdbMovie.class));
     }
 
     public void getImage(String imagePath, HttpClient client) {
@@ -79,7 +78,7 @@ public class HttpClientTheMovieDatabaseService {
         return client.send(request, new JsonBodyHandler<>(TmdbCredits.class));
     }
 
-    private HttpResponse<TmdbSearchResults> searchForMovieRequest(MultiValueMap<String, String> query, HttpClient client) throws InterruptedException, ExecutionException {
+    private HttpResponse<TmdbSearchResults> searchForMovieRequest(MultiValueMap<String, String> query, HttpClient client) throws IOException, InterruptedException {
         var uri = baseUrl().path("/search/movie").queryParams(query).queryParam("api_key", tmdbApiKey).build();
 
         var request = HttpRequest.newBuilder()
@@ -88,7 +87,7 @@ public class HttpClientTheMovieDatabaseService {
             .build();
 
 
-        return client.sendAsync(request, new JsonBodyHandler<>(TmdbSearchResults.class)).get();
+        return client.send(request, new JsonBodyHandler<>(TmdbSearchResults.class));
     }
 
     private void searchForShowRequest(MultiValueMap<String, String> query, HttpClient client) {

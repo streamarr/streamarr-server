@@ -1,6 +1,5 @@
 package com.streamarr.server.services.library;
 
-import com.github.mizosoft.methanol.Methanol;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.external.tmdb.TmdbSearchResults;
@@ -36,7 +35,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 
 
@@ -93,7 +91,7 @@ public class LoomLibraryManagementService implements InitializingBean {
              var executor = Executors.newVirtualThreadPerTaskExecutor();
              var stream = Files.walk(Paths.get(library.getFilepath()))) {
 
-            HttpClient client = Methanol.newBuilder()
+            HttpClient client = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(5))
                 .executor(httpClientExecutorService)
                 .build();
@@ -205,7 +203,7 @@ public class LoomLibraryManagementService implements InitializingBean {
         return result;
     }
 
-    private <T> HttpResponse<TmdbSearchResults> searchForMedia(T information, HttpClient client) throws InterruptedException, ExecutionException {
+    private <T> HttpResponse<TmdbSearchResults> searchForMedia(T information, HttpClient client) throws IOException, InterruptedException {
         return switch (information) {
             case VideoFileMetadata videoFileMetadata ->
                 theMovieDatabaseService.searchForMovie(videoFileMetadata, client);
