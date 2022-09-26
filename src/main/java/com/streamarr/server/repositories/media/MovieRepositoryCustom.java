@@ -10,7 +10,7 @@ public interface MovieRepositoryCustom {
 
     Future<Movie> saveAsync(Movie movie);
 
-    Future<Movie> findByTmdbId(String tmdbId);
+    Future<Movie> findByTmdbIdAsync(String tmdbId);
 
     List<Movie> seekWithFilter(MediaPaginationOptions options);
 

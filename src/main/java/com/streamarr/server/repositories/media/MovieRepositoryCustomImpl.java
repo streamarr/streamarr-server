@@ -50,7 +50,7 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
         }
     }
 
-    public Future<Movie> findByTmdbId(String tmdbId) {
+    public Future<Movie> findByTmdbIdAsync(String tmdbId) {
         var cb = sessionFactory.getCriteriaBuilder();
 
         var query = cb.createQuery(Movie.class);

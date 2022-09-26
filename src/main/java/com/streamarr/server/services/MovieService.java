@@ -2,19 +2,24 @@ package com.streamarr.server.services;
 
 import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.BaseEntity;
+import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.graphql.cursor.MediaPaginationOptions;
 import com.streamarr.server.graphql.cursor.PaginationOptions;
+import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import graphql.relay.Connection;
 import graphql.relay.DefaultEdge;
 import graphql.relay.Edge;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
@@ -22,8 +27,31 @@ import java.util.stream.Collectors;
 public class MovieService {
 
     private final MovieRepository movieRepository;
+    private final MediaFileRepository mediaFileRepository;
     private final CursorUtil cursorUtil;
     private final RelayPaginationService relayPaginationService;
+    private final Logger log;
+
+    @Transactional
+    public Optional<Movie> addMediaFileToMovieByTmdbId(String id, MediaFile mediaFile) {
+        var movie = movieRepository.findFirstByTmdbId(id);
+
+        if (movie.isEmpty()) {
+            return Optional.empty();
+        }
+
+        movie.get().addFile(mediaFile);
+        return Optional.of(movieRepository.saveAndFlush(movie.get()));
+    }
+
+    @Transactional
+    public Movie saveMovieWithMediaFile(Movie movie, MediaFile mediaFile) {
+        var savedMovie = movieRepository.saveAndFlush(movie);
+
+        savedMovie.addFile(mediaFile);
+
+        return movieRepository.save(savedMovie);
+    }
 
     public Connection<? extends BaseCollectable<?>> getMoviesWithFilter(
         int first,

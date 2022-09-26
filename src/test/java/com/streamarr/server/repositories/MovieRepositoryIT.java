@@ -14,11 +14,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.annotation.Transactional;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -71,7 +73,7 @@ public class MovieRepositoryIT {
 
         movieRepository.save(movie);
 
-        var movieFuture = movieRepository.findByTmdbId("123");
+        var movieFuture = movieRepository.findByTmdbIdAsync("123");
 
         movieFuture.compose(m -> {
                 m.addFile(MediaFile.builder()
@@ -89,5 +91,32 @@ public class MovieRepositoryIT {
                     testContext.completeNow();
                 });
             });
+    }
+
+    @Test
+    @DisplayName("Should.")
+    @Transactional
+    void should() {
+
+        var libraryId = UUID.fromString("41b306af-59d0-43f0-af6d-d967592aeb18");
+
+        var file = MediaFile.builder()
+            .libraryId(libraryId)
+            .status(MediaFileStatus.MATCHED)
+            .filename("a-wonderful-test-[1080p].mkv")
+            .filepath("/root/a-wonderful-test-[1080p].mkv")
+            .build();
+
+        var movie = movieRepository.save(Movie.builder()
+            .title("A Wonderful Test")
+            .tmdbId("123")
+            .files(Set.of(file))
+            .libraryId(libraryId) // TODO: This should probably be generated in the future...
+            .build());
+
+        var optionalMovie = movieRepository.findFirstByTmdbId("123");
+
+        System.out.println(optionalMovie.get().getFiles().size());
+
     }
 }

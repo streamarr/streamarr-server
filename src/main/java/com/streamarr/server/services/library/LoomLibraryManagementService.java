@@ -7,22 +7,20 @@ import com.streamarr.server.domain.external.tmdb.TmdbSearchResults;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.MediaType;
+import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.domain.metadata.Company;
+import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
-import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.metadata.HttpClientTheMovieDatabaseService;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileMetadata;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
-import io.vertx.core.Vertx;
-import io.vertx.core.shareddata.SharedData;
-import lombok.Getter;
 import lombok.RequiredArgsConstructor;
-import lombok.Setter;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
-import org.springframework.beans.factory.InitializingBean;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
@@ -37,25 +35,21 @@ import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 
 
 @Service
 @RequiredArgsConstructor
-public class LoomLibraryManagementService implements InitializingBean {
+public class LoomLibraryManagementService {
 
     private final VideoExtensionValidator videoExtensionValidator;
     private final DefaultVideoFileMetadataParser defaultVideoFileMetadataParser;
     private final HttpClientTheMovieDatabaseService theMovieDatabaseService;
     private final LibraryRepository libraryRepository;
     private final MediaFileRepository mediaFileRepository;
-    private final MovieRepository movieRepository;
+    private final MovieService movieService;
     private final Logger log;
-    private final Vertx vertx;
-    private SharedData sharedData;
-
-    public void afterPropertiesSet() {
-        sharedData = vertx.sharedData();
-    }
+    private final MutexFactory<String> mutexFactory;
 
     public void addLibrary() {
         // validate
@@ -81,7 +75,7 @@ public class LoomLibraryManagementService implements InitializingBean {
 
         var library = optionalLibrary.get();
 
-        log.info("Starting " + library.getName() + " library scan.");
+        log.info("Starting {} library scan.", library.getName());
         var startTime = Instant.now();
 
         library.setStatus(LibraryStatus.SCANNING);
@@ -92,6 +86,7 @@ public class LoomLibraryManagementService implements InitializingBean {
              var executor = Executors.newVirtualThreadPerTaskExecutor();
              var stream = Files.walk(Paths.get(library.getFilepath()))) {
 
+            // TODO: Does the executor actually get used here when not using sendAsync?
             HttpClient client = Methanol.newBuilder()
                 .version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(Duration.ofSeconds(10))
@@ -108,7 +103,14 @@ public class LoomLibraryManagementService implements InitializingBean {
             throw new RuntimeException(e);
         }
 
-        log.info("Scanned MediaFiles from Library at filepath: {}", library.getFilepath());
+        var endTime = Instant.now();
+        var elapsedTime = Duration.between(startTime, endTime).getSeconds();
+
+        library.setStatus(LibraryStatus.HEALTHY);
+        library.setRefreshCompletedOn(endTime);
+        libraryRepository.save(library);
+
+        log.info("Finished {} library scan in {} seconds.", library.getName(), elapsedTime);
     }
 
     private void processFile(Library library, File file, HttpClient client) {
@@ -125,10 +127,11 @@ public class LoomLibraryManagementService implements InitializingBean {
 
         var mediaInformationResult = extractInformationFromMediaFile(library.getType(), mediaFile);
 
-        // TODO: Should this ever retry? Manual resolution
         if (mediaInformationResult.isEmpty()) {
             mediaFile.setStatus(MediaFileStatus.FILENAME_PARSING_FAILED);
             mediaFileRepository.save(mediaFile);
+
+            log.error("Failed to parse file at path '{}'", mediaFile.getFilepath());
 
             return;
         }
@@ -139,9 +142,8 @@ public class LoomLibraryManagementService implements InitializingBean {
             var searchResult = searchForMedia(mediaInformationResult.get(), client);
 
             if (searchResult.body().getResults().isEmpty()) {
-                // Our flag means death?
-                // The king of comedy
-                log.error("Empty search results for Title: {}", mediaInformationResult.get().title());
+                // TODO: investigate failure with: "The king of comedy" - TMDB vs IMDB years?
+                log.error("Empty search results for title '{}'", mediaInformationResult.get().title());
                 return;
             }
 
@@ -149,7 +151,7 @@ public class LoomLibraryManagementService implements InitializingBean {
 
             enrichMediaMetadata(library, mediaFile, firstResult.getId(), client);
         } catch (Exception ex) {
-            log.error("Failure finding search results:", ex);
+            log.error("Failure requesting search results:", ex);
         }
     }
 
@@ -223,19 +225,67 @@ public class LoomLibraryManagementService implements InitializingBean {
 
     private void enrichMediaMetadata(Library library, MediaFile mediaFile, int id, HttpClient client) {
         switch (library.getType()) {
-            case MOVIE -> enrichMovieMetadata(library, mediaFile, String.valueOf(id), client);
+            case MOVIE -> enrichMovieMetadata(library, mediaFile, String.valueOf(id));
             default -> throw new IllegalStateException("Unexpected value: " + mediaFile);
         }
         ;
     }
 
-    private void enrichMovieMetadata(Library library, MediaFile mediaFile, String id, HttpClient client) {
-        try {
-            var movieResult = theMovieDatabaseService.getMovieMetadata(String.valueOf(id), client);
+    private void enrichMovieMetadata(Library library, MediaFile mediaFile, String id) {
+        // Create lock using tmdb id.
+        var mutex = mutexFactory.getMutex(id);
 
-            log.info(movieResult.body().getTitle());
+        try {
+            mutex.lock();
+
+            var optionalMovie = movieService.addMediaFileToMovieByTmdbId(id, mediaFile);
+
+            // If we have a movie in the DB, no need to fetch metadata again.
+            if (optionalMovie.isPresent()) {
+                return;
+            }
+
+            enrichMovieUsingTmdb(library, id, mediaFile);
         } catch (Exception ex) {
-            log.error("Failure getting movie metadata:", ex);
+            log.error("Failure enriching movie metadata:", ex);
+        } finally {
+            mutex.unlock();
+        }
+    }
+
+    private void enrichMovieUsingTmdb(Library library, String id, MediaFile mediaFile) {
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+
+            var client = Methanol.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .connectTimeout(Duration.ofSeconds(10))
+                .build();
+
+            var movieFuture = executor.submit(() -> theMovieDatabaseService.getMovieMetadata(id, client));
+            var creditsFuture = executor.submit(() -> theMovieDatabaseService.getMovieCreditsMetadata(id, client));
+
+            var tmdbMovie = movieFuture.get().body();
+            var tmdbCredits = creditsFuture.get().body();
+
+            var movieToSave = Movie.builder()
+                .libraryId(library.getId())
+                .tmdbId(String.valueOf(tmdbMovie.getId()))
+                .title(tmdbMovie.getTitle())
+                .studios(tmdbMovie.getProductionCompanies().stream()
+                    .map(c -> Company.builder()
+                        .name(c.getName())
+                        .build())
+                    .collect(Collectors.toSet()))
+                .cast(tmdbCredits.getCast().stream()
+                    .map(credit -> Person.builder()
+                        .name(credit.getName())
+                        .build())
+                    .collect(Collectors.toSet()))
+                .build();
+
+            movieService.saveMovieWithMediaFile(movieToSave, mediaFile);
+        } catch (Exception ex) {
+            log.error("Failure enriching movie metadata using TMDB", ex);
         }
     }
 
@@ -245,10 +295,4 @@ public class LoomLibraryManagementService implements InitializingBean {
         // cleanup if file cannot be located.
     }
 
-    @Getter
-    @Setter
-    public class MovieContext {
-        private String posterPath;
-        private String backdropPath;
-    }
 }

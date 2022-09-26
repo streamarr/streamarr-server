@@ -12,14 +12,12 @@ import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
-import com.streamarr.server.services.metadata.ImageThumbnailWorkerVerticle;
 import com.streamarr.server.services.metadata.TheMovieDatabaseService;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileMetadata;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
-import io.vertx.core.buffer.Buffer;
 import io.vertx.core.shareddata.SharedData;
 import io.vertx.ext.web.client.HttpResponse;
 import lombok.Getter;
@@ -40,7 +38,6 @@ import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 
@@ -86,10 +83,6 @@ public class LibraryManagementService implements InitializingBean {
 
         var library = optionalLibrary.get();
 
-//        if (library.getStatus().equals(LibraryStatus.SCANNING)) {
-//            throw new RuntimeException("Library scan already in progress.");
-//        }
-
         // TODO: deleteMissingMediaFiles() - check all files in the database to ensure they still exist
 
         log.info("Starting " + library.getName() + " library scan.");
@@ -99,16 +92,13 @@ public class LibraryManagementService implements InitializingBean {
         library.setRefreshStartedOn(startTime);
         libraryRepository.save(library);
 
-        var filesToMatchCounter = new AtomicInteger(0);
-
         try (var stream = Files.walk(Paths.get(library.getFilepath()))) {
 
-            // TODO: count and save to JOB table or something?
             stream
                 .filter(Files::isRegularFile)
                 .map(Path::toFile)
                 .forEach(file -> {
-                    processFile(library, file, filesToMatchCounter);
+                    processFile(library, file);
                 });
 
         } catch (InvalidPathException | IOException ex) {
@@ -121,8 +111,6 @@ public class LibraryManagementService implements InitializingBean {
             throw new RuntimeException("Failed to access library filepath.");
         }
 
-        log.info("Scanned {} MediaFiles from Library at filepath: {}", filesToMatchCounter.get(), library.getFilepath());
-
         // DEFINITION: "media file" an entity that describes the file and
         // serves as an intermediate step until we can resolve metadata and link to parent (ex. Movie).
 
@@ -132,7 +120,7 @@ public class LibraryManagementService implements InitializingBean {
         // get metadata using "media file".
     }
 
-    private void processFile(Library library, File file, AtomicInteger counter) {
+    private void processFile(Library library, File file) {
 
         if (isInvalidFileExtension(file)) {
             return;
@@ -144,12 +132,8 @@ public class LibraryManagementService implements InitializingBean {
             return;
         }
 
-        // Count files to match
-        counter.getAndIncrement();
-
         var mediaInformationResult = extractInformationFromMediaFile(library.getType(), mediaFile);
 
-        // TODO: Should this ever retry? Manual resolution
         if (mediaInformationResult.isEmpty()) {
             mediaFile.setStatus(MediaFileStatus.FILENAME_PARSING_FAILED);
             mediaFileRepository.save(mediaFile);
@@ -255,16 +239,6 @@ public class LibraryManagementService implements InitializingBean {
     private void enrichMovieMetadata(Library library, MediaFile mediaFile, String id) {
         var movieResult = theMovieDatabaseService.getMovieMetadata(String.valueOf(id));
 
-        movieResult.onComplete(t -> {
-            log.info(t.result().body().getTitle());
-        }).onFailure(f -> {
-            log.error("Failure getting movie metadata:", f);
-        });
-    }
-
-    private void enrichMovieMetadataFull(Library library, MediaFile mediaFile, String id) {
-        var movieResult = theMovieDatabaseService.getMovieMetadata(String.valueOf(id));
-
         var fs = vertx.fileSystem();
         var movieCtx = new MovieContext();
 
@@ -279,7 +253,7 @@ public class LibraryManagementService implements InitializingBean {
                     movieCtx.setPosterPath(tmdbMovie.getPosterPath());
                     movieCtx.setBackdropPath(tmdbMovie.getBackdropPath());
 
-                    movieRepository.findByTmdbId(id)
+                    movieRepository.findByTmdbIdAsync(id)
                         .compose(e -> {
 
                             // no movie found, creating new one
@@ -316,33 +290,34 @@ public class LibraryManagementService implements InitializingBean {
 
                             // Get and add people.
                             theMovieDatabaseService.getMovieCreditsMetadata(id).onComplete(r -> {
-                                var creditsResponse = r.result().body();
+                                    var creditsResponse = r.result().body();
 
-                                // TODO: Do I need to update Entity, tmdb unique id?
-                                creditsResponse.getCast()
-                                    .stream()
-                                    .map(credit -> Person.builder().name(credit.getName()).build())
-                                    .forEach(movie::addPersonToCast);
+                                    // TODO: Do I need to update Entity, tmdb unique id?
+                                    creditsResponse.getCast()
+                                        .stream()
+                                        .map(credit -> Person.builder().name(credit.getName()).build())
+                                        .forEach(movie::addPersonToCast);
 
-                                movieRepository.saveAsync(movie);
-                            }).onFailure(f -> movieRepository.saveAsync(movie));
+                                    movieRepository.saveAsync(movie);
+                                }).onComplete(f -> log.error("Finished saving cast to movie"))
+                                .onFailure(f -> movieRepository.saveAsync(movie));
 
                             // Get and save posters.
-                            theMovieDatabaseService.getImage(movieCtx.getPosterPath())
-                                .compose(r -> {
-                                    var imageBuffer = r.body();
-
-                                    // TODO: Improve this to handle multiple images and multiple thumbnails...
-                                    vertx.eventBus()
-                                        .request(ImageThumbnailWorkerVerticle.IMAGE_THUMBNAIL_PROCESSOR, imageBuffer)
-                                        .compose(i -> fs.writeFile("/Users/stuckya/Downloads/Test/Images/" + movie.getId().toString() + "-poster-200px.jpg", (Buffer) i.body()))
-                                        .onSuccess(i -> log.info("wrote thumbnail"))
-                                        .onFailure(i -> log.error("failed to write thumbnail", i));
-
-                                    return fs.writeFile("/Users/stuckya/Downloads/Test/Images/" + movie.getId().toString() + "-poster.jpg", imageBuffer);
-                                })
-                                .onSuccess(r -> log.info("Wrote original image"))
-                                .onFailure(r -> log.error("Failed to write file:", r));
+//                            theMovieDatabaseService.getImage(movieCtx.getPosterPath())
+//                                .compose(r -> {
+//                                    var imageBuffer = r.body();
+//
+//                                    // TODO: Improve this to handle multiple images and multiple thumbnails...
+//                                    vertx.eventBus()
+//                                        .request(ImageThumbnailWorkerVerticle.IMAGE_THUMBNAIL_PROCESSOR, imageBuffer)
+//                                        .compose(i -> fs.writeFile("/Users/stuckya/Downloads/Test/Images/" + movie.getId().toString() + "-poster-200px.jpg", (Buffer) i.body()))
+//                                        .onSuccess(i -> log.info("wrote thumbnail"))
+//                                        .onFailure(i -> log.error("failed to write thumbnail", i));
+//
+//                                    return fs.writeFile("/Users/stuckya/Downloads/Test/Images/" + movie.getId().toString() + "-poster.jpg", imageBuffer);
+//                                })
+//                                .onSuccess(r -> log.info("Wrote original image"))
+//                                .onFailure(r -> log.error("Failed to write file:", r));
                         }).onFailure(ex -> {
                             lock.release();
                             log.error("failed to save movie", ex);
