@@ -21,12 +21,12 @@ import java.net.http.HttpResponse;
 
 
 @Service
-public class HttpClientTheMovieDatabaseService {
+public class TheMovieDatabaseHttpService {
 
     private final String tmdbApiKey;
     private final Logger log;
 
-    public HttpClientTheMovieDatabaseService(
+    public TheMovieDatabaseHttpService(
         @Value("${tmdb.api.key:}")
         String tmdbApiKey,
         Logger log

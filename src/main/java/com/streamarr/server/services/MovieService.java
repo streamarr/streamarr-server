@@ -8,13 +8,11 @@ import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.graphql.cursor.MediaPaginationOptions;
 import com.streamarr.server.graphql.cursor.PaginationOptions;
-import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import graphql.relay.Connection;
 import graphql.relay.DefaultEdge;
 import graphql.relay.Edge;
 import lombok.RequiredArgsConstructor;
-import org.slf4j.Logger;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,10 +25,8 @@ import java.util.stream.Collectors;
 public class MovieService {
 
     private final MovieRepository movieRepository;
-    private final MediaFileRepository mediaFileRepository;
     private final CursorUtil cursorUtil;
     private final RelayPaginationService relayPaginationService;
-    private final Logger log;
 
     @Transactional
     public Optional<Movie> addMediaFileToMovieByTmdbId(String id, MediaFile mediaFile) {

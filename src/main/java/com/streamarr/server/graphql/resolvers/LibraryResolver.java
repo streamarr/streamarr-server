@@ -13,7 +13,6 @@ import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.library.LibraryManagementService;
-import com.streamarr.server.services.library.LoomLibraryManagementService;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
 import lombok.RequiredArgsConstructor;
@@ -27,16 +26,11 @@ public class LibraryResolver {
 
     private final LibraryRepository libraryRepository;
     private final LibraryManagementService libraryManagementService;
-    private final LoomLibraryManagementService loomLibraryManagementService;
     private final MovieService movieService;
 
     @DgsMutation
-    public boolean refreshLibrary(String id, boolean vertx) {
-        if (vertx) {
-            libraryManagementService.refreshLibrary(UUID.fromString(id));
-        } else {
-            loomLibraryManagementService.refreshLibrary(UUID.fromString(id));
-        }
+    public boolean refreshLibrary(String id) {
+        libraryManagementService.refreshLibrary(UUID.fromString(id));
         return true;
     }
 

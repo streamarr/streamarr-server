@@ -9,7 +9,7 @@ import java.nio.charset.StandardCharsets;
 
 public class JsonBodyHandler<W> implements HttpResponse.BodyHandler<W> {
 
-    private Class<W> wClass;
+    private final Class<W> wClass;
 
     public JsonBodyHandler(Class<W> wClass) {
         this.wClass = wClass;

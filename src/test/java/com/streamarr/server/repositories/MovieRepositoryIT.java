@@ -5,7 +5,6 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.repositories.media.MovieRepository;
 import io.vertx.junit5.VertxExtension;
-import io.vertx.junit5.VertxTestContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -51,52 +50,9 @@ public class MovieRepositoryIT {
     }
 
     @Test
-    @DisplayName("Should successfully save movie and add multiple files to movie when using saveAsync method.")
-    void shouldSaveMovieAndAddFilesWhenUsingSaveAsyncMethod(VertxTestContext testContext) {
-
-        var libraryId = UUID.fromString("41b306af-59d0-43f0-af6d-d967592aeb18");
-
-        var file = MediaFile.builder()
-            .libraryId(libraryId)
-            .status(MediaFileStatus.MATCHED)
-            .filename("a-wonderful-test-[1080p].mkv")
-            .filepath("/root/a-wonderful-test-[1080p].mkv")
-            .build();
-
-        var movie = movieRepository.save(Movie.builder()
-            .title("A Wonderful Test")
-            .tmdbId("123")
-            .libraryId(libraryId) // TODO: This should probably be generated in the future...
-            .build());
-
-        movie.addFile(file);
-
-        movieRepository.save(movie);
-
-        var movieFuture = movieRepository.findByTmdbIdAsync("123");
-
-        movieFuture.compose(m -> {
-                m.addFile(MediaFile.builder()
-                    .libraryId(m.getLibraryId())
-                    .status(MediaFileStatus.MATCHED)
-                    .filename("a-wonderful-test-[4k].mkv")
-                    .filepath("/root/a-wonderful-test-[4k].mkv")
-                    .build());
-
-                return movieRepository.saveAsync(m);
-            }).onFailure(testContext::failNow)
-            .onComplete(c -> {
-                testContext.verify(() -> {
-                    assertThat(c.result().getFiles().size()).isEqualTo(2);
-                    testContext.completeNow();
-                });
-            });
-    }
-
-    @Test
-    @DisplayName("Should.")
+    @DisplayName("Should save a Movie with it's MediaFile when no existing Movie in the database.")
     @Transactional
-    void should() {
+    void shouldSaveMovieWithMediaFile() {
 
         var libraryId = UUID.fromString("41b306af-59d0-43f0-af6d-d967592aeb18");
 
@@ -107,16 +63,13 @@ public class MovieRepositoryIT {
             .filepath("/root/a-wonderful-test-[1080p].mkv")
             .build();
 
-        var movie = movieRepository.save(Movie.builder()
+        var movie = movieRepository.saveAndFlush(Movie.builder()
             .title("A Wonderful Test")
             .tmdbId("123")
             .files(Set.of(file))
-            .libraryId(libraryId) // TODO: This should probably be generated in the future...
+            .libraryId(libraryId) // TODO: This should probably be generated in the test...
             .build());
 
-        var optionalMovie = movieRepository.findFirstByTmdbId("123");
-
-        System.out.println(optionalMovie.get().getFiles().size());
-
+        assertThat(movie.getFiles()).hasSize(1);
     }
 }

@@ -5,10 +5,7 @@ import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.graphql.cursor.MediaPaginationOptions;
 import com.streamarr.server.graphql.cursor.PaginationDirection;
 import com.streamarr.server.jooq.generated.Tables;
-import io.smallrye.mutiny.vertx.UniHelper;
-import io.vertx.core.Future;
 import lombok.RequiredArgsConstructor;
-import org.hibernate.reactive.mutiny.Mutiny;
 import org.jooq.DSLContext;
 import org.jooq.SortField;
 import org.jooq.SortOrder;
@@ -16,7 +13,6 @@ import org.jooq.SortOrder;
 import javax.persistence.EntityManager;
 import javax.persistence.PersistenceContext;
 import javax.persistence.Query;
-import javax.persistence.criteria.Root;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -31,48 +27,6 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
     private final DSLContext context;
     @PersistenceContext
     private final EntityManager entityManager;
-
-    private final Mutiny.SessionFactory sessionFactory;
-
-    public Future<Movie> saveAsync(Movie movie) {
-
-        if (movie.getId() == null) {
-            return UniHelper.toFuture(sessionFactory.withTransaction(session ->
-                session.persist(movie)
-                    .chain(session::flush)
-                    .replaceWith(movie)
-            )).onFailure(System.out::println);
-        } else {
-            return UniHelper.toFuture(sessionFactory.withTransaction(session ->
-                session.merge(movie)
-                    .onItem()
-                    .call(session::flush)));
-        }
-    }
-
-    public Future<Movie> findByTmdbIdAsync(String tmdbId) {
-        var cb = sessionFactory.getCriteriaBuilder();
-
-        var query = cb.createQuery(Movie.class);
-
-        Root<Movie> root = query.from(Movie.class);
-
-        if (tmdbId != null && !tmdbId.trim().isEmpty()) {
-            query.where(
-                cb.equal(root.get("tmdbId"), tmdbId)
-            );
-        }
-
-        return UniHelper.toFuture(sessionFactory.withSession(session -> {
-            var graph = session.createEntityGraph(Movie.class);
-            graph.addAttributeNodes("files");
-            graph.addAttributeNodes("cast");
-
-            return session.createQuery(query)
-                .setPlan(graph)
-                .getSingleResultOrNull();
-        }));
-    }
 
     public List<Movie> seekWithFilter(MediaPaginationOptions options) {
 
