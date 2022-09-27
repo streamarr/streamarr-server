@@ -4,11 +4,9 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.repositories.media.MovieRepository;
-import io.vertx.junit5.VertxExtension;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -27,7 +25,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SpringBootTest
 @Tag("IntegrationTest")
 @DisplayName("Movie Service Integration Tests")
-@ExtendWith(VertxExtension.class)
 @Testcontainers
 public class MovieRepositoryIT {
 
