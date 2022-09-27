@@ -476,7 +476,7 @@
                 <version>2.22.2</version>
                 <configuration>
                     <!--suppress UnresolvedMavenProperty -->
-                    <argLine>${surefire.jacoco.args}</argLine>
+                    <argLine>${surefire.jacoco.args} --enable-preview</argLine>
                 </configuration>
             </plugin>
             <plugin>
@@ -485,7 +485,7 @@
                 <version>2.22.2</version>
                 <configuration>
                     <!--suppress UnresolvedMavenProperty -->
-                    <argLine>${failsafe.jacoco.args}</argLine>
+                    <argLine>${failsafe.jacoco.args} --enable-preview</argLine>
                 </configuration>
                 <executions>
                     <execution>
