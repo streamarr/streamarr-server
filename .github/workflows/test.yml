@@ -17,7 +17,7 @@ jobs:
           images: |
             name/app
           tags: |
-            type=ref,event=release
+            type=ref,event=push
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
 
