@@ -32,7 +32,7 @@ jobs:
       - name: Build with pack CLI & publish to Docker Hub
         run: |
           pack build index.docker.io/streamarr/streamarr-server:latest \
-              --tag streamarr/streamarr-server:${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}
+              --tag streamarr/streamarr-server:${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }} \
               --builder paketobuildpacks/builder:base \
               --path . \
               --cache-image index.docker.io/streamarr/spring-boot-buildpack-paketo-cache-image:latest \
