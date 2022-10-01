@@ -70,6 +70,7 @@ public class LibraryManagementService {
         var library = optionalLibrary.get();
 
         log.info("Starting {} library scan.", library.getName());
+
         var startTime = Instant.now();
 
         library.setStatus(LibraryStatus.SCANNING);
@@ -131,7 +132,7 @@ public class LibraryManagementService {
         var mediaInformationResult = extractInformationFromMediaFile(library.getType(), mediaFile);
 
         if (mediaInformationResult.isEmpty()) {
-            mediaFile.setStatus(MediaFileStatus.FILENAME_PARSING_FAILED);
+            mediaFile.setStatus(MediaFileStatus.METADATA_PARSING_FAILED);
             mediaFileRepository.save(mediaFile);
 
             log.error("Failed to parse file at path '{}'", mediaFile.getFilepath());
@@ -142,9 +143,15 @@ public class LibraryManagementService {
         log.info("Parsed filename. Title: {} and Year: {}", mediaInformationResult.get().title(), mediaInformationResult.get().year());
 
         // TODO: switch based on type?
+        // TODO: investigate failure with: "The king of comedy" - TMDB vs IMDB years?
         var movieId = theMovieDatabaseMetadataProvider.searchForMovie(mediaInformationResult.get(), client);
 
         if (movieId.isEmpty()) {
+            mediaFile.setStatus(MediaFileStatus.SEARCH_FAILED);
+            mediaFileRepository.save(mediaFile);
+
+            log.error("Failed to find matching search result for file at path '{}'", mediaFile.getFilepath());
+
             return;
         }
 
@@ -209,6 +216,7 @@ public class LibraryManagementService {
 
     private void enrichMovieMetadata(Library library, MediaFile mediaFile, String id) {
         // Create lock using tmdb id.
+        // TODO: What if we use 2 different metadata providers?
         var mutex = mutexFactory.getMutex(id);
 
         try {

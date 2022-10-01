@@ -21,7 +21,7 @@
         <sonar.coverage.jacoco.xmlReportPaths>
             target/site/jacoco-merged-test-coverage-report/jacoco.xml
         </sonar.coverage.jacoco.xmlReportPaths>
-        <sonar.coverage.exclusions>**/pom.xml</sonar.coverage.exclusions>
+        <sonar.coverage.exclusions>**/pom.xml, **/StreamarrServerApplication.java</sonar.coverage.exclusions>
         <sonar.test.inclusions>**/src/test/**</sonar.test.inclusions>
         <sonar.exclusions>**/jooq/generated/**</sonar.exclusions>
 

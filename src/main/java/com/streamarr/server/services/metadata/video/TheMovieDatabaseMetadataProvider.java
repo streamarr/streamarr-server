@@ -30,8 +30,6 @@ public class TheMovieDatabaseMetadataProvider implements MovieMetadataProvider {
 
 
             if (searchResult.body().getResults().isEmpty()) {
-                // TODO: investigate failure with: "The king of comedy" - TMDB vs IMDB years?
-                log.error("Empty search results for title '{}'", videoInformation.title());
                 return Optional.empty();
             }
 
