@@ -4,21 +4,20 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.repositories.media.MovieRepository;
-import io.vertx.junit5.VertxExtension;
-import io.vertx.junit5.VertxTestContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.annotation.Transactional;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -26,7 +25,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SpringBootTest
 @Tag("IntegrationTest")
 @DisplayName("Movie Service Integration Tests")
-@ExtendWith(VertxExtension.class)
 @Testcontainers
 public class MovieRepositoryIT {
 
@@ -49,8 +47,9 @@ public class MovieRepositoryIT {
     }
 
     @Test
-    @DisplayName("Should successfully save movie and add multiple files to movie when using saveAsync method.")
-    void shouldSaveMovieAndAddFilesWhenUsingSaveAsyncMethod(VertxTestContext testContext) {
+    @DisplayName("Should save a Movie with it's MediaFile when no existing Movie in the database.")
+    @Transactional
+    void shouldSaveMovieWithMediaFile() {
 
         var libraryId = UUID.fromString("41b306af-59d0-43f0-af6d-d967592aeb18");
 
@@ -61,33 +60,13 @@ public class MovieRepositoryIT {
             .filepath("/root/a-wonderful-test-[1080p].mkv")
             .build();
 
-        var movie = movieRepository.save(Movie.builder()
+        var movie = movieRepository.saveAndFlush(Movie.builder()
             .title("A Wonderful Test")
             .tmdbId("123")
-            .libraryId(libraryId) // TODO: This should probably be generated in the future...
+            .files(Set.of(file))
+            .libraryId(libraryId) // TODO: This should probably be generated in the test...
             .build());
 
-        movie.addFile(file);
-
-        movieRepository.save(movie);
-
-        var movieFuture = movieRepository.findByTmdbId("123");
-
-        movieFuture.compose(m -> {
-                m.addFile(MediaFile.builder()
-                    .libraryId(m.getLibraryId())
-                    .status(MediaFileStatus.MATCHED)
-                    .filename("a-wonderful-test-[4k].mkv")
-                    .filepath("/root/a-wonderful-test-[4k].mkv")
-                    .build());
-
-                return movieRepository.saveAsync(m);
-            }).onFailure(testContext::failNow)
-            .onComplete(c -> {
-                testContext.verify(() -> {
-                    assertThat(c.result().getFiles().size()).isEqualTo(2);
-                    testContext.completeNow();
-                });
-            });
+        assertThat(movie.getFiles()).hasSize(1);
     }
 }

@@ -6,7 +6,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.experimental.SuperBuilder;
-import org.hibernate.annotations.Type;
 import org.springframework.data.annotation.CreatedBy;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedBy;
@@ -40,7 +39,6 @@ public abstract class BaseEntity<T extends BaseEntity<T>> {
     @CreatedBy
     private UUID createdBy;
 
-    @Type(type = "com.streamarr.server.config.persistence.TimestampWithTimezone")
     @Column(updatable = false)
     @Setter(value = AccessLevel.PROTECTED)
     @CreatedDate
@@ -49,7 +47,6 @@ public abstract class BaseEntity<T extends BaseEntity<T>> {
     @LastModifiedBy
     private UUID lastModifiedBy;
 
-    @Type(type = "com.streamarr.server.config.persistence.TimestampWithTimezone")
     @Setter(value = AccessLevel.PROTECTED)
     @LastModifiedDate
     private Instant lastModifiedOn;

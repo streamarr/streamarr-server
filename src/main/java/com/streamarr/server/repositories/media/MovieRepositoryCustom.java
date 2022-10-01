@@ -2,15 +2,10 @@ package com.streamarr.server.repositories.media;
 
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.graphql.cursor.MediaPaginationOptions;
-import io.vertx.core.Future;
 
 import java.util.List;
 
 public interface MovieRepositoryCustom {
-
-    Future<Movie> saveAsync(Movie movie);
-
-    Future<Movie> findByTmdbId(String tmdbId);
 
     List<Movie> seekWithFilter(MediaPaginationOptions options);
 

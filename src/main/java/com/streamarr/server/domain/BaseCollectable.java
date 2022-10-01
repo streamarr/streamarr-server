@@ -34,11 +34,11 @@ public abstract class BaseCollectable<T extends BaseCollectable<T>> extends Base
     private String title;
 
     @Builder.Default
-    @Setter(AccessLevel.NONE)
     @OneToMany(
         cascade = {CascadeType.PERSIST, CascadeType.MERGE},
         fetch = FetchType.LAZY,
         mappedBy = "mediaId")
+    @Setter(AccessLevel.NONE)
     private final Set<MediaFile> files = new HashSet<>();
 
     public void addFile(MediaFile file) {

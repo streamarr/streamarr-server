@@ -1,4 +1,4 @@
 type Mutation {
     addRating(input: RatingInput!): Rating!
-    refreshLibrary(id: ID!, vertx: Boolean): Boolean!
+    refreshLibrary(id: ID!): Boolean!
 }
