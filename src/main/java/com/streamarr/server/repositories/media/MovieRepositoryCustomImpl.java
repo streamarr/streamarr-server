@@ -40,9 +40,6 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
         var orderByColumns = new SortField[]{buildOrderBy(filter), Tables.BASE_COLLECTABLE.ID.sort(filter.getSortDirection())};
         var seekValues = new Object[]{filter.getPreviousSortFieldValue(), options.getCursorId()};
 
-        //  WHERE (id, code) > (3, 'abc')
-        //  ORDER BY id ASC, code ASC
-
         var fields = Arrays.stream(orderByColumns).map(SortField::$field).collect(Collectors.toList());
 
         var query = context.select()
