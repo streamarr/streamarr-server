@@ -17,6 +17,8 @@ jobs:
       - name: Docker Metadata
         id: meta
         uses: docker/metadata-action@v4
+        with:
+          images: streamarr/streamarr-server
 
       - if: github.event.release
         name: Update version in pom.xml
