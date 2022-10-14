@@ -151,7 +151,7 @@ public class MediaFile extends TableImpl<MediaFileRecord> {
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.MOVIE_FILE_FILEPATH_IDX);
+        return Arrays.asList(Indexes.MEDIA_FILE_FILEPATH_IDX);
     }
 
     @Override

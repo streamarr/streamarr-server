@@ -15,8 +15,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Tag("UnitTest")
-@DisplayName("Base Entity Tests")
-public class BaseEntityTest {
+@DisplayName("Base Auditable Entity Tests")
+public class BaseAuditableEntityTest {
 
     @Nested
     @DisplayName("Base Entity Equals Tests")
@@ -80,7 +80,7 @@ public class BaseEntityTest {
         @DisplayName("Should throw exception when createdOn builder accessed")
         void shouldThrowExceptionWhenCreatedOnBuilderAccessed() throws Exception {
             var builder = Review.builder();
-            var createdOnMethod = BaseEntity.BaseEntityBuilder.class.getDeclaredMethod("createdOn", Instant.class);
+            var createdOnMethod = BaseAuditableEntity.BaseAuditableEntityBuilder.class.getDeclaredMethod("createdOn", Instant.class);
 
             createdOnMethod.setAccessible(true);
             var invocationEx = assertThrows(
@@ -95,7 +95,7 @@ public class BaseEntityTest {
         @DisplayName("Should throw exception when lastModifiedOn builder accessed")
         void shouldThrowExceptionWhenLastModifiedOnBuilderAccessed() throws Exception {
             var builder = Review.builder();
-            var lastModifiedOnMethod = BaseEntity.BaseEntityBuilder.class.getDeclaredMethod("lastModifiedOn", Instant.class);
+            var lastModifiedOnMethod = BaseAuditableEntity.BaseAuditableEntityBuilder.class.getDeclaredMethod("lastModifiedOn", Instant.class);
 
             lastModifiedOnMethod.setAccessible(true);
             var invocationEx = assertThrows(

@@ -1,18 +1,29 @@
 package com.streamarr.server.services.library;
 
+import com.streamarr.server.repositories.LibraryRepository;
 import io.methvin.watcher.DirectoryWatcher;
+import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.springframework.beans.factory.InitializingBean;
+import org.springframework.context.annotation.DependsOn;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.PreDestroy;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 @Service
-public class DirectoryWatchingService {
+@RequiredArgsConstructor
+@DependsOn("libraryRepository")
+public class DirectoryWatchingService implements InitializingBean {
 
-    private Set<Path> directoriesToWatch;
+    private final LibraryRepository libraryRepository;
+    private final Logger log;
+
+    private final Set<Path> directoriesToWatch = new HashSet<>();
     private DirectoryWatcher watcher;
 
     // Server being setup, no libraries specified yet, early exit
@@ -32,15 +43,14 @@ public class DirectoryWatchingService {
             .paths(directoriesToWatch.stream().toList())
             .listener(event -> {
                 switch (event.eventType()) {
-                    case CREATE: /* file created */
-                        ;
-                        break;
-                    case MODIFY: /* file modified */
-                        ;
-                        break;
-                    case DELETE: /* file deleted */
-                        ;
-                        break;
+                    case CREATE ->
+                        // TODO: Ignore certain files, ignore "New Folder" / "untitled folder"
+                        // TODO: Watch file. Is the file expanding? If yes, delay for ~60 seconds.
+                        log.info("Watcher event type: {} -- filepath: {}", event.eventType(), event.path());
+                    case MODIFY -> /* file modified */
+                        log.info("Watcher event type: {} -- filepath: {}", event.eventType(), event.path());
+                    case DELETE -> /* file deleted */
+                        log.info("Watcher event type: {} -- filepath: {}", event.eventType(), event.path());
                 }
             })
             // .fileHashing(false) // defaults to true
@@ -56,6 +66,8 @@ public class DirectoryWatchingService {
             directoriesToWatch.add(path);
 
             setup();
+
+            return;
         }
 
         // TODO: will this work?
@@ -91,5 +103,19 @@ public class DirectoryWatchingService {
 
     public CompletableFuture<Void> watch() {
         return watcher.watchAsync();
+    }
+
+    @Override
+    public void afterPropertiesSet() {
+
+        var repositories = libraryRepository.findAll();
+
+        repositories.forEach(rep -> directoriesToWatch.add(Path.of(rep.getFilepath())));
+
+        try {
+            setup();
+        } catch (IOException ex) {
+            log.error("Failed to start library watcher", ex);
+        }
     }
 }

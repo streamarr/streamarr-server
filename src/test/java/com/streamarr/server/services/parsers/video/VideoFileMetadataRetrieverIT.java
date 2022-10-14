@@ -29,7 +29,7 @@ public class VideoFileMetadataRetrieverIT {
     }
 
     @Autowired
-    private List<MetadataParser<VideoFileMetadata>> parsers;
+    private List<MetadataParser<VideoFileParserResult>> parsers;
 
     @Test
     @DisplayName("Should inject only video file parsers and not episode file parsers")

@@ -23,13 +23,13 @@ import java.util.Set;
 @Getter
 @Setter
 @SuperBuilder
-@AllArgsConstructor
 @NoArgsConstructor
+@AllArgsConstructor
 @TypeDef(
     name = "pgsql_enum",
     typeClass = PostgreSQLEnumType.class
 )
-public class Library extends BaseEntity<Library> {
+public class Library extends BaseAuditableEntity<Library> {
 
     private String filepath;
 
@@ -51,6 +51,13 @@ public class Library extends BaseEntity<Library> {
     @Enumerated(EnumType.STRING)
     @Type(type = "pgsql_enum")
     private MediaType type;
+
+    // TODO: List<Setting> property?
+
+    // Library should use this external metadata agent strategy
+    @Enumerated(EnumType.STRING)
+    @Type(type = "pgsql_enum")
+    private ExternalAgentStrategy externalAgentStrategy;
 
     @OneToMany(fetch = FetchType.LAZY, mappedBy = "libraryId")
     private Set<BaseCollectable<?>> items = new HashSet<>();

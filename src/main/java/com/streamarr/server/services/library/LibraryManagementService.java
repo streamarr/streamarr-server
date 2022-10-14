@@ -5,13 +5,13 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
-import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.MovieService;
-import com.streamarr.server.services.metadata.video.TheMovieDatabaseMetadataProvider;
+import com.streamarr.server.services.metadata.RemoteSearchResult;
+import com.streamarr.server.services.metadata.movie.TMDBMovieProvider;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
-import com.streamarr.server.services.parsers.video.VideoFileMetadata;
+import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.io.FilenameUtils;
@@ -38,7 +38,7 @@ public class LibraryManagementService {
 
     private final VideoExtensionValidator videoExtensionValidator;
     private final DefaultVideoFileMetadataParser defaultVideoFileMetadataParser;
-    private final TheMovieDatabaseMetadataProvider theMovieDatabaseMetadataProvider;
+    private final TMDBMovieProvider tmdbMovieProvider;
     private final LibraryRepository libraryRepository;
     private final MediaFileRepository mediaFileRepository;
     private final MovieService movieService;
@@ -94,6 +94,7 @@ public class LibraryManagementService {
                 .forEach(file -> {
                     executor.submit(() -> processFile(library, file, client));
                 });
+
         } catch (IOException e) {
             var endTimeOfFailure = Instant.now();
 
@@ -128,34 +129,10 @@ public class LibraryManagementService {
             return;
         }
 
-        // TODO: Switch based on type?
-        var mediaInformationResult = extractInformationFromMediaFile(library.getType(), mediaFile);
-
-        if (mediaInformationResult.isEmpty()) {
-            mediaFile.setStatus(MediaFileStatus.METADATA_PARSING_FAILED);
-            mediaFileRepository.save(mediaFile);
-
-            log.error("Failed to parse file at path '{}'", mediaFile.getFilepath());
-
-            return;
+        switch (library.getType()) {
+            case MOVIE -> handleMovieFileType(library, mediaFile, client);
+            case SERIES -> throw new UnsupportedOperationException("Not implemented yet");
         }
-
-        log.info("Parsed filename. Title: {} and Year: {}", mediaInformationResult.get().title(), mediaInformationResult.get().year());
-
-        // TODO: switch based on type?
-        // TODO: investigate failure with: "The king of comedy" - TMDB vs IMDB years?
-        var movieId = theMovieDatabaseMetadataProvider.searchForMovie(mediaInformationResult.get(), client);
-
-        if (movieId.isEmpty()) {
-            mediaFile.setStatus(MediaFileStatus.SEARCH_FAILED);
-            mediaFileRepository.save(mediaFile);
-
-            log.error("Failed to find matching search result for file at path '{}'", mediaFile.getFilepath());
-
-            return;
-        }
-
-        enrichMediaMetadata(library, mediaFile, movieId.get());
     }
 
     private boolean isInvalidFileExtension(File file) {
@@ -189,14 +166,35 @@ public class LibraryManagementService {
         return file.getStatus().equals(MediaFileStatus.MATCHED);
     }
 
-    private Optional<VideoFileMetadata> extractInformationFromMediaFile(MediaType libraryType, MediaFile mediaFile) {
-        return switch (libraryType) {
-            case MOVIE -> extractInformationAsMovieFile(mediaFile);
-            default -> throw new IllegalStateException("Unexpected value: " + mediaFile);
-        };
+    private void handleMovieFileType(Library library, MediaFile mediaFile, HttpClient client) {
+        var mediaInformationResult = parseMediaFileForMovie(mediaFile);
+
+        if (mediaInformationResult.isEmpty()) {
+            mediaFile.setStatus(MediaFileStatus.METADATA_PARSING_FAILED);
+            mediaFileRepository.save(mediaFile);
+
+            log.error("Failed to parse file at path '{}'", mediaFile.getFilepath());
+
+            return;
+        }
+
+        log.info("Parsed filename. Title: {} and Year: {}", mediaInformationResult.get().title(), mediaInformationResult.get().year());
+
+        var movieSearchResult = tmdbMovieProvider.search(mediaInformationResult.get(), client);
+
+        if (movieSearchResult.isEmpty()) {
+            mediaFile.setStatus(MediaFileStatus.SEARCH_FAILED);
+            mediaFileRepository.save(mediaFile);
+
+            log.error("Failed to find matching search result for file at path '{}'", mediaFile.getFilepath());
+
+            return;
+        }
+
+        enrichMovieMetadata(library, mediaFile, movieSearchResult.get());
     }
 
-    private Optional<VideoFileMetadata> extractInformationAsMovieFile(MediaFile mediaFile) {
+    private Optional<VideoFileParserResult> parseMediaFileForMovie(MediaFile mediaFile) {
         var result = defaultVideoFileMetadataParser.parse(mediaFile.getFilename());
 
         if (result.isEmpty() || StringUtils.isEmpty(result.get().title())) {
@@ -206,30 +204,22 @@ public class LibraryManagementService {
         return result;
     }
 
-    private void enrichMediaMetadata(Library library, MediaFile mediaFile, String id) {
-        switch (library.getType()) {
-            case MOVIE -> enrichMovieMetadata(library, mediaFile, id);
-            default -> throw new IllegalStateException("Unexpected value: " + mediaFile);
-        }
-        ;
-    }
+    private void enrichMovieMetadata(Library library, MediaFile mediaFile, RemoteSearchResult remoteSearchResult) {
 
-    private void enrichMovieMetadata(Library library, MediaFile mediaFile, String id) {
-        // Create lock using tmdb id.
-        // TODO: What if we use 2 different metadata providers?
-        var mutex = mutexFactory.getMutex(id);
+        // Lock should use the library agent's external id.
+        var mutex = mutexFactory.getMutex(remoteSearchResult.externalId());
 
         try {
             mutex.lock();
 
-            var optionalMovie = movieService.addMediaFileToMovieByTmdbId(id, mediaFile);
+            var optionalMovie = movieService.addMediaFileToMovieByTmdbId(remoteSearchResult.externalId(), mediaFile);
 
             // If we have a movie in the DB, no need to fetch metadata again.
             if (optionalMovie.isPresent()) {
                 return;
             }
 
-            var movieToSave = theMovieDatabaseMetadataProvider.buildEnrichedMovie(library, id);
+            var movieToSave = tmdbMovieProvider.getMetadata(remoteSearchResult, library);
 
             if (movieToSave.isEmpty()) {
                 return;

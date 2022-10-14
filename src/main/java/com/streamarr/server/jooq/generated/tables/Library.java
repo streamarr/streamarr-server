@@ -7,6 +7,7 @@ package com.streamarr.server.jooq.generated.tables;
 import com.streamarr.server.jooq.generated.Indexes;
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
+import com.streamarr.server.jooq.generated.enums.ExternalAgentStrategy;
 import com.streamarr.server.jooq.generated.enums.LibraryBackend;
 import com.streamarr.server.jooq.generated.enums.LibraryStatus;
 import com.streamarr.server.jooq.generated.enums.MediaType;
@@ -20,12 +21,12 @@ import java.util.function.Function;
 
 import org.jooq.Field;
 import org.jooq.ForeignKey;
-import org.jooq.Function12;
+import org.jooq.Function13;
 import org.jooq.Index;
 import org.jooq.Name;
 import org.jooq.Record;
 import org.jooq.Records;
-import org.jooq.Row12;
+import org.jooq.Row13;
 import org.jooq.Schema;
 import org.jooq.SelectField;
 import org.jooq.Table;
@@ -118,6 +119,11 @@ public class Library extends TableImpl<LibraryRecord> {
      */
     public final TableField<LibraryRecord, MediaType> TYPE = createField(DSL.name("type"), SQLDataType.VARCHAR.nullable(false).asEnumDataType(com.streamarr.server.jooq.generated.enums.MediaType.class), this, "");
 
+    /**
+     * The column <code>public.library.external_agent_strategy</code>.
+     */
+    public final TableField<LibraryRecord, ExternalAgentStrategy> EXTERNAL_AGENT_STRATEGY = createField(DSL.name("external_agent_strategy"), SQLDataType.VARCHAR.nullable(false).defaultValue(DSL.field("'TMDB'::external_agent_strategy", SQLDataType.VARCHAR)).asEnumDataType(com.streamarr.server.jooq.generated.enums.ExternalAgentStrategy.class), this, "");
+
     private Library(Name alias, Table<LibraryRecord> aliased) {
         this(alias, aliased, null);
     }
@@ -206,18 +212,18 @@ public class Library extends TableImpl<LibraryRecord> {
     }
 
     // -------------------------------------------------------------------------
-    // Row12 type methods
+    // Row13 type methods
     // -------------------------------------------------------------------------
 
     @Override
-    public Row12<UUID, OffsetDateTime, UUID, OffsetDateTime, UUID, String, String, OffsetDateTime, OffsetDateTime, LibraryStatus, LibraryBackend, MediaType> fieldsRow() {
-        return (Row12) super.fieldsRow();
+    public Row13<UUID, OffsetDateTime, UUID, OffsetDateTime, UUID, String, String, OffsetDateTime, OffsetDateTime, LibraryStatus, LibraryBackend, MediaType, ExternalAgentStrategy> fieldsRow() {
+        return (Row13) super.fieldsRow();
     }
 
     /**
      * Convenience mapping calling {@link SelectField#convertFrom(Function)}.
      */
-    public <U> SelectField<U> mapping(Function12<? super UUID, ? super OffsetDateTime, ? super UUID, ? super OffsetDateTime, ? super UUID, ? super String, ? super String, ? super OffsetDateTime, ? super OffsetDateTime, ? super LibraryStatus, ? super LibraryBackend, ? super MediaType, ? extends U> from) {
+    public <U> SelectField<U> mapping(Function13<? super UUID, ? super OffsetDateTime, ? super UUID, ? super OffsetDateTime, ? super UUID, ? super String, ? super String, ? super OffsetDateTime, ? super OffsetDateTime, ? super LibraryStatus, ? super LibraryBackend, ? super MediaType, ? super ExternalAgentStrategy, ? extends U> from) {
         return convertFrom(Records.mapping(from));
     }
 
@@ -225,7 +231,7 @@ public class Library extends TableImpl<LibraryRecord> {
      * Convenience mapping calling {@link SelectField#convertFrom(Class,
      * Function)}.
      */
-    public <U> SelectField<U> mapping(Class<U> toType, Function12<? super UUID, ? super OffsetDateTime, ? super UUID, ? super OffsetDateTime, ? super UUID, ? super String, ? super String, ? super OffsetDateTime, ? super OffsetDateTime, ? super LibraryStatus, ? super LibraryBackend, ? super MediaType, ? extends U> from) {
+    public <U> SelectField<U> mapping(Class<U> toType, Function13<? super UUID, ? super OffsetDateTime, ? super UUID, ? super OffsetDateTime, ? super UUID, ? super String, ? super String, ? super OffsetDateTime, ? super OffsetDateTime, ? super LibraryStatus, ? super LibraryBackend, ? super MediaType, ? super ExternalAgentStrategy, ? extends U> from) {
         return convertFrom(toType, Records.mapping(from));
     }
 }

@@ -11,7 +11,7 @@ import java.util.regex.Pattern;
 
 @Service
 @Order(100)
-public class DefaultVideoFileMetadataParser implements MetadataParser<VideoFileMetadata> {
+public class DefaultVideoFileMetadataParser implements MetadataParser<VideoFileParserResult> {
 
     // TODO: We should also DI these regex patterns
     private static final List<Pattern> EXTRACTION_REGEXES = List.of(
@@ -21,7 +21,7 @@ public class DefaultVideoFileMetadataParser implements MetadataParser<VideoFileM
     private static final Pattern TAG_REGEX = Pattern.compile("^\\s*\\[[^\\]]+\\](?!\\.\\w+$)\\s*(?<cleaned>.+)");
     private static final Pattern KNOWN_WORD_EXCLUSIONS_REGEX = Pattern.compile("[ _\\,\\.\\(\\)\\[\\]\\-](3d|sbs|tab|hsbs|htab|mvc|HDR|HDC|UHD|UltraHD|4k|ac3|dts|custom|dc|divx|divx5|dsr|dsrip|dutch|dvd|dvdrip|dvdscr|dvdscreener|screener|dvdivx|cam|fragment|fs|hdtv|hdrip|hdtvrip|internal|limited|multisubs|ntsc|ogg|ogm|pal|pdtv|proper|repack|rerip|retail|cd[1-9]|r3|r5|bd5|bd|se|svcd|swedish|german|read.nfo|nfofix|unrated|ws|telesync|ts|telecine|tc|brrip|bdrip|480p|480i|576p|576i|720p|720i|1080p|1080i|2160p|hrhd|hrhdtv|hddvd|bluray|blu-ray|x264|x265|h264|xvid|xvidvd|xxx|www.www|AAC|\\[.*\\])([ _\\,\\.\\(\\)\\[\\]\\-]|$)", Pattern.CASE_INSENSITIVE);
 
-    public Optional<VideoFileMetadata> parse(String filename) {
+    public Optional<VideoFileParserResult> parse(String filename) {
 
         if (StringUtils.isBlank(filename)) {
             return Optional.empty();
@@ -41,7 +41,7 @@ public class DefaultVideoFileMetadataParser implements MetadataParser<VideoFileM
                 return Optional.empty();
             }
 
-            return Optional.of(VideoFileMetadata.builder()
+            return Optional.of(VideoFileParserResult.builder()
                 .title(cleanTitle(matchResult.group(1)))
                 .year(cleanYear(matchResult.group(2)))
                 .build());
@@ -53,7 +53,7 @@ public class DefaultVideoFileMetadataParser implements MetadataParser<VideoFileM
             return Optional.empty();
         }
 
-        return Optional.of(VideoFileMetadata.builder()
+        return Optional.of(VideoFileParserResult.builder()
             .title(cleanedInput)
             .build());
     }

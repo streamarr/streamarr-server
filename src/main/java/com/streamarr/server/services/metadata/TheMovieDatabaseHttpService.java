@@ -1,10 +1,10 @@
 package com.streamarr.server.services.metadata;
 
 import com.streamarr.server.domain.external.tmdb.TmdbCredits;
+import com.streamarr.server.domain.external.tmdb.TmdbJsonBodyHandler;
 import com.streamarr.server.domain.external.tmdb.TmdbMovie;
 import com.streamarr.server.domain.external.tmdb.TmdbSearchResults;
-import com.streamarr.server.services.library.JsonBodyHandler;
-import com.streamarr.server.services.parsers.video.VideoFileMetadata;
+import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.springframework.beans.factory.annotation.Value;
@@ -35,27 +35,27 @@ public class TheMovieDatabaseHttpService {
         this.log = log;
     }
 
-    public HttpResponse<TmdbSearchResults> searchForMovie(VideoFileMetadata videoFileMetadata, HttpClient client) throws IOException, InterruptedException {
+    public HttpResponse<TmdbSearchResults> searchForMovie(VideoFileParserResult videoFileParserResult, HttpClient client) throws IOException, InterruptedException {
         var query = new LinkedMultiValueMap<String, String>();
 
-        query.add("query", videoFileMetadata.title());
+        query.add("query", videoFileParserResult.title());
 
-        if (StringUtils.isNotBlank(videoFileMetadata.year())) {
-            query.add("year", videoFileMetadata.year());
+        if (StringUtils.isNotBlank(videoFileParserResult.year())) {
+            query.add("year", videoFileParserResult.year());
         }
 
         return searchForMovieRequest(query, client);
     }
 
     public HttpResponse<TmdbMovie> getMovieMetadata(String movieId, HttpClient client) throws IOException, InterruptedException {
-        var uri = baseUrl().path("/movie/").path(movieId).queryParam("api_key", tmdbApiKey).build();
+        var uri = baseUrl().path("/movie/").path(movieId).queryParam("api_key", tmdbApiKey).queryParam("append_to_response", "credits").build();
 
         var request = HttpRequest.newBuilder()
             .uri(uri)
             .GET()
             .build();
 
-        return client.send(request, new JsonBodyHandler<>(TmdbMovie.class));
+        return client.send(request, new TmdbJsonBodyHandler<>(TmdbMovie.class));
     }
 
     public void getImage(String imagePath, HttpClient client) {
@@ -75,7 +75,7 @@ public class TheMovieDatabaseHttpService {
             .GET()
             .build();
 
-        return client.send(request, new JsonBodyHandler<>(TmdbCredits.class));
+        return client.send(request, new TmdbJsonBodyHandler<>(TmdbCredits.class));
     }
 
     private HttpResponse<TmdbSearchResults> searchForMovieRequest(MultiValueMap<String, String> query, HttpClient client) throws IOException, InterruptedException {
@@ -86,8 +86,7 @@ public class TheMovieDatabaseHttpService {
             .GET()
             .build();
 
-
-        return client.send(request, new JsonBodyHandler<>(TmdbSearchResults.class));
+        return client.send(request, new TmdbJsonBodyHandler<>(TmdbSearchResults.class));
     }
 
     private void searchForShowRequest(MultiValueMap<String, String> query, HttpClient client) {

@@ -7,9 +7,9 @@ import lombok.NoArgsConstructor;
 import org.jooq.SortOrder;
 
 @Getter
-@Builder(toBuilder = true)
-@AllArgsConstructor
 @NoArgsConstructor
+@AllArgsConstructor
+@Builder(toBuilder = true)
 public class MediaFilter {
 
     @Builder.Default

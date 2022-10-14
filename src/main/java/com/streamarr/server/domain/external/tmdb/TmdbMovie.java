@@ -2,14 +2,16 @@ package com.streamarr.server.domain.external.tmdb;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.util.List;
 
 @Getter
-@AllArgsConstructor
+@Builder
 @NoArgsConstructor
+@AllArgsConstructor
 public class TmdbMovie {
 
     private int id;
@@ -45,8 +47,11 @@ public class TmdbMovie {
     @JsonProperty("spoken_languages")
     private List<TmdbSpokenLanguage> spokenLanguages;
     @JsonProperty("production_companies")
-    private List<TmdbProductionCompanies> productionCompanies;
+    private List<TmdbProductionCompany> productionCompanies;
     @JsonProperty("production_countries")
-    private List<TmdbProductionCountries> productionCountries;
-    private List<TmdbGenres> genres;
+    private List<TmdbProductionCountry> productionCountries;
+    private List<TmdbGenre> genres;
+
+    // append_to_response
+    private TmdbCredits credits;
 }

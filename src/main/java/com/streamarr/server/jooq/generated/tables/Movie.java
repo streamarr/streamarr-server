@@ -8,6 +8,7 @@ import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.tables.records.MovieRecord;
 
+import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
@@ -15,11 +16,11 @@ import java.util.function.Function;
 
 import org.jooq.Field;
 import org.jooq.ForeignKey;
-import org.jooq.Function4;
+import org.jooq.Function7;
 import org.jooq.Name;
 import org.jooq.Record;
 import org.jooq.Records;
-import org.jooq.Row4;
+import org.jooq.Row7;
 import org.jooq.Schema;
 import org.jooq.SelectField;
 import org.jooq.Table;
@@ -58,19 +59,34 @@ public class Movie extends TableImpl<MovieRecord> {
     public final TableField<MovieRecord, UUID> ID = createField(DSL.name("id"), SQLDataType.UUID.nullable(false), this, "");
 
     /**
-     * The column <code>public.movie.artwork</code>.
+     * The column <code>public.movie.backdrop_path</code>.
      */
-    public final TableField<MovieRecord, String> ARTWORK = createField(DSL.name("artwork"), SQLDataType.CLOB, this, "");
+    public final TableField<MovieRecord, String> BACKDROP_PATH = createField(DSL.name("backdrop_path"), SQLDataType.CLOB, this, "");
 
     /**
-     * The column <code>public.movie.tmdb_id</code>.
+     * The column <code>public.movie.poster_path</code>.
      */
-    public final TableField<MovieRecord, String> TMDB_ID = createField(DSL.name("tmdb_id"), SQLDataType.CLOB, this, "");
+    public final TableField<MovieRecord, String> POSTER_PATH = createField(DSL.name("poster_path"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>public.movie.tagline</code>.
+     */
+    public final TableField<MovieRecord, String> TAGLINE = createField(DSL.name("tagline"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>public.movie.summary</code>.
+     */
+    public final TableField<MovieRecord, String> SUMMARY = createField(DSL.name("summary"), SQLDataType.CLOB, this, "");
 
     /**
      * The column <code>public.movie.content_rating</code>.
      */
     public final TableField<MovieRecord, String> CONTENT_RATING = createField(DSL.name("content_rating"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>public.movie.release_date</code>.
+     */
+    public final TableField<MovieRecord, LocalDate> RELEASE_DATE = createField(DSL.name("release_date"), SQLDataType.LOCALDATE, this, "");
 
     private Movie(Name alias, Table<MovieRecord> aliased) {
         this(alias, aliased, null);
@@ -173,18 +189,18 @@ public class Movie extends TableImpl<MovieRecord> {
     }
 
     // -------------------------------------------------------------------------
-    // Row4 type methods
+    // Row7 type methods
     // -------------------------------------------------------------------------
 
     @Override
-    public Row4<UUID, String, String, String> fieldsRow() {
-        return (Row4) super.fieldsRow();
+    public Row7<UUID, String, String, String, String, String, LocalDate> fieldsRow() {
+        return (Row7) super.fieldsRow();
     }
 
     /**
      * Convenience mapping calling {@link SelectField#convertFrom(Function)}.
      */
-    public <U> SelectField<U> mapping(Function4<? super UUID, ? super String, ? super String, ? super String, ? extends U> from) {
+    public <U> SelectField<U> mapping(Function7<? super UUID, ? super String, ? super String, ? super String, ? super String, ? super String, ? super LocalDate, ? extends U> from) {
         return convertFrom(Records.mapping(from));
     }
 
@@ -192,7 +208,7 @@ public class Movie extends TableImpl<MovieRecord> {
      * Convenience mapping calling {@link SelectField#convertFrom(Class,
      * Function)}.
      */
-    public <U> SelectField<U> mapping(Class<U> toType, Function4<? super UUID, ? super String, ? super String, ? super String, ? extends U> from) {
+    public <U> SelectField<U> mapping(Class<U> toType, Function7<? super UUID, ? super String, ? super String, ? super String, ? super String, ? super String, ? super LocalDate, ? extends U> from) {
         return convertFrom(toType, Records.mapping(from));
     }
 }

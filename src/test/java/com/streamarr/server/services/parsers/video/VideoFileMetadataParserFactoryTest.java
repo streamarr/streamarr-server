@@ -25,7 +25,7 @@ public class VideoFileMetadataParserFactoryTest {
     @Mock
     private DefaultVideoFileMetadataParser mockDefaultVideoFileMetadataParser;
 
-    private final List<MetadataParser<VideoFileMetadata>> parsers = new ArrayList<>();
+    private final List<MetadataParser<VideoFileParserResult>> parsers = new ArrayList<>();
 
     private VideoFileMetadataParserFactory videoFileMetadataParserFactory;
 
@@ -38,7 +38,7 @@ public class VideoFileMetadataParserFactoryTest {
     @Test
     @DisplayName("Should parse and return result from MetadataParser when provided valid filename")
     void shouldSuccessfullyParseFilename() {
-        var fakeResult = Optional.of(VideoFileMetadata.builder()
+        var fakeResult = Optional.of(VideoFileParserResult.builder()
             .title("Spider Man")
             .year("2002")
             .build());

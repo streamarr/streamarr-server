@@ -1,6 +1,6 @@
 package com.streamarr.server.domain.metadata;
 
-import com.streamarr.server.domain.BaseEntity;
+import com.streamarr.server.domain.BaseAuditableEntity;
 import com.streamarr.server.domain.media.Movie;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -16,11 +16,13 @@ import java.util.Set;
 @Entity
 @Getter
 @SuperBuilder
-@AllArgsConstructor
 @NoArgsConstructor
-public class Company extends BaseEntity<Company> {
+@AllArgsConstructor
+public class Company extends BaseAuditableEntity<Company> {
 
     private String name;
+
+    private String sourceId;
 
     @ManyToMany(mappedBy = "studios", fetch = FetchType.LAZY)
     private Set<Movie> movies = new HashSet<>();

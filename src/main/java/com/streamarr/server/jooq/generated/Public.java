@@ -6,6 +6,7 @@ package com.streamarr.server.jooq.generated;
 
 import com.streamarr.server.jooq.generated.tables.BaseCollectable;
 import com.streamarr.server.jooq.generated.tables.Company;
+import com.streamarr.server.jooq.generated.tables.ExternalIdentifier;
 import com.streamarr.server.jooq.generated.tables.Library;
 import com.streamarr.server.jooq.generated.tables.MediaFile;
 import com.streamarr.server.jooq.generated.tables.Movie;
@@ -47,6 +48,11 @@ public class Public extends SchemaImpl {
      * The table <code>public.company</code>.
      */
     public final Company COMPANY = Company.COMPANY;
+
+    /**
+     * The table <code>public.external_identifier</code>.
+     */
+    public final ExternalIdentifier EXTERNAL_IDENTIFIER = ExternalIdentifier.EXTERNAL_IDENTIFIER;
 
     /**
      * The table <code>public.library</code>.
@@ -116,6 +122,7 @@ public class Public extends SchemaImpl {
         return Arrays.asList(
             BaseCollectable.BASE_COLLECTABLE,
             Company.COMPANY,
+            ExternalIdentifier.EXTERNAL_IDENTIFIER,
             Library.LIBRARY,
             MediaFile.MEDIA_FILE,
             Movie.MOVIE,

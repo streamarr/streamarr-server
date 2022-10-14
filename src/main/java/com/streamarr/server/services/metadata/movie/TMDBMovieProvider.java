@@ -1,12 +1,17 @@
-package com.streamarr.server.services.metadata.video;
+package com.streamarr.server.services.metadata.movie;
 
 import com.github.mizosoft.methanol.Methanol;
+import com.streamarr.server.domain.ExternalAgentStrategy;
+import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Person;
+import com.streamarr.server.services.metadata.MetadataProvider;
+import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.TheMovieDatabaseHttpService;
-import com.streamarr.server.services.parsers.video.VideoFileMetadata;
+import com.streamarr.server.services.parsers.video.VideoFileParserResult;
+import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.springframework.stereotype.Service;
@@ -19,21 +24,29 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
-public class TheMovieDatabaseMetadataProvider implements MovieMetadataProvider {
+public class TMDBMovieProvider implements MetadataProvider<Movie> {
 
     private final TheMovieDatabaseHttpService theMovieDatabaseHttpService;
     private final Logger log;
 
-    public Optional<String> searchForMovie(VideoFileMetadata videoInformation, HttpClient client) {
+    @Getter
+    private final ExternalAgentStrategy agentStrategy = ExternalAgentStrategy.TMDB;
+
+    public Optional<RemoteSearchResult> search(VideoFileParserResult videoInformation, HttpClient client) {
         try {
             var searchResult = theMovieDatabaseHttpService.searchForMovie(videoInformation, client);
-
 
             if (searchResult.body().getResults().isEmpty()) {
                 return Optional.empty();
             }
 
-            return Optional.of(String.valueOf(searchResult.body().getResults().get(0).getId()));
+            var tmdbResult = searchResult.body().getResults().get(0);
+
+            return Optional.of(RemoteSearchResult.builder()
+                .externalSourceType(ExternalSourceType.TMDB)
+                .externalId(String.valueOf(tmdbResult.getId()))
+                .title(tmdbResult.getTitle())
+                .build());
 
         } catch (Exception ex) {
             log.error("Failure requesting search results:", ex);
@@ -42,7 +55,7 @@ public class TheMovieDatabaseMetadataProvider implements MovieMetadataProvider {
         return Optional.empty();
     }
 
-    public Optional<Movie> buildEnrichedMovie(Library library, String externalId) {
+    public Optional<Movie> getMetadata(RemoteSearchResult remoteSearchResult, Library library) {
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
 
             // TODO: is this actually more performant compared to using the above client?
@@ -51,15 +64,14 @@ public class TheMovieDatabaseMetadataProvider implements MovieMetadataProvider {
                 .connectTimeout(Duration.ofSeconds(15))
                 .build();
 
-            var movieFuture = executor.submit(() -> theMovieDatabaseHttpService.getMovieMetadata(externalId, client));
-            var creditsFuture = executor.submit(() -> theMovieDatabaseHttpService.getMovieCreditsMetadata(externalId, client));
+            // TODO: Replace with append_to TMDB feature; credits. What about release_dates / releases?
+            var movieFuture = executor.submit(() -> theMovieDatabaseHttpService.getMovieMetadata(remoteSearchResult.externalId(), client));
 
             var tmdbMovie = movieFuture.get().body();
-            var tmdbCredits = creditsFuture.get().body();
+            var tmdbCredits = tmdbMovie.getCredits();
 
             return Optional.of(Movie.builder()
                 .libraryId(library.getId())
-                .tmdbId(String.valueOf(tmdbMovie.getId()))
                 .title(tmdbMovie.getTitle())
                 .studios(tmdbMovie.getProductionCompanies().stream()
                     .map(c -> Company.builder()
@@ -74,7 +86,7 @@ public class TheMovieDatabaseMetadataProvider implements MovieMetadataProvider {
                 .build());
 
         } catch (Exception ex) {
-            log.error("Failure enriching movie metadata using TMDB id '{}'", externalId, ex);
+            log.error("Failure enriching movie metadata using TMDB id '{}'", remoteSearchResult.externalId(), ex);
         }
 
         return Optional.empty();

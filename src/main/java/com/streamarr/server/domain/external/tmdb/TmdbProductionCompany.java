@@ -2,15 +2,20 @@ package com.streamarr.server.domain.external.tmdb;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Getter
-@AllArgsConstructor
+@Builder
 @NoArgsConstructor
-public class TmdbProductionCountries {
+@AllArgsConstructor
+public class TmdbProductionCompany {
 
-    @JsonProperty("iso_3166_1")
-    private String iso31661;
+    private int id;
     private String name;
+    @JsonProperty("logo_path")
+    private String logoPath;
+    @JsonProperty("origin_country")
+    private String originCountry;
 }

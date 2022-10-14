@@ -5,6 +5,7 @@ CREATE TABLE person
     created_by       UUID                     NOT NULL,
     last_modified_on TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     last_modified_by UUID,
-    name             TEXT,
+    name             TEXT                     NOT NULL,
+    source_id        TEXT                     NOT NULL,
     CONSTRAINT person_pkey PRIMARY KEY (id)
 );

@@ -1,6 +1,6 @@
 package com.streamarr.server.domain.media;
 
-import com.streamarr.server.domain.BaseEntity;
+import com.streamarr.server.domain.BaseAuditableEntity;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -19,15 +19,19 @@ import java.util.UUID;
 @SuperBuilder
 @NoArgsConstructor
 @AllArgsConstructor
-public class MediaFile extends BaseEntity<MediaFile> {
+public class MediaFile extends BaseAuditableEntity<MediaFile> {
 
     private UUID mediaId;
+
     @Enumerated(EnumType.STRING)
     @Type(type = "pgsql_enum")
     private MediaFileStatus status;
+
     private UUID libraryId;
+
     private String filename;
     private String filepath;
+    
     private long size;
 
     @Override

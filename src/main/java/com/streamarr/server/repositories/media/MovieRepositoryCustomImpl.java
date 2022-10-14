@@ -16,6 +16,7 @@ import javax.persistence.Query;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 import static org.jooq.impl.DSL.row;
@@ -59,6 +60,25 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
         }
 
         return results;
+    }
+
+    public Optional<Movie> findByTmdbId(String tmdbId) {
+        var query = context.select()
+            .from(Tables.MOVIE)
+            .innerJoin(Tables.BASE_COLLECTABLE)
+            .on(Tables.MOVIE.ID.eq(Tables.BASE_COLLECTABLE.ID))
+            .join(Tables.EXTERNAL_IDENTIFIER)
+            .on(Tables.EXTERNAL_IDENTIFIER.ENTITY_ID.eq(Tables.MOVIE.ID))
+            .where(Tables.EXTERNAL_IDENTIFIER.EXTERNAL_ID.eq(tmdbId))
+            .limit(1);
+
+        var results = nativeQuery(entityManager, query, Movie.class);
+
+        if (results.isEmpty()) {
+            return Optional.empty();
+        }
+
+        return Optional.of(results.get(0));
     }
 
     private MediaFilter reverseFilter(MediaFilter filter) {

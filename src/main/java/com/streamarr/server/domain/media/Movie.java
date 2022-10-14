@@ -19,6 +19,7 @@ import javax.persistence.JoinColumn;
 import javax.persistence.JoinTable;
 import javax.persistence.ManyToMany;
 import javax.persistence.OneToMany;
+import java.time.LocalDate;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -26,17 +27,22 @@ import java.util.Set;
 @Getter
 @Setter
 @SuperBuilder
-@AllArgsConstructor
 @NoArgsConstructor
+@AllArgsConstructor
 public class Movie extends BaseCollectable<Movie> {
 
-    // TODO: Should this actually be imdbId or "externalId"?
-    private String tmdbId;
+    private String backdropPath;
 
-    private String artwork;
+    private String posterPath;
 
-    // TODO: ENUM or String? Example: "PG", "R"
+    private String tagline;
+
+    private String summary;
+
+    // TODO: ENUM or String? Example: "PG", "R". Or should this be modeled differently...?
     private String contentRating;
+
+    private LocalDate releaseDate;
 
     @Builder.Default
     @ManyToMany(

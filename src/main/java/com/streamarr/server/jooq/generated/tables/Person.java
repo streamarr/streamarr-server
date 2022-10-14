@@ -14,11 +14,11 @@ import java.util.function.Function;
 
 import org.jooq.Field;
 import org.jooq.ForeignKey;
-import org.jooq.Function6;
+import org.jooq.Function7;
 import org.jooq.Name;
 import org.jooq.Record;
 import org.jooq.Records;
-import org.jooq.Row6;
+import org.jooq.Row7;
 import org.jooq.Schema;
 import org.jooq.SelectField;
 import org.jooq.Table;
@@ -79,7 +79,12 @@ public class Person extends TableImpl<PersonRecord> {
     /**
      * The column <code>public.person.name</code>.
      */
-    public final TableField<PersonRecord, String> NAME = createField(DSL.name("name"), SQLDataType.CLOB, this, "");
+    public final TableField<PersonRecord, String> NAME = createField(DSL.name("name"), SQLDataType.CLOB.nullable(false), this, "");
+
+    /**
+     * The column <code>public.person.source_id</code>.
+     */
+    public final TableField<PersonRecord, String> SOURCE_ID = createField(DSL.name("source_id"), SQLDataType.CLOB.nullable(false), this, "");
 
     private Person(Name alias, Table<PersonRecord> aliased) {
         this(alias, aliased, null);
@@ -164,18 +169,18 @@ public class Person extends TableImpl<PersonRecord> {
     }
 
     // -------------------------------------------------------------------------
-    // Row6 type methods
+    // Row7 type methods
     // -------------------------------------------------------------------------
 
     @Override
-    public Row6<UUID, OffsetDateTime, UUID, OffsetDateTime, UUID, String> fieldsRow() {
-        return (Row6) super.fieldsRow();
+    public Row7<UUID, OffsetDateTime, UUID, OffsetDateTime, UUID, String, String> fieldsRow() {
+        return (Row7) super.fieldsRow();
     }
 
     /**
      * Convenience mapping calling {@link SelectField#convertFrom(Function)}.
      */
-    public <U> SelectField<U> mapping(Function6<? super UUID, ? super OffsetDateTime, ? super UUID, ? super OffsetDateTime, ? super UUID, ? super String, ? extends U> from) {
+    public <U> SelectField<U> mapping(Function7<? super UUID, ? super OffsetDateTime, ? super UUID, ? super OffsetDateTime, ? super UUID, ? super String, ? super String, ? extends U> from) {
         return convertFrom(Records.mapping(from));
     }
 
@@ -183,7 +188,7 @@ public class Person extends TableImpl<PersonRecord> {
      * Convenience mapping calling {@link SelectField#convertFrom(Class,
      * Function)}.
      */
-    public <U> SelectField<U> mapping(Class<U> toType, Function6<? super UUID, ? super OffsetDateTime, ? super UUID, ? super OffsetDateTime, ? super UUID, ? super String, ? extends U> from) {
+    public <U> SelectField<U> mapping(Class<U> toType, Function7<? super UUID, ? super OffsetDateTime, ? super UUID, ? super OffsetDateTime, ? super UUID, ? super String, ? super String, ? extends U> from) {
         return convertFrom(toType, Records.mapping(from));
     }
 }

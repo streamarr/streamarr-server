@@ -12,9 +12,13 @@ import javax.persistence.Entity;
 @Entity
 @Getter
 @SuperBuilder
-@AllArgsConstructor
 @NoArgsConstructor
+@AllArgsConstructor
 public class Series extends BaseCollectable<Series> {
 
-    private String artwork;
+    private String backdropPath;
+
+    private String logoPath;
+
+    private String posterPath;
 }

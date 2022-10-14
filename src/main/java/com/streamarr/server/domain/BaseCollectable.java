@@ -14,6 +14,7 @@ import javax.persistence.Entity;
 import javax.persistence.FetchType;
 import javax.persistence.Inheritance;
 import javax.persistence.InheritanceType;
+import javax.persistence.JoinColumn;
 import javax.persistence.OneToMany;
 import java.util.HashSet;
 import java.util.Set;
@@ -21,13 +22,13 @@ import java.util.UUID;
 
 
 @Entity
-@Inheritance(strategy = InheritanceType.JOINED)
 @Getter
 @Setter
 @SuperBuilder
-@AllArgsConstructor
 @NoArgsConstructor
-public abstract class BaseCollectable<T extends BaseCollectable<T>> extends BaseEntity<T> implements Collectable {
+@AllArgsConstructor
+@Inheritance(strategy = InheritanceType.JOINED)
+public abstract class BaseCollectable<T extends BaseCollectable<T>> extends BaseAuditableEntity<T> implements Collectable {
 
     private UUID libraryId;
 
@@ -36,10 +37,18 @@ public abstract class BaseCollectable<T extends BaseCollectable<T>> extends Base
     @Builder.Default
     @OneToMany(
         cascade = {CascadeType.PERSIST, CascadeType.MERGE},
-        fetch = FetchType.LAZY,
-        mappedBy = "mediaId")
+        fetch = FetchType.LAZY)
+    @JoinColumn(name = "mediaId")
     @Setter(AccessLevel.NONE)
     private final Set<MediaFile> files = new HashSet<>();
+
+    @Builder.Default
+    @OneToMany(
+        cascade = {CascadeType.PERSIST, CascadeType.MERGE},
+        fetch = FetchType.LAZY)
+    @JoinColumn(name = "entityId")
+    @Setter(AccessLevel.NONE)
+    private final Set<ExternalIdentifier> externalIds = new HashSet<>();
 
     public void addFile(MediaFile file) {
         file.setMediaId(this.getId());

@@ -1,7 +1,7 @@
 package com.streamarr.server.services;
 
+import com.streamarr.server.domain.BaseAuditableEntity;
 import com.streamarr.server.domain.BaseCollectable;
-import com.streamarr.server.domain.BaseEntity;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.graphql.cursor.CursorUtil;
@@ -30,7 +30,7 @@ public class MovieService {
 
     @Transactional
     public Optional<Movie> addMediaFileToMovieByTmdbId(String id, MediaFile mediaFile) {
-        var movie = movieRepository.findFirstByTmdbId(id);
+        var movie = movieRepository.findByTmdbId(id);
 
         if (movie.isEmpty()) {
             return Optional.empty();
@@ -89,7 +89,7 @@ public class MovieService {
         return relayPaginationService.buildConnection(edges, mediaOptions.getPaginationOptions(), mediaOptions.getCursorId());
     }
 
-    private List<Edge<? extends BaseEntity<?>>> mapItemsToEdges(List<Movie> movies, MediaPaginationOptions options) {
+    private List<Edge<? extends BaseAuditableEntity<?>>> mapItemsToEdges(List<Movie> movies, MediaPaginationOptions options) {
         return movies.stream()
             .map(result -> {
                 var orderByValue = getOrderByValue(options.getMediaFilter(), result);

@@ -24,31 +24,31 @@ import java.util.UUID;
 @Getter
 @Setter
 @SuperBuilder
-@AllArgsConstructor
-@NoArgsConstructor
 @MappedSuperclass
+@NoArgsConstructor
+@AllArgsConstructor
 @EntityListeners(AuditingEntityListener.class)
-public abstract class BaseEntity<T extends BaseEntity<T>> {
+public abstract class BaseAuditableEntity<T extends BaseAuditableEntity<T>> {
 
     @Id
     @Column(updatable = false)
     @GeneratedValue(strategy = GenerationType.AUTO)
     private UUID id;
 
-    @Column(updatable = false)
     @CreatedBy
+    @Column(updatable = false)
     private UUID createdBy;
 
+    @CreatedDate
     @Column(updatable = false)
     @Setter(value = AccessLevel.PROTECTED)
-    @CreatedDate
     private Instant createdOn;
 
     @LastModifiedBy
     private UUID lastModifiedBy;
 
-    @Setter(value = AccessLevel.PROTECTED)
     @LastModifiedDate
+    @Setter(value = AccessLevel.PROTECTED)
     private Instant lastModifiedOn;
 
     @Override
@@ -70,7 +70,7 @@ public abstract class BaseEntity<T extends BaseEntity<T>> {
         return getClass().hashCode();
     }
 
-    public abstract static class BaseEntityBuilder<T extends BaseEntity<T>, C extends BaseEntity<T>, B extends BaseEntityBuilder<T, C, B>> {
+    public abstract static class BaseAuditableEntityBuilder<T extends BaseAuditableEntity<T>, C extends BaseAuditableEntity<T>, B extends BaseAuditableEntityBuilder<T, C, B>> {
 
         private B createdOn(Instant createdOn) {
             throw new UnsupportedOperationException("createdOn method is unsupported");

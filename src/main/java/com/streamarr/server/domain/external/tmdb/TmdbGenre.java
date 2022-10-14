@@ -5,9 +5,9 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Getter
-@AllArgsConstructor
 @NoArgsConstructor
-public class TmdbGenres {
+@AllArgsConstructor
+public class TmdbGenre {
 
     private int id;
     private String name;
