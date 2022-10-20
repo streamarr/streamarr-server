@@ -1,9 +1,9 @@
 package com.streamarr.server.services.library;
 
 import io.methvin.watcher.DirectoryWatcher;
+import jakarta.annotation.PreDestroy;
 import org.springframework.stereotype.Service;
 
-import javax.annotation.PreDestroy;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Set;
