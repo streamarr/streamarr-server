@@ -24,18 +24,24 @@ import java.net.http.HttpResponse;
 public class TheMovieDatabaseHttpService {
 
     private final String tmdbApiKey;
+
     private final Logger log;
+
+    private final HttpClient client;
+
 
     public TheMovieDatabaseHttpService(
         @Value("${tmdb.api.key:}")
         String tmdbApiKey,
-        Logger log
+        Logger log,
+        HttpClient client
     ) {
         this.tmdbApiKey = tmdbApiKey;
         this.log = log;
+        this.client = client;
     }
 
-    public HttpResponse<TmdbSearchResults> searchForMovie(VideoFileParserResult videoFileParserResult, HttpClient client) throws IOException, InterruptedException {
+    public HttpResponse<TmdbSearchResults> searchForMovie(VideoFileParserResult videoFileParserResult) throws IOException, InterruptedException {
         var query = new LinkedMultiValueMap<String, String>();
 
         query.add("query", videoFileParserResult.title());
@@ -44,11 +50,16 @@ public class TheMovieDatabaseHttpService {
             query.add("year", videoFileParserResult.year());
         }
 
-        return searchForMovieRequest(query, client);
+        return searchForMovieRequest(query);
     }
 
-    public HttpResponse<TmdbMovie> getMovieMetadata(String movieId, HttpClient client) throws IOException, InterruptedException {
-        var uri = baseUrl().path("/movie/").path(movieId).queryParam("api_key", tmdbApiKey).queryParam("append_to_response", "credits").build();
+    public HttpResponse<TmdbMovie> getMovieMetadata(String movieId) throws IOException, InterruptedException {
+        var uri = baseUrl()
+            .path("/movie/")
+            .path(movieId)
+            .queryParam("api_key", tmdbApiKey)
+            .queryParam("append_to_response", "credits")
+            .build();
 
         var request = HttpRequest.newBuilder()
             .uri(uri)
@@ -58,7 +69,7 @@ public class TheMovieDatabaseHttpService {
         return client.send(request, new TmdbJsonBodyHandler<>(TmdbMovie.class));
     }
 
-    public void getImage(String imagePath, HttpClient client) {
+    public void getImage(String imagePath) {
         var uri = baseImageUrl().path("/original/").path(imagePath).build();
 
         var request = HttpRequest.newBuilder()
@@ -67,7 +78,7 @@ public class TheMovieDatabaseHttpService {
             .build();
     }
 
-    public HttpResponse<TmdbCredits> getMovieCreditsMetadata(String movieId, HttpClient client) throws IOException, InterruptedException {
+    public HttpResponse<TmdbCredits> getMovieCreditsMetadata(String movieId) throws IOException, InterruptedException {
         var uri = baseUrl().path("/movie/").path(movieId).path("/credits").queryParam("api_key", tmdbApiKey).build();
 
         var request = HttpRequest.newBuilder()
@@ -78,7 +89,7 @@ public class TheMovieDatabaseHttpService {
         return client.send(request, new TmdbJsonBodyHandler<>(TmdbCredits.class));
     }
 
-    private HttpResponse<TmdbSearchResults> searchForMovieRequest(MultiValueMap<String, String> query, HttpClient client) throws IOException, InterruptedException {
+    private HttpResponse<TmdbSearchResults> searchForMovieRequest(MultiValueMap<String, String> query) throws IOException, InterruptedException {
         var uri = baseUrl().path("/search/movie").queryParams(query).queryParam("api_key", tmdbApiKey).build();
 
         var request = HttpRequest.newBuilder()
@@ -89,7 +100,7 @@ public class TheMovieDatabaseHttpService {
         return client.send(request, new TmdbJsonBodyHandler<>(TmdbSearchResults.class));
     }
 
-    private void searchForShowRequest(MultiValueMap<String, String> query, HttpClient client) {
+    private void searchForShowRequest(MultiValueMap<String, String> query) {
         var uri = baseUrl().path("/search/tv").queryParams(query).queryParam("api_key", tmdbApiKey).build();
 
         var request = HttpRequest.newBuilder()

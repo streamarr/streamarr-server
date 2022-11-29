@@ -33,6 +33,7 @@ public class MovieService {
         var movie = movieRepository.findByTmdbId(id);
 
         if (movie.isEmpty()) {
+            System.out.println("NO MOVIE FOUND WITH TMDB ID: " + id);
             return Optional.empty();
         }
 

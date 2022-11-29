@@ -1,9 +1,9 @@
 package com.streamarr.server.services;
 
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
-import com.streamarr.server.utils.FakeLibraryHelper;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -56,7 +56,7 @@ public class MovieServiceIT {
     @BeforeAll
     public void setup() {
 
-        var fakeLibrary = FakeLibraryHelper.buildFakeLibrary();
+        var fakeLibrary = LibraryFixtureCreator.buildFakeLibrary();
 
         var savedLibrary = libraryRepository.saveAndFlush(fakeLibrary);
 

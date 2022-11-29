@@ -1,15 +1,15 @@
 package com.streamarr.server.services.library;
 
-import com.github.mizosoft.methanol.Methanol;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.MovieService;
+import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
-import com.streamarr.server.services.metadata.movie.TMDBMovieProvider;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
@@ -19,12 +19,10 @@ import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.springframework.stereotype.Service;
 
-import java.io.File;
 import java.io.IOException;
-import java.net.http.HttpClient;
+import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
@@ -38,12 +36,13 @@ public class LibraryManagementService {
 
     private final VideoExtensionValidator videoExtensionValidator;
     private final DefaultVideoFileMetadataParser defaultVideoFileMetadataParser;
-    private final TMDBMovieProvider tmdbMovieProvider;
+    private final MetadataProvider<Movie> tmdbMovieProvider;
     private final LibraryRepository libraryRepository;
     private final MediaFileRepository mediaFileRepository;
     private final MovieService movieService;
     private final Logger log;
     private final MutexFactory<String> mutexFactory;
+    private final FileSystem fileSystem;
 
     public void addLibrary() {
         // validate
@@ -77,23 +76,12 @@ public class LibraryManagementService {
         library.setRefreshStartedOn(startTime);
         libraryRepository.save(library);
 
-        try (var httpClientExecutorService = Executors.newVirtualThreadPerTaskExecutor();
-             var executor = Executors.newVirtualThreadPerTaskExecutor();
-             var stream = Files.walk(Paths.get(library.getFilepath()))) {
-
-            // TODO: Does the executor actually get used here when not using sendAsync?
-            HttpClient client = Methanol.newBuilder()
-                .version(HttpClient.Version.HTTP_1_1)
-                .connectTimeout(Duration.ofSeconds(15))
-                .executor(httpClientExecutorService)
-                .build();
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+             var stream = Files.walk(fileSystem.getPath(library.getFilepath()))) {
 
             stream
                 .filter(Files::isRegularFile)
-                .map(Path::toFile)
-                .forEach(file -> {
-                    executor.submit(() -> processFile(library, file, client));
-                });
+                .forEach(file -> executor.submit(() -> processFile(library, file)));
 
         } catch (IOException e) {
             var endTimeOfFailure = Instant.now();
@@ -102,7 +90,7 @@ public class LibraryManagementService {
             library.setRefreshCompletedOn(endTimeOfFailure);
             libraryRepository.save(library);
 
-            log.error("Failed to access {} library during scan attempt.", library.getName());
+            log.error("Failed to access {} library during scan attempt.", library.getName(), e);
 
             return;
         }
@@ -117,47 +105,56 @@ public class LibraryManagementService {
         log.info("Finished {} library scan in {} seconds.", library.getName(), elapsedTime);
     }
 
-    private void processFile(Library library, File file, HttpClient client) {
+    private void processFile(Library library, Path path) {
 
-        if (isInvalidFileExtension(file)) {
+        if (isInvalidFileExtension(path)) {
             return;
         }
 
-        var mediaFile = probeFile(library, file);
+        var mediaFile = probeFile(library, path);
 
         if (isAlreadyMatched(mediaFile)) {
             return;
         }
 
         switch (library.getType()) {
-            case MOVIE -> handleMovieFileType(library, mediaFile, client);
+            case MOVIE -> handleMovieFileType(library, mediaFile);
             case SERIES -> throw new UnsupportedOperationException("Not implemented yet");
         }
     }
 
-    private boolean isInvalidFileExtension(File file) {
-        var extension = getExtension(file);
+    private boolean isInvalidFileExtension(Path path) {
+        var extension = getExtension(path);
 
         return !videoExtensionValidator.validate(extension);
     }
 
-    private String getExtension(File file) {
-        return FilenameUtils.getExtension(file.getName());
+    private String getExtension(Path path) {
+        return FilenameUtils.getExtension(path.getFileName().toString());
     }
 
-    private MediaFile probeFile(Library library, File file) {
-        var optionalMediaFile = mediaFileRepository.findFirstByFilepath(file.getAbsolutePath());
+    private MediaFile probeFile(Library library, Path path) {
+        var absoluteFilepath = path.toAbsolutePath().toString();
+
+        var optionalMediaFile = mediaFileRepository.findFirstByFilepath(absoluteFilepath);
 
         if (optionalMediaFile.isPresent()) {
-            log.info("MediaFile id: '{}' already exists, not adding again.", optionalMediaFile.get().getMediaId());
+            log.info("MediaFile id: '{}' already exists, not adding again.", optionalMediaFile.get().getId());
             return optionalMediaFile.get();
+        }
+
+        long fileSize = 0;
+        try {
+            fileSize = Files.size(path);
+        } catch (IOException ex) {
+            log.error("Could not get filesize at path: {} media might be corrupt.", absoluteFilepath, ex);
         }
 
         return mediaFileRepository.save(MediaFile.builder()
             .status(MediaFileStatus.UNMATCHED)
-            .filename(file.getName())
-            .filepath(file.getAbsolutePath())
-            .size(file.length())
+            .filename(path.getFileName().toString())
+            .filepath(absoluteFilepath)
+            .size(fileSize)
             .libraryId(library.getId())
             .build());
     }
@@ -166,7 +163,7 @@ public class LibraryManagementService {
         return file.getStatus().equals(MediaFileStatus.MATCHED);
     }
 
-    private void handleMovieFileType(Library library, MediaFile mediaFile, HttpClient client) {
+    private void handleMovieFileType(Library library, MediaFile mediaFile) {
         var mediaInformationResult = parseMediaFileForMovie(mediaFile);
 
         if (mediaInformationResult.isEmpty()) {
@@ -180,7 +177,7 @@ public class LibraryManagementService {
 
         log.info("Parsed filename. Title: {} and Year: {}", mediaInformationResult.get().title(), mediaInformationResult.get().year());
 
-        var movieSearchResult = tmdbMovieProvider.search(mediaInformationResult.get(), client);
+        var movieSearchResult = tmdbMovieProvider.search(mediaInformationResult.get());
 
         if (movieSearchResult.isEmpty()) {
             mediaFile.setStatus(MediaFileStatus.SEARCH_FAILED);

@@ -38,6 +38,7 @@
         <hibernate-types.version>2.19.2</hibernate-types.version>
         <thumbnailator.version>0.4.17</thumbnailator.version>
         <methanol-client.version>1.7.0</methanol-client.version>
+        <jimfs.version>1.2</jimfs.version>
         <testcontainers.version>1.17.3</testcontainers.version>
         <jacoco.version>0.8.8</jacoco.version>
         <surefire-failsafe-plugin.version>2.22.2</surefire-failsafe-plugin.version>
@@ -141,6 +142,13 @@
             <groupId>net.coobird</groupId>
             <artifactId>thumbnailator</artifactId>
             <version>${thumbnailator.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.google.jimfs</groupId>
+            <artifactId>jimfs</artifactId>
+            <version>${jimfs.version}</version>
+            <scope>test</scope>
         </dependency>
 
         <dependency>
@@ -446,5 +454,4 @@
             </build>
         </profile>
     </profiles>
-
 </project>

@@ -9,7 +9,6 @@ import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.springframework.stereotype.Component;
 
-import java.net.http.HttpClient;
 import java.util.List;
 import java.util.Optional;
 
@@ -21,7 +20,7 @@ public class MovieMetadataProviderFactory {
 
     private final Logger log;
 
-    public Optional<RemoteSearchResult> searchForMovie(Library library, VideoFileParserResult videoFileParserResult, HttpClient client) {
+    public Optional<RemoteSearchResult> searchForMovie(Library library, VideoFileParserResult videoFileParserResult) {
         var optionalProvider = getProviderForLibrary(library);
 
         if (optionalProvider.isEmpty()) {
@@ -31,7 +30,7 @@ public class MovieMetadataProviderFactory {
 
         var provider = optionalProvider.get();
 
-        return provider.search(videoFileParserResult, client);
+        return provider.search(videoFileParserResult);
     }
 
     private Optional<MetadataProvider<Movie>> getProviderForLibrary(Library library) {

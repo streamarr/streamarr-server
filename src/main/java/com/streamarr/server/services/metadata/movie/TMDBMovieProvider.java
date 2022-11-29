@@ -1,9 +1,10 @@
 package com.streamarr.server.services.metadata.movie;
 
-import com.github.mizosoft.methanol.Methanol;
 import com.streamarr.server.domain.ExternalAgentStrategy;
+import com.streamarr.server.domain.ExternalIdentifier;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.external.tmdb.TmdbMovie;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Person;
@@ -13,12 +14,14 @@ import com.streamarr.server.services.metadata.TheMovieDatabaseHttpService;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.springframework.stereotype.Service;
 
-import java.net.http.HttpClient;
-import java.time.Duration;
+import java.time.LocalDate;
+import java.util.HashSet;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
@@ -32,9 +35,9 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
     @Getter
     private final ExternalAgentStrategy agentStrategy = ExternalAgentStrategy.TMDB;
 
-    public Optional<RemoteSearchResult> search(VideoFileParserResult videoInformation, HttpClient client) {
+    public Optional<RemoteSearchResult> search(VideoFileParserResult videoInformation) {
         try {
-            var searchResult = theMovieDatabaseHttpService.searchForMovie(videoInformation, client);
+            var searchResult = theMovieDatabaseHttpService.searchForMovie(videoInformation);
 
             if (searchResult.body().getResults().isEmpty()) {
                 return Optional.empty();
@@ -56,16 +59,11 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
     }
 
     public Optional<Movie> getMetadata(RemoteSearchResult remoteSearchResult, Library library) {
+        // TODO: Should we be using an executor here?
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
 
-            // TODO: is this actually more performant compared to using the above client?
-            var client = Methanol.newBuilder()
-                .version(HttpClient.Version.HTTP_1_1)
-                .connectTimeout(Duration.ofSeconds(15))
-                .build();
-
             // TODO: Replace with append_to TMDB feature; credits. What about release_dates / releases?
-            var movieFuture = executor.submit(() -> theMovieDatabaseHttpService.getMovieMetadata(remoteSearchResult.externalId(), client));
+            var movieFuture = executor.submit(() -> theMovieDatabaseHttpService.getMovieMetadata(remoteSearchResult.externalId()));
 
             var tmdbMovie = movieFuture.get().body();
             var tmdbCredits = tmdbMovie.getCredits();
@@ -73,13 +71,20 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
             return Optional.of(Movie.builder()
                 .libraryId(library.getId())
                 .title(tmdbMovie.getTitle())
+                .externalIds(mapExternalIds(tmdbMovie))
+                .tagline(tmdbMovie.getTagline())
+                .summary(tmdbMovie.getOverview())
+                .releaseDate(LocalDate.parse(tmdbMovie.getReleaseDate()))
                 .studios(tmdbMovie.getProductionCompanies().stream()
                     .map(c -> Company.builder()
+                        .sourceId(String.valueOf(c.getId()))
                         .name(c.getName())
                         .build())
                     .collect(Collectors.toSet()))
+                // TODO: What happens if no results? null / empty list?
                 .cast(tmdbCredits.getCast().stream()
                     .map(credit -> Person.builder()
+                        .sourceId(String.valueOf(credit.getId()))
                         .name(credit.getName())
                         .build())
                     .collect(Collectors.toSet()))
@@ -90,6 +95,27 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
         }
 
         return Optional.empty();
+    }
+
+    private Set<ExternalIdentifier> mapExternalIds(TmdbMovie tmdbMove) {
+
+        var externalIdSet = new HashSet<ExternalIdentifier>();
+
+        externalIdSet.add(ExternalIdentifier.builder()
+            .externalSourceType(ExternalSourceType.TMDB)
+            .externalId(String.valueOf(tmdbMove.getId()))
+            .build()
+        );
+
+        if (StringUtils.isNotBlank(tmdbMove.getImdbId())) {
+            externalIdSet.add(ExternalIdentifier.builder()
+                .externalSourceType(ExternalSourceType.IMDB)
+                .externalId(tmdbMove.getImdbId())
+                .build());
+        }
+
+        return externalIdSet;
+
     }
 
 }
