@@ -1,4 +1,4 @@
-package com.streamarr.server.services.library;
+package com.streamarr.server.services.concurrency;
 
 import org.springframework.stereotype.Component;
 

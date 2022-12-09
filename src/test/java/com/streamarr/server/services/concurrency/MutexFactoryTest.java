@@ -1,4 +1,4 @@
-package com.streamarr.server.services.library;
+package com.streamarr.server.services.concurrency;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
