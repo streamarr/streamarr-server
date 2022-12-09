@@ -51,7 +51,8 @@ public class LibraryManagementService {
         MovieService movieService,
         Logger log,
         MutexFactoryProvider mutexFactoryProvider,
-        FileSystem fileSystem) {
+        FileSystem fileSystem
+    ) {
         this.videoExtensionValidator = videoExtensionValidator;
         this.defaultVideoFileMetadataParser = defaultVideoFileMetadataParser;
         this.tmdbMovieProvider = tmdbMovieProvider;
