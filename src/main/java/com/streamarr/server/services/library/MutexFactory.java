@@ -15,6 +15,6 @@ public class MutexFactory<K> {
     }
 
     public ReentrantLock getMutex(K key) {
-        return this.map.compute(key, (k, v) -> v == null ? new ReentrantLock() : v);
+        return map.compute(key, (k, v) -> v == null ? new ReentrantLock() : v);
     }
 }

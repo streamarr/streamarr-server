@@ -62,7 +62,7 @@ public class LibraryManagementServiceTest {
         fakeMediaFileRepository,
         movieService,
         LoggerFactory.getLogger(LibraryManagementServiceTest.class),
-        new MutexFactory<>(),
+        new MutexFactoryProvider(),
         fileSystem
     );
 
@@ -97,11 +97,21 @@ public class LibraryManagementServiceTest {
     }
 
     @Test
-    @DisplayName("Should scan a movie file and create an unmatched meda file when provided a valid library")
+    @DisplayName("Should scan a movie file and create an unmatched meda file when provided a valid library ")
     void shouldScanMovieAndCreateMediaFileWhenProvidedLibrary() throws IOException {
+        var movieFolder = "About Time";
+        var movieFilename = "About Time (2013).mkv";
+
         var rootPath = createRootLibraryDirectory();
-        var moviePath = createMovieFile(rootPath, "About Time", "About Time (2013).mkv");
-        
+        var moviePath = createMovieFile(rootPath, movieFolder, movieFilename);
+
+        when(tmdbMovieProvider.search(any(VideoFileParserResult.class))).thenReturn(Optional.of(RemoteSearchResult.builder()
+            .title(movieFolder)
+            .externalId("123")
+            .build()));
+
+        when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class))).thenReturn(Optional.empty());
+
         libraryManagementService.refreshLibrary(savedLibraryId);
 
         var mediaFile = fakeMediaFileRepository.findFirstByFilepath(moviePath.toAbsolutePath().toString());

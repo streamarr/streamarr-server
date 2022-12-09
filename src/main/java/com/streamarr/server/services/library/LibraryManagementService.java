@@ -13,7 +13,6 @@ import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
-import lombok.RequiredArgsConstructor;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
@@ -31,7 +30,6 @@ import java.util.concurrent.Executors;
 
 
 @Service
-@RequiredArgsConstructor
 public class LibraryManagementService {
 
     private final VideoExtensionValidator videoExtensionValidator;
@@ -41,14 +39,36 @@ public class LibraryManagementService {
     private final MediaFileRepository mediaFileRepository;
     private final MovieService movieService;
     private final Logger log;
-    private final MutexFactory<String> mutexFactory;
     private final FileSystem fileSystem;
+    private final MutexFactory<String> mutexFactory;
 
-    public void addLibrary() {
-        // validate
-        // save new "Library" entity
-        // refreshAll
-        // register watcher
+    public LibraryManagementService(
+        VideoExtensionValidator videoExtensionValidator,
+        DefaultVideoFileMetadataParser defaultVideoFileMetadataParser,
+        MetadataProvider<Movie> tmdbMovieProvider,
+        LibraryRepository libraryRepository,
+        MediaFileRepository mediaFileRepository,
+        MovieService movieService,
+        Logger log,
+        MutexFactoryProvider mutexFactoryProvider,
+        FileSystem fileSystem) {
+        this.videoExtensionValidator = videoExtensionValidator;
+        this.defaultVideoFileMetadataParser = defaultVideoFileMetadataParser;
+        this.tmdbMovieProvider = tmdbMovieProvider;
+        this.libraryRepository = libraryRepository;
+        this.mediaFileRepository = mediaFileRepository;
+        this.movieService = movieService;
+        this.log = log;
+        this.fileSystem = fileSystem;
+
+        this.mutexFactory = mutexFactoryProvider.getMutexFactory();
+    }
+
+    public void addLibrary(Library library) {
+        // validate library doesn't already exist.
+        // save new library entity to database.
+        // call refreshLibrary() once new library has been created.
+        // return newly created library.
     }
 
     public void removeLibrary() {
@@ -147,6 +167,7 @@ public class LibraryManagementService {
         try {
             fileSize = Files.size(path);
         } catch (IOException ex) {
+            // TODO: What about SecurityException?
             log.error("Could not get filesize at path: {} media might be corrupt.", absoluteFilepath, ex);
         }
 
@@ -226,7 +247,9 @@ public class LibraryManagementService {
         } catch (Exception ex) {
             log.error("Failure enriching movie metadata:", ex);
         } finally {
-            mutex.unlock();
+            if (mutex.isHeldByCurrentThread()) {
+                mutex.unlock();
+            }
         }
     }
 
