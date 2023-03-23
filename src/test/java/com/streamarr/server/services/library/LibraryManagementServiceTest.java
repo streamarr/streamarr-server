@@ -2,6 +2,7 @@ package com.streamarr.server.services.library;
 
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
+import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaFile;
@@ -16,6 +17,7 @@ import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
+import com.streamarr.server.services.metadata.movie.MovieMetadataProviderFactory;
 import com.streamarr.server.services.metadata.movie.TMDBMovieProvider;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
@@ -27,12 +29,14 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -49,8 +53,10 @@ import static org.mockito.Mockito.when;
 @DisplayName("Library Management Service Tests")
 public class LibraryManagementServiceTest {
 
+    private final Logger testLogger = LoggerFactory.getLogger(LibraryManagementServiceTest.class);
     private final MovieService movieService = mock(MovieService.class);
     private final MetadataProvider<Movie> tmdbMovieProvider = mock(TMDBMovieProvider.class);
+    private final MovieMetadataProviderFactory fakeMovieMetadataProviderFactory = new MovieMetadataProviderFactory(List.of(tmdbMovieProvider), testLogger);
     private final LibraryRepository fakeLibraryRepository = new FakeLibraryRepository();
     private final MediaFileRepository fakeMediaFileRepository = new FakeMediaFileRepository();
     private final FileSystem fileSystem = Jimfs.newFileSystem(Configuration.unix());
@@ -58,11 +64,11 @@ public class LibraryManagementServiceTest {
     private final LibraryManagementService libraryManagementService = new LibraryManagementService(
         new VideoExtensionValidator(),
         new DefaultVideoFileMetadataParser(),
-        tmdbMovieProvider,
+        fakeMovieMetadataProviderFactory,
         fakeLibraryRepository,
         fakeMediaFileRepository,
         movieService,
-        LoggerFactory.getLogger(LibraryManagementServiceTest.class),
+        testLogger,
         new MutexFactoryProvider(),
         fileSystem
     );
@@ -98,13 +104,15 @@ public class LibraryManagementServiceTest {
     }
 
     @Test
-    @DisplayName("Should scan a movie file and create an unmatched meda file when provided a valid library ")
-    void shouldScanMovieAndCreateMediaFileWhenProvidedLibrary() throws IOException {
+    @DisplayName("Should scan a file and create an unmatched MedaFile when provided a valid library")
+    void shouldScanFileAndCreateMediaFileWhenProvidedLibrary() throws IOException {
         var movieFolder = "About Time";
         var movieFilename = "About Time (2013).mkv";
 
         var rootPath = createRootLibraryDirectory();
         var moviePath = createMovieFile(rootPath, movieFolder, movieFilename);
+
+        when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
 
         when(tmdbMovieProvider.search(any(VideoFileParserResult.class))).thenReturn(Optional.of(RemoteSearchResult.builder()
             .title(movieFolder)
@@ -122,8 +130,8 @@ public class LibraryManagementServiceTest {
     }
 
     @Test
-    @DisplayName("Should scan a movie file and skip updating media file when provided a library containing an existing movie")
-    void shouldScanMovieAndSkipUpdatingMediaFileWhenProvidedLibraryContainingExistingMovie() throws IOException {
+    @DisplayName("Should skip updating media file when provided a library containing an existing movie match")
+    void shouldSkipUpdatingMediaFileWhenProvidedLibraryContainingExistingMovie() throws IOException {
         var movieFolder = "About Time";
         var movieFilename = "About Time (2013).mkv";
 
@@ -146,8 +154,8 @@ public class LibraryManagementServiceTest {
     }
 
     @Test
-    @DisplayName("Should scan a movie file and match media file when provided a library containing an existing unmatched movie")
-    void shouldScanMovieAndMatchMediaFileWhenProvidedLibraryContainingExistingUnmatchedMovie() throws IOException {
+    @DisplayName("Should match media file when provided a library containing an existing unmatched movie")
+    void shouldMatchMediaFileWhenProvidedLibraryContainingExistingUnmatchedMovie() throws IOException {
         var movieFolder = "About Time";
         var movieFilename = "About Time (2013).mkv";
 
@@ -177,8 +185,8 @@ public class LibraryManagementServiceTest {
     }
 
     @Test
-    @DisplayName("Should scan a movie file and skip creating a media file when provided a library containing an unsupported file extension")
-    void shouldScanMovieAndSkipCreatingMediaFileWhenProvidedLibraryContainingUnsupportedMovie() throws IOException {
+    @DisplayName("Should skip creating a media file when provided a library containing an unsupported file extension")
+    void shouldSkipCreatingMediaFileWhenProvidedLibraryContainingUnsupportedMovie() throws IOException {
         var rootPath = createRootLibraryDirectory();
         var moviePath = createMovieFile(rootPath, "About Time", "About Time (2013).av1");
 

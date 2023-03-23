@@ -62,13 +62,23 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
         // TODO: Should we be using an executor here?
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
 
-            // TODO: Replace with append_to TMDB feature; credits. What about release_dates / releases?
             var movieFuture = executor.submit(() -> theMovieDatabaseHttpService.getMovieMetadata(remoteSearchResult.externalId()));
 
             var tmdbMovie = movieFuture.get().body();
-            var tmdbCredits = tmdbMovie.getCredits();
 
-            return Optional.of(Movie.builder()
+            // TODO: null & empty list check
+            var tmdbCredits = tmdbMovie.getCredits();
+            // TODO: null & empty list check
+            var tmdbReleases = tmdbMovie.getReleases();
+
+            var movieRating = tmdbReleases.getCountries().stream()
+                .filter(release -> StringUtils.isNotBlank(release.getCertification()))
+                // TODO: Support other country codes.
+                .filter(release -> release.getIso31661().equals("US"))
+                .findFirst();
+
+            // TODO: Saving people and cast at this point will create duplicates.
+            var movieBuilder = Movie.builder()
                 .libraryId(library.getId())
                 .title(tmdbMovie.getTitle())
                 .externalIds(mapExternalIds(tmdbMovie))
@@ -87,8 +97,12 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
                         .sourceId(String.valueOf(credit.getId()))
                         .name(credit.getName())
                         .build())
-                    .collect(Collectors.toSet()))
-                .build());
+                    .collect(Collectors.toSet()));
+
+            // TODO: is this the cleanest way?
+            movieRating.ifPresent(movieRelease -> movieBuilder.contentRating(movieRelease.getCertification()));
+
+            return Optional.of(movieBuilder.build());
 
         } catch (Exception ex) {
             log.error("Failure enriching movie metadata using TMDB id '{}'", remoteSearchResult.externalId(), ex);

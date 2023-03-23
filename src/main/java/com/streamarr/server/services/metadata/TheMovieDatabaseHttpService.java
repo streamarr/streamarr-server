@@ -58,7 +58,7 @@ public class TheMovieDatabaseHttpService {
             .path("/movie/")
             .path(movieId)
             .queryParam("api_key", tmdbApiKey)
-            .queryParam("append_to_response", "credits")
+            .queryParam("append_to_response", "credits,releases")
             .build();
 
         var request = HttpRequest.newBuilder()

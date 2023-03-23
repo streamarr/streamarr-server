@@ -1,21 +1,15 @@
 package com.streamarr.server.domain.metadata;
 
 import com.streamarr.server.domain.BaseAuditableEntity;
-import com.streamarr.server.domain.ExternalIdentifier;
 import com.streamarr.server.domain.media.Movie;
-import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
 import lombok.experimental.SuperBuilder;
 
-import javax.persistence.CascadeType;
 import javax.persistence.Entity;
 import javax.persistence.FetchType;
 import javax.persistence.ManyToMany;
-import javax.persistence.OneToMany;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -33,13 +27,15 @@ public class Person extends BaseAuditableEntity<Person> {
     @ManyToMany(mappedBy = "cast", fetch = FetchType.LAZY)
     private Set<Movie> movies = new HashSet<>();
 
-    @Builder.Default
-    @OneToMany(
-        cascade = {CascadeType.PERSIST, CascadeType.MERGE},
-        fetch = FetchType.LAZY,
-        mappedBy = "entityId")
-    @Setter(AccessLevel.NONE)
-    private final Set<ExternalIdentifier> externalIds = new HashSet<>();
+
+    // TODO: Do we want to use this?
+//    @Builder.Default
+//    @OneToMany(
+//        cascade = {CascadeType.PERSIST, CascadeType.MERGE},
+//        fetch = FetchType.LAZY,
+//        mappedBy = "entityId")
+//    @Setter(AccessLevel.NONE)
+//    private final Set<ExternalIdentifier> externalIds = new HashSet<>();
 
     @Override
     public boolean equals(Object o) {

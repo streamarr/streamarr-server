@@ -19,8 +19,10 @@ import javax.persistence.JoinColumn;
 import javax.persistence.JoinTable;
 import javax.persistence.ManyToMany;
 import javax.persistence.OneToMany;
+import javax.persistence.OrderBy;
 import java.time.LocalDate;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Set;
 
 @Entity
@@ -56,13 +58,15 @@ public class Movie extends BaseCollectable<Movie> {
 
     @Builder.Default
     @ManyToMany(
-        cascade = {CascadeType.PERSIST, CascadeType.MERGE},
+        cascade = {CascadeType.MERGE},
         fetch = FetchType.LAZY)
     @JoinTable(
         name = "movie_person",
         joinColumns = @JoinColumn(name = "movie_id"),
         inverseJoinColumns = @JoinColumn(name = "person_id"))
-    private Set<Person> cast = new HashSet<>();
+    // TODO: Use cast ordering?
+    @OrderBy("name")
+    private Set<Person> cast = new LinkedHashSet<>();
 
     @OneToMany(fetch = FetchType.LAZY, mappedBy = "movieId")
     private Set<Rating> ratings = new HashSet<>();

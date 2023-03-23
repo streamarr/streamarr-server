@@ -1,6 +1,6 @@
 package com.streamarr.server.repositories;
 
-import com.streamarr.server.domain.metadata.Person;
+import com.streamarr.server.domain.metadata.Company;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -10,9 +10,7 @@ import java.util.UUID;
 
 
 @Repository
-public interface PersonRepository extends JpaRepository<Person, UUID> {
+public interface CompanyRepository extends JpaRepository<Company, UUID> {
 
-    Set<Person> findPersonsBySourceIdIn(List<String> sourceIds);
-
-    Person findPersonBySourceId(String sourceId);
+    Set<Company> findCompaniesBySourceIdIn(List<String> sourceIds);
 }

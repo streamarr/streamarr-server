@@ -4,14 +4,13 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
-import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
-import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
+import com.streamarr.server.services.metadata.movie.MovieMetadataProviderFactory;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
@@ -36,7 +35,7 @@ public class LibraryManagementService {
 
     private final VideoExtensionValidator videoExtensionValidator;
     private final DefaultVideoFileMetadataParser defaultVideoFileMetadataParser;
-    private final MetadataProvider<Movie> tmdbMovieProvider;
+    private final MovieMetadataProviderFactory movieMetadataProviderFactory;
     private final LibraryRepository libraryRepository;
     private final MediaFileRepository mediaFileRepository;
     private final MovieService movieService;
@@ -47,7 +46,7 @@ public class LibraryManagementService {
     public LibraryManagementService(
         VideoExtensionValidator videoExtensionValidator,
         DefaultVideoFileMetadataParser defaultVideoFileMetadataParser,
-        MetadataProvider<Movie> tmdbMovieProvider,
+        MovieMetadataProviderFactory movieMetadataProviderFactory,
         LibraryRepository libraryRepository,
         MediaFileRepository mediaFileRepository,
         MovieService movieService,
@@ -57,7 +56,7 @@ public class LibraryManagementService {
     ) {
         this.videoExtensionValidator = videoExtensionValidator;
         this.defaultVideoFileMetadataParser = defaultVideoFileMetadataParser;
-        this.tmdbMovieProvider = tmdbMovieProvider;
+        this.movieMetadataProviderFactory = movieMetadataProviderFactory;
         this.libraryRepository = libraryRepository;
         this.mediaFileRepository = mediaFileRepository;
         this.movieService = movieService;
@@ -82,6 +81,10 @@ public class LibraryManagementService {
         // delete "Library" entity
     }
 
+    // TODO: Should this be it's own class, LibraryRefreshService?
+    // TODO: Should 'Scanning' be separated from 'Refreshing'?
+    // TODO: Scan == Just checking files for changes, ie. added, deleted, renamed, moved (could be more efficient)
+    // TODO: Refresh == Scan + Metadata
     public void refreshLibrary(UUID libraryId) {
         var optionalLibrary = libraryRepository.findById(libraryId);
 
@@ -130,7 +133,7 @@ public class LibraryManagementService {
 
     private void processFile(Library library, Path path) {
 
-        if (isInvalidFileExtension(path)) {
+        if (isUnsupportedFileExtension(path)) {
             return;
         }
 
@@ -141,12 +144,12 @@ public class LibraryManagementService {
         }
 
         switch (library.getType()) {
-            case MOVIE -> handleMovieFileType(library, mediaFile);
+            case MOVIE -> processMovieFileType(library, mediaFile);
             case SERIES -> throw new UnsupportedOperationException("Not implemented yet");
         }
     }
 
-    private boolean isInvalidFileExtension(Path path) {
+    private boolean isUnsupportedFileExtension(Path path) {
         var extension = getExtension(path);
 
         return !videoExtensionValidator.validate(extension);
@@ -187,8 +190,8 @@ public class LibraryManagementService {
         return file.getStatus().equals(MediaFileStatus.MATCHED);
     }
 
-    private void handleMovieFileType(Library library, MediaFile mediaFile) {
-        var mediaInformationResult = parseMediaFileForMovie(mediaFile);
+    private void processMovieFileType(Library library, MediaFile mediaFile) {
+        var mediaInformationResult = parseMediaFileForMovieInfo(mediaFile);
 
         if (mediaInformationResult.isEmpty()) {
             mediaFile.setStatus(MediaFileStatus.METADATA_PARSING_FAILED);
@@ -201,7 +204,7 @@ public class LibraryManagementService {
 
         log.info("Parsed filename. Title: {} and Year: {}", mediaInformationResult.get().title(), mediaInformationResult.get().year());
 
-        var movieSearchResult = tmdbMovieProvider.search(mediaInformationResult.get());
+        var movieSearchResult = movieMetadataProviderFactory.search(library, mediaInformationResult.get());
 
         if (movieSearchResult.isEmpty()) {
             mediaFile.setStatus(MediaFileStatus.SEARCH_FAILED);
@@ -215,7 +218,7 @@ public class LibraryManagementService {
         enrichMovieMetadata(library, mediaFile, movieSearchResult.get());
     }
 
-    private Optional<VideoFileParserResult> parseMediaFileForMovie(MediaFile mediaFile) {
+    private Optional<VideoFileParserResult> parseMediaFileForMovieInfo(MediaFile mediaFile) {
         var result = defaultVideoFileMetadataParser.parse(mediaFile.getFilename());
 
         if (result.isEmpty() || StringUtils.isEmpty(result.get().title())) {
@@ -225,6 +228,7 @@ public class LibraryManagementService {
         return result;
     }
 
+    // TODO: Naming, this does more than enriching, it also saves...
     private void enrichMovieMetadata(Library library, MediaFile mediaFile, RemoteSearchResult remoteSearchResult) {
 
         // Lock should use the library agent's external id.
@@ -233,20 +237,7 @@ public class LibraryManagementService {
         try {
             mutex.lock();
 
-            var optionalMovie = movieService.addMediaFileToMovieByTmdbId(remoteSearchResult.externalId(), mediaFile);
-
-            // If we have a movie in the DB, no need to fetch metadata again.
-            if (optionalMovie.isPresent()) {
-                return;
-            }
-
-            var movieToSave = tmdbMovieProvider.getMetadata(remoteSearchResult, library);
-
-            if (movieToSave.isEmpty()) {
-                return;
-            }
-
-            movieService.saveMovieWithMediaFile(movieToSave.get(), mediaFile);
+            updateOrSaveEnrichedMovie(library, mediaFile, remoteSearchResult);
         } catch (Exception ex) {
             log.error("Failure enriching movie metadata:", ex);
         } finally {
@@ -254,6 +245,32 @@ public class LibraryManagementService {
                 mutex.unlock();
             }
         }
+    }
+
+    // TODO: Naming...
+    private void updateOrSaveEnrichedMovie(Library library, MediaFile mediaFile, RemoteSearchResult remoteSearchResult) {
+        var optionalMovie = movieService.addMediaFileToMovieByTmdbId(remoteSearchResult.externalId(), mediaFile);
+
+        // TODO: VERIFY ASSUMPTION! This means movie metadata can never be updated via this process. Is this okay?
+        // If we have a movie in the DB, no need to fetch metadata again.
+        if (optionalMovie.isPresent()) {
+            return;
+        }
+
+        var movieToSave = movieMetadataProviderFactory.getMetadata(remoteSearchResult, library);
+
+        if (movieToSave.isEmpty()) {
+            return;
+        }
+
+        var cast = movieToSave.get().getCast();
+
+        // TODO: VERIFY ASSUMPTION! This means people wont be updated in this process.
+        // Get or create cast before creating movie. This prevents duplicates.
+        // TODO: TBD; Where should we actually compose the persistence of Movie and it's children.
+        var savedCast = movieService.getOrCreateCast(cast);
+
+        movieService.saveMovieWithMediaFileAndCast(movieToSave.get(), mediaFile, savedCast);
     }
 
     private void deleteMissingMediaFiles() {

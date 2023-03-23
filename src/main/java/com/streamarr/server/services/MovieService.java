@@ -2,12 +2,15 @@ package com.streamarr.server.services;
 
 import com.streamarr.server.domain.BaseAuditableEntity;
 import com.streamarr.server.domain.BaseCollectable;
+import com.streamarr.server.domain.mappers.PersonMappers;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.graphql.cursor.MediaPaginationOptions;
 import com.streamarr.server.graphql.cursor.PaginationOptions;
+import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import graphql.relay.Connection;
 import graphql.relay.DefaultEdge;
@@ -18,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -25,6 +29,8 @@ import java.util.stream.Collectors;
 public class MovieService {
 
     private final MovieRepository movieRepository;
+    private final PersonMappers personMappers;
+    private final PersonRepository personRepository;
     private final CursorUtil cursorUtil;
     private final RelayPaginationService relayPaginationService;
 
@@ -32,6 +38,7 @@ public class MovieService {
     public Optional<Movie> addMediaFileToMovieByTmdbId(String id, MediaFile mediaFile) {
         var movie = movieRepository.findByTmdbId(id);
 
+        // TODO: Finish this...
         if (movie.isEmpty()) {
             System.out.println("NO MOVIE FOUND WITH TMDB ID: " + id);
             return Optional.empty();
@@ -42,12 +49,53 @@ public class MovieService {
     }
 
     @Transactional
-    public Movie saveMovieWithMediaFile(Movie movie, MediaFile mediaFile) {
-        var savedMovie = movieRepository.saveAndFlush(movie);
+    public Movie saveMovieWithMediaFileAndCast(Movie movie, MediaFile mediaFile, Set<Person> cast) {
+
+        // TODO: Cleanup
+        var testMovie = Movie.builder()
+            .id(movie.getId())
+            .createdBy(movie.getCreatedBy())
+            .lastModifiedBy(movie.getLastModifiedBy())
+            .title(movie.getTitle())
+            .libraryId(movie.getLibraryId())
+            .externalIds(movie.getExternalIds())
+            .files(movie.getFiles())
+            .tagline(movie.getTagline())
+            .summary(movie.getSummary())
+            .backdropPath(movie.getBackdropPath())
+            .posterPath(movie.getPosterPath())
+            .releaseDate(movie.getReleaseDate())
+            .contentRating(movie.getContentRating())
+            .studios(movie.getStudios())
+            .build();
+
+        var savedMovie = movieRepository.saveAndFlush(testMovie);
+
+        savedMovie.setCast(cast);
 
         savedMovie.addFile(mediaFile);
 
         return movieRepository.save(savedMovie);
+    }
+
+    // TODO: Move to "PersonService"?
+    public Set<Person> getOrCreateCast(Set<Person> cast) {
+        return cast.stream().map(this::savePerson).collect(Collectors.toSet());
+    }
+
+    // TODO: Move to "PersonService"?
+    @Transactional
+    public Person savePerson(Person person) {
+        var existingPerson = personRepository.findPersonBySourceId(person.getSourceId());
+
+        if (existingPerson != null) {
+
+            personMappers.updatePerson(person, existingPerson);
+
+            return personRepository.save(existingPerson);
+        }
+
+        return personRepository.save(person);
     }
 
     public Connection<? extends BaseCollectable<?>> getMoviesWithFilter(

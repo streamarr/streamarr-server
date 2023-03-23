@@ -54,4 +54,5 @@ public class TmdbMovie {
 
     // append_to_response
     private TmdbCredits credits;
+    private TmdbReleases releases;
 }

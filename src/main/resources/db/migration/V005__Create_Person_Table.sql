@@ -7,5 +7,6 @@ CREATE TABLE person
     last_modified_by UUID,
     name             TEXT                     NOT NULL,
     source_id        TEXT                     NOT NULL,
-    CONSTRAINT person_pkey PRIMARY KEY (id)
+    CONSTRAINT person_pkey PRIMARY KEY (id),
+    CONSTRAINT person_uc UNIQUE (source_id, name)
 );
