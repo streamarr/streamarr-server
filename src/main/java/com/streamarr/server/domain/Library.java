@@ -35,9 +35,9 @@ public class Library extends BaseAuditableEntity<Library> {
 
     private String name;
 
-    private Instant refreshStartedOn;
+    private Instant scanStartedOn;
 
-    private Instant refreshCompletedOn;
+    private Instant scanCompletedOn;
 
     @Enumerated(EnumType.STRING)
     @Type(type = "pgsql_enum")

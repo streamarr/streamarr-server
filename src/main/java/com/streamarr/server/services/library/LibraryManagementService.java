@@ -81,26 +81,32 @@ public class LibraryManagementService {
         // delete "Library" entity
     }
 
-    // TODO: Should this be it's own class, LibraryRefreshService?
-    // TODO: Should 'Scanning' be separated from 'Refreshing'?
-    // TODO: Scan == Just checking files for changes, ie. added, deleted, renamed, moved (could be more efficient)
-    // TODO: Refresh == Scan + Metadata
-    public void refreshLibrary(UUID libraryId) {
+    // TODO: Should this be it's own class, LibraryScanningService?
+    // TODO: LibraryScanningService could compose LibraryValidationService and LibraryCleanupService for example.
+    public void scanLibrary(UUID libraryId) {
         var optionalLibrary = libraryRepository.findById(libraryId);
 
+
+        // TODO: Could this be moved to another service, LibraryValidationService?
         if (optionalLibrary.isEmpty()) {
-            throw new RuntimeException("Library cannot be found for refresh.");
+            throw new RuntimeException("Library cannot be found for scanning.");
         }
 
         var library = optionalLibrary.get();
+
+        if (library.getStatus().equals(LibraryStatus.SCANNING)) {
+            throw new RuntimeException("Library is currently being scanned.");
+        }
 
         log.info("Starting {} library scan.", library.getName());
 
         var startTime = Instant.now();
 
         library.setStatus(LibraryStatus.SCANNING);
-        library.setRefreshStartedOn(startTime);
+        library.setScanStartedOn(startTime);
         libraryRepository.save(library);
+
+        // TODO: Cleanup orphaned MediaFiles and their parent Movie/Show/etc. LibraryCleanupService?
 
         try (var executor = Executors.newVirtualThreadPerTaskExecutor();
              var stream = Files.walk(fileSystem.getPath(library.getFilepath()))) {
@@ -113,7 +119,7 @@ public class LibraryManagementService {
             var endTimeOfFailure = Instant.now();
 
             library.setStatus(LibraryStatus.UNHEALTHY);
-            library.setRefreshCompletedOn(endTimeOfFailure);
+            library.setScanCompletedOn(endTimeOfFailure);
             libraryRepository.save(library);
 
             log.error("Failed to access {} library during scan attempt.", library.getName(), e);
@@ -125,7 +131,7 @@ public class LibraryManagementService {
         var elapsedTime = Duration.between(startTime, endTime).getSeconds();
 
         library.setStatus(LibraryStatus.HEALTHY);
-        library.setRefreshCompletedOn(endTime);
+        library.setScanCompletedOn(endTime);
         libraryRepository.save(library);
 
         log.info("Finished {} library scan in {} seconds.", library.getName(), elapsedTime);
@@ -152,7 +158,13 @@ public class LibraryManagementService {
     private boolean isUnsupportedFileExtension(Path path) {
         var extension = getExtension(path);
 
-        return !videoExtensionValidator.validate(extension);
+        var valid = videoExtensionValidator.validate(extension);
+
+        if (!valid) {
+            log.error("Unsupported file extension: {} for filepath {}.", extension, path.toAbsolutePath());
+        }
+
+        return !valid;
     }
 
     private String getExtension(Path path) {
@@ -173,7 +185,8 @@ public class LibraryManagementService {
         try {
             fileSize = Files.size(path);
         } catch (IOException ex) {
-            // TODO: What about SecurityException?
+            // TODO: What about handling a possible SecurityException?
+            // TODO: Should this filesize error be handled differently, maybe a status?
             log.error("Could not get filesize at path: {} media might be corrupt.", absoluteFilepath, ex);
         }
 
@@ -190,6 +203,7 @@ public class LibraryManagementService {
         return file.getStatus().equals(MediaFileStatus.MATCHED);
     }
 
+    // TODO: At this point, we are handling another responsibility, we should move this to a service.
     private void processMovieFileType(Library library, MediaFile mediaFile) {
         var mediaInformationResult = parseMediaFileForMovieInfo(mediaFile);
 
@@ -197,23 +211,25 @@ public class LibraryManagementService {
             mediaFile.setStatus(MediaFileStatus.METADATA_PARSING_FAILED);
             mediaFileRepository.save(mediaFile);
 
-            log.error("Failed to parse file at path '{}'", mediaFile.getFilepath());
+            log.error("Failed to parse MediaFile id: {} at path: '{}'", mediaFile.getId(), mediaFile.getFilepath());
 
             return;
         }
 
-        log.info("Parsed filename. Title: {} and Year: {}", mediaInformationResult.get().title(), mediaInformationResult.get().year());
+        log.info("Parsed filename for MediaFile id: {}. Title: {} and Year: {}", mediaFile.getId(), mediaInformationResult.get().title(), mediaInformationResult.get().year());
 
         var movieSearchResult = movieMetadataProviderFactory.search(library, mediaInformationResult.get());
 
         if (movieSearchResult.isEmpty()) {
-            mediaFile.setStatus(MediaFileStatus.SEARCH_FAILED);
+            mediaFile.setStatus(MediaFileStatus.METADATA_SEARCH_FAILED);
             mediaFileRepository.save(mediaFile);
 
-            log.error("Failed to find matching search result for file at path '{}'", mediaFile.getFilepath());
+            log.error("Failed to find matching search result for MediaFile id: {} at path: '{}'", mediaFile.getId(), mediaFile.getFilepath());
 
             return;
         }
+
+        log.info("Found metadata search result during enrichment for MediaFile id: {}. Metadata provider: {} and External id: {}", mediaFile.getId(), movieSearchResult.get().externalSourceType(), movieSearchResult.get().externalId());
 
         enrichMovieMetadata(library, mediaFile, movieSearchResult.get());
     }
@@ -248,11 +264,11 @@ public class LibraryManagementService {
     }
 
     // TODO: Naming...
+    // TODO: This should be moved to a service.
     private void updateOrSaveEnrichedMovie(Library library, MediaFile mediaFile, RemoteSearchResult remoteSearchResult) {
         var optionalMovie = movieService.addMediaFileToMovieByTmdbId(remoteSearchResult.externalId(), mediaFile);
 
-        // TODO: VERIFY ASSUMPTION! This means movie metadata can never be updated via this process. Is this okay?
-        // If we have a movie in the DB, no need to fetch metadata again.
+        // If we found a movie in the DB, no need to fetch metadata again. This should only happen during a metadata refresh.
         if (optionalMovie.isPresent()) {
             return;
         }
@@ -265,9 +281,8 @@ public class LibraryManagementService {
 
         var cast = movieToSave.get().getCast();
 
-        // TODO: VERIFY ASSUMPTION! This means people wont be updated in this process.
         // Get or create cast before creating movie. This prevents duplicates.
-        // TODO: TBD; Where should we actually compose the persistence of Movie and it's children.
+        // TODO: TBD; Where should we actually compose the persistence of Movie and it's children objects.
         var savedCast = movieService.getOrCreateCast(cast);
 
         movieService.saveMovieWithMediaFileAndCast(movieToSave.get(), mediaFile, savedCast);

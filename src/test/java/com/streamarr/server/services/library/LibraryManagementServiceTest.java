@@ -3,6 +3,7 @@ package com.streamarr.server.services.library;
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
 import com.streamarr.server.domain.ExternalAgentStrategy;
+import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaFile;
@@ -89,49 +90,61 @@ public class LibraryManagementServiceTest {
     }
 
     @Test
-    @DisplayName("Should throw an exception when no library configured")
+    @DisplayName("Should not allow for scanning of a library that doesn't exist.")
     void shouldFailWhenNoLibraryFound() {
-        assertThrows(RuntimeException.class, () -> libraryManagementService.refreshLibrary(UUID.randomUUID()), "Library cannot be found for refresh.");
+        var ex = assertThrows(RuntimeException.class, () -> libraryManagementService.scanLibrary(UUID.randomUUID()));
+        assertThat(ex).hasMessage("Library cannot be found for scanning.");
+
+    }
+
+    @Test
+    @DisplayName("Should not allow for scanning of a library that is currently being scanned.")
+    void shouldFailWhenLibraryCurrentlyBeingScanned() {
+        var library = fakeLibraryRepository.findById(savedLibraryId);
+        library.orElseThrow().setStatus(LibraryStatus.SCANNING);
+        fakeLibraryRepository.save(library.orElseThrow());
+
+        var ex = assertThrows(RuntimeException.class, () -> libraryManagementService.scanLibrary(savedLibraryId));
+        assertThat(ex).hasMessage("Library is currently being scanned.");
     }
 
     @Test
     @DisplayName("Should set library status to unhealthy when the library filepath cannot be accessed")
     void shouldSetLibraryStatusToUnhealthyWhenLibraryFilepathInaccessible() {
-        libraryManagementService.refreshLibrary(savedLibraryId);
+        libraryManagementService.scanLibrary(savedLibraryId);
 
         assertTrue(fakeLibraryRepository.findById(savedLibraryId).isPresent());
         assertThat(fakeLibraryRepository.findById(savedLibraryId).get().getStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
     }
 
     @Test
-    @DisplayName("Should scan a file and create an unmatched MedaFile when provided a valid library")
-    void shouldScanFileAndCreateMediaFileWhenProvidedLibrary() throws IOException {
-        var movieFolder = "About Time";
-        var movieFilename = "About Time (2013).mkv";
+    @DisplayName("Should set library status to healthy when the library filepath can be accessed")
+    void shouldSetLibraryStatusToHealthyWhenLibraryFilepathAccessible() throws IOException {
+        createRootLibraryDirectory();
 
-        var rootPath = createRootLibraryDirectory();
-        var moviePath = createMovieFile(rootPath, movieFolder, movieFilename);
+        libraryManagementService.scanLibrary(savedLibraryId);
 
-        when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
-
-        when(tmdbMovieProvider.search(any(VideoFileParserResult.class))).thenReturn(Optional.of(RemoteSearchResult.builder()
-            .title(movieFolder)
-            .externalId("123")
-            .build()));
-
-        when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class))).thenReturn(Optional.empty());
-
-        libraryManagementService.refreshLibrary(savedLibraryId);
-
-        var mediaFile = fakeMediaFileRepository.findFirstByFilepath(moviePath.toAbsolutePath().toString());
-
-        assertTrue(mediaFile.isPresent());
-        assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.UNMATCHED);
+        assertTrue(fakeLibraryRepository.findById(savedLibraryId).isPresent());
+        assertThat(fakeLibraryRepository.findById(savedLibraryId).get().getStatus()).isEqualTo(LibraryStatus.HEALTHY);
     }
 
     @Test
-    @DisplayName("Should skip updating media file when provided a library containing an existing movie match")
-    void shouldSkipUpdatingMediaFileWhenProvidedLibraryContainingExistingMovie() throws IOException {
+    @DisplayName("Should skip creating a media file when provided a library containing an unsupported file extension")
+    void shouldSkipCreatingMediaFileWhenProvidedLibraryContainingUnsupportedMovie() throws IOException {
+        // This tradeoff increases scan speed in worst case scenarios where a library contains a large number of unsupported files.
+        var rootPath = createRootLibraryDirectory();
+        var moviePath = createMovieFile(rootPath, "About Time", "About Time (2013).av1");
+
+        libraryManagementService.scanLibrary(savedLibraryId);
+
+        var mediaFile = fakeMediaFileRepository.findFirstByFilepath(moviePath.toAbsolutePath().toString());
+
+        assertTrue(mediaFile.isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should skip updating metadata when provided a media file that has already been matched.")
+    void shouldSkipUpdatingMetadataWhenProvidedMediaFileThatHasBeenMatched() throws IOException {
         var movieFolder = "About Time";
         var movieFilename = "About Time (2013).mkv";
 
@@ -145,12 +158,44 @@ public class LibraryManagementServiceTest {
             .status(MediaFileStatus.MATCHED)
             .build());
 
-        libraryManagementService.refreshLibrary(savedLibraryId);
+        libraryManagementService.scanLibrary(savedLibraryId);
 
         var mediaFileAfterRefresh = fakeMediaFileRepository.findFirstByFilepath(moviePath.toAbsolutePath().toString());
 
         assertTrue(mediaFileAfterRefresh.isPresent());
         assertEquals(mediaFileBeforeRefresh, mediaFileAfterRefresh.get());
+    }
+
+    @Test
+    @DisplayName("Should match media file when provided a library containing a file with a supported extension")
+    void shouldMatchMediaFileWhenProvidedLibraryContainingSupportedMovie() throws IOException {
+        var movieFolder = "About Time";
+        var movieFilename = "About Time (2013).mkv";
+
+        var rootPath = createRootLibraryDirectory();
+        var moviePath = createMovieFile(rootPath, movieFolder, movieFilename);
+
+        when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+
+        when(tmdbMovieProvider.search(any(VideoFileParserResult.class))).thenReturn(Optional.of(RemoteSearchResult.builder()
+            .title(movieFolder)
+            .externalId("123")
+            .externalSourceType(ExternalSourceType.TMDB)
+            .build()));
+
+        when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
+            .thenReturn(Optional.of(Movie.builder()
+                .title(movieFolder)
+                .build()));
+
+        libraryManagementService.scanLibrary(savedLibraryId);
+
+        var mediaFile = fakeMediaFileRepository.findFirstByFilepath(moviePath.toAbsolutePath().toString());
+
+        assertTrue(mediaFile.isPresent());
+
+        // TODO: Failing because we don't have an impl of FakeMovieRepository that would update the MediaFile...
+        assertEquals(MediaFileStatus.MATCHED, mediaFile.get().getStatus());
     }
 
     @Test
@@ -176,25 +221,12 @@ public class LibraryManagementServiceTest {
 
         when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class))).thenReturn(Optional.of(Movie.builder().build()));
 
-        libraryManagementService.refreshLibrary(savedLibraryId);
+        libraryManagementService.scanLibrary(savedLibraryId);
 
         var mediaFileAfterRefresh = fakeMediaFileRepository.findFirstByFilepath(moviePath.toAbsolutePath().toString());
 
         assertTrue(mediaFileAfterRefresh.isPresent());
         assertEquals(mediaFileBeforeRefresh, mediaFileAfterRefresh.get());
-    }
-
-    @Test
-    @DisplayName("Should skip creating a media file when provided a library containing an unsupported file extension")
-    void shouldSkipCreatingMediaFileWhenProvidedLibraryContainingUnsupportedMovie() throws IOException {
-        var rootPath = createRootLibraryDirectory();
-        var moviePath = createMovieFile(rootPath, "About Time", "About Time (2013).av1");
-
-        libraryManagementService.refreshLibrary(savedLibraryId);
-
-        var mediaFile = fakeMediaFileRepository.findFirstByFilepath(moviePath.toAbsolutePath().toString());
-
-        assertTrue(mediaFile.isEmpty());
     }
 
 

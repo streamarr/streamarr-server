@@ -31,7 +31,7 @@ public class MediaFile extends BaseAuditableEntity<MediaFile> {
 
     private String filename;
     private String filepath;
-    
+
     private long size;
 
     @Override

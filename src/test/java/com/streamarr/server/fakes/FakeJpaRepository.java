@@ -85,7 +85,7 @@ public class FakeJpaRepository<L extends BaseAuditableEntity> implements JpaRepo
     @Override
     public <S extends L> S save(S entity) {
         var id = entity.getId() != null ? entity.getId() : UUID.randomUUID();
-
+        
         entity.setId(id);
         database.put(id, entity);
 

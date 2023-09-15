@@ -4,6 +4,7 @@ import com.streamarr.server.domain.BaseAuditableEntity;
 import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.mappers.PersonMappers;
 import com.streamarr.server.domain.media.MediaFile;
+import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.graphql.cursor.CursorUtil;
@@ -72,6 +73,9 @@ public class MovieService {
         var savedMovie = movieRepository.saveAndFlush(testMovie);
 
         savedMovie.setCast(cast);
+
+        // TODO: Will this work?
+        mediaFile.setStatus(MediaFileStatus.MATCHED);
 
         savedMovie.addFile(mediaFile);
 
