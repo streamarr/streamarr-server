@@ -438,5 +438,6 @@ public class SchemaHistoryRecord extends UpdatableRecordImpl<SchemaHistoryRecord
         setInstalledOn(installedOn);
         setExecutionTime(executionTime);
         setSuccess(success);
+        resetChangedOnNotNull();
     }
 }

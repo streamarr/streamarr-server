@@ -328,5 +328,6 @@ public class BaseCollectableRecord extends UpdatableRecordImpl<BaseCollectableRe
         setLastModifiedBy(lastModifiedBy);
         setTitle(title);
         setLibraryId(libraryId);
+        resetChangedOnNotNull();
     }
 }

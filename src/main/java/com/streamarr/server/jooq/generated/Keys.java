@@ -58,6 +58,7 @@ public class Keys {
     public static final UniqueKey<MovieCompanyRecord> MOVIE_COMPANY_PKEY = Internal.createUniqueKey(MovieCompany.MOVIE_COMPANY, DSL.name("movie_company_pkey"), new TableField[] { MovieCompany.MOVIE_COMPANY.ID }, true);
     public static final UniqueKey<MoviePersonRecord> MOVIE_PERSON_PKEY = Internal.createUniqueKey(MoviePerson.MOVIE_PERSON, DSL.name("movie_person_pkey"), new TableField[] { MoviePerson.MOVIE_PERSON.ID }, true);
     public static final UniqueKey<PersonRecord> PERSON_PKEY = Internal.createUniqueKey(Person.PERSON, DSL.name("person_pkey"), new TableField[] { Person.PERSON.ID }, true);
+    public static final UniqueKey<PersonRecord> PERSON_UC = Internal.createUniqueKey(Person.PERSON, DSL.name("person_uc"), new TableField[] { Person.PERSON.SOURCE_ID, Person.PERSON.NAME }, true);
     public static final UniqueKey<RatingRecord> RATING_PKEY = Internal.createUniqueKey(Rating.RATING, DSL.name("rating_pkey"), new TableField[] { Rating.RATING.ID }, true);
     public static final UniqueKey<ReviewRecord> REVIEW_PKEY = Internal.createUniqueKey(Review.REVIEW, DSL.name("review_pkey"), new TableField[] { Review.REVIEW.ID }, true);
     public static final UniqueKey<SchemaHistoryRecord> SCHEMA_HISTORY_PK = Internal.createUniqueKey(SchemaHistory.SCHEMA_HISTORY, DSL.name("schema_history_pk"), new TableField[] { SchemaHistory.SCHEMA_HISTORY.INSTALLED_RANK }, true);

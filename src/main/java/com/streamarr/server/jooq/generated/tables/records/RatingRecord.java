@@ -365,5 +365,6 @@ public class RatingRecord extends UpdatableRecordImpl<RatingRecord> implements R
         setSource(source);
         setValue(value);
         setMovieId(movieId);
+        resetChangedOnNotNull();
     }
 }

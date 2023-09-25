@@ -54,12 +54,12 @@ public class Company extends TableImpl<CompanyRecord> {
     /**
      * The column <code>public.company.id</code>.
      */
-    public final TableField<CompanyRecord, UUID> ID = createField(DSL.name("id"), SQLDataType.UUID.nullable(false).defaultValue(DSL.field("uuid_generate_v4()", SQLDataType.UUID)), this, "");
+    public final TableField<CompanyRecord, UUID> ID = createField(DSL.name("id"), SQLDataType.UUID.nullable(false).defaultValue(DSL.field(DSL.raw("uuid_generate_v4()"), SQLDataType.UUID)), this, "");
 
     /**
      * The column <code>public.company.created_on</code>.
      */
-    public final TableField<CompanyRecord, OffsetDateTime> CREATED_ON = createField(DSL.name("created_on"), SQLDataType.TIMESTAMPWITHTIMEZONE(6).nullable(false).defaultValue(DSL.field("now()", SQLDataType.TIMESTAMPWITHTIMEZONE)), this, "");
+    public final TableField<CompanyRecord, OffsetDateTime> CREATED_ON = createField(DSL.name("created_on"), SQLDataType.TIMESTAMPWITHTIMEZONE(6).nullable(false).defaultValue(DSL.field(DSL.raw("now()"), SQLDataType.TIMESTAMPWITHTIMEZONE)), this, "");
 
     /**
      * The column <code>public.company.created_by</code>.
@@ -69,7 +69,7 @@ public class Company extends TableImpl<CompanyRecord> {
     /**
      * The column <code>public.company.last_modified_on</code>.
      */
-    public final TableField<CompanyRecord, OffsetDateTime> LAST_MODIFIED_ON = createField(DSL.name("last_modified_on"), SQLDataType.TIMESTAMPWITHTIMEZONE(6).nullable(false).defaultValue(DSL.field("now()", SQLDataType.TIMESTAMPWITHTIMEZONE)), this, "");
+    public final TableField<CompanyRecord, OffsetDateTime> LAST_MODIFIED_ON = createField(DSL.name("last_modified_on"), SQLDataType.TIMESTAMPWITHTIMEZONE(6).nullable(false).defaultValue(DSL.field(DSL.raw("now()"), SQLDataType.TIMESTAMPWITHTIMEZONE)), this, "");
 
     /**
      * The column <code>public.company.last_modified_by</code>.

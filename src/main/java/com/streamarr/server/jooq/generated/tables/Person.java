@@ -9,6 +9,8 @@ import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.tables.records.PersonRecord;
 
 import java.time.OffsetDateTime;
+import java.util.Arrays;
+import java.util.List;
 import java.util.UUID;
 import java.util.function.Function;
 
@@ -54,12 +56,12 @@ public class Person extends TableImpl<PersonRecord> {
     /**
      * The column <code>public.person.id</code>.
      */
-    public final TableField<PersonRecord, UUID> ID = createField(DSL.name("id"), SQLDataType.UUID.nullable(false).defaultValue(DSL.field("uuid_generate_v4()", SQLDataType.UUID)), this, "");
+    public final TableField<PersonRecord, UUID> ID = createField(DSL.name("id"), SQLDataType.UUID.nullable(false).defaultValue(DSL.field(DSL.raw("uuid_generate_v4()"), SQLDataType.UUID)), this, "");
 
     /**
      * The column <code>public.person.created_on</code>.
      */
-    public final TableField<PersonRecord, OffsetDateTime> CREATED_ON = createField(DSL.name("created_on"), SQLDataType.TIMESTAMPWITHTIMEZONE(6).nullable(false).defaultValue(DSL.field("now()", SQLDataType.TIMESTAMPWITHTIMEZONE)), this, "");
+    public final TableField<PersonRecord, OffsetDateTime> CREATED_ON = createField(DSL.name("created_on"), SQLDataType.TIMESTAMPWITHTIMEZONE(6).nullable(false).defaultValue(DSL.field(DSL.raw("now()"), SQLDataType.TIMESTAMPWITHTIMEZONE)), this, "");
 
     /**
      * The column <code>public.person.created_by</code>.
@@ -69,7 +71,7 @@ public class Person extends TableImpl<PersonRecord> {
     /**
      * The column <code>public.person.last_modified_on</code>.
      */
-    public final TableField<PersonRecord, OffsetDateTime> LAST_MODIFIED_ON = createField(DSL.name("last_modified_on"), SQLDataType.TIMESTAMPWITHTIMEZONE(6).nullable(false).defaultValue(DSL.field("now()", SQLDataType.TIMESTAMPWITHTIMEZONE)), this, "");
+    public final TableField<PersonRecord, OffsetDateTime> LAST_MODIFIED_ON = createField(DSL.name("last_modified_on"), SQLDataType.TIMESTAMPWITHTIMEZONE(6).nullable(false).defaultValue(DSL.field(DSL.raw("now()"), SQLDataType.TIMESTAMPWITHTIMEZONE)), this, "");
 
     /**
      * The column <code>public.person.last_modified_by</code>.
@@ -127,6 +129,11 @@ public class Person extends TableImpl<PersonRecord> {
     @Override
     public UniqueKey<PersonRecord> getPrimaryKey() {
         return Keys.PERSON_PKEY;
+    }
+
+    @Override
+    public List<UniqueKey<PersonRecord>> getUniqueKeys() {
+        return Arrays.asList(Keys.PERSON_UC);
     }
 
     @Override

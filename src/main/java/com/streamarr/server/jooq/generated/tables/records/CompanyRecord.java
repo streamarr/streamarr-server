@@ -328,5 +328,6 @@ public class CompanyRecord extends UpdatableRecordImpl<CompanyRecord> implements
         setLastModifiedBy(lastModifiedBy);
         setName(name);
         setSourceId(sourceId);
+        resetChangedOnNotNull();
     }
 }

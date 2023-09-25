@@ -5,14 +5,14 @@ import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.graphql.cursor.MediaPaginationOptions;
 import com.streamarr.server.graphql.cursor.PaginationDirection;
 import com.streamarr.server.jooq.generated.Tables;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+import jakarta.persistence.Query;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
 import org.jooq.SortField;
 import org.jooq.SortOrder;
 
-import javax.persistence.EntityManager;
-import javax.persistence.PersistenceContext;
-import javax.persistence.Query;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -63,7 +63,8 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
     }
 
     public Optional<Movie> findByTmdbId(String tmdbId) {
-        var query = context.select()
+        var query = context
+            .select(Tables.MOVIE.asterisk(), Tables.BASE_COLLECTABLE.asterisk())
             .from(Tables.MOVIE)
             .innerJoin(Tables.BASE_COLLECTABLE)
             .on(Tables.MOVIE.ID.eq(Tables.BASE_COLLECTABLE.ID))
@@ -94,7 +95,8 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
         var orderByColumns = new SortField[]{buildOrderBy(options.getMediaFilter()), Tables.BASE_COLLECTABLE.ID.sort(SortOrder.DEFAULT)};
 
         // TODO: reuse any logic from above?
-        var query = context.select()
+        var query = context
+            .select()
             .from(Tables.MOVIE)
             .innerJoin(Tables.BASE_COLLECTABLE)
             .on(Tables.MOVIE.ID.eq(Tables.BASE_COLLECTABLE.ID))

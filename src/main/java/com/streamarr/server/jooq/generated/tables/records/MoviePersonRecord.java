@@ -217,5 +217,6 @@ public class MoviePersonRecord extends UpdatableRecordImpl<MoviePersonRecord> im
         setCreatedOn(createdOn);
         setMovieId(movieId);
         setPersonId(personId);
+        resetChangedOnNotNull();
     }
 }

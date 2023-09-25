@@ -77,7 +77,7 @@ public class MovieRepositoryIT {
         var movie = movieRepository.saveAndFlush(Movie.builder()
             .title("A Wonderful Test")
             .files(Set.of(file))
-            .libraryId(savedLibrary.getId())
+            .library(savedLibrary)
             .build());
 
         assertThat(movie.getFiles()).hasSize(1);
@@ -95,7 +95,7 @@ public class MovieRepositoryIT {
         movieRepository.saveAndFlush(Movie.builder()
             .title("A Wonderful Test")
             .externalIds(Set.of(fakeExternalId))
-            .libraryId(savedLibrary.getId())
+            .library(savedLibrary)
             .build());
 
         var result = movieRepository.findByTmdbId(fakeExternalId.getExternalId());

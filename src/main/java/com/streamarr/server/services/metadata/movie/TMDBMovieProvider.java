@@ -79,7 +79,7 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
 
             // TODO: Saving people and cast at this point will create duplicates.
             var movieBuilder = Movie.builder()
-                .libraryId(library.getId())
+                .library(library)
                 .title(tmdbMovie.getTitle())
                 .externalIds(mapExternalIds(tmdbMovie))
                 .tagline(tmdbMovie.getTagline())

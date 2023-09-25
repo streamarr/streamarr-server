@@ -62,12 +62,12 @@ public class Library extends TableImpl<LibraryRecord> {
     /**
      * The column <code>public.library.id</code>.
      */
-    public final TableField<LibraryRecord, UUID> ID = createField(DSL.name("id"), SQLDataType.UUID.nullable(false).defaultValue(DSL.field("uuid_generate_v4()", SQLDataType.UUID)), this, "");
+    public final TableField<LibraryRecord, UUID> ID = createField(DSL.name("id"), SQLDataType.UUID.nullable(false).defaultValue(DSL.field(DSL.raw("uuid_generate_v4()"), SQLDataType.UUID)), this, "");
 
     /**
      * The column <code>public.library.created_on</code>.
      */
-    public final TableField<LibraryRecord, OffsetDateTime> CREATED_ON = createField(DSL.name("created_on"), SQLDataType.TIMESTAMPWITHTIMEZONE(6).nullable(false).defaultValue(DSL.field("now()", SQLDataType.TIMESTAMPWITHTIMEZONE)), this, "");
+    public final TableField<LibraryRecord, OffsetDateTime> CREATED_ON = createField(DSL.name("created_on"), SQLDataType.TIMESTAMPWITHTIMEZONE(6).nullable(false).defaultValue(DSL.field(DSL.raw("now()"), SQLDataType.TIMESTAMPWITHTIMEZONE)), this, "");
 
     /**
      * The column <code>public.library.created_by</code>.
@@ -77,7 +77,7 @@ public class Library extends TableImpl<LibraryRecord> {
     /**
      * The column <code>public.library.last_modified_on</code>.
      */
-    public final TableField<LibraryRecord, OffsetDateTime> LAST_MODIFIED_ON = createField(DSL.name("last_modified_on"), SQLDataType.TIMESTAMPWITHTIMEZONE(6).nullable(false).defaultValue(DSL.field("now()", SQLDataType.TIMESTAMPWITHTIMEZONE)), this, "");
+    public final TableField<LibraryRecord, OffsetDateTime> LAST_MODIFIED_ON = createField(DSL.name("last_modified_on"), SQLDataType.TIMESTAMPWITHTIMEZONE(6).nullable(false).defaultValue(DSL.field(DSL.raw("now()"), SQLDataType.TIMESTAMPWITHTIMEZONE)), this, "");
 
     /**
      * The column <code>public.library.last_modified_by</code>.
@@ -95,14 +95,14 @@ public class Library extends TableImpl<LibraryRecord> {
     public final TableField<LibraryRecord, String> NAME = createField(DSL.name("name"), SQLDataType.CLOB, this, "");
 
     /**
-     * The column <code>public.library.refresh_started_on</code>.
+     * The column <code>public.library.scan_started_on</code>.
      */
-    public final TableField<LibraryRecord, OffsetDateTime> REFRESH_STARTED_ON = createField(DSL.name("refresh_started_on"), SQLDataType.TIMESTAMPWITHTIMEZONE(6), this, "");
+    public final TableField<LibraryRecord, OffsetDateTime> SCAN_STARTED_ON = createField(DSL.name("scan_started_on"), SQLDataType.TIMESTAMPWITHTIMEZONE(6), this, "");
 
     /**
-     * The column <code>public.library.refresh_completed_on</code>.
+     * The column <code>public.library.scan_completed_on</code>.
      */
-    public final TableField<LibraryRecord, OffsetDateTime> REFRESH_COMPLETED_ON = createField(DSL.name("refresh_completed_on"), SQLDataType.TIMESTAMPWITHTIMEZONE(6), this, "");
+    public final TableField<LibraryRecord, OffsetDateTime> SCAN_COMPLETED_ON = createField(DSL.name("scan_completed_on"), SQLDataType.TIMESTAMPWITHTIMEZONE(6), this, "");
 
     /**
      * The column <code>public.library.status</code>.
@@ -122,7 +122,7 @@ public class Library extends TableImpl<LibraryRecord> {
     /**
      * The column <code>public.library.external_agent_strategy</code>.
      */
-    public final TableField<LibraryRecord, ExternalAgentStrategy> EXTERNAL_AGENT_STRATEGY = createField(DSL.name("external_agent_strategy"), SQLDataType.VARCHAR.nullable(false).defaultValue(DSL.field("'TMDB'::external_agent_strategy", SQLDataType.VARCHAR)).asEnumDataType(com.streamarr.server.jooq.generated.enums.ExternalAgentStrategy.class), this, "");
+    public final TableField<LibraryRecord, ExternalAgentStrategy> EXTERNAL_AGENT_STRATEGY = createField(DSL.name("external_agent_strategy"), SQLDataType.VARCHAR.nullable(false).defaultValue(DSL.field(DSL.raw("'TMDB'::external_agent_strategy"), SQLDataType.VARCHAR)).asEnumDataType(com.streamarr.server.jooq.generated.enums.ExternalAgentStrategy.class), this, "");
 
     private Library(Name alias, Table<LibraryRecord> aliased) {
         this(alias, aliased, null);

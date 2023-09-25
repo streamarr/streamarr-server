@@ -477,5 +477,6 @@ public class MediaFileRecord extends UpdatableRecordImpl<MediaFileRecord> implem
         setMediaId(mediaId);
         setLibraryId(libraryId);
         setStatus(status);
+        resetChangedOnNotNull();
     }
 }

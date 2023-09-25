@@ -328,5 +328,6 @@ public class PersonRecord extends UpdatableRecordImpl<PersonRecord> implements R
         setLastModifiedBy(lastModifiedBy);
         setName(name);
         setSourceId(sourceId);
+        resetChangedOnNotNull();
     }
 }

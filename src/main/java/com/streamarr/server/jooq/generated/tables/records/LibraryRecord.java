@@ -127,30 +127,30 @@ public class LibraryRecord extends UpdatableRecordImpl<LibraryRecord> implements
     }
 
     /**
-     * Setter for <code>public.library.refresh_started_on</code>.
+     * Setter for <code>public.library.scan_started_on</code>.
      */
-    public void setRefreshStartedOn(OffsetDateTime value) {
+    public void setScanStartedOn(OffsetDateTime value) {
         set(7, value);
     }
 
     /**
-     * Getter for <code>public.library.refresh_started_on</code>.
+     * Getter for <code>public.library.scan_started_on</code>.
      */
-    public OffsetDateTime getRefreshStartedOn() {
+    public OffsetDateTime getScanStartedOn() {
         return (OffsetDateTime) get(7);
     }
 
     /**
-     * Setter for <code>public.library.refresh_completed_on</code>.
+     * Setter for <code>public.library.scan_completed_on</code>.
      */
-    public void setRefreshCompletedOn(OffsetDateTime value) {
+    public void setScanCompletedOn(OffsetDateTime value) {
         set(8, value);
     }
 
     /**
-     * Getter for <code>public.library.refresh_completed_on</code>.
+     * Getter for <code>public.library.scan_completed_on</code>.
      */
-    public OffsetDateTime getRefreshCompletedOn() {
+    public OffsetDateTime getScanCompletedOn() {
         return (OffsetDateTime) get(8);
     }
 
@@ -270,12 +270,12 @@ public class LibraryRecord extends UpdatableRecordImpl<LibraryRecord> implements
 
     @Override
     public Field<OffsetDateTime> field8() {
-        return Library.LIBRARY.REFRESH_STARTED_ON;
+        return Library.LIBRARY.SCAN_STARTED_ON;
     }
 
     @Override
     public Field<OffsetDateTime> field9() {
-        return Library.LIBRARY.REFRESH_COMPLETED_ON;
+        return Library.LIBRARY.SCAN_COMPLETED_ON;
     }
 
     @Override
@@ -335,12 +335,12 @@ public class LibraryRecord extends UpdatableRecordImpl<LibraryRecord> implements
 
     @Override
     public OffsetDateTime component8() {
-        return getRefreshStartedOn();
+        return getScanStartedOn();
     }
 
     @Override
     public OffsetDateTime component9() {
-        return getRefreshCompletedOn();
+        return getScanCompletedOn();
     }
 
     @Override
@@ -400,12 +400,12 @@ public class LibraryRecord extends UpdatableRecordImpl<LibraryRecord> implements
 
     @Override
     public OffsetDateTime value8() {
-        return getRefreshStartedOn();
+        return getScanStartedOn();
     }
 
     @Override
     public OffsetDateTime value9() {
-        return getRefreshCompletedOn();
+        return getScanCompletedOn();
     }
 
     @Override
@@ -472,13 +472,13 @@ public class LibraryRecord extends UpdatableRecordImpl<LibraryRecord> implements
 
     @Override
     public LibraryRecord value8(OffsetDateTime value) {
-        setRefreshStartedOn(value);
+        setScanStartedOn(value);
         return this;
     }
 
     @Override
     public LibraryRecord value9(OffsetDateTime value) {
-        setRefreshCompletedOn(value);
+        setScanCompletedOn(value);
         return this;
     }
 
@@ -538,7 +538,7 @@ public class LibraryRecord extends UpdatableRecordImpl<LibraryRecord> implements
     /**
      * Create a detached, initialised LibraryRecord
      */
-    public LibraryRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, String filepath, String name, OffsetDateTime refreshStartedOn, OffsetDateTime refreshCompletedOn, LibraryStatus status, LibraryBackend backend, MediaType type, ExternalAgentStrategy externalAgentStrategy) {
+    public LibraryRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, String filepath, String name, OffsetDateTime scanStartedOn, OffsetDateTime scanCompletedOn, LibraryStatus status, LibraryBackend backend, MediaType type, ExternalAgentStrategy externalAgentStrategy) {
         super(Library.LIBRARY);
 
         setId(id);
@@ -548,11 +548,12 @@ public class LibraryRecord extends UpdatableRecordImpl<LibraryRecord> implements
         setLastModifiedBy(lastModifiedBy);
         setFilepath(filepath);
         setName(name);
-        setRefreshStartedOn(refreshStartedOn);
-        setRefreshCompletedOn(refreshCompletedOn);
+        setScanStartedOn(scanStartedOn);
+        setScanCompletedOn(scanCompletedOn);
         setStatus(status);
         setBackend(backend);
         setType(type);
         setExternalAgentStrategy(externalAgentStrategy);
+        resetChangedOnNotNull();
     }
 }

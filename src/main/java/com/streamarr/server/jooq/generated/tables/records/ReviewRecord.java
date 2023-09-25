@@ -328,5 +328,6 @@ public class ReviewRecord extends UpdatableRecordImpl<ReviewRecord> implements R
         setLastModifiedBy(lastModifiedBy);
         setAuthor(author);
         setMovieId(movieId);
+        resetChangedOnNotNull();
     }
 }

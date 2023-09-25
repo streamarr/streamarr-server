@@ -1,6 +1,10 @@
 package com.streamarr.server.domain;
 
 
+import io.hypersistence.utils.hibernate.type.basic.PostgreSQLEnumType;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -8,9 +12,6 @@ import lombok.Setter;
 import lombok.experimental.SuperBuilder;
 import org.hibernate.annotations.Type;
 
-import javax.persistence.Entity;
-import javax.persistence.EnumType;
-import javax.persistence.Enumerated;
 import java.util.UUID;
 
 @Entity
@@ -25,7 +26,7 @@ public class ExternalIdentifier extends BaseAuditableEntity<ExternalIdentifier> 
     private UUID entityId;
 
     @Enumerated(EnumType.STRING)
-    @Type(type = "pgsql_enum")
+    @Type(PostgreSQLEnumType.class)
     private ExternalSourceType externalSourceType;
 
     private String externalId;

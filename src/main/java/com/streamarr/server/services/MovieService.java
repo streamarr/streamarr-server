@@ -58,7 +58,7 @@ public class MovieService {
             .createdBy(movie.getCreatedBy())
             .lastModifiedBy(movie.getLastModifiedBy())
             .title(movie.getTitle())
-            .libraryId(movie.getLibraryId())
+            .library(movie.getLibrary())
             .externalIds(movie.getExternalIds())
             .files(movie.getFiles())
             .tagline(movie.getTagline())

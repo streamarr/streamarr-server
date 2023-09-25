@@ -366,5 +366,6 @@ public class ExternalIdentifierRecord extends UpdatableRecordImpl<ExternalIdenti
         setExternalSourceType(externalSourceType);
         setExternalId(externalId);
         setEntityId(entityId);
+        resetChangedOnNotNull();
     }
 }

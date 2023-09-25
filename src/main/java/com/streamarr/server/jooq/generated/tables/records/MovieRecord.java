@@ -328,5 +328,6 @@ public class MovieRecord extends UpdatableRecordImpl<MovieRecord> implements Rec
         setSummary(summary);
         setContentRating(contentRating);
         setReleaseDate(releaseDate);
+        resetChangedOnNotNull();
     }
 }

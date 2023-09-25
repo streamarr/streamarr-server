@@ -253,5 +253,6 @@ public class SeriesRecord extends UpdatableRecordImpl<SeriesRecord> implements R
         setPosterPath(posterPath);
         setLogoPath(logoPath);
         setContentRating(contentRating);
+        resetChangedOnNotNull();
     }
 }

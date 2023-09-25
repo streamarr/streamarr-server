@@ -62,12 +62,12 @@ public class MovieServiceIT {
 
         var fakeMovie1 = Movie.builder()
             .title("fakeMovie")
-            .libraryId(savedLibrary.getId())
+            .library(savedLibrary)
             .build();
 
         var fakeMovie2 = Movie.builder()
             .title("fakeMovie")
-            .libraryId(savedLibrary.getId())
+            .library(savedLibrary)
             .build();
 
         movieRepository.saveAllAndFlush(List.of(fakeMovie1, fakeMovie2));
