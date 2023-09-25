@@ -12,7 +12,7 @@ import java.util.UUID;
 @EnableJpaAuditing
 public class PersistenceConfig {
 
-    // TODO: for testing, replace with JWT implementation
+    // TODO: for testing only, replace with JWT implementation
     public static class AuditorAwareImpl implements AuditorAware<UUID> {
         @Override
         public Optional<UUID> getCurrentAuditor() {

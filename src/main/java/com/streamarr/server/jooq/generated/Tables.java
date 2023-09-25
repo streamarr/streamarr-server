@@ -6,6 +6,7 @@ package com.streamarr.server.jooq.generated;
 
 import com.streamarr.server.jooq.generated.tables.BaseCollectable;
 import com.streamarr.server.jooq.generated.tables.Company;
+import com.streamarr.server.jooq.generated.tables.ExternalIdentifier;
 import com.streamarr.server.jooq.generated.tables.Library;
 import com.streamarr.server.jooq.generated.tables.MediaFile;
 import com.streamarr.server.jooq.generated.tables.Movie;
@@ -33,6 +34,11 @@ public class Tables {
      * The table <code>public.company</code>.
      */
     public static final Company COMPANY = Company.COMPANY;
+
+    /**
+     * The table <code>public.external_identifier</code>.
+     */
+    public static final ExternalIdentifier EXTERNAL_IDENTIFIER = ExternalIdentifier.EXTERNAL_IDENTIFIER;
 
     /**
      * The table <code>public.library</code>.

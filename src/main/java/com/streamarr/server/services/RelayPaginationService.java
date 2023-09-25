@@ -1,6 +1,6 @@
 package com.streamarr.server.services;
 
-import com.streamarr.server.domain.BaseEntity;
+import com.streamarr.server.domain.BaseAuditableEntity;
 import com.streamarr.server.graphql.cursor.InvalidCursorException;
 import com.streamarr.server.graphql.cursor.PaginationDirection;
 import com.streamarr.server.graphql.cursor.PaginationOptions;
@@ -91,9 +91,9 @@ public class RelayPaginationService {
 
         return pageSize;
     }
-    
+
     @SuppressWarnings("unchecked")
-    public <T> Connection<T> buildConnection(List<Edge<? extends BaseEntity<?>>> edges, PaginationOptions options, Optional<UUID> cursorId) {
+    public <T> Connection<T> buildConnection(List<Edge<? extends BaseAuditableEntity<?>>> edges, PaginationOptions options, Optional<UUID> cursorId) {
 
         if (edges.isEmpty()) {
             return emptyConnection();

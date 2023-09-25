@@ -1,6 +1,7 @@
 package com.streamarr.server.services.parsers.video;
 
 
+import com.streamarr.server.domain.ExternalSourceType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.DynamicNode;
 import org.junit.jupiter.api.DynamicTest;
@@ -22,28 +23,28 @@ public class ExternalIdVideoFileMetadataParserTest {
     @DisplayName("Should successfully extract both id and source from filename")
     public class SuccessfulExternalIdAndSourceExtractionTests {
 
-        record TestCase(ExternalVideoSourceType source, String id, String filename) {
+        record TestCase(ExternalSourceType source, String id, String filename) {
         }
 
         @TestFactory
         Stream<DynamicNode> tests() {
             return Stream.of(
-                new TestCase(ExternalVideoSourceType.IMDB, "tt13327038", "Do Revenge (2022) [imdb-tt13327038][WEBDL-1080p][EAC3 Atmos 5.1][x264]-EVO.mkv"),
-                new TestCase(ExternalVideoSourceType.IMDB, "tt13327038", "Do Revenge (2022) [IMDB-tt13327038][WEBDL-1080p][EAC3 Atmos 5.1][x264]-EVO.mkv"),
-                new TestCase(ExternalVideoSourceType.IMDB, "tt13327038", "Do Revenge (2022) [imdb tt13327038][WEBDL-1080p][EAC3 Atmos 5.1][x264]-EVO.mkv"),
-                new TestCase(ExternalVideoSourceType.IMDB, "tt13327038", "Do Revenge (2022) [IMDB tt13327038][WEBDL-1080p][EAC3 Atmos 5.1][x264]-EVO.mkv"),
-                new TestCase(ExternalVideoSourceType.IMDB, "tt13327038", "Do Revenge (2022) {imdb-tt13327038}[WEBDL-1080p][EAC3 Atmos 5.1][x264]-EVO.mkv"),
-                new TestCase(ExternalVideoSourceType.IMDB, "tt13327038", "Do Revenge (2022) {IMDB-tt13327038}[WEBDL-1080p][EAC3 Atmos 5.1][x264]-EVO.mkv"),
-                new TestCase(ExternalVideoSourceType.IMDB, "tt13327038", "Do Revenge (2022) {imdb tt13327038}[WEBDL-1080p][EAC3 Atmos 5.1][x264]-EVO.mkv"),
-                new TestCase(ExternalVideoSourceType.IMDB, "tt13327038", "Do Revenge (2022) {IMDB tt13327038}[WEBDL-1080p][EAC3 Atmos 5.1][x264]-EVO.mkv"),
-                new TestCase(ExternalVideoSourceType.TMDB, "762504", "Nope (2022) [tmdb-762504][WEBDL-1080p][EAC3 5.1][h264]-EVO.mkv"),
-                new TestCase(ExternalVideoSourceType.TMDB, "762504", "Nope (2022) [tmdb-762504][WEBDL-1080p][EAC3 5.1][h264]-EVO.mkv"),
-                new TestCase(ExternalVideoSourceType.TMDB, "762504", "Nope (2022) [tmdb 762504][WEBDL-1080p][EAC3 5.1][h264]-EVO.mkv"),
-                new TestCase(ExternalVideoSourceType.TMDB, "762504", "Nope (2022) [tmdb 762504][WEBDL-1080p][EAC3 5.1][h264]-EVO.mkv"),
-                new TestCase(ExternalVideoSourceType.TMDB, "762504", "Nope (2022) {tmdb-762504}[WEBDL-1080p][EAC3 5.1][h264]-EVO.mkv"),
-                new TestCase(ExternalVideoSourceType.TMDB, "762504", "Nope (2022) {tmdb-762504}[WEBDL-1080p][EAC3 5.1][h264]-EVO.mkv"),
-                new TestCase(ExternalVideoSourceType.TMDB, "762504", "Nope (2022) {tmdb 762504}[WEBDL-1080p][EAC3 5.1][h264]-EVO.mkv"),
-                new TestCase(ExternalVideoSourceType.TMDB, "762504", "Nope (2022) {tmdb 762504}[WEBDL-1080p][EAC3 5.1][h264]-EVO.mkv")
+                new TestCase(ExternalSourceType.IMDB, "tt13327038", "Do Revenge (2022) [imdb-tt13327038][WEBDL-1080p][EAC3 Atmos 5.1][x264]-EVO.mkv"),
+                new TestCase(ExternalSourceType.IMDB, "tt13327038", "Do Revenge (2022) [IMDB-tt13327038][WEBDL-1080p][EAC3 Atmos 5.1][x264]-EVO.mkv"),
+                new TestCase(ExternalSourceType.IMDB, "tt13327038", "Do Revenge (2022) [imdb tt13327038][WEBDL-1080p][EAC3 Atmos 5.1][x264]-EVO.mkv"),
+                new TestCase(ExternalSourceType.IMDB, "tt13327038", "Do Revenge (2022) [IMDB tt13327038][WEBDL-1080p][EAC3 Atmos 5.1][x264]-EVO.mkv"),
+                new TestCase(ExternalSourceType.IMDB, "tt13327038", "Do Revenge (2022) {imdb-tt13327038}[WEBDL-1080p][EAC3 Atmos 5.1][x264]-EVO.mkv"),
+                new TestCase(ExternalSourceType.IMDB, "tt13327038", "Do Revenge (2022) {IMDB-tt13327038}[WEBDL-1080p][EAC3 Atmos 5.1][x264]-EVO.mkv"),
+                new TestCase(ExternalSourceType.IMDB, "tt13327038", "Do Revenge (2022) {imdb tt13327038}[WEBDL-1080p][EAC3 Atmos 5.1][x264]-EVO.mkv"),
+                new TestCase(ExternalSourceType.IMDB, "tt13327038", "Do Revenge (2022) {IMDB tt13327038}[WEBDL-1080p][EAC3 Atmos 5.1][x264]-EVO.mkv"),
+                new TestCase(ExternalSourceType.TMDB, "762504", "Nope (2022) [tmdb-762504][WEBDL-1080p][EAC3 5.1][h264]-EVO.mkv"),
+                new TestCase(ExternalSourceType.TMDB, "762504", "Nope (2022) [tmdb-762504][WEBDL-1080p][EAC3 5.1][h264]-EVO.mkv"),
+                new TestCase(ExternalSourceType.TMDB, "762504", "Nope (2022) [tmdb 762504][WEBDL-1080p][EAC3 5.1][h264]-EVO.mkv"),
+                new TestCase(ExternalSourceType.TMDB, "762504", "Nope (2022) [tmdb 762504][WEBDL-1080p][EAC3 5.1][h264]-EVO.mkv"),
+                new TestCase(ExternalSourceType.TMDB, "762504", "Nope (2022) {tmdb-762504}[WEBDL-1080p][EAC3 5.1][h264]-EVO.mkv"),
+                new TestCase(ExternalSourceType.TMDB, "762504", "Nope (2022) {tmdb-762504}[WEBDL-1080p][EAC3 5.1][h264]-EVO.mkv"),
+                new TestCase(ExternalSourceType.TMDB, "762504", "Nope (2022) {tmdb 762504}[WEBDL-1080p][EAC3 5.1][h264]-EVO.mkv"),
+                new TestCase(ExternalSourceType.TMDB, "762504", "Nope (2022) {tmdb 762504}[WEBDL-1080p][EAC3 5.1][h264]-EVO.mkv")
             ).map(testCase -> DynamicTest.dynamicTest(
                 testCase.filename(),
                 () -> {

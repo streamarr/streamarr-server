@@ -217,5 +217,6 @@ public class MovieCompanyRecord extends UpdatableRecordImpl<MovieCompanyRecord> 
         setCreatedOn(createdOn);
         setMovieId(movieId);
         setCompanyId(companyId);
+        resetChangedOnNotNull();
     }
 }

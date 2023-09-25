@@ -5,17 +5,18 @@ import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.graphql.cursor.MediaPaginationOptions;
 import com.streamarr.server.graphql.cursor.PaginationDirection;
 import com.streamarr.server.jooq.generated.Tables;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+import jakarta.persistence.Query;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
 import org.jooq.SortField;
 import org.jooq.SortOrder;
 
-import javax.persistence.EntityManager;
-import javax.persistence.PersistenceContext;
-import javax.persistence.Query;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 import static org.jooq.impl.DSL.row;
@@ -61,6 +62,26 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
         return results;
     }
 
+    public Optional<Movie> findByTmdbId(String tmdbId) {
+        var query = context
+            .select(Tables.MOVIE.asterisk(), Tables.BASE_COLLECTABLE.asterisk())
+            .from(Tables.MOVIE)
+            .innerJoin(Tables.BASE_COLLECTABLE)
+            .on(Tables.MOVIE.ID.eq(Tables.BASE_COLLECTABLE.ID))
+            .join(Tables.EXTERNAL_IDENTIFIER)
+            .on(Tables.EXTERNAL_IDENTIFIER.ENTITY_ID.eq(Tables.MOVIE.ID))
+            .where(Tables.EXTERNAL_IDENTIFIER.EXTERNAL_ID.eq(tmdbId))
+            .limit(1);
+
+        var results = nativeQuery(entityManager, query, Movie.class);
+
+        if (results.isEmpty()) {
+            return Optional.empty();
+        }
+
+        return Optional.of(results.get(0));
+    }
+
     private MediaFilter reverseFilter(MediaFilter filter) {
         if (filter.getSortDirection().equals(SortOrder.DESC)) {
             return filter.toBuilder().sortDirection(SortOrder.ASC).build();
@@ -74,7 +95,8 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
         var orderByColumns = new SortField[]{buildOrderBy(options.getMediaFilter()), Tables.BASE_COLLECTABLE.ID.sort(SortOrder.DEFAULT)};
 
         // TODO: reuse any logic from above?
-        var query = context.select()
+        var query = context
+            .select()
             .from(Tables.MOVIE)
             .innerJoin(Tables.BASE_COLLECTABLE)
             .on(Tables.MOVIE.ID.eq(Tables.BASE_COLLECTABLE.ID))

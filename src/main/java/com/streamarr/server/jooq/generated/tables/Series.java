@@ -15,11 +15,11 @@ import java.util.function.Function;
 
 import org.jooq.Field;
 import org.jooq.ForeignKey;
-import org.jooq.Function3;
+import org.jooq.Function5;
 import org.jooq.Name;
 import org.jooq.Record;
 import org.jooq.Records;
-import org.jooq.Row3;
+import org.jooq.Row5;
 import org.jooq.Schema;
 import org.jooq.SelectField;
 import org.jooq.Table;
@@ -58,9 +58,19 @@ public class Series extends TableImpl<SeriesRecord> {
     public final TableField<SeriesRecord, UUID> ID = createField(DSL.name("id"), SQLDataType.UUID.nullable(false), this, "");
 
     /**
-     * The column <code>public.series.artwork</code>.
+     * The column <code>public.series.backdrop_path</code>.
      */
-    public final TableField<SeriesRecord, String> ARTWORK = createField(DSL.name("artwork"), SQLDataType.CLOB, this, "");
+    public final TableField<SeriesRecord, String> BACKDROP_PATH = createField(DSL.name("backdrop_path"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>public.series.poster_path</code>.
+     */
+    public final TableField<SeriesRecord, String> POSTER_PATH = createField(DSL.name("poster_path"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>public.series.logo_path</code>.
+     */
+    public final TableField<SeriesRecord, String> LOGO_PATH = createField(DSL.name("logo_path"), SQLDataType.CLOB, this, "");
 
     /**
      * The column <code>public.series.content_rating</code>.
@@ -168,18 +178,18 @@ public class Series extends TableImpl<SeriesRecord> {
     }
 
     // -------------------------------------------------------------------------
-    // Row3 type methods
+    // Row5 type methods
     // -------------------------------------------------------------------------
 
     @Override
-    public Row3<UUID, String, String> fieldsRow() {
-        return (Row3) super.fieldsRow();
+    public Row5<UUID, String, String, String, String> fieldsRow() {
+        return (Row5) super.fieldsRow();
     }
 
     /**
      * Convenience mapping calling {@link SelectField#convertFrom(Function)}.
      */
-    public <U> SelectField<U> mapping(Function3<? super UUID, ? super String, ? super String, ? extends U> from) {
+    public <U> SelectField<U> mapping(Function5<? super UUID, ? super String, ? super String, ? super String, ? super String, ? extends U> from) {
         return convertFrom(Records.mapping(from));
     }
 
@@ -187,7 +197,7 @@ public class Series extends TableImpl<SeriesRecord> {
      * Convenience mapping calling {@link SelectField#convertFrom(Class,
      * Function)}.
      */
-    public <U> SelectField<U> mapping(Class<U> toType, Function3<? super UUID, ? super String, ? super String, ? extends U> from) {
+    public <U> SelectField<U> mapping(Class<U> toType, Function5<? super UUID, ? super String, ? super String, ? super String, ? super String, ? extends U> from) {
         return convertFrom(toType, Records.mapping(from));
     }
 }

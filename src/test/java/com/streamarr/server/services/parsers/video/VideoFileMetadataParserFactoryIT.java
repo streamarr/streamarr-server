@@ -1,5 +1,6 @@
 package com.streamarr.server.services.parsers.video;
 
+import com.streamarr.server.domain.ExternalSourceType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -34,7 +35,7 @@ public class VideoFileMetadataParserFactoryIT {
 
         assertThat(result).isPresent();
         assertThat(result.get().externalId()).isEqualTo("762504");
-        assertThat(result.get().externalSource()).isEqualTo(ExternalVideoSourceType.TMDB);
+        assertThat(result.get().externalSource()).isEqualTo(ExternalSourceType.TMDB);
     }
 
     @Test
