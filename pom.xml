@@ -30,7 +30,7 @@
         <dgs-graphql.version>5.2.4</dgs-graphql.version>
         <flyway.version>8.5.13</flyway.version>
         <lombok.version>1.18.24</lombok.version>
-        <postgresql.version>42.5.0</postgresql.version>
+        <postgresql.version>42.5.5</postgresql.version>
         <methvin-directory-watcher.version>0.16.1</methvin-directory-watcher.version>
         <jooq.version>3.17.4</jooq.version>
         <maven-compiler-plugin.version>3.10.1</maven-compiler-plugin.version>
