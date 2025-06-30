@@ -31,7 +31,7 @@
         <flyway.version>8.5.13</flyway.version>
         <lombok.version>1.18.24</lombok.version>
         <postgresql.version>42.5.0</postgresql.version>
-        <methvin-directory-watcher.version>0.16.1</methvin-directory-watcher.version>
+        <methvin-directory-watcher.version>0.19.1</methvin-directory-watcher.version>
         <jooq.version>3.17.4</jooq.version>
         <maven-compiler-plugin.version>3.10.1</maven-compiler-plugin.version>
         <yaml-properties-maven-plugin.version>1.1.3</yaml-properties-maven-plugin.version>
