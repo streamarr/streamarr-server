@@ -25,7 +25,7 @@
         <sonar.test.inclusions>**/src/test/**</sonar.test.inclusions>
         <sonar.exclusions>**/jooq/generated/**</sonar.exclusions>
 
-        <apache-commons-lang.version>3.12.0</apache-commons-lang.version>
+        <apache-commons-lang.version>3.18.0</apache-commons-lang.version>
         <apache-commons-io.version>2.11.0</apache-commons-io.version>
         <dgs-graphql.version>5.2.4</dgs-graphql.version>
         <flyway.version>8.5.13</flyway.version>
