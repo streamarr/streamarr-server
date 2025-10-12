@@ -39,7 +39,7 @@
         <thumbnailator.version>0.4.17</thumbnailator.version>
         <methanol-client.version>1.7.0</methanol-client.version>
         <testcontainers.version>1.17.3</testcontainers.version>
-        <jacoco.version>0.8.8</jacoco.version>
+        <jacoco.version>0.8.14</jacoco.version>
         <surefire-failsafe-plugin.version>2.22.2</surefire-failsafe-plugin.version>
     </properties>
 
