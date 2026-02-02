@@ -6,8 +6,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 @SpringBootApplication
 public class StreamarrServerApplication {
 
-    public static void main(String[] args) {
-        SpringApplication.run(StreamarrServerApplication.class, args);
-    }
-
+  public static void main(String[] args) {
+    SpringApplication.run(StreamarrServerApplication.class, args);
+  }
 }

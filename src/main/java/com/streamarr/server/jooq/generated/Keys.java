@@ -6,10 +6,14 @@ package com.streamarr.server.jooq.generated;
 
 import com.streamarr.server.jooq.generated.tables.BaseCollectable;
 import com.streamarr.server.jooq.generated.tables.Company;
+import com.streamarr.server.jooq.generated.tables.ExternalIdentifier;
+import com.streamarr.server.jooq.generated.tables.Genre;
 import com.streamarr.server.jooq.generated.tables.Library;
 import com.streamarr.server.jooq.generated.tables.MediaFile;
 import com.streamarr.server.jooq.generated.tables.Movie;
 import com.streamarr.server.jooq.generated.tables.MovieCompany;
+import com.streamarr.server.jooq.generated.tables.MovieDirector;
+import com.streamarr.server.jooq.generated.tables.MovieGenre;
 import com.streamarr.server.jooq.generated.tables.MoviePerson;
 import com.streamarr.server.jooq.generated.tables.Person;
 import com.streamarr.server.jooq.generated.tables.Rating;
@@ -18,9 +22,13 @@ import com.streamarr.server.jooq.generated.tables.SchemaHistory;
 import com.streamarr.server.jooq.generated.tables.Series;
 import com.streamarr.server.jooq.generated.tables.records.BaseCollectableRecord;
 import com.streamarr.server.jooq.generated.tables.records.CompanyRecord;
+import com.streamarr.server.jooq.generated.tables.records.ExternalIdentifierRecord;
+import com.streamarr.server.jooq.generated.tables.records.GenreRecord;
 import com.streamarr.server.jooq.generated.tables.records.LibraryRecord;
 import com.streamarr.server.jooq.generated.tables.records.MediaFileRecord;
 import com.streamarr.server.jooq.generated.tables.records.MovieCompanyRecord;
+import com.streamarr.server.jooq.generated.tables.records.MovieDirectorRecord;
+import com.streamarr.server.jooq.generated.tables.records.MovieGenreRecord;
 import com.streamarr.server.jooq.generated.tables.records.MoviePersonRecord;
 import com.streamarr.server.jooq.generated.tables.records.MovieRecord;
 import com.streamarr.server.jooq.generated.tables.records.PersonRecord;
@@ -34,13 +42,14 @@ import org.jooq.TableField;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
 import org.jooq.impl.Internal;
+import org.jooq.impl.QOM.ForeignKeyRule;
 
 
 /**
  * A class modelling foreign key relationships and constraints of tables in
  * public.
  */
-@SuppressWarnings({ "all", "unchecked", "rawtypes" })
+@SuppressWarnings({ "all", "unchecked", "rawtypes", "this-escape" })
 public class Keys {
 
     // -------------------------------------------------------------------------
@@ -49,12 +58,19 @@ public class Keys {
 
     public static final UniqueKey<BaseCollectableRecord> BASE_COLLECTABLE_PKEY = Internal.createUniqueKey(BaseCollectable.BASE_COLLECTABLE, DSL.name("base_collectable_pkey"), new TableField[] { BaseCollectable.BASE_COLLECTABLE.ID }, true);
     public static final UniqueKey<CompanyRecord> COMPANY_PKEY = Internal.createUniqueKey(Company.COMPANY, DSL.name("company_pkey"), new TableField[] { Company.COMPANY.ID }, true);
+    public static final UniqueKey<CompanyRecord> COMPANY_SOURCE_ID_UNIQUE = Internal.createUniqueKey(Company.COMPANY, DSL.name("company_source_id_unique"), new TableField[] { Company.COMPANY.SOURCE_ID }, true);
+    public static final UniqueKey<ExternalIdentifierRecord> EXTERNAL_IDENTIFIER_PKEY = Internal.createUniqueKey(ExternalIdentifier.EXTERNAL_IDENTIFIER, DSL.name("external_identifier_pkey"), new TableField[] { ExternalIdentifier.EXTERNAL_IDENTIFIER.EXTERNAL_SOURCE_TYPE, ExternalIdentifier.EXTERNAL_IDENTIFIER.EXTERNAL_ID }, true);
+    public static final UniqueKey<GenreRecord> GENRE_PKEY = Internal.createUniqueKey(Genre.GENRE, DSL.name("genre_pkey"), new TableField[] { Genre.GENRE.ID }, true);
+    public static final UniqueKey<GenreRecord> GENRE_SOURCE_ID_UNIQUE = Internal.createUniqueKey(Genre.GENRE, DSL.name("genre_source_id_unique"), new TableField[] { Genre.GENRE.SOURCE_ID }, true);
     public static final UniqueKey<LibraryRecord> LIBRARY_PKEY = Internal.createUniqueKey(Library.LIBRARY, DSL.name("library_pkey"), new TableField[] { Library.LIBRARY.ID }, true);
     public static final UniqueKey<MediaFileRecord> MOVIE_FILE_PKEY = Internal.createUniqueKey(MediaFile.MEDIA_FILE, DSL.name("movie_file_pkey"), new TableField[] { MediaFile.MEDIA_FILE.ID }, true);
     public static final UniqueKey<MovieRecord> MOVIE_PKEY = Internal.createUniqueKey(Movie.MOVIE, DSL.name("movie_pkey"), new TableField[] { Movie.MOVIE.ID }, true);
     public static final UniqueKey<MovieCompanyRecord> MOVIE_COMPANY_PKEY = Internal.createUniqueKey(MovieCompany.MOVIE_COMPANY, DSL.name("movie_company_pkey"), new TableField[] { MovieCompany.MOVIE_COMPANY.ID }, true);
+    public static final UniqueKey<MovieDirectorRecord> MOVIE_DIRECTOR_PKEY = Internal.createUniqueKey(MovieDirector.MOVIE_DIRECTOR, DSL.name("movie_director_pkey"), new TableField[] { MovieDirector.MOVIE_DIRECTOR.MOVIE_ID, MovieDirector.MOVIE_DIRECTOR.PERSON_ID }, true);
+    public static final UniqueKey<MovieGenreRecord> MOVIE_GENRE_PKEY = Internal.createUniqueKey(MovieGenre.MOVIE_GENRE, DSL.name("movie_genre_pkey"), new TableField[] { MovieGenre.MOVIE_GENRE.MOVIE_ID, MovieGenre.MOVIE_GENRE.GENRE_ID }, true);
     public static final UniqueKey<MoviePersonRecord> MOVIE_PERSON_PKEY = Internal.createUniqueKey(MoviePerson.MOVIE_PERSON, DSL.name("movie_person_pkey"), new TableField[] { MoviePerson.MOVIE_PERSON.ID }, true);
     public static final UniqueKey<PersonRecord> PERSON_PKEY = Internal.createUniqueKey(Person.PERSON, DSL.name("person_pkey"), new TableField[] { Person.PERSON.ID }, true);
+    public static final UniqueKey<PersonRecord> PERSON_UC = Internal.createUniqueKey(Person.PERSON, DSL.name("person_uc"), new TableField[] { Person.PERSON.SOURCE_ID, Person.PERSON.NAME }, true);
     public static final UniqueKey<RatingRecord> RATING_PKEY = Internal.createUniqueKey(Rating.RATING, DSL.name("rating_pkey"), new TableField[] { Rating.RATING.ID }, true);
     public static final UniqueKey<ReviewRecord> REVIEW_PKEY = Internal.createUniqueKey(Review.REVIEW, DSL.name("review_pkey"), new TableField[] { Review.REVIEW.ID }, true);
     public static final UniqueKey<SchemaHistoryRecord> SCHEMA_HISTORY_PK = Internal.createUniqueKey(SchemaHistory.SCHEMA_HISTORY, DSL.name("schema_history_pk"), new TableField[] { SchemaHistory.SCHEMA_HISTORY.INSTALLED_RANK }, true);
@@ -64,15 +80,20 @@ public class Keys {
     // FOREIGN KEY definitions
     // -------------------------------------------------------------------------
 
-    public static final ForeignKey<BaseCollectableRecord, LibraryRecord> BASE_COLLECTABLE__FK_LIBRARY = Internal.createForeignKey(BaseCollectable.BASE_COLLECTABLE, DSL.name("fk_library"), new TableField[] { BaseCollectable.BASE_COLLECTABLE.LIBRARY_ID }, Keys.LIBRARY_PKEY, new TableField[] { Library.LIBRARY.ID }, true);
-    public static final ForeignKey<MediaFileRecord, BaseCollectableRecord> MEDIA_FILE__FK_BASE_COLLECTABLE = Internal.createForeignKey(MediaFile.MEDIA_FILE, DSL.name("fk_base_collectable"), new TableField[] { MediaFile.MEDIA_FILE.MEDIA_ID }, Keys.BASE_COLLECTABLE_PKEY, new TableField[] { BaseCollectable.BASE_COLLECTABLE.ID }, true);
-    public static final ForeignKey<MediaFileRecord, LibraryRecord> MEDIA_FILE__FK_LIBRARY = Internal.createForeignKey(MediaFile.MEDIA_FILE, DSL.name("fk_library"), new TableField[] { MediaFile.MEDIA_FILE.LIBRARY_ID }, Keys.LIBRARY_PKEY, new TableField[] { Library.LIBRARY.ID }, true);
-    public static final ForeignKey<MovieRecord, BaseCollectableRecord> MOVIE__FK_MOVIE = Internal.createForeignKey(Movie.MOVIE, DSL.name("fk_movie"), new TableField[] { Movie.MOVIE.ID }, Keys.BASE_COLLECTABLE_PKEY, new TableField[] { BaseCollectable.BASE_COLLECTABLE.ID }, true);
-    public static final ForeignKey<MovieCompanyRecord, CompanyRecord> MOVIE_COMPANY__MOVIE_COMPANY_COMPANY_ID_FKEY = Internal.createForeignKey(MovieCompany.MOVIE_COMPANY, DSL.name("movie_company_company_id_fkey"), new TableField[] { MovieCompany.MOVIE_COMPANY.COMPANY_ID }, Keys.COMPANY_PKEY, new TableField[] { Company.COMPANY.ID }, true);
-    public static final ForeignKey<MovieCompanyRecord, MovieRecord> MOVIE_COMPANY__MOVIE_COMPANY_MOVIE_ID_FKEY = Internal.createForeignKey(MovieCompany.MOVIE_COMPANY, DSL.name("movie_company_movie_id_fkey"), new TableField[] { MovieCompany.MOVIE_COMPANY.MOVIE_ID }, Keys.MOVIE_PKEY, new TableField[] { Movie.MOVIE.ID }, true);
-    public static final ForeignKey<MoviePersonRecord, MovieRecord> MOVIE_PERSON__MOVIE_PERSON_MOVIE_ID_FKEY = Internal.createForeignKey(MoviePerson.MOVIE_PERSON, DSL.name("movie_person_movie_id_fkey"), new TableField[] { MoviePerson.MOVIE_PERSON.MOVIE_ID }, Keys.MOVIE_PKEY, new TableField[] { Movie.MOVIE.ID }, true);
-    public static final ForeignKey<MoviePersonRecord, PersonRecord> MOVIE_PERSON__MOVIE_PERSON_PERSON_ID_FKEY = Internal.createForeignKey(MoviePerson.MOVIE_PERSON, DSL.name("movie_person_person_id_fkey"), new TableField[] { MoviePerson.MOVIE_PERSON.PERSON_ID }, Keys.PERSON_PKEY, new TableField[] { Person.PERSON.ID }, true);
-    public static final ForeignKey<RatingRecord, MovieRecord> RATING__FK_MOVIE = Internal.createForeignKey(Rating.RATING, DSL.name("fk_movie"), new TableField[] { Rating.RATING.MOVIE_ID }, Keys.MOVIE_PKEY, new TableField[] { Movie.MOVIE.ID }, true);
-    public static final ForeignKey<ReviewRecord, MovieRecord> REVIEW__FK_MOVIE = Internal.createForeignKey(Review.REVIEW, DSL.name("fk_movie"), new TableField[] { Review.REVIEW.MOVIE_ID }, Keys.MOVIE_PKEY, new TableField[] { Movie.MOVIE.ID }, true);
-    public static final ForeignKey<SeriesRecord, BaseCollectableRecord> SERIES__FK_SERIES = Internal.createForeignKey(Series.SERIES, DSL.name("fk_series"), new TableField[] { Series.SERIES.ID }, Keys.BASE_COLLECTABLE_PKEY, new TableField[] { BaseCollectable.BASE_COLLECTABLE.ID }, true);
+    public static final ForeignKey<BaseCollectableRecord, LibraryRecord> BASE_COLLECTABLE__FK_LIBRARY = Internal.createForeignKey(BaseCollectable.BASE_COLLECTABLE, DSL.name("fk_library"), new TableField[] { BaseCollectable.BASE_COLLECTABLE.LIBRARY_ID }, Keys.LIBRARY_PKEY, new TableField[] { Library.LIBRARY.ID }, true, ForeignKeyRule.NO_ACTION, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<ExternalIdentifierRecord, BaseCollectableRecord> EXTERNAL_IDENTIFIER__FK_BASE_COLLECTABLE = Internal.createForeignKey(ExternalIdentifier.EXTERNAL_IDENTIFIER, DSL.name("fk_base_collectable"), new TableField[] { ExternalIdentifier.EXTERNAL_IDENTIFIER.ENTITY_ID }, Keys.BASE_COLLECTABLE_PKEY, new TableField[] { BaseCollectable.BASE_COLLECTABLE.ID }, true, ForeignKeyRule.NO_ACTION, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<MediaFileRecord, BaseCollectableRecord> MEDIA_FILE__FK_BASE_COLLECTABLE = Internal.createForeignKey(MediaFile.MEDIA_FILE, DSL.name("fk_base_collectable"), new TableField[] { MediaFile.MEDIA_FILE.MEDIA_ID }, Keys.BASE_COLLECTABLE_PKEY, new TableField[] { BaseCollectable.BASE_COLLECTABLE.ID }, true, ForeignKeyRule.NO_ACTION, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<MediaFileRecord, LibraryRecord> MEDIA_FILE__FK_LIBRARY = Internal.createForeignKey(MediaFile.MEDIA_FILE, DSL.name("fk_library"), new TableField[] { MediaFile.MEDIA_FILE.LIBRARY_ID }, Keys.LIBRARY_PKEY, new TableField[] { Library.LIBRARY.ID }, true, ForeignKeyRule.NO_ACTION, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<MovieRecord, BaseCollectableRecord> MOVIE__FK_MOVIE = Internal.createForeignKey(Movie.MOVIE, DSL.name("fk_movie"), new TableField[] { Movie.MOVIE.ID }, Keys.BASE_COLLECTABLE_PKEY, new TableField[] { BaseCollectable.BASE_COLLECTABLE.ID }, true, ForeignKeyRule.NO_ACTION, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<MovieCompanyRecord, CompanyRecord> MOVIE_COMPANY__MOVIE_COMPANY_COMPANY_ID_FKEY = Internal.createForeignKey(MovieCompany.MOVIE_COMPANY, DSL.name("movie_company_company_id_fkey"), new TableField[] { MovieCompany.MOVIE_COMPANY.COMPANY_ID }, Keys.COMPANY_PKEY, new TableField[] { Company.COMPANY.ID }, true, ForeignKeyRule.NO_ACTION, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<MovieCompanyRecord, MovieRecord> MOVIE_COMPANY__MOVIE_COMPANY_MOVIE_ID_FKEY = Internal.createForeignKey(MovieCompany.MOVIE_COMPANY, DSL.name("movie_company_movie_id_fkey"), new TableField[] { MovieCompany.MOVIE_COMPANY.MOVIE_ID }, Keys.MOVIE_PKEY, new TableField[] { Movie.MOVIE.ID }, true, ForeignKeyRule.NO_ACTION, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<MovieDirectorRecord, MovieRecord> MOVIE_DIRECTOR__MOVIE_DIRECTOR_MOVIE_ID_FKEY = Internal.createForeignKey(MovieDirector.MOVIE_DIRECTOR, DSL.name("movie_director_movie_id_fkey"), new TableField[] { MovieDirector.MOVIE_DIRECTOR.MOVIE_ID }, Keys.MOVIE_PKEY, new TableField[] { Movie.MOVIE.ID }, true, ForeignKeyRule.NO_ACTION, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<MovieDirectorRecord, PersonRecord> MOVIE_DIRECTOR__MOVIE_DIRECTOR_PERSON_ID_FKEY = Internal.createForeignKey(MovieDirector.MOVIE_DIRECTOR, DSL.name("movie_director_person_id_fkey"), new TableField[] { MovieDirector.MOVIE_DIRECTOR.PERSON_ID }, Keys.PERSON_PKEY, new TableField[] { Person.PERSON.ID }, true, ForeignKeyRule.NO_ACTION, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<MovieGenreRecord, GenreRecord> MOVIE_GENRE__MOVIE_GENRE_GENRE_ID_FKEY = Internal.createForeignKey(MovieGenre.MOVIE_GENRE, DSL.name("movie_genre_genre_id_fkey"), new TableField[] { MovieGenre.MOVIE_GENRE.GENRE_ID }, Keys.GENRE_PKEY, new TableField[] { Genre.GENRE.ID }, true, ForeignKeyRule.NO_ACTION, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<MovieGenreRecord, MovieRecord> MOVIE_GENRE__MOVIE_GENRE_MOVIE_ID_FKEY = Internal.createForeignKey(MovieGenre.MOVIE_GENRE, DSL.name("movie_genre_movie_id_fkey"), new TableField[] { MovieGenre.MOVIE_GENRE.MOVIE_ID }, Keys.MOVIE_PKEY, new TableField[] { Movie.MOVIE.ID }, true, ForeignKeyRule.NO_ACTION, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<MoviePersonRecord, MovieRecord> MOVIE_PERSON__MOVIE_PERSON_MOVIE_ID_FKEY = Internal.createForeignKey(MoviePerson.MOVIE_PERSON, DSL.name("movie_person_movie_id_fkey"), new TableField[] { MoviePerson.MOVIE_PERSON.MOVIE_ID }, Keys.MOVIE_PKEY, new TableField[] { Movie.MOVIE.ID }, true, ForeignKeyRule.NO_ACTION, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<MoviePersonRecord, PersonRecord> MOVIE_PERSON__MOVIE_PERSON_PERSON_ID_FKEY = Internal.createForeignKey(MoviePerson.MOVIE_PERSON, DSL.name("movie_person_person_id_fkey"), new TableField[] { MoviePerson.MOVIE_PERSON.PERSON_ID }, Keys.PERSON_PKEY, new TableField[] { Person.PERSON.ID }, true, ForeignKeyRule.NO_ACTION, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<RatingRecord, MovieRecord> RATING__FK_MOVIE = Internal.createForeignKey(Rating.RATING, DSL.name("fk_movie"), new TableField[] { Rating.RATING.MOVIE_ID }, Keys.MOVIE_PKEY, new TableField[] { Movie.MOVIE.ID }, true, ForeignKeyRule.NO_ACTION, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<ReviewRecord, MovieRecord> REVIEW__FK_MOVIE = Internal.createForeignKey(Review.REVIEW, DSL.name("fk_movie"), new TableField[] { Review.REVIEW.MOVIE_ID }, Keys.MOVIE_PKEY, new TableField[] { Movie.MOVIE.ID }, true, ForeignKeyRule.NO_ACTION, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<SeriesRecord, BaseCollectableRecord> SERIES__FK_SERIES = Internal.createForeignKey(Series.SERIES, DSL.name("fk_series"), new TableField[] { Series.SERIES.ID }, Keys.BASE_COLLECTABLE_PKEY, new TableField[] { BaseCollectable.BASE_COLLECTABLE.ID }, true, ForeignKeyRule.NO_ACTION, ForeignKeyRule.NO_ACTION);
 }

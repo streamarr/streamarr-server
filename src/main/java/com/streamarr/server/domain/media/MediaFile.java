@@ -1,17 +1,17 @@
 package com.streamarr.server.domain.media;
 
-import com.streamarr.server.domain.BaseEntity;
+import com.streamarr.server.domain.BaseAuditableEntity;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import java.util.UUID;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.experimental.SuperBuilder;
-import org.hibernate.annotations.Type;
-
-import javax.persistence.Entity;
-import javax.persistence.EnumType;
-import javax.persistence.Enumerated;
-import java.util.UUID;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Getter
@@ -19,33 +19,37 @@ import java.util.UUID;
 @SuperBuilder
 @NoArgsConstructor
 @AllArgsConstructor
-public class MediaFile extends BaseEntity<MediaFile> {
+public class MediaFile extends BaseAuditableEntity<MediaFile> {
 
-    private UUID mediaId;
-    @Enumerated(EnumType.STRING)
-    @Type(type = "pgsql_enum")
-    private MediaFileStatus status;
-    private UUID libraryId;
-    private String filename;
-    private String filepath;
-    private long size;
+  private UUID mediaId;
 
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) {
-            return true;
-        }
-        if (o == null || getClass() != o.getClass()) {
-            return false;
-        }
+  @Enumerated(EnumType.STRING)
+  @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+  private MediaFileStatus status;
 
-        MediaFile that = (MediaFile) o;
+  private UUID libraryId;
 
-        return filepath != null && filepath.equals(that.getFilepath());
+  private String filename;
+  private String filepath;
+
+  private long size;
+
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
     }
 
-    @Override
-    public int hashCode() {
-        return getClass().hashCode();
-    }
+    MediaFile that = (MediaFile) o;
+
+    return filepath != null && filepath.equals(that.getFilepath());
+  }
+
+  @Override
+  public int hashCode() {
+    return getClass().hashCode();
+  }
 }

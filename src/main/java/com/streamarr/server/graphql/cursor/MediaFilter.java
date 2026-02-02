@@ -7,16 +7,14 @@ import lombok.NoArgsConstructor;
 import org.jooq.SortOrder;
 
 @Getter
-@Builder(toBuilder = true)
-@AllArgsConstructor
 @NoArgsConstructor
+@AllArgsConstructor
+@Builder(toBuilder = true)
 public class MediaFilter {
 
-    @Builder.Default
-    private final OrderMoviesBy sortBy = OrderMoviesBy.TITLE;
-    @Builder.Default
-    private final SortOrder sortDirection = SortOrder.ASC;
+  @Builder.Default private final OrderMoviesBy sortBy = OrderMoviesBy.TITLE;
+  @Builder.Default private final SortOrder sortDirection = SortOrder.ASC;
 
-    // Used for seek pagination
-    private Object previousSortFieldValue;
+  // Used for seek pagination
+  private Object previousSortFieldValue;
 }

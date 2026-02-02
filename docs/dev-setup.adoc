@@ -1,0 +1,97 @@
+= Developer Setup
+
+== Prerequisites
+
+* **JDK 25** (LTS) -- https://www.azul.com/downloads/?version=java-25-lts[Zulu] or https://adoptium.net/[Temurin]
+* **Docker** -- for PostgreSQL (development and integration tests)
+* **Git** with GPG signing configured
+
+== Clone and Build
+
+[source,bash]
+----
+git clone git@github.com:streamarr/streamarr-server.git
+cd streamarr-server
+cp .env.example .env
+# Edit .env and add your TMDB API token
+./mvnw clean compile
+----
+
+== Running PostgreSQL
+
+[source,bash]
+----
+docker compose up -d postgres
+----
+
+This starts PostgreSQL 18 on port 5432 with credentials from `.env`.
+
+== Running the Server
+
+[source,bash]
+----
+./mvnw spring-boot:run
+----
+
+The server starts on `http://localhost:8080` with the `dev` profile active.
+
+The `dev` profile enables GraphiQL at `http://localhost:8080/graphiql` and auto-populates the database with sample data via `DevDataInitializer`.
+
+== Running Tests
+
+[source,bash]
+----
+# Unit tests only
+./mvnw test
+
+# Unit + integration tests (uses TestContainers -- no manual Docker setup needed)
+./mvnw verify
+----
+
+Integration tests use TestContainers to spin up a real PostgreSQL instance automatically.
+
+== jOOQ Code Regeneration
+
+After modifying Flyway migrations, regenerate jOOQ types:
+
+[source,bash]
+----
+docker compose up -d postgres
+./mvnw generate-sources -P generate-jooq-code
+----
+
+== Code Formatting
+
+Google Java Format is enforced via Spotless:
+
+[source,bash]
+----
+# Check formatting
+./mvnw spotless:check
+
+# Auto-format
+./mvnw spotless:apply
+----
+
+== TMDB API Token
+
+Get a free API read access token at https://www.themoviedb.org/settings/api and add it to your `.env` file.
+
+== Observability (Optional)
+
+To enable OpenTelemetry export to Grafana Cloud:
+
+[source,bash]
+----
+# Add to .env:
+COMPOSE_PROFILES=observability
+GRAFANA_CLOUD_INSTANCE_ID=<your-id>
+GRAFANA_CLOUD_API_KEY=<your-key>
+GRAFANA_CLOUD_OTLP_ENDPOINT=<your-endpoint>
+
+# Start with observability:
+docker compose --profile observability up -d
+
+# Run server with observability profile:
+./mvnw spring-boot:run -Dspring-boot.run.profiles=dev,observability
+----

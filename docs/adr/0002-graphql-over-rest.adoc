@@ -1,0 +1,21 @@
+= ADR 0002: GraphQL Over REST
+
+== Status
+
+Accepted
+
+== Context
+
+The primary client is a tvOS app that needs flexible queries for browsing, searching, and displaying media details. REST would require multiple endpoints or over-fetching.
+
+== Decision
+
+Use GraphQL via Netflix DGS for the API layer.
+
+== Consequences
+
+* Client can request exactly the fields it needs -- reduces payload size for Apple TV
+* Relay-style cursor pagination works naturally with infinite scroll UIs
+* Single endpoint simplifies client networking
+* DGS integrates cleanly with Spring Boot and provides schema-first development
+* Streaming endpoints (HLS) remain REST since media players expect plain HTTP

@@ -6,8 +6,8 @@ type Library {
     lastModifiedOn: String!
     name: String
     filepath: String!
-    refreshStartedOn: String
-    refreshCompletedOn: String
+    scanStartedOn: String
+    scanCompletedOn: String
     status: LibraryStatus!
     backend: LibraryBackend!
     type: MediaType!

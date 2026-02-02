@@ -1,4 +1,4 @@
-CREATE TYPE media_file_status AS ENUM ('UNMATCHED', 'METADATA_PARSING_FAILED', 'SEARCH_FAILED', 'MATCHED');
+CREATE TYPE media_file_status AS ENUM ('UNMATCHED', 'METADATA_PARSING_FAILED', 'METADATA_SEARCH_FAILED', 'MATCHED');
 
 CREATE TABLE media_file
 (
@@ -18,5 +18,5 @@ CREATE TABLE media_file
     CONSTRAINT fk_library FOREIGN KEY (library_id) REFERENCES library (id)
 );
 
-CREATE UNIQUE INDEX movie_file_filepath_idx
+CREATE UNIQUE INDEX media_file_filepath_idx
     ON media_file (filepath);

@@ -1,0 +1,91 @@
+= Architecture Overview
+
+== Tech Stack
+
+* **Java** (LTS), **Spring Boot**, **PostgreSQL**
+* **GraphQL** via Netflix DGS
+* **jOOQ** for complex queries (keyset pagination)
+* **Flyway** for database migrations
+* **FFmpeg** via ProcessBuilder for HLS transcoding (planned)
+
+== Layered Architecture
+
+----
+GraphQL Resolvers (protocol layer)
+        |
+    Services (business logic)
+        |
+    Repositories (data access)
+        |
+    Domain Entities (core model)
+        |
+    PostgreSQL (via Flyway migrations)
+----
+
+*Dependency rule:* each layer only depends on the layer below it.
+
+* *Resolvers* delegate to services -- no business logic at the protocol layer
+* *Services* orchestrate business operations -- protocol-agnostic
+* *Repositories* use JPA for CRUD and jOOQ for complex queries
+* *Domain* depends on nothing -- pure data model
+
+These rules are enforced by ArchUnit tests.
+
+== Database
+
+PostgreSQL with UUID primary keys, custom ENUMs, and audit columns (`created_on`, `modified_on`, `created_by`, `modified_by`) on all entities.
+
+Entity hierarchy uses JPA JOINED inheritance:
+
+----
+BaseAuditableEntity (UUID PK, audit columns)
+    └── BaseCollectable (title, summary, release_date)
+            ├── Movie
+            └── Series
+----
+
+== GraphQL API
+
+Netflix DGS with Relay-style cursor-based pagination:
+
+* `MediaConnection` / `MediaEdge` / `PageInfo`
+* Keyset (seek) pagination via jOOQ for performant infinite scroll
+
+== Metadata Pipeline
+
+----
+Library Scan
+    → Walk filesystem
+    → Parse filename (regex-based, 59+ test cases)
+    → Search TMDB for match
+    → Enrich with TMDB metadata (cast, studios, ratings)
+    → Persist Movie + MediaFile + relationships
+----
+
+The metadata provider abstraction (`MetadataProvider<T>`) allows swapping TMDB for another source without changing the scan pipeline.
+
+== Key Design Decisions
+
+See link:adr/[Architecture Decision Records] for detailed rationale. Summary:
+
+|===
+| Decision | Rationale
+
+| PostgreSQL over SQLite/H2
+| Production-grade, supports custom ENUMs, UUID PKs, full-text search
+
+| GraphQL over REST
+| Flexible queries for rich tvOS client, Relay pagination for infinite scroll
+
+| Keyset pagination over offset
+| O(1) performance regardless of page depth
+
+| ProcessBuilder + FFmpeg over JNI
+| Full control over process lifecycle, proven pattern (Jellyfin/Plex/Emby)
+
+| TDD and behavior testing
+| Tests at service boundary are protocol-agnostic and survive refactoring
+
+| TMDB metadata abstraction
+| Provider interface allows future sources without changing the pipeline
+|===

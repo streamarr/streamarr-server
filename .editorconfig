@@ -1,0 +1,30 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.java]
+indent_size = 2
+
+[*.sql]
+indent_size = 2
+
+[*.{yml,yaml}]
+indent_size = 2
+
+[*.{graphqls,graphql}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.adoc]
+trim_trailing_whitespace = false
+
+[Makefile]
+indent_style = tab

@@ -1,95 +1,128 @@
 package com.streamarr.server.services.library;
 
+import com.streamarr.server.repositories.LibraryRepository;
 import io.methvin.watcher.DirectoryWatcher;
-import org.springframework.stereotype.Service;
-
-import javax.annotation.PreDestroy;
+import jakarta.annotation.PreDestroy;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.InitializingBean;
+import org.springframework.context.annotation.DependsOn;
+import org.springframework.stereotype.Service;
 
+@Slf4j
 @Service
-public class DirectoryWatchingService {
+@RequiredArgsConstructor
+@DependsOn("libraryRepository")
+public class DirectoryWatchingService implements InitializingBean {
 
-    private Set<Path> directoriesToWatch;
-    private DirectoryWatcher watcher;
+  private final LibraryRepository libraryRepository;
 
-    // Server being setup, no libraries specified yet, early exit
-    // Server setup, libraries specified
-    // Server partially setup, library added, stop and recreate watcher
+  private final Set<Path> directoriesToWatch = new HashSet<>();
+  private DirectoryWatcher watcher;
 
-    // No directory yet
-    // Given directory of library
-    public void setup() throws IOException {
-        if (directoriesToWatch.isEmpty()) {
-            // TODO; log
-            return;
-        }
+  // Server being setup, no libraries specified yet, early exit
+  // Server setup, libraries specified
+  // Server partially setup, library added, stop and recreate watcher
 
-        // TODO: provider pattern to DI?
-        this.watcher = DirectoryWatcher.builder()
+  // No directory yet
+  // Given directory of library
+  public void setup() throws IOException {
+    if (directoriesToWatch.isEmpty()) {
+      log.debug("No directories configured for watching, skipping setup.");
+      return;
+    }
+
+    this.watcher =
+        DirectoryWatcher.builder()
             .paths(directoriesToWatch.stream().toList())
-            .listener(event -> {
-                switch (event.eventType()) {
-                    case CREATE: /* file created */
-                        ;
-                        break;
-                    case MODIFY: /* file modified */
-                        ;
-                        break;
-                    case DELETE: /* file deleted */
-                        ;
-                        break;
-                }
-            })
+            .listener(
+                event -> {
+                  switch (event.eventType()) {
+                    case CREATE ->
+                        log.info(
+                            "Watcher event type: {} -- filepath: {}",
+                            event.eventType(),
+                            event.path());
+                    case MODIFY -> /* file modified */
+                        log.info(
+                            "Watcher event type: {} -- filepath: {}",
+                            event.eventType(),
+                            event.path());
+                    case DELETE -> /* file deleted */
+                        log.info(
+                            "Watcher event type: {} -- filepath: {}",
+                            event.eventType(),
+                            event.path());
+                  }
+                })
             // .fileHashing(false) // defaults to true
             // .logger(logger) // defaults to LoggerFactory.getLogger(DirectoryWatcher.class)
-            // .watchService(watchService) // defaults based on OS to either JVM WatchService or the JNA macOS WatchService
+            // .watchService(watchService) // defaults based on OS to either JVM WatchService or the
+            // JNA macOS WatchService
             .build();
 
-        watch();
+    watch();
+  }
+
+  public void addDirectory(Path path) throws IOException {
+    if (watcher == null || watcher.isClosed()) {
+      directoriesToWatch.add(path);
+
+      setup();
+
+      return;
     }
 
-    public void addDirectory(Path path) throws IOException {
-        if (watcher == null || watcher.isClosed()) {
-            directoriesToWatch.add(path);
+    stopWatching();
 
-            setup();
-        }
+    directoriesToWatch.add(path);
 
-        // TODO: will this work?
-        stopWatching();
+    setup();
+  }
 
-        directoriesToWatch.add(path);
-
-        setup();
+  public void removeDirectory(Path path) throws IOException {
+    if (directoriesToWatch.isEmpty()) {
+      return;
     }
 
-    public void removeDirectory(Path path) throws IOException {
-        if (directoriesToWatch.isEmpty()) {
-            return;
-        }
-
-        if (!directoriesToWatch.contains(path)) {
-            return;
-        }
-
-        stopWatching();
-
-        directoriesToWatch.remove(path);
-
-        if (!directoriesToWatch.isEmpty()) {
-            setup();
-        }
+    if (!directoriesToWatch.contains(path)) {
+      return;
     }
 
-    @PreDestroy
-    public void stopWatching() throws IOException {
-        watcher.close();
-    }
+    stopWatching();
 
-    public CompletableFuture<Void> watch() {
-        return watcher.watchAsync();
+    directoriesToWatch.remove(path);
+
+    if (!directoriesToWatch.isEmpty()) {
+      setup();
     }
+  }
+
+  @PreDestroy
+  public void stopWatching() throws IOException {
+    watcher.close();
+  }
+
+  public CompletableFuture<Void> watch() {
+    return watcher.watchAsync();
+  }
+
+  @Override
+  public void afterPropertiesSet() {
+
+    var repositories = libraryRepository.findAll();
+
+    repositories.forEach(rep -> directoriesToWatch.add(Path.of(rep.getFilepath())));
+
+    try {
+      setup();
+    } catch (IOException ex) {
+      log.error("Failed to start library watcher", ex);
+    }
+  }
 }

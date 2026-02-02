@@ -5,7 +5,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>2.7.4</version>
+        <version>4.0.2</version>
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     <groupId>com.streamarr</groupId>
@@ -14,7 +14,7 @@
     <name>Streamarr-Server</name>
     <description>Streamarr, the open source media server system.</description>
     <properties>
-        <java.version>19</java.version>
+        <java.version>25</java.version>
         <sonar.projectKey>streamarr_streamarr-server</sonar.projectKey>
         <sonar.organization>streamarr</sonar.organization>
         <sonar.host.url>https://sonarcloud.io</sonar.host.url>
@@ -25,22 +25,27 @@
         <sonar.test.inclusions>**/src/test/**</sonar.test.inclusions>
         <sonar.exclusions>**/jooq/generated/**</sonar.exclusions>
 
-        <apache-commons-lang.version>3.12.0</apache-commons-lang.version>
-        <apache-commons-io.version>2.11.0</apache-commons-io.version>
-        <dgs-graphql.version>5.2.4</dgs-graphql.version>
-        <flyway.version>8.5.13</flyway.version>
-        <lombok.version>1.18.24</lombok.version>
-        <postgresql.version>42.5.0</postgresql.version>
-        <methvin-directory-watcher.version>0.16.1</methvin-directory-watcher.version>
-        <jooq.version>3.17.4</jooq.version>
-        <maven-compiler-plugin.version>3.10.1</maven-compiler-plugin.version>
+        <apache-commons-lang.version>3.20.0</apache-commons-lang.version>
+        <apache-commons-io.version>2.21.0</apache-commons-io.version>
+        <dgs-graphql.version>11.1.0</dgs-graphql.version>
+        <lombok.version>1.18.42</lombok.version>
+        <lombok.mapstruct-binding.version>0.2.0</lombok.mapstruct-binding.version>
+        <postgresql.version>42.7.9</postgresql.version>
+        <methvin-directory-watcher.version>0.19.1</methvin-directory-watcher.version>
+        <jooq.version>3.20.11</jooq.version>
+        <maven-compiler-plugin.version>3.14.1</maven-compiler-plugin.version>
         <yaml-properties-maven-plugin.version>1.1.3</yaml-properties-maven-plugin.version>
-        <hibernate-types.version>2.19.2</hibernate-types.version>
-        <thumbnailator.version>0.4.17</thumbnailator.version>
-        <methanol-client.version>1.7.0</methanol-client.version>
-        <testcontainers.version>1.17.3</testcontainers.version>
-        <jacoco.version>0.8.8</jacoco.version>
-        <surefire-failsafe-plugin.version>2.22.2</surefire-failsafe-plugin.version>
+        <thumbnailator.version>0.4.21</thumbnailator.version>
+        <mapstruct.version>1.6.3</mapstruct.version>
+        <methanol-client.version>1.8.4</methanol-client.version>
+        <jimfs.version>1.3.1</jimfs.version>
+        <testcontainers.version>2.0.3</testcontainers.version>
+        <awaitility.version>4.3.0</awaitility.version>
+        <jacoco.version>0.8.14</jacoco.version>
+        <flyway.version>11.14.1</flyway.version>
+        <surefire-failsafe-plugin.version>3.5.4</surefire-failsafe-plugin.version>
+        <spotless.version>3.2.1</spotless.version>
+        <archunit.version>1.4.1</archunit.version>
     </properties>
 
     <dependencies>
@@ -72,10 +77,17 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-jooq</artifactId>
         </dependency>
-
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-flyway</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+        </dependency>
         <dependency>
             <groupId>com.netflix.graphql.dgs</groupId>
-            <artifactId>graphql-dgs-spring-boot-starter</artifactId>
+            <artifactId>dgs-starter</artifactId>
         </dependency>
         <dependency>
             <groupId>com.netflix.graphql.dgs</groupId>
@@ -108,12 +120,6 @@
         </dependency>
 
         <dependency>
-            <groupId>org.flywaydb</groupId>
-            <artifactId>flyway-core</artifactId>
-            <version>${flyway.version}</version>
-        </dependency>
-
-        <dependency>
             <groupId>io.methvin</groupId>
             <artifactId>directory-watcher</artifactId>
             <version>${methvin-directory-watcher.version}</version>
@@ -132,15 +138,22 @@
         </dependency>
 
         <dependency>
-            <groupId>com.vladmihalcea</groupId>
-            <artifactId>hibernate-types-55</artifactId>
-            <version>${hibernate-types.version}</version>
-        </dependency>
-
-        <dependency>
             <groupId>net.coobird</groupId>
             <artifactId>thumbnailator</artifactId>
             <version>${thumbnailator.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.mapstruct</groupId>
+            <artifactId>mapstruct</artifactId>
+            <version>${mapstruct.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.google.jimfs</groupId>
+            <artifactId>jimfs</artifactId>
+            <version>${jimfs.version}</version>
+            <scope>test</scope>
         </dependency>
 
         <dependency>
@@ -151,14 +164,32 @@
 
         <dependency>
             <groupId>org.testcontainers</groupId>
-            <artifactId>junit-jupiter</artifactId>
+            <artifactId>testcontainers-junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
 
         <dependency>
             <groupId>org.testcontainers</groupId>
-            <artifactId>postgresql</artifactId>
+            <artifactId>testcontainers-postgresql</artifactId>
             <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.awaitility</groupId>
+            <artifactId>awaitility</artifactId>
+            <version>${awaitility.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>io.opentelemetry.instrumentation</groupId>
+            <artifactId>opentelemetry-spring-boot-starter</artifactId>
         </dependency>
 
         <dependency>
@@ -166,10 +197,38 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+            <version>${archunit.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>com.netflix.graphql.dgs</groupId>
+            <artifactId>dgs-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.wiremock</groupId>
+            <artifactId>wiremock-standalone</artifactId>
+            <version>3.13.2</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>io.opentelemetry.instrumentation</groupId>
+                <artifactId>opentelemetry-instrumentation-bom</artifactId>
+                <version>2.24.0</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
             <dependency>
                 <groupId>com.netflix.graphql.dgs</groupId>
                 <artifactId>graphql-dgs-platform-dependencies</artifactId>
@@ -202,14 +261,21 @@
                 <configuration>
                     <source>${java.version}</source>
                     <target>${java.version}</target>
-                    <compilerArgs>
-                        <arg>--enable-preview</arg>
-                    </compilerArgs>
                     <annotationProcessorPaths>
                         <path>
                             <groupId>org.projectlombok</groupId>
                             <artifactId>lombok</artifactId>
                             <version>${lombok.version}</version>
+                        </path>
+                        <path>
+                            <groupId>org.mapstruct</groupId>
+                            <artifactId>mapstruct-processor</artifactId>
+                            <version>${mapstruct.version}</version>
+                        </path>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok-mapstruct-binding</artifactId>
+                            <version>${lombok.mapstruct-binding.version}</version>
                         </path>
                     </annotationProcessorPaths>
                 </configuration>
@@ -217,9 +283,6 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
-                <configuration>
-                    <jvmArguments>--enable-preview</jvmArguments>
-                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.jacoco</groupId>
@@ -320,12 +383,24 @@
                 </executions>
             </plugin>
             <plugin>
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
+                <version>${spotless.version}</version>
+                <configuration>
+                    <java>
+                        <googleJavaFormat/>
+                        <excludes>
+                            <exclude>src/main/java/com/streamarr/server/jooq/generated/**</exclude>
+                        </excludes>
+                    </java>
+                </configuration>
+            </plugin>
+            <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>${surefire-failsafe-plugin.version}</version>
                 <configuration>
-                    <!--suppress UnresolvedMavenProperty -->
-                    <argLine>${surefire.jacoco.args} --enable-preview</argLine>
+                    <argLine>${surefire.jacoco.args}</argLine>
                 </configuration>
             </plugin>
             <plugin>
@@ -333,8 +408,7 @@
                 <artifactId>maven-failsafe-plugin</artifactId>
                 <version>${surefire-failsafe-plugin.version}</version>
                 <configuration>
-                    <!--suppress UnresolvedMavenProperty -->
-                    <argLine>${failsafe.jacoco.args} --enable-preview</argLine>
+                    <argLine>${failsafe.jacoco.args}</argLine>
                 </configuration>
                 <executions>
                     <execution>
@@ -383,6 +457,13 @@
                                 </goals>
                             </execution>
                         </executions>
+                        <dependencies>
+                            <dependency>
+                                <groupId>org.flywaydb</groupId>
+                                <artifactId>flyway-database-postgresql</artifactId>
+                                <version>${flyway.version}</version>
+                            </dependency>
+                        </dependencies>
                         <configuration>
                             <!--suppress UnresolvedMavenProperty -->
                             <driver>${spring.datasource.driverClassName}</driver>
@@ -446,5 +527,4 @@
             </build>
         </profile>
     </profiles>
-
 </project>

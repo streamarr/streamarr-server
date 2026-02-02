@@ -1,0 +1,20 @@
+= ADR 0001: PostgreSQL Over Embedded Database
+
+== Status
+
+Accepted
+
+== Context
+
+Media server applications need a database. Common choices include SQLite (embedded, file-based), H2 (in-memory/embedded Java), and PostgreSQL (client-server).
+
+== Decision
+
+Use PostgreSQL as the sole database for development, testing, and production.
+
+== Consequences
+
+* Custom ENUMs, UUID primary keys, and full-text search available out of the box
+* TestContainers ensures dev/prod parity -- no H2 compatibility issues
+* Docker required for local development (trivial with `docker compose up -d postgres`)
+* Eliminates the class of bugs caused by H2/PostgreSQL behavioral differences

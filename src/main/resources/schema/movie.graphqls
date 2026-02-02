@@ -5,11 +5,26 @@ type Movie implements BaseCollectable {
     lastModifiedBy: String
     lastModifiedOn: String!
     title: String
-    artwork: String
-    contentRating: String
+    originalTitle: String
+    titleSort: String
+    tagline: String
+    summary: String
+    runtime: Int
+    releaseDate: String
+    backdropPath: String
+    posterPath: String
+    contentRating: ContentRating
     files: [MediaFile]!
     studios: [Company]!
     cast: [Person]!
+    directors: [Person]!
+    genres: [Genre]!
     ratings: [Rating]!
     reviews: [Review]!
+}
+
+type ContentRating {
+    system: String!
+    value: String!
+    country: String!
 }

@@ -1,109 +1,138 @@
 package com.streamarr.server.services.metadata;
 
-import com.streamarr.server.domain.external.tmdb.TmdbCredits;
-import com.streamarr.server.domain.external.tmdb.TmdbMovie;
-import com.streamarr.server.domain.external.tmdb.TmdbSearchResults;
-import com.streamarr.server.services.library.JsonBodyHandler;
-import com.streamarr.server.services.parsers.video.VideoFileMetadata;
+import com.streamarr.server.services.metadata.tmdb.TmdbApiException;
+import com.streamarr.server.services.metadata.tmdb.TmdbCredits;
+import com.streamarr.server.services.metadata.tmdb.TmdbFailure;
+import com.streamarr.server.services.metadata.tmdb.TmdbMovie;
+import com.streamarr.server.services.metadata.tmdb.TmdbSearchResults;
+import com.streamarr.server.services.parsers.video.VideoFileParserResult;
+import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
-import org.slf4j.Logger;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.util.UriBuilder;
 import org.springframework.web.util.UriComponentsBuilder;
+import tools.jackson.databind.ObjectMapper;
 
-import java.io.IOException;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-
-
+@Slf4j
 @Service
 public class TheMovieDatabaseHttpService {
 
-    private final String tmdbApiKey;
-    private final Logger log;
+  private static final int MAX_RETRIES = 3;
+  private static final long BASE_DELAY_MS = 1000;
 
-    public TheMovieDatabaseHttpService(
-        @Value("${tmdb.api.key:}")
-        String tmdbApiKey,
-        Logger log
-    ) {
-        this.tmdbApiKey = tmdbApiKey;
-        this.log = log;
+  private final String tmdbApiToken;
+
+  private final String tmdbApiBaseUrl;
+
+  private final HttpClient client;
+
+  private final ObjectMapper objectMapper;
+
+  public TheMovieDatabaseHttpService(
+      @Value("${tmdb.api.token:}") String tmdbApiToken,
+      @Value("${tmdb.api.base-url:https://api.themoviedb.org/3}") String tmdbApiBaseUrl,
+      HttpClient client,
+      ObjectMapper objectMapper) {
+    this.tmdbApiToken = tmdbApiToken;
+    this.tmdbApiBaseUrl = tmdbApiBaseUrl;
+    this.client = client;
+    this.objectMapper = objectMapper;
+  }
+
+  public TmdbSearchResults searchForMovie(VideoFileParserResult videoFileParserResult)
+      throws IOException, InterruptedException {
+    var query = new LinkedMultiValueMap<String, String>();
+
+    query.add("query", videoFileParserResult.title());
+
+    if (StringUtils.isNotBlank(videoFileParserResult.year())) {
+      query.add("year", videoFileParserResult.year());
     }
 
-    public HttpResponse<TmdbSearchResults> searchForMovie(VideoFileMetadata videoFileMetadata, HttpClient client) throws IOException, InterruptedException {
-        var query = new LinkedMultiValueMap<String, String>();
+    return searchForMovieRequest(query);
+  }
 
-        query.add("query", videoFileMetadata.title());
-
-        if (StringUtils.isNotBlank(videoFileMetadata.year())) {
-            query.add("year", videoFileMetadata.year());
-        }
-
-        return searchForMovieRequest(query, client);
-    }
-
-    public HttpResponse<TmdbMovie> getMovieMetadata(String movieId, HttpClient client) throws IOException, InterruptedException {
-        var uri = baseUrl().path("/movie/").path(movieId).queryParam("api_key", tmdbApiKey).build();
-
-        var request = HttpRequest.newBuilder()
-            .uri(uri)
-            .GET()
+  public TmdbMovie getMovieMetadata(String movieId) throws IOException, InterruptedException {
+    var uri =
+        baseUrl()
+            .path("/movie/")
+            .path(movieId)
+            .queryParam("append_to_response", "credits,release_dates")
             .build();
 
-        return client.send(request, new JsonBodyHandler<>(TmdbMovie.class));
+    var request = authenticatedRequest(uri).GET().build();
+
+    return sendWithRetry(request, TmdbMovie.class);
+  }
+
+  public TmdbCredits getMovieCreditsMetadata(String movieId)
+      throws IOException, InterruptedException {
+    var uri = baseUrl().path("/movie/").path(movieId).path("/credits").build();
+
+    var request = authenticatedRequest(uri).GET().build();
+
+    return sendWithRetry(request, TmdbCredits.class);
+  }
+
+  private TmdbSearchResults searchForMovieRequest(MultiValueMap<String, String> query)
+      throws IOException, InterruptedException {
+    var uri = baseUrl().path("/search/movie").queryParams(query).build();
+
+    var request = authenticatedRequest(uri).GET().build();
+
+    return sendWithRetry(request, TmdbSearchResults.class);
+  }
+
+  private <T> T sendWithRetry(HttpRequest request, Class<T> responseType)
+      throws IOException, InterruptedException {
+    for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      var response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+      if (response.statusCode() == 200) {
+        return objectMapper.readValue(response.body(), responseType);
+      }
+
+      if (response.statusCode() != 429) {
+        var failure = objectMapper.readValue(response.body(), TmdbFailure.class);
+        throw new TmdbApiException(response.statusCode(), failure.getStatusMessage());
+      }
+
+      if (attempt == MAX_RETRIES) {
+        break;
+      }
+
+      var delaySeconds =
+          response
+              .headers()
+              .firstValue("Retry-After")
+              .map(Long::parseLong)
+              .orElse(BASE_DELAY_MS * (1L << attempt) / 1000);
+
+      log.warn(
+          "TMDB rate limited (429). Retrying after {}s (attempt {}/{})",
+          delaySeconds,
+          attempt + 1,
+          MAX_RETRIES);
+
+      Thread.sleep(delaySeconds * 1000);
     }
 
-    public void getImage(String imagePath, HttpClient client) {
-        var uri = baseImageUrl().path("/original/").path(imagePath).build();
+    throw new TmdbApiException(429, "TMDB rate limit exceeded after " + MAX_RETRIES + " retries");
+  }
 
-        var request = HttpRequest.newBuilder()
-            .uri(uri)
-            .GET()
-            .build();
-    }
+  private HttpRequest.Builder authenticatedRequest(URI uri) {
+    return HttpRequest.newBuilder().uri(uri).header("Authorization", "Bearer " + tmdbApiToken);
+  }
 
-    public HttpResponse<TmdbCredits> getMovieCreditsMetadata(String movieId, HttpClient client) throws IOException, InterruptedException {
-        var uri = baseUrl().path("/movie/").path(movieId).path("/credits").queryParam("api_key", tmdbApiKey).build();
-
-        var request = HttpRequest.newBuilder()
-            .uri(uri)
-            .GET()
-            .build();
-
-        return client.send(request, new JsonBodyHandler<>(TmdbCredits.class));
-    }
-
-    private HttpResponse<TmdbSearchResults> searchForMovieRequest(MultiValueMap<String, String> query, HttpClient client) throws IOException, InterruptedException {
-        var uri = baseUrl().path("/search/movie").queryParams(query).queryParam("api_key", tmdbApiKey).build();
-
-        var request = HttpRequest.newBuilder()
-            .uri(uri)
-            .GET()
-            .build();
-
-
-        return client.send(request, new JsonBodyHandler<>(TmdbSearchResults.class));
-    }
-
-    private void searchForShowRequest(MultiValueMap<String, String> query, HttpClient client) {
-        var uri = baseUrl().path("/search/tv").queryParams(query).queryParam("api_key", tmdbApiKey).build();
-
-        var request = HttpRequest.newBuilder()
-            .uri(uri)
-            .GET()
-            .build();
-    }
-
-    private UriBuilder baseUrl() {
-        return UriComponentsBuilder.fromHttpUrl("https://api.themoviedb.org/3");
-    }
-
-    private UriBuilder baseImageUrl() {
-        return UriComponentsBuilder.fromHttpUrl("https://image.tmdb.org/t/p");
-    }
+  private UriBuilder baseUrl() {
+    return UriComponentsBuilder.fromUriString(tmdbApiBaseUrl);
+  }
 }

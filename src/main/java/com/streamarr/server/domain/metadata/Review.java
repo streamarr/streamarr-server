@@ -1,22 +1,25 @@
 package com.streamarr.server.domain.metadata;
 
-import com.streamarr.server.domain.BaseEntity;
+import com.streamarr.server.domain.BaseAuditableEntity;
+import com.streamarr.server.domain.media.Movie;
+import jakarta.persistence.Entity;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.experimental.SuperBuilder;
 
-import javax.persistence.Entity;
-import java.util.UUID;
-
 @Entity
 @Getter
 @SuperBuilder
-@AllArgsConstructor
 @NoArgsConstructor
-public class Review extends BaseEntity<Review> {
+@AllArgsConstructor
+public class Review extends BaseAuditableEntity<Review> {
 
-    private UUID movieId;
+  @ManyToOne
+  @JoinColumn(name = "movieId")
+  private Movie movie;
 
-    private String author;
+  private String author;
 }

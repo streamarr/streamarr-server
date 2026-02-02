@@ -5,14 +5,13 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-
 @Getter
 @Builder
-@AllArgsConstructor
 @NoArgsConstructor
+@AllArgsConstructor
 public class RatingInput {
 
-    private String userId;
-    private String source;
-    private String value;
+  private String userId;
+  private String source;
+  private String value;
 }

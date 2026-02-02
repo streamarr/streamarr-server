@@ -1,57 +1,62 @@
 package com.streamarr.server.graphql.cursor;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import graphql.relay.DefaultConnectionCursor;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Component;
-
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
+import tools.jackson.databind.ObjectMapper;
 
 @Component
 @RequiredArgsConstructor
 public class CursorUtil {
 
-    private final ObjectMapper jacksonObjectMapper;
+  private final ObjectMapper jacksonObjectMapper;
 
-    public DefaultConnectionCursor encodeMediaCursor(MediaPaginationOptions mediaPaginationOptions, UUID cursorId, Object sortValue) {
-        try {
-            mediaPaginationOptions = MediaPaginationOptions.builder()
-                .cursorId(cursorId)
-                .mediaFilter(mediaPaginationOptions.getMediaFilter().toBuilder()
-                    .previousSortFieldValue(sortValue)
-                    .build())
-                .build();
+  public DefaultConnectionCursor encodeMediaCursor(
+      MediaPaginationOptions mediaPaginationOptions, UUID cursorId, Object sortValue) {
+    try {
+      mediaPaginationOptions =
+          MediaPaginationOptions.builder()
+              .cursorId(cursorId)
+              .mediaFilter(
+                  mediaPaginationOptions.getMediaFilter().toBuilder()
+                      .previousSortFieldValue(sortValue)
+                      .build())
+              .build();
 
-            String jsonStr = jacksonObjectMapper.writeValueAsString(mediaPaginationOptions);
-            return new DefaultConnectionCursor(Base64.getEncoder().encodeToString(jsonStr.getBytes(StandardCharsets.UTF_8)));
-        } catch (Exception ex) {
-            throw new InvalidCursorException(ex.getMessage());
-        }
+      String jsonStr = jacksonObjectMapper.writeValueAsString(mediaPaginationOptions);
+      return new DefaultConnectionCursor(
+          Base64.getEncoder().encodeToString(jsonStr.getBytes(StandardCharsets.UTF_8)));
+    } catch (Exception ex) {
+      throw new InvalidCursorException(ex.getMessage());
+    }
+  }
+
+  public MediaPaginationOptions decodeMediaCursor(PaginationOptions options) {
+
+    var optionalCursor = options.getCursor();
+
+    if (optionalCursor.isEmpty()) {
+      throw new InvalidCursorException("Cannot decode an empty cursor.");
     }
 
-    public MediaPaginationOptions decodeMediaCursor(PaginationOptions options) {
+    var cursor = optionalCursor.get();
 
-        var optionalCursor = options.getCursor();
+    try {
+      var jsonStr = new String(Base64.getDecoder().decode(cursor));
+      return jacksonObjectMapper.readValue(jsonStr, MediaPaginationOptions.class).toBuilder()
+          .paginationOptions(options)
+          .build();
 
-        if (optionalCursor.isEmpty()) {
-            throw new InvalidCursorException("Cannot decode an empty cursor.");
-        }
-
-        var cursor = optionalCursor.get();
-
-        try {
-            var jsonStr = new String(Base64.getDecoder().decode(cursor));
-            return jacksonObjectMapper.readValue(jsonStr, MediaPaginationOptions.class)
-                .toBuilder()
-                .paginationOptions(options)
-                .build();
-
-        } catch (JsonProcessingException ex) {
-            var msg = "Could not decode cursor '" + cursor + "' into " + MediaPaginationOptions.class.getSimpleName();
-            throw new InvalidCursorException(msg);
-        }
+    } catch (Exception ex) {
+      var msg =
+          "Could not decode cursor '"
+              + cursor
+              + "' into "
+              + MediaPaginationOptions.class.getSimpleName();
+      throw new InvalidCursorException(msg);
     }
+  }
 }

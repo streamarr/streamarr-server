@@ -6,10 +6,14 @@ package com.streamarr.server.jooq.generated;
 
 import com.streamarr.server.jooq.generated.tables.BaseCollectable;
 import com.streamarr.server.jooq.generated.tables.Company;
+import com.streamarr.server.jooq.generated.tables.ExternalIdentifier;
+import com.streamarr.server.jooq.generated.tables.Genre;
 import com.streamarr.server.jooq.generated.tables.Library;
 import com.streamarr.server.jooq.generated.tables.MediaFile;
 import com.streamarr.server.jooq.generated.tables.Movie;
 import com.streamarr.server.jooq.generated.tables.MovieCompany;
+import com.streamarr.server.jooq.generated.tables.MovieDirector;
+import com.streamarr.server.jooq.generated.tables.MovieGenre;
 import com.streamarr.server.jooq.generated.tables.MoviePerson;
 import com.streamarr.server.jooq.generated.tables.Person;
 import com.streamarr.server.jooq.generated.tables.Rating;
@@ -21,7 +25,7 @@ import com.streamarr.server.jooq.generated.tables.Series;
 /**
  * Convenience access to all tables in public.
  */
-@SuppressWarnings({ "all", "unchecked", "rawtypes" })
+@SuppressWarnings({ "all", "unchecked", "rawtypes", "this-escape" })
 public class Tables {
 
     /**
@@ -33,6 +37,16 @@ public class Tables {
      * The table <code>public.company</code>.
      */
     public static final Company COMPANY = Company.COMPANY;
+
+    /**
+     * The table <code>public.external_identifier</code>.
+     */
+    public static final ExternalIdentifier EXTERNAL_IDENTIFIER = ExternalIdentifier.EXTERNAL_IDENTIFIER;
+
+    /**
+     * The table <code>public.genre</code>.
+     */
+    public static final Genre GENRE = Genre.GENRE;
 
     /**
      * The table <code>public.library</code>.
@@ -53,6 +67,16 @@ public class Tables {
      * The table <code>public.movie_company</code>.
      */
     public static final MovieCompany MOVIE_COMPANY = MovieCompany.MOVIE_COMPANY;
+
+    /**
+     * The table <code>public.movie_director</code>.
+     */
+    public static final MovieDirector MOVIE_DIRECTOR = MovieDirector.MOVIE_DIRECTOR;
+
+    /**
+     * The table <code>public.movie_genre</code>.
+     */
+    public static final MovieGenre MOVIE_GENRE = MovieGenre.MOVIE_GENRE;
 
     /**
      * The table <code>public.movie_person</code>.
