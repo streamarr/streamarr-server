@@ -22,39 +22,27 @@
 
 </p>
 
-# Intro
+# Streamarr
 
-What is Streamarr? Streamarr is a modern open source media management solution.
+Streamarr is an open-source media server that organizes your personal video library and streams it to your devices. It scans your filesystem, matches files against metadata providers (TMDB), and serves content via a GraphQL API designed for rich client experiences.
 
-Streamarr is currently in active development with the core functionality still a WIP. We are looking for contributors.
+**Status:** Active development. Core scanning, metadata enrichment, and GraphQL API are functional. HLS transcoding and Series support are in progress.
 
-### Running in docker:
+## Tech Stack
 
-#### Step 1 - Ensure JAVA_HOME = JDK 17 (_MACOS example_)
+Java 25, Spring Boot 4, PostgreSQL 18, Netflix DGS (GraphQL), jOOQ, Flyway, FFmpeg.
 
-`jenv local 17.0.3`
+## Getting Started
 
-#### Step 2 - Build the docker image
+See [Developer Setup](docs/dev-setup.adoc) for prerequisites, build instructions, and local development workflow.
 
-`./mvnw spring-boot:build-image`
+## Architecture
 
-Resulting image from this build command will look like:
+See [Architecture Overview](docs/architecture.adoc) for how the system is structured, and [Architecture Decision Records](docs/adr/) for key design rationale.
 
-`docker.io/library/server:0.0.1-SNAPSHOT`
+## Contributing
 
-#### Step 3 - Start PG Docker Container:
-
-`docker compose up -d`
-
-### Running locally:
-
-#### Step 1 - Ensure JAVA_HOME = JDK 17 (_MACOS example_)
-
-`jenv local 17.0.3`
-
-#### Step 2 - Start Streamarr Server
-
-`./mvnw spring-boot:run`
+See [Contributing](CONTRIBUTING.adoc) for the development process, commit conventions, and code style.
 
 ## Attribution
 
