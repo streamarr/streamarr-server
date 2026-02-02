@@ -31,6 +31,10 @@ public abstract class BaseCollectable<T extends BaseCollectable<T>> extends Base
 
   private String title;
 
+  private String originalTitle;
+
+  private String titleSort;
+
   @ManyToOne
   @JoinColumn(name = "libraryId")
   private Library library;
