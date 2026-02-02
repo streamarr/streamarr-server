@@ -1,5 +1,6 @@
 package com.streamarr.server.fakes;
 
+import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.graphql.cursor.MediaPaginationOptions;
 import com.streamarr.server.repositories.media.MovieRepository;
@@ -13,7 +14,11 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
     return database.values().stream()
         .filter(
             movie ->
-                movie.getExternalIds().stream().anyMatch(id -> id.getExternalId().equals(tmdbId)))
+                movie.getExternalIds().stream()
+                    .anyMatch(
+                        id ->
+                            id.getExternalSourceType() == ExternalSourceType.TMDB
+                                && id.getExternalId().equals(tmdbId)))
         .findFirst();
   }
 

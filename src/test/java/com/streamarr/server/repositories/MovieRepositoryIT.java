@@ -83,4 +83,40 @@ public class MovieRepositoryIT extends AbstractIntegrationTest {
     assertThat(result).isPresent();
     assertThat(result.get().getExternalIds()).hasSize(1);
   }
+
+  @Test
+  @DisplayName("Should only match TMDB source when another source shares the same external ID.")
+  @Transactional
+  void shouldOnlyMatchTmdbSourceWhenAnotherSourceSharesSameExternalId() {
+    var sharedId = "99999";
+
+    movieRepository.saveAndFlush(
+        Movie.builder()
+            .title("IMDB Movie")
+            .externalIds(
+                Set.of(
+                    ExternalIdentifier.builder()
+                        .externalId(sharedId)
+                        .externalSourceType(ExternalSourceType.IMDB)
+                        .build()))
+            .library(savedLibrary)
+            .build());
+
+    movieRepository.saveAndFlush(
+        Movie.builder()
+            .title("TMDB Movie")
+            .externalIds(
+                Set.of(
+                    ExternalIdentifier.builder()
+                        .externalId(sharedId)
+                        .externalSourceType(ExternalSourceType.TMDB)
+                        .build()))
+            .library(savedLibrary)
+            .build());
+
+    var result = movieRepository.findByTmdbId(sharedId);
+
+    assertThat(result).isPresent();
+    assertThat(result.get().getTitle()).isEqualTo("TMDB Movie");
+  }
 }

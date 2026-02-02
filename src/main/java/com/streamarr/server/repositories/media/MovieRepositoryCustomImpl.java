@@ -10,6 +10,9 @@ import com.streamarr.server.jooq.generated.Tables;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import jakarta.persistence.Query;
+import static org.jooq.impl.DSL.inline;
+
+import com.streamarr.server.jooq.generated.enums.ExternalSourceType;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -77,7 +80,10 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
             .on(Tables.MOVIE.ID.eq(Tables.BASE_COLLECTABLE.ID))
             .join(Tables.EXTERNAL_IDENTIFIER)
             .on(Tables.EXTERNAL_IDENTIFIER.ENTITY_ID.eq(Tables.MOVIE.ID))
-            .where(Tables.EXTERNAL_IDENTIFIER.EXTERNAL_ID.eq(tmdbId))
+            .where(
+                Tables.EXTERNAL_IDENTIFIER.EXTERNAL_SOURCE_TYPE.eq(
+                        inline(ExternalSourceType.TMDB))
+                    .and(Tables.EXTERNAL_IDENTIFIER.EXTERNAL_ID.eq(tmdbId)))
             .limit(1);
 
     var results = nativeQuery(entityManager, query, Movie.class);
