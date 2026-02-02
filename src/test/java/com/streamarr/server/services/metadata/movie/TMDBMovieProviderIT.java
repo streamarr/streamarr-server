@@ -156,33 +156,62 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
   // --- getMetadata() tests ---
 
   @Test
-  @DisplayName("Should map complete movie when TMDB returns full response")
-  void shouldMapCompleteMovieWhenTmdbReturnsFullResponse() {
-    stubFullMovieResponse();
+  @DisplayName("Should map basic fields when TMDB returns full response")
+  void shouldMapBasicFieldsWhenTmdbReturnsFullResponse() {
+    var movie = getMetadataFromFullResponse();
 
-    var searchResult = buildSearchResult("27205");
-
-    var result = provider.getMetadata(searchResult, savedLibrary);
-
-    assertThat(result).isPresent();
-    var movie = result.get();
     assertThat(movie.getTitle()).isEqualTo("Inception");
     assertThat(movie.getTagline()).isEqualTo("Your mind is the scene of the crime.");
     assertThat(movie.getSummary())
         .isEqualTo("A thief who steals corporate secrets through dream-sharing technology.");
     assertThat(movie.getReleaseDate()).isEqualTo(LocalDate.of(2010, 7, 16));
+  }
+
+  @Test
+  @DisplayName("Should map content rating when TMDB returns full response")
+  void shouldMapContentRatingWhenTmdbReturnsFullResponse() {
+    var movie = getMetadataFromFullResponse();
+
     assertThat(movie.getContentRating()).isNotNull();
     assertThat(movie.getContentRating().system()).isEqualTo("MPAA");
     assertThat(movie.getContentRating().value()).isEqualTo("PG-13");
     assertThat(movie.getContentRating().country()).isEqualTo("US");
+  }
+
+  @Test
+  @DisplayName("Should map external IDs when TMDB returns full response")
+  void shouldMapExternalIdsWhenTmdbReturnsFullResponse() {
+    var movie = getMetadataFromFullResponse();
+
     assertThat(movie.getExternalIds()).hasSize(2);
+  }
+
+  @Test
+  @DisplayName("Should map cast in order when TMDB returns full response")
+  void shouldMapCastInOrderWhenTmdbReturnsFullResponse() {
+    var movie = getMetadataFromFullResponse();
+
     assertThat(movie.getCast()).hasSize(2);
     assertThat(movie.getCast().get(0).getName()).isEqualTo("Leonardo DiCaprio");
     assertThat(movie.getCast().get(0).getSourceId()).isEqualTo("6193");
     assertThat(movie.getCast().get(1).getName()).isEqualTo("Tom Hardy");
+  }
+
+  @Test
+  @DisplayName("Should map studios when TMDB returns full response")
+  void shouldMapStudiosWhenTmdbReturnsFullResponse() {
+    var movie = getMetadataFromFullResponse();
+
     assertThat(movie.getStudios()).hasSize(1);
     assertThat(movie.getStudios().iterator().next().getName()).isEqualTo("Legendary Entertainment");
     assertThat(movie.getStudios().iterator().next().getSourceId()).isEqualTo("923");
+  }
+
+  @Test
+  @DisplayName("Should associate library when TMDB returns full response")
+  void shouldAssociateLibraryWhenTmdbReturnsFullResponse() {
+    var movie = getMetadataFromFullResponse();
+
     assertThat(movie.getLibrary()).isEqualTo(savedLibrary);
   }
 
@@ -277,6 +306,13 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
   }
 
   // --- Helpers ---
+
+  private com.streamarr.server.domain.media.Movie getMetadataFromFullResponse() {
+    stubFullMovieResponse();
+    var result = provider.getMetadata(buildSearchResult("27205"), savedLibrary);
+    assertThat(result).isPresent();
+    return result.get();
+  }
 
   private RemoteSearchResult buildSearchResult(String externalId) {
     return RemoteSearchResult.builder()
