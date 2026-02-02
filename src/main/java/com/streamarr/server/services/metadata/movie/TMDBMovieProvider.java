@@ -82,7 +82,6 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
               .externalIds(mapExternalIds(tmdbMovie))
               .tagline(tmdbMovie.getTagline())
               .summary(tmdbMovie.getOverview())
-              .releaseDate(LocalDate.parse(tmdbMovie.getReleaseDate()))
               .studios(
                   productionCompanies.stream()
                       .map(
@@ -101,6 +100,10 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
                                   .name(credit.getName())
                                   .build())
                       .collect(Collectors.toList()));
+
+      if (StringUtils.isNotBlank(tmdbMovie.getReleaseDate())) {
+        movieBuilder.releaseDate(LocalDate.parse(tmdbMovie.getReleaseDate()));
+      }
 
       movieRating.ifPresent(
           movieRelease ->
