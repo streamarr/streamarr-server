@@ -124,5 +124,7 @@ public class MovieService {
         "sortBy", previousFilter.getSortBy(), filter.getSortBy());
     relayPaginationService.validateCursorField(
         "sortDirection", previousFilter.getSortDirection(), filter.getSortDirection());
+    relayPaginationService.validateCursorField(
+        "libraryId", previousFilter.getLibraryId(), filter.getLibraryId());
   }
 }
