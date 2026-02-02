@@ -11,6 +11,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.services.metadata.tmdb.TmdbApiException;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.io.IOException;
 import org.junit.jupiter.api.AfterAll;
@@ -320,8 +321,8 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should throw IOException with TMDB error message when API returns error status")
-  void shouldThrowIOExceptionWithMessageWhenApiReturnsError() {
+  @DisplayName("Should throw TmdbApiException with status code and message when API returns error")
+  void shouldThrowTmdbApiExceptionWithStatusCodeWhenApiReturnsError() {
     wireMock.stubFor(
         get(urlPathEqualTo("/search/movie"))
             .willReturn(
@@ -340,8 +341,10 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
     var parserResult = VideoFileParserResult.builder().title("Anything").build();
 
     assertThatThrownBy(() -> service.searchForMovie(parserResult))
-        .isInstanceOf(IOException.class)
-        .hasMessage("Invalid API key: You must be granted a valid key.");
+        .isInstanceOf(TmdbApiException.class)
+        .hasMessage("Invalid API key: You must be granted a valid key.")
+        .satisfies(
+            ex -> assertThat(((TmdbApiException) ex).getStatusCode()).isEqualTo(401));
   }
 
   @Test
@@ -391,8 +394,8 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should throw IOException when rate limit persists after max retries")
-  void shouldThrowIOExceptionWhenRateLimitPersistsAfterMaxRetries() {
+  @DisplayName("Should throw TmdbApiException when rate limit persists after max retries")
+  void shouldThrowTmdbApiExceptionWhenRateLimitPersistsAfterMaxRetries() {
     wireMock.stubFor(
         get(urlPathEqualTo("/search/movie"))
             .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "0")));
@@ -400,7 +403,9 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
     var parserResult = VideoFileParserResult.builder().title("Test").build();
 
     assertThatThrownBy(() -> service.searchForMovie(parserResult))
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("rate limit exceeded");
+        .isInstanceOf(TmdbApiException.class)
+        .hasMessageContaining("rate limit exceeded")
+        .satisfies(
+            ex -> assertThat(((TmdbApiException) ex).getStatusCode()).isEqualTo(429));
   }
 }

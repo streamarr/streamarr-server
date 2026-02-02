@@ -1,6 +1,5 @@
 package com.streamarr.server.services.metadata.tmdb;
 
-import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
@@ -31,7 +30,8 @@ public class TmdbJsonBodyHandler<W> implements HttpResponse.BodyHandler<W> {
         (String body) -> {
           if (responseInfo.statusCode() != 200) {
             var failure = objectMapper.readValue(body, TmdbFailure.class);
-            throw new UncheckedIOException(new IOException(failure.getStatusMessage()));
+            throw new UncheckedIOException(
+                new TmdbApiException(responseInfo.statusCode(), failure.getStatusMessage()));
           }
 
           return objectMapper.readValue(body, targetType);

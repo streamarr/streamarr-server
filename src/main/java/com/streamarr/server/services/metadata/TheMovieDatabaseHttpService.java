@@ -1,5 +1,6 @@
 package com.streamarr.server.services.metadata;
 
+import com.streamarr.server.services.metadata.tmdb.TmdbApiException;
 import com.streamarr.server.services.metadata.tmdb.TmdbCredits;
 import com.streamarr.server.services.metadata.tmdb.TmdbFailure;
 import com.streamarr.server.services.metadata.tmdb.TmdbMovie;
@@ -101,7 +102,7 @@ public class TheMovieDatabaseHttpService {
 
       if (response.statusCode() != 429) {
         var failure = objectMapper.readValue(response.body(), TmdbFailure.class);
-        throw new IOException(failure.getStatusMessage());
+        throw new TmdbApiException(response.statusCode(), failure.getStatusMessage());
       }
 
       if (attempt == MAX_RETRIES) {
@@ -124,7 +125,7 @@ public class TheMovieDatabaseHttpService {
       Thread.sleep(delaySeconds * 1000);
     }
 
-    throw new IOException("TMDB rate limit exceeded after " + MAX_RETRIES + " retries");
+    throw new TmdbApiException(429, "TMDB rate limit exceeded after " + MAX_RETRIES + " retries");
   }
 
   private HttpRequest.Builder authenticatedRequest(URI uri) {
