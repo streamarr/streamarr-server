@@ -1,6 +1,7 @@
 name: Release Publisher
 
 on:
+  workflow_dispatch:
   release:
     types:
       - released
@@ -27,14 +28,14 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Install pack CLI
-        uses: buildpacks/github-actions/setup-pack@f7c510438b6d0d7f3326d2765ce0d11728c75285 # v5.7.4
+        uses: buildpacks/github-actions/setup-pack@f3ec16c6d708761c6e87bbc8fe7f97375f80e7cd # v5.10.1
 
       - name: Build with pack CLI & publish to Docker Hub
         run: |
           pack build index.docker.io/streamarr/streamarr-server:latest \
               --tag streamarr/streamarr-server:${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }} \
-              --builder paketobuildpacks/builder:base \
-              --env BP_JVM_VERSION=25.* \
+              --builder paketobuildpacks/builder-jammy-base \
+              --env BP_JVM_VERSION=25 \
               --path . \
               --cache-image index.docker.io/streamarr/spring-boot-buildpack-paketo-cache-image:latest \
               --publish
