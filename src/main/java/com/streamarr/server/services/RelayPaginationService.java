@@ -23,20 +23,8 @@ public class RelayPaginationService {
   private static final int MAX_PAGE_SIZE = 500;
 
   public PaginationOptions getPaginationOptions(int first, String after, int last, String before) {
-
     var cursor = getCursor(after, before);
-
-    if (cursor.isEmpty()) {
-      var limit = getLimit(first, last, PaginationDirection.FORWARD);
-
-      return PaginationOptions.builder()
-          .cursor(cursor)
-          .limit(limit)
-          .paginationDirection(PaginationDirection.FORWARD)
-          .build();
-    }
-
-    var direction = getDirection(after, before);
+    var direction = cursor.isEmpty() ? PaginationDirection.FORWARD : getDirection(after, before);
     var limit = getLimit(first, last, direction);
 
     return PaginationOptions.builder()
@@ -107,22 +95,18 @@ public class RelayPaginationService {
     var hasPreviousPage = false;
     var hasNextPage = false;
 
-    if (cursorId.isPresent()) {
-      if (direction.equals(PaginationDirection.FORWARD)) {
-        var node = edges.get(0).getNode();
+    if (cursorId.isPresent() && direction.equals(PaginationDirection.FORWARD)) {
+      hasPreviousPage = edges.get(0).getNode().getId().equals(cursorId.get());
+      edges = edges.subList(1, edges.size());
+    }
 
-        hasPreviousPage = node.getId().equals(cursorId.get());
-        edges = edges.subList(1, edges.size());
-      } else {
-        var node = edges.get(edges.size() - 1).getNode();
+    if (cursorId.isPresent() && direction.equals(PaginationDirection.REVERSE)) {
+      hasNextPage = edges.get(edges.size() - 1).getNode().getId().equals(cursorId.get());
+      edges = edges.subList(0, edges.size() - 1);
+    }
 
-        hasNextPage = node.getId().equals(cursorId.get());
-        edges = edges.subList(0, edges.size() - 1);
-      }
-
-      if (edges.isEmpty()) {
-        return emptyConnection();
-      }
+    if (edges.isEmpty()) {
+      return emptyConnection();
     }
 
     var isListLargerThanLimit = edges.size() > limit;
