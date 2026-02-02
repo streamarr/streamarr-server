@@ -49,7 +49,7 @@ public class LibraryResolver {
     int last = dfe.getArgumentOrDefault("last", 0);
     String before = dfe.getArgument("before");
 
-    // TODO: where library.id == movie.libraryId
+    // TODO(#48): filter items by library.id
 
     return switch (library.getType()) {
       case MOVIE -> movieService.getMoviesWithFilter(first, after, last, before, filter);
