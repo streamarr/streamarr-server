@@ -11,7 +11,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
 
   streamarr-server:
-    image: docker.io/library/server:0.0.1-SNAPSHOT
+    image: streamarr/streamarr-server:latest
     restart: always
     ports:
       - "8080:8080"
