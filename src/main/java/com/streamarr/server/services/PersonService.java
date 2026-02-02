@@ -24,9 +24,9 @@ public class PersonService {
   public Person savePerson(Person person) {
     var existingPerson = personRepository.findPersonBySourceId(person.getSourceId());
 
-    if (existingPerson != null) {
-      personMappers.updatePerson(person, existingPerson);
-      return personRepository.save(existingPerson);
+    if (existingPerson.isPresent()) {
+      personMappers.updatePerson(person, existingPerson.get());
+      return personRepository.save(existingPerson.get());
     }
 
     return personRepository.save(person);
