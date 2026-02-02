@@ -14,7 +14,7 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class MovieMetadataProviderFactory {
+public class MovieMetadataProviderResolver {
 
   private final List<MetadataProvider<Movie>> movieProviders;
 

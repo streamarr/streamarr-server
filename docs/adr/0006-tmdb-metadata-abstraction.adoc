@@ -10,11 +10,11 @@ TMDB is the primary metadata source, but the system should not be coupled to a s
 
 == Decision
 
-Define a `MetadataProvider<T>` interface that abstracts metadata search and enrichment. TMDB is the first implementation. A factory (`MovieMetadataProviderFactory`) selects the provider based on the library's configured agent strategy.
+Define a `MetadataProvider<T>` interface that abstracts metadata search and enrichment. TMDB is the first implementation. A resolver (`MovieMetadataProviderResolver`) selects the provider based on the library's configured agent strategy.
 
 == Consequences
 
 * Adding a new metadata source requires implementing one interface -- no changes to the scan pipeline
 * TMDB-specific types (`TmdbMovie`, `TmdbCredits`, etc.) are isolated in `services.metadata.tmdb` -- they never leak into domain or service layers
-* The factory pattern allows per-library provider selection (e.g., one library uses TMDB, another uses a custom source)
+* The resolver pattern allows per-library provider selection (e.g., one library uses TMDB, another uses a custom source)
 * Enforced by ArchUnit: TMDB types cannot be imported outside the metadata package

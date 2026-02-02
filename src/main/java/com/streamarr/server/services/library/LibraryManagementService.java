@@ -13,7 +13,7 @@ import com.streamarr.server.services.PersonService;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
-import com.streamarr.server.services.metadata.movie.MovieMetadataProviderFactory;
+import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
@@ -37,7 +37,7 @@ public class LibraryManagementService {
 
   private final VideoExtensionValidator videoExtensionValidator;
   private final DefaultVideoFileMetadataParser defaultVideoFileMetadataParser;
-  private final MovieMetadataProviderFactory movieMetadataProviderFactory;
+  private final MovieMetadataProviderResolver movieMetadataProviderResolver;
   private final LibraryRepository libraryRepository;
   private final MediaFileRepository mediaFileRepository;
   private final MovieService movieService;
@@ -48,7 +48,7 @@ public class LibraryManagementService {
   public LibraryManagementService(
       VideoExtensionValidator videoExtensionValidator,
       DefaultVideoFileMetadataParser defaultVideoFileMetadataParser,
-      MovieMetadataProviderFactory movieMetadataProviderFactory,
+      MovieMetadataProviderResolver movieMetadataProviderResolver,
       LibraryRepository libraryRepository,
       MediaFileRepository mediaFileRepository,
       MovieService movieService,
@@ -57,7 +57,7 @@ public class LibraryManagementService {
       FileSystem fileSystem) {
     this.videoExtensionValidator = videoExtensionValidator;
     this.defaultVideoFileMetadataParser = defaultVideoFileMetadataParser;
-    this.movieMetadataProviderFactory = movieMetadataProviderFactory;
+    this.movieMetadataProviderResolver = movieMetadataProviderResolver;
     this.libraryRepository = libraryRepository;
     this.mediaFileRepository = mediaFileRepository;
     this.movieService = movieService;
@@ -221,7 +221,7 @@ public class LibraryManagementService {
         mediaInformationResult.get().year());
 
     var movieSearchResult =
-        movieMetadataProviderFactory.search(library, mediaInformationResult.get());
+        movieMetadataProviderResolver.search(library, mediaInformationResult.get());
 
     if (movieSearchResult.isEmpty()) {
       mediaFile.setStatus(MediaFileStatus.METADATA_SEARCH_FAILED);
@@ -283,7 +283,7 @@ public class LibraryManagementService {
       return;
     }
 
-    var movieToSave = movieMetadataProviderFactory.getMetadata(remoteSearchResult, library);
+    var movieToSave = movieMetadataProviderResolver.getMetadata(remoteSearchResult, library);
 
     if (movieToSave.isEmpty()) {
       return;

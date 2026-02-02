@@ -29,7 +29,7 @@ import com.streamarr.server.services.PersonService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
-import com.streamarr.server.services.metadata.movie.MovieMetadataProviderFactory;
+import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.metadata.movie.TMDBMovieProvider;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
@@ -57,8 +57,8 @@ public class LibraryManagementServiceTest {
   private final MovieService movieService = mock(MovieService.class);
   private final PersonService personService = mock(PersonService.class);
   private final MetadataProvider<Movie> tmdbMovieProvider = mock(TMDBMovieProvider.class);
-  private final MovieMetadataProviderFactory fakeMovieMetadataProviderFactory =
-      new MovieMetadataProviderFactory(List.of(tmdbMovieProvider));
+  private final MovieMetadataProviderResolver fakeMovieMetadataProviderResolver =
+      new MovieMetadataProviderResolver(List.of(tmdbMovieProvider));
   private final LibraryRepository fakeLibraryRepository = new FakeLibraryRepository();
   private final MediaFileRepository fakeMediaFileRepository = new FakeMediaFileRepository();
   private final FileSystem fileSystem = Jimfs.newFileSystem(Configuration.unix());
@@ -67,7 +67,7 @@ public class LibraryManagementServiceTest {
       new LibraryManagementService(
           new VideoExtensionValidator(),
           new DefaultVideoFileMetadataParser(),
-          fakeMovieMetadataProviderFactory,
+          fakeMovieMetadataProviderResolver,
           fakeLibraryRepository,
           fakeMediaFileRepository,
           movieService,
