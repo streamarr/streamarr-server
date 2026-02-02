@@ -92,6 +92,7 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
               .summary(tmdbMovie.getOverview())
               .backdropPath(tmdbMovie.getBackdropPath())
               .posterPath(tmdbMovie.getPosterPath())
+              .runtime(tmdbMovie.getRuntime())
               .studios(
                   productionCompanies.stream()
                       .map(

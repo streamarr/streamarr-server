@@ -7,6 +7,7 @@ type Movie implements BaseCollectable {
     title: String
     tagline: String
     summary: String
+    runtime: Int
     releaseDate: String
     backdropPath: String
     posterPath: String

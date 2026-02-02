@@ -44,6 +44,8 @@ public class Movie extends BaseCollectable<Movie> {
 
   private String summary;
 
+  private Integer runtime;
+
   @Embedded
   @AttributeOverride(name = "system", column = @Column(name = "content_rating_system"))
   @AttributeOverride(name = "value", column = @Column(name = "content_rating_value"))

@@ -308,6 +308,14 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should map runtime when TMDB response includes runtime")
+  void shouldMapRuntimeWhenResponseIncludesRuntime() {
+    var movie = getMetadataFromFullResponse();
+
+    assertThat(movie.getRuntime()).isEqualTo(148);
+  }
+
+  @Test
   @DisplayName("Should map backdrop and poster paths when TMDB response includes image paths")
   void shouldMapBackdropAndPosterPathsWhenResponseIncludesImagePaths() {
     var movie = getMetadataFromFullResponse();
