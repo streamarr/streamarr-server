@@ -1,5 +1,6 @@
 package com.streamarr.server.services.metadata;
 
+import com.streamarr.server.exceptions.ImageProcessingException;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -18,7 +19,7 @@ public class ImageThumbnailService {
 
   public byte[] convertImageToThumbnails(byte[] imageData) {
     if (imageData == null) {
-      throw new RuntimeException("Image input data must not be null.");
+      throw new ImageProcessingException("Image input data must not be null.");
     }
 
     try {
@@ -38,7 +39,7 @@ public class ImageThumbnailService {
       return outputStream.toByteArray();
 
     } catch (IOException | NullPointerException ex) {
-      throw new RuntimeException(ex);
+      throw new ImageProcessingException(ex);
     }
   }
 }
