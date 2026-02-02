@@ -1,6 +1,7 @@
 package com.streamarr.server.services;
 
 import com.streamarr.server.domain.BaseAuditableEntity;
+import com.streamarr.server.exceptions.InvalidPaginationArgumentException;
 import com.streamarr.server.graphql.cursor.InvalidCursorException;
 import com.streamarr.server.graphql.cursor.PaginationDirection;
 import com.streamarr.server.graphql.cursor.PaginationOptions;
@@ -51,7 +52,8 @@ public class RelayPaginationService {
     var beforeIsBlank = StringUtils.isBlank(before);
 
     if (!afterIsBlank && !beforeIsBlank) {
-      throw new RuntimeException("Cannot request with both after and before simultaneously.");
+      throw new InvalidPaginationArgumentException(
+          "Cannot request with both after and before simultaneously.");
     }
 
     return afterIsBlank ? PaginationDirection.REVERSE : PaginationDirection.FORWARD;
@@ -78,11 +80,12 @@ public class RelayPaginationService {
   private int validateGreaterThanZeroButLessThanMax(String fieldName, int pageSize) {
 
     if (pageSize <= 0) {
-      throw new RuntimeException(fieldName + " must be greater than zero.");
+      throw new InvalidPaginationArgumentException(fieldName + " must be greater than zero.");
     }
 
     if (pageSize > MAX_PAGE_SIZE) {
-      throw new RuntimeException(fieldName + " must be less than " + MAX_PAGE_SIZE + ".");
+      throw new InvalidPaginationArgumentException(
+          fieldName + " must be less than " + MAX_PAGE_SIZE + ".");
     }
 
     return pageSize;

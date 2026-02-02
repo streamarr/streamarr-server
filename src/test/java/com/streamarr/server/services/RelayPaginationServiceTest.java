@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 import com.streamarr.server.domain.BaseAuditableEntity;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.exceptions.InvalidPaginationArgumentException;
 import com.streamarr.server.graphql.cursor.PaginationDirection;
 import com.streamarr.server.graphql.cursor.PaginationOptions;
 import graphql.relay.DefaultConnectionCursor;
@@ -28,7 +29,7 @@ public class RelayPaginationServiceTest {
   @DisplayName(
       "Should throw exception when paginating with both after and before arguments simultaneously.")
   void shouldThrowExceptionWhenPaginatingWithBothAfterAndBeforeCursors() {
-    assertThatExceptionOfType(RuntimeException.class)
+    assertThatExceptionOfType(InvalidPaginationArgumentException.class)
         .isThrownBy(() -> relayPaginationService.getPaginationOptions(10, "cursor", 0, "cursor"))
         .withMessageContaining("Cannot request with both after and before simultaneously.");
   }
@@ -36,7 +37,7 @@ public class RelayPaginationServiceTest {
   @Test
   @DisplayName("Should throw exception when paginating with negative first argument.")
   void shouldThrowExceptionWhenPaginatingWithNegativeFirstLimit() {
-    assertThatExceptionOfType(RuntimeException.class)
+    assertThatExceptionOfType(InvalidPaginationArgumentException.class)
         .isThrownBy(() -> relayPaginationService.getPaginationOptions(-1, "cursor", 0, null))
         .withMessageContaining("first must be greater than zero.");
   }
@@ -44,7 +45,7 @@ public class RelayPaginationServiceTest {
   @Test
   @DisplayName("Should throw exception when paginating with negative last argument.")
   void shouldThrowExceptionWhenPaginatingWithNegativeLastLimit() {
-    assertThatExceptionOfType(RuntimeException.class)
+    assertThatExceptionOfType(InvalidPaginationArgumentException.class)
         .isThrownBy(() -> relayPaginationService.getPaginationOptions(0, null, -1, "cursor"))
         .withMessageContaining("last must be greater than zero.");
   }
@@ -52,7 +53,7 @@ public class RelayPaginationServiceTest {
   @Test
   @DisplayName("Should throw exception when paginating with first argument that is too large.")
   void shouldThrowExceptionWhenPaginatingWithFirstLimitTooLarge() {
-    assertThatExceptionOfType(RuntimeException.class)
+    assertThatExceptionOfType(InvalidPaginationArgumentException.class)
         .isThrownBy(() -> relayPaginationService.getPaginationOptions(501, "cursor", 0, null))
         .withMessageContaining("first must be less than 500.");
   }
@@ -60,7 +61,7 @@ public class RelayPaginationServiceTest {
   @Test
   @DisplayName("Should throw exception when paginating with last argument that is too large.")
   void shouldThrowExceptionWhenPaginatingWithLastLimitTooLarge() {
-    assertThatExceptionOfType(RuntimeException.class)
+    assertThatExceptionOfType(InvalidPaginationArgumentException.class)
         .isThrownBy(() -> relayPaginationService.getPaginationOptions(0, null, 501, "cursor"))
         .withMessageContaining("last must be less than 500.");
   }
@@ -69,7 +70,7 @@ public class RelayPaginationServiceTest {
   @DisplayName(
       "Should throw exception when paginating with no cursor and first argument is too large.")
   void shouldThrowExceptionWhenPaginatingWithNoCursorAndFirstLimitTooLarge() {
-    assertThatExceptionOfType(RuntimeException.class)
+    assertThatExceptionOfType(InvalidPaginationArgumentException.class)
         .isThrownBy(() -> relayPaginationService.getPaginationOptions(501, null, 0, null))
         .withMessageContaining("first must be less than 500.");
   }
@@ -77,7 +78,7 @@ public class RelayPaginationServiceTest {
   @Test
   @DisplayName("Should throw exception when paginating with no cursor and only last argument.")
   void shouldThrowExceptionWhenPaginatingWithNoCursorAndOnlyLast() {
-    assertThatExceptionOfType(RuntimeException.class)
+    assertThatExceptionOfType(InvalidPaginationArgumentException.class)
         .isThrownBy(() -> relayPaginationService.getPaginationOptions(0, null, 1, null))
         .withMessageContaining("first must be greater than zero.");
   }
