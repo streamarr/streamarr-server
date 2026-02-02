@@ -181,11 +181,14 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should map external IDs when TMDB returns full response")
+  @DisplayName("Should map TMDB and IMDB external IDs when TMDB returns full response")
   void shouldMapExternalIdsWhenTmdbReturnsFullResponse() {
     var movie = getMetadataFromFullResponse();
 
     assertThat(movie.getExternalIds()).hasSize(2);
+    assertThat(movie.getExternalIds())
+        .extracting("externalSourceType")
+        .containsExactlyInAnyOrder(ExternalSourceType.TMDB, ExternalSourceType.IMDB);
   }
 
   @Test
@@ -282,6 +285,21 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
 
     assertThat(result).isPresent();
     assertThat(result.get().getStudios()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should have null release date when TMDB response has blank release date")
+  void shouldHaveNullReleaseDateWhenResponseHasBlankReleaseDate() {
+    stubMinimalMovieResponse(
+        "27205",
+        """
+        ,"release_date": ""
+        """);
+
+    var result = provider.getMetadata(buildSearchResult("27205"), savedLibrary);
+
+    assertThat(result).isPresent();
+    assertThat(result.get().getReleaseDate()).isNull();
   }
 
   @Test
