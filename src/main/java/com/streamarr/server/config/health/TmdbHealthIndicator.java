@@ -33,6 +33,10 @@ public class TmdbHealthIndicator implements HealthIndicator {
       }
 
       return Health.down().withDetail("statusCode", response.statusCode()).build();
+    } catch (InterruptedException ex) {
+      Thread.currentThread().interrupt();
+      log.warn("TMDB health check interrupted", ex);
+      return Health.down().withException(ex).build();
     } catch (Exception ex) {
       log.warn("TMDB health check failed", ex);
       return Health.down().withException(ex).build();
