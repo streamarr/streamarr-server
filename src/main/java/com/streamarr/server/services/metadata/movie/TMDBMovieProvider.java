@@ -14,6 +14,7 @@ import com.streamarr.server.services.metadata.TheMovieDatabaseHttpService;
 import com.streamarr.server.services.metadata.tmdb.TmdbCredits;
 import com.streamarr.server.services.metadata.tmdb.TmdbMovie;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
+import java.io.IOException;
 import java.time.LocalDate;
 import java.util.Collections;
 import java.util.HashSet;
@@ -52,7 +53,10 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
               .title(tmdbResult.getTitle())
               .build());
 
-    } catch (Exception ex) {
+    } catch (IOException ex) {
+      log.error("Failure requesting search results:", ex);
+    } catch (InterruptedException ex) {
+      Thread.currentThread().interrupt();
       log.error("Failure requesting search results:", ex);
     }
 
@@ -112,7 +116,13 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
 
       return Optional.of(movieBuilder.build());
 
-    } catch (Exception ex) {
+    } catch (IOException ex) {
+      log.error(
+          "Failure enriching movie metadata using TMDB id '{}'",
+          remoteSearchResult.externalId(),
+          ex);
+    } catch (InterruptedException ex) {
+      Thread.currentThread().interrupt();
       log.error(
           "Failure enriching movie metadata using TMDB id '{}'",
           remoteSearchResult.externalId(),
