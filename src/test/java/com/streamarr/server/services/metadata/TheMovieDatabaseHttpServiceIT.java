@@ -50,7 +50,7 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName("Should return search results when searching with title and year")
-  void should_returnSearchResults_when_searchingWithTitleAndYear() throws Exception {
+  void shouldReturnSearchResultsWhenSearchingWithTitleAndYear() throws Exception {
     wireMock.stubFor(
         get(urlPathEqualTo("/search/movie"))
             .withQueryParam("query", equalTo("Inception"))
@@ -93,7 +93,7 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName("Should search successfully when year is blank")
-  void should_returnSearchResults_when_yearIsBlank() throws Exception {
+  void shouldReturnSearchResultsWhenYearIsBlank() throws Exception {
     wireMock.stubFor(
         get(urlPathEqualTo("/search/movie"))
             .withQueryParam("query", equalTo("About Time"))
@@ -132,7 +132,7 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName("Should return movie metadata with nested credits and releases")
-  void should_returnMovieWithNestedData_when_gettingMetadataById() throws Exception {
+  void shouldReturnMovieWithNestedDataWhenGettingMetadataById() throws Exception {
     wireMock.stubFor(
         get(urlPathEqualTo("/movie/27205"))
             .withQueryParam("append_to_response", equalTo("credits,releases"))
@@ -225,7 +225,7 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName("Should return movie credits from standalone credits endpoint")
-  void should_returnCredits_when_gettingMovieCredits() throws Exception {
+  void shouldReturnCreditsWhenGettingMovieCredits() throws Exception {
     wireMock.stubFor(
         get(urlPathEqualTo("/movie/27205/credits"))
             .willReturn(
@@ -271,7 +271,7 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName("Should throw IOException with TMDB error message when API returns error status")
-  void should_throwIOExceptionWithMessage_when_apiReturnsError() {
+  void shouldThrowIOExceptionWithMessageWhenApiReturnsError() {
     wireMock.stubFor(
         get(urlPathEqualTo("/search/movie"))
             .willReturn(
@@ -296,7 +296,7 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName("Should retry and succeed when temporarily rate limited")
-  void should_retryAndSucceed_when_temporarilyRateLimited() throws Exception {
+  void shouldRetryAndSucceedWhenTemporarilyRateLimited() throws Exception {
     wireMock.stubFor(
         get(urlPathEqualTo("/search/movie"))
             .inScenario("Rate Limit Recovery")
@@ -342,7 +342,7 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName("Should throw IOException when rate limit persists after max retries")
-  void should_throwIOException_when_rateLimitPersistsAfterMaxRetries() {
+  void shouldThrowIOExceptionWhenRateLimitPersistsAfterMaxRetries() {
     wireMock.stubFor(
         get(urlPathEqualTo("/search/movie"))
             .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "0")));
