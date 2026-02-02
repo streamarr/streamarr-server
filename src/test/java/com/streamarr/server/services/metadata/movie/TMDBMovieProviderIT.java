@@ -345,6 +345,23 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should map profile path when TMDB response includes cast profile path")
+  void shouldMapProfilePathWhenResponseIncludesCastProfilePath() {
+    var movie = getMetadataFromFullResponse();
+
+    assertThat(movie.getCast().get(0).getProfilePath()).isEqualTo("/wo2hJpn04vbtmh0B9utCFdsQhxM.jpg");
+  }
+
+  @Test
+  @DisplayName("Should map logo path when TMDB response includes company logo path")
+  void shouldMapLogoPathWhenResponseIncludesCompanyLogoPath() {
+    var movie = getMetadataFromFullResponse();
+
+    assertThat(movie.getStudios().iterator().next().getLogoPath())
+        .isEqualTo("/8M99Dkt23MjQMTTWukq4m5XsEuo.png");
+  }
+
+  @Test
   @DisplayName("Should map backdrop and poster paths when TMDB response includes image paths")
   void shouldMapBackdropAndPosterPathsWhenResponseIncludesImagePaths() {
     var movie = getMetadataFromFullResponse();
@@ -444,7 +461,8 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
                                 "credit_id": "52fe4534c3a36847f80a7cd1",
                                 "adult": false,
                                 "gender": 2,
-                                "popularity": 50.0
+                                "popularity": 50.0,
+                                "profile_path": "/wo2hJpn04vbtmh0B9utCFdsQhxM.jpg"
                               },
                               {
                                 "id": 2524,
@@ -490,7 +508,8 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
                             {
                               "id": 923,
                               "name": "Legendary Entertainment",
-                              "origin_country": "US"
+                              "origin_country": "US",
+                              "logo_path": "/8M99Dkt23MjQMTTWukq4m5XsEuo.png"
                             }
                           ]
                         }

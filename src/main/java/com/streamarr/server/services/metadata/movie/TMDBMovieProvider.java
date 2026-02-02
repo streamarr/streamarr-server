@@ -104,6 +104,7 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
                               Company.builder()
                                   .sourceId(String.valueOf(c.getId()))
                                   .name(c.getName())
+                                  .logoPath(c.getLogoPath())
                                   .build())
                       .collect(Collectors.toSet()))
               .cast(
@@ -113,6 +114,7 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
                               Person.builder()
                                   .sourceId(String.valueOf(credit.getId()))
                                   .name(credit.getName())
+                                  .profilePath(credit.getProfilePath())
                                   .build())
                       .collect(Collectors.toList()))
               .directors(
@@ -123,6 +125,7 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
                               Person.builder()
                                   .sourceId(String.valueOf(crew.getId()))
                                   .name(crew.getName())
+                                  .profilePath(crew.getProfilePath())
                                   .build())
                       .collect(Collectors.toList()))
               .genres(
