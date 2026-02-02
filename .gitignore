@@ -50,5 +50,8 @@ dependency-reduced-pom.xml
 buildNumber.properties
 .mvn/timing.properties
 
+### Environment ###
+.env
+
 ### jEnv ###
 .java-version

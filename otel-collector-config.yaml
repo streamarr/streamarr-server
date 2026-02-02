@@ -1,0 +1,45 @@
+extensions:
+  basicauth/grafana_cloud:
+    client_auth:
+      username: "${GRAFANA_CLOUD_INSTANCE_ID}"
+      password: "${GRAFANA_CLOUD_API_KEY}"
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    send_batch_size: 1024
+    timeout: 5s
+  resourcedetection:
+    detectors: [env, system, docker]
+    timeout: 2s
+
+exporters:
+  debug:
+    verbosity: basic
+  otlphttp/grafana_cloud:
+    endpoint: "${GRAFANA_CLOUD_OTLP_ENDPOINT}"
+    auth:
+      authenticator: basicauth/grafana_cloud
+
+service:
+  extensions: [basicauth/grafana_cloud]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [resourcedetection, batch]
+      exporters: [debug, otlphttp/grafana_cloud]
+    metrics:
+      receivers: [otlp]
+      processors: [resourcedetection, batch]
+      exporters: [debug, otlphttp/grafana_cloud]
+    logs:
+      receivers: [otlp]
+      processors: [resourcedetection, batch]
+      exporters: [debug, otlphttp/grafana_cloud]

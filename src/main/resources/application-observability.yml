@@ -1,0 +1,18 @@
+otel:
+  exporter:
+    otlp:
+      endpoint: http://otel-collector:4318
+      protocol: http/protobuf
+  resource:
+    attributes:
+      service.name: streamarr-server
+      deployment.environment: ${DEPLOYMENT_ENV:dev}
+  traces:
+    sampler:
+      arg: 1.0
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
