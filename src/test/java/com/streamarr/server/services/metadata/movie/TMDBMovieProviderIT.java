@@ -10,6 +10,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.ExternalSourceType;
+import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
@@ -45,7 +47,7 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
 
   @Autowired private LibraryRepository libraryRepository;
 
-  private com.streamarr.server.domain.Library savedLibrary;
+  private Library savedLibrary;
 
   @BeforeAll
   void setupLibrary() {
@@ -307,7 +309,7 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
 
   // --- Helpers ---
 
-  private com.streamarr.server.domain.media.Movie getMetadataFromFullResponse() {
+  private Movie getMetadataFromFullResponse() {
     stubFullMovieResponse();
     var result = provider.getMetadata(buildSearchResult("27205"), savedLibrary);
     assertThat(result).isPresent();
