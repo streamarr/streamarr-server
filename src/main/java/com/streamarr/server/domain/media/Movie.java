@@ -73,9 +73,11 @@ public class Movie extends BaseCollectable<Movie> {
   @OrderColumn(name = "ordinal")
   private List<Person> cast = new ArrayList<>();
 
+  @Builder.Default
   @OneToMany(fetch = FetchType.LAZY, mappedBy = "movie")
   private Set<Rating> ratings = new HashSet<>();
 
+  @Builder.Default
   @OneToMany(fetch = FetchType.LAZY, mappedBy = "movie")
   private Set<Review> reviews = new HashSet<>();
 
