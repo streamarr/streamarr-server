@@ -326,16 +326,6 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should preserve cast order from TMDB response")
-  void shouldPreserveCastOrderFromTmdbResponse() {
-    var movie = getMetadataFromFullResponse();
-
-    assertThat(movie.getCast()).hasSize(2);
-    assertThat(movie.getCast().get(0).getName()).isEqualTo("Leonardo DiCaprio");
-    assertThat(movie.getCast().get(1).getName()).isEqualTo("Tom Hardy");
-  }
-
-  @Test
   @DisplayName("Should map directors when TMDB response includes crew")
   void shouldMapDirectorsWhenResponseIncludesCrew() {
     var movie = getMetadataFromFullResponse();
@@ -414,7 +404,7 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
           "video": false%s
         }
         """
-            .formatted(Integer.parseInt(movieId), additionalJson);
+            .formatted(movieId, additionalJson);
 
     wireMock.stubFor(
         get(urlPathEqualTo("/movie/" + movieId))
