@@ -1,0 +1,23 @@
+= ADR 0004: ProcessBuilder + FFmpeg Over JNI Bindings
+
+== Status
+
+Accepted
+
+== Context
+
+HLS video transcoding requires FFmpeg. Options include JNI/JavaCPP bindings (in-process), Java FFM API (Foreign Function & Memory), or subprocess via ProcessBuilder.
+
+== Decision
+
+Use ProcessBuilder to run FFmpeg as a subprocess.
+
+== Consequences
+
+* Full control over FFmpeg process lifecycle (critical for seek = kill + restart)
+* No native library dependencies in the Java build -- FFmpeg installed on the host/container
+* Virtual threads pair well with ProcessBuilder blocking I/O
+* Follows the proven pattern used by Jellyfin, Plex, and Emby
+* Graceful shutdown: write `q` to stdin, wait, then `destroyForcibly()` as fallback
+* Single Docker image works with and without GPU -- runtime detection
+* Future option: Java FFM API for auxiliary tasks like media probing via libavformat

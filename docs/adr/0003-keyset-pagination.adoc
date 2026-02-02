@@ -1,0 +1,21 @@
+= ADR 0003: Keyset Pagination Over Offset
+
+== Status
+
+Accepted
+
+== Context
+
+Offset-based pagination (`LIMIT/OFFSET`) degrades at scale -- page 1000 requires the database to scan and discard 999 pages of rows. Media libraries can contain tens of thousands of items.
+
+== Decision
+
+Use keyset (seek) pagination with jOOQ, exposed as Relay cursor-based pagination in GraphQL.
+
+== Consequences
+
+* O(1) page fetch regardless of depth -- page 1000 is as fast as page 1
+* Cursors encode the last-seen sort key, making them opaque and tamper-resistant
+* jOOQ provides type-safe seek/keyset query building
+* Slightly more complex implementation than offset, but jOOQ absorbs the complexity
+* Rows inserted/deleted between pages don't cause duplicates or gaps

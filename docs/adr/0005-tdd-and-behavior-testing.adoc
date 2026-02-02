@@ -1,0 +1,22 @@
+= ADR 0005: TDD and Behavior Testing
+
+== Status
+
+Accepted
+
+== Context
+
+Testing strategy significantly impacts development speed and refactoring confidence. Mock-heavy unit tests are brittle and break on internal changes. End-to-end tests are slow and hard to maintain.
+
+== Decision
+
+Test at the service layer boundary using real dependencies (TestContainers + PostgreSQL). Use TDD (Red-Green-Refactor) for all features and bug fixes.
+
+== Consequences
+
+* Service tests are protocol-agnostic -- swapping GraphQL for REST doesn't break tests
+* Real database interactions catch SQL/JPA issues that mocks would hide
+* Fake implementations (e.g., `FakeMovieRepository`) preferred over mocks for collaborators
+* No `verify()` or `ArgumentCaptor` -- tests assert on observable outcomes, not interactions
+* Refactoring internals doesn't break tests as long as behavior is preserved
+* Slightly longer test execution than pure unit tests, mitigated by TestContainers reuse

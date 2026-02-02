@@ -1,0 +1,36 @@
+= Contributing to Streamarr
+
+Thanks for your interest in contributing to Streamarr!
+
+== Getting Started
+
+See link:docs/dev-setup.adoc[Developer Setup] for prerequisites, build instructions, and local development workflow.
+
+== Architecture
+
+See link:docs/architecture.adoc[Architecture Overview] for how the system is structured and key design decisions.
+
+Architecture Decision Records live in link:docs/adr/[docs/adr/].
+
+== Development Process
+
+1. Fork the repository and create a feature branch from `main`
+2. Follow the engineering guidelines in `CLAUDE.md`
+3. Write tests first (TDD: Red-Green-Refactor)
+4. Separate structural and behavioral changes into distinct commits
+5. Run `./mvnw verify` to ensure all tests pass
+6. Submit a pull request
+
+== Commit Messages
+
+* Keep under 200 words
+* State whether the change is structural or behavioral
+* Use signed commits (`git commit -S`)
+
+== Code Style
+
+Google Java Format is enforced via Spotless. Run `./mvnw spotless:apply` to format before committing.
+
+== Questions?
+
+Open an issue on GitHub.
