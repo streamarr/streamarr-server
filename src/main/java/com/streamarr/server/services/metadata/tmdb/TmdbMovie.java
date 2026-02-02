@@ -69,5 +69,7 @@ public class TmdbMovie {
 
   // append_to_response
   private TmdbCredits credits;
-  private TmdbReleases releases;
+
+  @JsonProperty("release_dates")
+  private TmdbReleaseDateResults releaseDates;
 }

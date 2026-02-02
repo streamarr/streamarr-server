@@ -69,14 +69,18 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
 
       var credits = Optional.ofNullable(tmdbMovie.getCredits());
       var castList = credits.map(TmdbCredits::getCast).orElse(Collections.emptyList());
-      var releases = Optional.ofNullable(tmdbMovie.getReleases());
+      var releaseDateResults = Optional.ofNullable(tmdbMovie.getReleaseDates());
       var productionCompanies =
           Optional.ofNullable(tmdbMovie.getProductionCompanies()).orElse(Collections.emptyList());
 
       var movieRating =
-          releases.map(r -> r.getCountries()).orElse(Collections.emptyList()).stream()
+          releaseDateResults
+              .map(r -> r.getResults())
+              .orElse(Collections.emptyList())
+              .stream()
+              .filter(info -> "US".equals(info.getIso31661()))
+              .flatMap(info -> info.getReleaseDates().stream())
               .filter(release -> StringUtils.isNotBlank(release.getCertification()))
-              .filter(release -> release.getIso31661().equals("US"))
               .findFirst();
 
       var movieBuilder =

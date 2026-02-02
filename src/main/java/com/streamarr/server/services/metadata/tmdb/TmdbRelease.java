@@ -16,11 +16,13 @@ public class TmdbRelease {
 
   private String certification;
 
-  @JsonProperty("iso_3166_1")
-  private String iso31661;
+  @JsonProperty("iso_639_1")
+  private String iso6391;
 
-  private boolean primary;
+  private String note;
 
   @JsonProperty("release_date")
   private String releaseDate;
+
+  private int type;
 }

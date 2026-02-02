@@ -135,7 +135,7 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
   void shouldReturnMovieWithNestedDataWhenGettingMetadataById() throws Exception {
     wireMock.stubFor(
         get(urlPathEqualTo("/movie/27205"))
-            .withQueryParam("append_to_response", equalTo("credits,releases"))
+            .withQueryParam("append_to_response", equalTo("credits,release_dates"))
             .willReturn(
                 aResponse()
                     .withStatus(200)
@@ -186,13 +186,18 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
                           }
                         ]
                       },
-                      "releases": {
-                        "countries": [
+                      "release_dates": {
+                        "results": [
                           {
-                            "certification": "PG-13",
                             "iso_3166_1": "US",
-                            "primary": true,
-                            "release_date": "2010-07-16"
+                            "release_dates": [
+                              {
+                                "certification": "PG-13",
+                                "release_date": "2010-07-16T00:00:00.000Z",
+                                "type": 3,
+                                "note": ""
+                              }
+                            ]
                           }
                         ]
                       },
@@ -216,8 +221,13 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
     assertThat(movie.getCredits().getCast().getFirst().getName()).isEqualTo("Leonardo DiCaprio");
     assertThat(movie.getCredits().getCrew()).hasSize(1);
     assertThat(movie.getCredits().getCrew().getFirst().getJob()).isEqualTo("Director");
-    assertThat(movie.getReleases().getCountries()).hasSize(1);
-    assertThat(movie.getReleases().getCountries().getFirst().getCertification()).isEqualTo("PG-13");
+    assertThat(movie.getReleaseDates().getResults()).hasSize(1);
+    assertThat(movie.getReleaseDates().getResults().getFirst().getIso31661()).isEqualTo("US");
+    assertThat(movie.getReleaseDates().getResults().getFirst().getReleaseDates()).hasSize(1);
+    assertThat(
+            movie.getReleaseDates().getResults().getFirst().getReleaseDates().getFirst()
+                .getCertification())
+        .isEqualTo("PG-13");
     assertThat(movie.getProductionCompanies()).hasSize(1);
     assertThat(movie.getProductionCompanies().getFirst().getName())
         .isEqualTo("Legendary Entertainment");

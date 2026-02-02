@@ -64,7 +64,7 @@ public class TheMovieDatabaseHttpService {
         baseUrl()
             .path("/movie/")
             .path(movieId)
-            .queryParam("append_to_response", "credits,releases")
+            .queryParam("append_to_response", "credits,release_dates")
             .build();
 
     var request = authenticatedRequest(uri).GET().build();

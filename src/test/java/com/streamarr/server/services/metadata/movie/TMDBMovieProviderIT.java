@@ -242,7 +242,7 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
     stubMinimalMovieResponse(
         "27205",
         """
-        ,"releases": {"countries": [{"certification": "15", "iso_3166_1": "GB", "primary": false, "release_date": "2010-07-16"}]}
+        ,"release_dates": {"results": [{"iso_3166_1": "GB", "release_dates": [{"certification": "15", "release_date": "2010-07-16T00:00:00.000Z", "type": 3}]}]}
         """);
 
     var result = provider.getMetadata(buildSearchResult("27205"), savedLibrary);
@@ -355,7 +355,7 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
 
     wireMock.stubFor(
         get(urlPathEqualTo("/movie/" + movieId))
-            .withQueryParam("append_to_response", equalTo("credits,releases"))
+            .withQueryParam("append_to_response", equalTo("credits,release_dates"))
             .willReturn(
                 aResponse()
                     .withStatus(200)
@@ -366,7 +366,7 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
   private void stubFullMovieResponse() {
     wireMock.stubFor(
         get(urlPathEqualTo("/movie/27205"))
-            .withQueryParam("append_to_response", equalTo("credits,releases"))
+            .withQueryParam("append_to_response", equalTo("credits,release_dates"))
             .willReturn(
                 aResponse()
                     .withStatus(200)
@@ -430,13 +430,18 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
                               }
                             ]
                           },
-                          "releases": {
-                            "countries": [
+                          "release_dates": {
+                            "results": [
                               {
-                                "certification": "PG-13",
                                 "iso_3166_1": "US",
-                                "primary": true,
-                                "release_date": "2010-07-16"
+                                "release_dates": [
+                                  {
+                                    "certification": "PG-13",
+                                    "release_date": "2010-07-16T00:00:00.000Z",
+                                    "type": 3,
+                                    "note": ""
+                                  }
+                                ]
                               }
                             ]
                           },
