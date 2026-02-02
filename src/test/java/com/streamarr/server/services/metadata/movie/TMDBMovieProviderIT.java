@@ -307,6 +307,15 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
     assertThat(result).isEmpty();
   }
 
+  @Test
+  @DisplayName("Should map backdrop and poster paths when TMDB response includes image paths")
+  void shouldMapBackdropAndPosterPathsWhenResponseIncludesImagePaths() {
+    var movie = getMetadataFromFullResponse();
+
+    assertThat(movie.getBackdropPath()).isEqualTo("/s3TBrRGB1iav7gFOCNx3H31MoES.jpg");
+    assertThat(movie.getPosterPath()).isEqualTo("/oYuLEt3zVCKq57qu2F8dT7NIa6f.jpg");
+  }
+
   // --- Helpers ---
 
   private Movie getMetadataFromFullResponse() {
@@ -368,6 +377,8 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
                           "id": 27205,
                           "title": "Inception",
                           "adult": false,
+                          "backdrop_path": "/s3TBrRGB1iav7gFOCNx3H31MoES.jpg",
+                          "poster_path": "/oYuLEt3zVCKq57qu2F8dT7NIa6f.jpg",
                           "overview": "A thief who steals corporate secrets through dream-sharing technology.",
                           "tagline": "Your mind is the scene of the crime.",
                           "release_date": "2010-07-16",

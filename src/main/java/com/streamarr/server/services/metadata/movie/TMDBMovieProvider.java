@@ -86,6 +86,8 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
               .externalIds(mapExternalIds(tmdbMovie))
               .tagline(tmdbMovie.getTagline())
               .summary(tmdbMovie.getOverview())
+              .backdropPath(tmdbMovie.getBackdropPath())
+              .posterPath(tmdbMovie.getPosterPath())
               .studios(
                   productionCompanies.stream()
                       .map(
