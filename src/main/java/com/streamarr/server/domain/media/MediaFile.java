@@ -1,18 +1,17 @@
 package com.streamarr.server.domain.media;
 
 import com.streamarr.server.domain.BaseAuditableEntity;
-import io.hypersistence.utils.hibernate.type.basic.PostgreSQLEnumType;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import java.util.UUID;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.experimental.SuperBuilder;
-import org.hibernate.annotations.Type;
-
-import java.util.UUID;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Getter
@@ -22,35 +21,35 @@ import java.util.UUID;
 @AllArgsConstructor
 public class MediaFile extends BaseAuditableEntity<MediaFile> {
 
-    private UUID mediaId;
+  private UUID mediaId;
 
-    @Enumerated(EnumType.STRING)
-    @Type(PostgreSQLEnumType.class)
-    private MediaFileStatus status;
+  @Enumerated(EnumType.STRING)
+  @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+  private MediaFileStatus status;
 
-    private UUID libraryId;
+  private UUID libraryId;
 
-    private String filename;
-    private String filepath;
+  private String filename;
+  private String filepath;
 
-    private long size;
+  private long size;
 
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) {
-            return true;
-        }
-        if (o == null || getClass() != o.getClass()) {
-            return false;
-        }
-
-        MediaFile that = (MediaFile) o;
-
-        return filepath != null && filepath.equals(that.getFilepath());
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
     }
 
-    @Override
-    public int hashCode() {
-        return getClass().hashCode();
-    }
+    MediaFile that = (MediaFile) o;
+
+    return filepath != null && filepath.equals(that.getFilepath());
+  }
+
+  @Override
+  public int hashCode() {
+    return getClass().hashCode();
+  }
 }

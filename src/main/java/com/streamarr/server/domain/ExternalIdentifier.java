@@ -1,18 +1,16 @@
 package com.streamarr.server.domain;
 
-
-import io.hypersistence.utils.hibernate.type.basic.PostgreSQLEnumType;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import java.util.UUID;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.experimental.SuperBuilder;
-import org.hibernate.annotations.Type;
-
-import java.util.UUID;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Getter
@@ -22,12 +20,13 @@ import java.util.UUID;
 @AllArgsConstructor
 public class ExternalIdentifier extends BaseAuditableEntity<ExternalIdentifier> {
 
-    // The parent
-    private UUID entityId;
+  // UUID PK is for JPA identity; composite unique index on (external_source_type, external_id)
+  // enforces business-level deduplication at the database layer.
+  private UUID entityId;
 
-    @Enumerated(EnumType.STRING)
-    @Type(PostgreSQLEnumType.class)
-    private ExternalSourceType externalSourceType;
+  @Enumerated(EnumType.STRING)
+  @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+  private ExternalSourceType externalSourceType;
 
-    private String externalId;
+  private String externalId;
 }
