@@ -123,7 +123,7 @@ public class SeasonPathMetadataParser implements MetadataParser<SeasonPathMetada
     return Optional.empty();
   }
 
-  // TODO: Clean this up...
+  // TODO(#40): Clean this up
   private Optional<Result> getSeasonNumberFromPathSubstring(String path) {
     var numericStart = -1;
     var length = 0;
