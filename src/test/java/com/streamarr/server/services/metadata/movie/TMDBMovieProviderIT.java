@@ -1,5 +1,12 @@
 package com.streamarr.server.services.metadata.movie;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
+import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
+import static org.assertj.core.api.Assertions.assertThat;
+
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.ExternalSourceType;
@@ -7,6 +14,7 @@ import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
+import java.time.LocalDate;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,22 +26,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
-import java.time.LocalDate;
-
-import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
-import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
-import static com.github.tomakehurst.wiremock.client.WireMock.get;
-import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
-import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
-import static org.assertj.core.api.Assertions.assertThat;
-
 @Tag("IntegrationTest")
 @DisplayName("TMDB Movie Provider Integration Tests")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TMDBMovieProviderIT extends AbstractIntegrationTest {
 
-  private static final WireMockServer wireMock =
-      new WireMockServer(wireMockConfig().dynamicPort());
+  private static final WireMockServer wireMock = new WireMockServer(wireMockConfig().dynamicPort());
 
   @DynamicPropertySource
   static void configureWireMock(DynamicPropertyRegistry registry) {
@@ -99,8 +97,7 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
                         """)));
 
     var result =
-        provider.search(
-            VideoFileParserResult.builder().title("Inception").year("2010").build());
+        provider.search(VideoFileParserResult.builder().title("Inception").year("2010").build());
 
     assertThat(result).isPresent();
     assertThat(result.get().title()).isEqualTo("Inception");
@@ -128,8 +125,7 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
                         """)));
 
     var result =
-        provider.search(
-            VideoFileParserResult.builder().title("Nonexistent Movie").build());
+        provider.search(VideoFileParserResult.builder().title("Nonexistent Movie").build());
 
     assertThat(result).isEmpty();
   }
@@ -152,8 +148,7 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
                         }
                         """)));
 
-    var result =
-        provider.search(VideoFileParserResult.builder().title("Test").build());
+    var result = provider.search(VideoFileParserResult.builder().title("Test").build());
 
     assertThat(result).isEmpty();
   }
@@ -174,8 +169,7 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
     assertThat(movie.getTitle()).isEqualTo("Inception");
     assertThat(movie.getTagline()).isEqualTo("Your mind is the scene of the crime.");
     assertThat(movie.getSummary())
-        .isEqualTo(
-            "A thief who steals corporate secrets through dream-sharing technology.");
+        .isEqualTo("A thief who steals corporate secrets through dream-sharing technology.");
     assertThat(movie.getReleaseDate()).isEqualTo(LocalDate.of(2010, 7, 16));
     assertThat(movie.getContentRating()).isNotNull();
     assertThat(movie.getContentRating().system()).isEqualTo("MPAA");
@@ -187,8 +181,7 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
     assertThat(movie.getCast().get(0).getSourceId()).isEqualTo("6193");
     assertThat(movie.getCast().get(1).getName()).isEqualTo("Tom Hardy");
     assertThat(movie.getStudios()).hasSize(1);
-    assertThat(movie.getStudios().iterator().next().getName())
-        .isEqualTo("Legendary Entertainment");
+    assertThat(movie.getStudios().iterator().next().getName()).isEqualTo("Legendary Entertainment");
     assertThat(movie.getStudios().iterator().next().getSourceId()).isEqualTo("923");
     assertThat(movie.getLibrary()).isEqualTo(savedLibrary);
   }
@@ -196,27 +189,11 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should map only TMDB external ID when IMDB ID is blank")
   void shouldMapOnlyTmdbExternalIdWhenImdbIdIsBlank() {
-    wireMock.stubFor(
-        get(urlPathEqualTo("/movie/27205"))
-            .withQueryParam("append_to_response", equalTo("credits,releases"))
-            .willReturn(
-                aResponse()
-                    .withStatus(200)
-                    .withHeader("Content-Type", "application/json")
-                    .withBody(
-                        """
-                        {
-                          "id": 27205,
-                          "title": "Inception",
-                          "imdb_id": "",
-                          "release_date": "2010-07-16",
-                          "adult": false,
-                          "popularity": 85.0,
-                          "vote_count": 30000,
-                          "vote_average": 8.4,
-                          "video": false
-                        }
-                        """)));
+    stubMinimalMovieResponse(
+        "27205",
+        """
+        ,"imdb_id": ""
+        """);
 
     var result = provider.getMetadata(buildSearchResult("27205"), savedLibrary);
 
@@ -231,36 +208,11 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should skip content rating when no US certification exists")
   void shouldSkipContentRatingWhenNoUsCertificationExists() {
-    wireMock.stubFor(
-        get(urlPathEqualTo("/movie/27205"))
-            .withQueryParam("append_to_response", equalTo("credits,releases"))
-            .willReturn(
-                aResponse()
-                    .withStatus(200)
-                    .withHeader("Content-Type", "application/json")
-                    .withBody(
-                        """
-                        {
-                          "id": 27205,
-                          "title": "Inception",
-                          "release_date": "2010-07-16",
-                          "adult": false,
-                          "popularity": 85.0,
-                          "vote_count": 30000,
-                          "vote_average": 8.4,
-                          "video": false,
-                          "releases": {
-                            "countries": [
-                              {
-                                "certification": "15",
-                                "iso_3166_1": "GB",
-                                "primary": false,
-                                "release_date": "2010-07-16"
-                              }
-                            ]
-                          }
-                        }
-                        """)));
+    stubMinimalMovieResponse(
+        "27205",
+        """
+        ,"releases": {"countries": [{"certification": "15", "iso_3166_1": "GB", "primary": false, "release_date": "2010-07-16"}]}
+        """);
 
     var result = provider.getMetadata(buildSearchResult("27205"), savedLibrary);
 
@@ -271,26 +223,7 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should handle null credits when credits absent from response")
   void shouldHandleNullCreditsWhenCreditsAbsentFromResponse() {
-    wireMock.stubFor(
-        get(urlPathEqualTo("/movie/27205"))
-            .withQueryParam("append_to_response", equalTo("credits,releases"))
-            .willReturn(
-                aResponse()
-                    .withStatus(200)
-                    .withHeader("Content-Type", "application/json")
-                    .withBody(
-                        """
-                        {
-                          "id": 27205,
-                          "title": "Inception",
-                          "release_date": "2010-07-16",
-                          "adult": false,
-                          "popularity": 85.0,
-                          "vote_count": 30000,
-                          "vote_average": 8.4,
-                          "video": false
-                        }
-                        """)));
+    stubMinimalMovieResponse("27205");
 
     var result = provider.getMetadata(buildSearchResult("27205"), savedLibrary);
 
@@ -301,26 +234,7 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should handle null releases when releases absent from response")
   void shouldHandleNullReleasesWhenReleasesAbsentFromResponse() {
-    wireMock.stubFor(
-        get(urlPathEqualTo("/movie/27205"))
-            .withQueryParam("append_to_response", equalTo("credits,releases"))
-            .willReturn(
-                aResponse()
-                    .withStatus(200)
-                    .withHeader("Content-Type", "application/json")
-                    .withBody(
-                        """
-                        {
-                          "id": 27205,
-                          "title": "Inception",
-                          "release_date": "2010-07-16",
-                          "adult": false,
-                          "popularity": 85.0,
-                          "vote_count": 30000,
-                          "vote_average": 8.4,
-                          "video": false
-                        }
-                        """)));
+    stubMinimalMovieResponse("27205");
 
     var result = provider.getMetadata(buildSearchResult("27205"), savedLibrary);
 
@@ -331,26 +245,7 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should handle null production companies when companies absent from response")
   void shouldHandleNullProductionCompaniesWhenCompaniesAbsentFromResponse() {
-    wireMock.stubFor(
-        get(urlPathEqualTo("/movie/27205"))
-            .withQueryParam("append_to_response", equalTo("credits,releases"))
-            .willReturn(
-                aResponse()
-                    .withStatus(200)
-                    .withHeader("Content-Type", "application/json")
-                    .withBody(
-                        """
-                        {
-                          "id": 27205,
-                          "title": "Inception",
-                          "release_date": "2010-07-16",
-                          "adult": false,
-                          "popularity": 85.0,
-                          "vote_count": 30000,
-                          "vote_average": 8.4,
-                          "video": false
-                        }
-                        """)));
+    stubMinimalMovieResponse("27205");
 
     var result = provider.getMetadata(buildSearchResult("27205"), savedLibrary);
 
@@ -389,6 +284,36 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
         .externalId(externalId)
         .externalSourceType(ExternalSourceType.TMDB)
         .build();
+  }
+
+  private void stubMinimalMovieResponse(String movieId) {
+    stubMinimalMovieResponse(movieId, "");
+  }
+
+  private void stubMinimalMovieResponse(String movieId, String additionalJson) {
+    var body =
+        """
+        {
+          "id": %s,
+          "title": "Inception",
+          "release_date": "2010-07-16",
+          "adult": false,
+          "popularity": 85.0,
+          "vote_count": 30000,
+          "vote_average": 8.4,
+          "video": false%s
+        }
+        """
+            .formatted(Integer.parseInt(movieId), additionalJson);
+
+    wireMock.stubFor(
+        get(urlPathEqualTo("/movie/" + movieId))
+            .withQueryParam("append_to_response", equalTo("credits,releases"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(body)));
   }
 
   private void stubFullMovieResponse() {
