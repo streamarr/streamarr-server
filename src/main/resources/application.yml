@@ -10,6 +10,10 @@ spring:
   profiles:
     active: dev
 
+  threads:
+    virtual:
+      enabled: true
+
 dgs:
   graphql:
     graphiql:
@@ -19,4 +23,4 @@ dgs:
 
 tmdb:
   api:
-    key: "5351726ee5668fb921afd988d23022ee"
+    token: ${TMDB_API_TOKEN:}
