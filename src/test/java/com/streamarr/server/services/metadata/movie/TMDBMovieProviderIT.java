@@ -326,7 +326,8 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should map original title and compute title sort when TMDB response includes original title")
+  @DisplayName(
+      "Should map original title and compute title sort when TMDB response includes original title")
   void shouldMapOriginalTitleAndComputeTitleSortWhenResponseIncludesOriginalTitle() {
     var movie = getMetadataFromFullResponse();
 
@@ -366,7 +367,8 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
   void shouldMapProfilePathWhenResponseIncludesCastProfilePath() {
     var movie = getMetadataFromFullResponse();
 
-    assertThat(movie.getCast().get(0).getProfilePath()).isEqualTo("/wo2hJpn04vbtmh0B9utCFdsQhxM.jpg");
+    assertThat(movie.getCast().get(0).getProfilePath())
+        .isEqualTo("/wo2hJpn04vbtmh0B9utCFdsQhxM.jpg");
   }
 
   @Test

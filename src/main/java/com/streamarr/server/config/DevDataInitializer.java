@@ -72,11 +72,9 @@ public class DevDataInitializer {
         personRepository.save(Person.builder().sourceId("525").name("Christopher Nolan").build());
 
     var dicaprio =
-        personRepository.save(
-            Person.builder().sourceId("6193").name("Leonardo DiCaprio").build());
+        personRepository.save(Person.builder().sourceId("6193").name("Leonardo DiCaprio").build());
 
-    var hardy =
-        personRepository.save(Person.builder().sourceId("2524").name("Tom Hardy").build());
+    var hardy = personRepository.save(Person.builder().sourceId("2524").name("Tom Hardy").build());
 
     var bale =
         personRepository.save(Person.builder().sourceId("3894").name("Christian Bale").build());

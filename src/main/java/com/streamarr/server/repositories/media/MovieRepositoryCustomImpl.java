@@ -1,5 +1,6 @@
 package com.streamarr.server.repositories.media;
 
+import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.row;
 
 import com.streamarr.server.domain.media.Movie;
@@ -7,12 +8,10 @@ import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.graphql.cursor.MediaPaginationOptions;
 import com.streamarr.server.graphql.cursor.PaginationDirection;
 import com.streamarr.server.jooq.generated.Tables;
+import com.streamarr.server.jooq.generated.enums.ExternalSourceType;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import jakarta.persistence.Query;
-import static org.jooq.impl.DSL.inline;
-
-import com.streamarr.server.jooq.generated.enums.ExternalSourceType;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -81,8 +80,9 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
             .join(Tables.EXTERNAL_IDENTIFIER)
             .on(Tables.EXTERNAL_IDENTIFIER.ENTITY_ID.eq(Tables.MOVIE.ID))
             .where(
-                Tables.EXTERNAL_IDENTIFIER.EXTERNAL_SOURCE_TYPE.eq(
-                        inline(ExternalSourceType.TMDB))
+                Tables.EXTERNAL_IDENTIFIER
+                    .EXTERNAL_SOURCE_TYPE
+                    .eq(inline(ExternalSourceType.TMDB))
                     .and(Tables.EXTERNAL_IDENTIFIER.EXTERNAL_ID.eq(tmdbId)))
             .limit(1);
 

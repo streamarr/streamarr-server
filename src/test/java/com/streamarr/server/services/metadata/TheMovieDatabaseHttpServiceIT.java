@@ -225,7 +225,12 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
     assertThat(movie.getReleaseDates().getResults().getFirst().getIso31661()).isEqualTo("US");
     assertThat(movie.getReleaseDates().getResults().getFirst().getReleaseDates()).hasSize(1);
     assertThat(
-            movie.getReleaseDates().getResults().getFirst().getReleaseDates().getFirst()
+            movie
+                .getReleaseDates()
+                .getResults()
+                .getFirst()
+                .getReleaseDates()
+                .getFirst()
                 .getCertification())
         .isEqualTo("PG-13");
     assertThat(movie.getProductionCompanies()).hasSize(1);
@@ -342,8 +347,7 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
     assertThatThrownBy(() -> service.searchForMovie(parserResult))
         .isInstanceOf(TmdbApiException.class)
         .hasMessage("Invalid API key: You must be granted a valid key.")
-        .satisfies(
-            ex -> assertThat(((TmdbApiException) ex).getStatusCode()).isEqualTo(401));
+        .satisfies(ex -> assertThat(((TmdbApiException) ex).getStatusCode()).isEqualTo(401));
   }
 
   @Test
@@ -404,7 +408,6 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
     assertThatThrownBy(() -> service.searchForMovie(parserResult))
         .isInstanceOf(TmdbApiException.class)
         .hasMessageContaining("rate limit exceeded")
-        .satisfies(
-            ex -> assertThat(((TmdbApiException) ex).getStatusCode()).isEqualTo(429));
+        .satisfies(ex -> assertThat(((TmdbApiException) ex).getStatusCode()).isEqualTo(429));
   }
 }

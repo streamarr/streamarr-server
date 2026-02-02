@@ -75,14 +75,10 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
       var releaseDateResults = Optional.ofNullable(tmdbMovie.getReleaseDates());
       var productionCompanies =
           Optional.ofNullable(tmdbMovie.getProductionCompanies()).orElse(Collections.emptyList());
-      var tmdbGenres =
-          Optional.ofNullable(tmdbMovie.getGenres()).orElse(Collections.emptyList());
+      var tmdbGenres = Optional.ofNullable(tmdbMovie.getGenres()).orElse(Collections.emptyList());
 
       var movieRating =
-          releaseDateResults
-              .map(r -> r.getResults())
-              .orElse(Collections.emptyList())
-              .stream()
+          releaseDateResults.map(r -> r.getResults()).orElse(Collections.emptyList()).stream()
               .filter(info -> "US".equals(info.getIso31661()))
               .flatMap(info -> info.getReleaseDates().stream())
               .filter(release -> StringUtils.isNotBlank(release.getCertification()))
@@ -160,29 +156,27 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
     } catch (InterruptedException ex) {
       Thread.currentThread().interrupt();
       log.error(
-          "Metadata enrichment interrupted for TMDB id '{}'",
-          remoteSearchResult.externalId(),
-          ex);
+          "Metadata enrichment interrupted for TMDB id '{}'", remoteSearchResult.externalId(), ex);
     }
 
     return Optional.empty();
   }
 
-  private Set<ExternalIdentifier> mapExternalIds(TmdbMovie tmdbMove) {
+  private Set<ExternalIdentifier> mapExternalIds(TmdbMovie tmdbMovie) {
 
     var externalIdSet = new HashSet<ExternalIdentifier>();
 
     externalIdSet.add(
         ExternalIdentifier.builder()
             .externalSourceType(ExternalSourceType.TMDB)
-            .externalId(String.valueOf(tmdbMove.getId()))
+            .externalId(String.valueOf(tmdbMovie.getId()))
             .build());
 
-    if (StringUtils.isNotBlank(tmdbMove.getImdbId())) {
+    if (StringUtils.isNotBlank(tmdbMovie.getImdbId())) {
       externalIdSet.add(
           ExternalIdentifier.builder()
               .externalSourceType(ExternalSourceType.IMDB)
-              .externalId(tmdbMove.getImdbId())
+              .externalId(tmdbMovie.getImdbId())
               .build());
     }
 
