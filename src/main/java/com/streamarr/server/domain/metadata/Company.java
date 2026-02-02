@@ -23,6 +23,8 @@ public class Company extends BaseAuditableEntity<Company> {
 
   private String sourceId;
 
+  private String logoPath;
+
   @ManyToMany(mappedBy = "studios", fetch = FetchType.LAZY)
   private Set<Movie> movies = new HashSet<>();
 }
