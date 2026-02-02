@@ -4,7 +4,6 @@ import com.streamarr.server.domain.BaseAuditableEntity;
 import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Movie;
-import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.graphql.cursor.MediaPaginationOptions;
@@ -44,10 +43,9 @@ public class MovieService {
   }
 
   @Transactional
-  public Movie saveMovieWithMediaFileAndCast(Movie movie, MediaFile mediaFile, List<Person> cast) {
+  public Movie saveMovieWithMediaFile(Movie movie, MediaFile mediaFile) {
     var savedMovie = movieRepository.saveAndFlush(movie);
 
-    savedMovie.setCast(cast);
     savedMovie.addFile(mediaFile);
 
     return movieRepository.save(savedMovie);

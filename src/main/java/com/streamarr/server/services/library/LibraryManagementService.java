@@ -292,7 +292,8 @@ public class LibraryManagementService {
     var cast = movieToSave.get().getCast();
     var savedCast = personService.getOrCreateCast(cast);
 
-    movieService.saveMovieWithMediaFileAndCast(movieToSave.get(), mediaFile, savedCast);
+    movieToSave.get().setCast(savedCast);
+    movieService.saveMovieWithMediaFile(movieToSave.get(), mediaFile);
     markMediaFileAsMatched(mediaFile);
   }
 
