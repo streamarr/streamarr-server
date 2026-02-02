@@ -15,11 +15,10 @@ Architecture Decision Records live in link:docs/adr/[docs/adr/].
 == Development Process
 
 1. Fork the repository and create a feature branch from `main`
-2. Follow the engineering guidelines in `CLAUDE.md`
-3. Write tests first (TDD: Red-Green-Refactor)
-4. Separate structural and behavioral changes into distinct commits
-5. Run `./mvnw verify` to ensure all tests pass
-6. Submit a pull request
+2. Write tests first (TDD: Red-Green-Refactor)
+3. Separate structural and behavioral changes into distinct commits
+4. Run `./mvnw verify` to ensure all tests pass
+5. Submit a pull request
 
 == Commit Messages
 
