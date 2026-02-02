@@ -1,6 +1,7 @@
 package com.streamarr.server.repositories.media;
 
 import static org.jooq.impl.DSL.inline;
+import static org.jooq.impl.DSL.noCondition;
 import static org.jooq.impl.DSL.row;
 
 import com.streamarr.server.domain.media.Movie;
@@ -17,6 +18,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
+import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.SortField;
 import org.jooq.SortOrder;
@@ -45,17 +47,19 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
 
     var fields = Arrays.stream(orderByColumns).map(SortField::$field).toList();
 
+    var seekCondition =
+        filter.getSortDirection().equals(SortOrder.DESC)
+            ? row(fields).lessOrEqual(seekValues)
+            : row(fields).greaterOrEqual(seekValues);
+
     var query =
         context
             .select()
             .from(Tables.MOVIE)
             .innerJoin(Tables.BASE_COLLECTABLE)
             .on(Tables.MOVIE.ID.eq(Tables.BASE_COLLECTABLE.ID))
-            // Reverses seek based on sort order
-            .where(
-                filter.getSortDirection().equals(SortOrder.DESC)
-                    ? row(fields).lessOrEqual(seekValues)
-                    : row(fields).greaterOrEqual(seekValues))
+            .where(seekCondition)
+            .and(libraryCondition(filter))
             .orderBy(orderByColumns)
             // N+2 (Allows us to efficiently check if there are items before AND after N)
             .limit(options.getPaginationOptions().getLimit() + 2);
@@ -115,10 +119,16 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
             .from(Tables.MOVIE)
             .innerJoin(Tables.BASE_COLLECTABLE)
             .on(Tables.MOVIE.ID.eq(Tables.BASE_COLLECTABLE.ID))
+            .where(libraryCondition(options.getMediaFilter()))
             .orderBy(orderByColumns)
             .limit(options.getPaginationOptions().getLimit() + 1);
 
     return nativeQuery(entityManager, query, Movie.class);
+  }
+
+  private Condition libraryCondition(MediaFilter filter) {
+    var libraryId = filter.getLibraryId();
+    return libraryId != null ? Tables.BASE_COLLECTABLE.LIBRARY_ID.eq(libraryId) : noCondition();
   }
 
   private SortField<?> buildOrderBy(MediaFilter filter) {

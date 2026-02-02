@@ -54,6 +54,7 @@ public class MovieService {
   public Connection<? extends BaseCollectable<?>> getMoviesWithFilter(
       int first, String after, int last, String before, MediaFilter filter) {
 
+    // TODO(#54): cross-library collection queries will use this null-libraryId path
     if (filter == null) {
       filter = buildDefaultMovieFilter();
     }
@@ -124,5 +125,7 @@ public class MovieService {
         "sortBy", previousFilter.getSortBy(), filter.getSortBy());
     relayPaginationService.validateCursorField(
         "sortDirection", previousFilter.getSortDirection(), filter.getSortDirection());
+    relayPaginationService.validateCursorField(
+        "libraryId", previousFilter.getLibraryId(), filter.getLibraryId());
   }
 }

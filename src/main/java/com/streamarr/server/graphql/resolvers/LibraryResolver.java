@@ -49,10 +49,13 @@ public class LibraryResolver {
     int last = dfe.getArgumentOrDefault("last", 0);
     String before = dfe.getArgument("before");
 
-    // TODO(#48): filter items by library.id
+    var effectiveFilter =
+        (filter != null ? filter.toBuilder() : MediaFilter.builder())
+            .libraryId(library.getId())
+            .build();
 
     return switch (library.getType()) {
-      case MOVIE -> movieService.getMoviesWithFilter(first, after, last, before, filter);
+      case MOVIE -> movieService.getMoviesWithFilter(first, after, last, before, effectiveFilter);
       default -> throw new UnsupportedMediaTypeException(library.getType().name());
     };
   }

@@ -2,10 +2,12 @@ package com.streamarr.server.services;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.assertj.core.api.Assertions.assertThatNoException;
 
 import com.streamarr.server.domain.BaseAuditableEntity;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.exceptions.InvalidPaginationArgumentException;
+import com.streamarr.server.graphql.cursor.InvalidCursorException;
 import com.streamarr.server.graphql.cursor.PaginationDirection;
 import com.streamarr.server.graphql.cursor.PaginationOptions;
 import graphql.relay.DefaultConnectionCursor;
@@ -448,5 +450,26 @@ public class RelayPaginationServiceTest {
     assertThat(connection.getPageInfo().getStartCursor()).isEqualTo(edges.get(1).getCursor());
     assertThat(connection.getPageInfo().isHasNextPage()).isTrue();
     assertThat(connection.getPageInfo().isHasPreviousPage()).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should not throw when validating cursor field with both values null")
+  void shouldNotThrowWhenValidatingCursorFieldWithBothValuesNull() {
+    assertThatNoException()
+        .isThrownBy(() -> relayPaginationService.validateCursorField("field", null, null));
+  }
+
+  @Test
+  @DisplayName("Should throw InvalidCursorException when prior cursor field value is null")
+  void shouldThrowWhenValidatingCursorFieldWithNullPrior() {
+    assertThatExceptionOfType(InvalidCursorException.class)
+        .isThrownBy(() -> relayPaginationService.validateCursorField("field", null, "value"));
+  }
+
+  @Test
+  @DisplayName("Should throw InvalidCursorException when current cursor field value is null")
+  void shouldThrowWhenValidatingCursorFieldWithNullCurrent() {
+    assertThatExceptionOfType(InvalidCursorException.class)
+        .isThrownBy(() -> relayPaginationService.validateCursorField("field", "value", null));
   }
 }
