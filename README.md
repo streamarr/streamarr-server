@@ -55,3 +55,9 @@ Resulting image from this build command will look like:
 #### Step 2 - Start Streamarr Server
 
 `./mvnw spring-boot:run`
+
+## Attribution
+
+<img src="https://www.themoviedb.org/assets/2/v4/logos/v2/blue_long_2-9665a76b1ae401a510ec1e0ca40ddcb3b0cfe45f1d51b77a308fea0845885571.svg" width="300" alt="TMDB logo">
+
+This product uses the [TMDB API](https://www.themoviedb.org/) but is not endorsed or certified by TMDB.

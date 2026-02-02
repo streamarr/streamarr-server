@@ -11,7 +11,7 @@ import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
 @EnableJpaAuditing
 public class PersistenceConfig {
 
-  // Placeholder auditor — replaced when authentication is implemented
+  // TODO: Placeholder auditor — replace with authenticated user's ID (see #41)
   public static class AuditorAwareImpl implements AuditorAware<UUID> {
     @Override
     public Optional<UUID> getCurrentAuditor() {
