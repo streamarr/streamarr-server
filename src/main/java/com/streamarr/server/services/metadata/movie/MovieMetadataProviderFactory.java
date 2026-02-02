@@ -5,51 +5,55 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
-import lombok.RequiredArgsConstructor;
-import org.slf4j.Logger;
-import org.springframework.stereotype.Component;
-
 import java.util.List;
 import java.util.Optional;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class MovieMetadataProviderFactory {
 
-    private final List<MetadataProvider<Movie>> movieProviders;
+  private final List<MetadataProvider<Movie>> movieProviders;
 
-    private final Logger log;
+  public Optional<RemoteSearchResult> search(
+      Library library, VideoFileParserResult videoFileParserResult) {
+    var optionalProvider = getProviderForLibrary(library);
 
-    public Optional<RemoteSearchResult> search(Library library, VideoFileParserResult videoFileParserResult) {
-        var optionalProvider = getProviderForLibrary(library);
-
-        if (optionalProvider.isEmpty()) {
-            log.error("No metadata provider found for {} library while searching for {}", library.getName(), videoFileParserResult.title());
-            return Optional.empty();
-        }
-
-        var provider = optionalProvider.get();
-
-        return provider.search(videoFileParserResult);
+    if (optionalProvider.isEmpty()) {
+      log.error(
+          "No metadata provider found for {} library while searching for {}",
+          library.getName(),
+          videoFileParserResult.title());
+      return Optional.empty();
     }
 
-    // TODO: Rename this method, it actually does more than just "getting metadata"
-    public Optional<Movie> getMetadata(RemoteSearchResult remoteSearchResult, Library library) {
-        var optionalProvider = getProviderForLibrary(library);
+    var provider = optionalProvider.get();
 
-        if (optionalProvider.isEmpty()) {
-            log.error("No metadata provider found for {} library while enriching {}", library.getName(), remoteSearchResult.title());
-            return Optional.empty();
-        }
+    return provider.search(videoFileParserResult);
+  }
 
-        var provider = optionalProvider.get();
+  public Optional<Movie> getMetadata(RemoteSearchResult remoteSearchResult, Library library) {
+    var optionalProvider = getProviderForLibrary(library);
 
-        return provider.getMetadata(remoteSearchResult, library);
+    if (optionalProvider.isEmpty()) {
+      log.error(
+          "No metadata provider found for {} library while enriching {}",
+          library.getName(),
+          remoteSearchResult.title());
+      return Optional.empty();
     }
 
-    private Optional<MetadataProvider<Movie>> getProviderForLibrary(Library library) {
-        return movieProviders.stream()
-            .filter(provider -> library.getExternalAgentStrategy().equals(provider.getAgentStrategy()))
-            .findFirst();
-    }
+    var provider = optionalProvider.get();
+
+    return provider.getMetadata(remoteSearchResult, library);
+  }
+
+  private Optional<MetadataProvider<Movie>> getProviderForLibrary(Library library) {
+    return movieProviders.stream()
+        .filter(provider -> library.getExternalAgentStrategy().equals(provider.getAgentStrategy()))
+        .findFirst();
+  }
 }
