@@ -16,12 +16,12 @@ public class PersonService {
   private final PersonRepository personRepository;
   private final PersonMappers personMappers;
 
+  @Transactional
   public List<Person> getOrCreatePersons(List<Person> persons) {
     return persons.stream().map(this::savePerson).collect(Collectors.toList());
   }
 
-  @Transactional
-  public Person savePerson(Person person) {
+  private Person savePerson(Person person) {
     var existingPerson = personRepository.findPersonBySourceId(person.getSourceId());
 
     if (existingPerson.isPresent()) {
