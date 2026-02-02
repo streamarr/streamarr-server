@@ -170,7 +170,7 @@ public class ExternalIdentifier extends TableImpl<ExternalIdentifierRecord> {
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.EXTERNAL_IDENTIFIER_ID_IDX);
+        return Arrays.asList(Indexes.EXTERNAL_IDENTIFIER_ID_IDX, Indexes.IDX_EXTERNAL_IDENTIFIER_ENTITY_ID);
     }
 
     @Override

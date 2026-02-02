@@ -6,6 +6,8 @@ package com.streamarr.server.jooq.generated.tables;
 
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
+import com.streamarr.server.jooq.generated.tables.Movie.MoviePath;
+import com.streamarr.server.jooq.generated.tables.MovieDirector.MovieDirectorPath;
 import com.streamarr.server.jooq.generated.tables.MoviePerson.MoviePersonPath;
 import com.streamarr.server.jooq.generated.tables.records.PersonRecord;
 
@@ -93,6 +95,11 @@ public class Person extends TableImpl<PersonRecord> {
      */
     public final TableField<PersonRecord, String> SOURCE_ID = createField(DSL.name("source_id"), SQLDataType.CLOB.nullable(false), this, "");
 
+    /**
+     * The column <code>public.person.profile_path</code>.
+     */
+    public final TableField<PersonRecord, String> PROFILE_PATH = createField(DSL.name("profile_path"), SQLDataType.CLOB, this, "");
+
     private Person(Name alias, Table<PersonRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -170,6 +177,19 @@ public class Person extends TableImpl<PersonRecord> {
         return Arrays.asList(Keys.PERSON_UC);
     }
 
+    private transient MovieDirectorPath _movieDirector;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.movie_director</code> table
+     */
+    public MovieDirectorPath movieDirector() {
+        if (_movieDirector == null)
+            _movieDirector = new MovieDirectorPath(this, null, Keys.MOVIE_DIRECTOR__MOVIE_DIRECTOR_PERSON_ID_FKEY.getInverseKey());
+
+        return _movieDirector;
+    }
+
     private transient MoviePersonPath _moviePerson;
 
     /**
@@ -181,6 +201,14 @@ public class Person extends TableImpl<PersonRecord> {
             _moviePerson = new MoviePersonPath(this, null, Keys.MOVIE_PERSON__MOVIE_PERSON_PERSON_ID_FKEY.getInverseKey());
 
         return _moviePerson;
+    }
+
+    /**
+     * Get the implicit many-to-many join path to the <code>public.movie</code>
+     * table
+     */
+    public MoviePath movie() {
+        return movieDirector().movie();
     }
 
     @Override

@@ -7,8 +7,12 @@ package com.streamarr.server.jooq.generated.tables;
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable.BaseCollectablePath;
+import com.streamarr.server.jooq.generated.tables.Genre.GenrePath;
 import com.streamarr.server.jooq.generated.tables.MovieCompany.MovieCompanyPath;
+import com.streamarr.server.jooq.generated.tables.MovieDirector.MovieDirectorPath;
+import com.streamarr.server.jooq.generated.tables.MovieGenre.MovieGenrePath;
 import com.streamarr.server.jooq.generated.tables.MoviePerson.MoviePersonPath;
+import com.streamarr.server.jooq.generated.tables.Person.PersonPath;
 import com.streamarr.server.jooq.generated.tables.Rating.RatingPath;
 import com.streamarr.server.jooq.generated.tables.Review.ReviewPath;
 import com.streamarr.server.jooq.generated.tables.records.MovieRecord;
@@ -106,6 +110,11 @@ public class Movie extends TableImpl<MovieRecord> {
      * The column <code>public.movie.content_rating_country</code>.
      */
     public final TableField<MovieRecord, String> CONTENT_RATING_COUNTRY = createField(DSL.name("content_rating_country"), SQLDataType.VARCHAR(5), this, "");
+
+    /**
+     * The column <code>public.movie.runtime</code>.
+     */
+    public final TableField<MovieRecord, Integer> RUNTIME = createField(DSL.name("runtime"), SQLDataType.INTEGER, this, "");
 
     private Movie(Name alias, Table<MovieRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
@@ -236,6 +245,32 @@ public class Movie extends TableImpl<MovieRecord> {
         return _movieCompany;
     }
 
+    private transient MovieDirectorPath _movieDirector;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.movie_director</code> table
+     */
+    public MovieDirectorPath movieDirector() {
+        if (_movieDirector == null)
+            _movieDirector = new MovieDirectorPath(this, null, Keys.MOVIE_DIRECTOR__MOVIE_DIRECTOR_MOVIE_ID_FKEY.getInverseKey());
+
+        return _movieDirector;
+    }
+
+    private transient MovieGenrePath _movieGenre;
+
+    /**
+     * Get the implicit to-many join path to the <code>public.movie_genre</code>
+     * table
+     */
+    public MovieGenrePath movieGenre() {
+        if (_movieGenre == null)
+            _movieGenre = new MovieGenrePath(this, null, Keys.MOVIE_GENRE__MOVIE_GENRE_MOVIE_ID_FKEY.getInverseKey());
+
+        return _movieGenre;
+    }
+
     private transient MoviePersonPath _moviePerson;
 
     /**
@@ -247,6 +282,22 @@ public class Movie extends TableImpl<MovieRecord> {
             _moviePerson = new MoviePersonPath(this, null, Keys.MOVIE_PERSON__MOVIE_PERSON_MOVIE_ID_FKEY.getInverseKey());
 
         return _moviePerson;
+    }
+
+    /**
+     * Get the implicit many-to-many join path to the <code>public.person</code>
+     * table
+     */
+    public PersonPath person() {
+        return movieDirector().person();
+    }
+
+    /**
+     * Get the implicit many-to-many join path to the <code>public.genre</code>
+     * table
+     */
+    public GenrePath genre() {
+        return movieGenre().genre();
     }
 
     @Override

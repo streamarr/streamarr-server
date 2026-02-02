@@ -147,6 +147,20 @@ public class MovieRecord extends UpdatableRecordImpl<MovieRecord> {
         return (String) get(8);
     }
 
+    /**
+     * Setter for <code>public.movie.runtime</code>.
+     */
+    public void setRuntime(Integer value) {
+        set(9, value);
+    }
+
+    /**
+     * Getter for <code>public.movie.runtime</code>.
+     */
+    public Integer getRuntime() {
+        return (Integer) get(9);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -170,7 +184,7 @@ public class MovieRecord extends UpdatableRecordImpl<MovieRecord> {
     /**
      * Create a detached, initialised MovieRecord
      */
-    public MovieRecord(UUID id, String backdropPath, String posterPath, String tagline, String summary, LocalDate releaseDate, String contentRatingSystem, String contentRatingValue, String contentRatingCountry) {
+    public MovieRecord(UUID id, String backdropPath, String posterPath, String tagline, String summary, LocalDate releaseDate, String contentRatingSystem, String contentRatingValue, String contentRatingCountry, Integer runtime) {
         super(Movie.MOVIE);
 
         setId(id);
@@ -182,6 +196,7 @@ public class MovieRecord extends UpdatableRecordImpl<MovieRecord> {
         setContentRatingSystem(contentRatingSystem);
         setContentRatingValue(contentRatingValue);
         setContentRatingCountry(contentRatingCountry);
+        setRuntime(runtime);
         resetTouchedOnNotNull();
     }
 }

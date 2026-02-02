@@ -4,6 +4,7 @@
 package com.streamarr.server.jooq.generated.tables;
 
 
+import com.streamarr.server.jooq.generated.Indexes;
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.tables.Movie.MoviePath;
@@ -19,6 +20,7 @@ import java.util.UUID;
 import org.jooq.Condition;
 import org.jooq.Field;
 import org.jooq.ForeignKey;
+import org.jooq.Index;
 import org.jooq.InverseForeignKey;
 import org.jooq.Name;
 import org.jooq.Path;
@@ -149,6 +151,11 @@ public class MoviePerson extends TableImpl<MoviePersonRecord> {
     @Override
     public Schema getSchema() {
         return aliased() ? null : Public.PUBLIC;
+    }
+
+    @Override
+    public List<Index> getIndexes() {
+        return Arrays.asList(Indexes.IDX_MOVIE_PERSON_MOVIE_ID, Indexes.IDX_MOVIE_PERSON_PERSON_ID);
     }
 
     @Override

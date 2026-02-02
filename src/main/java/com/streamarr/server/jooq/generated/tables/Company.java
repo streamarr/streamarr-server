@@ -10,7 +10,9 @@ import com.streamarr.server.jooq.generated.tables.MovieCompany.MovieCompanyPath;
 import com.streamarr.server.jooq.generated.tables.records.CompanyRecord;
 
 import java.time.OffsetDateTime;
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.List;
 import java.util.UUID;
 
 import org.jooq.Condition;
@@ -91,6 +93,11 @@ public class Company extends TableImpl<CompanyRecord> {
      */
     public final TableField<CompanyRecord, String> SOURCE_ID = createField(DSL.name("source_id"), SQLDataType.CLOB.nullable(false), this, "");
 
+    /**
+     * The column <code>public.company.logo_path</code>.
+     */
+    public final TableField<CompanyRecord, String> LOGO_PATH = createField(DSL.name("logo_path"), SQLDataType.CLOB, this, "");
+
     private Company(Name alias, Table<CompanyRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -161,6 +168,11 @@ public class Company extends TableImpl<CompanyRecord> {
     @Override
     public UniqueKey<CompanyRecord> getPrimaryKey() {
         return Keys.COMPANY_PKEY;
+    }
+
+    @Override
+    public List<UniqueKey<CompanyRecord>> getUniqueKeys() {
+        return Arrays.asList(Keys.COMPANY_SOURCE_ID_UNIQUE);
     }
 
     private transient MovieCompanyPath _movieCompany;

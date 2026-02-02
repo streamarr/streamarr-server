@@ -119,6 +119,34 @@ public class BaseCollectableRecord extends UpdatableRecordImpl<BaseCollectableRe
         return (UUID) get(6);
     }
 
+    /**
+     * Setter for <code>public.base_collectable.original_title</code>.
+     */
+    public void setOriginalTitle(String value) {
+        set(7, value);
+    }
+
+    /**
+     * Getter for <code>public.base_collectable.original_title</code>.
+     */
+    public String getOriginalTitle() {
+        return (String) get(7);
+    }
+
+    /**
+     * Setter for <code>public.base_collectable.title_sort</code>.
+     */
+    public void setTitleSort(String value) {
+        set(8, value);
+    }
+
+    /**
+     * Getter for <code>public.base_collectable.title_sort</code>.
+     */
+    public String getTitleSort() {
+        return (String) get(8);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -142,7 +170,7 @@ public class BaseCollectableRecord extends UpdatableRecordImpl<BaseCollectableRe
     /**
      * Create a detached, initialised BaseCollectableRecord
      */
-    public BaseCollectableRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, String title, UUID libraryId) {
+    public BaseCollectableRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, String title, UUID libraryId, String originalTitle, String titleSort) {
         super(BaseCollectable.BASE_COLLECTABLE);
 
         setId(id);
@@ -152,6 +180,8 @@ public class BaseCollectableRecord extends UpdatableRecordImpl<BaseCollectableRe
         setLastModifiedBy(lastModifiedBy);
         setTitle(title);
         setLibraryId(libraryId);
+        setOriginalTitle(originalTitle);
+        setTitleSort(titleSort);
         resetTouchedOnNotNull();
     }
 }

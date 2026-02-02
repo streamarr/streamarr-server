@@ -4,9 +4,16 @@
 package com.streamarr.server.jooq.generated;
 
 
+import com.streamarr.server.jooq.generated.tables.BaseCollectable;
 import com.streamarr.server.jooq.generated.tables.ExternalIdentifier;
 import com.streamarr.server.jooq.generated.tables.Library;
 import com.streamarr.server.jooq.generated.tables.MediaFile;
+import com.streamarr.server.jooq.generated.tables.MovieCompany;
+import com.streamarr.server.jooq.generated.tables.MovieDirector;
+import com.streamarr.server.jooq.generated.tables.MovieGenre;
+import com.streamarr.server.jooq.generated.tables.MoviePerson;
+import com.streamarr.server.jooq.generated.tables.Rating;
+import com.streamarr.server.jooq.generated.tables.Review;
 import com.streamarr.server.jooq.generated.tables.SchemaHistory;
 
 import org.jooq.Index;
@@ -26,6 +33,23 @@ public class Indexes {
     // -------------------------------------------------------------------------
 
     public static final Index EXTERNAL_IDENTIFIER_ID_IDX = Internal.createIndex(DSL.name("external_identifier_id_idx"), ExternalIdentifier.EXTERNAL_IDENTIFIER, new OrderField[] { ExternalIdentifier.EXTERNAL_IDENTIFIER.ID }, true);
+    public static final Index IDX_BASE_COLLECTABLE_LIBRARY_CREATED_ID = Internal.createIndex(DSL.name("idx_base_collectable_library_created_id"), BaseCollectable.BASE_COLLECTABLE, new OrderField[] { BaseCollectable.BASE_COLLECTABLE.LIBRARY_ID, BaseCollectable.BASE_COLLECTABLE.CREATED_ON, BaseCollectable.BASE_COLLECTABLE.ID }, false);
+    public static final Index IDX_BASE_COLLECTABLE_LIBRARY_ID = Internal.createIndex(DSL.name("idx_base_collectable_library_id"), BaseCollectable.BASE_COLLECTABLE, new OrderField[] { BaseCollectable.BASE_COLLECTABLE.LIBRARY_ID }, false);
+    public static final Index IDX_BASE_COLLECTABLE_LIBRARY_TITLE_ID = Internal.createIndex(DSL.name("idx_base_collectable_library_title_id"), BaseCollectable.BASE_COLLECTABLE, new OrderField[] { BaseCollectable.BASE_COLLECTABLE.LIBRARY_ID, BaseCollectable.BASE_COLLECTABLE.TITLE, BaseCollectable.BASE_COLLECTABLE.ID }, false);
+    public static final Index IDX_BASE_COLLECTABLE_LIBRARY_TITLESORT_ID = Internal.createIndex(DSL.name("idx_base_collectable_library_titlesort_id"), BaseCollectable.BASE_COLLECTABLE, new OrderField[] { BaseCollectable.BASE_COLLECTABLE.LIBRARY_ID, BaseCollectable.BASE_COLLECTABLE.TITLE_SORT, BaseCollectable.BASE_COLLECTABLE.ID }, false);
+    public static final Index IDX_EXTERNAL_IDENTIFIER_ENTITY_ID = Internal.createIndex(DSL.name("idx_external_identifier_entity_id"), ExternalIdentifier.EXTERNAL_IDENTIFIER, new OrderField[] { ExternalIdentifier.EXTERNAL_IDENTIFIER.ENTITY_ID }, false);
+    public static final Index IDX_MEDIA_FILE_LIBRARY_ID = Internal.createIndex(DSL.name("idx_media_file_library_id"), MediaFile.MEDIA_FILE, new OrderField[] { MediaFile.MEDIA_FILE.LIBRARY_ID }, false);
+    public static final Index IDX_MEDIA_FILE_MEDIA_ID = Internal.createIndex(DSL.name("idx_media_file_media_id"), MediaFile.MEDIA_FILE, new OrderField[] { MediaFile.MEDIA_FILE.MEDIA_ID }, false);
+    public static final Index IDX_MOVIE_COMPANY_COMPANY_ID = Internal.createIndex(DSL.name("idx_movie_company_company_id"), MovieCompany.MOVIE_COMPANY, new OrderField[] { MovieCompany.MOVIE_COMPANY.COMPANY_ID }, false);
+    public static final Index IDX_MOVIE_COMPANY_MOVIE_ID = Internal.createIndex(DSL.name("idx_movie_company_movie_id"), MovieCompany.MOVIE_COMPANY, new OrderField[] { MovieCompany.MOVIE_COMPANY.MOVIE_ID }, false);
+    public static final Index IDX_MOVIE_DIRECTOR_MOVIE_ID = Internal.createIndex(DSL.name("idx_movie_director_movie_id"), MovieDirector.MOVIE_DIRECTOR, new OrderField[] { MovieDirector.MOVIE_DIRECTOR.MOVIE_ID }, false);
+    public static final Index IDX_MOVIE_DIRECTOR_PERSON_ID = Internal.createIndex(DSL.name("idx_movie_director_person_id"), MovieDirector.MOVIE_DIRECTOR, new OrderField[] { MovieDirector.MOVIE_DIRECTOR.PERSON_ID }, false);
+    public static final Index IDX_MOVIE_GENRE_GENRE_ID = Internal.createIndex(DSL.name("idx_movie_genre_genre_id"), MovieGenre.MOVIE_GENRE, new OrderField[] { MovieGenre.MOVIE_GENRE.GENRE_ID }, false);
+    public static final Index IDX_MOVIE_GENRE_MOVIE_ID = Internal.createIndex(DSL.name("idx_movie_genre_movie_id"), MovieGenre.MOVIE_GENRE, new OrderField[] { MovieGenre.MOVIE_GENRE.MOVIE_ID }, false);
+    public static final Index IDX_MOVIE_PERSON_MOVIE_ID = Internal.createIndex(DSL.name("idx_movie_person_movie_id"), MoviePerson.MOVIE_PERSON, new OrderField[] { MoviePerson.MOVIE_PERSON.MOVIE_ID }, false);
+    public static final Index IDX_MOVIE_PERSON_PERSON_ID = Internal.createIndex(DSL.name("idx_movie_person_person_id"), MoviePerson.MOVIE_PERSON, new OrderField[] { MoviePerson.MOVIE_PERSON.PERSON_ID }, false);
+    public static final Index IDX_RATING_MOVIE_ID = Internal.createIndex(DSL.name("idx_rating_movie_id"), Rating.RATING, new OrderField[] { Rating.RATING.MOVIE_ID }, false);
+    public static final Index IDX_REVIEW_MOVIE_ID = Internal.createIndex(DSL.name("idx_review_movie_id"), Review.REVIEW, new OrderField[] { Review.REVIEW.MOVIE_ID }, false);
     public static final Index LIBRARY_FILE_PATH_IDX = Internal.createIndex(DSL.name("library_file_path_idx"), Library.LIBRARY, new OrderField[] { Library.LIBRARY.FILEPATH }, true);
     public static final Index MEDIA_FILE_FILEPATH_IDX = Internal.createIndex(DSL.name("media_file_filepath_idx"), MediaFile.MEDIA_FILE, new OrderField[] { MediaFile.MEDIA_FILE.FILEPATH }, true);
     public static final Index SCHEMA_HISTORY_S_IDX = Internal.createIndex(DSL.name("schema_history_s_idx"), SchemaHistory.SCHEMA_HISTORY, new OrderField[] { SchemaHistory.SCHEMA_HISTORY.SUCCESS }, false);

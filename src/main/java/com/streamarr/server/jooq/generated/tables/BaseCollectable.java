@@ -4,6 +4,7 @@
 package com.streamarr.server.jooq.generated.tables;
 
 
+import com.streamarr.server.jooq.generated.Indexes;
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.tables.ExternalIdentifier.ExternalIdentifierPath;
@@ -22,6 +23,7 @@ import java.util.UUID;
 import org.jooq.Condition;
 import org.jooq.Field;
 import org.jooq.ForeignKey;
+import org.jooq.Index;
 import org.jooq.InverseForeignKey;
 import org.jooq.Name;
 import org.jooq.Path;
@@ -97,6 +99,16 @@ public class BaseCollectable extends TableImpl<BaseCollectableRecord> {
      */
     public final TableField<BaseCollectableRecord, UUID> LIBRARY_ID = createField(DSL.name("library_id"), SQLDataType.UUID.nullable(false), this, "");
 
+    /**
+     * The column <code>public.base_collectable.original_title</code>.
+     */
+    public final TableField<BaseCollectableRecord, String> ORIGINAL_TITLE = createField(DSL.name("original_title"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>public.base_collectable.title_sort</code>.
+     */
+    public final TableField<BaseCollectableRecord, String> TITLE_SORT = createField(DSL.name("title_sort"), SQLDataType.CLOB, this, "");
+
     private BaseCollectable(Name alias, Table<BaseCollectableRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -162,6 +174,11 @@ public class BaseCollectable extends TableImpl<BaseCollectableRecord> {
     @Override
     public Schema getSchema() {
         return aliased() ? null : Public.PUBLIC;
+    }
+
+    @Override
+    public List<Index> getIndexes() {
+        return Arrays.asList(Indexes.IDX_BASE_COLLECTABLE_LIBRARY_CREATED_ID, Indexes.IDX_BASE_COLLECTABLE_LIBRARY_ID, Indexes.IDX_BASE_COLLECTABLE_LIBRARY_TITLE_ID, Indexes.IDX_BASE_COLLECTABLE_LIBRARY_TITLESORT_ID);
     }
 
     @Override
