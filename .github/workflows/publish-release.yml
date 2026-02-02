@@ -27,7 +27,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Install pack CLI
-        uses: buildpacks/github-actions/setup-pack@f7c510438b6d0d7f3326d2765ce0d11728c75285 # v5.7.4
+        uses: buildpacks/github-actions/setup-pack@f3ec16c6d708761c6e87bbc8fe7f97375f80e7cd # v5.10.1
 
       - name: Build with pack CLI & publish to Docker Hub
         run: |
