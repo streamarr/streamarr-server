@@ -54,6 +54,7 @@ public class MovieService {
   public Connection<? extends BaseCollectable<?>> getMoviesWithFilter(
       int first, String after, int last, String before, MediaFilter filter) {
 
+    // TODO(#54): cross-library collection queries will use this null-libraryId path
     if (filter == null) {
       filter = buildDefaultMovieFilter();
     }
