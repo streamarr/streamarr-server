@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class ImageThumbnailService {
 
+  // TODO(#37): generate multiple thumbnail sizes and blur-up placeholder
   public byte[] convertImageToThumbnails(byte[] imageData) {
     if (imageData == null) {
       throw new ImageProcessingException("Image input data must not be null.");
