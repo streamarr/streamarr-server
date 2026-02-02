@@ -1,6 +1,9 @@
 package com.streamarr.server.graphql.resolvers;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.when;
 
 import com.netflix.graphql.dgs.DgsQueryExecutor;
@@ -10,9 +13,15 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaType;
+import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.library.LibraryManagementService;
+import graphql.relay.DefaultConnection;
+import graphql.relay.DefaultConnectionCursor;
+import graphql.relay.DefaultEdge;
+import graphql.relay.DefaultPageInfo;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -79,5 +88,75 @@ class LibraryResolverTest {
 
     assertThat(result.getErrors()).isNotEmpty();
     assertThat(result.getErrors().get(0).getMessage()).contains("Invalid ID format");
+  }
+
+  @Test
+  @DisplayName("Should return paginated items when library queried")
+  void shouldReturnPaginatedItemsWhenLibraryQueried() {
+    var libraryId = UUID.randomUUID();
+    var library =
+        Library.builder()
+            .name("Movies")
+            .filepath("/mpool/media/movies")
+            .status(LibraryStatus.HEALTHY)
+            .backend(LibraryBackend.LOCAL)
+            .type(MediaType.MOVIE)
+            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+            .build();
+    library.setId(libraryId);
+
+    var movie = Movie.builder().title("Inception").build();
+    movie.setId(UUID.randomUUID());
+
+    var cursor = new DefaultConnectionCursor("cursor1");
+    var connection =
+        new DefaultConnection<>(
+            List.of(new DefaultEdge<>(movie, cursor)),
+            new DefaultPageInfo(cursor, cursor, false, false));
+
+    when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
+    doReturn(connection)
+        .when(movieService)
+        .getMoviesWithFilter(anyInt(), any(), anyInt(), any(), any());
+
+    String title =
+        dgsQueryExecutor.executeAndExtractJsonPath(
+            String.format(
+                """
+                { library(id: "%s") { items(first: 10) { edges { node { ... on Movie { title } } cursor } pageInfo { hasNextPage } } } }
+                """,
+                libraryId),
+            "data.library.items.edges[0].node.title");
+
+    assertThat(title).isEqualTo("Inception");
+  }
+
+  @Test
+  @DisplayName("Should return error when unsupported media type in items")
+  void shouldReturnErrorWhenUnsupportedMediaTypeInItems() {
+    var libraryId = UUID.randomUUID();
+    var library =
+        Library.builder()
+            .name("TV Shows")
+            .filepath("/mpool/media/shows")
+            .status(LibraryStatus.HEALTHY)
+            .backend(LibraryBackend.LOCAL)
+            .type(MediaType.SERIES)
+            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+            .build();
+    library.setId(libraryId);
+
+    when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
+
+    var result =
+        dgsQueryExecutor.execute(
+            String.format(
+                """
+                { library(id: "%s") { items(first: 10) { edges { node { ... on Movie { title } } } } } }
+                """,
+                libraryId));
+
+    assertThat(result.getErrors()).isNotEmpty();
+    assertThat(result.getErrors().get(0).getMessage()).contains("Unsupported media type");
   }
 }
