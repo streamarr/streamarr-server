@@ -27,4 +27,23 @@ public class Company extends BaseAuditableEntity<Company> {
 
   @ManyToMany(mappedBy = "studios", fetch = FetchType.LAZY)
   private Set<Movie> movies = new HashSet<>();
+
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
+
+    Company that = (Company) o;
+
+    return sourceId != null && sourceId.equals(that.getSourceId());
+  }
+
+  @Override
+  public int hashCode() {
+    return getClass().hashCode();
+  }
 }
