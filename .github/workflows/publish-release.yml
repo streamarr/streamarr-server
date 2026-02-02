@@ -1,6 +1,7 @@
 name: Release Publisher
 
 on:
+  workflow_dispatch:
   release:
     types:
       - released
@@ -33,8 +34,8 @@ jobs:
         run: |
           pack build index.docker.io/streamarr/streamarr-server:latest \
               --tag streamarr/streamarr-server:${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }} \
-              --builder paketobuildpacks/builder:base \
-              --env BP_JVM_VERSION=25.* \
+              --builder paketobuildpacks/builder-jammy-base \
+              --env BP_JVM_VERSION=25 \
               --path . \
               --cache-image index.docker.io/streamarr/spring-boot-buildpack-paketo-cache-image:latest \
               --publish
