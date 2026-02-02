@@ -16,7 +16,6 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
 import org.jooq.SortField;
@@ -44,7 +43,7 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
         };
     var seekValues = new Object[] {filter.getPreviousSortFieldValue(), options.getCursorId()};
 
-    var fields = Arrays.stream(orderByColumns).map(SortField::$field).collect(Collectors.toList());
+    var fields = Arrays.stream(orderByColumns).map(SortField::$field).toList();
 
     var query =
         context
