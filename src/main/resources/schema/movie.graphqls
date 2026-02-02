@@ -10,10 +10,16 @@ type Movie implements BaseCollectable {
     releaseDate: String
     backdropPath: String
     posterPath: String
-    contentRating: String
+    contentRating: ContentRating
     files: [MediaFile]!
     studios: [Company]!
     cast: [Person]!
     ratings: [Rating]!
     reviews: [Review]!
+}
+
+type ContentRating {
+    system: String!
+    value: String!
+    country: String!
 }
