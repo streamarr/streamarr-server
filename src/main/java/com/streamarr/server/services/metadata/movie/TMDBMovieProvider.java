@@ -69,6 +69,7 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
 
       var credits = Optional.ofNullable(tmdbMovie.getCredits());
       var castList = credits.map(TmdbCredits::getCast).orElse(Collections.emptyList());
+      var crewList = credits.map(TmdbCredits::getCrew).orElse(Collections.emptyList());
       var releaseDateResults = Optional.ofNullable(tmdbMovie.getReleaseDates());
       var productionCompanies =
           Optional.ofNullable(tmdbMovie.getProductionCompanies()).orElse(Collections.emptyList());
@@ -109,6 +110,16 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
                               Person.builder()
                                   .sourceId(String.valueOf(credit.getId()))
                                   .name(credit.getName())
+                                  .build())
+                      .collect(Collectors.toList()))
+              .directors(
+                  crewList.stream()
+                      .filter(crew -> "Director".equals(crew.getJob()))
+                      .map(
+                          crew ->
+                              Person.builder()
+                                  .sourceId(String.valueOf(crew.getId()))
+                                  .name(crew.getName())
                                   .build())
                       .collect(Collectors.toList()));
 

@@ -76,6 +76,17 @@ public class Movie extends BaseCollectable<Movie> {
   private List<Person> cast = new ArrayList<>();
 
   @Builder.Default
+  @ManyToMany(
+      cascade = {CascadeType.MERGE},
+      fetch = FetchType.LAZY)
+  @JoinTable(
+      name = "movie_director",
+      joinColumns = @JoinColumn(name = "movie_id"),
+      inverseJoinColumns = @JoinColumn(name = "person_id"))
+  @OrderColumn(name = "ordinal")
+  private List<Person> directors = new ArrayList<>();
+
+  @Builder.Default
   @OneToMany(fetch = FetchType.LAZY, mappedBy = "movie")
   private Set<Rating> ratings = new HashSet<>();
 

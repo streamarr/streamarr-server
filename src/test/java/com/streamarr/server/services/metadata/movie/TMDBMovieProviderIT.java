@@ -308,6 +308,16 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should map directors when TMDB response includes crew")
+  void shouldMapDirectorsWhenResponseIncludesCrew() {
+    var movie = getMetadataFromFullResponse();
+
+    assertThat(movie.getDirectors()).hasSize(1);
+    assertThat(movie.getDirectors().get(0).getName()).isEqualTo("Christopher Nolan");
+    assertThat(movie.getDirectors().get(0).getSourceId()).isEqualTo("525");
+  }
+
+  @Test
   @DisplayName("Should map runtime when TMDB response includes runtime")
   void shouldMapRuntimeWhenResponseIncludesRuntime() {
     var movie = getMetadataFromFullResponse();

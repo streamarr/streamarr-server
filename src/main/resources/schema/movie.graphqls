@@ -15,6 +15,7 @@ type Movie implements BaseCollectable {
     files: [MediaFile]!
     studios: [Company]!
     cast: [Person]!
+    directors: [Person]!
     ratings: [Rating]!
     reviews: [Review]!
 }
