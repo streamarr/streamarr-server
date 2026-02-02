@@ -294,11 +294,11 @@ public class LibraryManagementService {
     }
 
     var cast = movieToSave.get().getCast();
-    var savedCast = personService.getOrCreateCast(cast);
+    var savedCast = personService.getOrCreatePersons(cast);
     movieToSave.get().setCast(savedCast);
 
     var directors = movieToSave.get().getDirectors();
-    var savedDirectors = personService.getOrCreateCast(directors);
+    var savedDirectors = personService.getOrCreatePersons(directors);
     movieToSave.get().setDirectors(savedDirectors);
 
     var genres = movieToSave.get().getGenres();

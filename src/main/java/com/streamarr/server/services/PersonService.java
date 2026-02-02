@@ -16,8 +16,8 @@ public class PersonService {
   private final PersonRepository personRepository;
   private final PersonMappers personMappers;
 
-  public List<Person> getOrCreateCast(List<Person> cast) {
-    return cast.stream().map(this::savePerson).collect(Collectors.toList());
+  public List<Person> getOrCreatePersons(List<Person> persons) {
+    return persons.stream().map(this::savePerson).collect(Collectors.toList());
   }
 
   @Transactional
