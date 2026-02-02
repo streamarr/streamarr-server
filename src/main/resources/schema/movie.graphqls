@@ -5,6 +5,8 @@ type Movie implements BaseCollectable {
     lastModifiedBy: String
     lastModifiedOn: String!
     title: String
+    originalTitle: String
+    titleSort: String
     tagline: String
     summary: String
     runtime: Int

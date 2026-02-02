@@ -15,6 +15,7 @@ import com.streamarr.server.services.metadata.TheMovieDatabaseHttpService;
 import com.streamarr.server.services.metadata.tmdb.TmdbCredits;
 import com.streamarr.server.services.metadata.tmdb.TmdbMovie;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
+import com.streamarr.server.utils.TitleSortUtil;
 import java.io.IOException;
 import java.time.LocalDate;
 import java.util.Collections;
@@ -97,6 +98,8 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
               .backdropPath(tmdbMovie.getBackdropPath())
               .posterPath(tmdbMovie.getPosterPath())
               .runtime(tmdbMovie.getRuntime())
+              .originalTitle(tmdbMovie.getOriginalTitle())
+              .titleSort(TitleSortUtil.computeTitleSort(tmdbMovie.getTitle()))
               .studios(
                   productionCompanies.stream()
                       .map(

@@ -308,6 +308,15 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should map original title and compute title sort when TMDB response includes original title")
+  void shouldMapOriginalTitleAndComputeTitleSortWhenResponseIncludesOriginalTitle() {
+    var movie = getMetadataFromFullResponse();
+
+    assertThat(movie.getOriginalTitle()).isEqualTo("Inception");
+    assertThat(movie.getTitleSort()).isEqualTo("Inception");
+  }
+
+  @Test
   @DisplayName("Should map genres when TMDB response includes genres")
   void shouldMapGenresWhenResponseIncludesGenres() {
     var movie = getMetadataFromFullResponse();
@@ -444,6 +453,7 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
                           "vote_count": 30000,
                           "video": false,
                           "status": "Released",
+                          "original_title": "Inception",
                           "imdb_id": "tt1375666",
                           "genres": [
                             {"id": 28, "name": "Action"},
