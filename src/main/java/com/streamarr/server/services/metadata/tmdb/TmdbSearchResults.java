@@ -1,12 +1,11 @@
-package com.streamarr.server.domain.external.tmdb;
+package com.streamarr.server.services.metadata.tmdb;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-
-import java.util.List;
 
 @Getter
 @Builder
@@ -14,10 +13,12 @@ import java.util.List;
 @AllArgsConstructor
 public class TmdbSearchResults {
 
-    private int page;
-    private List<TmdbSearchResult> results;
-    @JsonProperty("total_results")
-    private int totalResults;
-    @JsonProperty("total_pages")
-    private int totalPages;
+  private int page;
+  private List<TmdbSearchResult> results;
+
+  @JsonProperty("total_results")
+  private int totalResults;
+
+  @JsonProperty("total_pages")
+  private int totalPages;
 }

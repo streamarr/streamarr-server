@@ -1,4 +1,4 @@
-package com.streamarr.server.domain.external.tmdb;
+package com.streamarr.server.services.metadata.tmdb;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
@@ -12,12 +12,15 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class TmdbExternalIds {
 
-    @JsonProperty("imdb_id")
-    private String imdbId;
-    @JsonProperty("facebook_id")
-    private String facebookId;
-    @JsonProperty("instagram_id")
-    private String instagramId;
-    @JsonProperty("twitter_id")
-    private String twitterId;
+  @JsonProperty("imdb_id")
+  private String imdbId;
+
+  @JsonProperty("facebook_id")
+  private String facebookId;
+
+  @JsonProperty("instagram_id")
+  private String instagramId;
+
+  @JsonProperty("twitter_id")
+  private String twitterId;
 }

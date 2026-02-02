@@ -1,4 +1,4 @@
-package com.streamarr.server.domain.external.tmdb;
+package com.streamarr.server.services.metadata.tmdb;
 
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -9,6 +9,6 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class TmdbGenre {
 
-    private int id;
-    private String name;
+  private int id;
+  private String name;
 }

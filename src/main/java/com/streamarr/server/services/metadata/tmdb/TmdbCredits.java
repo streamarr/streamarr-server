@@ -1,11 +1,10 @@
-package com.streamarr.server.domain.external.tmdb;
+package com.streamarr.server.services.metadata.tmdb;
 
+import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-
-import java.util.List;
 
 @Getter
 @Builder
@@ -13,7 +12,7 @@ import java.util.List;
 @AllArgsConstructor
 public class TmdbCredits {
 
-    private int id;
-    private List<TmdbCredit> cast;
-    private List<TmdbCredit> crew;
+  private int id;
+  private List<TmdbCredit> cast;
+  private List<TmdbCredit> crew;
 }

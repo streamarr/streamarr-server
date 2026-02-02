@@ -1,11 +1,10 @@
-package com.streamarr.server.domain.external.tmdb;
+package com.streamarr.server.services.metadata.tmdb;
 
+import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-
-import java.util.List;
 
 @Getter
 @Builder
@@ -13,5 +12,5 @@ import java.util.List;
 @AllArgsConstructor
 public class TmdbReleases {
 
-    private List<TmdbRelease> countries;
+  private List<TmdbRelease> countries;
 }

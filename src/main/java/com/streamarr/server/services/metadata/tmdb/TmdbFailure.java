@@ -1,4 +1,4 @@
-package com.streamarr.server.domain.external.tmdb;
+package com.streamarr.server.services.metadata.tmdb;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
@@ -12,9 +12,11 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class TmdbFailure {
 
-    @JsonProperty("status_message")
-    private String statusMessage;
-    private boolean success;
-    @JsonProperty("status_code")
-    private int statusCode;
+  @JsonProperty("status_message")
+  private String statusMessage;
+
+  private boolean success;
+
+  @JsonProperty("status_code")
+  private int statusCode;
 }
