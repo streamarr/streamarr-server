@@ -20,7 +20,7 @@ public class TmdbMovie {
   private String backdropPath;
 
   @JsonProperty("belongs_to_collection")
-  private Object belongsToCollection;
+  private TmdbCollection belongsToCollection;
 
   private Long budget;
   private String homepage;

@@ -280,6 +280,46 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should deserialize collection when response includes belongs_to_collection")
+  void shouldDeserializeCollectionWhenResponseIncludesBelongsToCollection() throws Exception {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/movie/120"))
+            .withQueryParam("append_to_response", equalTo("credits,release_dates"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                    {
+                      "id": 120,
+                      "title": "The Lord of the Rings: The Fellowship of the Ring",
+                      "adult": false,
+                      "release_date": "2001-12-18",
+                      "popularity": 90.0,
+                      "vote_count": 20000,
+                      "vote_average": 8.4,
+                      "video": false,
+                      "belongs_to_collection": {
+                        "id": 119,
+                        "name": "The Lord of the Rings Collection",
+                        "poster_path": "/poster.jpg",
+                        "backdrop_path": "/backdrop.jpg"
+                      }
+                    }
+                    """)));
+
+    var movie = service.getMovieMetadata("120");
+
+    assertThat(movie.getBelongsToCollection()).isNotNull();
+    assertThat(movie.getBelongsToCollection().getId()).isEqualTo(119);
+    assertThat(movie.getBelongsToCollection().getName())
+        .isEqualTo("The Lord of the Rings Collection");
+    assertThat(movie.getBelongsToCollection().getPosterPath()).isEqualTo("/poster.jpg");
+    assertThat(movie.getBelongsToCollection().getBackdropPath()).isEqualTo("/backdrop.jpg");
+  }
+
+  @Test
   @DisplayName("Should throw IOException with TMDB error message when API returns error status")
   void shouldThrowIOExceptionWithMessageWhenApiReturnsError() {
     wireMock.stubFor(
