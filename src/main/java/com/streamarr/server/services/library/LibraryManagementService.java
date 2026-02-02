@@ -8,6 +8,7 @@ import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
+import com.streamarr.server.services.GenreService;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.PersonService;
 import com.streamarr.server.services.concurrency.MutexFactory;
@@ -42,6 +43,7 @@ public class LibraryManagementService {
   private final MediaFileRepository mediaFileRepository;
   private final MovieService movieService;
   private final PersonService personService;
+  private final GenreService genreService;
   private final FileSystem fileSystem;
   private final MutexFactory<String> mutexFactory;
 
@@ -53,6 +55,7 @@ public class LibraryManagementService {
       MediaFileRepository mediaFileRepository,
       MovieService movieService,
       PersonService personService,
+      GenreService genreService,
       MutexFactoryProvider mutexFactoryProvider,
       FileSystem fileSystem) {
     this.videoExtensionValidator = videoExtensionValidator;
@@ -62,6 +65,7 @@ public class LibraryManagementService {
     this.mediaFileRepository = mediaFileRepository;
     this.movieService = movieService;
     this.personService = personService;
+    this.genreService = genreService;
     this.fileSystem = fileSystem;
 
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
@@ -296,6 +300,10 @@ public class LibraryManagementService {
     var directors = movieToSave.get().getDirectors();
     var savedDirectors = personService.getOrCreateCast(directors);
     movieToSave.get().setDirectors(savedDirectors);
+
+    var genres = movieToSave.get().getGenres();
+    var savedGenres = genreService.getOrCreateGenres(genres);
+    movieToSave.get().setGenres(savedGenres);
 
     movieService.saveMovieWithMediaFile(movieToSave.get(), mediaFile);
     markMediaFileAsMatched(mediaFile);

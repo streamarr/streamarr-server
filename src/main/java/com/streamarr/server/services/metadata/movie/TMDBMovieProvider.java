@@ -7,6 +7,7 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.ContentRating;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.metadata.Company;
+import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
@@ -73,6 +74,8 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
       var releaseDateResults = Optional.ofNullable(tmdbMovie.getReleaseDates());
       var productionCompanies =
           Optional.ofNullable(tmdbMovie.getProductionCompanies()).orElse(Collections.emptyList());
+      var tmdbGenres =
+          Optional.ofNullable(tmdbMovie.getGenres()).orElse(Collections.emptyList());
 
       var movieRating =
           releaseDateResults
@@ -121,7 +124,16 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
                                   .sourceId(String.valueOf(crew.getId()))
                                   .name(crew.getName())
                                   .build())
-                      .collect(Collectors.toList()));
+                      .collect(Collectors.toList()))
+              .genres(
+                  tmdbGenres.stream()
+                      .map(
+                          g ->
+                              Genre.builder()
+                                  .sourceId(String.valueOf(g.getId()))
+                                  .name(g.getName())
+                                  .build())
+                      .collect(Collectors.toSet()));
 
       if (StringUtils.isNotBlank(tmdbMovie.getReleaseDate())) {
         movieBuilder.releaseDate(LocalDate.parse(tmdbMovie.getReleaseDate()));

@@ -308,6 +308,15 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should map genres when TMDB response includes genres")
+  void shouldMapGenresWhenResponseIncludesGenres() {
+    var movie = getMetadataFromFullResponse();
+
+    assertThat(movie.getGenres()).hasSize(2);
+    assertThat(movie.getGenres()).extracting("name").containsExactlyInAnyOrder("Action", "Sci-Fi");
+  }
+
+  @Test
   @DisplayName("Should preserve cast order from TMDB response")
   void shouldPreserveCastOrderFromTmdbResponse() {
     var movie = getMetadataFromFullResponse();
@@ -419,6 +428,10 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
                           "video": false,
                           "status": "Released",
                           "imdb_id": "tt1375666",
+                          "genres": [
+                            {"id": 28, "name": "Action"},
+                            {"id": 878, "name": "Sci-Fi"}
+                          ],
                           "credits": {
                             "id": 27205,
                             "cast": [

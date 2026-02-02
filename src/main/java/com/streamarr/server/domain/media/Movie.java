@@ -2,6 +2,7 @@ package com.streamarr.server.domain.media;
 
 import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.metadata.Company;
+import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.domain.metadata.Rating;
 import com.streamarr.server.domain.metadata.Review;
@@ -85,6 +86,16 @@ public class Movie extends BaseCollectable<Movie> {
       inverseJoinColumns = @JoinColumn(name = "person_id"))
   @OrderColumn(name = "ordinal")
   private List<Person> directors = new ArrayList<>();
+
+  @Builder.Default
+  @ManyToMany(
+      cascade = {CascadeType.PERSIST, CascadeType.MERGE},
+      fetch = FetchType.LAZY)
+  @JoinTable(
+      name = "movie_genre",
+      joinColumns = @JoinColumn(name = "movie_id"),
+      inverseJoinColumns = @JoinColumn(name = "genre_id"))
+  private Set<Genre> genres = new HashSet<>();
 
   @Builder.Default
   @OneToMany(fetch = FetchType.LAZY, mappedBy = "movie")

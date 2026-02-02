@@ -16,6 +16,7 @@ type Movie implements BaseCollectable {
     studios: [Company]!
     cast: [Person]!
     directors: [Person]!
+    genres: [Genre]!
     ratings: [Rating]!
     reviews: [Review]!
 }

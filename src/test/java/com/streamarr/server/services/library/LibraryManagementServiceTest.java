@@ -24,6 +24,7 @@ import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
+import com.streamarr.server.services.GenreService;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.PersonService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
@@ -56,6 +57,7 @@ public class LibraryManagementServiceTest {
 
   private final MovieService movieService = mock(MovieService.class);
   private final PersonService personService = mock(PersonService.class);
+  private final GenreService genreService = mock(GenreService.class);
   private final MetadataProvider<Movie> tmdbMovieProvider = mock(TMDBMovieProvider.class);
   private final MovieMetadataProviderResolver fakeMovieMetadataProviderResolver =
       new MovieMetadataProviderResolver(List.of(tmdbMovieProvider));
@@ -72,6 +74,7 @@ public class LibraryManagementServiceTest {
           fakeMediaFileRepository,
           movieService,
           personService,
+          genreService,
           new MutexFactoryProvider(),
           fileSystem);
 
