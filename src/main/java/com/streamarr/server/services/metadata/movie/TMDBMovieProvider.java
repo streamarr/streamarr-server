@@ -57,7 +57,7 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
       log.error("Failure requesting search results:", ex);
     } catch (InterruptedException ex) {
       Thread.currentThread().interrupt();
-      log.error("Failure requesting search results:", ex);
+      log.error("Search interrupted:", ex);
     }
 
     return Optional.empty();
@@ -124,7 +124,7 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
     } catch (InterruptedException ex) {
       Thread.currentThread().interrupt();
       log.error(
-          "Failure enriching movie metadata using TMDB id '{}'",
+          "Metadata enrichment interrupted for TMDB id '{}'",
           remoteSearchResult.externalId(),
           ex);
     }
