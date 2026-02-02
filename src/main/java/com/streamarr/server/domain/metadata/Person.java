@@ -37,7 +37,7 @@ public class Person extends BaseAuditableEntity<Person> {
 
     Person that = (Person) o;
 
-    return name != null && name.equals(that.getName());
+    return sourceId != null && sourceId.equals(that.getSourceId());
   }
 
   @Override
