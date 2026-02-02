@@ -12,6 +12,7 @@ import graphql.relay.Edge;
 import graphql.relay.PageInfo;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import org.apache.commons.lang3.StringUtils;
@@ -148,7 +149,7 @@ public class RelayPaginationService {
   }
 
   public <T> void validateCursorField(String fieldName, T prior, T current) {
-    if (prior.equals(current)) {
+    if (Objects.equals(prior, current)) {
       return;
     }
 
