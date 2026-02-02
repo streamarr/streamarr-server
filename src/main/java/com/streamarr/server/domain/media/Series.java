@@ -7,7 +7,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.experimental.SuperBuilder;
 
-
 @Entity
 @Getter
 @SuperBuilder
@@ -15,9 +14,9 @@ import lombok.experimental.SuperBuilder;
 @AllArgsConstructor
 public class Series extends BaseCollectable<Series> {
 
-    private String backdropPath;
+  private String backdropPath;
 
-    private String logoPath;
+  private String logoPath;
 
-    private String posterPath;
+  private String posterPath;
 }

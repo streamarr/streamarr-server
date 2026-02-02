@@ -9,6 +9,8 @@ import jakarta.persistence.InheritanceType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
+import java.util.HashSet;
+import java.util.Set;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -17,10 +19,6 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.experimental.SuperBuilder;
 
-import java.util.HashSet;
-import java.util.Set;
-
-
 @Entity
 @Getter
 @Setter
@@ -28,32 +26,33 @@ import java.util.Set;
 @NoArgsConstructor
 @AllArgsConstructor
 @Inheritance(strategy = InheritanceType.JOINED)
-public abstract class BaseCollectable<T extends BaseCollectable<T>> extends BaseAuditableEntity<T> implements Collectable {
+public abstract class BaseCollectable<T extends BaseCollectable<T>> extends BaseAuditableEntity<T>
+    implements Collectable {
 
-    private String title;
+  private String title;
 
-    @ManyToOne
-    @JoinColumn(name = "libraryId")
-    private Library library;
+  @ManyToOne
+  @JoinColumn(name = "libraryId")
+  private Library library;
 
-    @Builder.Default
-    @OneToMany(
-        cascade = {CascadeType.PERSIST, CascadeType.MERGE},
-        fetch = FetchType.LAZY)
-    @JoinColumn(name = "mediaId")
-    @Setter(AccessLevel.NONE)
-    private final Set<MediaFile> files = new HashSet<>();
+  @Builder.Default
+  @OneToMany(
+      cascade = {CascadeType.PERSIST, CascadeType.MERGE},
+      fetch = FetchType.LAZY)
+  @JoinColumn(name = "mediaId")
+  @Setter(AccessLevel.NONE)
+  private final Set<MediaFile> files = new HashSet<>();
 
-    @Builder.Default
-    @OneToMany(
-        cascade = {CascadeType.PERSIST, CascadeType.MERGE},
-        fetch = FetchType.LAZY)
-    @JoinColumn(name = "entityId")
-    @Setter(AccessLevel.NONE)
-    private final Set<ExternalIdentifier> externalIds = new HashSet<>();
+  @Builder.Default
+  @OneToMany(
+      cascade = {CascadeType.PERSIST, CascadeType.MERGE},
+      fetch = FetchType.LAZY)
+  @JoinColumn(name = "entityId")
+  @Setter(AccessLevel.NONE)
+  private final Set<ExternalIdentifier> externalIds = new HashSet<>();
 
-    public void addFile(MediaFile file) {
-        file.setMediaId(this.getId());
-        files.add(file);
-    }
+  public void addFile(MediaFile file) {
+    file.setMediaId(this.getId());
+    files.add(file);
+  }
 }

@@ -1,12 +1,9 @@
 package com.streamarr.server.repositories;
 
 import com.streamarr.server.domain.metadata.Rating;
+import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
-import java.util.UUID;
-
-
 @Repository
-public interface RatingRepository extends JpaRepository<Rating, UUID> {
-}
+public interface RatingRepository extends JpaRepository<Rating, UUID> {}

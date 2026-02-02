@@ -17,9 +17,9 @@ import lombok.experimental.SuperBuilder;
 @AllArgsConstructor
 public class Review extends BaseAuditableEntity<Review> {
 
-    @ManyToOne
-    @JoinColumn(name = "movieId")
-    private Movie movie;
+  @ManyToOne
+  @JoinColumn(name = "movieId")
+  private Movie movie;
 
-    private String author;
+  private String author;
 }

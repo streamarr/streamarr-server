@@ -1,15 +1,14 @@
 package com.streamarr.server.services.concurrency;
 
-import org.springframework.util.ConcurrentReferenceHashMap;
-
 import java.util.concurrent.locks.ReentrantLock;
+import org.springframework.util.ConcurrentReferenceHashMap;
 
 public class MutexFactory<K> {
 
-    private final ConcurrentReferenceHashMap<K, ReentrantLock> map = new ConcurrentReferenceHashMap<>();
+  private final ConcurrentReferenceHashMap<K, ReentrantLock> map =
+      new ConcurrentReferenceHashMap<>();
 
-    public ReentrantLock getMutex(K key) {
-        return map.compute(key, (k, v) -> v == null ? new ReentrantLock() : v);
-    }
-    
+  public ReentrantLock getMutex(K key) {
+    return map.compute(key, (k, v) -> v == null ? new ReentrantLock() : v);
+  }
 }

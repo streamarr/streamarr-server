@@ -17,11 +17,11 @@ import lombok.experimental.SuperBuilder;
 @AllArgsConstructor
 public class Rating extends BaseAuditableEntity<Rating> {
 
-    @ManyToOne
-    @JoinColumn(name = "movieId")
-    private Movie movie;
+  @ManyToOne
+  @JoinColumn(name = "movieId")
+  private Movie movie;
 
-    private String source;
+  private String source;
 
-    private String value;
+  private String value;
 }

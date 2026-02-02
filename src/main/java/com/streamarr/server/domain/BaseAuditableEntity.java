@@ -6,6 +6,8 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.MappedSuperclass;
+import java.time.Instant;
+import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -18,9 +20,6 @@ import org.springframework.data.annotation.LastModifiedBy;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
-import java.time.Instant;
-import java.util.UUID;
-
 @Getter
 @Setter
 @SuperBuilder
@@ -30,54 +29,56 @@ import java.util.UUID;
 @EntityListeners(AuditingEntityListener.class)
 public abstract class BaseAuditableEntity<T extends BaseAuditableEntity<T>> {
 
-    @Id
-    @Column(updatable = false)
-    @GeneratedValue(strategy = GenerationType.AUTO)
-    private UUID id;
+  @Id
+  @Column(updatable = false)
+  @GeneratedValue(strategy = GenerationType.AUTO)
+  private UUID id;
 
-    @CreatedBy
-    @Column(updatable = false)
-    private UUID createdBy;
+  @CreatedBy
+  @Column(updatable = false)
+  private UUID createdBy;
 
-    @CreatedDate
-    @Column(updatable = false)
-    @Setter(value = AccessLevel.PROTECTED)
-    private Instant createdOn;
+  @CreatedDate
+  @Column(updatable = false)
+  @Setter(value = AccessLevel.PROTECTED)
+  private Instant createdOn;
 
-    @LastModifiedBy
-    private UUID lastModifiedBy;
+  @LastModifiedBy private UUID lastModifiedBy;
 
-    @LastModifiedDate
-    @Setter(value = AccessLevel.PROTECTED)
-    private Instant lastModifiedOn;
+  @LastModifiedDate
+  @Setter(value = AccessLevel.PROTECTED)
+  private Instant lastModifiedOn;
 
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) {
-            return true;
-        }
-        if (o == null || getClass() != o.getClass()) {
-            return false;
-        }
-
-        T that = (T) o;
-
-        return id != null && id.equals(that.getId());
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
     }
 
-    @Override
-    public int hashCode() {
-        return getClass().hashCode();
+    T that = (T) o;
+
+    return id != null && id.equals(that.getId());
+  }
+
+  @Override
+  public int hashCode() {
+    return getClass().hashCode();
+  }
+
+  public abstract static class BaseAuditableEntityBuilder<
+      T extends BaseAuditableEntity<T>,
+      C extends BaseAuditableEntity<T>,
+      B extends BaseAuditableEntityBuilder<T, C, B>> {
+
+    private B createdOn(Instant createdOn) {
+      throw new UnsupportedOperationException("createdOn method is unsupported");
     }
 
-    public abstract static class BaseAuditableEntityBuilder<T extends BaseAuditableEntity<T>, C extends BaseAuditableEntity<T>, B extends BaseAuditableEntityBuilder<T, C, B>> {
-
-        private B createdOn(Instant createdOn) {
-            throw new UnsupportedOperationException("createdOn method is unsupported");
-        }
-
-        private B lastModifiedOn(Instant lastModifiedOn) {
-            throw new UnsupportedOperationException("lastModifiedOn method is unsupported");
-        }
+    private B lastModifiedOn(Instant lastModifiedOn) {
+      throw new UnsupportedOperationException("lastModifiedOn method is unsupported");
     }
+  }
 }

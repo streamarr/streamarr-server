@@ -1,7 +1,10 @@
 package com.streamarr.server.services.parsers.video;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import com.streamarr.server.services.parsers.MetadataParser;
 import com.streamarr.server.services.parsers.show.EpisodePathMetadataParser;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -13,40 +16,34 @@ import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 import org.springframework.test.context.support.AnnotationConfigContextLoader;
 
-import java.util.List;
-
-import static org.assertj.core.api.Assertions.assertThat;
-
 @Tag("IntegrationTest")
 @DisplayName("Video File Metadata Parser Injection Retrieval Integration Tests")
 @ExtendWith(SpringExtension.class)
 @ContextConfiguration(loader = AnnotationConfigContextLoader.class)
 public class VideoFileMetadataRetrieverIT {
 
-    @Configuration
-    @ComponentScan(basePackages = {"com.streamarr.server.services.parsers"})
-    static class ContextConfiguration {
-    }
+  @Configuration
+  @ComponentScan(basePackages = {"com.streamarr.server.services.parsers"})
+  static class ContextConfiguration {}
 
-    @Autowired
-    private List<MetadataParser<VideoFileParserResult>> parsers;
+  @Autowired private List<MetadataParser<VideoFileParserResult>> parsers;
 
-    @Test
-    @DisplayName("Should inject only video file parsers and not episode file parsers")
-    void shouldInjectCorrectServices() {
-        assertThat(parsers).hasSize(2);
-    }
+  @Test
+  @DisplayName("Should inject only video file parsers and not episode file parsers")
+  void shouldInjectCorrectServices() {
+    assertThat(parsers).hasSize(2);
+  }
 
-    @Test
-    @DisplayName("Should inject parsers in the correct order based on definition in services.")
-    void shouldInjectServicesInOrder() {
-        assertThat(parsers.get(0)).isInstanceOf(ExternalIdVideoFileMetadataParser.class);
-        assertThat(parsers.get(1)).isInstanceOf(DefaultVideoFileMetadataParser.class);
-    }
+  @Test
+  @DisplayName("Should inject parsers in the correct order based on definition in services.")
+  void shouldInjectServicesInOrder() {
+    assertThat(parsers.get(0)).isInstanceOf(ExternalIdVideoFileMetadataParser.class);
+    assertThat(parsers.get(1)).isInstanceOf(DefaultVideoFileMetadataParser.class);
+  }
 
-    @Test
-    @DisplayName("Should not inject parsers of incorrect type.")
-    void shouldNotInjectIncorrectParsers() {
-        parsers.forEach(p -> assertThat(p).isNotInstanceOf(EpisodePathMetadataParser.class));
-    }
+  @Test
+  @DisplayName("Should not inject parsers of incorrect type.")
+  void shouldNotInjectIncorrectParsers() {
+    parsers.forEach(p -> assertThat(p).isNotInstanceOf(EpisodePathMetadataParser.class));
+  }
 }

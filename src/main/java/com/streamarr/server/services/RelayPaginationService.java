@@ -9,167 +9,172 @@ import graphql.relay.DefaultConnection;
 import graphql.relay.DefaultPageInfo;
 import graphql.relay.Edge;
 import graphql.relay.PageInfo;
-import org.apache.commons.lang3.StringUtils;
-import org.springframework.stereotype.Service;
-
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.stereotype.Service;
 
 @Service
 public class RelayPaginationService {
 
-    private static final int MAX_PAGE_SIZE = 500;
+  private static final int MAX_PAGE_SIZE = 500;
 
-    public PaginationOptions getPaginationOptions(int first,
-                                                  String after,
-                                                  int last,
-                                                  String before) {
+  public PaginationOptions getPaginationOptions(int first, String after, int last, String before) {
 
-        var cursor = getCursor(after, before);
+    var cursor = getCursor(after, before);
 
-        if (cursor.isEmpty()) {
-            var limit = getLimit(first, last, PaginationDirection.FORWARD);
+    if (cursor.isEmpty()) {
+      var limit = getLimit(first, last, PaginationDirection.FORWARD);
 
-            return PaginationOptions.builder()
-                .cursor(cursor)
-                .limit(limit)
-                .paginationDirection(PaginationDirection.FORWARD)
-                .build();
-        }
-
-        var direction = getDirection(after, before);
-        var limit = getLimit(first, last, direction);
-
-        return PaginationOptions.builder()
-            .cursor(cursor)
-            .paginationDirection(direction)
-            .limit(limit)
-            .build();
+      return PaginationOptions.builder()
+          .cursor(cursor)
+          .limit(limit)
+          .paginationDirection(PaginationDirection.FORWARD)
+          .build();
     }
 
-    private PaginationDirection getDirection(String after, String before) {
+    var direction = getDirection(after, before);
+    var limit = getLimit(first, last, direction);
 
-        var afterIsBlank = StringUtils.isBlank(after);
-        var beforeIsBlank = StringUtils.isBlank(before);
+    return PaginationOptions.builder()
+        .cursor(cursor)
+        .paginationDirection(direction)
+        .limit(limit)
+        .build();
+  }
 
-        if (!afterIsBlank && !beforeIsBlank) {
-            throw new RuntimeException("Cannot request with both after and before simultaneously.");
-        }
+  private PaginationDirection getDirection(String after, String before) {
 
-        return afterIsBlank ?
-            PaginationDirection.REVERSE : PaginationDirection.FORWARD;
+    var afterIsBlank = StringUtils.isBlank(after);
+    var beforeIsBlank = StringUtils.isBlank(before);
+
+    if (!afterIsBlank && !beforeIsBlank) {
+      throw new RuntimeException("Cannot request with both after and before simultaneously.");
     }
 
-    private Optional<String> getCursor(String after, String before) {
+    return afterIsBlank ? PaginationDirection.REVERSE : PaginationDirection.FORWARD;
+  }
 
-        var afterIsBlank = StringUtils.isBlank(after);
-        var beforeIsBlank = StringUtils.isBlank(before);
+  private Optional<String> getCursor(String after, String before) {
 
-        if (afterIsBlank && beforeIsBlank) {
-            return Optional.empty();
-        }
+    var afterIsBlank = StringUtils.isBlank(after);
+    var beforeIsBlank = StringUtils.isBlank(before);
 
-        return afterIsBlank ? Optional.of(before) : Optional.of(after);
+    if (afterIsBlank && beforeIsBlank) {
+      return Optional.empty();
     }
 
-    private int getLimit(int first, int last, PaginationDirection direction) {
-        return direction.equals(PaginationDirection.REVERSE) ?
-            validateGreaterThanZeroButLessThanMax("last", last) : validateGreaterThanZeroButLessThanMax("first", first);
+    return afterIsBlank ? Optional.of(before) : Optional.of(after);
+  }
+
+  private int getLimit(int first, int last, PaginationDirection direction) {
+    return direction.equals(PaginationDirection.REVERSE)
+        ? validateGreaterThanZeroButLessThanMax("last", last)
+        : validateGreaterThanZeroButLessThanMax("first", first);
+  }
+
+  private int validateGreaterThanZeroButLessThanMax(String fieldName, int pageSize) {
+
+    if (pageSize <= 0) {
+      throw new RuntimeException(fieldName + " must be greater than zero.");
     }
 
-    private int validateGreaterThanZeroButLessThanMax(String fieldName, int pageSize) {
-
-        if (pageSize <= 0) {
-            throw new RuntimeException(fieldName + " must be greater than zero.");
-        }
-
-        if (pageSize > MAX_PAGE_SIZE) {
-            throw new RuntimeException(fieldName + " must be less than " + MAX_PAGE_SIZE + ".");
-        }
-
-        return pageSize;
+    if (pageSize > MAX_PAGE_SIZE) {
+      throw new RuntimeException(fieldName + " must be less than " + MAX_PAGE_SIZE + ".");
     }
 
-    @SuppressWarnings("unchecked")
-    public <T> Connection<T> buildConnection(List<Edge<? extends BaseAuditableEntity<?>>> edges, PaginationOptions options, Optional<UUID> cursorId) {
+    return pageSize;
+  }
 
-        if (edges.isEmpty()) {
-            return emptyConnection();
-        }
+  @SuppressWarnings("unchecked")
+  public <T> Connection<T> buildConnection(
+      List<Edge<? extends BaseAuditableEntity<?>>> edges,
+      PaginationOptions options,
+      Optional<UUID> cursorId) {
 
-        var limit = options.getLimit();
-        var direction = options.getPaginationDirection();
-
-        var hasPreviousPage = false;
-        var hasNextPage = false;
-
-        if (cursorId.isPresent()) {
-            if (direction.equals(PaginationDirection.FORWARD)) {
-                var node = edges.get(0).getNode();
-
-                hasPreviousPage = node.getId().equals(cursorId.get());
-                edges = edges.subList(1, edges.size());
-            } else {
-                var node = edges.get(edges.size() - 1).getNode();
-
-                hasNextPage = node.getId().equals(cursorId.get());
-                edges = edges.subList(0, edges.size() - 1);
-            }
-
-            if (edges.isEmpty()) {
-                return emptyConnection();
-            }
-        }
-
-        var isListLargerThanLimit = edges.size() > limit;
-
-        if (direction.equals(PaginationDirection.FORWARD)) {
-            hasNextPage = isListLargerThanLimit;
-        } else {
-            hasPreviousPage = isListLargerThanLimit;
-        }
-
-        edges = pruneListByLimitGivenDirection(edges, limit, direction);
-
-        var firstEdge = edges.get(0);
-        var lastEdge = edges.get(edges.size() - 1);
-
-        var pageInfo = new DefaultPageInfo(
-            firstEdge.getCursor(),
-            lastEdge.getCursor(),
-            hasPreviousPage,
-            hasNextPage
-        );
-
-        return new DefaultConnection(edges, pageInfo);
+    if (edges.isEmpty()) {
+      return emptyConnection();
     }
 
-    private <T> Connection<T> emptyConnection() {
-        PageInfo pageInfo = new DefaultPageInfo(null, null, false, false);
-        return new DefaultConnection<>(Collections.emptyList(), pageInfo);
+    var limit = options.getLimit();
+    var direction = options.getPaginationDirection();
+
+    var hasPreviousPage = false;
+    var hasNextPage = false;
+
+    if (cursorId.isPresent()) {
+      if (direction.equals(PaginationDirection.FORWARD)) {
+        var node = edges.get(0).getNode();
+
+        hasPreviousPage = node.getId().equals(cursorId.get());
+        edges = edges.subList(1, edges.size());
+      } else {
+        var node = edges.get(edges.size() - 1).getNode();
+
+        hasNextPage = node.getId().equals(cursorId.get());
+        edges = edges.subList(0, edges.size() - 1);
+      }
+
+      if (edges.isEmpty()) {
+        return emptyConnection();
+      }
     }
 
-    private <T> List<T> pruneListByLimitGivenDirection(List<T> list, int limit, PaginationDirection direction) {
-        if (list.size() <= limit) {
-            return list;
-        }
+    var isListLargerThanLimit = edges.size() > limit;
 
-        if (direction.equals(PaginationDirection.REVERSE)) {
-            return list.subList(1, list.size());
-
-        }
-
-        return list.subList(0, list.size() - 1);
+    if (direction.equals(PaginationDirection.FORWARD)) {
+      hasNextPage = isListLargerThanLimit;
+    } else {
+      hasPreviousPage = isListLargerThanLimit;
     }
 
-    public <T> void validateCursorField(String fieldName, T prior, T current) {
-        if (prior.equals(current)) {
-            return;
-        }
+    edges = pruneListByLimitGivenDirection(edges, limit, direction);
 
-        throw new InvalidCursorException("Prior query " + fieldName + " was '" + prior + "'" +
-            " but new query " + fieldName + " is '" + current + "'");
+    var firstEdge = edges.get(0);
+    var lastEdge = edges.get(edges.size() - 1);
+
+    var pageInfo =
+        new DefaultPageInfo(
+            firstEdge.getCursor(), lastEdge.getCursor(), hasPreviousPage, hasNextPage);
+
+    return new DefaultConnection(edges, pageInfo);
+  }
+
+  private <T> Connection<T> emptyConnection() {
+    PageInfo pageInfo = new DefaultPageInfo(null, null, false, false);
+    return new DefaultConnection<>(Collections.emptyList(), pageInfo);
+  }
+
+  private <T> List<T> pruneListByLimitGivenDirection(
+      List<T> list, int limit, PaginationDirection direction) {
+    if (list.size() <= limit) {
+      return list;
     }
+
+    if (direction.equals(PaginationDirection.REVERSE)) {
+      return list.subList(1, list.size());
+    }
+
+    return list.subList(0, list.size() - 1);
+  }
+
+  public <T> void validateCursorField(String fieldName, T prior, T current) {
+    if (prior.equals(current)) {
+      return;
+    }
+
+    throw new InvalidCursorException(
+        "Prior query "
+            + fieldName
+            + " was '"
+            + prior
+            + "'"
+            + " but new query "
+            + fieldName
+            + " is '"
+            + current
+            + "'");
+  }
 }

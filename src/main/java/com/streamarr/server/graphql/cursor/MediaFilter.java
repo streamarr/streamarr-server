@@ -12,11 +12,9 @@ import org.jooq.SortOrder;
 @Builder(toBuilder = true)
 public class MediaFilter {
 
-    @Builder.Default
-    private final OrderMoviesBy sortBy = OrderMoviesBy.TITLE;
-    @Builder.Default
-    private final SortOrder sortDirection = SortOrder.ASC;
+  @Builder.Default private final OrderMoviesBy sortBy = OrderMoviesBy.TITLE;
+  @Builder.Default private final SortOrder sortDirection = SortOrder.ASC;
 
-    // Used for seek pagination
-    private Object previousSortFieldValue;
+  // Used for seek pagination
+  private Object previousSortFieldValue;
 }

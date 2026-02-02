@@ -1,22 +1,21 @@
 package com.streamarr.server.graphql.resolvers;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
+
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.repositories.media.MovieRepository;
+import java.util.Optional;
+import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
-
-import java.util.Optional;
-import java.util.UUID;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
 
 @Tag("UnitTest")
 @EnableDgsTest
@@ -33,18 +32,14 @@ class MovieResolverTest {
   void shouldReturnMovieWhenValidIdProvided() {
     var movieId = UUID.randomUUID();
     var movie =
-        Movie.builder()
-            .title("Inception")
-            .tagline("Your mind is the scene of the crime.")
-            .build();
+        Movie.builder().title("Inception").tagline("Your mind is the scene of the crime.").build();
     movie.setId(movieId);
 
     when(movieRepository.findById(movieId)).thenReturn(Optional.of(movie));
 
     String title =
         dgsQueryExecutor.executeAndExtractJsonPath(
-            String.format("{ movie(id: \"%s\") { title tagline } }", movieId),
-            "data.movie.title");
+            String.format("{ movie(id: \"%s\") { title tagline } }", movieId), "data.movie.title");
 
     assertThat(title).isEqualTo("Inception");
   }
@@ -56,8 +51,7 @@ class MovieResolverTest {
 
     Object result =
         dgsQueryExecutor.executeAndExtractJsonPath(
-            String.format("{ movie(id: \"%s\") { title } }", UUID.randomUUID()),
-            "data.movie");
+            String.format("{ movie(id: \"%s\") { title } }", UUID.randomUUID()), "data.movie");
 
     assertThat(result).isNull();
   }
