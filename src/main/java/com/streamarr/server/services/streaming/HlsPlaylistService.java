@@ -57,8 +57,9 @@ public class HlsPlaylistService {
     var container = decision.containerFormat();
     var probe = session.getMediaProbe();
     var segmentDuration = properties.segmentDurationSeconds();
-    var totalDuration = probe.duration().getSeconds();
-    var segmentCount = (int) Math.ceil((double) totalDuration / segmentDuration);
+    var totalDurationMs = probe.duration().toMillis();
+    var segmentDurationMs = segmentDuration * 1000L;
+    var segmentCount = (int) Math.ceil((double) totalDurationMs / segmentDurationMs);
     var extension = container.segmentExtension();
 
     var sb = new StringBuilder();
@@ -73,9 +74,9 @@ public class HlsPlaylistService {
     }
 
     for (int i = 0; i < segmentCount; i++) {
-      var remaining = totalDuration - ((long) i * segmentDuration);
-      var duration = Math.min(segmentDuration, remaining);
-      sb.append("#EXTINF:").append(String.format("%.6f", (double) duration)).append(",\n");
+      var remainingMs = totalDurationMs - ((long) i * segmentDurationMs);
+      var durationMs = Math.min(segmentDurationMs, remainingMs);
+      sb.append("#EXTINF:").append(String.format("%.6f", durationMs / 1000.0)).append(",\n");
       sb.append("segment").append(i).append(extension).append("\n");
     }
 

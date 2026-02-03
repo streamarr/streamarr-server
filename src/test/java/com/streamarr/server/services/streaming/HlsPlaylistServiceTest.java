@@ -254,6 +254,73 @@ class HlsPlaylistServiceTest {
     assertThat(duration).isLessThanOrEqualTo(6.0);
   }
 
+  private StreamSession createSessionWithDuration(
+      ContainerFormat container, TranscodeMode mode, Duration duration) {
+    var session =
+        StreamSession.builder()
+            .sessionId(UUID.randomUUID())
+            .mediaFileId(UUID.randomUUID())
+            .sourcePath(Path.of("/media/test.mkv"))
+            .mediaProbe(
+                MediaProbe.builder()
+                    .duration(duration)
+                    .framerate(23.976)
+                    .width(1920)
+                    .height(1080)
+                    .videoCodec("h264")
+                    .audioCodec("aac")
+                    .bitrate(5_000_000L)
+                    .build())
+            .transcodeDecision(
+                TranscodeDecision.builder()
+                    .transcodeMode(mode)
+                    .videoCodecFamily(container == ContainerFormat.FMP4 ? "av1" : "h264")
+                    .audioCodec("aac")
+                    .containerFormat(container)
+                    .needsKeyframeAlignment(mode != TranscodeMode.FULL_TRANSCODE)
+                    .build())
+            .options(
+                StreamingOptions.builder().supportedCodecs(List.of("h264", "av1")).build())
+            .seekPosition(0)
+            .createdAt(Instant.now())
+            .lastAccessedAt(Instant.now())
+            .activeRequestCount(new AtomicInteger(0))
+            .build();
+    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
+    return session;
+  }
+
+  @Test
+  @DisplayName("shouldIncludeExtraSegmentForSubSecondDuration")
+  void shouldIncludeExtraSegmentForSubSecondDuration() {
+    var session =
+        createSessionWithDuration(
+            ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, Duration.ofMillis(18500));
+
+    var playlist = service.generateMediaPlaylist(session);
+
+    var segmentLines =
+        playlist.lines().filter(l -> l.startsWith("segment") && l.endsWith(".ts")).toList();
+    assertThat(segmentLines).hasSize(4);
+  }
+
+  @Test
+  @DisplayName("shouldCalculateLastSegmentDurationWithSubSecondPrecision")
+  void shouldCalculateLastSegmentDurationWithSubSecondPrecision() {
+    var session =
+        createSessionWithDuration(
+            ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, Duration.ofMillis(18500));
+
+    var playlist = service.generateMediaPlaylist(session);
+
+    var extinfLines = playlist.lines().filter(l -> l.startsWith("#EXTINF:")).toList();
+    assertThat(extinfLines).hasSize(4);
+
+    var lastExtinf = extinfLines.getLast();
+    var duration = Double.parseDouble(lastExtinf.replace("#EXTINF:", "").replace(",", ""));
+    assertThat(duration).isCloseTo(0.5, org.assertj.core.api.Assertions.within(0.01));
+  }
+
   // --- Multi-variant (ABR) tests ---
 
   private StreamSession createAbrSession(int durationSeconds) {
