@@ -88,6 +88,10 @@ public class TranscodeCapabilityService {
       var process = processFactory.create(new String[] {"ffmpeg", "-version"});
       var exitCode = process.waitFor();
       return exitCode == 0;
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      log.debug("FFmpeg version check interrupted", e);
+      return false;
     } catch (Exception e) {
       log.debug("FFmpeg version check failed", e);
       return false;
@@ -113,6 +117,10 @@ public class TranscodeCapabilityService {
 
       process.waitFor();
       return Set.copyOf(encoders);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      log.debug("Hardware encoder detection interrupted", e);
+      return Set.of();
     } catch (Exception e) {
       log.debug("Hardware encoder detection failed", e);
       return Set.of();
@@ -141,6 +149,10 @@ public class TranscodeCapabilityService {
 
       process.waitFor();
       return result.toString();
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      log.debug("Accelerator detection interrupted", e);
+      return "";
     } catch (Exception e) {
       log.debug("Accelerator detection failed", e);
       return "";
