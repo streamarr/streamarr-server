@@ -74,13 +74,20 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should create session when media file is valid")
-  void shouldCreateSessionWhenMediaFileIsValid() {
+  @DisplayName("Should assign session identity when media file is valid")
+  void shouldAssignSessionIdentityWhenMediaFileIsValid() {
     var session = streamingService.createSession(savedMediaFile.getId(), defaultOptions());
 
     assertThat(session).isNotNull();
     assertThat(session.getSessionId()).isNotNull();
     assertThat(session.getMediaFileId()).isEqualTo(savedMediaFile.getId());
+  }
+
+  @Test
+  @DisplayName("Should initialize transcode pipeline when media file is valid")
+  void shouldInitializeTranscodePipelineWhenMediaFileIsValid() {
+    var session = streamingService.createSession(savedMediaFile.getId(), defaultOptions());
+
     assertThat(session.getMediaProbe()).isNotNull();
     assertThat(session.getTranscodeDecision()).isNotNull();
     assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);

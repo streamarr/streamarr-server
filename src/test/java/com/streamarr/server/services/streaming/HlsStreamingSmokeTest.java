@@ -218,38 +218,35 @@ class HlsStreamingSmokeTest {
   }
 
   @Test
-  @DisplayName("Should generate RFC 8216 compliant master playlist when session is active")
-  void shouldGenerateRfc8216CompliantMasterPlaylistWhenSessionIsActive() {
+  @DisplayName("Should start master playlist with EXTM3U and no BOM when session is active")
+  void shouldStartMasterPlaylistWithExtm3uAndNoBomWhenSessionIsActive() {
     var file = seedMediaFile();
-    var options =
-        StreamingOptions.builder()
-            .quality(VideoQuality.AUTO)
-            .supportedCodecs(List.of("h264"))
-            .build();
-
-    var session = streamingService.createSession(file.getId(), options);
+    var session = streamingService.createSession(file.getId(), defaultOptions());
     var playlist = playlistService.generateMasterPlaylist(session);
 
     assertThat(playlist).startsWith("#EXTM3U\n");
+    assertThat(playlist).doesNotContain("\uFEFF");
+  }
+
+  @Test
+  @DisplayName("Should include stream variant info in master playlist when session is active")
+  void shouldIncludeStreamVariantInfoInMasterPlaylistWhenSessionIsActive() {
+    var file = seedMediaFile();
+    var session = streamingService.createSession(file.getId(), defaultOptions());
+    var playlist = playlistService.generateMasterPlaylist(session);
+
     assertThat(playlist).contains("#EXT-X-STREAM-INF:");
     assertThat(playlist).contains("BANDWIDTH=");
     assertThat(playlist).contains("RESOLUTION=320x180");
     assertThat(playlist).contains("CODECS=");
     assertThat(playlist).contains("stream.m3u8");
-    assertThat(playlist).doesNotContain("\uFEFF");
   }
 
   @Test
-  @DisplayName("Should generate RFC 8216 compliant media playlist when session is active")
-  void shouldGenerateRfc8216CompliantMediaPlaylistWhenSessionIsActive() {
+  @DisplayName("Should include required HLS tags in media playlist when session is active")
+  void shouldIncludeRequiredHlsTagsInMediaPlaylistWhenSessionIsActive() {
     var file = seedMediaFile();
-    var options =
-        StreamingOptions.builder()
-            .quality(VideoQuality.AUTO)
-            .supportedCodecs(List.of("h264"))
-            .build();
-
-    var session = streamingService.createSession(file.getId(), options);
+    var session = streamingService.createSession(file.getId(), defaultOptions());
     var playlist = playlistService.generateMediaPlaylist(session);
 
     assertThat(playlist).startsWith("#EXTM3U\n");
@@ -260,6 +257,14 @@ class HlsStreamingSmokeTest {
     assertThat(playlist).contains("#EXT-X-ENDLIST");
     assertThat(playlist).doesNotContain("#EXT-X-STREAM-INF");
     assertThat(playlist).doesNotContain("#EXT-X-MAP");
+  }
+
+  @Test
+  @DisplayName("Should generate valid segment entries in media playlist when session is active")
+  void shouldGenerateValidSegmentEntriesInMediaPlaylistWhenSessionIsActive() {
+    var file = seedMediaFile();
+    var session = streamingService.createSession(file.getId(), defaultOptions());
+    var playlist = playlistService.generateMediaPlaylist(session);
 
     var extinfLines = playlist.lines().filter(l -> l.startsWith("#EXTINF:")).toList();
     assertThat(extinfLines).isNotEmpty();
