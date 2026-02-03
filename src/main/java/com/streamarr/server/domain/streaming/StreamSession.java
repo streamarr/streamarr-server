@@ -32,8 +32,8 @@ public class StreamSession {
 
   @Builder.Default private final List<QualityVariant> variants = Collections.emptyList();
 
-  @Setter private int seekPosition;
-  @Setter private Instant lastAccessedAt;
+  @Setter private volatile int seekPosition;
+  @Setter private volatile Instant lastAccessedAt;
 
   public TranscodeHandle getHandle() {
     return variantHandles.get(DEFAULT_VARIANT);
