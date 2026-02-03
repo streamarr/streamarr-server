@@ -9,6 +9,7 @@ import com.streamarr.server.exceptions.InvalidIdException;
 import com.streamarr.server.graphql.dto.StreamSessionDto;
 import com.streamarr.server.graphql.dto.StreamingOptionsInput;
 import com.streamarr.server.services.streaming.StreamingService;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 
@@ -48,20 +49,29 @@ public class StreamingResolver {
   }
 
   private StreamingOptions mapOptions(StreamingOptionsInput input) {
-    if (input == null) {
-      return StreamingOptions.builder()
-          .quality(VideoQuality.AUTO)
-          .supportedCodecs(StreamingOptions.DEFAULT_SUPPORTED_CODECS)
-          .build();
-    }
+    return Optional.ofNullable(input).map(this::buildOptionsFromInput).orElse(defaultOptions());
+  }
+
+  private StreamingOptions defaultOptions() {
+    return StreamingOptions.builder()
+        .quality(VideoQuality.AUTO)
+        .supportedCodecs(StreamingOptions.DEFAULT_SUPPORTED_CODECS)
+        .build();
+  }
+
+  private StreamingOptions buildOptionsFromInput(StreamingOptionsInput input) {
+    var quality =
+        Optional.ofNullable(input.quality()).map(VideoQuality::valueOf).orElse(VideoQuality.AUTO);
+    var codecs =
+        Optional.ofNullable(input.supportedCodecs())
+            .orElse(StreamingOptions.DEFAULT_SUPPORTED_CODECS);
 
     return StreamingOptions.builder()
-        .quality(input.quality() != null ? VideoQuality.valueOf(input.quality()) : VideoQuality.AUTO)
+        .quality(quality)
         .maxWidth(input.maxWidth())
         .maxHeight(input.maxHeight())
         .maxBitrate(input.maxBitrate())
-        .supportedCodecs(
-            input.supportedCodecs() != null ? input.supportedCodecs() : StreamingOptions.DEFAULT_SUPPORTED_CODECS)
+        .supportedCodecs(codecs)
         .audioLanguage(input.audioLanguage())
         .subtitleLanguage(input.subtitleLanguage())
         .build();
