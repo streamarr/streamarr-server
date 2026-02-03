@@ -9,7 +9,6 @@ import com.streamarr.server.exceptions.InvalidIdException;
 import com.streamarr.server.graphql.dto.StreamSessionDto;
 import com.streamarr.server.graphql.dto.StreamingOptionsInput;
 import com.streamarr.server.services.streaming.StreamingService;
-import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 
@@ -52,7 +51,7 @@ public class StreamingResolver {
     if (input == null) {
       return StreamingOptions.builder()
           .quality(VideoQuality.AUTO)
-          .supportedCodecs(List.of("h264"))
+          .supportedCodecs(StreamingOptions.DEFAULT_SUPPORTED_CODECS)
           .build();
     }
 
@@ -62,7 +61,7 @@ public class StreamingResolver {
         .maxHeight(input.maxHeight())
         .maxBitrate(input.maxBitrate())
         .supportedCodecs(
-            input.supportedCodecs() != null ? input.supportedCodecs() : List.of("h264"))
+            input.supportedCodecs() != null ? input.supportedCodecs() : StreamingOptions.DEFAULT_SUPPORTED_CODECS)
         .audioLanguage(input.audioLanguage())
         .subtitleLanguage(input.subtitleLanguage())
         .build();

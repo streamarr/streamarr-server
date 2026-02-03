@@ -56,7 +56,7 @@ public class TranscodeDecisionService {
         return codec;
       }
     }
-    return "h264";
+    return StreamingOptions.DEFAULT_SUPPORTED_CODECS.getFirst();
   }
 
   private ContainerFormat containerForCodec(String codecFamily) {

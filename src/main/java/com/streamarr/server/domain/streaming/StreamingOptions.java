@@ -11,4 +11,7 @@ public record StreamingOptions(
     Integer maxBitrate,
     List<String> supportedCodecs,
     String audioLanguage,
-    String subtitleLanguage) {}
+    String subtitleLanguage) {
+
+  public static final List<String> DEFAULT_SUPPORTED_CODECS = List.of("h264");
+}
