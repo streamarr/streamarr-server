@@ -230,7 +230,7 @@ class FfmpegCommandBuilderTest {
 
     var cmd = builder.buildCommand(j);
 
-    assertThat(cmd).anyMatch(s -> s.startsWith("expr:gte(t,n_forced*"));
+    assertThat(cmd).isNotEmpty().anyMatch(s -> s.startsWith("expr:gte(t,n_forced*"));
     assertThat(cmd).contains("-sc_threshold:v:0", "0");
   }
 
@@ -378,7 +378,7 @@ class FfmpegCommandBuilderTest {
 
     var cmd = builder.buildCommand(j);
 
-    assertThat(cmd).anyMatch(s -> s.contains("temp_file"));
+    assertThat(cmd).isNotEmpty().anyMatch(s -> s.contains("temp_file"));
   }
 
   @Test
@@ -428,7 +428,7 @@ class FfmpegCommandBuilderTest {
 
     var cmd = builder.buildCommand(j);
 
-    assertThat(cmd).noneMatch(s -> s.contains("force_key_frames"));
+    assertThat(cmd).isNotEmpty().noneMatch(s -> s.contains("force_key_frames"));
     assertThat(cmd).doesNotContain("-g:v:0");
     assertThat(cmd).doesNotContain("-forced-idr");
   }
@@ -457,7 +457,7 @@ class FfmpegCommandBuilderTest {
 
     var cmd = builder.buildCommand(j);
 
-    assertThat(cmd).anyMatch(s -> s.startsWith("expr:gte(t,n_forced*"));
+    assertThat(cmd).isNotEmpty().anyMatch(s -> s.startsWith("expr:gte(t,n_forced*"));
     assertThat(cmd).doesNotContain("-sc_threshold:v:0");
   }
 
@@ -475,7 +475,7 @@ class FfmpegCommandBuilderTest {
 
     var cmd = builder.buildCommand(j);
 
-    assertThat(cmd).anyMatch(s -> s.startsWith("expr:gte(t,n_forced*"));
+    assertThat(cmd).isNotEmpty().anyMatch(s -> s.startsWith("expr:gte(t,n_forced*"));
   }
 
   @Test
