@@ -23,7 +23,7 @@ class FfmpegHealthIndicatorTest {
     var health = indicator.health();
 
     assertThat(health.getStatus()).isEqualTo(Status.UP);
-    assertThat(health.getDetails()).containsEntry("gpu", true);
+    assertThat(health.getDetails()).containsEntry("hardwareEncoding", true);
     assertThat(health.getDetails()).containsKey("encoders");
     assertThat(health.getDetails()).containsEntry("accelerator", "cuda");
   }
@@ -38,7 +38,7 @@ class FfmpegHealthIndicatorTest {
     var health = indicator.health();
 
     assertThat(health.getStatus()).isEqualTo(Status.UP);
-    assertThat(health.getDetails()).containsEntry("gpu", false);
+    assertThat(health.getDetails()).containsEntry("hardwareEncoding", false);
   }
 
   @Test

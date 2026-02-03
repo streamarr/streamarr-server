@@ -20,7 +20,7 @@ public class FfmpegHealthIndicator implements HealthIndicator {
 
     var hwEncoding = capabilityService.getHardwareEncodingCapability();
     return Health.up()
-        .withDetail("gpu", hwEncoding.available())
+        .withDetail("hardwareEncoding", hwEncoding.available())
         .withDetail("encoders", hwEncoding.encoders())
         .withDetail("accelerator", hwEncoding.accelerator())
         .build();
