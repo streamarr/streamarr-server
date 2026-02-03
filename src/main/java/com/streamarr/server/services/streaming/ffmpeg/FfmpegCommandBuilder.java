@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming.ffmpeg;
 import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.TranscodeJob;
 import com.streamarr.server.domain.streaming.TranscodeMode;
+import com.streamarr.server.domain.streaming.TranscodeRequest;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -70,8 +71,19 @@ public class FfmpegCommandBuilder {
       }
       case FULL_TRANSCODE -> {
         cmd.addAll(List.of("-c:v", job.videoEncoder(), "-c:a", "aac", "-b:a", "128k"));
+        addScaleAndBitrateArgs(cmd, job.request());
       }
     }
+  }
+
+  private void addScaleAndBitrateArgs(List<String> cmd, TranscodeRequest request) {
+    cmd.addAll(List.of("-vf", "scale=-2:" + request.height()));
+    var bitrate = String.valueOf(request.bitrate());
+    cmd.addAll(
+        List.of(
+            "-b:v", bitrate,
+            "-maxrate", bitrate,
+            "-bufsize", String.valueOf(request.bitrate() * 2)));
   }
 
   private void addKeyframeArgs(List<String> cmd, TranscodeJob job) {

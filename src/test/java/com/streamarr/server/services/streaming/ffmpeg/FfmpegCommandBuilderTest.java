@@ -87,6 +87,83 @@ class FfmpegCommandBuilderTest {
 
     assertThat(cmd).contains("-c:v", "copy", "-c:a", "copy");
     assertThat(cmd).doesNotContain("-vf");
+    assertThat(cmd).doesNotContain("-b:v", "-maxrate", "-bufsize");
+  }
+
+  @Test
+  @DisplayName("shouldIncludeScaleFilterForFullTranscode")
+  void shouldIncludeScaleFilterForFullTranscode() {
+    var j =
+        job(
+            TranscodeMode.FULL_TRANSCODE,
+            "h264",
+            "aac",
+            ContainerFormat.MPEGTS,
+            "libx264",
+            false);
+
+    var cmd = builder.buildCommand(j);
+
+    assertThat(cmd).contains("-vf", "scale=-2:1080");
+  }
+
+  @Test
+  @DisplayName("shouldIncludeBitrateControlForFullTranscode")
+  void shouldIncludeBitrateControlForFullTranscode() {
+    var j =
+        job(
+            TranscodeMode.FULL_TRANSCODE,
+            "h264",
+            "aac",
+            ContainerFormat.MPEGTS,
+            "libx264",
+            false);
+
+    var cmd = builder.buildCommand(j);
+
+    assertThat(cmd).contains("-b:v", "5000000");
+    assertThat(cmd).contains("-maxrate", "5000000");
+    assertThat(cmd).contains("-bufsize", "10000000");
+  }
+
+  @Test
+  @DisplayName("shouldUseVariantHeightForScaleAndBitrate")
+  void shouldUseVariantHeightForScaleAndBitrate() {
+    var j =
+        job(
+            TranscodeMode.FULL_TRANSCODE,
+            "h264",
+            "aac",
+            ContainerFormat.MPEGTS,
+            "libx264",
+            false,
+            0,
+            1280,
+            720,
+            3_000_000L);
+
+    var cmd = builder.buildCommand(j);
+
+    assertThat(cmd).contains("-vf", "scale=-2:720");
+    assertThat(cmd).contains("-b:v", "3000000");
+    assertThat(cmd).contains("-bufsize", "6000000");
+  }
+
+  @Test
+  @DisplayName("shouldNotIncludeScaleOrBitrateForPartialTranscode")
+  void shouldNotIncludeScaleOrBitrateForPartialTranscode() {
+    var j =
+        job(
+            TranscodeMode.PARTIAL_TRANSCODE,
+            "h264",
+            "aac",
+            ContainerFormat.MPEGTS,
+            "copy",
+            true);
+
+    var cmd = builder.buildCommand(j);
+
+    assertThat(cmd).doesNotContain("-vf", "-b:v", "-maxrate", "-bufsize");
   }
 
   @Test
