@@ -8,7 +8,6 @@ import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -21,17 +20,12 @@ public class LocalTranscodeExecutor implements TranscodeExecutor {
   private final SegmentStore segmentStore;
   private final TranscodeCapabilityService capabilityService;
 
-  private final ConcurrentHashMap<UUID, Process> processes = new ConcurrentHashMap<>();
-
   @Override
   public TranscodeHandle start(TranscodeRequest request) {
     var job = resolveJob(request);
     var command = commandBuilder.buildCommand(job);
 
     var process = processManager.startProcess(request.sessionId(), command, job.outputDir());
-    if (process != null) {
-      processes.put(request.sessionId(), process);
-    }
 
     var pid = process != null ? process.pid() : -1L;
     log.info(
@@ -45,7 +39,6 @@ public class LocalTranscodeExecutor implements TranscodeExecutor {
 
   @Override
   public void stop(UUID sessionId) {
-    processes.remove(sessionId);
     processManager.stopProcess(sessionId);
     log.info("Stopped transcode for session {}", sessionId);
   }
