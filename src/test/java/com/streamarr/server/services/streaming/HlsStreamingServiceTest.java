@@ -76,7 +76,7 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("shouldCreateSessionForValidMediaFile")
+  @DisplayName("Should create session for valid media file")
   void shouldCreateSessionForValidMediaFile() {
     var file = seedMediaFile();
 
@@ -92,7 +92,7 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("shouldStartTranscodeWhenCreatingSession")
+  @DisplayName("Should start transcode when creating session")
   void shouldStartTranscodeWhenCreatingSession() {
     var file = seedMediaFile();
 
@@ -103,7 +103,7 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("shouldThrowWhenMediaFileNotFound")
+  @DisplayName("Should throw when media file not found")
   void shouldThrowWhenMediaFileNotFound() {
     var invalidId = UUID.randomUUID();
 
@@ -112,7 +112,7 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("shouldGetExistingSession")
+  @DisplayName("Should get existing session")
   void shouldGetExistingSession() {
     var file = seedMediaFile();
     var session = service.createSession(file.getId(), defaultOptions());
@@ -124,7 +124,7 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("shouldReturnEmptyForNonexistentSession")
+  @DisplayName("Should return empty for nonexistent session")
   void shouldReturnEmptyForNonexistentSession() {
     var result = service.getSession(UUID.randomUUID());
 
@@ -132,7 +132,7 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("shouldUpdateLastAccessedAtOnGetSession")
+  @DisplayName("Should update last accessed at on get session")
   void shouldUpdateLastAccessedAtOnGetSession() {
     var file = seedMediaFile();
     var session = service.createSession(file.getId(), defaultOptions());
@@ -144,7 +144,7 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("shouldDestroySession")
+  @DisplayName("Should destroy session")
   void shouldDestroySession() {
     var file = seedMediaFile();
     var session = service.createSession(file.getId(), defaultOptions());
@@ -157,7 +157,7 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("shouldRejectFullTranscodeWhenAtConcurrencyLimit")
+  @DisplayName("Should reject full transcode when at concurrency limit")
   void shouldRejectFullTranscodeWhenAtConcurrencyLimit() {
     ffprobeService.setDefaultProbe(
         MediaProbe.builder()
@@ -187,7 +187,7 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("shouldAllowRemuxSessionsWhenAtTranscodeConcurrencyLimit")
+  @DisplayName("Should allow remux sessions when at transcode concurrency limit")
   void shouldAllowRemuxSessionsWhenAtTranscodeConcurrencyLimit() {
     ffprobeService.setDefaultProbe(
         MediaProbe.builder()
@@ -231,7 +231,7 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("shouldSetCorrectTranscodeDecisionOnSession")
+  @DisplayName("Should set correct transcode decision on session")
   void shouldSetCorrectTranscodeDecisionOnSession() {
     ffprobeService.setDefaultProbe(
         MediaProbe.builder()
@@ -255,7 +255,7 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("shouldSeekToNewPosition")
+  @DisplayName("Should seek to new position")
   void shouldSeekToNewPosition() {
     var file = seedMediaFile();
     var session = service.createSession(file.getId(), defaultOptions());
@@ -270,7 +270,7 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("shouldStopOldTranscodeOnSeek")
+  @DisplayName("Should stop old transcode on seek")
   void shouldStopOldTranscodeOnSeek() {
     var file = seedMediaFile();
     var session = service.createSession(file.getId(), defaultOptions());
@@ -281,7 +281,7 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("shouldThrowWhenSeekingNonexistentSession")
+  @DisplayName("Should throw when seeking nonexistent session")
   void shouldThrowWhenSeekingNonexistentSession() {
     var invalidId = UUID.randomUUID();
 
@@ -290,7 +290,7 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("shouldStartMultipleVariantsForAutoQualityFullTranscode")
+  @DisplayName("Should start multiple variants for auto quality full transcode")
   void shouldStartMultipleVariantsForAutoQualityFullTranscode() {
     ffprobeService.setDefaultProbe(
         MediaProbe.builder()
@@ -317,7 +317,7 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("shouldUseSingleVariantForAutoQualityRemux")
+  @DisplayName("Should use single variant for auto quality remux")
   void shouldUseSingleVariantForAutoQualityRemux() {
     var file = seedMediaFile();
     var options =
@@ -333,7 +333,7 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("shouldUseSingleVariantForExplicitQuality")
+  @DisplayName("Should use single variant for explicit quality")
   void shouldUseSingleVariantForExplicitQuality() {
     ffprobeService.setDefaultProbe(
         MediaProbe.builder()

@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test;
 class TranscodeCapabilityServiceTest {
 
   @Test
-  @DisplayName("shouldReportUnavailableWhenFfmpegNotInstalled")
+  @DisplayName("Should report unavailable when FFmpeg not installed")
   void shouldReportUnavailableWhenFfmpegNotInstalled() {
     var service = new TranscodeCapabilityService(command -> createProcess("", 1));
 
@@ -21,7 +21,7 @@ class TranscodeCapabilityServiceTest {
   }
 
   @Test
-  @DisplayName("shouldReportCpuOnlyWhenNoGpuDetected")
+  @DisplayName("Should report CPU only when no GPU detected")
   void shouldReportCpuOnlyWhenNoGpuDetected() {
     var outputs =
         Map.of(
@@ -38,7 +38,7 @@ class TranscodeCapabilityServiceTest {
   }
 
   @Test
-  @DisplayName("shouldDetectNvencHardwareCapability")
+  @DisplayName("Should detect NVENC hardware capability")
   void shouldDetectNvencHardwareCapability() {
     var encoderOutput =
         """
@@ -64,7 +64,7 @@ class TranscodeCapabilityServiceTest {
   }
 
   @Test
-  @DisplayName("shouldResolveH264EncoderToHardwareWhenAvailable")
+  @DisplayName("Should resolve H264 encoder to hardware when available")
   void shouldResolveH264EncoderToHardwareWhenAvailable() {
     var encoderOutput =
         """
@@ -84,7 +84,7 @@ class TranscodeCapabilityServiceTest {
   }
 
   @Test
-  @DisplayName("shouldResolveAv1EncoderToSoftwareWhenNoHardware")
+  @DisplayName("Should resolve AV1 encoder to software when no hardware")
   void shouldResolveAv1EncoderToSoftwareWhenNoHardware() {
     var outputs =
         Map.of(
@@ -99,7 +99,7 @@ class TranscodeCapabilityServiceTest {
   }
 
   @Test
-  @DisplayName("shouldResolveH264EncoderToSoftwareWhenNoHardware")
+  @DisplayName("Should resolve H264 encoder to software when no hardware")
   void shouldResolveH264EncoderToSoftwareWhenNoHardware() {
     var outputs =
         Map.of(
@@ -114,7 +114,7 @@ class TranscodeCapabilityServiceTest {
   }
 
   @Test
-  @DisplayName("shouldDetectQsvCapability")
+  @DisplayName("Should detect QSV capability")
   void shouldDetectQsvCapability() {
     var encoderOutput =
         """

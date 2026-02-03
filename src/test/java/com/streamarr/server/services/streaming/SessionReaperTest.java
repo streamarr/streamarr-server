@@ -44,7 +44,7 @@ class SessionReaperTest {
   }
 
   @Test
-  @DisplayName("shouldReapIdleSessionWithNoActiveRequests")
+  @DisplayName("Should reap idle session with no active requests")
   void shouldReapIdleSessionWithNoActiveRequests() {
     var session = buildSession(Instant.now().minusSeconds(120), 0);
     streamingService.addSession(session);
@@ -55,7 +55,7 @@ class SessionReaperTest {
   }
 
   @Test
-  @DisplayName("shouldPreserveIdleSessionWithActiveRequests")
+  @DisplayName("Should preserve idle session with active requests")
   void shouldPreserveIdleSessionWithActiveRequests() {
     var session = buildSession(Instant.now().minusSeconds(120), 1);
     streamingService.addSession(session);
@@ -66,7 +66,7 @@ class SessionReaperTest {
   }
 
   @Test
-  @DisplayName("shouldPreserveRecentlyAccessedSession")
+  @DisplayName("Should preserve recently accessed session")
   void shouldPreserveRecentlyAccessedSession() {
     var session = buildSession(Instant.now().minusSeconds(10), 0);
     streamingService.addSession(session);
@@ -77,7 +77,7 @@ class SessionReaperTest {
   }
 
   @Test
-  @DisplayName("shouldUpdateHandleToFailedWhenFfmpegProcessDies")
+  @DisplayName("Should update handle to failed when FFmpeg process dies")
   void shouldUpdateHandleToFailedWhenFfmpegProcessDies() {
     var session = buildSession(Instant.now().minusSeconds(10), 0);
     session.setHandle(new TranscodeHandle(1234L, TranscodeStatus.ACTIVE));
@@ -91,7 +91,7 @@ class SessionReaperTest {
   }
 
   @Test
-  @DisplayName("shouldNotChangeHandleWhenFfmpegProcessIsRunning")
+  @DisplayName("Should not change handle when FFmpeg process is running")
   void shouldNotChangeHandleWhenFfmpegProcessIsRunning() {
     var session = buildSession(Instant.now().minusSeconds(10), 0);
     session.setHandle(new TranscodeHandle(1234L, TranscodeStatus.ACTIVE));

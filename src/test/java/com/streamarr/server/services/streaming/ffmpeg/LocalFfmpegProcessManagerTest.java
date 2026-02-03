@@ -18,7 +18,7 @@ class LocalFfmpegProcessManagerTest {
   private final LocalFfmpegProcessManager manager = new LocalFfmpegProcessManager();
 
   @Test
-  @DisplayName("shouldStartProcessAndReportRunning")
+  @DisplayName("Should start process and report running")
   void shouldStartProcessAndReportRunning() {
     var sessionId = UUID.randomUUID();
 
@@ -32,7 +32,7 @@ class LocalFfmpegProcessManagerTest {
   }
 
   @Test
-  @DisplayName("shouldStopProcessGracefully")
+  @DisplayName("Should stop process gracefully")
   void shouldStopProcessGracefully() throws Exception {
     var sessionId = UUID.randomUUID();
 
@@ -44,13 +44,13 @@ class LocalFfmpegProcessManagerTest {
   }
 
   @Test
-  @DisplayName("shouldReportNotRunningForUnknownSession")
+  @DisplayName("Should report not running for unknown session")
   void shouldReportNotRunningForUnknownSession() {
     assertThat(manager.isRunning(UUID.randomUUID())).isFalse();
   }
 
   @Test
-  @DisplayName("shouldReportNotRunningAfterProcessExitsNaturally")
+  @DisplayName("Should report not running after process exits naturally")
   void shouldReportNotRunningAfterProcessExitsNaturally() throws Exception {
     var sessionId = UUID.randomUUID();
 
@@ -63,7 +63,7 @@ class LocalFfmpegProcessManagerTest {
   }
 
   @Test
-  @DisplayName("shouldHandleStopOnAlreadyStoppedSession")
+  @DisplayName("Should handle stop on already stopped session")
   void shouldHandleStopOnAlreadyStoppedSession() {
     var sessionId = UUID.randomUUID();
 

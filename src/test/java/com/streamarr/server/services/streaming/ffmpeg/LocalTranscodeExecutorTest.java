@@ -67,7 +67,7 @@ class LocalTranscodeExecutorTest {
   }
 
   @Test
-  @DisplayName("shouldStartTranscodeWithGpuEncoderWhenAvailable")
+  @DisplayName("Should start transcode with GPU encoder when available")
   void shouldStartTranscodeWithGpuEncoderWhenAvailable() {
     var request = createRequest(TranscodeMode.FULL_TRANSCODE, "h264");
 
@@ -79,7 +79,7 @@ class LocalTranscodeExecutorTest {
   }
 
   @Test
-  @DisplayName("shouldFallbackToSoftwareEncoderWhenNoGpu")
+  @DisplayName("Should fall back to software encoder when no GPU")
   void shouldFallbackToSoftwareEncoderWhenNoGpu() {
     var noHwCapability =
         HardwareEncodingCapability.builder().available(false).encoders(Set.of()).build();
@@ -97,7 +97,7 @@ class LocalTranscodeExecutorTest {
   }
 
   @Test
-  @DisplayName("shouldStopTranscodeAndRemoveFromMap")
+  @DisplayName("Should stop transcode and remove from map")
   void shouldStopTranscodeAndRemoveFromMap() {
     var request = createRequest(TranscodeMode.FULL_TRANSCODE, "h264");
     executor.start(request);
@@ -109,7 +109,7 @@ class LocalTranscodeExecutorTest {
   }
 
   @Test
-  @DisplayName("shouldReportRunningForActiveSession")
+  @DisplayName("Should report running for active session")
   void shouldReportRunningForActiveSession() {
     var request = createRequest(TranscodeMode.FULL_TRANSCODE, "h264");
     executor.start(request);
@@ -118,19 +118,19 @@ class LocalTranscodeExecutorTest {
   }
 
   @Test
-  @DisplayName("shouldReportNotRunningForUnknownSession")
+  @DisplayName("Should report not running for unknown session")
   void shouldReportNotRunningForUnknownSession() {
     assertThat(executor.isRunning(UUID.randomUUID())).isFalse();
   }
 
   @Test
-  @DisplayName("shouldReportHealthyWhenFfmpegAvailable")
+  @DisplayName("Should report healthy when FFmpeg available")
   void shouldReportHealthyWhenFfmpegAvailable() {
     assertThat(executor.isHealthy()).isTrue();
   }
 
   @Test
-  @DisplayName("shouldReportUnhealthyWhenFfmpegUnavailable")
+  @DisplayName("Should report unhealthy when FFmpeg unavailable")
   void shouldReportUnhealthyWhenFfmpegUnavailable() {
     var capabilityService =
         createCapabilityService(false,
@@ -143,7 +143,7 @@ class LocalTranscodeExecutorTest {
   }
 
   @Test
-  @DisplayName("shouldUseCopyEncoderForRemux")
+  @DisplayName("Should use copy encoder for remux")
   void shouldUseCopyEncoderForRemux() {
     var request = createRequest(TranscodeMode.REMUX, "h264");
 

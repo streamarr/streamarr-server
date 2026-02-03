@@ -19,11 +19,11 @@ import com.streamarr.server.services.streaming.StreamingService;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.Collections;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -50,7 +50,7 @@ class StreamControllerIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("shouldReturnMasterPlaylistWithCorrectContentType")
+  @DisplayName("Should return master playlist with correct content type")
   void shouldReturnMasterPlaylistWithCorrectContentType() throws Exception {
     var session = buildMpegtsSession();
     when(streamingService.getSession(session.getSessionId())).thenReturn(Optional.of(session));
@@ -66,7 +66,7 @@ class StreamControllerIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("shouldReturn404ForInvalidSession")
+  @DisplayName("Should return 404 when session not found")
   void shouldReturn404ForInvalidSession() throws Exception {
     var invalidId = UUID.randomUUID();
     when(streamingService.getSession(invalidId)).thenReturn(Optional.empty());
@@ -77,7 +77,7 @@ class StreamControllerIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("shouldServeTsSegmentWithCorrectContentType")
+  @DisplayName("Should serve TS segment with correct content type")
   void shouldServeTsSegmentWithCorrectContentType() throws Exception {
     var session = buildMpegtsSession();
     var segmentData = new byte[] {0x47, 0x00, 0x11, 0x10};
@@ -97,7 +97,7 @@ class StreamControllerIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("shouldReturn404WhenSegmentUnavailable")
+  @DisplayName("Should return 404 when segment unavailable")
   void shouldReturn404WhenSegmentUnavailable() throws Exception {
     var session = buildMpegtsSession();
     when(streamingService.getSession(session.getSessionId())).thenReturn(Optional.of(session));

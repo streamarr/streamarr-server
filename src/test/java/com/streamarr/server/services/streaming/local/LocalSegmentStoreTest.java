@@ -37,7 +37,7 @@ class LocalSegmentStoreTest {
   }
 
   @Test
-  @DisplayName("shouldCreateOutputDirectoryForSession")
+  @DisplayName("Should create output directory for session")
   void shouldCreateOutputDirectoryForSession() {
     var sessionId = UUID.randomUUID();
 
@@ -48,7 +48,7 @@ class LocalSegmentStoreTest {
   }
 
   @Test
-  @DisplayName("shouldReturnSameOutputDirectoryForSameSession")
+  @DisplayName("Should return same output directory for same session")
   void shouldReturnSameOutputDirectoryForSameSession() {
     var sessionId = UUID.randomUUID();
 
@@ -59,7 +59,7 @@ class LocalSegmentStoreTest {
   }
 
   @Test
-  @DisplayName("shouldReadSegmentFileCorrectly")
+  @DisplayName("Should read segment file correctly")
   void shouldReadSegmentFileCorrectly() throws IOException {
     var sessionId = UUID.randomUUID();
     var outputDir = store.getOutputDirectory(sessionId);
@@ -72,7 +72,7 @@ class LocalSegmentStoreTest {
   }
 
   @Test
-  @DisplayName("shouldThrowWhenReadingNonexistentSegment")
+  @DisplayName("Should throw when reading nonexistent segment")
   void shouldThrowWhenReadingNonexistentSegment() {
     var sessionId = UUID.randomUUID();
     store.getOutputDirectory(sessionId);
@@ -82,7 +82,7 @@ class LocalSegmentStoreTest {
   }
 
   @Test
-  @DisplayName("shouldDeleteSessionDirectory")
+  @DisplayName("Should delete session directory")
   void shouldDeleteSessionDirectory() throws IOException {
     var sessionId = UUID.randomUUID();
     var outputDir = store.getOutputDirectory(sessionId);
@@ -94,7 +94,7 @@ class LocalSegmentStoreTest {
   }
 
   @Test
-  @DisplayName("shouldHandleDeleteOfNonexistentSession")
+  @DisplayName("Should handle delete of nonexistent session")
   void shouldHandleDeleteOfNonexistentSession() {
     var sessionId = UUID.randomUUID();
 
@@ -102,7 +102,7 @@ class LocalSegmentStoreTest {
   }
 
   @Test
-  @DisplayName("shouldWaitForSegmentThatAlreadyExists")
+  @DisplayName("Should wait for segment that already exists")
   void shouldWaitForSegmentThatAlreadyExists() throws IOException {
     var sessionId = UUID.randomUUID();
     var outputDir = store.getOutputDirectory(sessionId);
@@ -114,7 +114,7 @@ class LocalSegmentStoreTest {
   }
 
   @Test
-  @DisplayName("shouldTimeoutWhenSegmentNeverAppears")
+  @DisplayName("Should timeout when segment never appears")
   void shouldTimeoutWhenSegmentNeverAppears() {
     var sessionId = UUID.randomUUID();
     store.getOutputDirectory(sessionId);
@@ -125,7 +125,7 @@ class LocalSegmentStoreTest {
   }
 
   @Test
-  @DisplayName("shouldRejectSegmentNameWithPathTraversal")
+  @DisplayName("Should reject segment name with path traversal")
   void shouldRejectSegmentNameWithPathTraversal() {
     var sessionId = UUID.randomUUID();
     store.getOutputDirectory(sessionId);
@@ -135,7 +135,7 @@ class LocalSegmentStoreTest {
   }
 
   @Test
-  @DisplayName("shouldAllowValidSegmentNameWithSubdirectory")
+  @DisplayName("Should allow valid segment name with subdirectory")
   void shouldAllowValidSegmentNameWithSubdirectory() throws IOException {
     var sessionId = UUID.randomUUID();
     var outputDir = store.getOutputDirectory(sessionId);
@@ -149,7 +149,7 @@ class LocalSegmentStoreTest {
   }
 
   @Test
-  @DisplayName("shouldWaitForSegmentCreatedByBackgroundThread")
+  @DisplayName("Should wait for segment created by background thread")
   void shouldWaitForSegmentCreatedByBackgroundThread() {
     var sessionId = UUID.randomUUID();
     var outputDir = store.getOutputDirectory(sessionId);

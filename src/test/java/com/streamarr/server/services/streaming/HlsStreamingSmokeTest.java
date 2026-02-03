@@ -135,7 +135,7 @@ class HlsStreamingSmokeTest {
   }
 
   @Test
-  @DisplayName("shouldProbeTestVideoAndReturnValidMediaProbe")
+  @DisplayName("Should probe test video and return valid media probe")
   void shouldProbeTestVideoAndReturnValidMediaProbe() {
     var file = seedMediaFile();
     var options =
@@ -157,7 +157,7 @@ class HlsStreamingSmokeTest {
   }
 
   @Test
-  @DisplayName("shouldChooseRemuxForCompatibleSource")
+  @DisplayName("Should choose remux for compatible source")
   void shouldChooseRemuxForCompatibleSource() {
     var file = seedMediaFile();
     var options =
@@ -173,7 +173,7 @@ class HlsStreamingSmokeTest {
   }
 
   @Test
-  @DisplayName("shouldStartFfmpegAndProduceSegments")
+  @DisplayName("Should start FFmpeg and produce segments")
   void shouldStartFfmpegAndProduceSegments() {
     var file = seedMediaFile();
     var options =
@@ -198,7 +198,7 @@ class HlsStreamingSmokeTest {
   }
 
   @Test
-  @DisplayName("shouldGenerateRfc8216CompliantMasterPlaylist")
+  @DisplayName("Should generate RFC 8216 compliant master playlist")
   void shouldGenerateRfc8216CompliantMasterPlaylist() {
     var file = seedMediaFile();
     var options =
@@ -220,7 +220,7 @@ class HlsStreamingSmokeTest {
   }
 
   @Test
-  @DisplayName("shouldGenerateRfc8216CompliantMediaPlaylist")
+  @DisplayName("Should generate RFC 8216 compliant media playlist")
   void shouldGenerateRfc8216CompliantMediaPlaylist() {
     var file = seedMediaFile();
     var options =
@@ -258,7 +258,7 @@ class HlsStreamingSmokeTest {
   }
 
   @Test
-  @DisplayName("shouldShutdownFfmpegGracefullyViaStdinQuit")
+  @DisplayName("Should shutdown FFmpeg gracefully via stdin quit")
   void shouldShutdownFfmpegGracefullyViaStdinQuit() {
     var file = seedMediaFile();
     var options =
@@ -285,7 +285,7 @@ class HlsStreamingSmokeTest {
   }
 
   @Test
-  @DisplayName("shouldCleanUpOnSessionDestroy")
+  @DisplayName("Should clean up on session destroy")
   void shouldCleanUpOnSessionDestroy() {
     var file = seedMediaFile();
     var options =

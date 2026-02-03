@@ -74,7 +74,7 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("shouldCreateSessionForValidMediaFile")
+  @DisplayName("Should create session for valid media file")
   void shouldCreateSessionForValidMediaFile() {
     var session = streamingService.createSession(savedMediaFile.getId(), defaultOptions());
 
@@ -87,7 +87,7 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("shouldRetrieveExistingSession")
+  @DisplayName("Should retrieve existing session")
   void shouldRetrieveExistingSession() {
     var session = streamingService.createSession(savedMediaFile.getId(), defaultOptions());
 
@@ -98,7 +98,7 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("shouldDestroySessionAndCleanup")
+  @DisplayName("Should destroy session and cleanup")
   void shouldDestroySessionAndCleanup() {
     var session = streamingService.createSession(savedMediaFile.getId(), defaultOptions());
 
@@ -108,14 +108,14 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("shouldThrowWhenMediaFileNotFound")
+  @DisplayName("Should throw when media file not found")
   void shouldThrowWhenMediaFileNotFound() {
     assertThatThrownBy(() -> streamingService.createSession(UUID.randomUUID(), defaultOptions()))
         .isInstanceOf(MediaFileNotFoundException.class);
   }
 
   @Test
-  @DisplayName("shouldSeekToNewPosition")
+  @DisplayName("Should seek to new position")
   void shouldSeekToNewPosition() {
     var session = streamingService.createSession(savedMediaFile.getId(), defaultOptions());
 
@@ -126,7 +126,7 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("shouldThrowWhenSeekingNonexistentSession")
+  @DisplayName("Should throw when seeking nonexistent session")
   void shouldThrowWhenSeekingNonexistentSession() {
     assertThatThrownBy(() -> streamingService.seekSession(UUID.randomUUID(), 300))
         .isInstanceOf(SessionNotFoundException.class);

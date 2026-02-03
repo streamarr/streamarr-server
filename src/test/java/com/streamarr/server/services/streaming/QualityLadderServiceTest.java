@@ -16,7 +16,7 @@ class QualityLadderServiceTest {
   private final QualityLadderService service = new QualityLadderService();
 
   @Test
-  @DisplayName("shouldGenerateAllTiersFor1080pSource")
+  @DisplayName("Should generate all tiers for 1080p source")
   void shouldGenerateAllTiersFor1080pSource() {
     var probe = buildProbe(1920, 1080, 8_000_000L);
     var options = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();
@@ -31,7 +31,7 @@ class QualityLadderServiceTest {
   }
 
   @Test
-  @DisplayName("shouldCapAt720pForSourceBelow1080p")
+  @DisplayName("Should cap at 720p for source below 1080p")
   void shouldCapAt720pForSourceBelow1080p() {
     var probe = buildProbe(1280, 720, 4_000_000L);
     var options = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();
@@ -45,7 +45,7 @@ class QualityLadderServiceTest {
   }
 
   @Test
-  @DisplayName("shouldFilterByClientMaxHeight")
+  @DisplayName("Should filter by client max height")
   void shouldFilterByClientMaxHeight() {
     var probe = buildProbe(1920, 1080, 8_000_000L);
     var options =
@@ -59,7 +59,7 @@ class QualityLadderServiceTest {
   }
 
   @Test
-  @DisplayName("shouldReturnSingleVariantForLowResSource")
+  @DisplayName("Should return single variant for low res source")
   void shouldReturnSingleVariantForLowResSource() {
     var probe = buildProbe(320, 180, 500_000L);
     var options = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();
@@ -72,7 +72,7 @@ class QualityLadderServiceTest {
   }
 
   @Test
-  @DisplayName("shouldFilterByClientMaxBitrate")
+  @DisplayName("Should filter by client max bitrate")
   void shouldFilterByClientMaxBitrate() {
     var probe = buildProbe(1920, 1080, 8_000_000L);
     var options =
@@ -85,7 +85,7 @@ class QualityLadderServiceTest {
   }
 
   @Test
-  @DisplayName("shouldGenerateCorrectBitratesPerTier")
+  @DisplayName("Should generate correct bitrates per tier")
   void shouldGenerateCorrectBitratesPerTier() {
     var probe = buildProbe(1920, 1080, 8_000_000L);
     var options = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();

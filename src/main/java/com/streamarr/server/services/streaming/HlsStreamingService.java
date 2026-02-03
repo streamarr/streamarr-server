@@ -4,6 +4,7 @@ import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
+import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.VideoQuality;
@@ -169,7 +170,7 @@ public class HlsStreamingService implements StreamingService {
 
   private TranscodeRequest buildRequest(
       UUID sessionId, Path sourcePath, int seekPosition,
-      com.streamarr.server.domain.streaming.TranscodeDecision decision,
+      TranscodeDecision decision,
       double framerate, int width, int height, long bitrate) {
     return TranscodeRequest.builder()
         .sessionId(sessionId)

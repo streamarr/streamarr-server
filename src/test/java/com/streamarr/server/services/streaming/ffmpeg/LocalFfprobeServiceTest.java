@@ -19,7 +19,7 @@ class LocalFfprobeServiceTest {
   private final ObjectMapper objectMapper = new ObjectMapper();
 
   @Test
-  @DisplayName("shouldParseValidFfprobeOutputIntoMediaProbe")
+  @DisplayName("Should parse valid ffprobe output into media probe")
   void shouldParseValidFfprobeOutputIntoMediaProbe() {
     var json =
         """
@@ -58,7 +58,7 @@ class LocalFfprobeServiceTest {
   }
 
   @Test
-  @DisplayName("shouldParseFractionFramerate")
+  @DisplayName("Should parse fraction framerate")
   void shouldParseFractionFramerate() {
     var json =
         """
@@ -91,7 +91,7 @@ class LocalFfprobeServiceTest {
   }
 
   @Test
-  @DisplayName("shouldThrowWhenNoVideoStreamFound")
+  @DisplayName("Should throw when no video stream found")
   void shouldThrowWhenNoVideoStreamFound() {
     var json =
         """
@@ -117,7 +117,7 @@ class LocalFfprobeServiceTest {
   }
 
   @Test
-  @DisplayName("shouldThrowWhenFfprobeProcessFails")
+  @DisplayName("Should throw when ffprobe process fails")
   void shouldThrowWhenFfprobeProcessFails() {
     var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess("", 1));
 
@@ -126,7 +126,7 @@ class LocalFfprobeServiceTest {
   }
 
   @Test
-  @DisplayName("shouldHandleMissingAudioStream")
+  @DisplayName("Should handle missing audio stream")
   void shouldHandleMissingAudioStream() {
     var json =
         """
