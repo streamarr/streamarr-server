@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
@@ -47,23 +48,11 @@ public class HlsStreamingService implements StreamingService {
 
     var probe = ffprobeService.probe(Path.of(mediaFile.getFilepath()));
     var decision = transcodeDecisionService.decide(probe, options);
+    var variants = resolveVariants(probe, options, decision);
+    variants = enforceCapacityLimits(decision.transcodeMode(), variants);
 
     var sessionId = UUID.randomUUID();
     var now = Instant.now();
-
-    var useAbr =
-        isAutoQuality(options)
-            && decision.transcodeMode() == TranscodeMode.FULL_TRANSCODE;
-
-    List<QualityVariant> variants =
-        useAbr ? qualityLadderService.generateVariants(probe, options) : Collections.emptyList();
-
-    if (useAbr) {
-      variants = capVariantsToAvailableSlots(variants);
-    }
-    if (!useAbr && requiresTranscode(decision.transcodeMode())) {
-      enforceTranscodeLimit();
-    }
 
     var session =
         StreamSession.builder()
@@ -80,13 +69,7 @@ public class HlsStreamingService implements StreamingService {
             .activeRequestCount(new AtomicInteger(0))
             .build();
 
-    if (useAbr) {
-      startVariantTranscodes(session, variants);
-    }
-    if (!useAbr) {
-      startSingleTranscode(session, 0);
-    }
-
+    startTranscodes(session, 0);
     sessions.put(sessionId, session);
     log.info(
         "Created streaming session {} for media file {} (mode: {}, variants: {})",
@@ -116,13 +99,7 @@ public class HlsStreamingService implements StreamingService {
 
     transcodeExecutor.stop(sessionId);
     segmentStore.deleteSession(sessionId);
-
-    if (!session.getVariants().isEmpty()) {
-      startVariantTranscodes(session, session.getVariants(), positionSeconds);
-    }
-    if (session.getVariants().isEmpty()) {
-      startSingleTranscode(session, positionSeconds);
-    }
+    startTranscodes(session, positionSeconds);
 
     session.setSeekPosition(positionSeconds);
     session.setLastAccessedAt(Instant.now());
@@ -153,8 +130,31 @@ public class HlsStreamingService implements StreamingService {
     return sessions.size();
   }
 
-  private void startVariantTranscodes(StreamSession session, List<QualityVariant> variants) {
-    startVariantTranscodes(session, variants, 0);
+  private List<QualityVariant> resolveVariants(
+      MediaProbe probe, StreamingOptions options, TranscodeDecision decision) {
+    if (!isAutoQuality(options) || decision.transcodeMode() != TranscodeMode.FULL_TRANSCODE) {
+      return Collections.emptyList();
+    }
+    return qualityLadderService.generateVariants(probe, options);
+  }
+
+  private List<QualityVariant> enforceCapacityLimits(
+      TranscodeMode mode, List<QualityVariant> variants) {
+    if (!variants.isEmpty()) {
+      return capVariantsToAvailableSlots(variants);
+    }
+    if (requiresTranscode(mode)) {
+      enforceTranscodeLimit();
+    }
+    return variants;
+  }
+
+  private void startTranscodes(StreamSession session, int seekPosition) {
+    if (!session.getVariants().isEmpty()) {
+      startVariantTranscodes(session, session.getVariants(), seekPosition);
+      return;
+    }
+    startSingleTranscode(session, seekPosition);
   }
 
   private void startVariantTranscodes(
