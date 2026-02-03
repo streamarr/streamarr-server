@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming.local;
 
+import com.streamarr.server.exceptions.InvalidSegmentPathException;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.streaming.SegmentStore;
 import java.io.IOException;
@@ -96,7 +97,11 @@ public class LocalSegmentStore implements SegmentStore {
     if (dir == null) {
       throw new TranscodeException("No output directory for session: " + sessionId);
     }
-    return dir.resolve(segmentName);
+    var resolved = dir.resolve(segmentName).normalize();
+    if (!resolved.startsWith(dir)) {
+      throw new InvalidSegmentPathException(segmentName);
+    }
+    return resolved;
   }
 
   private Path createSessionDirectory(UUID sessionId) {

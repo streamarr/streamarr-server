@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming.local;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.exceptions.InvalidSegmentPathException;
 import com.streamarr.server.exceptions.TranscodeException;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -121,6 +122,30 @@ class LocalSegmentStoreTest {
     var result = store.waitForSegment(sessionId, "missing.ts", Duration.ofMillis(300));
 
     assertThat(result).isFalse();
+  }
+
+  @Test
+  @DisplayName("shouldRejectSegmentNameWithPathTraversal")
+  void shouldRejectSegmentNameWithPathTraversal() {
+    var sessionId = UUID.randomUUID();
+    store.getOutputDirectory(sessionId);
+
+    assertThatThrownBy(() -> store.readSegment(sessionId, "../../etc/passwd.ts"))
+        .isInstanceOf(InvalidSegmentPathException.class);
+  }
+
+  @Test
+  @DisplayName("shouldAllowValidSegmentNameWithSubdirectory")
+  void shouldAllowValidSegmentNameWithSubdirectory() throws IOException {
+    var sessionId = UUID.randomUUID();
+    var outputDir = store.getOutputDirectory(sessionId);
+    var variantDir = outputDir.resolve("720p");
+    Files.createDirectories(variantDir);
+    Files.write(variantDir.resolve("segment0.ts"), "data".getBytes());
+
+    var result = store.readSegment(sessionId, "720p/segment0.ts");
+
+    assertThat(result).isEqualTo("data".getBytes());
   }
 
   @Test

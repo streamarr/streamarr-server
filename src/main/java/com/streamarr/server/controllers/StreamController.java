@@ -2,6 +2,7 @@ package com.streamarr.server.controllers;
 
 import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.server.exceptions.InvalidSegmentPathException;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.StreamingService;
@@ -10,6 +11,7 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -78,6 +80,7 @@ public class StreamController {
   @GetMapping("/{sessionId}/{segmentName:.+\\.(?:ts|m4s)}")
   public ResponseEntity<byte[]> getSegment(
       @PathVariable UUID sessionId, @PathVariable String segmentName) {
+    validatePathSegment(segmentName);
     var session = findSession(sessionId);
     if (session == null) {
       return ResponseEntity.notFound().build();
@@ -89,6 +92,7 @@ public class StreamController {
   @GetMapping("/{sessionId}/{variantLabel}/stream.m3u8")
   public ResponseEntity<String> getVariantStreamPlaylist(
       @PathVariable UUID sessionId, @PathVariable String variantLabel) {
+    validatePathSegment(variantLabel);
     var session = findSession(sessionId);
     if (session == null) {
       return ResponseEntity.notFound().build();
@@ -105,6 +109,7 @@ public class StreamController {
   @GetMapping("/{sessionId}/{variantLabel}/init.mp4")
   public ResponseEntity<byte[]> getVariantInitSegment(
       @PathVariable UUID sessionId, @PathVariable String variantLabel) {
+    validatePathSegment(variantLabel);
     var session = findSession(sessionId);
     if (session == null) {
       return ResponseEntity.notFound().build();
@@ -136,6 +141,8 @@ public class StreamController {
       @PathVariable UUID sessionId,
       @PathVariable String variantLabel,
       @PathVariable String segmentName) {
+    validatePathSegment(variantLabel);
+    validatePathSegment(segmentName);
     var session = findSession(sessionId);
     if (session == null) {
       return ResponseEntity.notFound().build();
@@ -171,5 +178,16 @@ public class StreamController {
 
   private StreamSession findSession(UUID sessionId) {
     return streamingService.getSession(sessionId).orElse(null);
+  }
+
+  private void validatePathSegment(String segment) {
+    if (segment.contains("..") || segment.contains("/") || segment.contains("\\")) {
+      throw new InvalidSegmentPathException(segment);
+    }
+  }
+
+  @ExceptionHandler(InvalidSegmentPathException.class)
+  public ResponseEntity<Void> handleInvalidSegmentPath() {
+    return ResponseEntity.badRequest().build();
   }
 }

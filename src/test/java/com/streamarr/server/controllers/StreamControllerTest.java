@@ -395,6 +395,27 @@ class StreamControllerTest {
     assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(segmentData);
   }
 
+  @Test
+  @DisplayName("shouldReturn400ForSegmentNameWithPathTraversal")
+  void shouldReturn400ForSegmentNameWithPathTraversal() throws Exception {
+    streamingService.setSession(buildMpegtsSession());
+
+    mockMvc
+        .perform(get("/api/stream/{sessionId}/{segmentName}", SESSION_ID, "..segment0.ts"))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  @DisplayName("shouldReturn400ForVariantLabelWithPathTraversal")
+  void shouldReturn400ForVariantLabelWithPathTraversal() throws Exception {
+    streamingService.setSession(buildAbrSession());
+
+    mockMvc
+        .perform(
+            get("/api/stream/{sessionId}/{variantLabel}/segment0.ts", SESSION_ID, "..720p"))
+        .andExpect(status().isBadRequest());
+  }
+
   private static class StubStreamingService implements StreamingService {
 
     private StreamSession session;
