@@ -83,7 +83,25 @@ class HlsStreamingServiceTest {
 
     assertThat(session.getSessionId()).isNotNull();
     assertThat(session.getMediaFileId()).isEqualTo(file.getId());
+  }
+
+  @Test
+  @DisplayName("Should populate media probe when creating session")
+  void shouldPopulateMediaProbeWhenCreatingSession() {
+    var file = seedMediaFile();
+
+    var session = service.createSession(file.getId(), defaultOptions());
+
     assertThat(session.getMediaProbe()).isNotNull();
+  }
+
+  @Test
+  @DisplayName("Should populate transcode decision when creating session")
+  void shouldPopulateTranscodeDecisionWhenCreatingSession() {
+    var file = seedMediaFile();
+
+    var session = service.createSession(file.getId(), defaultOptions());
+
     assertThat(session.getTranscodeDecision()).isNotNull();
   }
 
@@ -261,6 +279,18 @@ class HlsStreamingServiceTest {
 
     assertThat(seeked.getSessionId()).isEqualTo(originalSessionId);
     assertThat(seeked.getSeekPosition()).isEqualTo(300);
+  }
+
+  @Test
+  @DisplayName("Should restart transcode when seeking")
+  void shouldRestartTranscodeWhenSeeking() {
+    var file = seedMediaFile();
+    var session = service.createSession(file.getId(), defaultOptions());
+
+    var seeked = service.seekSession(session.getSessionId(), 300);
+
+    assertThat(seeked.getHandle()).isNotNull();
+    assertThat(transcodeExecutor.isRunning(session.getSessionId())).isTrue();
   }
 
   @Test

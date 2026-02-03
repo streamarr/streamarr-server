@@ -123,6 +123,13 @@ class HlsStreamingSmokeTest {
     segmentStore.shutdown();
   }
 
+  private StreamingOptions defaultOptions() {
+    return StreamingOptions.builder()
+        .quality(VideoQuality.AUTO)
+        .supportedCodecs(List.of("h264"))
+        .build();
+  }
+
   private MediaFile seedMediaFile() {
     var file =
         MediaFile.builder()
@@ -135,22 +142,34 @@ class HlsStreamingSmokeTest {
   }
 
   @Test
-  @DisplayName("Should probe test video and return valid media probe")
-  void shouldProbeTestVideoAndReturnValidMediaProbe() {
+  @DisplayName("Should detect correct codecs from test video")
+  void shouldDetectCorrectCodecsFromTestVideo() {
     var file = seedMediaFile();
-    var options =
-        StreamingOptions.builder()
-            .quality(VideoQuality.AUTO)
-            .supportedCodecs(List.of("h264"))
-            .build();
-
-    var session = streamingService.createSession(file.getId(), options);
+    var session = streamingService.createSession(file.getId(), defaultOptions());
 
     var probe = session.getMediaProbe();
     assertThat(probe.videoCodec()).isEqualTo("h264");
     assertThat(probe.audioCodec()).isEqualTo("aac");
+  }
+
+  @Test
+  @DisplayName("Should detect correct resolution from test video")
+  void shouldDetectCorrectResolutionFromTestVideo() {
+    var file = seedMediaFile();
+    var session = streamingService.createSession(file.getId(), defaultOptions());
+
+    var probe = session.getMediaProbe();
     assertThat(probe.width()).isEqualTo(320);
     assertThat(probe.height()).isEqualTo(180);
+  }
+
+  @Test
+  @DisplayName("Should detect valid duration and bitrate from test video")
+  void shouldDetectValidDurationAndBitrateFromTestVideo() {
+    var file = seedMediaFile();
+    var session = streamingService.createSession(file.getId(), defaultOptions());
+
+    var probe = session.getMediaProbe();
     assertThat(probe.framerate()).isGreaterThan(0);
     assertThat(probe.duration()).isGreaterThan(Duration.ofSeconds(9));
     assertThat(probe.bitrate()).isGreaterThan(0);
