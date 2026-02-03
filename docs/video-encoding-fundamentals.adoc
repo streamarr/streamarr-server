@@ -100,6 +100,59 @@ The cost of streaming depends on whether the source codec matches what the clien
 
 Hardware encoding (NVENC, QSV, AMF, VideoToolbox) makes full transcoding practical for real-time streaming. A single modern GPU can handle multiple simultaneous transcodes at speeds well above real-time.
 
+== Adaptive Bitrate Streaming (ABR)
+
+Adaptive Bitrate Streaming encodes the same source into multiple quality *renditions* (resolution + bitrate combinations) and lists them in the HLS master playlist. The client player monitors network throughput and buffer levels, switching between renditions mid-stream to maintain smooth playback.
+
+=== When ABR Applies
+
+ABR only applies when the transcode mode is `FULL_TRANSCODE` and the requested quality is `AUTO`. In this case, the `QualityLadderService` generates a set of renditions from the standard quality tiers:
+
+|===
+| Tier | Resolution | Video Bitrate | Audio Bitrate
+
+| 1080p | 1920x1080 | 5 Mbps | 128 kbps
+| 720p  | 1280x720  | 3 Mbps | 128 kbps
+| 480p  | 854x480   | 1.5 Mbps | 96 kbps
+| 360p  | 640x360   | 800 kbps | 64 kbps
+|===
+
+Tiers are filtered by the source resolution (no upscaling) and any client-declared constraints (`maxHeight`, `maxBitrate`). A 720p source produces at most 720p, 480p, and 360p variants.
+
+=== Why Not REMUX or PARTIAL_TRANSCODE?
+
+Both modes copy the video stream verbatim (`-c:v copy`). The video resolution and bitrate are fixed at the source values -- FFmpeg cannot downscale or re-rate a copied stream. ABR requires re-encoding, which is why it only applies to `FULL_TRANSCODE`.
+
+=== Architecture: One FFmpeg per Variant
+
+Each quality variant runs as a separate FFmpeg process writing segments to its own subdirectory:
+
+----
+session-{uuid}/
+    ├── 1080p/
+    │       ├── stream.m3u8
+    │       ├── segment0.ts
+    │       └── ...
+    ├── 720p/
+    │       ├── stream.m3u8
+    │       └── ...
+    └── master.m3u8
+----
+
+This keeps each process simple (single output) and allows independent lifecycle management -- a variant can be started, stopped, or restarted without affecting others.
+
+=== FFmpeg Flags per Variant
+
+Each variant's FFmpeg command includes:
+
+* **Scale filter:** `-vf scale=-2:{height}` -- downscales video to the target height while auto-calculating width to preserve the source aspect ratio. The `-2` ensures the width is even (required by most codecs).
+* **CBR/VBV rate control:**
+** `-b:v {bitrate}` -- target video bitrate
+** `-maxrate {bitrate}` -- VBV ceiling (same as target for CBR behavior)
+** `-bufsize {bitrate x 2}` -- VBV buffer size, set to 2x the bitrate for tight rate control and predictable segment sizes
+
+These flags apply to `FULL_TRANSCODE` only. `REMUX` and `PARTIAL_TRANSCODE` commands use `-c:v copy` and omit all scale/bitrate arguments.
+
 == Why This Matters for Streamarr
 
 The `TranscodeDecisionService` inspects the source file (via ffprobe) and the client's declared codec support to choose the cheapest path: REMUX when possible, partial transcode when only audio needs conversion, full transcode as a last resort. This decision is cached per session so seek operations reuse the same strategy.
