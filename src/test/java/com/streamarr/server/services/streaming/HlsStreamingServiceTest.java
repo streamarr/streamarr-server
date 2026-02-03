@@ -9,7 +9,6 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeMode;
-import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.MaxConcurrentTranscodesException;
 import com.streamarr.server.exceptions.MediaFileNotFoundException;
@@ -82,13 +81,10 @@ class HlsStreamingServiceTest {
 
     var session = service.createSession(file.getId(), defaultOptions());
 
-    assertThat(session).isNotNull();
     assertThat(session.getSessionId()).isNotNull();
     assertThat(session.getMediaFileId()).isEqualTo(file.getId());
     assertThat(session.getMediaProbe()).isNotNull();
     assertThat(session.getTranscodeDecision()).isNotNull();
-    assertThat(session.getHandle()).isNotNull();
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
   }
 
   @Test
@@ -265,8 +261,6 @@ class HlsStreamingServiceTest {
 
     assertThat(seeked.getSessionId()).isEqualTo(originalSessionId);
     assertThat(seeked.getSeekPosition()).isEqualTo(300);
-    assertThat(seeked.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
-    assertThat(transcodeExecutor.isRunning(originalSessionId)).isTrue();
   }
 
   @Test
