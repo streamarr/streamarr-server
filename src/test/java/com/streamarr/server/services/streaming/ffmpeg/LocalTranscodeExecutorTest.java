@@ -31,14 +31,14 @@ class LocalTranscodeExecutorTest {
     segmentStore = new FakeSegmentStore();
     var commandBuilder = new FfmpegCommandBuilder();
 
-    var gpuCapability =
-        GpuCapability.builder()
+    var hwCapability =
+        HardwareEncodingCapability.builder()
             .available(true)
             .encoders(Set.of("h264_nvenc", "av1_nvenc"))
             .accelerator("cuda")
             .build();
 
-    var capabilityService = createCapabilityService(true, gpuCapability);
+    var capabilityService = createCapabilityService(true, hwCapability);
 
     executor = new LocalTranscodeExecutor(commandBuilder, processManager, segmentStore,
         capabilityService);
@@ -81,9 +81,9 @@ class LocalTranscodeExecutorTest {
   @Test
   @DisplayName("shouldFallbackToSoftwareEncoderWhenNoGpu")
   void shouldFallbackToSoftwareEncoderWhenNoGpu() {
-    var noGpuCapability =
-        GpuCapability.builder().available(false).encoders(Set.of()).build();
-    var capabilityService = createCapabilityService(true, noGpuCapability);
+    var noHwCapability =
+        HardwareEncodingCapability.builder().available(false).encoders(Set.of()).build();
+    var capabilityService = createCapabilityService(true, noHwCapability);
 
     executor = new LocalTranscodeExecutor(new FfmpegCommandBuilder(), processManager,
         segmentStore, capabilityService);
@@ -134,7 +134,7 @@ class LocalTranscodeExecutorTest {
   void shouldReportUnhealthyWhenFfmpegUnavailable() {
     var capabilityService =
         createCapabilityService(false,
-            GpuCapability.builder().available(false).encoders(Set.of()).build());
+            HardwareEncodingCapability.builder().available(false).encoders(Set.of()).build());
 
     executor = new LocalTranscodeExecutor(new FfmpegCommandBuilder(), processManager,
         segmentStore, capabilityService);
@@ -154,7 +154,7 @@ class LocalTranscodeExecutorTest {
   }
 
   private TranscodeCapabilityService createCapabilityService(
-      boolean available, GpuCapability gpuCapability) {
+      boolean available, HardwareEncodingCapability hwCapability) {
     var service = new TranscodeCapabilityService(
         command -> new FakeProcess("ffmpeg version 7.0", available ? 0 : 1));
     if (available) {
@@ -163,11 +163,11 @@ class LocalTranscodeExecutorTest {
       var outputs = Map.of(
           "ffmpeg", (Process) new FakeProcess("ffmpeg version 7.0", 0),
           "hwaccels", (Process) new FakeProcess(
-              gpuCapability.available() ? "Hardware acceleration methods:\ncuda\n"
+              hwCapability.available() ? "Hardware acceleration methods:\ncuda\n"
                   : "Hardware acceleration methods:\n",
               0),
           "encoders", (Process) new FakeProcess(
-              buildEncoderOutput(gpuCapability.encoders()), 0));
+              buildEncoderOutput(hwCapability.encoders()), 0));
 
       var testService = new TranscodeCapabilityService(command -> {
         var cmdStr = String.join(" ", command);

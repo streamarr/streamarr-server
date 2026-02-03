@@ -4,4 +4,4 @@ import java.util.Set;
 import lombok.Builder;
 
 @Builder
-public record GpuCapability(boolean available, Set<String> encoders, String accelerator) {}
+public record HardwareEncodingCapability(boolean available, Set<String> encoders, String accelerator) {}

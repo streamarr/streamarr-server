@@ -29,8 +29,8 @@ public class TranscodeCapabilityService {
 
   private final ProcessFactory processFactory;
   private boolean ffmpegAvailable;
-  private GpuCapability gpuCapability =
-      GpuCapability.builder().available(false).encoders(Set.of()).build();
+  private HardwareEncodingCapability hardwareEncodingCapability =
+      HardwareEncodingCapability.builder().available(false).encoders(Set.of()).build();
 
   public TranscodeCapabilityService(ProcessFactory processFactory) {
     this.processFactory = processFactory;
@@ -47,8 +47,8 @@ public class TranscodeCapabilityService {
     var hasGpu = !hwEncoders.isEmpty();
     var accelerator = hasGpu ? detectAccelerator() : "";
 
-    gpuCapability =
-        GpuCapability.builder()
+    hardwareEncodingCapability =
+        HardwareEncodingCapability.builder()
             .available(hasGpu)
             .encoders(hwEncoders)
             .accelerator(accelerator)
@@ -65,15 +65,15 @@ public class TranscodeCapabilityService {
     return ffmpegAvailable;
   }
 
-  public GpuCapability getGpuCapability() {
-    return gpuCapability;
+  public HardwareEncodingCapability getHardwareEncodingCapability() {
+    return hardwareEncodingCapability;
   }
 
   public String resolveEncoder(String codecFamily) {
-    if (gpuCapability.available()) {
+    if (hardwareEncodingCapability.available()) {
       var prefix = CODEC_HW_PREFIX.get(codecFamily);
       if (prefix != null) {
-        for (var encoder : gpuCapability.encoders()) {
+        for (var encoder : hardwareEncodingCapability.encoders()) {
           if (encoder.startsWith(prefix)) {
             return encoder;
           }

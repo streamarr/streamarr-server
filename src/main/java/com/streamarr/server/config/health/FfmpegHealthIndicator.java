@@ -18,11 +18,11 @@ public class FfmpegHealthIndicator implements HealthIndicator {
       return Health.down().withDetail("reason", "FFmpeg not found").build();
     }
 
-    var gpu = capabilityService.getGpuCapability();
+    var hwEncoding = capabilityService.getHardwareEncodingCapability();
     return Health.up()
-        .withDetail("gpu", gpu.available())
-        .withDetail("encoders", gpu.encoders())
-        .withDetail("accelerator", gpu.accelerator())
+        .withDetail("gpu", hwEncoding.available())
+        .withDetail("encoders", hwEncoding.encoders())
+        .withDetail("accelerator", hwEncoding.accelerator())
         .build();
   }
 }

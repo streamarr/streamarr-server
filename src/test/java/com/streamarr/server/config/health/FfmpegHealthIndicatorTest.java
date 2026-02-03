@@ -2,7 +2,6 @@ package com.streamarr.server.config.health;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.services.streaming.ffmpeg.GpuCapability;
 import com.streamarr.server.services.streaming.ffmpeg.TranscodeCapabilityService;
 import java.util.Set;
 import org.junit.jupiter.api.DisplayName;

@@ -34,12 +34,12 @@ class TranscodeCapabilityServiceTest {
     service.detectCapabilities();
 
     assertThat(service.isFfmpegAvailable()).isTrue();
-    assertThat(service.getGpuCapability().available()).isFalse();
+    assertThat(service.getHardwareEncodingCapability().available()).isFalse();
   }
 
   @Test
-  @DisplayName("shouldDetectNvencGpuCapability")
-  void shouldDetectNvencGpuCapability() {
+  @DisplayName("shouldDetectNvencHardwareCapability")
+  void shouldDetectNvencHardwareCapability() {
     var encoderOutput =
         """
         V....D h264_nvenc           NVIDIA NVENC H.264 encoder (codec h264)
@@ -58,8 +58,8 @@ class TranscodeCapabilityServiceTest {
     service.detectCapabilities();
 
     assertThat(service.isFfmpegAvailable()).isTrue();
-    assertThat(service.getGpuCapability().available()).isTrue();
-    assertThat(service.getGpuCapability().encoders())
+    assertThat(service.getHardwareEncodingCapability().available()).isTrue();
+    assertThat(service.getHardwareEncodingCapability().encoders())
         .contains("h264_nvenc", "hevc_nvenc", "av1_nvenc");
   }
 
@@ -130,7 +130,7 @@ class TranscodeCapabilityServiceTest {
     var service = new TranscodeCapabilityService(command -> resolveProcess(command, outputs));
     service.detectCapabilities();
 
-    assertThat(service.getGpuCapability().available()).isTrue();
+    assertThat(service.getHardwareEncodingCapability().available()).isTrue();
     assertThat(service.resolveEncoder("h264")).isEqualTo("h264_qsv");
   }
 
