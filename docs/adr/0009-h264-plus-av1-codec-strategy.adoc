@@ -1,0 +1,26 @@
+= ADR 0009: H.264 + AV1 Codec Strategy
+
+== Status
+
+Accepted
+
+== Context
+
+Output codec selection determines client compatibility, bandwidth usage, and hardware requirements. H.264 is universally supported. AV1 offers 30-50% bandwidth savings and is royalty-free, with hardware encoding available on Intel Arc, NVIDIA Ada+, and AMD RDNA3+. H.265 sits between the two but carries patent licensing complexity.
+
+== Decision
+
+Support H.264 (universal compatibility) and AV1 (bandwidth savings) as output codecs. Codec preference order is AV1 > H.264, filtered by client-declared capabilities and available hardware encoders.
+
+H.264 uses MPEGTS container (HLS version 3). AV1 uses fMP4 container (HLS version 6, required for `EXT-X-MAP`).
+
+H.265 support is deferred to a future PR -- the fMP4 infrastructure supports it, but encoder selection in `FfmpegCommandBuilder` needs H.265-specific configuration.
+
+== Consequences
+
+* Two codec paths cover the vast majority of clients and hardware
+* AV1 with hardware encoding provides significant bandwidth savings at low CPU cost
+* Clients that declare AV1 support get smaller segments and faster buffering
+* H.264 fallback ensures every client can play something
+* Container format (MPEGTS vs fMP4) is determined by codec choice, not configured separately
+* H.265 can be added later by expanding the `TranscodeDecisionService` preference list

@@ -1,0 +1,105 @@
+= Video Encoding Fundamentals
+
+A primer for contributors on the concepts underpinning HLS video streaming.
+
+== Containers vs Codecs
+
+A *container* (MKV, MP4, MPEGTS, fMP4) is a wrapper that carries one or more streams -- video, audio, subtitles, and metadata. Changing the container is cheap: FFmpeg copies the compressed streams into a new wrapper without re-encoding (`-c copy`, called a *remux*).
+
+A *codec* (H.264, H.265, AV1) is the compression algorithm applied to the raw video frames. Changing the codec requires decoding every frame and re-encoding it, which is orders of magnitude more expensive than a container change.
+
+=== Common Containers
+
+|===
+| Container | Extension | Notes
+
+| MKV (Matroska)
+| `.mkv`
+| Open format, supports virtually any codec combination. Common for stored media files
+
+| MP4
+| `.mp4`
+| ISO base media file format. Universal browser/device compatibility
+
+| MPEGTS
+| `.ts`
+| Transport stream for HLS. Carries H.264 + AAC. Each segment is independently decodable
+
+| fMP4
+| `.m4s` + `.mp4` init
+| Fragmented MP4 for HLS. Required for AV1 and H.265 in HLS. Needs an initialization segment (`init.mp4`) containing codec parameters
+|===
+
+=== Common Codecs
+
+|===
+| Codec | Compression | Hardware Support | Notes
+
+| H.264 (AVC)
+| Baseline
+| Universal (every GPU since ~2012)
+| Default for maximum compatibility. Uses MPEGTS container in HLS
+
+| H.265 (HEVC)
+| ~40% better than H.264
+| Broad (most GPUs since ~2016)
+| Patent licensing complexity. Uses fMP4 container in HLS
+
+| AV1
+| ~30-50% better than H.264
+| Growing (Intel Arc, NVIDIA Ada+, AMD RDNA3+)
+| Royalty-free, Netflix uses for 30%+ of traffic in 2026. Uses fMP4 container in HLS
+|===
+
+== How HLS Works
+
+HTTP Live Streaming (RFC 8216) delivers video as a sequence of small HTTP-downloadable files:
+
+----
+Master Playlist (master.m3u8)
+    ├── Variant 1: 1080p (stream_1080p.m3u8)
+    │       ├── segment0.ts
+    │       ├── segment1.ts
+    │       └── ...
+    ├── Variant 2: 720p (stream_720p.m3u8)
+    │       ├── segment0.ts
+    │       └── ...
+    └── Variant 3: 480p (stream_480p.m3u8)
+            └── ...
+----
+
+1. The *master playlist* lists available quality variants with bandwidth and resolution
+2. The client picks a variant based on network conditions
+3. The *media playlist* lists the segments for that variant with their durations
+4. The client downloads segments sequentially, switching variants adaptively
+
+The container (MPEGTS vs fMP4) is a packaging detail -- the client sees segments regardless. fMP4 requires an additional initialization segment (`init.mp4`) containing decoder configuration.
+
+== REMUX vs Transcode
+
+The cost of streaming depends on whether the source codec matches what the client can play:
+
+|===
+| Mode | What FFmpeg Does | CPU Cost | When
+
+| REMUX
+| Repackages streams into HLS segments without re-encoding (`-c copy`)
+| Near zero
+| Source codec is client-compatible (e.g., H.264 source, client supports H.264)
+
+| Partial Transcode
+| Copies video, re-encodes audio only (`-c:v copy -c:a aac`)
+| Low
+| Video codec matches but audio needs conversion (e.g., FLAC audio to AAC)
+
+| Full Transcode
+| Decodes and re-encodes both video and audio
+| High (GPU) or Very High (CPU)
+| Source codec is incompatible (e.g., H.265 source, client only supports H.264)
+|===
+
+Hardware encoding (NVENC, QSV, AMF, VideoToolbox) makes full transcoding practical for real-time streaming. A single modern GPU can handle multiple simultaneous transcodes at speeds well above real-time.
+
+== Why This Matters for Streamarr
+
+The `TranscodeDecisionService` inspects the source file (via ffprobe) and the client's declared codec support to choose the cheapest path: REMUX when possible, partial transcode when only audio needs conversion, full transcode as a last resort. This decision is cached per session so seek operations reuse the same strategy.

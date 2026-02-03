@@ -1,0 +1,220 @@
+package com.streamarr.server.services.streaming;
+
+import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.streaming.QualityVariant;
+import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.server.domain.streaming.StreamingOptions;
+import com.streamarr.server.domain.streaming.TranscodeMode;
+import com.streamarr.server.domain.streaming.TranscodeRequest;
+import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.exceptions.MaxConcurrentTranscodesException;
+import com.streamarr.server.exceptions.MediaFileNotFoundException;
+import com.streamarr.server.exceptions.SessionNotFoundException;
+import com.streamarr.server.repositories.media.MediaFileRepository;
+import java.nio.file.Path;
+import java.time.Instant;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
+@RequiredArgsConstructor
+public class HlsStreamingService implements StreamingService {
+
+  private final MediaFileRepository mediaFileRepository;
+  private final TranscodeExecutor transcodeExecutor;
+  private final SegmentStore segmentStore;
+  private final FfprobeService ffprobeService;
+  private final TranscodeDecisionService transcodeDecisionService;
+  private final QualityLadderService qualityLadderService;
+  private final StreamingProperties properties;
+
+  private final ConcurrentHashMap<UUID, StreamSession> sessions = new ConcurrentHashMap<>();
+
+  @Override
+  public StreamSession createSession(UUID mediaFileId, StreamingOptions options) {
+    var mediaFile =
+        mediaFileRepository
+            .findById(mediaFileId)
+            .orElseThrow(() -> new MediaFileNotFoundException(mediaFileId));
+
+    var probe = ffprobeService.probe(Path.of(mediaFile.getFilepath()));
+    var decision = transcodeDecisionService.decide(probe, options);
+
+    var sessionId = UUID.randomUUID();
+    var now = Instant.now();
+
+    var useAbr =
+        isAutoQuality(options)
+            && decision.transcodeMode() == TranscodeMode.FULL_TRANSCODE;
+
+    List<QualityVariant> variants =
+        useAbr ? qualityLadderService.generateVariants(probe, options) : Collections.emptyList();
+
+    if (useAbr) {
+      var slotsAvailable = availableTranscodeSlots();
+      if (slotsAvailable <= 0) {
+        throw new MaxConcurrentTranscodesException(properties.maxConcurrentTranscodes());
+      }
+      if (variants.size() > slotsAvailable) {
+        variants = variants.subList(0, (int) slotsAvailable);
+      }
+    } else if (requiresTranscode(decision.transcodeMode())) {
+      enforceTranscodeLimit();
+    }
+
+    var session =
+        StreamSession.builder()
+            .sessionId(sessionId)
+            .mediaFileId(mediaFileId)
+            .sourcePath(Path.of(mediaFile.getFilepath()))
+            .mediaProbe(probe)
+            .transcodeDecision(decision)
+            .options(options)
+            .variants(variants)
+            .seekPosition(0)
+            .createdAt(now)
+            .lastAccessedAt(now)
+            .activeRequestCount(new AtomicInteger(0))
+            .build();
+
+    if (useAbr) {
+      startVariantTranscodes(session, variants);
+    } else {
+      var request = buildRequest(sessionId, Path.of(mediaFile.getFilepath()), 0, decision,
+          probe.framerate(), probe.width(), probe.height(), probe.bitrate());
+      var handle = transcodeExecutor.start(request);
+      session.setHandle(handle);
+    }
+
+    sessions.put(sessionId, session);
+    log.info(
+        "Created streaming session {} for media file {} (mode: {}, variants: {})",
+        sessionId,
+        mediaFileId,
+        decision.transcodeMode(),
+        variants.size());
+
+    return session;
+  }
+
+  @Override
+  public Optional<StreamSession> getSession(UUID sessionId) {
+    var session = sessions.get(sessionId);
+    if (session != null) {
+      session.setLastAccessedAt(Instant.now());
+    }
+    return Optional.ofNullable(session);
+  }
+
+  @Override
+  public StreamSession seekSession(UUID sessionId, int positionSeconds) {
+    var session = sessions.get(sessionId);
+    if (session == null) {
+      throw new SessionNotFoundException(sessionId);
+    }
+
+    transcodeExecutor.stop(sessionId);
+    segmentStore.deleteSession(sessionId);
+
+    if (!session.getVariants().isEmpty()) {
+      startVariantTranscodes(session, session.getVariants(), positionSeconds);
+    } else {
+      var request = buildRequest(sessionId, session.getSourcePath(), positionSeconds,
+          session.getTranscodeDecision(), session.getMediaProbe().framerate(),
+          session.getMediaProbe().width(), session.getMediaProbe().height(),
+          session.getMediaProbe().bitrate());
+      var handle = transcodeExecutor.start(request);
+      session.setHandle(handle);
+    }
+
+    session.setSeekPosition(positionSeconds);
+    session.setLastAccessedAt(Instant.now());
+
+    log.info("Seeked session {} to position {}s", sessionId, positionSeconds);
+    return session;
+  }
+
+  @Override
+  public void destroySession(UUID sessionId) {
+    var session = sessions.remove(sessionId);
+    if (session == null) {
+      return;
+    }
+
+    transcodeExecutor.stop(sessionId);
+    segmentStore.deleteSession(sessionId);
+    log.info("Destroyed streaming session {}", sessionId);
+  }
+
+  @Override
+  public Collection<StreamSession> getAllSessions() {
+    return Collections.unmodifiableCollection(sessions.values());
+  }
+
+  @Override
+  public int getActiveSessionCount() {
+    return sessions.size();
+  }
+
+  private void startVariantTranscodes(StreamSession session, List<QualityVariant> variants) {
+    startVariantTranscodes(session, variants, 0);
+  }
+
+  private void startVariantTranscodes(
+      StreamSession session, List<QualityVariant> variants, int seekPosition) {
+    for (var variant : variants) {
+      var request = buildRequest(session.getSessionId(), session.getSourcePath(), seekPosition,
+          session.getTranscodeDecision(), session.getMediaProbe().framerate(),
+          variant.width(), variant.height(), variant.videoBitrate());
+      var handle = transcodeExecutor.start(request);
+      session.setVariantHandle(variant.label(), handle);
+    }
+  }
+
+  private TranscodeRequest buildRequest(
+      UUID sessionId, Path sourcePath, int seekPosition,
+      com.streamarr.server.domain.streaming.TranscodeDecision decision,
+      double framerate, int width, int height, long bitrate) {
+    return TranscodeRequest.builder()
+        .sessionId(sessionId)
+        .sourcePath(sourcePath)
+        .seekPosition(seekPosition)
+        .segmentDuration(properties.segmentDurationSeconds())
+        .framerate(framerate)
+        .transcodeDecision(decision)
+        .width(width)
+        .height(height)
+        .bitrate(bitrate)
+        .build();
+  }
+
+  private boolean isAutoQuality(StreamingOptions options) {
+    return options.quality() == null || options.quality() == VideoQuality.AUTO;
+  }
+
+  private boolean requiresTranscode(TranscodeMode mode) {
+    return mode == TranscodeMode.PARTIAL_TRANSCODE || mode == TranscodeMode.FULL_TRANSCODE;
+  }
+
+  private long availableTranscodeSlots() {
+    var activeTranscodes =
+        sessions.values().stream()
+            .filter(s -> requiresTranscode(s.getTranscodeDecision().transcodeMode()))
+            .mapToLong(s -> Math.max(1, s.getVariants().size()))
+            .sum();
+    return properties.maxConcurrentTranscodes() - activeTranscodes;
+  }
+
+  private void enforceTranscodeLimit() {
+    if (availableTranscodeSlots() <= 0) {
+      throw new MaxConcurrentTranscodesException(properties.maxConcurrentTranscodes());
+    }
+  }
+}

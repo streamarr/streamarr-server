@@ -1,0 +1,26 @@
+= ADR 0007: Transcode-First With Smart Remux
+
+== Status
+
+Accepted
+
+== Context
+
+Video streaming requires delivering content in a format the client can play. Two architectural approaches exist: (1) separate code paths for direct play (raw file serving) and transcoding (FFmpeg), or (2) route all streams through FFmpeg, using `-c copy` (remux) when the source is already compatible.
+
+Hardware encoding is ubiquitous in 2026 -- NVENC, QSV, VCN, and VideoToolbox cover virtually all server hardware. The CPU cost of transcoding through a hardware encoder is minimal.
+
+== Decision
+
+Route all streams through FFmpeg regardless of transcode mode. When the source codec matches client capabilities, FFmpeg remuxes (`-c copy`) with near-zero CPU cost. When conversion is needed, FFmpeg transcodes with hardware acceleration.
+
+This gives us one code path through `TranscodeExecutor` for all sessions, whether REMUX, PARTIAL_TRANSCODE, or FULL_TRANSCODE.
+
+== Consequences
+
+* Single code path simplifies session management, seek, and shutdown
+* REMUX is near-free -- FFmpeg copies compressed streams into HLS segments without decoding
+* No separate direct-play infrastructure to maintain
+* All sessions produce HLS segments, so the client player logic is uniform
+* Hardware encoding makes full transcode practical for real-time streaming
+* Future: direct play passthrough can be added as an optimization for clients that support the source container natively

@@ -44,6 +44,8 @@
         <jacoco.version>0.8.14</jacoco.version>
         <flyway.version>11.14.1</flyway.version>
         <surefire-failsafe-plugin.version>3.5.4</surefire-failsafe-plugin.version>
+        <surefire.excludedGroups>SmokeTest</surefire.excludedGroups>
+        <failsafe.excludedGroups>SmokeTest</failsafe.excludedGroups>
         <spotless.version>3.2.1</spotless.version>
         <archunit.version>1.4.1</archunit.version>
     </properties>
@@ -401,6 +403,7 @@
                 <version>${surefire-failsafe-plugin.version}</version>
                 <configuration>
                     <argLine>${surefire.jacoco.args}</argLine>
+                    <excludedGroups>${surefire.excludedGroups}</excludedGroups>
                 </configuration>
             </plugin>
             <plugin>
@@ -409,6 +412,7 @@
                 <version>${surefire-failsafe-plugin.version}</version>
                 <configuration>
                     <argLine>${failsafe.jacoco.args}</argLine>
+                    <excludedGroups>${failsafe.excludedGroups}</excludedGroups>
                 </configuration>
                 <executions>
                     <execution>
