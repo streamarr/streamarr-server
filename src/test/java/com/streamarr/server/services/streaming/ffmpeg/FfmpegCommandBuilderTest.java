@@ -163,7 +163,7 @@ class FfmpegCommandBuilderTest {
 
     var cmd = builder.buildCommand(j);
 
-    assertThat(cmd).doesNotContain("-vf", "-b:v", "-maxrate", "-bufsize");
+    assertThat(cmd).isNotEmpty().doesNotContain("-vf", "-b:v", "-maxrate", "-bufsize");
   }
 
   @Test
