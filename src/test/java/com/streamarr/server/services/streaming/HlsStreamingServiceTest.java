@@ -40,7 +40,7 @@ class HlsStreamingServiceTest {
     transcodeExecutor = new FakeTranscodeExecutor();
     segmentStore = new FakeSegmentStore();
     ffprobeService = new FakeFfprobeService();
-    var properties = new StreamingProperties(3, 6, 60);
+    var properties = new StreamingProperties(3, 6, 60, null);
     var decisionService = new TranscodeDecisionService();
 
     var qualityLadderService = new QualityLadderService();

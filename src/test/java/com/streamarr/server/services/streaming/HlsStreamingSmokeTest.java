@@ -98,7 +98,7 @@ class HlsStreamingSmokeTest {
 
     var decisionService = new TranscodeDecisionService();
     var qualityLadderService = new QualityLadderService();
-    var properties = new StreamingProperties(3, 6, 60);
+    var properties = new StreamingProperties(3, 6, 60, null);
 
     mediaFileRepository = new FakeMediaFileRepository();
     streamingService =

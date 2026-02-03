@@ -25,9 +25,8 @@ import tools.jackson.databind.ObjectMapper;
 public class StreamingConfig {
 
   @Bean
-  public SegmentStore segmentStore() {
-    var baseDir = Path.of(System.getProperty("java.io.tmpdir"), "streamarr-segments");
-    return new LocalSegmentStore(baseDir);
+  public SegmentStore segmentStore(StreamingProperties properties) {
+    return new LocalSegmentStore(Path.of(properties.segmentBasePath()));
   }
 
   @Bean
