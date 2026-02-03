@@ -37,6 +37,22 @@ class FfmpegCommandBuilderTest {
       String videoEncoder,
       boolean needsKeyframeAlignment,
       int seekPosition) {
+    return job(
+        mode, codecFamily, audioCodec, container, videoEncoder, needsKeyframeAlignment,
+        seekPosition, 1920, 1080, 5_000_000L);
+  }
+
+  private TranscodeJob job(
+      TranscodeMode mode,
+      String codecFamily,
+      String audioCodec,
+      ContainerFormat container,
+      String videoEncoder,
+      boolean needsKeyframeAlignment,
+      int seekPosition,
+      int width,
+      int height,
+      long bitrate) {
     return TranscodeJob.builder()
         .request(
             TranscodeRequest.builder()
@@ -53,9 +69,9 @@ class FfmpegCommandBuilderTest {
                         .containerFormat(container)
                         .needsKeyframeAlignment(needsKeyframeAlignment)
                         .build())
-                .width(1920)
-                .height(1080)
-                .bitrate(5_000_000L)
+                .width(width)
+                .height(height)
+                .bitrate(bitrate)
                 .build())
         .videoEncoder(videoEncoder)
         .outputDir(Path.of("/tmp/session-123"))
