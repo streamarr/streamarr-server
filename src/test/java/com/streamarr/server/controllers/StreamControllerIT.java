@@ -50,8 +50,8 @@ class StreamControllerIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should return master playlist with correct content type")
-  void shouldReturnMasterPlaylistWithCorrectContentType() throws Exception {
+  @DisplayName("Should return master playlist with correct content type when session exists")
+  void shouldReturnMasterPlaylistWithCorrectContentTypeWhenSessionExists() throws Exception {
     var session = buildMpegtsSession();
     when(streamingService.getSession(session.getSessionId())).thenReturn(Optional.of(session));
 
@@ -67,7 +67,7 @@ class StreamControllerIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName("Should return 404 when session not found")
-  void shouldReturn404ForInvalidSession() throws Exception {
+  void shouldReturn404WhenSessionNotFound() throws Exception {
     var invalidId = UUID.randomUUID();
     when(streamingService.getSession(invalidId)).thenReturn(Optional.empty());
 
@@ -77,8 +77,8 @@ class StreamControllerIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should serve TS segment with correct content type")
-  void shouldServeTsSegmentWithCorrectContentType() throws Exception {
+  @DisplayName("Should serve TS segment with correct content type when segment is available")
+  void shouldServeTsSegmentWithCorrectContentTypeWhenSegmentIsAvailable() throws Exception {
     var session = buildMpegtsSession();
     var segmentData = new byte[] {0x47, 0x00, 0x11, 0x10};
     when(streamingService.getSession(session.getSessionId())).thenReturn(Optional.of(session));

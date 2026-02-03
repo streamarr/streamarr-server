@@ -35,7 +35,7 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
-  @DisplayName("shouldRemuxWhenVideoCodecMatchesAndAudioIsAac")
+  @DisplayName("Should remux when video codec matches and audio is AAC")
   void shouldRemuxWhenVideoCodecMatchesAndAudioIsAac() {
     var source = probe("h264", "aac");
     var clientOptions = options(List.of("h264"));
@@ -49,7 +49,7 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
-  @DisplayName("shouldPartialTranscodeWhenVideoMatchesButAudioNeedsConversion")
+  @DisplayName("Should partial transcode when video matches but audio needs conversion")
   void shouldPartialTranscodeWhenVideoMatchesButAudioNeedsConversion() {
     var source = probe("h264", "flac");
     var clientOptions = options(List.of("h264"));
@@ -63,7 +63,7 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
-  @DisplayName("shouldFullTranscodeWhenVideoCodecIncompatible")
+  @DisplayName("Should full transcode when video codec is incompatible")
   void shouldFullTranscodeWhenVideoCodecIncompatible() {
     var source = probe("hevc", "aac");
     var clientOptions = options(List.of("h264"));
@@ -77,7 +77,7 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
-  @DisplayName("shouldPreferAv1OverH264WhenClientSupportsBoth")
+  @DisplayName("Should prefer AV1 over H264 when client supports both")
   void shouldPreferAv1OverH264WhenClientSupportsBoth() {
     var source = probe("hevc", "aac");
     var clientOptions = options(List.of("av1", "h264"));
@@ -89,8 +89,8 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
-  @DisplayName("shouldUseMpegtsContainerForH264")
-  void shouldUseMpegtsContainerForH264() {
+  @DisplayName("Should use MPEGTS container when transcoding to H264")
+  void shouldUseMpegtsContainerWhenTranscodingToH264() {
     var source = probe("hevc", "aac");
     var clientOptions = options(List.of("h264"));
 
@@ -100,8 +100,8 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
-  @DisplayName("shouldUseFmp4ContainerForAv1")
-  void shouldUseFmp4ContainerForAv1() {
+  @DisplayName("Should use fMP4 container when transcoding to AV1")
+  void shouldUseFmp4ContainerWhenTranscodingToAv1() {
     var source = probe("hevc", "aac");
     var clientOptions = options(List.of("av1"));
 
@@ -111,7 +111,7 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
-  @DisplayName("shouldRemuxAv1SourceWhenClientSupportsAv1AndAudioIsAac")
+  @DisplayName("Should remux AV1 source when client supports AV1 and audio is AAC")
   void shouldRemuxAv1SourceWhenClientSupportsAv1AndAudioIsAac() {
     var source = probe("av1", "aac");
     var clientOptions = options(List.of("av1", "h264"));
@@ -124,8 +124,8 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
-  @DisplayName("shouldPartialTranscodeAv1SourceWithNonAacAudio")
-  void shouldPartialTranscodeAv1SourceWithNonAacAudio() {
+  @DisplayName("Should partial transcode AV1 source when audio is not AAC")
+  void shouldPartialTranscodeAv1SourceWhenAudioIsNotAac() {
     var source = probe("av1", "ac3");
     var clientOptions = options(List.of("av1"));
 
@@ -137,8 +137,8 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
-  @DisplayName("shouldUseMpegtsContainerForRemuxH264")
-  void shouldUseMpegtsContainerForRemuxH264() {
+  @DisplayName("Should use MPEGTS container when remuxing H264")
+  void shouldUseMpegtsContainerWhenRemuxingH264() {
     var source = probe("h264", "aac");
     var clientOptions = options(List.of("h264"));
 
@@ -148,8 +148,8 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
-  @DisplayName("shouldNotNeedKeyframeAlignmentForFullTranscode")
-  void shouldNotNeedKeyframeAlignmentForFullTranscode() {
+  @DisplayName("Should not need keyframe alignment when doing full transcode")
+  void shouldNotNeedKeyframeAlignmentWhenDoingFullTranscode() {
     var source = probe("hevc", "flac");
     var clientOptions = options(List.of("h264"));
 
@@ -159,8 +159,8 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
-  @DisplayName("shouldNeedKeyframeAlignmentForPartialTranscode")
-  void shouldNeedKeyframeAlignmentForPartialTranscode() {
+  @DisplayName("Should need keyframe alignment when doing partial transcode")
+  void shouldNeedKeyframeAlignmentWhenDoingPartialTranscode() {
     var source = probe("h264", "flac");
     var clientOptions = options(List.of("h264"));
 

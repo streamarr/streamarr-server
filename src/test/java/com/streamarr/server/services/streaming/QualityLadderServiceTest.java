@@ -16,8 +16,8 @@ class QualityLadderServiceTest {
   private final QualityLadderService service = new QualityLadderService();
 
   @Test
-  @DisplayName("Should generate all tiers for 1080p source")
-  void shouldGenerateAllTiersFor1080pSource() {
+  @DisplayName("Should generate all tiers when source is 1080p")
+  void shouldGenerateAllTiersWhenSourceIs1080p() {
     var probe = buildProbe(1920, 1080, 8_000_000L);
     var options = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();
 
@@ -31,8 +31,8 @@ class QualityLadderServiceTest {
   }
 
   @Test
-  @DisplayName("Should cap at 720p for source below 1080p")
-  void shouldCapAt720pForSourceBelow1080p() {
+  @DisplayName("Should cap at 720p when source is below 1080p")
+  void shouldCapAt720pWhenSourceIsBelow1080p() {
     var probe = buildProbe(1280, 720, 4_000_000L);
     var options = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();
 
@@ -45,8 +45,8 @@ class QualityLadderServiceTest {
   }
 
   @Test
-  @DisplayName("Should filter by client max height")
-  void shouldFilterByClientMaxHeight() {
+  @DisplayName("Should filter tiers when client specifies max height")
+  void shouldFilterTiersWhenClientSpecifiesMaxHeight() {
     var probe = buildProbe(1920, 1080, 8_000_000L);
     var options =
         StreamingOptions.builder().maxHeight(480).supportedCodecs(List.of("h264")).build();
@@ -59,8 +59,8 @@ class QualityLadderServiceTest {
   }
 
   @Test
-  @DisplayName("Should return single variant for low res source")
-  void shouldReturnSingleVariantForLowResSource() {
+  @DisplayName("Should return single variant when source resolution is low")
+  void shouldReturnSingleVariantWhenSourceResolutionIsLow() {
     var probe = buildProbe(320, 180, 500_000L);
     var options = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();
 
@@ -72,8 +72,8 @@ class QualityLadderServiceTest {
   }
 
   @Test
-  @DisplayName("Should filter by client max bitrate")
-  void shouldFilterByClientMaxBitrate() {
+  @DisplayName("Should filter tiers when client specifies max bitrate")
+  void shouldFilterTiersWhenClientSpecifiesMaxBitrate() {
     var probe = buildProbe(1920, 1080, 8_000_000L);
     var options =
         StreamingOptions.builder().maxBitrate(2_000_000).supportedCodecs(List.of("h264")).build();
@@ -85,8 +85,8 @@ class QualityLadderServiceTest {
   }
 
   @Test
-  @DisplayName("Should generate correct bitrates per tier")
-  void shouldGenerateCorrectBitratesPerTier() {
+  @DisplayName("Should generate correct bitrates when source is 1080p")
+  void shouldGenerateCorrectBitratesWhenSourceIs1080p() {
     var probe = buildProbe(1920, 1080, 8_000_000L);
     var options = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();
 

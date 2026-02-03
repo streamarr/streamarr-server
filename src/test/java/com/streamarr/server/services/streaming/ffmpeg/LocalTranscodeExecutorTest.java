@@ -97,8 +97,8 @@ class LocalTranscodeExecutorTest {
   }
 
   @Test
-  @DisplayName("Should stop transcode and remove from map")
-  void shouldStopTranscodeAndRemoveFromMap() {
+  @DisplayName("Should stop transcode and remove from tracking when stopped")
+  void shouldStopTranscodeAndRemoveFromTrackingWhenStopped() {
     var request = createRequest(TranscodeMode.FULL_TRANSCODE, "h264");
     executor.start(request);
 
@@ -109,8 +109,8 @@ class LocalTranscodeExecutorTest {
   }
 
   @Test
-  @DisplayName("Should report running for active session")
-  void shouldReportRunningForActiveSession() {
+  @DisplayName("Should report running when session is active")
+  void shouldReportRunningWhenSessionIsActive() {
     var request = createRequest(TranscodeMode.FULL_TRANSCODE, "h264");
     executor.start(request);
 
@@ -118,8 +118,8 @@ class LocalTranscodeExecutorTest {
   }
 
   @Test
-  @DisplayName("Should report not running for unknown session")
-  void shouldReportNotRunningForUnknownSession() {
+  @DisplayName("Should report not running when session is unknown")
+  void shouldReportNotRunningWhenSessionIsUnknown() {
     assertThat(executor.isRunning(UUID.randomUUID())).isFalse();
   }
 
@@ -143,8 +143,8 @@ class LocalTranscodeExecutorTest {
   }
 
   @Test
-  @DisplayName("Should use copy encoder for remux")
-  void shouldUseCopyEncoderForRemux() {
+  @DisplayName("Should use copy encoder when mode is remux")
+  void shouldUseCopyEncoderWhenModeIsRemux() {
     var request = createRequest(TranscodeMode.REMUX, "h264");
 
     var handle = executor.start(request);

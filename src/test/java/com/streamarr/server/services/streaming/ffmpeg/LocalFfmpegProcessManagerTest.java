@@ -18,8 +18,8 @@ class LocalFfmpegProcessManagerTest {
   private final LocalFfmpegProcessManager manager = new LocalFfmpegProcessManager();
 
   @Test
-  @DisplayName("Should start process and report running")
-  void shouldStartProcessAndReportRunning() {
+  @DisplayName("Should report running when process is started")
+  void shouldReportRunningWhenProcessIsStarted() {
     var sessionId = UUID.randomUUID();
 
     var process = manager.startProcess(sessionId, List.of("sleep", "30"), tempDir);
@@ -32,8 +32,8 @@ class LocalFfmpegProcessManagerTest {
   }
 
   @Test
-  @DisplayName("Should stop process gracefully")
-  void shouldStopProcessGracefully() throws Exception {
+  @DisplayName("Should stop process gracefully when requested")
+  void shouldStopProcessGracefullyWhenRequested() throws Exception {
     var sessionId = UUID.randomUUID();
 
     manager.startProcess(sessionId, List.of("sleep", "30"), tempDir);
@@ -44,14 +44,14 @@ class LocalFfmpegProcessManagerTest {
   }
 
   @Test
-  @DisplayName("Should report not running for unknown session")
-  void shouldReportNotRunningForUnknownSession() {
+  @DisplayName("Should report not running when session is unknown")
+  void shouldReportNotRunningWhenSessionIsUnknown() {
     assertThat(manager.isRunning(UUID.randomUUID())).isFalse();
   }
 
   @Test
-  @DisplayName("Should report not running after process exits naturally")
-  void shouldReportNotRunningAfterProcessExitsNaturally() throws Exception {
+  @DisplayName("Should report not running when process has exited naturally")
+  void shouldReportNotRunningWhenProcessHasExitedNaturally() throws Exception {
     var sessionId = UUID.randomUUID();
 
     var process = manager.startProcess(sessionId, List.of("echo", "done"), tempDir);
@@ -63,8 +63,8 @@ class LocalFfmpegProcessManagerTest {
   }
 
   @Test
-  @DisplayName("Should handle stop on already stopped session")
-  void shouldHandleStopOnAlreadyStoppedSession() {
+  @DisplayName("Should not throw when stopping already stopped session")
+  void shouldNotThrowWhenStoppingAlreadyStoppedSession() {
     var sessionId = UUID.randomUUID();
 
     manager.stopProcess(sessionId);

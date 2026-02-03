@@ -79,8 +79,8 @@ class FfmpegCommandBuilderTest {
   }
 
   @Test
-  @DisplayName("Should build remux command with copy codecs")
-  void shouldBuildRemuxCommandWithCopyCodecs() {
+  @DisplayName("Should use copy codecs when mode is remux")
+  void shouldUseCopyCodecsWhenModeIsRemux() {
     var j = job(TranscodeMode.REMUX, "h264", "aac", ContainerFormat.MPEGTS, "copy", true);
 
     var cmd = builder.buildCommand(j);
@@ -91,8 +91,8 @@ class FfmpegCommandBuilderTest {
   }
 
   @Test
-  @DisplayName("Should include scale filter for full transcode")
-  void shouldIncludeScaleFilterForFullTranscode() {
+  @DisplayName("Should include scale filter when mode is full transcode")
+  void shouldIncludeScaleFilterWhenModeIsFullTranscode() {
     var j =
         job(
             TranscodeMode.FULL_TRANSCODE,
@@ -108,8 +108,8 @@ class FfmpegCommandBuilderTest {
   }
 
   @Test
-  @DisplayName("Should include bitrate control for full transcode")
-  void shouldIncludeBitrateControlForFullTranscode() {
+  @DisplayName("Should include bitrate control when mode is full transcode")
+  void shouldIncludeBitrateControlWhenModeIsFullTranscode() {
     var j =
         job(
             TranscodeMode.FULL_TRANSCODE,
@@ -127,8 +127,8 @@ class FfmpegCommandBuilderTest {
   }
 
   @Test
-  @DisplayName("Should use variant height for scale and bitrate")
-  void shouldUseVariantHeightForScaleAndBitrate() {
+  @DisplayName("Should use variant dimensions when variant differs from source")
+  void shouldUseVariantDimensionsWhenVariantDiffersFromSource() {
     var j =
         job(
             TranscodeMode.FULL_TRANSCODE,
@@ -150,8 +150,8 @@ class FfmpegCommandBuilderTest {
   }
 
   @Test
-  @DisplayName("Should not include scale or bitrate for partial transcode")
-  void shouldNotIncludeScaleOrBitrateForPartialTranscode() {
+  @DisplayName("Should not include scale or bitrate when mode is partial transcode")
+  void shouldNotIncludeScaleOrBitrateWhenModeIsPartialTranscode() {
     var j =
         job(
             TranscodeMode.PARTIAL_TRANSCODE,
@@ -167,8 +167,8 @@ class FfmpegCommandBuilderTest {
   }
 
   @Test
-  @DisplayName("Should build partial transcode with copy video and AAC audio")
-  void shouldBuildPartialTranscodeWithCopyVideoAndAacAudio() {
+  @DisplayName("Should use copy video and AAC audio when mode is partial transcode")
+  void shouldUseCopyVideoAndAacAudioWhenModeIsPartialTranscode() {
     var j =
         job(TranscodeMode.PARTIAL_TRANSCODE, "h264", "aac", ContainerFormat.MPEGTS, "copy", true);
 
@@ -179,8 +179,8 @@ class FfmpegCommandBuilderTest {
   }
 
   @Test
-  @DisplayName("Should build full transcode with H264 MPEGTS args")
-  void shouldBuildFullTranscodeWithH264MpegtsArgs() {
+  @DisplayName("Should include H264 MPEGTS args when full transcode targets H264")
+  void shouldIncludeH264MpegtsArgsWhenFullTranscodeTargetsH264() {
     var j =
         job(
             TranscodeMode.FULL_TRANSCODE,
@@ -198,8 +198,8 @@ class FfmpegCommandBuilderTest {
   }
 
   @Test
-  @DisplayName("Should build full transcode with AV1 fMP4 args")
-  void shouldBuildFullTranscodeWithAv1Fmp4Args() {
+  @DisplayName("Should include AV1 fMP4 args when full transcode targets AV1")
+  void shouldIncludeAv1Fmp4ArgsWhenFullTranscodeTargetsAv1() {
     var j =
         job(
             TranscodeMode.FULL_TRANSCODE,
@@ -217,8 +217,8 @@ class FfmpegCommandBuilderTest {
   }
 
   @Test
-  @DisplayName("Should use force keyframes for libx264")
-  void shouldUseForceKeyframesForLibx264() {
+  @DisplayName("Should use force keyframes when encoder is libx264")
+  void shouldUseForceKeyframesWhenEncoderIsLibx264() {
     var j =
         job(
             TranscodeMode.FULL_TRANSCODE,
@@ -235,8 +235,8 @@ class FfmpegCommandBuilderTest {
   }
 
   @Test
-  @DisplayName("Should use GOP size for NVENC encoder")
-  void shouldUseGopSizeForNvencEncoder() {
+  @DisplayName("Should use GOP size when encoder is NVENC")
+  void shouldUseGopSizeWhenEncoderIsNvenc() {
     var j =
         job(
             TranscodeMode.FULL_TRANSCODE,
@@ -253,8 +253,8 @@ class FfmpegCommandBuilderTest {
   }
 
   @Test
-  @DisplayName("Should use GOP size for libsvtav1")
-  void shouldUseGopSizeForLibsvtav1() {
+  @DisplayName("Should use GOP size when encoder is libsvtav1")
+  void shouldUseGopSizeWhenEncoderIsLibsvtav1() {
     var j =
         job(
             TranscodeMode.FULL_TRANSCODE,
@@ -270,8 +270,8 @@ class FfmpegCommandBuilderTest {
   }
 
   @Test
-  @DisplayName("Should include forced IDR for full transcode")
-  void shouldIncludeForcedIdrForFullTranscode() {
+  @DisplayName("Should include forced IDR when mode is full transcode")
+  void shouldIncludeForcedIdrWhenModeIsFullTranscode() {
     var j =
         job(
             TranscodeMode.FULL_TRANSCODE,
@@ -287,8 +287,8 @@ class FfmpegCommandBuilderTest {
   }
 
   @Test
-  @DisplayName("Should place seek before input")
-  void shouldPlaceSeekBeforeInput() {
+  @DisplayName("Should place seek before input when seek position is non-zero")
+  void shouldPlaceSeekBeforeInputWhenSeekPositionIsNonZero() {
     var j =
         job(
             TranscodeMode.FULL_TRANSCODE,
@@ -327,8 +327,8 @@ class FfmpegCommandBuilderTest {
   }
 
   @Test
-  @DisplayName("Should include fMP4 segment options")
-  void shouldIncludeFmp4SegmentOptions() {
+  @DisplayName("Should include fMP4 segment options when container is fMP4")
+  void shouldIncludeFmp4SegmentOptionsWhenContainerIsFmp4() {
     var j =
         job(
             TranscodeMode.FULL_TRANSCODE,
@@ -344,8 +344,8 @@ class FfmpegCommandBuilderTest {
   }
 
   @Test
-  @DisplayName("Should include common flags")
-  void shouldIncludeCommonFlags() {
+  @DisplayName("Should include common flags when building command")
+  void shouldIncludeCommonFlagsWhenBuildingCommand() {
     var j =
         job(
             TranscodeMode.FULL_TRANSCODE,
@@ -365,8 +365,8 @@ class FfmpegCommandBuilderTest {
   }
 
   @Test
-  @DisplayName("Should include HLS temp file flag")
-  void shouldIncludeHlsTempFileFlag() {
+  @DisplayName("Should include HLS temp file flag when building command")
+  void shouldIncludeHlsTempFileFlagWhenBuildingCommand() {
     var j =
         job(
             TranscodeMode.FULL_TRANSCODE,
@@ -382,8 +382,8 @@ class FfmpegCommandBuilderTest {
   }
 
   @Test
-  @DisplayName("Should start with FFmpeg binary")
-  void shouldStartWithFfmpegBinary() {
+  @DisplayName("Should start with FFmpeg binary when building command")
+  void shouldStartWithFfmpegBinaryWhenBuildingCommand() {
     var j = job(TranscodeMode.REMUX, "h264", "aac", ContainerFormat.MPEGTS, "copy", true);
 
     var cmd = builder.buildCommand(j);
@@ -392,8 +392,8 @@ class FfmpegCommandBuilderTest {
   }
 
   @Test
-  @DisplayName("Should set correct segment filename pattern")
-  void shouldSetCorrectSegmentFilenamePattern() {
+  @DisplayName("Should set TS segment filename pattern when container is MPEGTS")
+  void shouldSetTsSegmentFilenamePatternWhenContainerIsMpegts() {
     var j = job(TranscodeMode.REMUX, "h264", "aac", ContainerFormat.MPEGTS, "copy", true);
 
     var cmd = builder.buildCommand(j);
@@ -404,8 +404,8 @@ class FfmpegCommandBuilderTest {
   }
 
   @Test
-  @DisplayName("Should set fMP4 segment filename pattern")
-  void shouldSetFmp4SegmentFilenamePattern() {
+  @DisplayName("Should set m4s segment filename pattern when container is fMP4")
+  void shouldSetM4sSegmentFilenamePatternWhenContainerIsFmp4() {
     var j =
         job(
             TranscodeMode.FULL_TRANSCODE,
@@ -422,8 +422,8 @@ class FfmpegCommandBuilderTest {
   }
 
   @Test
-  @DisplayName("Should not include keyframe args for remux")
-  void shouldNotIncludeKeyframeArgsForRemux() {
+  @DisplayName("Should not include keyframe args when mode is remux")
+  void shouldNotIncludeKeyframeArgsWhenModeIsRemux() {
     var j = job(TranscodeMode.REMUX, "h264", "aac", ContainerFormat.MPEGTS, "copy", true);
 
     var cmd = builder.buildCommand(j);
@@ -434,8 +434,8 @@ class FfmpegCommandBuilderTest {
   }
 
   @Test
-  @DisplayName("Should output to HLS format")
-  void shouldOutputToHlsFormat() {
+  @DisplayName("Should output to HLS format when building command")
+  void shouldOutputToHlsFormatWhenBuildingCommand() {
     var j = job(TranscodeMode.REMUX, "h264", "aac", ContainerFormat.MPEGTS, "copy", true);
 
     var cmd = builder.buildCommand(j);
@@ -444,8 +444,8 @@ class FfmpegCommandBuilderTest {
   }
 
   @Test
-  @DisplayName("Should use force keyframes for libx265")
-  void shouldUseForceKeyframesForLibx265() {
+  @DisplayName("Should use force keyframes when encoder is libx265")
+  void shouldUseForceKeyframesWhenEncoderIsLibx265() {
     var j =
         job(
             TranscodeMode.FULL_TRANSCODE,
@@ -462,8 +462,8 @@ class FfmpegCommandBuilderTest {
   }
 
   @Test
-  @DisplayName("Should use force keyframes for VAAPI encoder")
-  void shouldUseForceKeyframesForVaapiEncoder() {
+  @DisplayName("Should use force keyframes when encoder is VAAPI")
+  void shouldUseForceKeyframesWhenEncoderIsVaapi() {
     var j =
         job(
             TranscodeMode.FULL_TRANSCODE,
@@ -479,8 +479,8 @@ class FfmpegCommandBuilderTest {
   }
 
   @Test
-  @DisplayName("Should include overwrite flag but not nostdin")
-  void shouldIncludeOverwriteFlagButNotNoStdin() {
+  @DisplayName("Should include overwrite flag but not nostdin when building command")
+  void shouldIncludeOverwriteFlagButNotNostdinWhenBuildingCommand() {
     var j = job(TranscodeMode.REMUX, "h264", "aac", ContainerFormat.MPEGTS, "copy", true);
 
     var cmd = builder.buildCommand(j);
@@ -490,8 +490,8 @@ class FfmpegCommandBuilderTest {
   }
 
   @Test
-  @DisplayName("Should set HLS time")
-  void shouldSetHlsTime() {
+  @DisplayName("Should set HLS time when building command")
+  void shouldSetHlsTimeWhenBuildingCommand() {
     var j = job(TranscodeMode.REMUX, "h264", "aac", ContainerFormat.MPEGTS, "copy", true);
 
     var cmd = builder.buildCommand(j);

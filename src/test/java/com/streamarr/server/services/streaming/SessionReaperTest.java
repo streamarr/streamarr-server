@@ -44,8 +44,8 @@ class SessionReaperTest {
   }
 
   @Test
-  @DisplayName("Should reap idle session with no active requests")
-  void shouldReapIdleSessionWithNoActiveRequests() {
+  @DisplayName("Should reap session when idle with no active requests")
+  void shouldReapSessionWhenIdleWithNoActiveRequests() {
     var session = buildSession(Instant.now().minusSeconds(120), 0);
     streamingService.addSession(session);
 
@@ -55,8 +55,8 @@ class SessionReaperTest {
   }
 
   @Test
-  @DisplayName("Should preserve idle session with active requests")
-  void shouldPreserveIdleSessionWithActiveRequests() {
+  @DisplayName("Should preserve session when idle but has active requests")
+  void shouldPreserveSessionWhenIdleButHasActiveRequests() {
     var session = buildSession(Instant.now().minusSeconds(120), 1);
     streamingService.addSession(session);
 
@@ -66,8 +66,8 @@ class SessionReaperTest {
   }
 
   @Test
-  @DisplayName("Should preserve recently accessed session")
-  void shouldPreserveRecentlyAccessedSession() {
+  @DisplayName("Should preserve session when recently accessed")
+  void shouldPreserveSessionWhenRecentlyAccessed() {
     var session = buildSession(Instant.now().minusSeconds(10), 0);
     streamingService.addSession(session);
 

@@ -19,8 +19,8 @@ class LocalFfprobeServiceTest {
   private final ObjectMapper objectMapper = new ObjectMapper();
 
   @Test
-  @DisplayName("Should parse valid ffprobe output into media probe")
-  void shouldParseValidFfprobeOutputIntoMediaProbe() {
+  @DisplayName("Should parse into media probe when ffprobe output is valid")
+  void shouldParseIntoMediaProbeWhenFfprobeOutputIsValid() {
     var json =
         """
         {
@@ -58,8 +58,8 @@ class LocalFfprobeServiceTest {
   }
 
   @Test
-  @DisplayName("Should parse fraction framerate")
-  void shouldParseFractionFramerate() {
+  @DisplayName("Should parse fraction framerate when rate is expressed as fraction")
+  void shouldParseFractionFramerateWhenRateIsExpressedAsFraction() {
     var json =
         """
         {
@@ -126,8 +126,8 @@ class LocalFfprobeServiceTest {
   }
 
   @Test
-  @DisplayName("Should handle missing audio stream")
-  void shouldHandleMissingAudioStream() {
+  @DisplayName("Should set null audio codec when no audio stream is found")
+  void shouldSetNullAudioCodecWhenNoAudioStreamIsFound() {
     var json =
         """
         {

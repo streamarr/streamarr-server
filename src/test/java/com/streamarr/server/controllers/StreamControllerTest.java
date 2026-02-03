@@ -56,8 +56,8 @@ class StreamControllerTest {
   }
 
   @Test
-  @DisplayName("Should return master playlist with correct content type")
-  void shouldReturnMasterPlaylistWithCorrectContentType() throws Exception {
+  @DisplayName("Should return master playlist with correct content type when session exists")
+  void shouldReturnMasterPlaylistWithCorrectContentTypeWhenSessionExists() throws Exception {
     streamingService.setSession(buildMpegtsSession());
 
     var result =
@@ -80,8 +80,8 @@ class StreamControllerTest {
   }
 
   @Test
-  @DisplayName("Should return media playlist with correct content type")
-  void shouldReturnMediaPlaylistWithCorrectContentType() throws Exception {
+  @DisplayName("Should return media playlist with correct content type when session exists")
+  void shouldReturnMediaPlaylistWithCorrectContentTypeWhenSessionExists() throws Exception {
     streamingService.setSession(buildMpegtsSession());
 
     var result =
@@ -105,8 +105,8 @@ class StreamControllerTest {
   }
 
   @Test
-  @DisplayName("Should serve TS segment with correct content type")
-  void shouldServeTsSegmentWithCorrectContentType() throws Exception {
+  @DisplayName("Should serve TS segment with correct content type when segment is available")
+  void shouldServeTsSegmentWithCorrectContentTypeWhenSegmentIsAvailable() throws Exception {
     streamingService.setSession(buildMpegtsSession());
     var segmentData = new byte[] {0x47, 0x00, 0x11, 0x10};
     segmentStore.addSegment(SESSION_ID, "segment0.ts", segmentData);
@@ -122,8 +122,8 @@ class StreamControllerTest {
   }
 
   @Test
-  @DisplayName("Should serve M4S segment with correct content type")
-  void shouldServeM4sSegmentWithCorrectContentType() throws Exception {
+  @DisplayName("Should serve m4s segment with correct content type when segment is available")
+  void shouldServeM4sSegmentWithCorrectContentTypeWhenSegmentIsAvailable() throws Exception {
     streamingService.setSession(buildFmp4Session());
     var segmentData = new byte[] {0x00, 0x00, 0x00, 0x1C};
     segmentStore.addSegment(SESSION_ID, "segment0.m4s", segmentData);
@@ -157,8 +157,8 @@ class StreamControllerTest {
   }
 
   @Test
-  @DisplayName("Should serve init segment for fMP4 session")
-  void shouldServeInitSegmentForFmp4Session() throws Exception {
+  @DisplayName("Should serve init segment when session uses fMP4")
+  void shouldServeInitSegmentWhenSessionUsesFmp4() throws Exception {
     streamingService.setSession(buildFmp4Session());
     var initData = new byte[] {0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70};
     segmentStore.addSegment(SESSION_ID, "init.mp4", initData);
@@ -192,8 +192,8 @@ class StreamControllerTest {
   }
 
   @Test
-  @DisplayName("Should increment and decrement active request count for segments")
-  void shouldIncrementAndDecrementActiveRequestCountForSegments() throws Exception {
+  @DisplayName("Should increment and decrement active request count when serving segment")
+  void shouldIncrementAndDecrementActiveRequestCountWhenServingSegment() throws Exception {
     var session = buildMpegtsSession();
     streamingService.setSession(session);
     segmentStore.addSegment(SESSION_ID, "segment0.ts", new byte[] {0x47});
@@ -322,8 +322,8 @@ class StreamControllerTest {
   }
 
   @Test
-  @DisplayName("Should serve variant media playlist")
-  void shouldServeVariantMediaPlaylist() throws Exception {
+  @DisplayName("Should serve variant media playlist when variant exists")
+  void shouldServeVariantMediaPlaylistWhenVariantExists() throws Exception {
     streamingService.setSession(buildAbrSession());
 
     var result =
@@ -348,8 +348,8 @@ class StreamControllerTest {
   }
 
   @Test
-  @DisplayName("Should serve variant segment")
-  void shouldServeVariantSegment() throws Exception {
+  @DisplayName("Should serve variant segment when variant and segment exist")
+  void shouldServeVariantSegmentWhenVariantAndSegmentExist() throws Exception {
     streamingService.setSession(buildAbrSession());
     var segmentData = new byte[] {0x47, 0x00, 0x11, 0x10};
     segmentStore.addSegment(SESSION_ID, "720p/segment0.ts", segmentData);
@@ -380,8 +380,8 @@ class StreamControllerTest {
   }
 
   @Test
-  @DisplayName("Should serve default variant segment via original URL")
-  void shouldServeDefaultVariantSegmentViaOriginalUrl() throws Exception {
+  @DisplayName("Should serve default variant segment when using original URL")
+  void shouldServeDefaultVariantSegmentWhenUsingOriginalUrl() throws Exception {
     streamingService.setSession(buildMpegtsSession());
     var segmentData = new byte[] {0x47};
     segmentStore.addSegment(SESSION_ID, "segment0.ts", segmentData);
@@ -396,8 +396,8 @@ class StreamControllerTest {
   }
 
   @Test
-  @DisplayName("Should return 400 for segment name with path traversal")
-  void shouldReturn400ForSegmentNameWithPathTraversal() throws Exception {
+  @DisplayName("Should return 400 when segment name contains path traversal")
+  void shouldReturn400WhenSegmentNameContainsPathTraversal() throws Exception {
     streamingService.setSession(buildMpegtsSession());
 
     mockMvc
@@ -406,8 +406,8 @@ class StreamControllerTest {
   }
 
   @Test
-  @DisplayName("Should return 400 for variant label with path traversal")
-  void shouldReturn400ForVariantLabelWithPathTraversal() throws Exception {
+  @DisplayName("Should return 400 when variant label contains path traversal")
+  void shouldReturn400WhenVariantLabelContainsPathTraversal() throws Exception {
     streamingService.setSession(buildAbrSession());
 
     mockMvc

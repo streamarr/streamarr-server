@@ -37,8 +37,8 @@ class LocalSegmentStoreTest {
   }
 
   @Test
-  @DisplayName("Should create output directory for session")
-  void shouldCreateOutputDirectoryForSession() {
+  @DisplayName("Should create output directory when session is first accessed")
+  void shouldCreateOutputDirectoryWhenSessionIsFirstAccessed() {
     var sessionId = UUID.randomUUID();
 
     var outputDir = store.getOutputDirectory(sessionId);
@@ -48,8 +48,8 @@ class LocalSegmentStoreTest {
   }
 
   @Test
-  @DisplayName("Should return same output directory for same session")
-  void shouldReturnSameOutputDirectoryForSameSession() {
+  @DisplayName("Should return same output directory when called twice for same session")
+  void shouldReturnSameOutputDirectoryWhenCalledTwiceForSameSession() {
     var sessionId = UUID.randomUUID();
 
     var first = store.getOutputDirectory(sessionId);
@@ -59,8 +59,8 @@ class LocalSegmentStoreTest {
   }
 
   @Test
-  @DisplayName("Should read segment file correctly")
-  void shouldReadSegmentFileCorrectly() throws IOException {
+  @DisplayName("Should read segment data when segment file exists")
+  void shouldReadSegmentDataWhenSegmentFileExists() throws IOException {
     var sessionId = UUID.randomUUID();
     var outputDir = store.getOutputDirectory(sessionId);
     var expectedBytes = "segment data".getBytes();
@@ -82,8 +82,8 @@ class LocalSegmentStoreTest {
   }
 
   @Test
-  @DisplayName("Should delete session directory")
-  void shouldDeleteSessionDirectory() throws IOException {
+  @DisplayName("Should delete directory and contents when session is deleted")
+  void shouldDeleteDirectoryAndContentsWhenSessionIsDeleted() throws IOException {
     var sessionId = UUID.randomUUID();
     var outputDir = store.getOutputDirectory(sessionId);
     Files.write(outputDir.resolve("segment0.ts"), "data".getBytes());
@@ -94,16 +94,16 @@ class LocalSegmentStoreTest {
   }
 
   @Test
-  @DisplayName("Should handle delete of nonexistent session")
-  void shouldHandleDeleteOfNonexistentSession() {
+  @DisplayName("Should not throw when deleting nonexistent session")
+  void shouldNotThrowWhenDeletingNonexistentSession() {
     var sessionId = UUID.randomUUID();
 
     store.deleteSession(sessionId);
   }
 
   @Test
-  @DisplayName("Should wait for segment that already exists")
-  void shouldWaitForSegmentThatAlreadyExists() throws IOException {
+  @DisplayName("Should return true immediately when waiting for existing segment")
+  void shouldReturnTrueImmediatelyWhenWaitingForExistingSegment() throws IOException {
     var sessionId = UUID.randomUUID();
     var outputDir = store.getOutputDirectory(sessionId);
     Files.write(outputDir.resolve("segment0.ts"), "data".getBytes());
@@ -125,8 +125,8 @@ class LocalSegmentStoreTest {
   }
 
   @Test
-  @DisplayName("Should reject segment name with path traversal")
-  void shouldRejectSegmentNameWithPathTraversal() {
+  @DisplayName("Should reject segment name when path traversal is attempted")
+  void shouldRejectSegmentNameWhenPathTraversalIsAttempted() {
     var sessionId = UUID.randomUUID();
     store.getOutputDirectory(sessionId);
 
@@ -135,8 +135,8 @@ class LocalSegmentStoreTest {
   }
 
   @Test
-  @DisplayName("Should allow valid segment name with subdirectory")
-  void shouldAllowValidSegmentNameWithSubdirectory() throws IOException {
+  @DisplayName("Should read segment when name includes valid subdirectory")
+  void shouldReadSegmentWhenNameIncludesValidSubdirectory() throws IOException {
     var sessionId = UUID.randomUUID();
     var outputDir = store.getOutputDirectory(sessionId);
     var variantDir = outputDir.resolve("720p");
@@ -149,8 +149,8 @@ class LocalSegmentStoreTest {
   }
 
   @Test
-  @DisplayName("Should wait for segment created by background thread")
-  void shouldWaitForSegmentCreatedByBackgroundThread() {
+  @DisplayName("Should return true when segment is created by background thread")
+  void shouldReturnTrueWhenSegmentIsCreatedByBackgroundThread() {
     var sessionId = UUID.randomUUID();
     var outputDir = store.getOutputDirectory(sessionId);
 

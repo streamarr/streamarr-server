@@ -28,8 +28,8 @@ import org.junit.jupiter.api.Test;
 class StreamingShutdownHookTest {
 
   @Test
-  @DisplayName("shouldDestroyAllActiveSessionsOnShutdown")
-  void shouldDestroyAllActiveSessionsOnShutdown() {
+  @DisplayName("Should destroy all active sessions when shutdown hook fires")
+  void shouldDestroyAllActiveSessionsWhenShutdownHookFires() {
     var service = new TrackingStreamingService();
     var session1 = buildSession();
     var session2 = buildSession();
@@ -45,8 +45,8 @@ class StreamingShutdownHookTest {
   }
 
   @Test
-  @DisplayName("shouldHandleNoActiveSessionsGracefully")
-  void shouldHandleNoActiveSessionsGracefully() {
+  @DisplayName("Should not throw when no active sessions exist during shutdown")
+  void shouldNotThrowWhenNoActiveSessionsExistDuringShutdown() {
     var service = new TrackingStreamingService();
 
     var hook = new StreamingShutdownHook(service);

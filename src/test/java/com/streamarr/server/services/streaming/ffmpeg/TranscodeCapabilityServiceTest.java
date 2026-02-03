@@ -38,8 +38,8 @@ class TranscodeCapabilityServiceTest {
   }
 
   @Test
-  @DisplayName("Should detect NVENC hardware capability")
-  void shouldDetectNvencHardwareCapability() {
+  @DisplayName("Should detect NVENC capability when NVENC encoders are available")
+  void shouldDetectNvencCapabilityWhenNvencEncodersAreAvailable() {
     var encoderOutput =
         """
         V....D h264_nvenc           NVIDIA NVENC H.264 encoder (codec h264)
@@ -114,8 +114,8 @@ class TranscodeCapabilityServiceTest {
   }
 
   @Test
-  @DisplayName("Should detect QSV capability")
-  void shouldDetectQsvCapability() {
+  @DisplayName("Should detect QSV capability when QSV encoder is available")
+  void shouldDetectQsvCapabilityWhenQsvEncoderIsAvailable() {
     var encoderOutput =
         """
         V....D h264_qsv             H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10 (Intel Quick Sync Video acceleration) (codec h264)

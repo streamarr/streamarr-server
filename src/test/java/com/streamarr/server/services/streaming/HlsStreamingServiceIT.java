@@ -74,8 +74,8 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should create session for valid media file")
-  void shouldCreateSessionForValidMediaFile() {
+  @DisplayName("Should create session when media file is valid")
+  void shouldCreateSessionWhenMediaFileIsValid() {
     var session = streamingService.createSession(savedMediaFile.getId(), defaultOptions());
 
     assertThat(session).isNotNull();
@@ -87,8 +87,8 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should retrieve existing session")
-  void shouldRetrieveExistingSession() {
+  @DisplayName("Should retrieve session when session exists")
+  void shouldRetrieveSessionWhenSessionExists() {
     var session = streamingService.createSession(savedMediaFile.getId(), defaultOptions());
 
     var retrieved = streamingService.getSession(session.getSessionId());
@@ -98,8 +98,8 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should destroy session and cleanup")
-  void shouldDestroySessionAndCleanup() {
+  @DisplayName("Should remove session when session is destroyed")
+  void shouldRemoveSessionWhenSessionIsDestroyed() {
     var session = streamingService.createSession(savedMediaFile.getId(), defaultOptions());
 
     streamingService.destroySession(session.getSessionId());
@@ -115,8 +115,8 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should seek to new position")
-  void shouldSeekToNewPosition() {
+  @DisplayName("Should update seek position when seeking session")
+  void shouldUpdateSeekPositionWhenSeekingSession() {
     var session = streamingService.createSession(savedMediaFile.getId(), defaultOptions());
 
     var seeked = streamingService.seekSession(session.getSessionId(), 300);

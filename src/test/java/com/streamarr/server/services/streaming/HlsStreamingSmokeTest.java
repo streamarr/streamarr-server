@@ -142,8 +142,8 @@ class HlsStreamingSmokeTest {
   }
 
   @Test
-  @DisplayName("Should detect correct codecs from test video")
-  void shouldDetectCorrectCodecsFromTestVideo() {
+  @DisplayName("Should detect correct codecs when probing test video")
+  void shouldDetectCorrectCodecsWhenProbingTestVideo() {
     var file = seedMediaFile();
     var session = streamingService.createSession(file.getId(), defaultOptions());
 
@@ -153,8 +153,8 @@ class HlsStreamingSmokeTest {
   }
 
   @Test
-  @DisplayName("Should detect correct resolution from test video")
-  void shouldDetectCorrectResolutionFromTestVideo() {
+  @DisplayName("Should detect correct resolution when probing test video")
+  void shouldDetectCorrectResolutionWhenProbingTestVideo() {
     var file = seedMediaFile();
     var session = streamingService.createSession(file.getId(), defaultOptions());
 
@@ -164,8 +164,8 @@ class HlsStreamingSmokeTest {
   }
 
   @Test
-  @DisplayName("Should detect valid duration and bitrate from test video")
-  void shouldDetectValidDurationAndBitrateFromTestVideo() {
+  @DisplayName("Should detect valid duration and bitrate when probing test video")
+  void shouldDetectValidDurationAndBitrateWhenProbingTestVideo() {
     var file = seedMediaFile();
     var session = streamingService.createSession(file.getId(), defaultOptions());
 
@@ -176,8 +176,8 @@ class HlsStreamingSmokeTest {
   }
 
   @Test
-  @DisplayName("Should choose remux for compatible source")
-  void shouldChooseRemuxForCompatibleSource() {
+  @DisplayName("Should choose remux when source codec is compatible")
+  void shouldChooseRemuxWhenSourceCodecIsCompatible() {
     var file = seedMediaFile();
     var options =
         StreamingOptions.builder()
@@ -192,8 +192,8 @@ class HlsStreamingSmokeTest {
   }
 
   @Test
-  @DisplayName("Should start FFmpeg and produce segments")
-  void shouldStartFfmpegAndProduceSegments() {
+  @DisplayName("Should start FFmpeg and produce segments when session is created")
+  void shouldStartFfmpegAndProduceSegmentsWhenSessionIsCreated() {
     var file = seedMediaFile();
     var options =
         StreamingOptions.builder()
@@ -217,8 +217,8 @@ class HlsStreamingSmokeTest {
   }
 
   @Test
-  @DisplayName("Should generate RFC 8216 compliant master playlist")
-  void shouldGenerateRfc8216CompliantMasterPlaylist() {
+  @DisplayName("Should generate RFC 8216 compliant master playlist when session is active")
+  void shouldGenerateRfc8216CompliantMasterPlaylistWhenSessionIsActive() {
     var file = seedMediaFile();
     var options =
         StreamingOptions.builder()
@@ -239,8 +239,8 @@ class HlsStreamingSmokeTest {
   }
 
   @Test
-  @DisplayName("Should generate RFC 8216 compliant media playlist")
-  void shouldGenerateRfc8216CompliantMediaPlaylist() {
+  @DisplayName("Should generate RFC 8216 compliant media playlist when session is active")
+  void shouldGenerateRfc8216CompliantMediaPlaylistWhenSessionIsActive() {
     var file = seedMediaFile();
     var options =
         StreamingOptions.builder()
@@ -277,8 +277,8 @@ class HlsStreamingSmokeTest {
   }
 
   @Test
-  @DisplayName("Should shutdown FFmpeg gracefully via stdin quit")
-  void shouldShutdownFfmpegGracefullyViaStdinQuit() {
+  @DisplayName("Should terminate FFmpeg process when session is destroyed")
+  void shouldTerminateFfmpegProcessWhenSessionIsDestroyed() {
     var file = seedMediaFile();
     var options =
         StreamingOptions.builder()
@@ -304,8 +304,8 @@ class HlsStreamingSmokeTest {
   }
 
   @Test
-  @DisplayName("Should clean up on session destroy")
-  void shouldCleanUpOnSessionDestroy() {
+  @DisplayName("Should remove session state when session is destroyed")
+  void shouldRemoveSessionStateWhenSessionIsDestroyed() {
     var file = seedMediaFile();
     var options =
         StreamingOptions.builder()
