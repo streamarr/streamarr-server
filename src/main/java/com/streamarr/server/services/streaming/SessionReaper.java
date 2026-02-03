@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import java.time.Instant;
@@ -23,23 +24,32 @@ public class SessionReaper {
     var now = Instant.now();
 
     for (var session : streamingService.getAllSessions()) {
-      var sessionId = session.getSessionId();
-      var idleSeconds = now.getEpochSecond() - session.getLastAccessedAt().getEpochSecond();
-
-      if (idleSeconds > properties.sessionTimeoutSeconds()
-          && session.getActiveRequestCount().get() == 0) {
-        log.info("Reaping idle session {} (idle {}s)", sessionId, idleSeconds);
-        streamingService.destroySession(sessionId);
+      if (isIdleAndUnused(session, now)) {
+        log.info("Reaping idle session {} (idle)", session.getSessionId());
+        streamingService.destroySession(session.getSessionId());
         continue;
       }
 
-      var handle = session.getHandle();
-      if (handle != null
-          && handle.status() == TranscodeStatus.ACTIVE
-          && !transcodeExecutor.isRunning(sessionId)) {
-        log.warn("FFmpeg process died for session {}", sessionId);
+      if (hasDeadProcess(session)) {
+        log.warn("FFmpeg process died for session {}", session.getSessionId());
+        var handle = session.getHandle();
         session.setHandle(new TranscodeHandle(handle.processId(), TranscodeStatus.FAILED));
       }
     }
+  }
+
+  private boolean isIdleAndUnused(
+      StreamSession session, Instant now) {
+    var idleSeconds = now.getEpochSecond() - session.getLastAccessedAt().getEpochSecond();
+    return idleSeconds > properties.sessionTimeoutSeconds()
+        && session.getActiveRequestCount().get() == 0;
+  }
+
+  private boolean hasDeadProcess(
+      StreamSession session) {
+    var handle = session.getHandle();
+    return handle != null
+        && handle.status() == TranscodeStatus.ACTIVE
+        && !transcodeExecutor.isRunning(session.getSessionId());
   }
 }

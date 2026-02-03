@@ -58,14 +58,9 @@ public class HlsStreamingService implements StreamingService {
         useAbr ? qualityLadderService.generateVariants(probe, options) : Collections.emptyList();
 
     if (useAbr) {
-      var slotsAvailable = availableTranscodeSlots();
-      if (slotsAvailable <= 0) {
-        throw new MaxConcurrentTranscodesException(properties.maxConcurrentTranscodes());
-      }
-      if (variants.size() > slotsAvailable) {
-        variants = variants.subList(0, (int) slotsAvailable);
-      }
-    } else if (requiresTranscode(decision.transcodeMode())) {
+      variants = capVariantsToAvailableSlots(variants);
+    }
+    if (!useAbr && requiresTranscode(decision.transcodeMode())) {
       enforceTranscodeLimit();
     }
 
@@ -86,11 +81,9 @@ public class HlsStreamingService implements StreamingService {
 
     if (useAbr) {
       startVariantTranscodes(session, variants);
-    } else {
-      var request = buildRequest(sessionId, Path.of(mediaFile.getFilepath()), 0, decision,
-          probe.framerate(), probe.width(), probe.height(), probe.bitrate());
-      var handle = transcodeExecutor.start(request);
-      session.setHandle(handle);
+    }
+    if (!useAbr) {
+      startSingleTranscode(session, 0);
     }
 
     sessions.put(sessionId, session);
@@ -125,13 +118,9 @@ public class HlsStreamingService implements StreamingService {
 
     if (!session.getVariants().isEmpty()) {
       startVariantTranscodes(session, session.getVariants(), positionSeconds);
-    } else {
-      var request = buildRequest(sessionId, session.getSourcePath(), positionSeconds,
-          session.getTranscodeDecision(), session.getMediaProbe().framerate(),
-          session.getMediaProbe().width(), session.getMediaProbe().height(),
-          session.getMediaProbe().bitrate());
-      var handle = transcodeExecutor.start(request);
-      session.setHandle(handle);
+    }
+    if (session.getVariants().isEmpty()) {
+      startSingleTranscode(session, positionSeconds);
     }
 
     session.setSeekPosition(positionSeconds);
@@ -193,6 +182,26 @@ public class HlsStreamingService implements StreamingService {
         .height(height)
         .bitrate(bitrate)
         .build();
+  }
+
+  private void startSingleTranscode(StreamSession session, int seekPosition) {
+    var probe = session.getMediaProbe();
+    var request = buildRequest(session.getSessionId(), session.getSourcePath(), seekPosition,
+        session.getTranscodeDecision(), probe.framerate(),
+        probe.width(), probe.height(), probe.bitrate());
+    var handle = transcodeExecutor.start(request);
+    session.setHandle(handle);
+  }
+
+  private List<QualityVariant> capVariantsToAvailableSlots(List<QualityVariant> variants) {
+    var slotsAvailable = availableTranscodeSlots();
+    if (slotsAvailable <= 0) {
+      throw new MaxConcurrentTranscodesException(properties.maxConcurrentTranscodes());
+    }
+    if (variants.size() > slotsAvailable) {
+      return variants.subList(0, (int) slotsAvailable);
+    }
+    return variants;
   }
 
   private boolean isAutoQuality(StreamingOptions options) {

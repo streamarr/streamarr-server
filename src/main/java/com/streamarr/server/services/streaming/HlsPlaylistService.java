@@ -32,12 +32,13 @@ public class HlsPlaylistService {
       var probe = session.getMediaProbe();
       appendStreamInf(sb, probe.bitrate(), probe.width(), probe.height(), codecs);
       sb.append("stream.m3u8\n");
-    } else {
-      for (var variant : session.getVariants()) {
-        var bandwidth = variant.videoBitrate() + variant.audioBitrate();
-        appendStreamInf(sb, bandwidth, variant.width(), variant.height(), codecs);
-        sb.append(variant.label()).append("/stream.m3u8\n");
-      }
+      return sb.toString();
+    }
+
+    for (var variant : session.getVariants()) {
+      var bandwidth = variant.videoBitrate() + variant.audioBitrate();
+      appendStreamInf(sb, bandwidth, variant.width(), variant.height(), codecs);
+      sb.append(variant.label()).append("/stream.m3u8\n");
     }
 
     return sb.toString();

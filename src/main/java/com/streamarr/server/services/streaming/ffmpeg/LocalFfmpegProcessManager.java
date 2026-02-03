@@ -42,6 +42,12 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
       return;
     }
 
+    sendQuitSignal(process, sessionId);
+    awaitGracefulShutdown(process, sessionId);
+    log.info("Stopped FFmpeg process for session {}", sessionId);
+  }
+
+  private void sendQuitSignal(Process process, UUID sessionId) {
     try {
       var outputStream = process.getOutputStream();
       outputStream.write('q');
@@ -49,7 +55,9 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
     } catch (IOException e) {
       log.debug("Failed to write quit signal to FFmpeg stdin for session {}", sessionId);
     }
+  }
 
+  private void awaitGracefulShutdown(Process process, UUID sessionId) {
     try {
       if (!process.waitFor(GRACEFUL_SHUTDOWN_SECONDS, TimeUnit.SECONDS)) {
         log.warn("FFmpeg did not stop gracefully for session {}, forcing", sessionId);
@@ -59,8 +67,6 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
       Thread.currentThread().interrupt();
       process.destroyForcibly();
     }
-
-    log.info("Stopped FFmpeg process for session {}", sessionId);
   }
 
   @Override

@@ -70,17 +70,21 @@ public class TranscodeCapabilityService {
   }
 
   public String resolveEncoder(String codecFamily) {
-    if (hardwareEncodingCapability.available()) {
-      var prefix = CODEC_HW_PREFIX.get(codecFamily);
-      if (prefix != null) {
-        for (var encoder : hardwareEncodingCapability.encoders()) {
-          if (encoder.startsWith(prefix)) {
-            return encoder;
-          }
-        }
+    var softwareDefault = SOFTWARE_ENCODERS.getOrDefault(codecFamily, "libx264");
+
+    if (!hardwareEncodingCapability.available()) {
+      return softwareDefault;
+    }
+    var prefix = CODEC_HW_PREFIX.get(codecFamily);
+    if (prefix == null) {
+      return softwareDefault;
+    }
+    for (var encoder : hardwareEncodingCapability.encoders()) {
+      if (encoder.startsWith(prefix)) {
+        return encoder;
       }
     }
-    return SOFTWARE_ENCODERS.getOrDefault(codecFamily, "libx264");
+    return softwareDefault;
   }
 
   private boolean checkFfmpegVersion() {

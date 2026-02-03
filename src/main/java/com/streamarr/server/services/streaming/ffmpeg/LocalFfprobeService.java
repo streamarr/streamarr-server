@@ -8,6 +8,7 @@ import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.streaming.FfprobeService;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.Optional;
 import java.util.function.Function;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -43,17 +44,15 @@ public class LocalFfprobeService implements FfprobeService {
   }
 
   private MediaProbe parseProbe(JsonNode root, Path filepath) {
-    var videoStream = findStream(root, "video");
-    if (videoStream == null) {
-      throw new TranscodeException("No video stream found in: " + filepath);
-    }
-
+    var videoStream =
+        findStream(root, "video")
+            .orElseThrow(() -> new TranscodeException("No video stream found in: " + filepath));
     var audioStream = findStream(root, "audio");
     var format = root.get("format");
 
     return MediaProbe.builder()
         .videoCodec(videoStream.get("codec_name").asText())
-        .audioCodec(audioStream != null ? audioStream.get("codec_name").asText() : null)
+        .audioCodec(audioStream.map(s -> s.get("codec_name").asText()).orElse(null))
         .width(videoStream.get("width").asInt())
         .height(videoStream.get("height").asInt())
         .framerate(parseFramerate(videoStream.get("r_frame_rate").asText()))
@@ -62,17 +61,17 @@ public class LocalFfprobeService implements FfprobeService {
         .build();
   }
 
-  private JsonNode findStream(JsonNode root, String codecType) {
+  private Optional<JsonNode> findStream(JsonNode root, String codecType) {
     var streams = root.get("streams");
     if (streams == null) {
-      return null;
+      return Optional.empty();
     }
     for (var stream : streams) {
       if (codecType.equals(stream.get("codec_type").asText())) {
-        return stream;
+        return Optional.of(stream);
       }
     }
-    return null;
+    return Optional.empty();
   }
 
   private double parseFramerate(String rFrameRate) {

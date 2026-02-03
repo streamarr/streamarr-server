@@ -88,26 +88,34 @@ public class FfmpegCommandBuilder {
 
   private void addKeyframeArgs(List<String> cmd, TranscodeJob job) {
     var encoder = job.videoEncoder();
-    var segLen = job.request().segmentDuration();
-    var fps = job.request().framerate();
 
     cmd.addAll(List.of("-forced-idr", "1"));
 
     if (GOP_ONLY_ENCODERS.contains(encoder)) {
-      var gopSize = (int) Math.ceil(segLen * fps);
-      cmd.addAll(
-          List.of(
-              "-g:v:0", String.valueOf(gopSize),
-              "-keyint_min:v:0", String.valueOf(gopSize)));
-    } else if (FORCE_KEYFRAME_ENCODERS.contains(encoder)) {
-      cmd.addAll(
-          List.of(
-              "-force_key_frames:0",
-              "expr:gte(t,n_forced*" + segLen + ")"));
+      addGopSizeArgs(cmd, job);
+      return;
+    }
+    if (FORCE_KEYFRAME_ENCODERS.contains(encoder)) {
+      addForceKeyframeExprArgs(cmd, job);
+    }
+  }
 
-      if ("libx264".equals(encoder)) {
-        cmd.addAll(List.of("-sc_threshold:v:0", "0"));
-      }
+  private void addGopSizeArgs(List<String> cmd, TranscodeJob job) {
+    var gopSize = (int) Math.ceil(job.request().segmentDuration() * job.request().framerate());
+    cmd.addAll(
+        List.of(
+            "-g:v:0", String.valueOf(gopSize),
+            "-keyint_min:v:0", String.valueOf(gopSize)));
+  }
+
+  private void addForceKeyframeExprArgs(List<String> cmd, TranscodeJob job) {
+    cmd.addAll(
+        List.of(
+            "-force_key_frames:0",
+            "expr:gte(t,n_forced*" + job.request().segmentDuration() + ")"));
+
+    if ("libx264".equals(job.videoEncoder())) {
+      cmd.addAll(List.of("-sc_threshold:v:0", "0"));
     }
   }
 
