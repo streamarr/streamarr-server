@@ -258,6 +258,33 @@ class HlsStreamingSmokeTest {
   }
 
   @Test
+  @DisplayName("shouldShutdownFfmpegGracefullyViaStdinQuit")
+  void shouldShutdownFfmpegGracefullyViaStdinQuit() {
+    var file = seedMediaFile();
+    var options =
+        StreamingOptions.builder()
+            .quality(VideoQuality.AUTO)
+            .supportedCodecs(List.of("h264"))
+            .build();
+
+    var session = streamingService.createSession(file.getId(), options);
+    var sessionId = session.getSessionId();
+
+    segmentStore.waitForSegment(sessionId, "segment0.ts", Duration.ofSeconds(30));
+
+    var handle = session.getHandle();
+    assertThat(handle).isNotNull();
+    assertThat(handle.status()).isEqualTo(TranscodeStatus.ACTIVE);
+
+    streamingService.destroySession(sessionId);
+
+    var processHandle = ProcessHandle.of(handle.processId());
+    assertThat(processHandle).satisfiesAnyOf(
+        ph -> assertThat(ph).isEmpty(),
+        ph -> assertThat(ph.get().isAlive()).isFalse());
+  }
+
+  @Test
   @DisplayName("shouldCleanUpOnSessionDestroy")
   void shouldCleanUpOnSessionDestroy() {
     var file = seedMediaFile();

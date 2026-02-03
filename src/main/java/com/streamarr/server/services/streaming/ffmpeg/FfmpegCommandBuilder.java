@@ -25,7 +25,7 @@ public class FfmpegCommandBuilder {
     var mode = decision.transcodeMode();
 
     cmd.add("ffmpeg");
-    cmd.addAll(List.of("-y", "-nostdin"));
+    cmd.add("-y");
 
     if (request.seekPosition() > 0) {
       cmd.addAll(List.of("-ss", String.valueOf(request.seekPosition())));

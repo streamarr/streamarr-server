@@ -386,14 +386,14 @@ class FfmpegCommandBuilderTest {
   }
 
   @Test
-  @DisplayName("shouldIncludeOverwriteAndNoStdinFlags")
-  void shouldIncludeOverwriteAndNoStdinFlags() {
+  @DisplayName("shouldIncludeOverwriteFlagButNotNoStdin")
+  void shouldIncludeOverwriteFlagButNotNoStdin() {
     var j = job(TranscodeMode.REMUX, "h264", "aac", ContainerFormat.MPEGTS, "copy", true);
 
     var cmd = builder.buildCommand(j);
 
     assertThat(cmd).contains("-y");
-    assertThat(cmd).contains("-nostdin");
+    assertThat(cmd).doesNotContain("-nostdin");
   }
 
   @Test
