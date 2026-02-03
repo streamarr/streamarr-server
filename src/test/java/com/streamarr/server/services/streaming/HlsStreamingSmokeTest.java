@@ -19,6 +19,7 @@ import com.streamarr.server.services.streaming.ffmpeg.LocalTranscodeExecutor;
 import com.streamarr.server.services.streaming.ffmpeg.TranscodeCapabilityService;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -81,7 +82,7 @@ class HlsStreamingSmokeTest {
                         filepath.toString())
                     .start();
               } catch (IOException e) {
-                throw new java.io.UncheckedIOException("Failed to start ffprobe", e);
+                throw new UncheckedIOException("Failed to start ffprobe", e);
               }
             });
 

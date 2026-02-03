@@ -3,6 +3,11 @@ package com.streamarr.server.config.health;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.services.streaming.ffmpeg.TranscodeCapabilityService;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -83,28 +88,27 @@ class FfmpegHealthIndicatorTest {
   }
 
   private static class FakeTestProcess extends Process {
-    private final java.io.InputStream inputStream;
+    private final InputStream inputStream;
     private final int exitCode;
 
     FakeTestProcess(String stdout, int exitCode) {
-      this.inputStream =
-          new java.io.ByteArrayInputStream(stdout.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+      this.inputStream = new ByteArrayInputStream(stdout.getBytes(StandardCharsets.UTF_8));
       this.exitCode = exitCode;
     }
 
     @Override
-    public java.io.OutputStream getOutputStream() {
-      return new java.io.ByteArrayOutputStream();
+    public OutputStream getOutputStream() {
+      return new ByteArrayOutputStream();
     }
 
     @Override
-    public java.io.InputStream getInputStream() {
+    public InputStream getInputStream() {
       return inputStream;
     }
 
     @Override
-    public java.io.InputStream getErrorStream() {
-      return new java.io.ByteArrayInputStream(new byte[0]);
+    public InputStream getErrorStream() {
+      return new ByteArrayInputStream(new byte[0]);
     }
 
     @Override

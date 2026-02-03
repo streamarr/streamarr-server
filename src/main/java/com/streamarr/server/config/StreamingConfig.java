@@ -14,6 +14,8 @@ import com.streamarr.server.services.streaming.ffmpeg.LocalFfprobeService;
 import com.streamarr.server.services.streaming.ffmpeg.LocalTranscodeExecutor;
 import com.streamarr.server.services.streaming.ffmpeg.TranscodeCapabilityService;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -53,8 +55,8 @@ public class StreamingConfig {
                     "-show_format",
                     filepath.toString())
                 .start();
-          } catch (java.io.IOException e) {
-            throw new java.io.UncheckedIOException("Failed to start ffprobe", e);
+          } catch (IOException e) {
+            throw new UncheckedIOException("Failed to start ffprobe", e);
           }
         });
   }

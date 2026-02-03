@@ -8,22 +8,12 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.AbstractIntegrationTest;
-import com.streamarr.server.domain.streaming.ContainerFormat;
-import com.streamarr.server.domain.streaming.MediaProbe;
-import com.streamarr.server.domain.streaming.StreamSession;
-import com.streamarr.server.domain.streaming.StreamingOptions;
-import com.streamarr.server.domain.streaming.TranscodeDecision;
-import com.streamarr.server.domain.streaming.TranscodeMode;
+import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.StreamingService;
-import java.nio.file.Path;
-import java.time.Duration;
-import java.time.Instant;
 import java.util.Collections;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -52,7 +42,7 @@ class StreamControllerIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should return master playlist with correct content type when session exists")
   void shouldReturnMasterPlaylistWithCorrectContentTypeWhenSessionExists() throws Exception {
-    var session = buildMpegtsSession();
+    var session = StreamSessionFixture.buildMpegtsSession();
     when(streamingService.getSession(session.getSessionId())).thenReturn(Optional.of(session));
 
     var result =
@@ -79,7 +69,7 @@ class StreamControllerIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should serve TS segment with correct content type when segment is available")
   void shouldServeTsSegmentWithCorrectContentTypeWhenSegmentIsAvailable() throws Exception {
-    var session = buildMpegtsSession();
+    var session = StreamSessionFixture.buildMpegtsSession();
     var segmentData = new byte[] {0x47, 0x00, 0x11, 0x10};
     when(streamingService.getSession(session.getSessionId())).thenReturn(Optional.of(session));
     when(segmentStore.waitForSegment(eq(session.getSessionId()), eq("segment0.ts"), any()))
@@ -99,7 +89,7 @@ class StreamControllerIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should return 404 when segment unavailable")
   void shouldReturn404WhenSegmentUnavailable() throws Exception {
-    var session = buildMpegtsSession();
+    var session = StreamSessionFixture.buildMpegtsSession();
     when(streamingService.getSession(session.getSessionId())).thenReturn(Optional.of(session));
     when(segmentStore.waitForSegment(eq(session.getSessionId()), eq("segment99.ts"), any()))
         .thenReturn(false);
@@ -107,35 +97,5 @@ class StreamControllerIT extends AbstractIntegrationTest {
     mockMvc
         .perform(get("/api/stream/{id}/segment99.ts", session.getSessionId()))
         .andExpect(status().isNotFound());
-  }
-
-  private StreamSession buildMpegtsSession() {
-    return StreamSession.builder()
-        .sessionId(UUID.randomUUID())
-        .mediaFileId(UUID.randomUUID())
-        .sourcePath(Path.of("/media/movie.mkv"))
-        .mediaProbe(
-            MediaProbe.builder()
-                .duration(Duration.ofMinutes(120))
-                .framerate(24.0)
-                .width(1920)
-                .height(1080)
-                .videoCodec("h264")
-                .audioCodec("aac")
-                .bitrate(5_000_000)
-                .build())
-        .transcodeDecision(
-            TranscodeDecision.builder()
-                .transcodeMode(TranscodeMode.REMUX)
-                .videoCodecFamily("h264")
-                .audioCodec("aac")
-                .containerFormat(ContainerFormat.MPEGTS)
-                .needsKeyframeAlignment(true)
-                .build())
-        .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
-        .createdAt(Instant.now())
-        .lastAccessedAt(Instant.now())
-        .activeRequestCount(new AtomicInteger(0))
-        .build();
   }
 }

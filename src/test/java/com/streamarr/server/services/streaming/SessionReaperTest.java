@@ -3,26 +3,20 @@ package com.streamarr.server.services.streaming;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.config.StreamingProperties;
-import com.streamarr.server.domain.streaming.ContainerFormat;
-import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
-import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
-import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
+import com.streamarr.server.fixtures.StreamSessionFixture;
 import java.nio.file.Path;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -115,36 +109,9 @@ class SessionReaperTest {
   }
 
   private StreamSession buildSession(Instant lastAccessedAt, int activeRequests) {
-    var sessionId = UUID.randomUUID();
-    var session =
-        StreamSession.builder()
-            .sessionId(sessionId)
-            .mediaFileId(UUID.randomUUID())
-            .sourcePath(Path.of("/media/movie.mkv"))
-            .mediaProbe(
-                MediaProbe.builder()
-                    .duration(Duration.ofMinutes(120))
-                    .framerate(24.0)
-                    .width(1920)
-                    .height(1080)
-                    .videoCodec("h264")
-                    .audioCodec("aac")
-                    .bitrate(5_000_000)
-                    .build())
-            .transcodeDecision(
-                TranscodeDecision.builder()
-                    .transcodeMode(TranscodeMode.REMUX)
-                    .videoCodecFamily("h264")
-                    .audioCodec("aac")
-                    .containerFormat(ContainerFormat.MPEGTS)
-                    .needsKeyframeAlignment(true)
-                    .build())
-            .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
-            .createdAt(Instant.now())
-            .lastAccessedAt(lastAccessedAt)
-            .activeRequestCount(new AtomicInteger(activeRequests))
-            .build();
-    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
+    var session = StreamSessionFixture.buildMpegtsSession();
+    session.setLastAccessedAt(lastAccessedAt);
+    session.getActiveRequestCount().set(activeRequests);
     return session;
   }
 
