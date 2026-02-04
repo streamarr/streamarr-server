@@ -382,4 +382,33 @@ class HlsStreamingServiceTest {
     assertThat(session.getVariants()).isEmpty();
     assertThat(session.getHandle()).isNotNull();
   }
+
+  @Test
+  @DisplayName("Should pass variant label to transcode request for ABR session")
+  void shouldPassVariantLabelToTranscodeRequestForAbrSession() {
+    ffprobeService.setDefaultProbe(
+        MediaProbe.builder()
+            .duration(Duration.ofMinutes(120))
+            .framerate(23.976)
+            .width(1920)
+            .height(1080)
+            .videoCodec("hevc")
+            .audioCodec("aac")
+            .bitrate(8_000_000L)
+            .build());
+
+    var file = seedMediaFile();
+    var options =
+        StreamingOptions.builder()
+            .quality(VideoQuality.AUTO)
+            .supportedCodecs(List.of("h264"))
+            .build();
+
+    var session = service.createSession(file.getId(), options);
+
+    assertThat(session.getVariants()).hasSizeGreaterThan(1);
+    assertThat(transcodeExecutor.getStartedVariants())
+        .containsExactlyInAnyOrderElementsOf(
+            session.getVariants().stream().map(v -> v.label()).toList());
+  }
 }

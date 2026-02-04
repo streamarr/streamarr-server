@@ -169,7 +169,8 @@ public class HlsStreamingService implements StreamingService {
               session.getMediaProbe().framerate(),
               variant.width(),
               variant.height(),
-              variant.videoBitrate());
+              variant.videoBitrate(),
+              variant.label());
       var handle = transcodeExecutor.start(request);
       session.setVariantHandle(variant.label(), handle);
     }
@@ -183,7 +184,8 @@ public class HlsStreamingService implements StreamingService {
       double framerate,
       int width,
       int height,
-      long bitrate) {
+      long bitrate,
+      String variantLabel) {
     return TranscodeRequest.builder()
         .sessionId(sessionId)
         .sourcePath(sourcePath)
@@ -194,6 +196,7 @@ public class HlsStreamingService implements StreamingService {
         .width(width)
         .height(height)
         .bitrate(bitrate)
+        .variantLabel(variantLabel)
         .build();
   }
 
@@ -208,7 +211,8 @@ public class HlsStreamingService implements StreamingService {
             probe.framerate(),
             probe.width(),
             probe.height(),
-            probe.bitrate());
+            probe.bitrate(),
+            StreamSession.defaultVariant());
     var handle = transcodeExecutor.start(request);
     session.setHandle(handle);
   }
