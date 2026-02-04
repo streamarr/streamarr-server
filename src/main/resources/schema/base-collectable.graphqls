@@ -5,4 +5,5 @@ interface BaseCollectable {
     lastModifiedBy: String
     lastModifiedOn: String!
     title: String
+    files: [MediaFile]!
 }
