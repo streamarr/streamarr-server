@@ -348,10 +348,14 @@ public class LibraryManagementService {
   }
 
   private void deleteMoviesWithNoRemainingFiles(Set<UUID> movieIds) {
-    for (var movieId : movieIds) {
-      var remainingFiles = mediaFileRepository.findByMediaId(movieId);
+    if (movieIds.isEmpty()) {
+      return;
+    }
 
-      if (remainingFiles.isEmpty()) {
+    var mediaIdsWithRemainingFiles = mediaFileRepository.findDistinctMediaIdsByMediaIdIn(movieIds);
+
+    for (var movieId : movieIds) {
+      if (!mediaIdsWithRemainingFiles.contains(movieId)) {
         movieService.deleteMovieById(movieId);
         log.info("Deleted Movie id: {} — no remaining media files.", movieId);
       }
