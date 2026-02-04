@@ -16,7 +16,7 @@ public class IgnoredFileValidator {
   private static final Set<String> DEFAULT_IGNORED_EXTENSIONS =
       Set.of(
           "nfo", "txt", "jpg", "jpeg", "png", "gif", "bmp", "part", "tmp", "crdownload", "bts",
-          "sync");
+          "sync", "srt", "sub", "ass", "ssa", "idx");
 
   private static final Set<String> DEFAULT_IGNORED_PREFIXES = Set.of("._");
 
