@@ -1,212 +1,109 @@
 package com.streamarr.server.services;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.nullable;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.graphql.cursor.CursorUtil;
+import com.streamarr.server.graphql.cursor.InvalidCursorException;
 import com.streamarr.server.graphql.cursor.MediaFilter;
-import com.streamarr.server.graphql.cursor.MediaPaginationOptions;
 import com.streamarr.server.graphql.cursor.OrderMoviesBy;
-import com.streamarr.server.graphql.cursor.PaginationDirection;
-import com.streamarr.server.graphql.cursor.PaginationOptions;
-import com.streamarr.server.repositories.media.MovieRepository;
-import graphql.relay.DefaultConnectionCursor;
-import java.time.Instant;
-import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
-import org.apache.commons.lang3.reflect.FieldUtils;
 import org.jooq.SortOrder;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
+import tools.jackson.databind.ObjectMapper;
 
-// TODO(#44): rewrite to behavior-based testing — replace verify/ArgumentCaptor/FieldUtils
 @Tag("UnitTest")
-@ExtendWith(MockitoExtension.class)
 @DisplayName("Movie Service Tests")
-public class MovieServiceTest {
+class MovieServiceTest {
 
-  @Mock private MovieRepository mockMovieRepository;
-  @Mock private CursorUtil mockCursorUtil;
-  @Mock private RelayPaginationService mockRelayPaginationService;
+  private FakeMovieRepository movieRepository;
+  private MovieService movieService;
 
-  @InjectMocks private MovieService movieService;
-
-  private final PaginationOptions fakePaginationOptionsWithoutCursor =
-      PaginationOptions.builder()
-          .paginationDirection(PaginationDirection.FORWARD)
-          .limit(1)
-          .cursor(Optional.empty())
-          .build();
-
-  private final PaginationOptions fakePaginationOptionsWithCursor =
-      fakePaginationOptionsWithoutCursor.toBuilder()
-          .cursor(Optional.of("cursor-placeholder"))
-          .build();
-
-  private final List<Movie> fakeMovies = List.of(Movie.builder().title("About Time").build());
-
-  @Test
-  @DisplayName("Should query database once using default filter when given no filter and no cursor")
-  void shouldQueryDatabaseOnceUsingDefaultFilterWhenNoFilterOrCursor() {
-    when(mockRelayPaginationService.getPaginationOptions(
-            eq(fakePaginationOptionsWithoutCursor.getLimit()),
-            eq(null),
-            anyInt(),
-            nullable(String.class)))
-        .thenReturn(fakePaginationOptionsWithoutCursor);
-
-    var captor = ArgumentCaptor.forClass(MediaPaginationOptions.class);
-
-    movieService.getMoviesWithFilter(1, null, 0, null, null);
-
-    verify(mockMovieRepository, times(1)).findFirstWithFilter(captor.capture());
-
-    var capturedFilter = captor.getValue().getMediaFilter();
-
-    assertThat(capturedFilter.getSortBy()).isEqualTo(OrderMoviesBy.TITLE);
-    assertThat(capturedFilter.getSortDirection()).isEqualTo(SortOrder.ASC);
-    assertThat(capturedFilter.getPreviousSortFieldValue()).isNull();
+  @BeforeEach
+  void setUp() {
+    movieRepository = new FakeMovieRepository();
+    var cursorUtil = new CursorUtil(new ObjectMapper());
+    var relayPaginationService = new RelayPaginationService();
+    movieService = new MovieService(movieRepository, cursorUtil, relayPaginationService);
   }
 
   @Test
-  @DisplayName("Should query database once using provided filter when given filter without cursor")
-  void shouldQueryDatabaseOnceUsingProvidedFilterWhenGivenFilterAndNoCursor() {
-    var fakeFilter =
-        MediaFilter.builder().sortBy(OrderMoviesBy.ADDED).sortDirection(SortOrder.DESC).build();
+  @DisplayName("Should apply default title ascending sort when given null filter")
+  void shouldApplyDefaultTitleAscSortWhenGivenNullFilter() {
+    movieRepository.save(Movie.builder().title("Zebra").build());
+    movieRepository.save(Movie.builder().title("Apple").build());
 
-    when(mockRelayPaginationService.getPaginationOptions(
-            eq(fakePaginationOptionsWithoutCursor.getLimit()),
-            eq(null),
-            anyInt(),
-            nullable(String.class)))
-        .thenReturn(fakePaginationOptionsWithoutCursor);
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, null);
 
-    var captor = ArgumentCaptor.forClass(MediaPaginationOptions.class);
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
-    movieService.getMoviesWithFilter(1, null, 0, null, fakeFilter);
-
-    verify(mockMovieRepository, times(1)).findFirstWithFilter(captor.capture());
-
-    var capturedFilter = captor.getValue().getMediaFilter();
-
-    assertThat(capturedFilter.getSortBy()).isEqualTo(fakeFilter.getSortBy());
-    assertThat(capturedFilter.getSortDirection()).isEqualTo(fakeFilter.getSortDirection());
-    assertThat(capturedFilter.getPreviousSortFieldValue()).isNull();
+    assertThat(titles).containsExactly("Apple", "Zebra");
   }
 
   @Test
-  @DisplayName(
-      "Should query database once using decoded cursor and previous sort value when given cursor")
-  void shouldQueryDatabaseOnceUsingCursorWithPreviousSortValueWhenGivenCursor() {
-    var fakeOptionsWithPreviousValue =
-        MediaPaginationOptions.builder()
-            .mediaFilter(
-                MediaFilter.builder()
-                    .sortBy(OrderMoviesBy.TITLE)
-                    .sortDirection(SortOrder.ASC)
-                    .previousSortFieldValue("About Time")
-                    .build())
-            .paginationOptions(fakePaginationOptionsWithCursor)
-            .build();
+  @DisplayName("Should apply provided sort direction when given explicit filter")
+  void shouldApplyProvidedSortDirectionWhenGivenExplicitFilter() {
+    movieRepository.save(Movie.builder().title("Apple").build());
+    movieRepository.save(Movie.builder().title("Zebra").build());
 
-    var fakeCursor = fakePaginationOptionsWithCursor.getCursor().orElseThrow();
+    var filter =
+        MediaFilter.builder().sortBy(OrderMoviesBy.TITLE).sortDirection(SortOrder.DESC).build();
 
-    when(mockRelayPaginationService.getPaginationOptions(
-            eq(fakePaginationOptionsWithCursor.getLimit()),
-            eq(fakeCursor),
-            anyInt(),
-            nullable(String.class)))
-        .thenReturn(fakePaginationOptionsWithCursor);
-    when(mockCursorUtil.decodeMediaCursor(any(PaginationOptions.class)))
-        .thenReturn(fakeOptionsWithPreviousValue);
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
 
-    var captor = ArgumentCaptor.forClass(MediaPaginationOptions.class);
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
-    movieService.getMoviesWithFilter(1, fakeCursor, 0, null, null);
-
-    verify(mockMovieRepository, times(1)).seekWithFilter(captor.capture());
-
-    var capturedFilter = captor.getValue().getMediaFilter();
-
-    assertThat(capturedFilter.getPreviousSortFieldValue())
-        .isEqualTo(fakeOptionsWithPreviousValue.getMediaFilter().getPreviousSortFieldValue());
+    assertThat(titles).containsExactly("Zebra", "Apple");
   }
 
   @Test
-  @DisplayName(
-      "Should encode cursor containing movie 'title' sort value when given default media filter")
-  void shouldEncodeCursorContainingTitleSortValueWhenGivenDefaultMediaFilter() {
-    when(mockRelayPaginationService.getPaginationOptions(
-            eq(fakePaginationOptionsWithoutCursor.getLimit()),
-            eq(null),
-            anyInt(),
-            nullable(String.class)))
-        .thenReturn(fakePaginationOptionsWithoutCursor);
-    when(mockMovieRepository.findFirstWithFilter(any(MediaPaginationOptions.class)))
-        .thenReturn(fakeMovies);
-    when(mockCursorUtil.encodeMediaCursor(
-            any(MediaPaginationOptions.class), nullable(UUID.class), any()))
-        .thenReturn(new DefaultConnectionCursor("new-cursor"));
+  @DisplayName("Should paginate forward using cursor when sorted by title")
+  void shouldPaginateForwardUsingCursorWhenSortedByTitle() {
+    movieRepository.save(Movie.builder().title("Apple").build());
+    movieRepository.save(Movie.builder().title("Banana").build());
+    movieRepository.save(Movie.builder().title("Cherry").build());
 
-    var captor = ArgumentCaptor.forClass(Object.class);
+    var firstPage = movieService.getMoviesWithFilter(1, null, 0, null, null);
 
-    movieService.getMoviesWithFilter(1, null, 0, null, null);
+    assertThat(firstPage.getEdges()).hasSize(1);
+    assertThat(firstPage.getEdges().get(0).getNode().getTitle()).isEqualTo("Apple");
+    assertThat(firstPage.getPageInfo().isHasNextPage()).isTrue();
 
-    verify(mockCursorUtil, times(1))
-        .encodeMediaCursor(
-            any(MediaPaginationOptions.class), nullable(UUID.class), captor.capture());
+    var cursor = firstPage.getPageInfo().getEndCursor().getValue();
+    var secondPage = movieService.getMoviesWithFilter(1, cursor, 0, null, null);
 
-    String currentSortValue = (String) captor.getValue();
-
-    assertThat(currentSortValue).isEqualTo(fakeMovies.get(0).getTitle());
+    assertThat(secondPage.getEdges()).hasSize(1);
+    assertThat(secondPage.getEdges().get(0).getNode().getTitle()).isEqualTo("Banana");
+    assertThat(secondPage.getPageInfo().isHasNextPage()).isTrue();
   }
 
   @Test
-  @DisplayName(
-      "Should encode cursor containing movie 'createdOn' sort value when given media filter")
-  void shouldEncodeCursorContainingCreatedOnSortValueWhenGivenMediaFilter()
-      throws IllegalAccessException {
-    FieldUtils.writeField(fakeMovies.get(0), "createdOn", Instant.now(), true);
+  @DisplayName("Should return empty connection when no movies exist")
+  void shouldReturnEmptyConnectionWhenNoMoviesExist() {
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, null);
 
-    var fakeFilter =
-        MediaFilter.builder().sortBy(OrderMoviesBy.ADDED).sortDirection(SortOrder.DESC).build();
+    assertThat(result.getEdges()).isEmpty();
+    assertThat(result.getPageInfo().isHasNextPage()).isFalse();
+    assertThat(result.getPageInfo().isHasPreviousPage()).isFalse();
+  }
 
-    when(mockRelayPaginationService.getPaginationOptions(
-            eq(fakePaginationOptionsWithoutCursor.getLimit()),
-            eq(null),
-            anyInt(),
-            nullable(String.class)))
-        .thenReturn(fakePaginationOptionsWithoutCursor);
-    when(mockMovieRepository.findFirstWithFilter(any(MediaPaginationOptions.class)))
-        .thenReturn(fakeMovies);
-    when(mockCursorUtil.encodeMediaCursor(
-            any(MediaPaginationOptions.class), nullable(UUID.class), any()))
-        .thenReturn(new DefaultConnectionCursor("new-cursor"));
+  @Test
+  @DisplayName("Should reject cursor when sort direction changes between queries")
+  void shouldRejectCursorWhenSortDirectionChanges() {
+    movieRepository.save(Movie.builder().title("Apple").build());
+    movieRepository.save(Movie.builder().title("Banana").build());
 
-    var captor = ArgumentCaptor.forClass(Object.class);
+    var ascResult = movieService.getMoviesWithFilter(1, null, 0, null, null);
+    var cursor = ascResult.getPageInfo().getEndCursor().getValue();
 
-    movieService.getMoviesWithFilter(1, null, 0, null, fakeFilter);
+    var descFilter =
+        MediaFilter.builder().sortBy(OrderMoviesBy.TITLE).sortDirection(SortOrder.DESC).build();
 
-    verify(mockCursorUtil, times(1))
-        .encodeMediaCursor(
-            any(MediaPaginationOptions.class), nullable(UUID.class), captor.capture());
-
-    Instant currentSortValue = (Instant) captor.getValue();
-
-    assertThat(currentSortValue).isEqualTo(fakeMovies.get(0).getCreatedOn());
+    assertThatThrownBy(() -> movieService.getMoviesWithFilter(1, cursor, 0, null, descFilter))
+        .isInstanceOf(InvalidCursorException.class);
   }
 }
