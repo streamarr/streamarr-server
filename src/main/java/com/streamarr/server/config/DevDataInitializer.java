@@ -22,6 +22,7 @@ import com.streamarr.server.repositories.RatingRepository;
 import com.streamarr.server.repositories.ReviewRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
+import java.nio.file.Path;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
@@ -145,15 +146,20 @@ public class DevDataInitializer {
             Review.builder().movie(inception).author("Dev Reviewer").build(),
             Review.builder().movie(darkKnight).author("Dev Reviewer").build()));
 
+    var testVideoPath =
+        Path.of(System.getProperty("user.dir"), "src", "test", "resources",
+                "BigBuckBunny_320x180_10s.mp4")
+            .toString();
+
     mediaFileRepository.saveAll(
         List.of(
             MediaFile.builder()
                 .mediaId(inception.getId())
                 .libraryId(library.getId())
                 .status(MediaFileStatus.MATCHED)
-                .filename("Inception (2010).mkv")
-                .filepath("/mpool/media/clean/movies/Inception (2010)/Inception (2010).mkv")
-                .size(4_500_000_000L)
+                .filename("BigBuckBunny_320x180_10s.mp4")
+                .filepath(testVideoPath)
+                .size(908_000L)
                 .build(),
             MediaFile.builder()
                 .mediaId(darkKnight.getId())
