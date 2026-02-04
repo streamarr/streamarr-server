@@ -427,4 +427,23 @@ class FfmpegCommandBuilderTest {
 
     assertThat(cmd).contains("-hls_time", "6");
   }
+
+  @Test
+  @DisplayName("Should only add forced IDR when encoder is in neither keyframe set")
+  void shouldOnlyAddForcedIdrWhenEncoderIsInNeitherKeyframeSet() {
+    var j =
+        job(
+            TranscodeMode.FULL_TRANSCODE,
+            "h264",
+            "aac",
+            ContainerFormat.MPEGTS,
+            "h264_videotoolbox",
+            false);
+
+    var cmd = builder.buildCommand(j);
+
+    assertThat(cmd).contains("-forced-idr", "1");
+    assertThat(cmd).doesNotContain("-g:v:0");
+    assertThat(cmd).isNotEmpty().noneMatch(s -> s.startsWith("-force_key_frames"));
+  }
 }

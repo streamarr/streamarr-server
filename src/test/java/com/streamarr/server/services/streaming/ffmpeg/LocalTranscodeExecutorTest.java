@@ -156,6 +156,17 @@ class LocalTranscodeExecutorTest {
     assertThat(processManager.getStarted()).contains(request.sessionId());
   }
 
+  @Test
+  @DisplayName("Should use copy encoder when mode is partial transcode")
+  void shouldUseCopyEncoderWhenModeIsPartialTranscode() {
+    var request = createRequest(TranscodeMode.PARTIAL_TRANSCODE, "h264");
+
+    var handle = executor.start(request);
+
+    assertThat(handle.status()).isEqualTo(TranscodeStatus.ACTIVE);
+    assertThat(processManager.getStarted()).contains(request.sessionId());
+  }
+
   private TranscodeCapabilityService createCapabilityService(
       boolean available, HardwareEncodingCapability hwCapability) {
     var service =
