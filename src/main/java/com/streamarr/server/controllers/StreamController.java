@@ -62,21 +62,7 @@ public class StreamController {
       return ResponseEntity.notFound().build();
     }
 
-    var s = session.get();
-    if (s.getTranscodeDecision().containerFormat() != ContainerFormat.FMP4) {
-      return ResponseEntity.notFound().build();
-    }
-
-    s.getActiveRequestCount().incrementAndGet();
-    try {
-      if (!segmentStore.waitForSegment(sessionId, "init.mp4", SEGMENT_WAIT_TIMEOUT)) {
-        return ResponseEntity.notFound().build();
-      }
-      var data = segmentStore.readSegment(sessionId, "init.mp4");
-      return ResponseEntity.ok().contentType(MP4_MEDIA_TYPE).body(data);
-    } finally {
-      s.getActiveRequestCount().decrementAndGet();
-    }
+    return serveInitSegment(session.get(), sessionId, "init.mp4");
   }
 
   @GetMapping("/{sessionId}/{segmentName:.+\\.(?:ts|m4s)}")
@@ -123,21 +109,7 @@ public class StreamController {
       return ResponseEntity.notFound().build();
     }
 
-    if (s.getTranscodeDecision().containerFormat() != ContainerFormat.FMP4) {
-      return ResponseEntity.notFound().build();
-    }
-
-    var qualifiedName = variantLabel + "/init.mp4";
-    s.getActiveRequestCount().incrementAndGet();
-    try {
-      if (!segmentStore.waitForSegment(sessionId, qualifiedName, SEGMENT_WAIT_TIMEOUT)) {
-        return ResponseEntity.notFound().build();
-      }
-      var data = segmentStore.readSegment(sessionId, qualifiedName);
-      return ResponseEntity.ok().contentType(MP4_MEDIA_TYPE).body(data);
-    } finally {
-      s.getActiveRequestCount().decrementAndGet();
-    }
+    return serveInitSegment(s, sessionId, variantLabel + "/init.mp4");
   }
 
   @GetMapping("/{sessionId}/{variantLabel}/{segmentName:.+\\.(?:ts|m4s)}")
@@ -159,6 +131,24 @@ public class StreamController {
 
     var qualifiedName = variantLabel + "/" + segmentName;
     return serveSegment(s, sessionId, qualifiedName);
+  }
+
+  private ResponseEntity<byte[]> serveInitSegment(
+      StreamSession session, UUID sessionId, String segmentName) {
+    if (session.getTranscodeDecision().containerFormat() != ContainerFormat.FMP4) {
+      return ResponseEntity.notFound().build();
+    }
+
+    session.getActiveRequestCount().incrementAndGet();
+    try {
+      if (!segmentStore.waitForSegment(sessionId, segmentName, SEGMENT_WAIT_TIMEOUT)) {
+        return ResponseEntity.notFound().build();
+      }
+      var data = segmentStore.readSegment(sessionId, segmentName);
+      return ResponseEntity.ok().contentType(MP4_MEDIA_TYPE).body(data);
+    } finally {
+      session.getActiveRequestCount().decrementAndGet();
+    }
   }
 
   private ResponseEntity<byte[]> serveSegment(
