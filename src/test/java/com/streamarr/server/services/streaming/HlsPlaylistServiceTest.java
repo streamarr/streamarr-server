@@ -60,8 +60,7 @@ class HlsPlaylistServiceTest {
                     .containerFormat(container)
                     .needsKeyframeAlignment(mode != TranscodeMode.FULL_TRANSCODE)
                     .build())
-            .options(
-                StreamingOptions.builder().supportedCodecs(List.of("h264", "av1")).build())
+            .options(StreamingOptions.builder().supportedCodecs(List.of("h264", "av1")).build())
             .seekPosition(0)
             .createdAt(Instant.now())
             .lastAccessedAt(Instant.now())
@@ -82,7 +81,8 @@ class HlsPlaylistServiceTest {
   }
 
   @Test
-  @DisplayName("Should include stream inf with bandwidth and resolution when generating master playlist")
+  @DisplayName(
+      "Should include stream inf with bandwidth and resolution when generating master playlist")
   void shouldIncludeStreamInfWithBandwidthAndResolutionWhenGeneratingMasterPlaylist() {
     var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 120);
 
@@ -279,8 +279,7 @@ class HlsPlaylistServiceTest {
                     .containerFormat(container)
                     .needsKeyframeAlignment(mode != TranscodeMode.FULL_TRANSCODE)
                     .build())
-            .options(
-                StreamingOptions.builder().supportedCodecs(List.of("h264", "av1")).build())
+            .options(StreamingOptions.builder().supportedCodecs(List.of("h264", "av1")).build())
             .seekPosition(0)
             .createdAt(Instant.now())
             .lastAccessedAt(Instant.now())
@@ -392,8 +391,7 @@ class HlsPlaylistServiceTest {
 
     var playlist = service.generateMasterPlaylist(session);
 
-    var streamInfLines =
-        playlist.lines().filter(l -> l.startsWith("#EXT-X-STREAM-INF:")).toList();
+    var streamInfLines = playlist.lines().filter(l -> l.startsWith("#EXT-X-STREAM-INF:")).toList();
     assertThat(streamInfLines).hasSize(3);
 
     assertThat(streamInfLines.get(0)).contains("RESOLUTION=1920x1080");
@@ -432,8 +430,7 @@ class HlsPlaylistServiceTest {
 
     var playlist = service.generateMasterPlaylist(session);
 
-    var streamInfLines =
-        playlist.lines().filter(l -> l.startsWith("#EXT-X-STREAM-INF:")).toList();
+    var streamInfLines = playlist.lines().filter(l -> l.startsWith("#EXT-X-STREAM-INF:")).toList();
     assertThat(streamInfLines).hasSize(1);
     assertThat(playlist).contains("stream.m3u8");
     assertThat(playlist).doesNotContain("/stream.m3u8");
@@ -446,8 +443,7 @@ class HlsPlaylistServiceTest {
 
     var playlist = service.generateMasterPlaylist(session);
 
-    var streamInfLines =
-        playlist.lines().filter(l -> l.startsWith("#EXT-X-STREAM-INF:")).toList();
+    var streamInfLines = playlist.lines().filter(l -> l.startsWith("#EXT-X-STREAM-INF:")).toList();
     for (var line : streamInfLines) {
       assertThat(line).contains("CODECS=");
     }

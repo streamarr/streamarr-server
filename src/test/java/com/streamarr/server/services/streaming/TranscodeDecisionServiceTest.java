@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.StreamingOptions;
-import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import java.time.Duration;
 import java.util.List;

@@ -160,18 +160,30 @@ public class HlsStreamingService implements StreamingService {
   private void startVariantTranscodes(
       StreamSession session, List<QualityVariant> variants, int seekPosition) {
     for (var variant : variants) {
-      var request = buildRequest(session.getSessionId(), session.getSourcePath(), seekPosition,
-          session.getTranscodeDecision(), session.getMediaProbe().framerate(),
-          variant.width(), variant.height(), variant.videoBitrate());
+      var request =
+          buildRequest(
+              session.getSessionId(),
+              session.getSourcePath(),
+              seekPosition,
+              session.getTranscodeDecision(),
+              session.getMediaProbe().framerate(),
+              variant.width(),
+              variant.height(),
+              variant.videoBitrate());
       var handle = transcodeExecutor.start(request);
       session.setVariantHandle(variant.label(), handle);
     }
   }
 
   private TranscodeRequest buildRequest(
-      UUID sessionId, Path sourcePath, int seekPosition,
+      UUID sessionId,
+      Path sourcePath,
+      int seekPosition,
       TranscodeDecision decision,
-      double framerate, int width, int height, long bitrate) {
+      double framerate,
+      int width,
+      int height,
+      long bitrate) {
     return TranscodeRequest.builder()
         .sessionId(sessionId)
         .sourcePath(sourcePath)
@@ -187,9 +199,16 @@ public class HlsStreamingService implements StreamingService {
 
   private void startSingleTranscode(StreamSession session, int seekPosition) {
     var probe = session.getMediaProbe();
-    var request = buildRequest(session.getSessionId(), session.getSourcePath(), seekPosition,
-        session.getTranscodeDecision(), probe.framerate(),
-        probe.width(), probe.height(), probe.bitrate());
+    var request =
+        buildRequest(
+            session.getSessionId(),
+            session.getSourcePath(),
+            seekPosition,
+            session.getTranscodeDecision(),
+            probe.framerate(),
+            probe.width(),
+            probe.height(),
+            probe.bitrate());
     var handle = transcodeExecutor.start(request);
     session.setHandle(handle);
   }

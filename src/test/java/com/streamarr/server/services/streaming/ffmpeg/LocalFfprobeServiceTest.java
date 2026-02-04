@@ -4,14 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 
-import tools.jackson.databind.ObjectMapper;
 import com.streamarr.server.exceptions.FfmpegNotAvailableException;
 import com.streamarr.server.exceptions.TranscodeException;
 import java.nio.file.Path;
-import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.ObjectMapper;
 
 @Tag("UnitTest")
 class LocalFfprobeServiceTest {

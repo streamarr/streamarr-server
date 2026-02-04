@@ -7,7 +7,6 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
-import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import java.nio.file.Path;

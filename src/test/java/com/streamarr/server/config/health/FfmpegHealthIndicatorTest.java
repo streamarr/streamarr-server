@@ -74,7 +74,8 @@ class FfmpegHealthIndicatorTest {
               }
               if (cmdStr.contains("-hwaccels")) {
                 return new FakeTestProcess(
-                    gpuAvailable ? "Hardware acceleration methods:\n" + accelerator + "\n"
+                    gpuAvailable
+                        ? "Hardware acceleration methods:\n" + accelerator + "\n"
                         : "Hardware acceleration methods:\n",
                     0);
               }

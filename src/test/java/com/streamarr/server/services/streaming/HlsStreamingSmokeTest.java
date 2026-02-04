@@ -117,7 +117,9 @@ class HlsStreamingSmokeTest {
   @AfterEach
   void tearDown() {
     try {
-      streamingService.getAllSessions().forEach(s -> streamingService.destroySession(s.getSessionId()));
+      streamingService
+          .getAllSessions()
+          .forEach(s -> streamingService.destroySession(s.getSessionId()));
     } catch (Exception e) {
       // best-effort cleanup
     }
@@ -304,9 +306,9 @@ class HlsStreamingSmokeTest {
     streamingService.destroySession(sessionId);
 
     var processHandle = ProcessHandle.of(handle.processId());
-    assertThat(processHandle).satisfiesAnyOf(
-        ph -> assertThat(ph).isEmpty(),
-        ph -> assertThat(ph.get().isAlive()).isFalse());
+    assertThat(processHandle)
+        .satisfiesAnyOf(
+            ph -> assertThat(ph).isEmpty(), ph -> assertThat(ph.get().isAlive()).isFalse());
   }
 
   @Test

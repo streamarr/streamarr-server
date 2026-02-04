@@ -14,4 +14,10 @@ public record TranscodeRequest(
     TranscodeDecision transcodeDecision,
     int width,
     int height,
-    long bitrate) {}
+    long bitrate,
+    String variantLabel) {
+
+  public TranscodeRequest {
+    variantLabel = variantLabel != null ? variantLabel : StreamSession.defaultVariant();
+  }
+}

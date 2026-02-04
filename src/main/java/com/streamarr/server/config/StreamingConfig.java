@@ -66,8 +66,8 @@ public class StreamingConfig {
       FfmpegProcessManager processManager,
       SegmentStore segmentStore,
       TranscodeCapabilityService capabilityService) {
-    return new LocalTranscodeExecutor(commandBuilder, processManager, segmentStore,
-        capabilityService);
+    return new LocalTranscodeExecutor(
+        commandBuilder, processManager, segmentStore, capabilityService);
   }
 
   @Bean

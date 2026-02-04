@@ -2,7 +2,6 @@ package com.streamarr.server.controllers;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.config.StreamingProperties;
@@ -39,7 +38,8 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 class StreamControllerTest {
 
   private static final UUID SESSION_ID = UUID.randomUUID();
-  private static final MediaType HLS_MEDIA_TYPE = MediaType.parseMediaType("application/vnd.apple.mpegurl");
+  private static final MediaType HLS_MEDIA_TYPE =
+      MediaType.parseMediaType("application/vnd.apple.mpegurl");
 
   private MockMvc mockMvc;
   private StubStreamingService streamingService;
@@ -356,11 +356,7 @@ class StreamControllerTest {
 
     var result =
         mockMvc
-            .perform(
-                get(
-                    "/api/stream/{sessionId}/{variantLabel}/segment0.ts",
-                    SESSION_ID,
-                    "720p"))
+            .perform(get("/api/stream/{sessionId}/{variantLabel}/segment0.ts", SESSION_ID, "720p"))
             .andExpect(status().isOk())
             .andReturn();
 
@@ -374,8 +370,7 @@ class StreamControllerTest {
     streamingService.setSession(buildAbrSession());
 
     mockMvc
-        .perform(
-            get("/api/stream/{sessionId}/{variantLabel}/segment0.ts", SESSION_ID, "360p"))
+        .perform(get("/api/stream/{sessionId}/{variantLabel}/segment0.ts", SESSION_ID, "360p"))
         .andExpect(status().isNotFound());
   }
 
@@ -411,8 +406,7 @@ class StreamControllerTest {
     streamingService.setSession(buildAbrSession());
 
     mockMvc
-        .perform(
-            get("/api/stream/{sessionId}/{variantLabel}/segment0.ts", SESSION_ID, "..720p"))
+        .perform(get("/api/stream/{sessionId}/{variantLabel}/segment0.ts", SESSION_ID, "..720p"))
         .andExpect(status().isBadRequest());
   }
 

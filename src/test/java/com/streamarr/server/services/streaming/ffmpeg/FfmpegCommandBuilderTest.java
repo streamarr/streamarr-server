@@ -8,7 +8,6 @@ import com.streamarr.server.domain.streaming.TranscodeJob;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import java.nio.file.Path;
-import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -38,8 +37,16 @@ class FfmpegCommandBuilderTest {
       boolean needsKeyframeAlignment,
       int seekPosition) {
     return job(
-        mode, codecFamily, audioCodec, container, videoEncoder, needsKeyframeAlignment,
-        seekPosition, 1920, 1080, 5_000_000L);
+        mode,
+        codecFamily,
+        audioCodec,
+        container,
+        videoEncoder,
+        needsKeyframeAlignment,
+        seekPosition,
+        1920,
+        1080,
+        5_000_000L);
   }
 
   private TranscodeJob job(
@@ -94,13 +101,7 @@ class FfmpegCommandBuilderTest {
   @DisplayName("Should include scale filter when mode is full transcode")
   void shouldIncludeScaleFilterWhenModeIsFullTranscode() {
     var j =
-        job(
-            TranscodeMode.FULL_TRANSCODE,
-            "h264",
-            "aac",
-            ContainerFormat.MPEGTS,
-            "libx264",
-            false);
+        job(TranscodeMode.FULL_TRANSCODE, "h264", "aac", ContainerFormat.MPEGTS, "libx264", false);
 
     var cmd = builder.buildCommand(j);
 
@@ -111,13 +112,7 @@ class FfmpegCommandBuilderTest {
   @DisplayName("Should include bitrate control when mode is full transcode")
   void shouldIncludeBitrateControlWhenModeIsFullTranscode() {
     var j =
-        job(
-            TranscodeMode.FULL_TRANSCODE,
-            "h264",
-            "aac",
-            ContainerFormat.MPEGTS,
-            "libx264",
-            false);
+        job(TranscodeMode.FULL_TRANSCODE, "h264", "aac", ContainerFormat.MPEGTS, "libx264", false);
 
     var cmd = builder.buildCommand(j);
 
@@ -153,13 +148,7 @@ class FfmpegCommandBuilderTest {
   @DisplayName("Should not include scale or bitrate when mode is partial transcode")
   void shouldNotIncludeScaleOrBitrateWhenModeIsPartialTranscode() {
     var j =
-        job(
-            TranscodeMode.PARTIAL_TRANSCODE,
-            "h264",
-            "aac",
-            ContainerFormat.MPEGTS,
-            "copy",
-            true);
+        job(TranscodeMode.PARTIAL_TRANSCODE, "h264", "aac", ContainerFormat.MPEGTS, "copy", true);
 
     var cmd = builder.buildCommand(j);
 
@@ -182,13 +171,7 @@ class FfmpegCommandBuilderTest {
   @DisplayName("Should include H264 MPEGTS args when full transcode targets H264")
   void shouldIncludeH264MpegtsArgsWhenFullTranscodeTargetsH264() {
     var j =
-        job(
-            TranscodeMode.FULL_TRANSCODE,
-            "h264",
-            "aac",
-            ContainerFormat.MPEGTS,
-            "libx264",
-            false);
+        job(TranscodeMode.FULL_TRANSCODE, "h264", "aac", ContainerFormat.MPEGTS, "libx264", false);
 
     var cmd = builder.buildCommand(j);
 
@@ -201,13 +184,7 @@ class FfmpegCommandBuilderTest {
   @DisplayName("Should include AV1 fMP4 args when full transcode targets AV1")
   void shouldIncludeAv1Fmp4ArgsWhenFullTranscodeTargetsAv1() {
     var j =
-        job(
-            TranscodeMode.FULL_TRANSCODE,
-            "av1",
-            "aac",
-            ContainerFormat.FMP4,
-            "libsvtav1",
-            false);
+        job(TranscodeMode.FULL_TRANSCODE, "av1", "aac", ContainerFormat.FMP4, "libsvtav1", false);
 
     var cmd = builder.buildCommand(j);
 
@@ -220,13 +197,7 @@ class FfmpegCommandBuilderTest {
   @DisplayName("Should use force keyframes when encoder is libx264")
   void shouldUseForceKeyframesWhenEncoderIsLibx264() {
     var j =
-        job(
-            TranscodeMode.FULL_TRANSCODE,
-            "h264",
-            "aac",
-            ContainerFormat.MPEGTS,
-            "libx264",
-            false);
+        job(TranscodeMode.FULL_TRANSCODE, "h264", "aac", ContainerFormat.MPEGTS, "libx264", false);
 
     var cmd = builder.buildCommand(j);
 
@@ -256,13 +227,7 @@ class FfmpegCommandBuilderTest {
   @DisplayName("Should use GOP size when encoder is libsvtav1")
   void shouldUseGopSizeWhenEncoderIsLibsvtav1() {
     var j =
-        job(
-            TranscodeMode.FULL_TRANSCODE,
-            "av1",
-            "aac",
-            ContainerFormat.FMP4,
-            "libsvtav1",
-            false);
+        job(TranscodeMode.FULL_TRANSCODE, "av1", "aac", ContainerFormat.FMP4, "libsvtav1", false);
 
     var cmd = builder.buildCommand(j);
 
@@ -273,13 +238,7 @@ class FfmpegCommandBuilderTest {
   @DisplayName("Should include forced IDR when mode is full transcode")
   void shouldIncludeForcedIdrWhenModeIsFullTranscode() {
     var j =
-        job(
-            TranscodeMode.FULL_TRANSCODE,
-            "h264",
-            "aac",
-            ContainerFormat.MPEGTS,
-            "libx264",
-            false);
+        job(TranscodeMode.FULL_TRANSCODE, "h264", "aac", ContainerFormat.MPEGTS, "libx264", false);
 
     var cmd = builder.buildCommand(j);
 
@@ -330,13 +289,7 @@ class FfmpegCommandBuilderTest {
   @DisplayName("Should include fMP4 segment options when container is fMP4")
   void shouldIncludeFmp4SegmentOptionsWhenContainerIsFmp4() {
     var j =
-        job(
-            TranscodeMode.FULL_TRANSCODE,
-            "av1",
-            "aac",
-            ContainerFormat.FMP4,
-            "libsvtav1",
-            false);
+        job(TranscodeMode.FULL_TRANSCODE, "av1", "aac", ContainerFormat.FMP4, "libsvtav1", false);
 
     var cmd = builder.buildCommand(j);
 
@@ -347,13 +300,7 @@ class FfmpegCommandBuilderTest {
   @DisplayName("Should include common flags when building command")
   void shouldIncludeCommonFlagsWhenBuildingCommand() {
     var j =
-        job(
-            TranscodeMode.FULL_TRANSCODE,
-            "h264",
-            "aac",
-            ContainerFormat.MPEGTS,
-            "libx264",
-            false);
+        job(TranscodeMode.FULL_TRANSCODE, "h264", "aac", ContainerFormat.MPEGTS, "libx264", false);
 
     var cmd = builder.buildCommand(j);
 
@@ -368,13 +315,7 @@ class FfmpegCommandBuilderTest {
   @DisplayName("Should include HLS temp file flag when building command")
   void shouldIncludeHlsTempFileFlagWhenBuildingCommand() {
     var j =
-        job(
-            TranscodeMode.FULL_TRANSCODE,
-            "h264",
-            "aac",
-            ContainerFormat.MPEGTS,
-            "libx264",
-            false);
+        job(TranscodeMode.FULL_TRANSCODE, "h264", "aac", ContainerFormat.MPEGTS, "libx264", false);
 
     var cmd = builder.buildCommand(j);
 
@@ -407,13 +348,7 @@ class FfmpegCommandBuilderTest {
   @DisplayName("Should set m4s segment filename pattern when container is fMP4")
   void shouldSetM4sSegmentFilenamePatternWhenContainerIsFmp4() {
     var j =
-        job(
-            TranscodeMode.FULL_TRANSCODE,
-            "av1",
-            "aac",
-            ContainerFormat.FMP4,
-            "libsvtav1",
-            false);
+        job(TranscodeMode.FULL_TRANSCODE, "av1", "aac", ContainerFormat.FMP4, "libsvtav1", false);
 
     var cmd = builder.buildCommand(j);
 
@@ -447,13 +382,7 @@ class FfmpegCommandBuilderTest {
   @DisplayName("Should use force keyframes when encoder is libx265")
   void shouldUseForceKeyframesWhenEncoderIsLibx265() {
     var j =
-        job(
-            TranscodeMode.FULL_TRANSCODE,
-            "hevc",
-            "aac",
-            ContainerFormat.FMP4,
-            "libx265",
-            false);
+        job(TranscodeMode.FULL_TRANSCODE, "hevc", "aac", ContainerFormat.FMP4, "libx265", false);
 
     var cmd = builder.buildCommand(j);
 

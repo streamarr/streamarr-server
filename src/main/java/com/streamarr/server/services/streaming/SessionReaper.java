@@ -38,15 +38,13 @@ public class SessionReaper {
     }
   }
 
-  private boolean isIdleAndUnused(
-      StreamSession session, Instant now) {
+  private boolean isIdleAndUnused(StreamSession session, Instant now) {
     var idleSeconds = now.getEpochSecond() - session.getLastAccessedAt().getEpochSecond();
     return idleSeconds > properties.sessionTimeoutSeconds()
         && session.getActiveRequestCount().get() == 0;
   }
 
-  private boolean hasDeadProcess(
-      StreamSession session) {
+  private boolean hasDeadProcess(StreamSession session) {
     var handle = session.getHandle();
     return handle != null
         && handle.status() == TranscodeStatus.ACTIVE

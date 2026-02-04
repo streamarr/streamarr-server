@@ -13,8 +13,19 @@ import org.springframework.stereotype.Component;
 public class FfmpegCommandBuilder {
 
   private static final Set<String> GOP_ONLY_ENCODERS =
-      Set.of("libsvtav1", "h264_nvenc", "hevc_nvenc", "av1_nvenc", "h264_qsv", "hevc_qsv",
-          "av1_qsv", "h264_amf", "hevc_amf", "av1_amf", "h264_rkmpp", "hevc_rkmpp");
+      Set.of(
+          "libsvtav1",
+          "h264_nvenc",
+          "hevc_nvenc",
+          "av1_nvenc",
+          "h264_qsv",
+          "hevc_qsv",
+          "av1_qsv",
+          "h264_amf",
+          "hevc_amf",
+          "av1_amf",
+          "h264_rkmpp",
+          "hevc_rkmpp");
 
   private static final Set<String> FORCE_KEYFRAME_ENCODERS =
       Set.of("libx264", "libx265", "h264_vaapi", "hevc_vaapi", "av1_vaapi");
@@ -51,12 +62,17 @@ public class FfmpegCommandBuilder {
   private void addCommonFlags(List<String> cmd) {
     cmd.addAll(
         List.of(
-            "-map_metadata", "-1",
-            "-map_chapters", "-1",
+            "-map_metadata",
+            "-1",
+            "-map_chapters",
+            "-1",
             "-copyts",
-            "-avoid_negative_ts", "disabled",
-            "-max_muxing_queue_size", "128",
-            "-max_delay", "5000000"));
+            "-avoid_negative_ts",
+            "disabled",
+            "-max_muxing_queue_size",
+            "128",
+            "-max_delay",
+            "5000000"));
   }
 
   private void addCodecArgs(List<String> cmd, TranscodeJob job) {
@@ -111,8 +127,7 @@ public class FfmpegCommandBuilder {
   private void addForceKeyframeExprArgs(List<String> cmd, TranscodeJob job) {
     cmd.addAll(
         List.of(
-            "-force_key_frames:0",
-            "expr:gte(t,n_forced*" + job.request().segmentDuration() + ")"));
+            "-force_key_frames:0", "expr:gte(t,n_forced*" + job.request().segmentDuration() + ")"));
 
     if ("libx264".equals(job.videoEncoder())) {
       cmd.addAll(List.of("-sc_threshold:v:0", "0"));
@@ -140,7 +155,6 @@ public class FfmpegCommandBuilder {
 
     cmd.addAll(
         List.of(
-            "-hls_segment_filename",
-            job.outputDir().resolve("segment%d" + extension).toString()));
+            "-hls_segment_filename", job.outputDir().resolve("segment%d" + extension).toString()));
   }
 }

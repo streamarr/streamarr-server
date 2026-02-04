@@ -40,8 +40,8 @@ class LocalTranscodeExecutorTest {
 
     var capabilityService = createCapabilityService(true, hwCapability);
 
-    executor = new LocalTranscodeExecutor(commandBuilder, processManager, segmentStore,
-        capabilityService);
+    executor =
+        new LocalTranscodeExecutor(commandBuilder, processManager, segmentStore, capabilityService);
   }
 
   private TranscodeRequest createRequest(TranscodeMode mode, String codecFamily) {
@@ -85,8 +85,9 @@ class LocalTranscodeExecutorTest {
         HardwareEncodingCapability.builder().available(false).encoders(Set.of()).build();
     var capabilityService = createCapabilityService(true, noHwCapability);
 
-    executor = new LocalTranscodeExecutor(new FfmpegCommandBuilder(), processManager,
-        segmentStore, capabilityService);
+    executor =
+        new LocalTranscodeExecutor(
+            new FfmpegCommandBuilder(), processManager, segmentStore, capabilityService);
 
     var request = createRequest(TranscodeMode.FULL_TRANSCODE, "av1");
 
@@ -133,11 +134,13 @@ class LocalTranscodeExecutorTest {
   @DisplayName("Should report unhealthy when FFmpeg unavailable")
   void shouldReportUnhealthyWhenFfmpegUnavailable() {
     var capabilityService =
-        createCapabilityService(false,
+        createCapabilityService(
+            false,
             HardwareEncodingCapability.builder().available(false).encoders(Set.of()).build());
 
-    executor = new LocalTranscodeExecutor(new FfmpegCommandBuilder(), processManager,
-        segmentStore, capabilityService);
+    executor =
+        new LocalTranscodeExecutor(
+            new FfmpegCommandBuilder(), processManager, segmentStore, capabilityService);
 
     assertThat(executor.isHealthy()).isFalse();
   }
@@ -155,33 +158,40 @@ class LocalTranscodeExecutorTest {
 
   private TranscodeCapabilityService createCapabilityService(
       boolean available, HardwareEncodingCapability hwCapability) {
-    var service = new TranscodeCapabilityService(
-        command -> new FakeProcess("ffmpeg version 7.0", available ? 0 : 1));
+    var service =
+        new TranscodeCapabilityService(
+            command -> new FakeProcess("ffmpeg version 7.0", available ? 0 : 1));
     if (available) {
       // Inject capability state via reflection-free approach: detect then override
       // We use a factory that returns the right result
-      var outputs = Map.of(
-          "ffmpeg", (Process) new FakeProcess("ffmpeg version 7.0", 0),
-          "hwaccels", (Process) new FakeProcess(
-              hwCapability.available() ? "Hardware acceleration methods:\ncuda\n"
-                  : "Hardware acceleration methods:\n",
-              0),
-          "encoders", (Process) new FakeProcess(
-              buildEncoderOutput(hwCapability.encoders()), 0));
+      var outputs =
+          Map.of(
+              "ffmpeg", (Process) new FakeProcess("ffmpeg version 7.0", 0),
+              "hwaccels",
+                  (Process)
+                      new FakeProcess(
+                          hwCapability.available()
+                              ? "Hardware acceleration methods:\ncuda\n"
+                              : "Hardware acceleration methods:\n",
+                          0),
+              "encoders",
+                  (Process) new FakeProcess(buildEncoderOutput(hwCapability.encoders()), 0));
 
-      var testService = new TranscodeCapabilityService(command -> {
-        var cmdStr = String.join(" ", command);
-        if (cmdStr.contains("-version")) {
-          return outputs.get("ffmpeg");
-        }
-        if (cmdStr.contains("-hwaccels")) {
-          return outputs.get("hwaccels");
-        }
-        if (cmdStr.contains("-encoders")) {
-          return outputs.get("encoders");
-        }
-        return new FakeProcess("", 1);
-      });
+      var testService =
+          new TranscodeCapabilityService(
+              command -> {
+                var cmdStr = String.join(" ", command);
+                if (cmdStr.contains("-version")) {
+                  return outputs.get("ffmpeg");
+                }
+                if (cmdStr.contains("-hwaccels")) {
+                  return outputs.get("hwaccels");
+                }
+                if (cmdStr.contains("-encoders")) {
+                  return outputs.get("encoders");
+                }
+                return new FakeProcess("", 1);
+              });
       testService.detectCapabilities();
       return testService;
     }
@@ -191,7 +201,10 @@ class LocalTranscodeExecutorTest {
   private String buildEncoderOutput(Set<String> encoders) {
     var sb = new StringBuilder();
     for (var encoder : encoders) {
-      sb.append(" V....D ").append(encoder).append("           ").append(encoder)
+      sb.append(" V....D ")
+          .append(encoder)
+          .append("           ")
+          .append(encoder)
           .append(" encoder\n");
     }
     return sb.toString();
