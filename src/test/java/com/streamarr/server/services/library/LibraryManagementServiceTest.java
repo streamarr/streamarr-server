@@ -21,9 +21,11 @@ import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
+import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
+import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.GenreService;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.PersonService;
@@ -55,7 +57,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @DisplayName("Library Management Service Tests")
 public class LibraryManagementServiceTest {
 
-  private final MovieService movieService = mock(MovieService.class);
   private final PersonService personService = mock(PersonService.class);
   private final GenreService genreService = mock(GenreService.class);
   private final MetadataProvider<Movie> tmdbMovieProvider = mock(TMDBMovieProvider.class);
@@ -63,6 +64,8 @@ public class LibraryManagementServiceTest {
       new MovieMetadataProviderResolver(List.of(tmdbMovieProvider));
   private final LibraryRepository fakeLibraryRepository = new FakeLibraryRepository();
   private final MediaFileRepository fakeMediaFileRepository = new FakeMediaFileRepository();
+  private final MovieRepository fakeMovieRepository = new FakeMovieRepository();
+  private final MovieService movieService = new MovieService(fakeMovieRepository, null, null);
   private final FileSystem fileSystem = Jimfs.newFileSystem(Configuration.unix());
 
   private final LibraryManagementService libraryManagementService =
