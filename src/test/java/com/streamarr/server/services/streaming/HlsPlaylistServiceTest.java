@@ -448,4 +448,29 @@ class HlsPlaylistServiceTest {
       assertThat(line).contains("CODECS=");
     }
   }
+
+  @Test
+  @DisplayName("Should reduce segment count when seek position is non-zero")
+  void shouldReduceSegmentCountWhenSeekPositionIsNonZero() {
+    var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 120);
+    session.setSeekPosition(60);
+
+    var playlist = service.generateMediaPlaylist(session);
+
+    var segmentLines =
+        playlist.lines().filter(l -> l.startsWith("segment") && l.endsWith(".ts")).toList();
+    assertThat(segmentLines).hasSize(10);
+  }
+
+  @Test
+  @DisplayName("Should generate full segments when seek position is zero")
+  void shouldGenerateFullSegmentsWhenSeekPositionIsZero() {
+    var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 120);
+
+    var playlist = service.generateMediaPlaylist(session);
+
+    var segmentLines =
+        playlist.lines().filter(l -> l.startsWith("segment") && l.endsWith(".ts")).toList();
+    assertThat(segmentLines).hasSize(20);
+  }
 }
