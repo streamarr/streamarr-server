@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 public class IgnoredFileValidator {
 
   private static final Set<String> DEFAULT_IGNORED_FILENAMES =
-      Set.of(".DS_Store", "Thumbs.db", "desktop.ini");
+      Set.of(".ds_store", "thumbs.db", "desktop.ini");
 
   private static final Set<String> DEFAULT_IGNORED_EXTENSIONS =
       Set.of(
@@ -26,7 +26,9 @@ public class IgnoredFileValidator {
 
   public IgnoredFileValidator(LibraryScanProperties properties) {
     this.ignoredFilenames =
-        mergeDefaults(DEFAULT_IGNORED_FILENAMES, properties.additionalIgnoredFilenames());
+        mergeDefaults(
+            DEFAULT_IGNORED_FILENAMES,
+            properties.additionalIgnoredFilenames().stream().map(String::toLowerCase).toList());
     this.ignoredExtensions =
         mergeDefaults(DEFAULT_IGNORED_EXTENSIONS, properties.additionalIgnoredExtensions());
     this.ignoredPrefixes =
@@ -36,7 +38,7 @@ public class IgnoredFileValidator {
   public boolean shouldIgnore(Path path) {
     var filename = path.getFileName().toString();
 
-    if (ignoredFilenames.contains(filename)) {
+    if (ignoredFilenames.contains(filename.toLowerCase())) {
       return true;
     }
 

@@ -84,6 +84,12 @@ class IgnoredFileValidatorTest {
   }
 
   @Test
+  @DisplayName("Should ignore filename case-insensitively")
+  void shouldIgnoreFilenameCaseInsensitively() {
+    assertTrue(validator.shouldIgnore(Path.of("THUMBS.DB")));
+  }
+
+  @Test
   @DisplayName("Should ignore when given additional configured filename")
   void shouldIgnoreWhenGivenAdditionalConfiguredFilename() {
     var customValidator =
