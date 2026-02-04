@@ -13,4 +13,6 @@ public interface MediaFileRepository extends JpaRepository<MediaFile, UUID> {
   Optional<MediaFile> findFirstByFilepath(String filepath);
 
   List<MediaFile> findByMediaId(UUID mediaId);
+
+  List<MediaFile> findByLibraryId(UUID libraryId);
 }

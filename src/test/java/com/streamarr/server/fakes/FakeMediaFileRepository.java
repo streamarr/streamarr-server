@@ -21,4 +21,11 @@ public class FakeMediaFileRepository extends FakeJpaRepository<MediaFile>
         .filter(file -> mediaId.equals(file.getMediaId()))
         .toList();
   }
+
+  @Override
+  public List<MediaFile> findByLibraryId(UUID libraryId) {
+    return database.values().stream()
+        .filter(file -> libraryId.equals(file.getLibraryId()))
+        .toList();
+  }
 }
