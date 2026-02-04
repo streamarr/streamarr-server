@@ -117,7 +117,11 @@ public class DirectoryWatchingService implements InitializingBean {
       return;
     }
 
-    libraryManagementService.processDiscoveredFile(optionalLibraryId.get(), path);
+    try {
+      libraryManagementService.processDiscoveredFile(optionalLibraryId.get(), path);
+    } catch (Exception e) {
+      log.error("Failed to process discovered file: {}", path, e);
+    }
   }
 
   private void handleDelete(Path path) {

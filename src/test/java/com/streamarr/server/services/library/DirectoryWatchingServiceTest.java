@@ -366,6 +366,47 @@ class DirectoryWatchingServiceTest {
     assertThat(callCount.get()).isEqualTo(2);
   }
 
+  @Test
+  @DisplayName("Should clean up in-flight map when processing throws exception")
+  void shouldCleanUpInFlightMapWhenProcessingThrowsException() throws Exception {
+    var seriesLibrary =
+        Library.builder()
+            .name("TV Shows")
+            .backend(LibraryBackend.LOCAL)
+            .status(LibraryStatus.HEALTHY)
+            .filepath("/media/shows")
+            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+            .type(MediaType.SERIES)
+            .build();
+    libraryRepository.save(seriesLibrary);
+    Files.createDirectories(fileSystem.getPath("/media/shows"));
+
+    var path = createFile("/media/shows/Show S01E01 (2024).mkv");
+    var firstDone = new CountDownLatch(1);
+    var secondCalled = new CountDownLatch(1);
+    var callCount = new java.util.concurrent.atomic.AtomicInteger(0);
+
+    stabilityCheckerRef.set(
+        p -> {
+          var count = callCount.incrementAndGet();
+          if (count == 1) {
+            firstDone.countDown();
+          } else {
+            secondCalled.countDown();
+          }
+          return true;
+        });
+
+    watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+    assertThat(firstDone.await(5, TimeUnit.SECONDS)).isTrue();
+    Thread.sleep(200);
+
+    watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+    assertThat(secondCalled.await(5, TimeUnit.SECONDS)).isTrue();
+
+    assertThat(callCount.get()).isEqualTo(2);
+  }
+
   private Path createFile(String pathStr) throws IOException {
     var path = fileSystem.getPath(pathStr);
     Files.createDirectories(path.getParent());
