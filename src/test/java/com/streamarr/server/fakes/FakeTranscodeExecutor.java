@@ -7,29 +7,38 @@ import com.streamarr.server.services.streaming.TranscodeExecutor;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 public class FakeTranscodeExecutor implements TranscodeExecutor {
 
-  private final Set<UUID> running = new HashSet<>();
-  private final Set<UUID> started = new HashSet<>();
+  private record ProcessKey(UUID sessionId, String variantLabel) {}
+
+  private final Set<ProcessKey> running = new HashSet<>();
+  private final Set<ProcessKey> started = new HashSet<>();
   private final Set<UUID> stopped = new HashSet<>();
 
   @Override
   public TranscodeHandle start(TranscodeRequest request) {
-    running.add(request.sessionId());
-    started.add(request.sessionId());
+    var key = new ProcessKey(request.sessionId(), request.variantLabel());
+    running.add(key);
+    started.add(key);
     return new TranscodeHandle(1L, TranscodeStatus.ACTIVE);
   }
 
   @Override
   public void stop(UUID sessionId) {
-    running.remove(sessionId);
+    running.removeIf(key -> key.sessionId().equals(sessionId));
     stopped.add(sessionId);
   }
 
   @Override
   public boolean isRunning(UUID sessionId) {
-    return running.contains(sessionId);
+    return running.stream().anyMatch(key -> key.sessionId().equals(sessionId));
+  }
+
+  @Override
+  public boolean isRunning(UUID sessionId, String variantLabel) {
+    return running.contains(new ProcessKey(sessionId, variantLabel));
   }
 
   @Override
@@ -38,7 +47,11 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   }
 
   public Set<UUID> getStarted() {
-    return Set.copyOf(started);
+    return started.stream().map(ProcessKey::sessionId).collect(Collectors.toUnmodifiableSet());
+  }
+
+  public Set<String> getStartedVariants() {
+    return started.stream().map(ProcessKey::variantLabel).collect(Collectors.toUnmodifiableSet());
   }
 
   public Set<UUID> getStopped() {
@@ -50,6 +63,10 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   }
 
   public void markDead(UUID sessionId) {
-    running.remove(sessionId);
+    running.removeIf(key -> key.sessionId().equals(sessionId));
+  }
+
+  public void markDead(UUID sessionId, String variantLabel) {
+    running.remove(new ProcessKey(sessionId, variantLabel));
   }
 }

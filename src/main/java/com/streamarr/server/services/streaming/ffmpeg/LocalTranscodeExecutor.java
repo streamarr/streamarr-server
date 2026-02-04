@@ -25,16 +25,18 @@ public class LocalTranscodeExecutor implements TranscodeExecutor {
     var job = resolveJob(request);
     var command = commandBuilder.buildCommand(job);
 
-    var process = processManager.startProcess(request.sessionId(), command, job.outputDir());
+    var process =
+        processManager.startProcess(
+            request.sessionId(), request.variantLabel(), command, job.outputDir());
 
-    var pid = process != null ? process.pid() : -1L;
     log.info(
-        "Started transcode for session {} (encoder: {}, PID: {})",
+        "Started transcode for session {} variant {} (encoder: {}, PID: {})",
         request.sessionId(),
+        request.variantLabel(),
         job.videoEncoder(),
-        pid);
+        process.pid());
 
-    return new TranscodeHandle(pid, TranscodeStatus.ACTIVE);
+    return new TranscodeHandle(process.pid(), TranscodeStatus.ACTIVE);
   }
 
   @Override
@@ -46,6 +48,11 @@ public class LocalTranscodeExecutor implements TranscodeExecutor {
   @Override
   public boolean isRunning(UUID sessionId) {
     return processManager.isRunning(sessionId);
+  }
+
+  @Override
+  public boolean isRunning(UUID sessionId, String variantLabel) {
+    return processManager.isRunning(sessionId, variantLabel);
   }
 
   @Override

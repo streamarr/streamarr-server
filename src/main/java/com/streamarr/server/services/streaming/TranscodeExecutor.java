@@ -12,5 +12,7 @@ public interface TranscodeExecutor {
 
   boolean isRunning(UUID sessionId);
 
+  boolean isRunning(UUID sessionId, String variantLabel);
+
   boolean isHealthy();
 }

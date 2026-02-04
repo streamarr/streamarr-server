@@ -16,19 +16,26 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
 
   private static final long GRACEFUL_SHUTDOWN_SECONDS = 5;
 
-  private final ConcurrentHashMap<UUID, Process> processes = new ConcurrentHashMap<>();
+  private record ProcessKey(UUID sessionId, String variantLabel) {}
+
+  private final ConcurrentHashMap<ProcessKey, Process> processes = new ConcurrentHashMap<>();
 
   @Override
-  public Process startProcess(UUID sessionId, List<String> command, Path workingDir) {
+  public Process startProcess(
+      UUID sessionId, String variantLabel, List<String> command, Path workingDir) {
     try {
       var processBuilder = new ProcessBuilder(command);
       processBuilder.directory(workingDir.toFile());
       processBuilder.redirectErrorStream(false);
 
       var process = processBuilder.start();
-      processes.put(sessionId, process);
+      processes.put(new ProcessKey(sessionId, variantLabel), process);
 
-      log.info("Started FFmpeg process (PID {}) for session {}", process.pid(), sessionId);
+      log.info(
+          "Started FFmpeg process (PID {}) for session {} variant {}",
+          process.pid(),
+          sessionId,
+          variantLabel);
       return process;
     } catch (IOException e) {
       throw new TranscodeException("Failed to start FFmpeg process for session: " + sessionId, e);
@@ -37,14 +44,21 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
 
   @Override
   public void stopProcess(UUID sessionId) {
-    var process = processes.remove(sessionId);
-    if (process == null || !process.isAlive()) {
-      return;
+    var keysToRemove =
+        processes.keySet().stream().filter(key -> key.sessionId().equals(sessionId)).toList();
+
+    for (var key : keysToRemove) {
+      var process = processes.remove(key);
+      if (process == null || !process.isAlive()) {
+        continue;
+      }
+      sendQuitSignal(process, sessionId);
+      awaitGracefulShutdown(process, sessionId);
     }
 
-    sendQuitSignal(process, sessionId);
-    awaitGracefulShutdown(process, sessionId);
-    log.info("Stopped FFmpeg process for session {}", sessionId);
+    if (!keysToRemove.isEmpty()) {
+      log.info("Stopped FFmpeg process(es) for session {}", sessionId);
+    }
   }
 
   private void sendQuitSignal(Process process, UUID sessionId) {
@@ -71,12 +85,24 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
 
   @Override
   public boolean isRunning(UUID sessionId) {
-    var process = processes.get(sessionId);
+    return processes.entrySet().stream()
+        .filter(e -> e.getKey().sessionId().equals(sessionId))
+        .anyMatch(e -> isAliveOrCleanup(e.getKey(), e.getValue()));
+  }
+
+  @Override
+  public boolean isRunning(UUID sessionId, String variantLabel) {
+    var key = new ProcessKey(sessionId, variantLabel);
+    var process = processes.get(key);
     if (process == null) {
       return false;
     }
+    return isAliveOrCleanup(key, process);
+  }
+
+  private boolean isAliveOrCleanup(ProcessKey key, Process process) {
     if (!process.isAlive()) {
-      processes.remove(sessionId);
+      processes.remove(key);
       return false;
     }
     return true;

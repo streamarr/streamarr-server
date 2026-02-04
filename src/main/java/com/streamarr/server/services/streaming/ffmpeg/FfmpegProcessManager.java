@@ -6,9 +6,11 @@ import java.util.UUID;
 
 public interface FfmpegProcessManager {
 
-  Process startProcess(UUID sessionId, List<String> command, Path workingDir);
+  Process startProcess(UUID sessionId, String variantLabel, List<String> command, Path workingDir);
 
   void stopProcess(UUID sessionId);
 
   boolean isRunning(UUID sessionId);
+
+  boolean isRunning(UUID sessionId, String variantLabel);
 }
