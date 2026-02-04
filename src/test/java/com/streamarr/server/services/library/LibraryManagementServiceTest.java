@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
+import com.streamarr.server.config.LibraryScanProperties;
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
@@ -34,6 +35,7 @@ import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolve
 import com.streamarr.server.services.metadata.movie.TMDBMovieProvider;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
+import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
 import java.io.IOException;
 import java.nio.file.FileSystem;
@@ -67,6 +69,7 @@ public class LibraryManagementServiceTest {
 
   private final LibraryManagementService libraryManagementService =
       new LibraryManagementService(
+          new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
           new VideoExtensionValidator(),
           new DefaultVideoFileMetadataParser(),
           fakeMovieMetadataProviderResolver,

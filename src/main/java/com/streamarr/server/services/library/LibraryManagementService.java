@@ -17,6 +17,7 @@ import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
+import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
 import java.io.IOException;
 import java.nio.file.FileSystem;
@@ -36,6 +37,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class LibraryManagementService {
 
+  private final IgnoredFileValidator ignoredFileValidator;
   private final VideoExtensionValidator videoExtensionValidator;
   private final DefaultVideoFileMetadataParser defaultVideoFileMetadataParser;
   private final MovieMetadataProviderResolver movieMetadataProviderResolver;
@@ -48,6 +50,7 @@ public class LibraryManagementService {
   private final MutexFactory<String> mutexFactory;
 
   public LibraryManagementService(
+      IgnoredFileValidator ignoredFileValidator,
       VideoExtensionValidator videoExtensionValidator,
       DefaultVideoFileMetadataParser defaultVideoFileMetadataParser,
       MovieMetadataProviderResolver movieMetadataProviderResolver,
@@ -58,6 +61,7 @@ public class LibraryManagementService {
       GenreService genreService,
       MutexFactoryProvider mutexFactoryProvider,
       FileSystem fileSystem) {
+    this.ignoredFileValidator = ignoredFileValidator;
     this.videoExtensionValidator = videoExtensionValidator;
     this.defaultVideoFileMetadataParser = defaultVideoFileMetadataParser;
     this.movieMetadataProviderResolver = movieMetadataProviderResolver;

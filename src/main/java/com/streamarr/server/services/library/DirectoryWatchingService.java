@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.services.validation.IgnoredFileValidator;
 import io.methvin.watcher.DirectoryWatcher;
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
@@ -21,6 +22,7 @@ import org.springframework.stereotype.Service;
 public class DirectoryWatchingService implements InitializingBean {
 
   private final LibraryRepository libraryRepository;
+  private final IgnoredFileValidator ignoredFileValidator;
 
   private final Set<Path> directoriesToWatch = new HashSet<>();
   private DirectoryWatcher watcher;
