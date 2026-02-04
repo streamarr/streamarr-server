@@ -134,7 +134,9 @@ public class LibraryManagementService {
 
   private void processFile(Library library, Path path) {
 
-    if (isUnsupportedFileExtension(path)) {
+    if (!hasSupportedExtension(path)) {
+      log.warn(
+          "Unsupported file extension: {} for filepath {}.", getExtension(path), path.toAbsolutePath());
       return;
     }
 
@@ -150,17 +152,8 @@ public class LibraryManagementService {
     }
   }
 
-  private boolean isUnsupportedFileExtension(Path path) {
-    var extension = getExtension(path);
-
-    var valid = videoExtensionValidator.validate(extension);
-
-    if (!valid) {
-      log.warn(
-          "Unsupported file extension: {} for filepath {}.", extension, path.toAbsolutePath());
-    }
-
-    return !valid;
+  private boolean hasSupportedExtension(Path path) {
+    return videoExtensionValidator.validate(getExtension(path));
   }
 
   private String getExtension(Path path) {
@@ -257,18 +250,17 @@ public class LibraryManagementService {
   private void enrichMovieMetadata(
       Library library, MediaFile mediaFile, RemoteSearchResult remoteSearchResult) {
 
-    // Lock should use the library agent's external id.
-    var mutex = mutexFactory.getMutex(remoteSearchResult.externalId());
+    var externalIdMutex = mutexFactory.getMutex(remoteSearchResult.externalId());
 
     try {
-      mutex.lock();
+      externalIdMutex.lock();
 
       updateOrSaveEnrichedMovie(library, mediaFile, remoteSearchResult);
     } catch (Exception ex) {
       log.error("Failure enriching movie metadata:", ex);
     } finally {
-      if (mutex.isHeldByCurrentThread()) {
-        mutex.unlock();
+      if (externalIdMutex.isHeldByCurrentThread()) {
+        externalIdMutex.unlock();
       }
     }
   }
