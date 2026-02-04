@@ -69,8 +69,8 @@ public class HlsStreamingService implements StreamingService {
             .activeRequestCount(new AtomicInteger(0))
             .build();
 
-    startTranscodes(session, 0);
     sessions.put(sessionId, session);
+    startTranscodes(session, 0);
     log.info(
         "Created streaming session {} for media file {} (mode: {}, variants: {})",
         sessionId,

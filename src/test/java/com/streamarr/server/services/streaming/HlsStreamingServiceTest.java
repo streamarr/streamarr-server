@@ -7,8 +7,11 @@ import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
+import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeMode;
+import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.MaxConcurrentTranscodesException;
 import com.streamarr.server.exceptions.MediaFileNotFoundException;
@@ -19,7 +22,9 @@ import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -410,5 +415,38 @@ class HlsStreamingServiceTest {
     assertThat(transcodeExecutor.getStartedVariants())
         .containsExactlyInAnyOrderElementsOf(
             session.getVariants().stream().map(v -> v.label()).toList());
+  }
+
+  @Test
+  @DisplayName("Should make session retrievable during transcode start")
+  void shouldMakeSessionRetrievableDuringTranscodeStart() {
+    var serviceRef = new AtomicReference<HlsStreamingService>();
+    var capturedSession = new AtomicReference<Optional<StreamSession>>();
+
+    var spyExecutor =
+        new FakeTranscodeExecutor() {
+          @Override
+          public TranscodeHandle start(TranscodeRequest request) {
+            capturedSession.set(serviceRef.get().getSession(request.sessionId()));
+            return super.start(request);
+          }
+        };
+
+    var spyService =
+        new HlsStreamingService(
+            mediaFileRepository,
+            spyExecutor,
+            segmentStore,
+            ffprobeService,
+            new TranscodeDecisionService(),
+            new QualityLadderService(),
+            new StreamingProperties(3, 6, 60, null));
+    serviceRef.set(spyService);
+
+    var file = seedMediaFile();
+
+    spyService.createSession(file.getId(), defaultOptions());
+
+    assertThat(capturedSession.get()).isPresent();
   }
 }
