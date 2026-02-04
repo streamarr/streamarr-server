@@ -75,20 +75,11 @@ public class LibraryManagementService {
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
   }
 
-  public void addLibrary(Library library) {
-    // validate library doesn't already exist.
-    // save new library entity to database.
-    // call refreshLibrary() once new library has been created.
-    // return newly created library.
-  }
+  // TODO #39: implement addLibrary mutation
+  public void addLibrary(Library library) {}
 
-  public void removeLibrary() {
-    // remove watcher
-    // cleanup?
-    // terminate streams?
-    // remove all db entries but leave files (shows, movies, etc)
-    // delete "Library" entity
-  }
+  // TODO #39: implement removeLibrary mutation
+  public void removeLibrary() {}
 
   public void scanLibrary(UUID libraryId) {
     var optionalLibrary = libraryRepository.findById(libraryId);
@@ -319,9 +310,6 @@ public class LibraryManagementService {
     mediaFileRepository.save(mediaFile);
   }
 
-  private void deleteMissingMediaFiles() {
-    // get all items in library
-    // locate files in FS
-    // cleanup if file cannot be located.
-  }
+  // TODO #34: detect and clean up orphaned MediaFiles
+  private void deleteMissingMediaFiles() {}
 }
