@@ -12,6 +12,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.stream.Stream;
 import org.jooq.SortOrder;
 
@@ -49,17 +50,7 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
 
     var sorted = filterByLibrary(effectiveFilter).sorted(comparatorFor(effectiveFilter)).toList();
 
-    var cursorId = options.getCursorId().orElse(null);
-    int startIndex = 0;
-    if (cursorId != null) {
-      for (int i = 0; i < sorted.size(); i++) {
-        if (sorted.get(i).getId().equals(cursorId)) {
-          startIndex = i;
-          break;
-        }
-      }
-    }
-
+    var startIndex = findCursorIndex(sorted, options.getCursorId());
     var endIndex = Math.min(sorted.size(), startIndex + limit + 2);
     var result = new ArrayList<>(sorted.subList(startIndex, endIndex));
 
@@ -70,16 +61,30 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
     return result;
   }
 
-  private Stream<Movie> filterByLibrary(MediaFilter filter) {
-    var libraryId = filter.getLibraryId();
-    var stream = database.values().stream();
-
-    if (libraryId != null) {
-      stream =
-          stream.filter(m -> m.getLibrary() != null && libraryId.equals(m.getLibrary().getId()));
+  private int findCursorIndex(List<Movie> sorted, Optional<UUID> cursorId) {
+    if (cursorId.isEmpty()) {
+      return 0;
     }
 
-    return stream;
+    var id = cursorId.get();
+    for (int i = 0; i < sorted.size(); i++) {
+      if (sorted.get(i).getId().equals(id)) {
+        return i;
+      }
+    }
+
+    return 0;
+  }
+
+  private Stream<Movie> filterByLibrary(MediaFilter filter) {
+    var libraryId = filter.getLibraryId();
+
+    if (libraryId == null) {
+      return database.values().stream();
+    }
+
+    return database.values().stream()
+        .filter(m -> m.getLibrary() != null && libraryId.equals(m.getLibrary().getId()));
   }
 
   private Comparator<Movie> comparatorFor(MediaFilter filter) {
