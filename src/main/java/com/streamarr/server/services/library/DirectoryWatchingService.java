@@ -130,10 +130,11 @@ public class DirectoryWatchingService implements InitializingBean {
   }
 
   Optional<UUID> resolveLibrary(Path path) {
-    var absolutePath = path.toAbsolutePath().toString();
+    var absolutePath = path.toAbsolutePath();
+    var fs = absolutePath.getFileSystem();
 
     return libraryRepository.findAll().stream()
-        .filter(library -> absolutePath.startsWith(library.getFilepath()))
+        .filter(library -> absolutePath.startsWith(fs.getPath(library.getFilepath())))
         .max(Comparator.comparingInt(library -> library.getFilepath().length()))
         .map(Library::getId);
   }

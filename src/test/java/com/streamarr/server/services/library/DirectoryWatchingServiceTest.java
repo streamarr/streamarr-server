@@ -258,6 +258,17 @@ class DirectoryWatchingServiceTest {
   }
 
   @Test
+  @DisplayName("Should not match library when path shares string prefix but not path prefix")
+  void shouldNotMatchLibraryWhenPathSharesStringPrefixButNotPathPrefix() throws IOException {
+    Files.createDirectories(fileSystem.getPath("/media/moviesfoo"));
+    var path = fileSystem.getPath("/media/moviesfoo/file.mkv");
+
+    var result = watchingService.resolveLibrary(path);
+
+    assertThat(result).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should clean up in-flight map after processing")
   void shouldCleanUpInFlightMapAfterProcessing() throws Exception {
     var path = createFile("/media/movies/Movie (2024).mkv");
