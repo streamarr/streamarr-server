@@ -1,11 +1,6 @@
 package com.streamarr.server.graphql.resolvers;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doNothing;
-import static org.mockito.Mockito.when;
 
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
@@ -19,7 +14,10 @@ import com.streamarr.server.services.streaming.StreamingService;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
@@ -27,17 +25,26 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
 
 @Tag("UnitTest")
 @EnableDgsTest
-@SpringBootTest(classes = {StreamingResolver.class})
+@SpringBootTest(classes = {StreamingResolver.class, StreamingResolverTest.TestConfig.class})
 @DisplayName("Streaming Resolver Tests")
 class StreamingResolverTest {
 
-  @Autowired private DgsQueryExecutor dgsQueryExecutor;
+  private static final StubStreamingService STUB_SERVICE = new StubStreamingService();
 
-  @MockitoBean private StreamingService streamingService;
+  @TestConfiguration
+  static class TestConfig {
+    @Bean
+    StreamingService streamingService() {
+      return STUB_SERVICE;
+    }
+  }
+
+  @Autowired private DgsQueryExecutor dgsQueryExecutor;
 
   private StreamSession buildSession(UUID sessionId) {
     return StreamSession.builder()
@@ -74,8 +81,7 @@ class StreamingResolverTest {
   void shouldReturnSessionDtoWhenCreatingStreamSession() {
     var sessionId = UUID.randomUUID();
     var session = buildSession(sessionId);
-    when(streamingService.createSession(any(UUID.class), any(StreamingOptions.class)))
-        .thenReturn(session);
+    STUB_SERVICE.setNextResult(session);
 
     var mutation =
         String.format(
@@ -124,7 +130,7 @@ class StreamingResolverTest {
   void shouldReturnSessionDtoWhenSeekingSession() {
     var sessionId = UUID.randomUUID();
     var session = buildSession(sessionId);
-    when(streamingService.seekSession(eq(sessionId), anyInt())).thenReturn(session);
+    STUB_SERVICE.setNextResult(session);
 
     var mutation =
         String.format(
@@ -163,9 +169,6 @@ class StreamingResolverTest {
   @Test
   @DisplayName("Should return true when destroying session")
   void shouldReturnTrueWhenDestroyingSession() {
-    var sessionId = UUID.randomUUID();
-    doNothing().when(streamingService).destroySession(sessionId);
-
     var mutation =
         String.format(
             """
@@ -173,7 +176,7 @@ class StreamingResolverTest {
               destroyStreamSession(sessionId: "%s")
             }
             """,
-            sessionId);
+            UUID.randomUUID());
 
     Boolean result =
         dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.destroyStreamSession");
@@ -194,5 +197,42 @@ class StreamingResolverTest {
 
     assertThat(result.getErrors()).isNotEmpty();
     assertThat(result.getErrors().getFirst().getMessage()).contains("Invalid ID format");
+  }
+
+  private static class StubStreamingService implements StreamingService {
+
+    private StreamSession nextResult;
+
+    void setNextResult(StreamSession session) {
+      this.nextResult = session;
+    }
+
+    @Override
+    public StreamSession createSession(UUID mediaFileId, StreamingOptions options) {
+      return nextResult;
+    }
+
+    @Override
+    public Optional<StreamSession> getSession(UUID sessionId) {
+      return Optional.ofNullable(nextResult);
+    }
+
+    @Override
+    public StreamSession seekSession(UUID sessionId, int positionSeconds) {
+      return nextResult;
+    }
+
+    @Override
+    public void destroySession(UUID sessionId) {}
+
+    @Override
+    public Collection<StreamSession> getAllSessions() {
+      return nextResult != null ? List.of(nextResult) : Collections.emptyList();
+    }
+
+    @Override
+    public int getActiveSessionCount() {
+      return nextResult != null ? 1 : 0;
+    }
   }
 }

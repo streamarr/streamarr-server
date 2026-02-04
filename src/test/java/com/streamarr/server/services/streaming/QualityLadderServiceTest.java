@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 @Tag("UnitTest")
+@DisplayName("Quality Ladder Service Tests")
 class QualityLadderServiceTest {
 
   private final QualityLadderService service = new QualityLadderService();

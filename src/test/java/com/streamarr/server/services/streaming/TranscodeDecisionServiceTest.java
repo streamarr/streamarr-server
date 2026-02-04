@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 @Tag("UnitTest")
+@DisplayName("Transcode Decision Service Tests")
 class TranscodeDecisionServiceTest {
 
   private final TranscodeDecisionService service = new TranscodeDecisionService();

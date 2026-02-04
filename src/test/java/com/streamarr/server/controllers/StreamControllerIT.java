@@ -1,26 +1,27 @@
 package com.streamarr.server.controllers;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.server.domain.streaming.StreamingOptions;
+import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.StreamingService;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Optional;
 import java.util.UUID;
-import org.junit.jupiter.api.BeforeEach;
+import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.convention.TestBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 @Tag("IntegrationTest")
@@ -28,22 +29,27 @@ import org.springframework.test.web.servlet.MockMvc;
 @AutoConfigureMockMvc
 class StreamControllerIT extends AbstractIntegrationTest {
 
+  private static final StubStreamingService STUB_SERVICE = new StubStreamingService();
+  private static final FakeSegmentStore FAKE_SEGMENT_STORE = new FakeSegmentStore();
+
   @Autowired private MockMvc mockMvc;
 
-  @MockitoBean private StreamingService streamingService;
-  @MockitoBean private SegmentStore segmentStore;
+  @TestBean StreamingService streamingService;
+  @TestBean SegmentStore segmentStore;
 
-  @BeforeEach
-  void setUp() {
-    when(streamingService.getAllSessions()).thenReturn(Collections.emptyList());
-    when(streamingService.getActiveSessionCount()).thenReturn(0);
+  static StreamingService streamingService() {
+    return STUB_SERVICE;
+  }
+
+  static SegmentStore segmentStore() {
+    return FAKE_SEGMENT_STORE;
   }
 
   @Test
   @DisplayName("Should return master playlist with correct content type when session exists")
   void shouldReturnMasterPlaylistWithCorrectContentTypeWhenSessionExists() throws Exception {
     var session = StreamSessionFixture.buildMpegtsSession();
-    when(streamingService.getSession(session.getSessionId())).thenReturn(Optional.of(session));
+    STUB_SERVICE.addSession(session);
 
     var result =
         mockMvc
@@ -58,11 +64,8 @@ class StreamControllerIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should return 404 when session not found")
   void shouldReturn404WhenSessionNotFound() throws Exception {
-    var invalidId = UUID.randomUUID();
-    when(streamingService.getSession(invalidId)).thenReturn(Optional.empty());
-
     mockMvc
-        .perform(get("/api/stream/{id}/master.m3u8", invalidId))
+        .perform(get("/api/stream/{id}/master.m3u8", UUID.randomUUID()))
         .andExpect(status().isNotFound());
   }
 
@@ -71,10 +74,8 @@ class StreamControllerIT extends AbstractIntegrationTest {
   void shouldServeTsSegmentWithCorrectContentTypeWhenSegmentIsAvailable() throws Exception {
     var session = StreamSessionFixture.buildMpegtsSession();
     var segmentData = new byte[] {0x47, 0x00, 0x11, 0x10};
-    when(streamingService.getSession(session.getSessionId())).thenReturn(Optional.of(session));
-    when(segmentStore.waitForSegment(eq(session.getSessionId()), eq("segment0.ts"), any()))
-        .thenReturn(true);
-    when(segmentStore.readSegment(session.getSessionId(), "segment0.ts")).thenReturn(segmentData);
+    STUB_SERVICE.addSession(session);
+    FAKE_SEGMENT_STORE.addSegment(session.getSessionId(), "segment0.ts", segmentData);
 
     var result =
         mockMvc
@@ -90,12 +91,49 @@ class StreamControllerIT extends AbstractIntegrationTest {
   @DisplayName("Should return 404 when segment unavailable")
   void shouldReturn404WhenSegmentUnavailable() throws Exception {
     var session = StreamSessionFixture.buildMpegtsSession();
-    when(streamingService.getSession(session.getSessionId())).thenReturn(Optional.of(session));
-    when(segmentStore.waitForSegment(eq(session.getSessionId()), eq("segment99.ts"), any()))
-        .thenReturn(false);
+    STUB_SERVICE.addSession(session);
 
     mockMvc
         .perform(get("/api/stream/{id}/segment99.ts", session.getSessionId()))
         .andExpect(status().isNotFound());
+  }
+
+  private static class StubStreamingService implements StreamingService {
+
+    private final ConcurrentHashMap<UUID, StreamSession> sessions = new ConcurrentHashMap<>();
+
+    void addSession(StreamSession session) {
+      sessions.put(session.getSessionId(), session);
+    }
+
+    @Override
+    public StreamSession createSession(UUID mediaFileId, StreamingOptions options) {
+      throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Optional<StreamSession> getSession(UUID sessionId) {
+      return Optional.ofNullable(sessions.get(sessionId));
+    }
+
+    @Override
+    public StreamSession seekSession(UUID sessionId, int positionSeconds) {
+      throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void destroySession(UUID sessionId) {
+      sessions.remove(sessionId);
+    }
+
+    @Override
+    public Collection<StreamSession> getAllSessions() {
+      return Collections.unmodifiableCollection(sessions.values());
+    }
+
+    @Override
+    public int getActiveSessionCount() {
+      return sessions.size();
+    }
   }
 }

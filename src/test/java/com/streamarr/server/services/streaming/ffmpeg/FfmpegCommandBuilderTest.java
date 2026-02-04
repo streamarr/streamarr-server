@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 @Tag("UnitTest")
+@DisplayName("FFmpeg Command Builder Tests")
 class FfmpegCommandBuilderTest {
 
   private final FfmpegCommandBuilder builder = new FfmpegCommandBuilder();

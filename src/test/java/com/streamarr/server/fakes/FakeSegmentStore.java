@@ -1,5 +1,6 @@
 package com.streamarr.server.fakes;
 
+import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.streaming.SegmentStore;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -16,9 +17,13 @@ public class FakeSegmentStore implements SegmentStore {
   public byte[] readSegment(UUID sessionId, String segmentName) {
     var segments = sessions.get(sessionId);
     if (segments == null) {
-      return null;
+      throw new TranscodeException("No output directory for session: " + sessionId);
     }
-    return segments.get(segmentName);
+    var data = segments.get(segmentName);
+    if (data == null) {
+      throw new TranscodeException("Segment not found: " + segmentName);
+    }
+    return data;
   }
 
   @Override

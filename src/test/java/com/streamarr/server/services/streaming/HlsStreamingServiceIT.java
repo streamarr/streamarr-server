@@ -2,24 +2,21 @@ package com.streamarr.server.services.streaming;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
-import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.StreamingOptions;
-import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.MediaFileNotFoundException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
+import com.streamarr.server.fakes.FakeFfprobeService;
+import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
-import java.nio.file.Path;
-import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,7 +24,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.convention.TestBean;
 
 @Tag("IntegrationTest")
 @DisplayName("HLS Streaming Service Integration Tests")
@@ -37,29 +34,30 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   @Autowired private MediaFileRepository mediaFileRepository;
   @Autowired private LibraryRepository libraryRepository;
 
-  @MockitoBean private TranscodeExecutor transcodeExecutor;
-  @MockitoBean private FfprobeService ffprobeService;
-  @MockitoBean private SegmentStore segmentStore;
+  @TestBean TranscodeExecutor transcodeExecutor;
+  @TestBean FfprobeService ffprobeService;
+  @TestBean SegmentStore segmentStore;
+
+  private static final FakeTranscodeExecutor FAKE_EXECUTOR = new FakeTranscodeExecutor();
+  private static final FakeFfprobeService FAKE_FFPROBE = new FakeFfprobeService();
+  private static final FakeSegmentStore FAKE_SEGMENT_STORE = new FakeSegmentStore();
+
+  static TranscodeExecutor transcodeExecutor() {
+    return FAKE_EXECUTOR;
+  }
+
+  static FfprobeService ffprobeService() {
+    return FAKE_FFPROBE;
+  }
+
+  static SegmentStore segmentStore() {
+    return FAKE_SEGMENT_STORE;
+  }
 
   private MediaFile savedMediaFile;
 
   @BeforeEach
   void setUp() {
-    when(ffprobeService.probe(any(Path.class)))
-        .thenReturn(
-            MediaProbe.builder()
-                .duration(Duration.ofMinutes(120))
-                .framerate(23.976)
-                .width(1920)
-                .height(1080)
-                .videoCodec("h264")
-                .audioCodec("aac")
-                .bitrate(5_000_000L)
-                .build());
-
-    when(transcodeExecutor.start(any()))
-        .thenReturn(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
-
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
 
     var file =

@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 
 @Tag("UnitTest")
+@DisplayName("Local Ffprobe Service Tests")
 class LocalFfprobeServiceTest {
 
   private final ObjectMapper objectMapper = new ObjectMapper();

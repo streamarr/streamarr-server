@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 @Tag("UnitTest")
+@DisplayName("HLS Playlist Service Tests")
 class HlsPlaylistServiceTest {
 
   private HlsPlaylistService service;

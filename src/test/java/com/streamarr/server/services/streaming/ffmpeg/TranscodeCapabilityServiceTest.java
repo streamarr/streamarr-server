@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 @Tag("UnitTest")
+@DisplayName("Transcode Capability Service Tests")
 class TranscodeCapabilityServiceTest {
 
   @Test
