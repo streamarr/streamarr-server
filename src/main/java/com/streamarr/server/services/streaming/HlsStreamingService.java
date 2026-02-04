@@ -223,7 +223,7 @@ public class HlsStreamingService implements StreamingService {
       throw new MaxConcurrentTranscodesException(properties.maxConcurrentTranscodes());
     }
     if (variants.size() > slotsAvailable) {
-      return variants.subList(0, (int) slotsAvailable);
+      return variants.subList(0, slotsAvailable);
     }
     return variants;
   }
@@ -236,11 +236,11 @@ public class HlsStreamingService implements StreamingService {
     return mode == TranscodeMode.PARTIAL_TRANSCODE || mode == TranscodeMode.FULL_TRANSCODE;
   }
 
-  private long availableTranscodeSlots() {
+  private int availableTranscodeSlots() {
     var activeTranscodes =
         sessions.values().stream()
             .filter(s -> requiresTranscode(s.getTranscodeDecision().transcodeMode()))
-            .mapToLong(s -> Math.max(1, s.getVariants().size()))
+            .mapToInt(s -> Math.max(1, s.getVariants().size()))
             .sum();
     return properties.maxConcurrentTranscodes() - activeTranscodes;
   }
