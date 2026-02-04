@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 public class IgnoredFileValidator {
 
   private static final Set<String> DEFAULT_IGNORED_FILENAMES =
-      Set.of(".DS_Store", "Thumbs.db", "desktop.ini", "small.jpg", "albumart.jpg");
+      Set.of(".DS_Store", "Thumbs.db", "desktop.ini");
 
   private static final Set<String> DEFAULT_IGNORED_EXTENSIONS =
       Set.of(
