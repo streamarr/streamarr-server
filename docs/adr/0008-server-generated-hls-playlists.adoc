@@ -1,0 +1,21 @@
+= ADR 0008: Server-Generated HLS Playlists
+
+== Status
+
+Accepted
+
+== Context
+
+FFmpeg can generate `.m3u8` playlist files alongside segments. However, reading these files introduces race conditions (file may not be flushed when the client requests it) and couples playlist generation to the local filesystem.
+
+== Decision
+
+Generate M3U8 playlists server-side from `MediaProbe` metadata and `SegmentStore` state rather than reading FFmpeg-written playlist files. The `HlsPlaylistService` computes segment count from duration and target segment length, then builds the playlist string in memory.
+
+== Consequences
+
+* No file I/O race conditions -- playlists are computed, not read
+* `SegmentStore` abstraction works with future remote/shared storage (S3, NFS) without changing playlist logic
+* Full control over playlist content, version tags, and RFC 8216 compliance
+* FFmpeg still writes segments to disk via `-hls_segment_filename`, but we ignore its `.m3u8` output
+* Playlist correctness depends on `MediaProbe` accuracy (duration, framerate) -- validated at session creation

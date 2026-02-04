@@ -33,4 +33,14 @@ class ArchitectureTest {
           .dependOnClassesThat()
           .resideInAPackage("..services.metadata.tmdb..")
           .as("TMDB types must not be used outside metadata package");
+
+  @ArchTest
+  static final ArchRule controllersMustNotDependOnRepositories =
+      noClasses()
+          .that()
+          .resideInAPackage("..controllers..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAPackage("..repositories..")
+          .as("Controllers must not depend on repositories");
 }

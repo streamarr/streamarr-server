@@ -1,0 +1,30 @@
+type StreamSession {
+    id: ID!
+    streamUrl: String!
+    transcodeMode: TranscodeMode!
+}
+
+enum TranscodeMode {
+    REMUX
+    PARTIAL_TRANSCODE
+    FULL_TRANSCODE
+}
+
+input StreamingOptionsInput {
+    quality: VideoQuality
+    maxWidth: Int
+    maxHeight: Int
+    maxBitrate: Int
+    supportedCodecs: [String!]
+    audioLanguage: String
+    subtitleLanguage: String
+}
+
+enum VideoQuality {
+    AUTO
+    LOW_360P
+    MEDIUM_480P
+    HIGH_720P
+    FULL_HD_1080P
+    UHD_4K
+}

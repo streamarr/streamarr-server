@@ -9,7 +9,7 @@ public class FakeMediaFileRepository extends FakeJpaRepository<MediaFile>
   @Override
   public Optional<MediaFile> findFirstByFilepath(String filepath) {
     return database.values().stream()
-        .filter(mediaFile -> mediaFile.getFilepath().equals(filepath))
+        .filter(file -> filepath.equals(file.getFilepath()))
         .findFirst();
   }
 }
