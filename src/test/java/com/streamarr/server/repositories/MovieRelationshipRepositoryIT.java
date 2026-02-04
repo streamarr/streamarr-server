@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.media.MediaFile;
+import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Genre;
@@ -11,6 +13,7 @@ import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.domain.metadata.Rating;
 import com.streamarr.server.domain.metadata.Review;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import java.util.List;
 import java.util.Set;
@@ -33,6 +36,7 @@ public class MovieRelationshipRepositoryIT extends AbstractIntegrationTest {
   @Autowired private GenreRepository genreRepository;
   @Autowired private RatingRepository ratingRepository;
   @Autowired private ReviewRepository reviewRepository;
+  @Autowired private MediaFileRepository mediaFileRepository;
 
   private Movie savedMovie;
 
@@ -40,27 +44,25 @@ public class MovieRelationshipRepositoryIT extends AbstractIntegrationTest {
   void setup() {
     Library library = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
 
-    var actor = personRepository.save(
-        Person.builder().name("Leonardo DiCaprio").sourceId("actor-1").build());
-    var director = personRepository.save(
-        Person.builder().name("Christopher Nolan").sourceId("dir-1").build());
+    var actor =
+        personRepository.save(
+            Person.builder().name("Leonardo DiCaprio").sourceId("actor-1").build());
+    var director =
+        personRepository.save(Person.builder().name("Christopher Nolan").sourceId("dir-1").build());
 
-    savedMovie = movieRepository.saveAndFlush(
-        Movie.builder()
-            .title("Inception")
-            .library(library)
-            .studios(Set.of(
-                Company.builder().name("Warner Bros").sourceId("wb-1").build()))
-            .cast(List.of(actor))
-            .directors(List.of(director))
-            .genres(Set.of(
-                Genre.builder().name("Sci-Fi").sourceId("scifi-1").build()))
-            .build());
+    savedMovie =
+        movieRepository.saveAndFlush(
+            Movie.builder()
+                .title("Inception")
+                .library(library)
+                .studios(Set.of(Company.builder().name("Warner Bros").sourceId("wb-1").build()))
+                .cast(List.of(actor))
+                .directors(List.of(director))
+                .genres(Set.of(Genre.builder().name("Sci-Fi").sourceId("scifi-1").build()))
+                .build());
 
-    ratingRepository.save(
-        Rating.builder().movie(savedMovie).source("IMDb").value("8.8").build());
-    reviewRepository.save(
-        Review.builder().movie(savedMovie).author("Roger Ebert").build());
+    ratingRepository.save(Rating.builder().movie(savedMovie).source("IMDb").value("8.8").build());
+    reviewRepository.save(Review.builder().movie(savedMovie).author("Roger Ebert").build());
   }
 
   @Test
@@ -121,8 +123,8 @@ public class MovieRelationshipRepositoryIT extends AbstractIntegrationTest {
   @DisplayName("Should return empty collections when movie has no relationships")
   void shouldReturnEmptyWhenMovieHasNoRelationships() {
     Library library = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
-    var emptyMovie = movieRepository.saveAndFlush(
-        Movie.builder().title("Empty Movie").library(library).build());
+    var emptyMovie =
+        movieRepository.saveAndFlush(Movie.builder().title("Empty Movie").library(library).build());
 
     assertThat(companyRepository.findByMovieId(emptyMovie.getId())).isEmpty();
     assertThat(personRepository.findCastByMovieId(emptyMovie.getId())).isEmpty();
@@ -130,5 +132,106 @@ public class MovieRelationshipRepositoryIT extends AbstractIntegrationTest {
     assertThat(genreRepository.findByMovieId(emptyMovie.getId())).isEmpty();
     assertThat(ratingRepository.findByMovie_Id(emptyMovie.getId())).isEmpty();
     assertThat(reviewRepository.findByMovie_Id(emptyMovie.getId())).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should cascade delete dependent entities when movie is deleted")
+  void shouldCascadeDeleteDependentEntitiesWhenMovieIsDeleted() {
+    var library = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
+
+    var actor =
+        personRepository.save(
+            Person.builder().name("Cascade Actor").sourceId("cascade-actor-1").build());
+    var director =
+        personRepository.save(
+            Person.builder().name("Cascade Director").sourceId("cascade-dir-1").build());
+
+    var movie =
+        movieRepository.saveAndFlush(
+            Movie.builder()
+                .title("Cascade Delete Test")
+                .library(library)
+                .studios(
+                    Set.of(
+                        Company.builder()
+                            .name("Cascade Studio")
+                            .sourceId("cascade-studio-1")
+                            .build()))
+                .cast(List.of(actor))
+                .directors(List.of(director))
+                .genres(
+                    Set.of(
+                        Genre.builder().name("Cascade Genre").sourceId("cascade-genre-1").build()))
+                .build());
+
+    ratingRepository.save(
+        Rating.builder().movie(movie).source("CascadeSource").value("9.0").build());
+    reviewRepository.save(Review.builder().movie(movie).author("Cascade Author").build());
+    mediaFileRepository.save(
+        MediaFile.builder()
+            .mediaId(movie.getId())
+            .libraryId(library.getId())
+            .filename("cascade-test.mkv")
+            .filepath("/test/cascade-test.mkv")
+            .status(MediaFileStatus.MATCHED)
+            .size(1000L)
+            .build());
+
+    var movieId = movie.getId();
+
+    movieRepository.deleteById(movieId);
+    movieRepository.flush();
+
+    assertThat(movieRepository.findById(movieId)).isEmpty();
+    assertThat(ratingRepository.findByMovie_Id(movieId)).isEmpty();
+    assertThat(reviewRepository.findByMovie_Id(movieId)).isEmpty();
+    assertThat(companyRepository.findByMovieId(movieId)).isEmpty();
+    assertThat(personRepository.findCastByMovieId(movieId)).isEmpty();
+    assertThat(personRepository.findDirectorsByMovieId(movieId)).isEmpty();
+    assertThat(genreRepository.findByMovieId(movieId)).isEmpty();
+    assertThat(mediaFileRepository.findByMediaId(movieId)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should preserve shared entities when movie is deleted")
+  void shouldPreserveSharedEntitiesWhenMovieIsDeleted() {
+    var library = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
+
+    var actor =
+        personRepository.save(
+            Person.builder().name("Surviving Actor").sourceId("surv-actor-1").build());
+    var director =
+        personRepository.save(
+            Person.builder().name("Surviving Director").sourceId("surv-dir-1").build());
+
+    var movie =
+        movieRepository.saveAndFlush(
+            Movie.builder()
+                .title("Delete Me Movie")
+                .library(library)
+                .studios(
+                    Set.of(
+                        Company.builder()
+                            .name("Surviving Studio")
+                            .sourceId("surv-studio-1")
+                            .build()))
+                .cast(List.of(actor))
+                .directors(List.of(director))
+                .genres(
+                    Set.of(
+                        Genre.builder().name("Surviving Genre").sourceId("surv-genre-1").build()))
+                .build());
+
+    var studioIds =
+        companyRepository.findByMovieId(movie.getId()).stream().map(Company::getId).toList();
+    var genreIds = genreRepository.findByMovieId(movie.getId()).stream().map(Genre::getId).toList();
+
+    movieRepository.deleteById(movie.getId());
+    movieRepository.flush();
+
+    assertThat(personRepository.findById(actor.getId())).isPresent();
+    assertThat(personRepository.findById(director.getId())).isPresent();
+    studioIds.forEach(id -> assertThat(companyRepository.findById(id)).isPresent());
+    genreIds.forEach(id -> assertThat(genreRepository.findById(id)).isPresent());
   }
 }
