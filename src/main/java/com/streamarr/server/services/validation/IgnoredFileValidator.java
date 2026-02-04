@@ -5,8 +5,10 @@ import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+@Slf4j
 @Component
 public class IgnoredFileValidator {
 
@@ -39,11 +41,13 @@ public class IgnoredFileValidator {
     var filename = path.getFileName().toString();
 
     if (ignoredFilenames.contains(filename.toLowerCase())) {
+      log.debug("Ignoring file with blocked filename: {}", path);
       return true;
     }
 
     for (var prefix : ignoredPrefixes) {
       if (filename.startsWith(prefix)) {
+        log.debug("Ignoring file with blocked prefix '{}': {}", prefix, path);
         return true;
       }
     }
@@ -51,7 +55,10 @@ public class IgnoredFileValidator {
     var dotIndex = filename.lastIndexOf('.');
     if (dotIndex >= 0) {
       var extension = filename.substring(dotIndex + 1).toLowerCase();
-      return ignoredExtensions.contains(extension);
+      if (ignoredExtensions.contains(extension)) {
+        log.debug("Ignoring file with blocked extension '{}': {}", extension, path);
+        return true;
+      }
     }
 
     return false;
