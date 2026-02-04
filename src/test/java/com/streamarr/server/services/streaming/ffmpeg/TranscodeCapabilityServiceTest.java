@@ -148,6 +148,127 @@ class TranscodeCapabilityServiceTest {
     return createProcess("", 1);
   }
 
+  @Test
+  @DisplayName("Should resolve HEVC encoder to hardware when NVENC available")
+  void shouldResolveHevcEncoderToHardwareWhenNvencAvailable() {
+    var encoderOutput =
+        """
+        V....D hevc_nvenc           NVIDIA NVENC hevc encoder (codec hevc)
+        """;
+
+    var outputs =
+        Map.of(
+            "ffmpeg", createProcess("ffmpeg version 7.0", 0),
+            "hwaccels", createProcess("Hardware acceleration methods:\ncuda\n", 0),
+            "encoders", createProcess(encoderOutput, 0));
+
+    var service = new TranscodeCapabilityService(command -> resolveProcess(command, outputs));
+    service.detectCapabilities();
+
+    assertThat(service.resolveEncoder("hevc")).isEqualTo("hevc_nvenc");
+  }
+
+  @Test
+  @DisplayName("Should resolve to software default when codec family is unknown")
+  void shouldResolveToSoftwareDefaultWhenCodecFamilyIsUnknown() {
+    var encoderOutput =
+        """
+        V....D h264_nvenc           NVIDIA NVENC H.264 encoder (codec h264)
+        """;
+
+    var outputs =
+        Map.of(
+            "ffmpeg", createProcess("ffmpeg version 7.0", 0),
+            "hwaccels", createProcess("Hardware acceleration methods:\ncuda\n", 0),
+            "encoders", createProcess(encoderOutput, 0));
+
+    var service = new TranscodeCapabilityService(command -> resolveProcess(command, outputs));
+    service.detectCapabilities();
+
+    assertThat(service.resolveEncoder("vp9")).isEqualTo("libx264");
+  }
+
+  @Test
+  @DisplayName("Should fallback to software when hardware encoder does not match codec")
+  void shouldFallbackToSoftwareWhenHardwareEncoderDoesNotMatchCodec() {
+    var encoderOutput =
+        """
+        V....D h264_nvenc           NVIDIA NVENC H.264 encoder (codec h264)
+        """;
+
+    var outputs =
+        Map.of(
+            "ffmpeg", createProcess("ffmpeg version 7.0", 0),
+            "hwaccels", createProcess("Hardware acceleration methods:\ncuda\n", 0),
+            "encoders", createProcess(encoderOutput, 0));
+
+    var service = new TranscodeCapabilityService(command -> resolveProcess(command, outputs));
+    service.detectCapabilities();
+
+    assertThat(service.resolveEncoder("av1")).isEqualTo("libsvtav1");
+  }
+
+  @Test
+  @DisplayName("Should detect accelerator string when GPU present")
+  void shouldDetectAcceleratorStringWhenGpuPresent() {
+    var encoderOutput =
+        """
+        V....D h264_nvenc           NVIDIA NVENC H.264 encoder (codec h264)
+        """;
+
+    var outputs =
+        Map.of(
+            "ffmpeg", createProcess("ffmpeg version 7.0", 0),
+            "hwaccels", createProcess("Hardware acceleration methods:\ncuda\n", 0),
+            "encoders", createProcess(encoderOutput, 0));
+
+    var service = new TranscodeCapabilityService(command -> resolveProcess(command, outputs));
+    service.detectCapabilities();
+
+    assertThat(service.getHardwareEncodingCapability().accelerator()).isEqualTo("cuda");
+  }
+
+  @Test
+  @DisplayName("Should concatenate multiple accelerators with comma")
+  void shouldConcatenateMultipleAcceleratorsWithComma() {
+    var encoderOutput =
+        """
+        V....D h264_nvenc           NVIDIA NVENC H.264 encoder (codec h264)
+        """;
+
+    var outputs =
+        Map.of(
+            "ffmpeg", createProcess("ffmpeg version 7.0", 0),
+            "hwaccels", createProcess("Hardware acceleration methods:\ncuda\ncuvid\n", 0),
+            "encoders", createProcess(encoderOutput, 0));
+
+    var service = new TranscodeCapabilityService(command -> resolveProcess(command, outputs));
+    service.detectCapabilities();
+
+    assertThat(service.getHardwareEncodingCapability().accelerator()).isEqualTo("cuda,cuvid");
+  }
+
+  @Test
+  @DisplayName("Should detect VideoToolbox encoder on macOS")
+  void shouldDetectVideoToolboxEncoderOnMacOs() {
+    var encoderOutput =
+        """
+        V....D h264_videotoolbox    VideoToolbox H.264 Encoder (codec h264)
+        """;
+
+    var outputs =
+        Map.of(
+            "ffmpeg", createProcess("ffmpeg version 7.0", 0),
+            "hwaccels", createProcess("Hardware acceleration methods:\nvideotoolbox\n", 0),
+            "encoders", createProcess(encoderOutput, 0));
+
+    var service = new TranscodeCapabilityService(command -> resolveProcess(command, outputs));
+    service.detectCapabilities();
+
+    assertThat(service.getHardwareEncodingCapability().encoders()).contains("h264_videotoolbox");
+    assertThat(service.resolveEncoder("h264")).isEqualTo("h264_videotoolbox");
+  }
+
   private Process createProcess(String stdout, int exitCode) {
     return new FakeProcess(stdout, exitCode);
   }
