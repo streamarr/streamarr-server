@@ -35,6 +35,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 @Tag("UnitTest")
+@DisplayName("Stream Controller Tests")
 class StreamControllerTest {
 
   private static final UUID SESSION_ID = UUID.randomUUID();
