@@ -44,6 +44,10 @@ public class DirectoryWatchingService implements InitializingBean {
             .paths(directoriesToWatch.stream().toList())
             .listener(
                 event -> {
+                  if (ignoredFileValidator.shouldIgnore(event.path())) {
+                    return;
+                  }
+
                   switch (event.eventType()) {
                     case CREATE ->
                         log.info(
