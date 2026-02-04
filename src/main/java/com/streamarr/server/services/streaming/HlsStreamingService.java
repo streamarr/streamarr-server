@@ -161,58 +161,38 @@ public class HlsStreamingService implements StreamingService {
       StreamSession session, List<QualityVariant> variants, int seekPosition) {
     for (var variant : variants) {
       var request =
-          buildRequest(
-              session.getSessionId(),
-              session.getSourcePath(),
-              seekPosition,
-              session.getTranscodeDecision(),
-              session.getMediaProbe().framerate(),
-              variant.width(),
-              variant.height(),
-              variant.videoBitrate(),
-              variant.label());
+          TranscodeRequest.builder()
+              .sessionId(session.getSessionId())
+              .sourcePath(session.getSourcePath())
+              .seekPosition(seekPosition)
+              .segmentDuration(properties.segmentDurationSeconds())
+              .framerate(session.getMediaProbe().framerate())
+              .transcodeDecision(session.getTranscodeDecision())
+              .width(variant.width())
+              .height(variant.height())
+              .bitrate(variant.videoBitrate())
+              .variantLabel(variant.label())
+              .build();
       var handle = transcodeExecutor.start(request);
       session.setVariantHandle(variant.label(), handle);
     }
   }
 
-  private TranscodeRequest buildRequest(
-      UUID sessionId,
-      Path sourcePath,
-      int seekPosition,
-      TranscodeDecision decision,
-      double framerate,
-      int width,
-      int height,
-      long bitrate,
-      String variantLabel) {
-    return TranscodeRequest.builder()
-        .sessionId(sessionId)
-        .sourcePath(sourcePath)
-        .seekPosition(seekPosition)
-        .segmentDuration(properties.segmentDurationSeconds())
-        .framerate(framerate)
-        .transcodeDecision(decision)
-        .width(width)
-        .height(height)
-        .bitrate(bitrate)
-        .variantLabel(variantLabel)
-        .build();
-  }
-
   private void startSingleTranscode(StreamSession session, int seekPosition) {
     var probe = session.getMediaProbe();
     var request =
-        buildRequest(
-            session.getSessionId(),
-            session.getSourcePath(),
-            seekPosition,
-            session.getTranscodeDecision(),
-            probe.framerate(),
-            probe.width(),
-            probe.height(),
-            probe.bitrate(),
-            StreamSession.defaultVariant());
+        TranscodeRequest.builder()
+            .sessionId(session.getSessionId())
+            .sourcePath(session.getSourcePath())
+            .seekPosition(seekPosition)
+            .segmentDuration(properties.segmentDurationSeconds())
+            .framerate(probe.framerate())
+            .transcodeDecision(session.getTranscodeDecision())
+            .width(probe.width())
+            .height(probe.height())
+            .bitrate(probe.bitrate())
+            .variantLabel(StreamSession.defaultVariant())
+            .build();
     var handle = transcodeExecutor.start(request);
     session.setHandle(handle);
   }
