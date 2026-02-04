@@ -72,6 +72,7 @@ public class DirectoryWatchingService implements InitializingBean {
     switch (eventType) {
       case CREATE, MODIFY -> handleCreateOrModify(path);
       case DELETE -> handleDelete(path);
+      case OVERFLOW -> log.warn("Watcher event buffer overflow, some events may have been lost");
     }
   }
 

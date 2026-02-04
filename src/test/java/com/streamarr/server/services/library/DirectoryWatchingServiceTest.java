@@ -112,6 +112,22 @@ class DirectoryWatchingServiceTest {
   }
 
   @Test
+  @DisplayName("Should handle overflow event without throwing")
+  void shouldHandleOverflowEventWithoutThrowing() {
+    var path = fileSystem.getPath("/media/movies/file.mkv");
+    var processed = new AtomicBoolean(false);
+    stabilityCheckerRef.set(
+        p -> {
+          processed.set(true);
+          return true;
+        });
+
+    watchingService.handleFileEvent(DirectoryChangeEvent.EventType.OVERFLOW, path);
+
+    assertThat(processed.get()).isFalse();
+  }
+
+  @Test
   @DisplayName("Should not process file when extension is unsupported")
   void shouldNotProcessFileWhenExtensionIsUnsupported() throws Exception {
     var path = createFile("/media/movies/readme.txt");
