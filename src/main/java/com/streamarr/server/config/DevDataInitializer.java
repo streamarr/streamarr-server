@@ -12,10 +12,12 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.metadata.Company;
+import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.domain.metadata.Rating;
 import com.streamarr.server.domain.metadata.Review;
 import com.streamarr.server.repositories.CompanyRepository;
+import com.streamarr.server.repositories.GenreRepository;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.repositories.RatingRepository;
@@ -44,6 +46,7 @@ public class DevDataInitializer {
   private final MovieRepository movieRepository;
   private final PersonRepository personRepository;
   private final CompanyRepository companyRepository;
+  private final GenreRepository genreRepository;
   private final RatingRepository ratingRepository;
   private final ReviewRepository reviewRepository;
   private final MediaFileRepository mediaFileRepository;
@@ -88,6 +91,15 @@ public class DevDataInitializer {
         companyRepository.save(
             Company.builder().sourceId("923").name("Legendary Pictures").build());
 
+    var action =
+        genreRepository.save(Genre.builder().sourceId("28").name("Action").build());
+
+    var sciFi =
+        genreRepository.save(Genre.builder().sourceId("878").name("Science Fiction").build());
+
+    var thriller =
+        genreRepository.save(Genre.builder().sourceId("53").name("Thriller").build());
+
     var inception =
         movieRepository.save(
             Movie.builder()
@@ -101,6 +113,8 @@ public class DevDataInitializer {
                 .posterPath("/ljsZTbVsrQSqZgWeep2B1QiDKuh.jpg")
                 .library(library)
                 .studios(Set.of(warnerBros, legendaryPictures))
+                .directors(List.of(nolan))
+                .genres(Set.of(action, sciFi, thriller))
                 .externalIds(
                     Set.of(
                         ExternalIdentifier.builder()
@@ -111,7 +125,7 @@ public class DevDataInitializer {
                             .externalSourceType(ExternalSourceType.IMDB)
                             .externalId("tt1375666")
                             .build()))
-                .cast(List.of(dicaprio, hardy, nolan))
+                .cast(List.of(dicaprio, hardy))
                 .build());
 
     var darkKnight =
@@ -127,13 +141,15 @@ public class DevDataInitializer {
                 .posterPath("/qJ2tW6WMUDux911BTUgMe1nPC7j.jpg")
                 .library(library)
                 .studios(Set.of(warnerBros, legendaryPictures))
+                .directors(List.of(nolan))
+                .genres(Set.of(action, thriller))
                 .externalIds(
                     Set.of(
                         ExternalIdentifier.builder()
                             .externalSourceType(ExternalSourceType.TMDB)
                             .externalId("155")
                             .build()))
-                .cast(List.of(bale, hardy, nolan))
+                .cast(List.of(bale, hardy))
                 .build());
 
     ratingRepository.saveAll(
@@ -172,6 +188,6 @@ public class DevDataInitializer {
                 .build()));
 
     log.info(
-        "Development data seeded: 1 library, 2 movies, 4 people, 2 companies, 2 ratings, 2 reviews, 2 media files.");
+        "Development data seeded: 1 library, 2 movies, 4 people, 2 companies, 3 genres, 2 ratings, 2 reviews, 2 media files.");
   }
 }
