@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming.ffmpeg;
 
+import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeJob;
 import com.streamarr.server.domain.streaming.TranscodeMode;
@@ -7,6 +8,7 @@ import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
+import java.nio.file.Path;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -62,13 +64,20 @@ public class LocalTranscodeExecutor implements TranscodeExecutor {
 
   private TranscodeJob resolveJob(TranscodeRequest request) {
     var videoEncoder = resolveEncoder(request);
-    var outputDir = segmentStore.getOutputDirectory(request.sessionId());
+    var outputDir = resolveOutputDir(request);
 
     return TranscodeJob.builder()
         .request(request)
         .videoEncoder(videoEncoder)
         .outputDir(outputDir)
         .build();
+  }
+
+  private Path resolveOutputDir(TranscodeRequest request) {
+    if (StreamSession.defaultVariant().equals(request.variantLabel())) {
+      return segmentStore.getOutputDirectory(request.sessionId());
+    }
+    return segmentStore.getOutputDirectory(request.sessionId(), request.variantLabel());
   }
 
   private String resolveEncoder(TranscodeRequest request) {

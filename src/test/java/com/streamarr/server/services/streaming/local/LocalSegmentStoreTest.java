@@ -171,4 +171,16 @@ class LocalSegmentStoreTest {
     assertThat(result).isTrue();
     executor.shutdown();
   }
+
+  @Test
+  @DisplayName("Should create variant subdirectory when variant label is not default")
+  void shouldCreateVariantSubdirWhenVariantLabelIsNotDefault() {
+    var sessionId = UUID.randomUUID();
+
+    var variantDir = store.getOutputDirectory(sessionId, "720p");
+
+    assertThat(variantDir).exists().isDirectory();
+    assertThat(variantDir.getFileName().toString()).isEqualTo("720p");
+    assertThat(variantDir.getParent()).isEqualTo(store.getOutputDirectory(sessionId));
+  }
 }
