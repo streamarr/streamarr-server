@@ -7,6 +7,7 @@ import com.streamarr.server.services.streaming.HlsPlaylistService;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.StreamingService;
 import java.time.Duration;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
@@ -35,37 +36,38 @@ public class StreamController {
   @GetMapping("/{sessionId}/master.m3u8")
   public ResponseEntity<String> getMasterPlaylist(@PathVariable UUID sessionId) {
     var session = findSession(sessionId);
-    if (session == null) {
+    if (session.isEmpty()) {
       return ResponseEntity.notFound().build();
     }
 
-    var playlist = playlistService.generateMasterPlaylist(session);
+    var playlist = playlistService.generateMasterPlaylist(session.get());
     return ResponseEntity.ok().contentType(HLS_MEDIA_TYPE).body(playlist);
   }
 
   @GetMapping("/{sessionId}/stream.m3u8")
   public ResponseEntity<String> getStreamPlaylist(@PathVariable UUID sessionId) {
     var session = findSession(sessionId);
-    if (session == null) {
+    if (session.isEmpty()) {
       return ResponseEntity.notFound().build();
     }
 
-    var playlist = playlistService.generateMediaPlaylist(session);
+    var playlist = playlistService.generateMediaPlaylist(session.get());
     return ResponseEntity.ok().contentType(HLS_MEDIA_TYPE).body(playlist);
   }
 
   @GetMapping("/{sessionId}/init.mp4")
   public ResponseEntity<byte[]> getInitSegment(@PathVariable UUID sessionId) {
     var session = findSession(sessionId);
-    if (session == null) {
+    if (session.isEmpty()) {
       return ResponseEntity.notFound().build();
     }
 
-    if (session.getTranscodeDecision().containerFormat() != ContainerFormat.FMP4) {
+    var s = session.get();
+    if (s.getTranscodeDecision().containerFormat() != ContainerFormat.FMP4) {
       return ResponseEntity.notFound().build();
     }
 
-    session.getActiveRequestCount().incrementAndGet();
+    s.getActiveRequestCount().incrementAndGet();
     try {
       if (!segmentStore.waitForSegment(sessionId, "init.mp4", SEGMENT_WAIT_TIMEOUT)) {
         return ResponseEntity.notFound().build();
@@ -73,7 +75,7 @@ public class StreamController {
       var data = segmentStore.readSegment(sessionId, "init.mp4");
       return ResponseEntity.ok().contentType(MP4_MEDIA_TYPE).body(data);
     } finally {
-      session.getActiveRequestCount().decrementAndGet();
+      s.getActiveRequestCount().decrementAndGet();
     }
   }
 
@@ -82,11 +84,11 @@ public class StreamController {
       @PathVariable UUID sessionId, @PathVariable String segmentName) {
     validatePathSegment(segmentName);
     var session = findSession(sessionId);
-    if (session == null) {
+    if (session.isEmpty()) {
       return ResponseEntity.notFound().build();
     }
 
-    return serveSegment(session, sessionId, segmentName);
+    return serveSegment(session.get(), sessionId, segmentName);
   }
 
   @GetMapping("/{sessionId}/{variantLabel}/stream.m3u8")
@@ -94,15 +96,16 @@ public class StreamController {
       @PathVariable UUID sessionId, @PathVariable String variantLabel) {
     validatePathSegment(variantLabel);
     var session = findSession(sessionId);
-    if (session == null) {
+    if (session.isEmpty()) {
       return ResponseEntity.notFound().build();
     }
 
-    if (!hasVariant(session, variantLabel)) {
+    var s = session.get();
+    if (!hasVariant(s, variantLabel)) {
       return ResponseEntity.notFound().build();
     }
 
-    var playlist = playlistService.generateMediaPlaylist(session);
+    var playlist = playlistService.generateMediaPlaylist(s);
     return ResponseEntity.ok().contentType(HLS_MEDIA_TYPE).body(playlist);
   }
 
@@ -111,20 +114,21 @@ public class StreamController {
       @PathVariable UUID sessionId, @PathVariable String variantLabel) {
     validatePathSegment(variantLabel);
     var session = findSession(sessionId);
-    if (session == null) {
+    if (session.isEmpty()) {
       return ResponseEntity.notFound().build();
     }
 
-    if (!hasVariant(session, variantLabel)) {
+    var s = session.get();
+    if (!hasVariant(s, variantLabel)) {
       return ResponseEntity.notFound().build();
     }
 
-    if (session.getTranscodeDecision().containerFormat() != ContainerFormat.FMP4) {
+    if (s.getTranscodeDecision().containerFormat() != ContainerFormat.FMP4) {
       return ResponseEntity.notFound().build();
     }
 
     var qualifiedName = variantLabel + "/init.mp4";
-    session.getActiveRequestCount().incrementAndGet();
+    s.getActiveRequestCount().incrementAndGet();
     try {
       if (!segmentStore.waitForSegment(sessionId, qualifiedName, SEGMENT_WAIT_TIMEOUT)) {
         return ResponseEntity.notFound().build();
@@ -132,7 +136,7 @@ public class StreamController {
       var data = segmentStore.readSegment(sessionId, qualifiedName);
       return ResponseEntity.ok().contentType(MP4_MEDIA_TYPE).body(data);
     } finally {
-      session.getActiveRequestCount().decrementAndGet();
+      s.getActiveRequestCount().decrementAndGet();
     }
   }
 
@@ -144,16 +148,17 @@ public class StreamController {
     validatePathSegment(variantLabel);
     validatePathSegment(segmentName);
     var session = findSession(sessionId);
-    if (session == null) {
+    if (session.isEmpty()) {
       return ResponseEntity.notFound().build();
     }
 
-    if (!hasVariant(session, variantLabel)) {
+    var s = session.get();
+    if (!hasVariant(s, variantLabel)) {
       return ResponseEntity.notFound().build();
     }
 
     var qualifiedName = variantLabel + "/" + segmentName;
-    return serveSegment(session, sessionId, qualifiedName);
+    return serveSegment(s, sessionId, qualifiedName);
   }
 
   private ResponseEntity<byte[]> serveSegment(
@@ -176,8 +181,8 @@ public class StreamController {
     return session.getVariants().stream().anyMatch(v -> v.label().equals(variantLabel));
   }
 
-  private StreamSession findSession(UUID sessionId) {
-    return streamingService.getSession(sessionId).orElse(null);
+  private Optional<StreamSession> findSession(UUID sessionId) {
+    return streamingService.getSession(sessionId);
   }
 
   private void validatePathSegment(String segment) {
