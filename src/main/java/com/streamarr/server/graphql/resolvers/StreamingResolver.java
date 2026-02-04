@@ -3,6 +3,7 @@ package com.streamarr.server.graphql.resolvers;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
+import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.InvalidIdException;
@@ -25,10 +26,7 @@ public class StreamingResolver {
     var opts = mapOptions(options);
     var session = streamingService.createSession(parseUuid(mediaFileId), opts);
 
-    return new StreamSessionDto(
-        session.getSessionId().toString(),
-        "/api/stream/" + session.getSessionId() + "/master.m3u8",
-        session.getTranscodeDecision().transcodeMode().name());
+    return toDto(session);
   }
 
   @DgsMutation
@@ -36,10 +34,7 @@ public class StreamingResolver {
       @InputArgument String sessionId, @InputArgument int positionSeconds) {
     var session = streamingService.seekSession(parseUuid(sessionId), positionSeconds);
 
-    return new StreamSessionDto(
-        session.getSessionId().toString(),
-        "/api/stream/" + session.getSessionId() + "/master.m3u8",
-        session.getTranscodeDecision().transcodeMode().name());
+    return toDto(session);
   }
 
   @DgsMutation
@@ -75,6 +70,13 @@ public class StreamingResolver {
         .audioLanguage(input.audioLanguage())
         .subtitleLanguage(input.subtitleLanguage())
         .build();
+  }
+
+  private StreamSessionDto toDto(StreamSession session) {
+    return new StreamSessionDto(
+        session.getSessionId().toString(),
+        "/api/stream/" + session.getSessionId() + "/master.m3u8",
+        session.getTranscodeDecision().transcodeMode().name());
   }
 
   private UUID parseUuid(String id) {
