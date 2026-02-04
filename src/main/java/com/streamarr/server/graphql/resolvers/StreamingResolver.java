@@ -73,10 +73,11 @@ public class StreamingResolver {
   }
 
   private StreamSessionDto toDto(StreamSession session) {
-    return new StreamSessionDto(
-        session.getSessionId().toString(),
-        "/api/stream/" + session.getSessionId() + "/master.m3u8",
-        session.getTranscodeDecision().transcodeMode().name());
+    return StreamSessionDto.builder()
+        .id(session.getSessionId().toString())
+        .streamUrl("/api/stream/" + session.getSessionId() + "/master.m3u8")
+        .transcodeMode(session.getTranscodeDecision().transcodeMode().name())
+        .build();
   }
 
   private UUID parseUuid(String id) {
