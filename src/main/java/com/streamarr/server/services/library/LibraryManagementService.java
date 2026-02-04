@@ -165,7 +165,7 @@ public class LibraryManagementService {
     var valid = videoExtensionValidator.validate(extension);
 
     if (!valid) {
-      log.error(
+      log.warn(
           "Unsupported file extension: {} for filepath {}.", extension, path.toAbsolutePath());
     }
 
