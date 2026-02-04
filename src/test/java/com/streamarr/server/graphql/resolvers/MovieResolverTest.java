@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import java.util.Optional;
 import java.util.UUID;
@@ -26,6 +27,8 @@ class MovieResolverTest {
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
 
   @MockitoBean private MovieRepository movieRepository;
+
+  @MockitoBean private MediaFileRepository mediaFileRepository;
 
   @Test
   @DisplayName("Should return movie when valid ID provided")

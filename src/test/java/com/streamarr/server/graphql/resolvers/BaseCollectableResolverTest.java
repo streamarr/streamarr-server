@@ -21,8 +21,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @Tag("UnitTest")
 @EnableDgsTest
-@SpringBootTest(classes = {BaseCollectableResolver.class, MovieResolver.class})
-@DisplayName("BaseCollectable Resolver Tests")
+@SpringBootTest(classes = {MovieResolver.class})
+@DisplayName("Movie Resolver Tests - Files Field")
 class BaseCollectableResolverTest {
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
