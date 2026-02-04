@@ -136,7 +136,7 @@ class HlsStreamingServiceTest {
     var file = seedMediaFile();
     var session = service.createSession(file.getId(), defaultOptions());
 
-    var retrieved = service.getSession(session.getSessionId());
+    var retrieved = service.accessSession(session.getSessionId());
 
     assertThat(retrieved).isPresent();
     assertThat(retrieved.get().getSessionId()).isEqualTo(session.getSessionId());
@@ -145,7 +145,7 @@ class HlsStreamingServiceTest {
   @Test
   @DisplayName("Should return empty when session does not exist")
   void shouldReturnEmptyWhenSessionDoesNotExist() {
-    var result = service.getSession(UUID.randomUUID());
+    var result = service.accessSession(UUID.randomUUID());
 
     assertThat(result).isEmpty();
   }
@@ -157,7 +157,7 @@ class HlsStreamingServiceTest {
     var session = service.createSession(file.getId(), defaultOptions());
     var initialAccess = session.getLastAccessedAt();
 
-    var retrieved = service.getSession(session.getSessionId());
+    var retrieved = service.accessSession(session.getSessionId());
 
     assertThat(retrieved.get().getLastAccessedAt()).isAfterOrEqualTo(initialAccess);
   }
@@ -170,7 +170,7 @@ class HlsStreamingServiceTest {
 
     service.destroySession(session.getSessionId());
 
-    assertThat(service.getSession(session.getSessionId())).isEmpty();
+    assertThat(service.accessSession(session.getSessionId())).isEmpty();
     assertThat(transcodeExecutor.getStopped()).contains(session.getSessionId());
     assertThat(transcodeExecutor.isRunning(session.getSessionId())).isFalse();
   }
@@ -427,7 +427,7 @@ class HlsStreamingServiceTest {
         new FakeTranscodeExecutor() {
           @Override
           public TranscodeHandle start(TranscodeRequest request) {
-            capturedSession.set(serviceRef.get().getSession(request.sessionId()));
+            capturedSession.set(serviceRef.get().accessSession(request.sessionId()));
             return super.start(request);
           }
         };

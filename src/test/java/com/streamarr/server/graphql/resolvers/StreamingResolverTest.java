@@ -213,7 +213,7 @@ class StreamingResolverTest {
     }
 
     @Override
-    public Optional<StreamSession> getSession(UUID sessionId) {
+    public Optional<StreamSession> accessSession(UUID sessionId) {
       return Optional.ofNullable(nextResult);
     }
 

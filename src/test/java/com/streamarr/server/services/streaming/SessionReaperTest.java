@@ -44,7 +44,7 @@ class SessionReaperTest {
 
     reaper.reapSessions();
 
-    assertThat(streamingService.getSession(session.getSessionId())).isEmpty();
+    assertThat(streamingService.accessSession(session.getSessionId())).isEmpty();
   }
 
   @Test
@@ -55,7 +55,7 @@ class SessionReaperTest {
 
     reaper.reapSessions();
 
-    assertThat(streamingService.getSession(session.getSessionId())).isPresent();
+    assertThat(streamingService.accessSession(session.getSessionId())).isPresent();
   }
 
   @Test
@@ -66,7 +66,7 @@ class SessionReaperTest {
 
     reaper.reapSessions();
 
-    assertThat(streamingService.getSession(session.getSessionId())).isPresent();
+    assertThat(streamingService.accessSession(session.getSessionId())).isPresent();
   }
 
   @Test
@@ -192,7 +192,7 @@ class SessionReaperTest {
     }
 
     @Override
-    public Optional<StreamSession> getSession(UUID sessionId) {
+    public Optional<StreamSession> accessSession(UUID sessionId) {
       return Optional.ofNullable(sessions.get(sessionId));
     }
 

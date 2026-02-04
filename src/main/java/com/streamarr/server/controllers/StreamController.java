@@ -182,7 +182,7 @@ public class StreamController {
   }
 
   private Optional<StreamSession> findSession(UUID sessionId) {
-    return streamingService.getSession(sessionId);
+    return streamingService.accessSession(sessionId);
   }
 
   private void validatePathSegment(String segment) {

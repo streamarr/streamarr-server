@@ -10,7 +10,7 @@ public interface StreamingService {
 
   StreamSession createSession(UUID mediaFileId, StreamingOptions options);
 
-  Optional<StreamSession> getSession(UUID sessionId);
+  Optional<StreamSession> accessSession(UUID sessionId);
 
   void destroySession(UUID sessionId);
 

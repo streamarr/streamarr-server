@@ -328,6 +328,6 @@ class HlsStreamingSmokeTest {
 
     streamingService.destroySession(sessionId);
 
-    assertThat(streamingService.getSession(sessionId)).isEmpty();
+    assertThat(streamingService.accessSession(sessionId)).isEmpty();
   }
 }

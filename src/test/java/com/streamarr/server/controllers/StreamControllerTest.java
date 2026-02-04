@@ -425,7 +425,7 @@ class StreamControllerTest {
     }
 
     @Override
-    public Optional<StreamSession> getSession(UUID sessionId) {
+    public Optional<StreamSession> accessSession(UUID sessionId) {
       if (session != null && session.getSessionId().equals(sessionId)) {
         return Optional.of(session);
       }

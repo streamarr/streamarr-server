@@ -96,7 +96,7 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   void shouldRetrieveSessionWhenSessionExists() {
     var session = streamingService.createSession(savedMediaFile.getId(), defaultOptions());
 
-    var retrieved = streamingService.getSession(session.getSessionId());
+    var retrieved = streamingService.accessSession(session.getSessionId());
 
     assertThat(retrieved).isPresent();
     assertThat(retrieved.get().getSessionId()).isEqualTo(session.getSessionId());
@@ -109,7 +109,7 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
 
     streamingService.destroySession(session.getSessionId());
 
-    assertThat(streamingService.getSession(session.getSessionId())).isEmpty();
+    assertThat(streamingService.accessSession(session.getSessionId())).isEmpty();
   }
 
   @Test

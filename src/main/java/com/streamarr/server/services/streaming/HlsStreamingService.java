@@ -82,7 +82,7 @@ public class HlsStreamingService implements StreamingService {
   }
 
   @Override
-  public Optional<StreamSession> getSession(UUID sessionId) {
+  public Optional<StreamSession> accessSession(UUID sessionId) {
     var session = sessions.get(sessionId);
     if (session != null) {
       session.setLastAccessedAt(Instant.now());

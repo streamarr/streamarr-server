@@ -112,7 +112,7 @@ class StreamControllerIT extends AbstractIntegrationTest {
     }
 
     @Override
-    public Optional<StreamSession> getSession(UUID sessionId) {
+    public Optional<StreamSession> accessSession(UUID sessionId) {
       return Optional.ofNullable(sessions.get(sessionId));
     }
 
