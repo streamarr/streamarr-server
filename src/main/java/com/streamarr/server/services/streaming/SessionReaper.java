@@ -30,11 +30,7 @@ public class SessionReaper {
         continue;
       }
 
-      if (hasDeadProcess(session)) {
-        log.warn("FFmpeg process died for session {}", session.getSessionId());
-        var handle = session.getHandle();
-        session.setHandle(new TranscodeHandle(handle.processId(), TranscodeStatus.FAILED));
-      }
+      handleDeadProcesses(session);
     }
   }
 
@@ -44,10 +40,21 @@ public class SessionReaper {
         && session.getActiveRequestCount().get() == 0;
   }
 
-  private boolean hasDeadProcess(StreamSession session) {
-    var handle = session.getHandle();
-    return handle != null
-        && handle.status() == TranscodeStatus.ACTIVE
-        && !transcodeExecutor.isRunning(session.getSessionId());
+  private void handleDeadProcesses(StreamSession session) {
+    for (var entry : session.getVariantHandles().entrySet()) {
+      var label = entry.getKey();
+      var handle = entry.getValue();
+
+      if (handle.status() != TranscodeStatus.ACTIVE) {
+        continue;
+      }
+      if (transcodeExecutor.isRunning(session.getSessionId(), label)) {
+        continue;
+      }
+
+      log.warn("FFmpeg process died for session {} variant {}", session.getSessionId(), label);
+      session.setVariantHandle(
+          label, new TranscodeHandle(handle.processId(), TranscodeStatus.FAILED));
+    }
   }
 }

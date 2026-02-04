@@ -107,10 +107,74 @@ class SessionReaperTest {
     assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
   }
 
+  @Test
+  @DisplayName("Should mark specific variant as failed when only that process dies")
+  void shouldMarkSpecificVariantAsFailedWhenOnlyThatProcessDies() {
+    var session = buildAbrSession(Instant.now().minusSeconds(10));
+    streamingService.addSession(session);
+
+    executor.markDead(session.getSessionId(), "1080p");
+
+    reaper.reapSessions();
+
+    assertThat(session.getVariantHandle("1080p").status()).isEqualTo(TranscodeStatus.FAILED);
+    assertThat(session.getVariantHandle("720p").status()).isEqualTo(TranscodeStatus.ACTIVE);
+  }
+
+  @Test
+  @DisplayName("Should not change handles when all variants are running")
+  void shouldNotChangeHandlesWhenAllVariantsRunning() {
+    var session = buildAbrSession(Instant.now().minusSeconds(10));
+    streamingService.addSession(session);
+
+    reaper.reapSessions();
+
+    assertThat(session.getVariantHandle("1080p").status()).isEqualTo(TranscodeStatus.ACTIVE);
+    assertThat(session.getVariantHandle("720p").status()).isEqualTo(TranscodeStatus.ACTIVE);
+  }
+
   private StreamSession buildSession(Instant lastAccessedAt, int activeRequests) {
     var session = StreamSessionFixture.buildMpegtsSession();
     session.setLastAccessedAt(lastAccessedAt);
     session.getActiveRequestCount().set(activeRequests);
+    return session;
+  }
+
+  private StreamSession buildAbrSession(Instant lastAccessedAt) {
+    var session = StreamSessionFixture.buildMpegtsSession();
+    session.setLastAccessedAt(lastAccessedAt);
+    session.getActiveRequestCount().set(0);
+
+    session.setVariantHandle("1080p", new TranscodeHandle(100L, TranscodeStatus.ACTIVE));
+    session.setVariantHandle("720p", new TranscodeHandle(101L, TranscodeStatus.ACTIVE));
+
+    executor.start(
+        com.streamarr.server.domain.streaming.TranscodeRequest.builder()
+            .sessionId(session.getSessionId())
+            .sourcePath(Path.of("/media/movie.mkv"))
+            .seekPosition(0)
+            .segmentDuration(6)
+            .framerate(24.0)
+            .transcodeDecision(session.getTranscodeDecision())
+            .width(1920)
+            .height(1080)
+            .bitrate(5_000_000)
+            .variantLabel("1080p")
+            .build());
+    executor.start(
+        com.streamarr.server.domain.streaming.TranscodeRequest.builder()
+            .sessionId(session.getSessionId())
+            .sourcePath(Path.of("/media/movie.mkv"))
+            .seekPosition(0)
+            .segmentDuration(6)
+            .framerate(24.0)
+            .transcodeDecision(session.getTranscodeDecision())
+            .width(1280)
+            .height(720)
+            .bitrate(3_000_000)
+            .variantLabel("720p")
+            .build());
+
     return session;
   }
 
