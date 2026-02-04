@@ -255,6 +255,22 @@ public class LibraryManagementServiceTest {
     assertEquals(mediaFileBeforeRefresh, mediaFileAfterRefresh.get());
   }
 
+  @Test
+  @DisplayName(
+      "Should skip processing when provided a library containing a system file with a valid extension")
+  void shouldSkipProcessingWhenGivenLibraryContainingSystemFile() throws IOException {
+    var rootPath = createRootLibraryDirectory();
+    var systemFilePath =
+        createMovieFile(rootPath, "About Time", "._About Time (2013).mkv");
+
+    libraryManagementService.scanLibrary(savedLibraryId);
+
+    var mediaFile =
+        fakeMediaFileRepository.findFirstByFilepath(systemFilePath.toAbsolutePath().toString());
+
+    assertTrue(mediaFile.isEmpty());
+  }
+
   private Path createRootLibraryDirectory() throws IOException {
     var library = fakeLibraryRepository.findById(savedLibraryId);
 

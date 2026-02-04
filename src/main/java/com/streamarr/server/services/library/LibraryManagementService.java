@@ -116,6 +116,7 @@ public class LibraryManagementService {
 
       stream
           .filter(Files::isRegularFile)
+          .filter(file -> !ignoredFileValidator.shouldIgnore(file))
           .forEach(file -> executor.submit(() -> processFile(library, file)));
 
     } catch (IOException e) {
