@@ -24,9 +24,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -125,6 +128,8 @@ public class LibraryManagementService {
 
       return;
     }
+
+    deleteMissingMediaFiles(library);
 
     var endTime = Instant.now();
     var elapsedTime = Duration.between(startTime, endTime).getSeconds();
@@ -314,9 +319,42 @@ public class LibraryManagementService {
     mediaFileRepository.save(mediaFile);
   }
 
-  private void deleteMissingMediaFiles() {
-    // get all items in library
-    // locate files in FS
-    // cleanup if file cannot be located.
+  private void deleteMissingMediaFiles(Library library) {
+    var mediaFiles = mediaFileRepository.findByLibraryId(library.getId());
+
+    var orphanedFiles =
+        mediaFiles.stream()
+            .filter(file -> !Files.exists(fileSystem.getPath(file.getFilepath())))
+            .toList();
+
+    if (orphanedFiles.isEmpty()) {
+      return;
+    }
+
+    var affectedMovieIds =
+        orphanedFiles.stream()
+            .map(MediaFile::getMediaId)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toSet());
+
+    mediaFileRepository.deleteAll(orphanedFiles);
+
+    deleteMoviesWithNoRemainingFiles(affectedMovieIds);
+
+    log.info(
+        "Removed {} orphaned media file(s) from {} library.",
+        orphanedFiles.size(),
+        library.getName());
+  }
+
+  private void deleteMoviesWithNoRemainingFiles(Set<UUID> movieIds) {
+    for (var movieId : movieIds) {
+      var remainingFiles = mediaFileRepository.findByMediaId(movieId);
+
+      if (remainingFiles.isEmpty()) {
+        movieService.deleteMovieById(movieId);
+        log.info("Deleted Movie id: {} — no remaining media files.", movieId);
+      }
+    }
   }
 }

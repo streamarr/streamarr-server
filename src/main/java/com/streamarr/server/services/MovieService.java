@@ -14,6 +14,7 @@ import graphql.relay.DefaultEdge;
 import graphql.relay.Edge;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -40,6 +41,11 @@ public class MovieService {
 
     movie.get().addFile(mediaFile);
     return Optional.of(movieRepository.saveAndFlush(movie.get()));
+  }
+
+  @Transactional
+  public void deleteMovieById(UUID movieId) {
+    movieRepository.deleteById(movieId);
   }
 
   @Transactional

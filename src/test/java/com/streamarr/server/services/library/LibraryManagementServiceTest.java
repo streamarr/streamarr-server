@@ -255,6 +255,135 @@ public class LibraryManagementServiceTest {
     assertEquals(mediaFileBeforeRefresh, mediaFileAfterRefresh.get());
   }
 
+  @Test
+  @DisplayName("Should remove orphaned media file when file no longer exists on disk")
+  void shouldRemoveOrphanedMediaFileWhenFileNoLongerExistsOnDisk() throws IOException {
+    createRootLibraryDirectory();
+
+    var orphanedMediaFile =
+        fakeMediaFileRepository.save(
+            MediaFile.builder()
+                .libraryId(savedLibraryId)
+                .filepath("/library/nonexistent/movie.mkv")
+                .filename("movie.mkv")
+                .status(MediaFileStatus.MATCHED)
+                .build());
+
+    libraryManagementService.scanLibrary(savedLibraryId);
+
+    assertThat(fakeMediaFileRepository.findById(orphanedMediaFile.getId())).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should not remove media file when file still exists on disk")
+  void shouldNotRemoveMediaFileWhenFileStillExistsOnDisk() throws IOException {
+    var rootPath = createRootLibraryDirectory();
+    var moviePath = createMovieFile(rootPath, "Inception", "Inception (2010).mkv");
+
+    var existingMediaFile =
+        fakeMediaFileRepository.save(
+            MediaFile.builder()
+                .libraryId(savedLibraryId)
+                .filepath(moviePath.toAbsolutePath().toString())
+                .filename("Inception (2010).mkv")
+                .status(MediaFileStatus.MATCHED)
+                .build());
+
+    libraryManagementService.scanLibrary(savedLibraryId);
+
+    assertThat(fakeMediaFileRepository.findById(existingMediaFile.getId())).isPresent();
+  }
+
+  @Test
+  @DisplayName("Should only remove orphaned media files for the scanned library")
+  void shouldOnlyRemoveOrphanedMediaFilesForScannedLibrary() throws IOException {
+    createRootLibraryDirectory();
+
+    var otherLibrary = fakeLibraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
+
+    var otherLibraryFile =
+        fakeMediaFileRepository.save(
+            MediaFile.builder()
+                .libraryId(otherLibrary.getId())
+                .filepath("/other/library/nonexistent.mkv")
+                .filename("nonexistent.mkv")
+                .status(MediaFileStatus.MATCHED)
+                .build());
+
+    libraryManagementService.scanLibrary(savedLibraryId);
+
+    assertThat(fakeMediaFileRepository.findById(otherLibraryFile.getId())).isPresent();
+  }
+
+  @Test
+  @DisplayName("Should not attempt cleanup when library path is inaccessible")
+  void shouldNotAttemptCleanupWhenLibraryPathInaccessible() {
+    var orphanedMediaFile =
+        fakeMediaFileRepository.save(
+            MediaFile.builder()
+                .libraryId(savedLibraryId)
+                .filepath("/library/nonexistent/movie.mkv")
+                .filename("movie.mkv")
+                .status(MediaFileStatus.MATCHED)
+                .build());
+
+    libraryManagementService.scanLibrary(savedLibraryId);
+
+    assertThat(fakeMediaFileRepository.findById(orphanedMediaFile.getId())).isPresent();
+  }
+
+  @Test
+  @DisplayName("Should delete movie when all its media files are orphaned")
+  void shouldDeleteMovieWhenAllItsMediaFilesAreOrphaned() throws IOException {
+    createRootLibraryDirectory();
+
+    var movie = fakeMovieRepository.save(Movie.builder().title("Gone Movie").build());
+
+    fakeMediaFileRepository.save(
+        MediaFile.builder()
+            .libraryId(savedLibraryId)
+            .mediaId(movie.getId())
+            .filepath("/library/nonexistent/gone-movie.mkv")
+            .filename("gone-movie.mkv")
+            .status(MediaFileStatus.MATCHED)
+            .build());
+
+    libraryManagementService.scanLibrary(savedLibraryId);
+
+    assertThat(fakeMovieRepository.findById(movie.getId())).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should not delete movie when it still has remaining media files")
+  void shouldNotDeleteMovieWhenItStillHasRemainingMediaFiles() throws IOException {
+    var rootPath = createRootLibraryDirectory();
+    var existingPath = createMovieFile(rootPath, "Surviving Movie", "Surviving Movie (2020).mkv");
+
+    var movie = fakeMovieRepository.save(Movie.builder().title("Surviving Movie").build());
+
+    fakeMediaFileRepository.save(
+        MediaFile.builder()
+            .libraryId(savedLibraryId)
+            .mediaId(movie.getId())
+            .filepath(existingPath.toAbsolutePath().toString())
+            .filename("Surviving Movie (2020).mkv")
+            .status(MediaFileStatus.MATCHED)
+            .build());
+
+    fakeMediaFileRepository.save(
+        MediaFile.builder()
+            .libraryId(savedLibraryId)
+            .mediaId(movie.getId())
+            .filepath("/library/nonexistent/surviving-movie-copy.mkv")
+            .filename("surviving-movie-copy.mkv")
+            .status(MediaFileStatus.MATCHED)
+            .build());
+
+    libraryManagementService.scanLibrary(savedLibraryId);
+
+    assertThat(fakeMovieRepository.findById(movie.getId())).isPresent();
+  }
+
   private Path createRootLibraryDirectory() throws IOException {
     var library = fakeLibraryRepository.findById(savedLibraryId);
 
