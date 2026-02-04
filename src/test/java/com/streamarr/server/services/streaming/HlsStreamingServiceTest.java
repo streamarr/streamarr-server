@@ -449,4 +449,75 @@ class HlsStreamingServiceTest {
 
     assertThat(capturedSession.get()).isPresent();
   }
+
+  @Test
+  @DisplayName("Should not throw when destroying nonexistent session")
+  void shouldNotThrowWhenDestroyingNonexistentSession() {
+    service.destroySession(UUID.randomUUID());
+
+    assertThat(transcodeExecutor.getStopped()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should return all sessions when multiple sessions created")
+  void shouldReturnAllSessionsWhenMultipleSessionsCreated() {
+    var file1 = seedMediaFile();
+    var file2 = seedMediaFile();
+    service.createSession(file1.getId(), defaultOptions());
+    service.createSession(file2.getId(), defaultOptions());
+
+    var all = service.getAllSessions();
+
+    assertThat(all).hasSize(2);
+  }
+
+  @Test
+  @DisplayName("Should return active session count when sessions exist")
+  void shouldReturnActiveSessionCountWhenSessionsExist() {
+    var file1 = seedMediaFile();
+    var file2 = seedMediaFile();
+    var session1 = service.createSession(file1.getId(), defaultOptions());
+    service.createSession(file2.getId(), defaultOptions());
+
+    service.destroySession(session1.getSessionId());
+
+    assertThat(service.getActiveSessionCount()).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("Should truncate variants when exceeding available slots")
+  void shouldTruncateVariantsWhenExceedingAvailableSlots() {
+    var properties = new StreamingProperties(2, 6, 60, null);
+    var limitedService =
+        new HlsStreamingService(
+            mediaFileRepository,
+            new FakeTranscodeExecutor(),
+            segmentStore,
+            ffprobeService,
+            new TranscodeDecisionService(),
+            new QualityLadderService(),
+            properties);
+
+    ffprobeService.setDefaultProbe(
+        MediaProbe.builder()
+            .duration(Duration.ofMinutes(120))
+            .framerate(23.976)
+            .width(1920)
+            .height(1080)
+            .videoCodec("hevc")
+            .audioCodec("aac")
+            .bitrate(8_000_000L)
+            .build());
+
+    var file = seedMediaFile();
+    var options =
+        StreamingOptions.builder()
+            .quality(VideoQuality.AUTO)
+            .supportedCodecs(List.of("h264"))
+            .build();
+
+    var session = limitedService.createSession(file.getId(), options);
+
+    assertThat(session.getVariants()).hasSize(2);
+  }
 }

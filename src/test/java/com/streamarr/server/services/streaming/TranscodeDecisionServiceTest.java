@@ -167,4 +167,16 @@ class TranscodeDecisionServiceTest {
 
     assertThat(decision.needsKeyframeAlignment()).isTrue();
   }
+
+  @Test
+  @DisplayName("Should fallback to default codec when client supports neither preference")
+  void shouldFallbackToDefaultCodecWhenClientSupportsNeitherPreference() {
+    var source = probe("hevc", "aac");
+    var clientOptions = options(List.of("vp9"));
+
+    var decision = service.decide(source, clientOptions);
+
+    assertThat(decision.videoCodecFamily()).isEqualTo("h264");
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.FULL_TRANSCODE);
+  }
 }
