@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import com.streamarr.server.repositories.LibraryRepository;
+import io.methvin.watcher.DirectoryChangeEvent;
 import io.methvin.watcher.DirectoryWatcher;
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
@@ -40,26 +41,7 @@ public class DirectoryWatchingService implements InitializingBean {
     this.watcher =
         DirectoryWatcher.builder()
             .paths(directoriesToWatch.stream().toList())
-            .listener(
-                event -> {
-                  switch (event.eventType()) {
-                    case CREATE ->
-                        log.info(
-                            "Watcher event type: {} -- filepath: {}",
-                            event.eventType(),
-                            event.path());
-                    case MODIFY -> /* file modified */
-                        log.info(
-                            "Watcher event type: {} -- filepath: {}",
-                            event.eventType(),
-                            event.path());
-                    case DELETE -> /* file deleted */
-                        log.info(
-                            "Watcher event type: {} -- filepath: {}",
-                            event.eventType(),
-                            event.path());
-                  }
-                })
+            .listener(event -> handleFileEvent(event.eventType(), event.path()))
             // .fileHashing(false) // defaults to true
             // .logger(logger) // defaults to LoggerFactory.getLogger(DirectoryWatcher.class)
             // .watchService(watchService) // defaults based on OS to either JVM WatchService or the
@@ -67,6 +49,14 @@ public class DirectoryWatchingService implements InitializingBean {
             .build();
 
     watch();
+  }
+
+  void handleFileEvent(DirectoryChangeEvent.EventType eventType, Path path) {
+    switch (eventType) {
+      case CREATE -> log.info("Watcher event type: {} -- filepath: {}", eventType, path);
+      case MODIFY -> log.info("Watcher event type: {} -- filepath: {}", eventType, path);
+      case DELETE -> log.info("Watcher event type: {} -- filepath: {}", eventType, path);
+    }
   }
 
   public void addDirectory(Path path) throws IOException {
