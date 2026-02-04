@@ -132,6 +132,37 @@ class LibraryResolverTest {
   }
 
   @Test
+  @DisplayName("Should return all libraries when queried")
+  void shouldReturnAllLibrariesWhenQueried() {
+    var moviesLibrary =
+        Library.builder()
+            .name("Movies")
+            .filepath("/mpool/media/movies")
+            .status(LibraryStatus.HEALTHY)
+            .backend(LibraryBackend.LOCAL)
+            .type(MediaType.MOVIE)
+            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+            .build();
+
+    var showsLibrary =
+        Library.builder()
+            .name("TV Shows")
+            .filepath("/mpool/media/shows")
+            .status(LibraryStatus.HEALTHY)
+            .backend(LibraryBackend.LOCAL)
+            .type(MediaType.SERIES)
+            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+            .build();
+
+    when(libraryRepository.findAll()).thenReturn(List.of(moviesLibrary, showsLibrary));
+
+    List<String> names =
+        dgsQueryExecutor.executeAndExtractJsonPath("{ libraries { name } }", "data.libraries[*].name");
+
+    assertThat(names).containsExactly("Movies", "TV Shows");
+  }
+
+  @Test
   @DisplayName("Should return error when unsupported media type in items")
   void shouldReturnErrorWhenUnsupportedMediaTypeInItems() {
     var libraryId = UUID.randomUUID();
