@@ -90,6 +90,12 @@ class IgnoredFileValidatorTest {
   }
 
   @Test
+  @DisplayName("Should not ignore file with no extension")
+  void shouldNotIgnoreWhenGivenFileWithNoExtension() {
+    assertFalse(validator.shouldIgnore(Path.of("README")));
+  }
+
+  @Test
   @DisplayName("Should ignore when given additional configured filename")
   void shouldIgnoreWhenGivenAdditionalConfiguredFilename() {
     var customValidator =
