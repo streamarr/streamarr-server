@@ -82,6 +82,23 @@ class MovieServiceTest {
   }
 
   @Test
+  @DisplayName("Should paginate backward using cursor when sorted by title")
+  void shouldPaginateBackwardUsingCursorWhenSortedByTitle() {
+    movieRepository.save(Movie.builder().title("Apple").build());
+    movieRepository.save(Movie.builder().title("Banana").build());
+    movieRepository.save(Movie.builder().title("Cherry").build());
+
+    var allMovies = movieService.getMoviesWithFilter(3, null, 0, null, null);
+    var endCursor = allMovies.getPageInfo().getEndCursor().getValue();
+
+    var backwardPage = movieService.getMoviesWithFilter(0, null, 1, endCursor, null);
+
+    assertThat(backwardPage.getEdges()).hasSize(1);
+    assertThat(backwardPage.getEdges().get(0).getNode().getTitle()).isEqualTo("Banana");
+    assertThat(backwardPage.getPageInfo().isHasPreviousPage()).isTrue();
+  }
+
+  @Test
   @DisplayName("Should return empty connection when no movies exist")
   void shouldReturnEmptyConnectionWhenNoMoviesExist() {
     var result = movieService.getMoviesWithFilter(10, null, 0, null, null);

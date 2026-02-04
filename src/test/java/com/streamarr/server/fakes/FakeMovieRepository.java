@@ -36,7 +36,10 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
     var filter = options.getMediaFilter();
     var limit = options.getPaginationOptions().getLimit();
 
-    return filterByLibrary(filter).sorted(comparatorFor(filter)).limit(limit + 1L).toList();
+    return filterByLibrary(filter)
+        .sorted(comparatorFor(filter, SortOrder.ASC))
+        .limit(limit + 1L)
+        .toList();
   }
 
   @Override
@@ -48,7 +51,10 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
 
     var effectiveFilter = shouldReverse ? reverseFilter(filter) : filter;
 
-    var sorted = filterByLibrary(effectiveFilter).sorted(comparatorFor(effectiveFilter)).toList();
+    var sorted =
+        filterByLibrary(effectiveFilter)
+            .sorted(comparatorFor(effectiveFilter, effectiveFilter.getSortDirection()))
+            .toList();
 
     var startIndex = findCursorIndex(sorted, options.getCursorId());
     var endIndex = Math.min(sorted.size(), startIndex + limit + 2);
@@ -87,7 +93,7 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
         .filter(m -> m.getLibrary() != null && libraryId.equals(m.getLibrary().getId()));
   }
 
-  private Comparator<Movie> comparatorFor(MediaFilter filter) {
+  private Comparator<Movie> comparatorFor(MediaFilter filter, SortOrder idSortOrder) {
     Comparator<Movie> primary =
         filter.getSortBy() == OrderMoviesBy.ADDED
             ? Comparator.comparing(
@@ -98,7 +104,12 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
       primary = primary.reversed();
     }
 
-    return primary.thenComparing(Movie::getId);
+    Comparator<Movie> idComparator = Comparator.comparing(Movie::getId);
+    if (idSortOrder == SortOrder.DESC) {
+      idComparator = idComparator.reversed();
+    }
+
+    return primary.thenComparing(idComparator);
   }
 
   private MediaFilter reverseFilter(MediaFilter filter) {
