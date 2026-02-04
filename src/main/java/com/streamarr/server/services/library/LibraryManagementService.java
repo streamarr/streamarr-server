@@ -75,18 +75,11 @@ public class LibraryManagementService {
   }
 
   public void addLibrary(Library library) {
-    // validate library doesn't already exist.
-    // save new library entity to database.
-    // call refreshLibrary() once new library has been created.
-    // return newly created library.
+    throw new UnsupportedOperationException("Not implemented yet — see issue #82");
   }
 
   public void removeLibrary() {
-    // remove watcher
-    // cleanup?
-    // terminate streams?
-    // remove all db entries but leave files (shows, movies, etc)
-    // delete "Library" entity
+    throw new UnsupportedOperationException("Not implemented yet — see issue #83");
   }
 
   public void scanLibrary(UUID libraryId) {

@@ -144,8 +144,6 @@ public class LibraryManagementServiceTest {
       "Should skip creating a media file when provided a library containing an unsupported file extension")
   void shouldSkipCreatingMediaFileWhenProvidedLibraryContainingUnsupportedMovie()
       throws IOException {
-    // This tradeoff increases scan speed in worst case scenarios where a library contains a large
-    // number of unsupported files.
     var rootPath = createRootLibraryDirectory();
     var moviePath = createMovieFile(rootPath, "About Time", "About Time (2013).av1");
 
