@@ -17,6 +17,7 @@ import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.library.LibraryManagementService;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -33,6 +34,11 @@ public class LibraryResolver {
   public boolean scanLibrary(String id) {
     libraryManagementService.scanLibrary(parseUuid(id));
     return true;
+  }
+
+  @DgsQuery
+  public List<Library> libraries() {
+    return libraryRepository.findAll();
   }
 
   @DgsQuery
