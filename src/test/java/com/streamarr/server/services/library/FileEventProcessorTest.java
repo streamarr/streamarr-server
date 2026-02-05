@@ -503,8 +503,8 @@ class FileEventProcessorTest {
   }
 
   @Test
-  @DisplayName("Should skip stability check for library added after reset")
-  void shouldSkipStabilityCheckForLibraryAddedAfterReset() throws Exception {
+  @DisplayName("Should skip stability check when library added after reset")
+  void shouldSkipStabilityCheckWhenLibraryAddedAfterReset() throws Exception {
     var laterLibrary =
         Library.builder()
             .name("Anime")
@@ -566,8 +566,8 @@ class FileEventProcessorTest {
   }
 
   @Test
-  @DisplayName("Should allow reprocessing after delete cancels in-flight stability check")
-  void shouldAllowReprocessingAfterDeleteCancelsInFlightStabilityCheck() throws Exception {
+  @DisplayName("Should reprocess file when delete cancels in-flight check")
+  void shouldReprocessFileWhenDeleteCancelsInFlightCheck() throws Exception {
     var path = createFile("/media/movies/Movie (2024).mkv");
     var firstCheckEntered = new CountDownLatch(1);
     var firstCheckBlocked = new CountDownLatch(1);
