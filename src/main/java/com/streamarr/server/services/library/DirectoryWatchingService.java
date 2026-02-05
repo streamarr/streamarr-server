@@ -17,8 +17,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
 import org.springframework.beans.factory.InitializingBean;
@@ -36,8 +36,7 @@ public class DirectoryWatchingService implements InitializingBean {
   private final VideoExtensionValidator videoExtensionValidator;
 
   private final Set<Path> directoriesToWatch = new HashSet<>();
-  private final ConcurrentHashMap<Path, CompletableFuture<Void>> inFlightChecks =
-      new ConcurrentHashMap<>();
+  private final ConcurrentHashMap<Path, Future<?>> inFlightChecks = new ConcurrentHashMap<>();
 
   private DirectoryWatcher watcher;
   private ExecutorService executor;
@@ -86,29 +85,18 @@ public class DirectoryWatchingService implements InitializingBean {
       return;
     }
 
-    var submitted = new AtomicBoolean(false);
     try {
-      inFlightChecks.computeIfAbsent(
+      inFlightChecks.compute(
           path,
-          key -> {
-            submitted.set(true);
-            return CompletableFuture.runAsync(
-                () -> {
-                  try {
-                    processStableFile(key);
-                  } finally {
-                    inFlightChecks.remove(key);
-                  }
-                },
-                executor);
+          (key, existing) -> {
+            if (existing != null && !existing.isDone()) {
+              log.debug("Stability check already in progress for: {}", path);
+              return existing;
+            }
+            return executor.submit(() -> processStableFile(key));
           });
     } catch (RejectedExecutionException e) {
       log.warn("Executor shut down, ignoring event for: {}", path);
-      return;
-    }
-
-    if (!submitted.get()) {
-      log.debug("Stability check already in progress for: {}", path);
     }
   }
 

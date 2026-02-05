@@ -368,6 +368,35 @@ class DirectoryWatchingServiceTest {
   }
 
   @Test
+  @DisplayName("Should interrupt stability check when file is deleted")
+  void shouldInterruptStabilityCheckWhenFileIsDeleted() throws Exception {
+    var path = createFile("/media/movies/Movie (2024).mkv");
+    var enteredLatch = new CountDownLatch(1);
+    var interruptedLatch = new CountDownLatch(1);
+
+    stabilityCheckerRef.set(
+        p -> {
+          enteredLatch.countDown();
+          try {
+            // Block until interrupted; bounded to prevent test hang if cancel fails
+            new CountDownLatch(1).await(10, TimeUnit.SECONDS);
+          } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            interruptedLatch.countDown();
+            return false;
+          }
+          return false;
+        });
+
+    watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+    assertThat(enteredLatch.await(5, TimeUnit.SECONDS)).isTrue();
+
+    watchingService.handleFileEvent(DirectoryChangeEvent.EventType.DELETE, path);
+
+    assertThat(interruptedLatch.await(2, TimeUnit.SECONDS)).isTrue();
+  }
+
+  @Test
   @DisplayName("Should remove from in-flight map on delete event")
   void shouldRemoveFromInFlightMapOnDeleteEvent() throws Exception {
     var path = createFile("/media/movies/Movie (2024).mkv");
