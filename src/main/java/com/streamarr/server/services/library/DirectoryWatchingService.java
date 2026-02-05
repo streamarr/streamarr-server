@@ -98,7 +98,14 @@ public class DirectoryWatchingService implements InitializingBean {
               log.debug("Stability check already in progress for: {}", path);
               return existing;
             }
-            return executor.submit(() -> processStableFile(key));
+            return executor.submit(
+                () -> {
+                  try {
+                    processStableFile(key);
+                  } finally {
+                    inFlightChecks.remove(key);
+                  }
+                });
           });
     } catch (RejectedExecutionException e) {
       log.warn("Executor shut down, ignoring event for: {}", path);
