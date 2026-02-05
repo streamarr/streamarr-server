@@ -71,7 +71,6 @@ class FileProcessingTaskCoordinatorIT extends AbstractIntegrationTest {
 
     var task = coordinator.createTask(path, testLibrary.getId());
 
-    assertThat(task).isNotNull();
     assertThat(task.getId()).isNotNull();
     assertThat(task.getFilepath()).isEqualTo(path.toAbsolutePath().toString());
     assertThat(task.getLibraryId()).isEqualTo(testLibrary.getId());
@@ -91,8 +90,8 @@ class FileProcessingTaskCoordinatorIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should claim task and transition to PROCESSING")
-  void shouldClaimTaskAndTransitionToProcessing() {
+  @DisplayName("Should transition to processing when task claimed")
+  void shouldTransitionToProcessingWhenTaskClaimed() {
     var path = Path.of("/media/movies/Claim (2024).mkv");
     coordinator.createTask(path, testLibrary.getId());
 
@@ -113,8 +112,8 @@ class FileProcessingTaskCoordinatorIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should prevent concurrent claims of same task with SELECT FOR UPDATE SKIP LOCKED")
-  void shouldPreventConcurrentClaimsWithSkipLocked() throws Exception {
+  @DisplayName("Should claim only once when multiple threads compete")
+  void shouldClaimOnlyOnceWhenMultipleThreadsCompete() throws Exception {
     var path = Path.of("/media/movies/Concurrent (2024).mkv");
     coordinator.createTask(path, testLibrary.getId());
 
@@ -149,8 +148,8 @@ class FileProcessingTaskCoordinatorIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should complete task successfully")
-  void shouldCompleteTaskSuccessfully() {
+  @DisplayName("Should transition to completed when task completed")
+  void shouldTransitionToCompletedWhenTaskCompleted() {
     var path = Path.of("/media/movies/Complete (2024).mkv");
     coordinator.createTask(path, testLibrary.getId());
     var claimed = coordinator.claimNextTask().orElseThrow();
@@ -165,8 +164,8 @@ class FileProcessingTaskCoordinatorIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should fail task with error message")
-  void shouldFailTaskWithErrorMessage() {
+  @DisplayName("Should store error message when task failed")
+  void shouldStoreErrorMessageWhenTaskFailed() {
     var path = Path.of("/media/movies/Fail (2024).mkv");
     coordinator.createTask(path, testLibrary.getId());
     var claimed = coordinator.claimNextTask().orElseThrow();
@@ -218,8 +217,8 @@ class FileProcessingTaskCoordinatorIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should handle race condition on concurrent createTask calls")
-  void shouldHandleRaceConditionOnConcurrentCreateTask() throws Exception {
+  @DisplayName("Should create single task when concurrent creates race")
+  void shouldCreateSingleTaskWhenConcurrentCreatesRace() throws Exception {
     var path = Path.of("/media/movies/RaceCondition (2024).mkv");
     var threadCount = 10;
     var executor = Executors.newFixedThreadPool(threadCount);
@@ -258,8 +257,8 @@ class FileProcessingTaskCoordinatorIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reclaim orphaned tasks with expired leases")
-  void shouldReclaimOrphanedTasksWithExpiredLeases() {
+  @DisplayName("Should reclaim task when lease expired")
+  void shouldReclaimTaskWhenLeaseExpired() {
     var path = Path.of("/media/movies/Orphan (2024).mkv");
     coordinator.createTask(path, testLibrary.getId());
     var claimed = coordinator.claimNextTask().orElseThrow();
@@ -274,13 +273,20 @@ class FileProcessingTaskCoordinatorIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reclaim orphaned PENDING tasks with NULL lease")
-  void shouldReclaimOrphanedPendingTasksWithNullLease() {
+  @DisplayName("Should create task with null lease when file event received")
+  void shouldCreateTaskWithNullLeaseWhenFileEventReceived() {
     var path = Path.of("/media/movies/NullLease (2024).mkv");
+
     var task = coordinator.createTask(path, testLibrary.getId());
 
     assertThat(task.getLeaseExpiresAt()).isNull();
-    assertThat(task.getStatus()).isEqualTo(FileProcessingTaskStatus.PENDING);
+  }
+
+  @Test
+  @DisplayName("Should reclaim task when lease is null")
+  void shouldReclaimTaskWhenLeaseIsNull() {
+    var path = Path.of("/media/movies/NullLease (2024).mkv");
+    var task = coordinator.createTask(path, testLibrary.getId());
 
     var reclaimed = coordinator.reclaimOrphanedTasks(10);
 
