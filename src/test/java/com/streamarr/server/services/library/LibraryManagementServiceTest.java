@@ -477,14 +477,7 @@ public class LibraryManagementServiceTest {
   @Test
   @DisplayName("Should throw InvalidLibraryPathException when filepath is null")
   void shouldThrowInvalidLibraryPathExceptionWhenFilepathIsNull() {
-    var library =
-        Library.builder()
-            .name("Test Library")
-            .backend(LibraryBackend.LOCAL)
-            .filepath(null)
-            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
-            .type(MediaType.MOVIE)
-            .build();
+    var library = LibraryFixtureCreator.buildUnsavedLibrary("Test Library", null);
 
     assertThrows(
         InvalidLibraryPathException.class, () -> libraryManagementService.addLibrary(library));
@@ -493,14 +486,7 @@ public class LibraryManagementServiceTest {
   @Test
   @DisplayName("Should throw InvalidLibraryPathException when filepath is blank")
   void shouldThrowInvalidLibraryPathExceptionWhenFilepathIsBlank() {
-    var library =
-        Library.builder()
-            .name("Test Library")
-            .backend(LibraryBackend.LOCAL)
-            .filepath("   ")
-            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
-            .type(MediaType.MOVIE)
-            .build();
+    var library = LibraryFixtureCreator.buildUnsavedLibrary("Test Library", "   ");
 
     assertThrows(
         InvalidLibraryPathException.class, () -> libraryManagementService.addLibrary(library));
@@ -516,13 +502,7 @@ public class LibraryManagementServiceTest {
     Files.createDirectories(libraryPath);
 
     var duplicateLibrary =
-        Library.builder()
-            .name("Duplicate Library")
-            .backend(LibraryBackend.LOCAL)
-            .filepath(existingFilepath)
-            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
-            .type(MediaType.MOVIE)
-            .build();
+        LibraryFixtureCreator.buildUnsavedLibrary("Duplicate Library", existingFilepath);
 
     assertThrows(
         LibraryAlreadyExistsException.class,
@@ -532,14 +512,7 @@ public class LibraryManagementServiceTest {
   @Test
   @DisplayName("Should throw InvalidLibraryPathException when path does not exist on disk")
   void shouldThrowInvalidLibraryPathExceptionWhenPathDoesNotExist() {
-    var library =
-        Library.builder()
-            .name("Test Library")
-            .backend(LibraryBackend.LOCAL)
-            .filepath("/nonexistent/path")
-            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
-            .type(MediaType.MOVIE)
-            .build();
+    var library = LibraryFixtureCreator.buildUnsavedLibrary("Test Library", "/nonexistent/path");
 
     assertThrows(
         InvalidLibraryPathException.class, () -> libraryManagementService.addLibrary(library));
@@ -552,14 +525,7 @@ public class LibraryManagementServiceTest {
     Files.createDirectories(filePath.getParent());
     Files.createFile(filePath);
 
-    var library =
-        Library.builder()
-            .name("Test Library")
-            .backend(LibraryBackend.LOCAL)
-            .filepath(filePath.toString())
-            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
-            .type(MediaType.MOVIE)
-            .build();
+    var library = LibraryFixtureCreator.buildUnsavedLibrary("Test Library", filePath.toString());
 
     assertThrows(
         InvalidLibraryPathException.class, () -> libraryManagementService.addLibrary(library));
@@ -572,13 +538,7 @@ public class LibraryManagementServiceTest {
     Files.createDirectories(newLibraryPath);
 
     var library =
-        Library.builder()
-            .name("New Library")
-            .backend(LibraryBackend.LOCAL)
-            .filepath(newLibraryPath.toString())
-            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
-            .type(MediaType.MOVIE)
-            .build();
+        LibraryFixtureCreator.buildUnsavedLibrary("New Library", newLibraryPath.toString());
 
     var savedLibrary = libraryManagementService.addLibrary(library);
 
@@ -593,14 +553,7 @@ public class LibraryManagementServiceTest {
     Files.createDirectories(newLibraryPath);
 
     var library =
-        Library.builder()
-            .name("Healthy Library")
-            .backend(LibraryBackend.LOCAL)
-            .filepath(newLibraryPath.toString())
-            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
-            .type(MediaType.MOVIE)
-            .status(null)
-            .build();
+        LibraryFixtureCreator.buildUnsavedLibrary("Healthy Library", newLibraryPath.toString());
 
     var savedLibrary = libraryManagementService.addLibrary(library);
 
@@ -614,13 +567,7 @@ public class LibraryManagementServiceTest {
     Files.createDirectories(newLibraryPath);
 
     var library =
-        Library.builder()
-            .name("Scan Library")
-            .backend(LibraryBackend.LOCAL)
-            .filepath(newLibraryPath.toString())
-            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
-            .type(MediaType.MOVIE)
-            .build();
+        LibraryFixtureCreator.buildUnsavedLibrary("Scan Library", newLibraryPath.toString());
 
     var savedLibrary = libraryManagementService.addLibrary(library);
 
