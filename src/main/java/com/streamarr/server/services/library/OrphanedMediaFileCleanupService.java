@@ -1,0 +1,68 @@
+package com.streamarr.server.services.library;
+
+import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.media.MediaFile;
+import com.streamarr.server.repositories.media.MediaFileRepository;
+import com.streamarr.server.services.MovieService;
+import java.nio.file.FileSystem;
+import java.nio.file.Files;
+import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class OrphanedMediaFileCleanupService {
+
+  private final MediaFileRepository mediaFileRepository;
+  private final MovieService movieService;
+  private final FileSystem fileSystem;
+
+  public void cleanupOrphanedFiles(Library library) {
+    var mediaFiles = mediaFileRepository.findByLibraryId(library.getId());
+
+    var orphanedFiles =
+        mediaFiles.stream()
+            .filter(file -> !Files.exists(fileSystem.getPath(file.getFilepath())))
+            .toList();
+
+    if (orphanedFiles.isEmpty()) {
+      return;
+    }
+
+    var affectedMovieIds =
+        orphanedFiles.stream()
+            .map(MediaFile::getMediaId)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toSet());
+
+    mediaFileRepository.deleteAll(orphanedFiles);
+
+    deleteMoviesWithNoRemainingFiles(affectedMovieIds);
+
+    log.info(
+        "Removed {} orphaned media file(s) from {} library.",
+        orphanedFiles.size(),
+        library.getName());
+  }
+
+  private void deleteMoviesWithNoRemainingFiles(Set<UUID> movieIds) {
+    if (movieIds.isEmpty()) {
+      return;
+    }
+
+    var mediaIdsWithRemainingFiles = mediaFileRepository.findDistinctMediaIdsByMediaIdIn(movieIds);
+
+    for (var movieId : movieIds) {
+      if (!mediaIdsWithRemainingFiles.contains(movieId)) {
+        movieService.deleteMovieById(movieId);
+        log.info("Deleted Movie id: {} — no remaining media files.", movieId);
+      }
+    }
+  }
+}

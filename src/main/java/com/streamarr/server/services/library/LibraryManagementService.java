@@ -24,12 +24,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Executors;
-import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -47,6 +44,7 @@ public class LibraryManagementService {
   private final MovieService movieService;
   private final PersonService personService;
   private final GenreService genreService;
+  private final OrphanedMediaFileCleanupService orphanedMediaFileCleanupService;
   private final FileSystem fileSystem;
   private final MutexFactory<String> mutexFactory;
 
@@ -59,6 +57,7 @@ public class LibraryManagementService {
       MovieService movieService,
       PersonService personService,
       GenreService genreService,
+      OrphanedMediaFileCleanupService orphanedMediaFileCleanupService,
       MutexFactoryProvider mutexFactoryProvider,
       FileSystem fileSystem) {
     this.videoExtensionValidator = videoExtensionValidator;
@@ -69,6 +68,7 @@ public class LibraryManagementService {
     this.movieService = movieService;
     this.personService = personService;
     this.genreService = genreService;
+    this.orphanedMediaFileCleanupService = orphanedMediaFileCleanupService;
     this.fileSystem = fileSystem;
 
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
@@ -122,7 +122,7 @@ public class LibraryManagementService {
       return;
     }
 
-    deleteMissingMediaFiles(library);
+    orphanedMediaFileCleanupService.cleanupOrphanedFiles(library);
 
     var endTime = Instant.now();
     var elapsedTime = Duration.between(startTime, endTime).getSeconds();
@@ -310,48 +310,5 @@ public class LibraryManagementService {
   private void markMediaFileAsMatched(MediaFile mediaFile) {
     mediaFile.setStatus(MediaFileStatus.MATCHED);
     mediaFileRepository.save(mediaFile);
-  }
-
-  private void deleteMissingMediaFiles(Library library) {
-    var mediaFiles = mediaFileRepository.findByLibraryId(library.getId());
-
-    var orphanedFiles =
-        mediaFiles.stream()
-            .filter(file -> !Files.exists(fileSystem.getPath(file.getFilepath())))
-            .toList();
-
-    if (orphanedFiles.isEmpty()) {
-      return;
-    }
-
-    var affectedMovieIds =
-        orphanedFiles.stream()
-            .map(MediaFile::getMediaId)
-            .filter(Objects::nonNull)
-            .collect(Collectors.toSet());
-
-    mediaFileRepository.deleteAll(orphanedFiles);
-
-    deleteMoviesWithNoRemainingFiles(affectedMovieIds);
-
-    log.info(
-        "Removed {} orphaned media file(s) from {} library.",
-        orphanedFiles.size(),
-        library.getName());
-  }
-
-  private void deleteMoviesWithNoRemainingFiles(Set<UUID> movieIds) {
-    if (movieIds.isEmpty()) {
-      return;
-    }
-
-    var mediaIdsWithRemainingFiles = mediaFileRepository.findDistinctMediaIdsByMediaIdIn(movieIds);
-
-    for (var movieId : movieIds) {
-      if (!mediaIdsWithRemainingFiles.contains(movieId)) {
-        movieService.deleteMovieById(movieId);
-        log.info("Deleted Movie id: {} — no remaining media files.", movieId);
-      }
-    }
   }
 }
