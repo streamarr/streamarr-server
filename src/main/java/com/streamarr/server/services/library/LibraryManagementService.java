@@ -17,6 +17,7 @@ import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.PersonService;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
+import com.streamarr.server.services.library.events.ScanCompletedEvent;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
@@ -250,7 +251,7 @@ public class LibraryManagementService {
       return;
     }
 
-    orphanedMediaFileCleanupService.cleanupOrphanedFiles(library);
+    eventPublisher.publishEvent(new ScanCompletedEvent(library.getId()));
 
     var endTime = Instant.now();
     var elapsedTime = Duration.between(startTime, endTime).getSeconds();

@@ -40,6 +40,7 @@ import com.streamarr.server.services.GenreService;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.PersonService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
+import com.streamarr.server.services.library.events.ScanCompletedEvent;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
@@ -265,6 +266,63 @@ public class LibraryManagementServiceTest {
     assertTrue(fakeLibraryRepository.findById(savedLibraryId).isPresent());
     assertThat(fakeLibraryRepository.findById(savedLibraryId).get().getStatus())
         .isEqualTo(LibraryStatus.HEALTHY);
+  }
+
+  @Test
+  @DisplayName(
+      "Should publish ScanCompletedEvent with correct library ID when scan completes successfully")
+  void shouldPublishScanCompletedEventWhenScanSucceeds() throws IOException {
+    createRootLibraryDirectory();
+
+    libraryManagementService.scanLibrary(savedLibraryId);
+
+    var events = capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class);
+    assertThat(events).hasSize(1);
+    assertThat(events.getFirst().libraryId()).isEqualTo(savedLibraryId);
+  }
+
+  @Test
+  @DisplayName("Should not publish ScanCompletedEvent when library path is inaccessible")
+  void shouldNotPublishScanCompletedEventWhenLibraryPathInaccessible() {
+    libraryManagementService.scanLibrary(savedLibraryId);
+
+    var events = capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class);
+    assertThat(events).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should not publish ScanCompletedEvent when file walk throws SecurityException")
+  void shouldNotPublishScanCompletedEventWhenFileWalkThrowsSecurityException() throws IOException {
+    var rootPath = createRootLibraryDirectory();
+    createMovieFile(rootPath, "About Time", "About Time (2013).mkv");
+
+    var throwingFileSystem =
+        new ThrowingFileSystemWrapper(
+            fileSystem,
+            () -> new SecurityException("Simulated security manager denial during traversal"));
+
+    var serviceWithThrowingFs =
+        new LibraryManagementService(
+            new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
+            new VideoExtensionValidator(),
+            new DefaultVideoFileMetadataParser(),
+            fakeMovieMetadataProviderResolver,
+            fakeLibraryRepository,
+            fakeMediaFileRepository,
+            movieService,
+            personService,
+            genreService,
+            orphanedMediaFileCleanupService,
+            directoryWatchingService,
+            streamingService,
+            capturingEventPublisher,
+            new MutexFactoryProvider(),
+            throwingFileSystem);
+
+    serviceWithThrowingFs.scanLibrary(savedLibraryId);
+
+    var events = capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class);
+    assertThat(events).isEmpty();
   }
 
   @Test

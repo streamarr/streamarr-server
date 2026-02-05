@@ -16,6 +16,7 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.MovieService;
+import com.streamarr.server.services.library.events.ScanCompletedEvent;
 import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
@@ -157,6 +158,32 @@ public class OrphanedMediaFileCleanupServiceTest {
     orphanedMediaFileCleanupService.cleanupOrphanedFiles(library);
 
     assertThat(fakeMovieRepository.findById(movie.getId())).isPresent();
+  }
+
+  @Test
+  @DisplayName("Should clean up orphaned files when ScanCompletedEvent is received")
+  void shouldCleanupOrphanedFilesWhenScanCompletedEventReceived() {
+    fakeMediaFileRepository.save(
+        MediaFile.builder()
+            .libraryId(library.getId())
+            .filepath("/library/nonexistent/movie.mkv")
+            .filename("movie.mkv")
+            .status(MediaFileStatus.MATCHED)
+            .build());
+
+    var event = new ScanCompletedEvent(library.getId());
+    orphanedMediaFileCleanupService.onScanCompleted(event);
+
+    var remainingFiles = fakeMediaFileRepository.findByLibraryId(library.getId());
+    assertThat(remainingFiles).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should handle gracefully when library was deleted before cleanup runs")
+  void shouldHandleGracefullyWhenLibraryDeletedBeforeCleanup() {
+    var event = new ScanCompletedEvent(UUID.randomUUID());
+
+    orphanedMediaFileCleanupService.onScanCompleted(event);
   }
 
   private Path createMovieFile(String folder, String filename) throws IOException {
