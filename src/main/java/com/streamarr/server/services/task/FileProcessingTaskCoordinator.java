@@ -14,6 +14,7 @@ import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -63,7 +64,17 @@ public class FileProcessingTaskCoordinator {
             .createdOn(clock.instant())
             .build();
 
-    return repository.save(task);
+    try {
+      return repository.save(task);
+    } catch (DataIntegrityViolationException e) {
+      log.debug("Concurrent task creation detected for filepath: {}", filepath);
+      return repository
+          .findByFilepathAndStatusIn(filepath, ACTIVE_STATUSES)
+          .orElseThrow(
+              () ->
+                  new IllegalStateException(
+                      "Task should exist after constraint violation for: " + filepath, e));
+    }
   }
 
   public Optional<FileProcessingTask> claimNextTask() {
