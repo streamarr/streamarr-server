@@ -1,8 +1,10 @@
 package com.streamarr.server.config;
 
 import java.nio.file.Path;
+import lombok.Builder;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+@Builder
 @ConfigurationProperties(prefix = "streaming")
 public record StreamingProperties(
     int maxConcurrentTranscodes,

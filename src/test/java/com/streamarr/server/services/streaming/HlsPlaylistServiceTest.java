@@ -31,7 +31,8 @@ class HlsPlaylistServiceTest {
 
   @BeforeEach
   void setUp() {
-    properties = new StreamingProperties(8, 6, 60, null, null, null);
+    properties =
+        StreamingProperties.builder().segmentDurationSeconds(6).sessionTimeoutSeconds(60).build();
     service = new HlsPlaylistService(properties);
   }
 

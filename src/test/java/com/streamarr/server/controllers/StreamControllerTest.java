@@ -50,7 +50,13 @@ class StreamControllerTest {
   void setUp() {
     streamingService = new StubStreamingService();
     segmentStore = new FakeSegmentStore();
-    playlistService = new HlsPlaylistService(new StreamingProperties(8, 6, 60, null, null, null));
+    playlistService =
+        new HlsPlaylistService(
+            StreamingProperties.builder()
+                .maxConcurrentTranscodes(8)
+                .segmentDurationSeconds(6)
+                .sessionTimeoutSeconds(60)
+                .build());
     var controller = new StreamController(streamingService, playlistService, segmentStore);
     mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
   }
