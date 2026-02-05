@@ -8,13 +8,16 @@ import java.net.InetAddress;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Service;
 
 @Slf4j
+@Service
 public class FileProcessingTaskCoordinator {
 
   private static final List<FileProcessingTaskStatus> ACTIVE_STATUSES =
@@ -24,6 +27,16 @@ public class FileProcessingTaskCoordinator {
   private final Clock clock;
   private final Duration leaseDuration;
   private final String instanceId;
+
+  public FileProcessingTaskCoordinator(
+      FileProcessingTaskRepository repository,
+      Clock clock,
+      @Value("${task.coordinator.lease-duration-seconds:60}") int leaseDurationSeconds) {
+    this.repository = repository;
+    this.clock = clock;
+    this.leaseDuration = Duration.ofSeconds(leaseDurationSeconds);
+    this.instanceId = generateInstanceId();
+  }
 
   public FileProcessingTaskCoordinator(
       FileProcessingTaskRepository repository, Clock clock, Duration leaseDuration) {
@@ -64,10 +77,13 @@ public class FileProcessingTaskCoordinator {
     return repository.reclaimOrphanedTasks(instanceId, leaseExpiresAt, now, limit);
   }
 
+  @Scheduled(fixedDelayString = "${task.coordinator.heartbeat-interval-ms:15000}")
   public void extendLeases() {
     var newLeaseExpiresAt = clock.instant().plus(leaseDuration);
     var count = repository.extendLeases(instanceId, newLeaseExpiresAt);
-    log.debug("Extended leases for {} tasks", count);
+    if (count > 0) {
+      log.debug("Extended leases for {} tasks", count);
+    }
   }
 
   public void complete(FileProcessingTask task) {

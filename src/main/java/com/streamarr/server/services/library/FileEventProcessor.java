@@ -1,6 +1,8 @@
 package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.task.FileProcessingTask;
+import com.streamarr.server.services.task.FileProcessingTaskCoordinator;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import io.methvin.watcher.DirectoryChangeEvent;
 import java.nio.file.Path;
@@ -26,6 +28,7 @@ class FileEventProcessor {
   private final FileStabilityChecker fileStabilityChecker;
   private final LibraryManagementService libraryManagementService;
   private final IgnoredFileValidator ignoredFileValidator;
+  private final FileProcessingTaskCoordinator taskCoordinator;
 
   private final ConcurrentHashMap<Path, InFlightTask> inFlightChecks = new ConcurrentHashMap<>();
   private final ReentrantReadWriteLock stateLock = new ReentrantReadWriteLock();
@@ -36,10 +39,12 @@ class FileEventProcessor {
   FileEventProcessor(
       FileStabilityChecker fileStabilityChecker,
       LibraryManagementService libraryManagementService,
-      IgnoredFileValidator ignoredFileValidator) {
+      IgnoredFileValidator ignoredFileValidator,
+      FileProcessingTaskCoordinator taskCoordinator) {
     this.fileStabilityChecker = fileStabilityChecker;
     this.libraryManagementService = libraryManagementService;
     this.ignoredFileValidator = ignoredFileValidator;
+    this.taskCoordinator = taskCoordinator;
   }
 
   void handleFileEvent(DirectoryChangeEvent.EventType eventType, Path path) {
@@ -78,14 +83,20 @@ class FileEventProcessor {
       return;
     }
 
+    var optionalLibraryId = resolveLibrary(path);
+    if (optionalLibraryId.isEmpty()) {
+      log.warn("No library matches path: {}", path);
+      return;
+    }
+
     try {
-      scheduleStabilityCheck(path);
+      scheduleStabilityCheck(path, optionalLibraryId.get());
     } catch (RejectedExecutionException e) {
       log.warn("Executor shut down, ignoring event for: {}", path);
     }
   }
 
-  private void scheduleStabilityCheck(Path path) {
+  private void scheduleStabilityCheck(Path path, UUID libraryId) {
     stateLock.readLock().lock();
     try {
       var token = new StabilityToken();
@@ -96,7 +107,8 @@ class FileEventProcessor {
               log.debug("Stability check already in progress for: {}", path);
               return existing;
             }
-            var future = executor.submit(() -> runStabilityCheckWithCleanup(key, token));
+            var task = taskCoordinator.createTask(key, libraryId);
+            var future = executor.submit(() -> runStabilityCheckWithCleanup(key, token, task));
             return new InFlightTask(future, token);
           });
     } finally {
@@ -104,42 +116,40 @@ class FileEventProcessor {
     }
   }
 
-  private void runStabilityCheckWithCleanup(Path path, StabilityToken token) {
+  private void runStabilityCheckWithCleanup(Path path, StabilityToken token, FileProcessingTask task) {
     try {
-      processStableFile(path);
+      processStableFile(path, task);
     } finally {
       inFlightChecks.compute(
           path, (k, current) -> current != null && current.token() == token ? null : current);
     }
   }
 
-  private void processStableFile(Path path) {
+  private void processStableFile(Path path, FileProcessingTask task) {
     log.info("Starting stability check for: {}", path);
 
     if (!fileStabilityChecker.awaitStability(path)) {
       log.warn("File did not stabilize: {}", path);
-      return;
-    }
-
-    var optionalLibraryId = resolveLibrary(path);
-    if (optionalLibraryId.isEmpty()) {
-      log.warn("No library matches path: {}", path);
+      taskCoordinator.fail(task, "File did not stabilize within timeout");
       return;
     }
 
     try {
-      libraryManagementService.processDiscoveredFile(optionalLibraryId.get(), path);
+      libraryManagementService.processDiscoveredFile(task.getLibraryId(), path);
+      taskCoordinator.complete(task);
     } catch (Exception e) {
       log.error("Failed to process discovered file: {}", path, e);
+      taskCoordinator.fail(task, e.getMessage());
     }
   }
 
   private void handleDelete(Path path) {
-    var task = inFlightChecks.remove(path);
-    if (task != null) {
-      task.future().cancel(true);
+    var inFlight = inFlightChecks.remove(path);
+    if (inFlight != null) {
+      inFlight.future().cancel(true);
       log.info("Cancelled in-flight check for deleted file: {}", path);
     }
+    taskCoordinator.cancelTask(path);
     log.info("Watcher event type: DELETE -- filepath: {}", path);
   }
 
