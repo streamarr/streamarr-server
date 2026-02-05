@@ -3,8 +3,9 @@ package com.streamarr.server.config;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import lombok.NonNull;
 
-public record FfmpegPaths(String ffmpeg, String ffprobe) {
+public record FfmpegPaths(@NonNull String ffmpeg, @NonNull String ffprobe) {
 
   private static final List<String> FFMPEG_SEARCH_PATHS =
       List.of(
