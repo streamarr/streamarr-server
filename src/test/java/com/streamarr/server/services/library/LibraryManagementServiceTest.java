@@ -15,15 +15,18 @@ import com.streamarr.server.config.LibraryScanProperties;
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.LibraryBackend;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
+import com.streamarr.server.fakes.ThrowingFileSystemWrapper;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
@@ -137,6 +140,98 @@ public class LibraryManagementServiceTest {
     assertTrue(fakeLibraryRepository.findById(savedLibraryId).isPresent());
     assertThat(fakeLibraryRepository.findById(savedLibraryId).get().getStatus())
         .isEqualTo(LibraryStatus.UNHEALTHY);
+  }
+
+  @Test
+  @DisplayName(
+      "Should set library status to unhealthy when file walk throws UncheckedIOException during iteration")
+  void shouldSetLibraryStatusToUnhealthyWhenFileWalkThrowsUncheckedIOException()
+      throws IOException {
+    var rootPath = createRootLibraryDirectory();
+    createMovieFile(rootPath, "About Time", "About Time (2013).mkv");
+
+    var throwingFileSystem = new ThrowingFileSystemWrapper(fileSystem);
+
+    var serviceWithThrowingFs =
+        new LibraryManagementService(
+            new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
+            new VideoExtensionValidator(),
+            new DefaultVideoFileMetadataParser(),
+            fakeMovieMetadataProviderResolver,
+            fakeLibraryRepository,
+            fakeMediaFileRepository,
+            movieService,
+            personService,
+            genreService,
+            orphanedMediaFileCleanupService,
+            new MutexFactoryProvider(),
+            throwingFileSystem);
+
+    serviceWithThrowingFs.scanLibrary(savedLibraryId);
+
+    assertTrue(fakeLibraryRepository.findById(savedLibraryId).isPresent());
+    assertThat(fakeLibraryRepository.findById(savedLibraryId).get().getStatus())
+        .isEqualTo(LibraryStatus.UNHEALTHY);
+  }
+
+  @Test
+  @DisplayName(
+      "Should set library status to unhealthy when file walk throws SecurityException during iteration")
+  void shouldSetLibraryStatusToUnhealthyWhenFileWalkThrowsSecurityException() throws IOException {
+    var rootPath = createRootLibraryDirectory();
+    createMovieFile(rootPath, "About Time", "About Time (2013).mkv");
+
+    var throwingFileSystem =
+        new ThrowingFileSystemWrapper(
+            fileSystem,
+            () -> new SecurityException("Simulated security manager denial during traversal"));
+
+    var serviceWithThrowingFs =
+        new LibraryManagementService(
+            new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
+            new VideoExtensionValidator(),
+            new DefaultVideoFileMetadataParser(),
+            fakeMovieMetadataProviderResolver,
+            fakeLibraryRepository,
+            fakeMediaFileRepository,
+            movieService,
+            personService,
+            genreService,
+            orphanedMediaFileCleanupService,
+            new MutexFactoryProvider(),
+            throwingFileSystem);
+
+    serviceWithThrowingFs.scanLibrary(savedLibraryId);
+
+    assertTrue(fakeLibraryRepository.findById(savedLibraryId).isPresent());
+    assertThat(fakeLibraryRepository.findById(savedLibraryId).get().getStatus())
+        .isEqualTo(LibraryStatus.UNHEALTHY);
+  }
+
+  @Test
+  @DisplayName("Should throw IllegalStateException when library has unsupported media type")
+  void shouldThrowIllegalStateExceptionWhenLibraryHasUnsupportedMediaType() throws IOException {
+    var otherTypeLibrary =
+        fakeLibraryRepository.save(
+            Library.builder()
+                .name("Other Type Library")
+                .backend(LibraryBackend.LOCAL)
+                .status(LibraryStatus.HEALTHY)
+                .filepath("/library/" + UUID.randomUUID())
+                .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+                .type(MediaType.OTHER)
+                .build());
+
+    var libraryPath = fileSystem.getPath(otherTypeLibrary.getFilepath());
+    Files.createDirectories(libraryPath);
+    var movieFolder = libraryPath.resolve("Test Movie");
+    Files.createDirectory(movieFolder);
+    var movieFile = movieFolder.resolve("Test Movie (2024).mkv");
+    Files.createFile(movieFile);
+
+    assertThrows(
+        IllegalStateException.class,
+        () -> libraryManagementService.processDiscoveredFile(otherTypeLibrary.getId(), movieFile));
   }
 
   @Test
