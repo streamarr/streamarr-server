@@ -16,6 +16,7 @@ import com.streamarr.server.repositories.GenreRepository;
 import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.repositories.RatingRepository;
 import com.streamarr.server.repositories.ReviewRepository;
+import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import java.util.List;
 import java.util.Optional;
@@ -36,6 +37,7 @@ class MovieFieldResolverTest {
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
 
   @MockitoBean private MovieRepository movieRepository;
+  @MockitoBean private MediaFileRepository mediaFileRepository;
   @MockitoBean private CompanyRepository companyRepository;
   @MockitoBean private PersonRepository personRepository;
   @MockitoBean private GenreRepository genreRepository;
@@ -85,8 +87,7 @@ class MovieFieldResolverTest {
   void shouldReturnDirectorsWhenMovieQueriedWithDirectorsField() {
     var movie = setupMovie();
     when(personRepository.findDirectorsByMovieId(movie.getId()))
-        .thenReturn(
-            List.of(Person.builder().name("Christopher Nolan").sourceId("nolan").build()));
+        .thenReturn(List.of(Person.builder().name("Christopher Nolan").sourceId("nolan").build()));
 
     String name =
         dgsQueryExecutor.executeAndExtractJsonPath(

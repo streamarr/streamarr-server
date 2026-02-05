@@ -6,6 +6,7 @@ import static org.mockito.Mockito.mock;
 
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
+import com.streamarr.server.config.LibraryScanProperties;
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
@@ -22,6 +23,7 @@ import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.metadata.movie.TMDBMovieProvider;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
+import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
 import io.methvin.watcher.DirectoryChangeEvent;
 import java.io.IOException;
@@ -59,6 +61,8 @@ class FileEventProcessorTest {
     fileSystem = Jimfs.newFileSystem(Configuration.unix());
     libraryRepository = new FakeLibraryRepository();
     mediaFileRepository = new FakeMediaFileRepository();
+    var ignoredFileValidator =
+        new IgnoredFileValidator(new LibraryScanProperties(null, null, null));
     var videoExtensionValidator = new VideoExtensionValidator();
     stabilityCheckerRef = new AtomicReference<>(path -> true);
 
@@ -110,6 +114,7 @@ class FileEventProcessorTest {
 
     var libraryManagementService =
         new LibraryManagementService(
+            ignoredFileValidator,
             videoExtensionValidator,
             new DefaultVideoFileMetadataParser(),
             new MovieMetadataProviderResolver(List.of(tmdbProvider)),
@@ -125,7 +130,7 @@ class FileEventProcessorTest {
         new FileEventProcessor(
             path -> stabilityCheckerRef.get().awaitStability(path),
             libraryManagementService,
-            videoExtensionValidator);
+            ignoredFileValidator);
 
     eventProcessor.reset(libraryRepository.findAll());
   }

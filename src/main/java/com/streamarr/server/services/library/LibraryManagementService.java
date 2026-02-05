@@ -17,6 +17,7 @@ import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
+import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
 import java.io.IOException;
 import java.nio.file.FileSystem;
@@ -36,6 +37,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class LibraryManagementService {
 
+  private final IgnoredFileValidator ignoredFileValidator;
   private final VideoExtensionValidator videoExtensionValidator;
   private final DefaultVideoFileMetadataParser defaultVideoFileMetadataParser;
   private final MovieMetadataProviderResolver movieMetadataProviderResolver;
@@ -48,6 +50,7 @@ public class LibraryManagementService {
   private final MutexFactory<String> mutexFactory;
 
   public LibraryManagementService(
+      IgnoredFileValidator ignoredFileValidator,
       VideoExtensionValidator videoExtensionValidator,
       DefaultVideoFileMetadataParser defaultVideoFileMetadataParser,
       MovieMetadataProviderResolver movieMetadataProviderResolver,
@@ -58,6 +61,7 @@ public class LibraryManagementService {
       GenreService genreService,
       MutexFactoryProvider mutexFactoryProvider,
       FileSystem fileSystem) {
+    this.ignoredFileValidator = ignoredFileValidator;
     this.videoExtensionValidator = videoExtensionValidator;
     this.defaultVideoFileMetadataParser = defaultVideoFileMetadataParser;
     this.movieMetadataProviderResolver = movieMetadataProviderResolver;
@@ -71,20 +75,11 @@ public class LibraryManagementService {
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
   }
 
-  public void addLibrary(Library library) {
-    // validate library doesn't already exist.
-    // save new library entity to database.
-    // call refreshLibrary() once new library has been created.
-    // return newly created library.
-  }
+  // TODO #39: implement addLibrary mutation
+  public void addLibrary(Library library) {}
 
-  public void removeLibrary() {
-    // remove watcher
-    // cleanup?
-    // terminate streams?
-    // remove all db entries but leave files (shows, movies, etc)
-    // delete "Library" entity
-  }
+  // TODO #39: implement removeLibrary mutation
+  public void removeLibrary() {}
 
   public void processDiscoveredFile(UUID libraryId, Path path) {
     var library =
@@ -121,6 +116,7 @@ public class LibraryManagementService {
 
       stream
           .filter(Files::isRegularFile)
+          .filter(file -> !ignoredFileValidator.shouldIgnore(file))
           .forEach(file -> executor.submit(() -> processFile(library, file)));
 
     } catch (IOException e) {
@@ -147,7 +143,11 @@ public class LibraryManagementService {
 
   private void processFile(Library library, Path path) {
 
-    if (isUnsupportedFileExtension(path)) {
+    if (!hasSupportedExtension(path)) {
+      log.warn(
+          "Unsupported file extension: {} for filepath {}.",
+          getExtension(path),
+          path.toAbsolutePath());
       return;
     }
 
@@ -163,17 +163,8 @@ public class LibraryManagementService {
     }
   }
 
-  private boolean isUnsupportedFileExtension(Path path) {
-    var extension = getExtension(path);
-
-    var valid = videoExtensionValidator.validate(extension);
-
-    if (!valid) {
-      log.error(
-          "Unsupported file extension: {} for filepath {}.", extension, path.toAbsolutePath());
-    }
-
-    return !valid;
+  private boolean hasSupportedExtension(Path path) {
+    return videoExtensionValidator.validate(getExtension(path));
   }
 
   private String getExtension(Path path) {
@@ -270,18 +261,17 @@ public class LibraryManagementService {
   private void enrichMovieMetadata(
       Library library, MediaFile mediaFile, RemoteSearchResult remoteSearchResult) {
 
-    // Lock should use the library agent's external id.
-    var mutex = mutexFactory.getMutex(remoteSearchResult.externalId());
+    var externalIdMutex = mutexFactory.getMutex(remoteSearchResult.externalId());
 
     try {
-      mutex.lock();
+      externalIdMutex.lock();
 
       updateOrSaveEnrichedMovie(library, mediaFile, remoteSearchResult);
     } catch (Exception ex) {
       log.error("Failure enriching movie metadata:", ex);
     } finally {
-      if (mutex.isHeldByCurrentThread()) {
-        mutex.unlock();
+      if (externalIdMutex.isHeldByCurrentThread()) {
+        externalIdMutex.unlock();
       }
     }
   }
@@ -323,9 +313,6 @@ public class LibraryManagementService {
     mediaFileRepository.save(mediaFile);
   }
 
-  private void deleteMissingMediaFiles() {
-    // get all items in library
-    // locate files in FS
-    // cleanup if file cannot be located.
-  }
+  // TODO #34: detect and clean up orphaned MediaFiles
+  private void deleteMissingMediaFiles() {}
 }

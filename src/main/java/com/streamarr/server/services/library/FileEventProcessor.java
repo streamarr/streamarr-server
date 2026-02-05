@@ -1,7 +1,7 @@
 package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.Library;
-import com.streamarr.server.services.validation.VideoExtensionValidator;
+import com.streamarr.server.services.validation.IgnoredFileValidator;
 import io.methvin.watcher.DirectoryChangeEvent;
 import java.nio.file.Path;
 import java.util.Comparator;
@@ -14,7 +14,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.io.FilenameUtils;
 
 @Slf4j
 class FileEventProcessor {
@@ -23,7 +22,7 @@ class FileEventProcessor {
 
   private final FileStabilityChecker fileStabilityChecker;
   private final LibraryManagementService libraryManagementService;
-  private final VideoExtensionValidator videoExtensionValidator;
+  private final IgnoredFileValidator ignoredFileValidator;
 
   private final ConcurrentHashMap<Path, InFlightTask> inFlightChecks = new ConcurrentHashMap<>();
 
@@ -33,10 +32,10 @@ class FileEventProcessor {
   FileEventProcessor(
       FileStabilityChecker fileStabilityChecker,
       LibraryManagementService libraryManagementService,
-      VideoExtensionValidator videoExtensionValidator) {
+      IgnoredFileValidator ignoredFileValidator) {
     this.fileStabilityChecker = fileStabilityChecker;
     this.libraryManagementService = libraryManagementService;
-    this.videoExtensionValidator = videoExtensionValidator;
+    this.ignoredFileValidator = ignoredFileValidator;
     this.executor = Executors.newVirtualThreadPerTaskExecutor();
     this.cachedLibraries = List.of();
   }
@@ -62,9 +61,8 @@ class FileEventProcessor {
   }
 
   private void handleCreateOrModify(Path path) {
-    var extension = FilenameUtils.getExtension(path.getFileName().toString());
-    if (!videoExtensionValidator.validate(extension)) {
-      log.debug("Ignoring non-video file: {}", path);
+    if (ignoredFileValidator.shouldIgnore(path)) {
+      log.debug("Ignoring file: {}", path);
       return;
     }
 

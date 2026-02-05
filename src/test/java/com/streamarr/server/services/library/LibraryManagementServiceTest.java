@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
+import com.streamarr.server.config.LibraryScanProperties;
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
@@ -34,6 +35,7 @@ import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolve
 import com.streamarr.server.services.metadata.movie.TMDBMovieProvider;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
+import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
 import java.io.IOException;
 import java.nio.file.FileSystem;
@@ -67,6 +69,7 @@ public class LibraryManagementServiceTest {
 
   private final LibraryManagementService libraryManagementService =
       new LibraryManagementService(
+          new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
           new VideoExtensionValidator(),
           new DefaultVideoFileMetadataParser(),
           fakeMovieMetadataProviderResolver,
@@ -141,8 +144,6 @@ public class LibraryManagementServiceTest {
       "Should skip creating a media file when provided a library containing an unsupported file extension")
   void shouldSkipCreatingMediaFileWhenProvidedLibraryContainingUnsupportedMovie()
       throws IOException {
-    // This tradeoff increases scan speed in worst case scenarios where a library contains a large
-    // number of unsupported files.
     var rootPath = createRootLibraryDirectory();
     var moviePath = createMovieFile(rootPath, "About Time", "About Time (2013).av1");
 
@@ -293,6 +294,21 @@ public class LibraryManagementServiceTest {
     assertThrows(
         LibraryNotFoundException.class,
         () -> libraryManagementService.processDiscoveredFile(UUID.randomUUID(), moviePath));
+  }
+
+  @Test
+  @DisplayName(
+      "Should skip processing when provided a library containing a system file with a valid extension")
+  void shouldSkipProcessingWhenGivenLibraryContainingSystemFile() throws IOException {
+    var rootPath = createRootLibraryDirectory();
+    var systemFilePath = createMovieFile(rootPath, "About Time", "._About Time (2013).mkv");
+
+    libraryManagementService.scanLibrary(savedLibraryId);
+
+    var mediaFile =
+        fakeMediaFileRepository.findFirstByFilepath(systemFilePath.toAbsolutePath().toString());
+
+    assertTrue(mediaFile.isEmpty());
   }
 
   private Path createRootLibraryDirectory() throws IOException {
