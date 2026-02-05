@@ -61,6 +61,7 @@ import java.util.concurrent.Executors;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -474,164 +475,166 @@ public class LibraryManagementServiceTest {
             });
   }
 
-  // ==================== addLibrary Tests ====================
+  @Nested
+  @DisplayName("Add Library Tests")
+  class AddLibraryTests {
 
-  @Test
-  @DisplayName("Should throw InvalidLibraryPathException when filepath is null")
-  void shouldThrowInvalidLibraryPathExceptionWhenFilepathIsNull() {
-    var library = LibraryFixtureCreator.buildUnsavedLibrary("Test Library", null);
+    @Test
+    @DisplayName("Should throw InvalidLibraryPathException when filepath is null")
+    void shouldThrowInvalidLibraryPathExceptionWhenFilepathIsNull() {
+      var library = LibraryFixtureCreator.buildUnsavedLibrary("Test Library", null);
 
-    assertThrows(
-        InvalidLibraryPathException.class, () -> libraryManagementService.addLibrary(library));
-  }
+      assertThrows(
+          InvalidLibraryPathException.class, () -> libraryManagementService.addLibrary(library));
+    }
 
-  @Test
-  @DisplayName("Should throw InvalidLibraryPathException when filepath is blank")
-  void shouldThrowInvalidLibraryPathExceptionWhenFilepathIsBlank() {
-    var library = LibraryFixtureCreator.buildUnsavedLibrary("Test Library", "   ");
+    @Test
+    @DisplayName("Should throw InvalidLibraryPathException when filepath is blank")
+    void shouldThrowInvalidLibraryPathExceptionWhenFilepathIsBlank() {
+      var library = LibraryFixtureCreator.buildUnsavedLibrary("Test Library", "   ");
 
-    assertThrows(
-        InvalidLibraryPathException.class, () -> libraryManagementService.addLibrary(library));
-  }
+      assertThrows(
+          InvalidLibraryPathException.class, () -> libraryManagementService.addLibrary(library));
+    }
 
-  @Test
-  @DisplayName("Should throw LibraryAlreadyExistsException when filepath already exists")
-  void shouldThrowLibraryAlreadyExistsExceptionWhenFilepathExists() throws IOException {
-    var existingLibrary = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
-    var existingFilepath = existingLibrary.getFilepath();
+    @Test
+    @DisplayName("Should throw LibraryAlreadyExistsException when filepath already exists")
+    void shouldThrowLibraryAlreadyExistsExceptionWhenFilepathExists() throws IOException {
+      var existingLibrary = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+      var existingFilepath = existingLibrary.getFilepath();
 
-    var libraryPath = fileSystem.getPath(existingFilepath);
-    Files.createDirectories(libraryPath);
+      var libraryPath = fileSystem.getPath(existingFilepath);
+      Files.createDirectories(libraryPath);
 
-    var duplicateLibrary =
-        LibraryFixtureCreator.buildUnsavedLibrary("Duplicate Library", existingFilepath);
+      var duplicateLibrary =
+          LibraryFixtureCreator.buildUnsavedLibrary("Duplicate Library", existingFilepath);
 
-    assertThrows(
-        LibraryAlreadyExistsException.class,
-        () -> libraryManagementService.addLibrary(duplicateLibrary));
-  }
+      assertThrows(
+          LibraryAlreadyExistsException.class,
+          () -> libraryManagementService.addLibrary(duplicateLibrary));
+    }
 
-  @Test
-  @DisplayName("Should throw InvalidLibraryPathException when path does not exist on disk")
-  void shouldThrowInvalidLibraryPathExceptionWhenPathDoesNotExist() {
-    var library = LibraryFixtureCreator.buildUnsavedLibrary("Test Library", "/nonexistent/path");
+    @Test
+    @DisplayName("Should throw InvalidLibraryPathException when path does not exist on disk")
+    void shouldThrowInvalidLibraryPathExceptionWhenPathDoesNotExist() {
+      var library = LibraryFixtureCreator.buildUnsavedLibrary("Test Library", "/nonexistent/path");
 
-    assertThrows(
-        InvalidLibraryPathException.class, () -> libraryManagementService.addLibrary(library));
-  }
+      assertThrows(
+          InvalidLibraryPathException.class, () -> libraryManagementService.addLibrary(library));
+    }
 
-  @Test
-  @DisplayName("Should throw InvalidLibraryPathException when path is not a directory")
-  void shouldThrowInvalidLibraryPathExceptionWhenPathIsNotDirectory() throws IOException {
-    var filePath = fileSystem.getPath("/library/file.txt");
-    Files.createDirectories(filePath.getParent());
-    Files.createFile(filePath);
+    @Test
+    @DisplayName("Should throw InvalidLibraryPathException when path is not a directory")
+    void shouldThrowInvalidLibraryPathExceptionWhenPathIsNotDirectory() throws IOException {
+      var filePath = fileSystem.getPath("/library/file.txt");
+      Files.createDirectories(filePath.getParent());
+      Files.createFile(filePath);
 
-    var library = LibraryFixtureCreator.buildUnsavedLibrary("Test Library", filePath.toString());
+      var library = LibraryFixtureCreator.buildUnsavedLibrary("Test Library", filePath.toString());
 
-    assertThrows(
-        InvalidLibraryPathException.class, () -> libraryManagementService.addLibrary(library));
-  }
+      assertThrows(
+          InvalidLibraryPathException.class, () -> libraryManagementService.addLibrary(library));
+    }
 
-  @Test
-  @DisplayName("Should save library and return with generated ID when valid library provided")
-  void shouldSaveLibraryAndReturnWithGeneratedId() throws IOException {
-    var newLibraryPath = fileSystem.getPath("/new-library");
-    Files.createDirectories(newLibraryPath);
+    @Test
+    @DisplayName("Should save library and return with generated ID when valid library provided")
+    void shouldSaveLibraryAndReturnWithGeneratedId() throws IOException {
+      var newLibraryPath = fileSystem.getPath("/new-library");
+      Files.createDirectories(newLibraryPath);
 
-    var library =
-        LibraryFixtureCreator.buildUnsavedLibrary("New Library", newLibraryPath.toString());
+      var library =
+          LibraryFixtureCreator.buildUnsavedLibrary("New Library", newLibraryPath.toString());
 
-    var savedLibrary = libraryManagementService.addLibrary(library);
+      var savedLibrary = libraryManagementService.addLibrary(library);
 
-    assertThat(savedLibrary.getId()).isNotNull();
-    assertThat(fakeLibraryRepository.findById(savedLibrary.getId())).isPresent();
-  }
+      assertThat(savedLibrary.getId()).isNotNull();
+      assertThat(fakeLibraryRepository.findById(savedLibrary.getId())).isPresent();
+    }
 
-  @Test
-  @DisplayName("Should set status to HEALTHY when adding library")
-  void shouldSetStatusToHealthyWhenAdding() throws IOException {
-    var newLibraryPath = fileSystem.getPath("/healthy-library");
-    Files.createDirectories(newLibraryPath);
+    @Test
+    @DisplayName("Should set status to HEALTHY when adding library")
+    void shouldSetStatusToHealthyWhenAdding() throws IOException {
+      var newLibraryPath = fileSystem.getPath("/healthy-library");
+      Files.createDirectories(newLibraryPath);
 
-    var library =
-        LibraryFixtureCreator.buildUnsavedLibrary("Healthy Library", newLibraryPath.toString());
+      var library =
+          LibraryFixtureCreator.buildUnsavedLibrary("Healthy Library", newLibraryPath.toString());
 
-    var savedLibrary = libraryManagementService.addLibrary(library);
+      var savedLibrary = libraryManagementService.addLibrary(library);
 
-    assertThat(savedLibrary.getStatus()).isEqualTo(LibraryStatus.HEALTHY);
-  }
+      assertThat(savedLibrary.getStatus()).isEqualTo(LibraryStatus.HEALTHY);
+    }
 
-  @Test
-  @DisplayName("Should trigger library scan asynchronously after adding")
-  void shouldTriggerLibraryScanAsynchronouslyAfterAdding() throws IOException {
-    var newLibraryPath = fileSystem.getPath("/scan-library");
-    Files.createDirectories(newLibraryPath);
+    @Test
+    @DisplayName("Should trigger library scan asynchronously after adding")
+    void shouldTriggerLibraryScanAsynchronouslyAfterAdding() throws IOException {
+      var newLibraryPath = fileSystem.getPath("/scan-library");
+      Files.createDirectories(newLibraryPath);
 
-    var library =
-        LibraryFixtureCreator.buildUnsavedLibrary("Scan Library", newLibraryPath.toString());
+      var library =
+          LibraryFixtureCreator.buildUnsavedLibrary("Scan Library", newLibraryPath.toString());
 
-    var savedLibrary = libraryManagementService.addLibrary(library);
+      var savedLibrary = libraryManagementService.addLibrary(library);
 
-    await()
-        .atMost(Duration.ofSeconds(5))
-        .untilAsserted(
-            () -> {
-              var refreshedLibrary =
-                  fakeLibraryRepository.findById(savedLibrary.getId()).orElseThrow();
-              assertThat(refreshedLibrary.getScanCompletedOn())
-                  .as("Library scan should complete")
-                  .isNotNull();
-              assertThat(refreshedLibrary.getStatus())
-                  .as("Library status should be HEALTHY after scan")
-                  .isEqualTo(LibraryStatus.HEALTHY);
-            });
-  }
+      await()
+          .atMost(Duration.ofSeconds(5))
+          .untilAsserted(
+              () -> {
+                var refreshedLibrary =
+                    fakeLibraryRepository.findById(savedLibrary.getId()).orElseThrow();
+                assertThat(refreshedLibrary.getScanCompletedOn())
+                    .as("Library scan should complete")
+                    .isNotNull();
+                assertThat(refreshedLibrary.getStatus())
+                    .as("Library status should be HEALTHY after scan")
+                    .isEqualTo(LibraryStatus.HEALTHY);
+              });
+    }
 
-  @Test
-  @DisplayName("Should throw LibraryAccessDeniedException when path access denied by security manager")
-  void shouldThrowLibraryAccessDeniedExceptionWhenPathAccessDenied() {
-    var securityExceptionFs = new SecurityExceptionFileSystem(fileSystem);
+    @Test
+    @DisplayName(
+        "Should throw LibraryAccessDeniedException when path access denied by security manager")
+    void shouldThrowLibraryAccessDeniedExceptionWhenPathAccessDenied() {
+      var securityExceptionFs = new SecurityExceptionFileSystem(fileSystem);
 
-    var serviceWithSecurityFs =
-        new LibraryManagementService(
-            new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
-            new VideoExtensionValidator(),
-            new DefaultVideoFileMetadataParser(),
-            fakeMovieMetadataProviderResolver,
-            fakeLibraryRepository,
-            fakeMediaFileRepository,
-            movieService,
-            personService,
-            genreService,
-            orphanedMediaFileCleanupService,
-            new MutexFactoryProvider(),
-            securityExceptionFs);
+      var serviceWithSecurityFs =
+          new LibraryManagementService(
+              new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
+              new VideoExtensionValidator(),
+              new DefaultVideoFileMetadataParser(),
+              fakeMovieMetadataProviderResolver,
+              fakeLibraryRepository,
+              fakeMediaFileRepository,
+              movieService,
+              personService,
+              genreService,
+              orphanedMediaFileCleanupService,
+              new MutexFactoryProvider(),
+              securityExceptionFs);
 
-    var library = LibraryFixtureCreator.buildUnsavedLibrary("Test Library", "/secure-path");
+      var library = LibraryFixtureCreator.buildUnsavedLibrary("Test Library", "/secure-path");
 
-    var exception =
-        assertThrows(
-            LibraryAccessDeniedException.class,
-            () -> serviceWithSecurityFs.addLibrary(library));
+      var exception =
+          assertThrows(
+              LibraryAccessDeniedException.class,
+              () -> serviceWithSecurityFs.addLibrary(library));
 
-    assertThat(exception.getMessage()).contains("/secure-path");
-  }
+      assertThat(exception.getMessage()).contains("/secure-path");
+    }
 
-  @Test
-  @DisplayName("Should not mutate input library when adding")
-  void shouldNotMutateInputLibraryWhenAdding() throws IOException {
-    var newLibraryPath = fileSystem.getPath("/no-mutate");
-    Files.createDirectories(newLibraryPath);
+    @Test
+    @DisplayName("Should not mutate input library when adding")
+    void shouldNotMutateInputLibraryWhenAdding() throws IOException {
+      var newLibraryPath = fileSystem.getPath("/no-mutate");
+      Files.createDirectories(newLibraryPath);
 
-    var library =
-        LibraryFixtureCreator.buildUnsavedLibrary("Test Library", newLibraryPath.toString());
+      var library =
+          LibraryFixtureCreator.buildUnsavedLibrary("Test Library", newLibraryPath.toString());
 
-    libraryManagementService.addLibrary(library);
+      libraryManagementService.addLibrary(library);
 
-    assertThat(library.getStatus())
-        .as("Input library should not be mutated")
-        .isNull();
+      assertThat(library.getStatus()).as("Input library should not be mutated").isNull();
+    }
   }
 
   private Path createRootLibraryDirectory() throws IOException {
