@@ -4,6 +4,7 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.exceptions.InvalidLibraryPathException;
 import com.streamarr.server.exceptions.LibraryAlreadyExistsException;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
@@ -205,7 +206,7 @@ public class LibraryManagementService {
       }
       streamingService.getAllSessions().stream()
           .filter(session -> mediaFileIds.contains(session.getMediaFileId()))
-          .map(session -> session.getSessionId())
+          .map(StreamSession::getSessionId)
           .forEach(streamingService::destroySession);
     } catch (Exception e) {
       log.warn("Failed to terminate streaming sessions: {}", e.getMessage());
