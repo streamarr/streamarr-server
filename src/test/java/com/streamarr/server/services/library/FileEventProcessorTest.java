@@ -565,6 +565,45 @@ class FileEventProcessorTest {
     assertThat(interruptedLatch.await(2, TimeUnit.SECONDS)).isTrue();
   }
 
+  @Test
+  @DisplayName("Should allow reprocessing after delete cancels in-flight stability check")
+  void shouldAllowReprocessingAfterDeleteCancelsInFlightStabilityCheck() throws Exception {
+    var path = createFile("/media/movies/Movie (2024).mkv");
+    var firstCheckEntered = new CountDownLatch(1);
+    var firstCheckBlocked = new CountDownLatch(1);
+    var secondCheckCompleted = new CountDownLatch(1);
+    var callCount = new AtomicInteger(0);
+
+    stabilityCheckerRef.set(
+        p -> {
+          var count = callCount.incrementAndGet();
+          if (count == 1) {
+            firstCheckEntered.countDown();
+            try {
+              firstCheckBlocked.await(5, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+              Thread.currentThread().interrupt();
+              return false;
+            }
+            return false;
+          }
+          secondCheckCompleted.countDown();
+          return true;
+        });
+
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+    assertThat(firstCheckEntered.await(5, TimeUnit.SECONDS)).isTrue();
+
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.DELETE, path);
+    firstCheckBlocked.countDown();
+
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+
+    assertThat(secondCheckCompleted.await(5, TimeUnit.SECONDS))
+        .as("Second stability check should complete, proving system recovered from cancelled first check")
+        .isTrue();
+  }
+
   private Path createFile(String pathStr) throws IOException {
     var path = fileSystem.getPath(pathStr);
     Files.createDirectories(path.getParent());
