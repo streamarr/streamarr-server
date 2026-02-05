@@ -171,7 +171,6 @@ class PollingFileStabilityCheckerTest {
         };
 
     var properties = new LibraryWatcherProperties(10, 5, 3600);
-    var clock = Clock.fixed(currentTime.get(), ZoneOffset.UTC);
     var checker =
         new PollingFileStabilityChecker(
             new MutableClock(currentTime), properties, interruptingSleeper);
