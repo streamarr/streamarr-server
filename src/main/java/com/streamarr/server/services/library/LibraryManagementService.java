@@ -20,6 +20,7 @@ import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -122,7 +123,7 @@ public class LibraryManagementService {
           .filter(file -> !ignoredFileValidator.shouldIgnore(file))
           .forEach(file -> executor.submit(() -> processFile(library, file)));
 
-    } catch (IOException e) {
+    } catch (IOException | UncheckedIOException e) {
       var endTimeOfFailure = Instant.now();
 
       library.setStatus(LibraryStatus.UNHEALTHY);

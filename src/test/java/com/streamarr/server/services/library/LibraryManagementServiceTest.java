@@ -138,7 +138,8 @@ public class LibraryManagementServiceTest {
   @Test
   @DisplayName(
       "Should set library status to unhealthy when file walk throws UncheckedIOException during iteration")
-  void shouldSetLibraryStatusToUnhealthyWhenFileWalkThrowsUncheckedIOException() throws IOException {
+  void shouldSetLibraryStatusToUnhealthyWhenFileWalkThrowsUncheckedIOException()
+      throws IOException {
     var rootPath = createRootLibraryDirectory();
     createMovieFile(rootPath, "About Time", "About Time (2013).mkv");
 
