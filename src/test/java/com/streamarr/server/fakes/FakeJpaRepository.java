@@ -1,6 +1,8 @@
 package com.streamarr.server.fakes;
 
+import com.streamarr.server.domain.AuditFieldSetter;
 import com.streamarr.server.domain.BaseAuditableEntity;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -87,6 +89,11 @@ public class FakeJpaRepository<L extends BaseAuditableEntity> implements JpaRepo
     var id = entity.getId() != null ? entity.getId() : UUID.randomUUID();
 
     entity.setId(id);
+
+    if (entity.getCreatedOn() == null) {
+      AuditFieldSetter.setCreatedOn(entity, Instant.now());
+    }
+
     database.put(id, entity);
 
     return (S) database.get(id);

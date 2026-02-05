@@ -17,8 +17,6 @@ public class FakeMediaFileRepository extends FakeJpaRepository<MediaFile>
 
   @Override
   public List<MediaFile> findByMediaId(UUID mediaId) {
-    return database.values().stream()
-        .filter(file -> mediaId.equals(file.getMediaId()))
-        .toList();
+    return database.values().stream().filter(file -> mediaId.equals(file.getMediaId())).toList();
   }
 }

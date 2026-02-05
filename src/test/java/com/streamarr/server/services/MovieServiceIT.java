@@ -9,9 +9,11 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.graphql.cursor.InvalidCursorException;
 import com.streamarr.server.graphql.cursor.MediaFilter;
+import com.streamarr.server.graphql.cursor.OrderMoviesBy;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import java.util.List;
+import org.jooq.SortOrder;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -32,6 +34,7 @@ public class MovieServiceIT extends AbstractIntegrationTest {
 
   private Library savedLibraryA;
   private Library savedLibraryB;
+  private Library savedLibraryC;
 
   @BeforeAll
   public void setup() {
@@ -42,11 +45,15 @@ public class MovieServiceIT extends AbstractIntegrationTest {
     var libraryB = LibraryFixtureCreator.buildFakeLibrary();
     savedLibraryB = libraryRepository.saveAndFlush(libraryB);
 
-    var movieA1 = Movie.builder().title("Alpha").library(savedLibraryA).build();
-    var movieA2 = Movie.builder().title("Beta").library(savedLibraryA).build();
-    var movieB1 = Movie.builder().title("Gamma").library(savedLibraryB).build();
+    var libraryC = LibraryFixtureCreator.buildFakeLibrary();
+    savedLibraryC = libraryRepository.saveAndFlush(libraryC);
 
-    movieRepository.saveAllAndFlush(List.of(movieA1, movieA2, movieB1));
+    movieRepository.saveAndFlush(Movie.builder().title("Alpha").library(savedLibraryA).build());
+    movieRepository.saveAndFlush(Movie.builder().title("Beta").library(savedLibraryA).build());
+    movieRepository.saveAndFlush(Movie.builder().title("Gamma").library(savedLibraryB).build());
+
+    movieRepository.saveAndFlush(Movie.builder().title("First").library(savedLibraryC).build());
+    movieRepository.saveAndFlush(Movie.builder().title("Second").library(savedLibraryC).build());
   }
 
   private MediaFilter filterForLibrary(Library library) {
@@ -176,5 +183,46 @@ public class MovieServiceIT extends AbstractIntegrationTest {
     assertThatThrownBy(
             () -> movieService.getMoviesWithFilter(1, cursorFromLibraryA, 0, null, filterB))
         .isInstanceOf(InvalidCursorException.class);
+  }
+
+  @Test
+  @DisplayName("Should return movies in createdOn descending order when given ADDED DESC sort")
+  void shouldReturnMoviesInCreatedOnDescOrderWhenGivenAddedDescSort() {
+
+    var filter =
+        MediaFilter.builder()
+            .sortBy(OrderMoviesBy.ADDED)
+            .sortDirection(SortOrder.DESC)
+            .libraryId(savedLibraryC.getId())
+            .build();
+
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactly("Second", "First");
+  }
+
+  @Test
+  @DisplayName("Should paginate forward with ADDED sort order")
+  void shouldPaginateForwardWithAddedSortOrder() {
+
+    var filter =
+        MediaFilter.builder()
+            .sortBy(OrderMoviesBy.ADDED)
+            .sortDirection(SortOrder.ASC)
+            .libraryId(savedLibraryC.getId())
+            .build();
+
+    var firstPage = movieService.getMoviesWithFilter(1, null, 0, null, filter);
+
+    assertThat(firstPage.getEdges()).hasSize(1);
+    assertThat(firstPage.getEdges().get(0).getNode().getTitle()).isEqualTo("First");
+
+    var cursor = firstPage.getPageInfo().getEndCursor().getValue();
+    var secondPage = movieService.getMoviesWithFilter(1, cursor, 0, null, filter);
+
+    assertThat(secondPage.getEdges()).hasSize(1);
+    assertThat(secondPage.getEdges().get(0).getNode().getTitle()).isEqualTo("Second");
   }
 }

@@ -40,27 +40,25 @@ public class MovieRelationshipRepositoryIT extends AbstractIntegrationTest {
   void setup() {
     Library library = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
 
-    var actor = personRepository.save(
-        Person.builder().name("Leonardo DiCaprio").sourceId("actor-1").build());
-    var director = personRepository.save(
-        Person.builder().name("Christopher Nolan").sourceId("dir-1").build());
+    var actor =
+        personRepository.save(
+            Person.builder().name("Leonardo DiCaprio").sourceId("actor-1").build());
+    var director =
+        personRepository.save(Person.builder().name("Christopher Nolan").sourceId("dir-1").build());
 
-    savedMovie = movieRepository.saveAndFlush(
-        Movie.builder()
-            .title("Inception")
-            .library(library)
-            .studios(Set.of(
-                Company.builder().name("Warner Bros").sourceId("wb-1").build()))
-            .cast(List.of(actor))
-            .directors(List.of(director))
-            .genres(Set.of(
-                Genre.builder().name("Sci-Fi").sourceId("scifi-1").build()))
-            .build());
+    savedMovie =
+        movieRepository.saveAndFlush(
+            Movie.builder()
+                .title("Inception")
+                .library(library)
+                .studios(Set.of(Company.builder().name("Warner Bros").sourceId("wb-1").build()))
+                .cast(List.of(actor))
+                .directors(List.of(director))
+                .genres(Set.of(Genre.builder().name("Sci-Fi").sourceId("scifi-1").build()))
+                .build());
 
-    ratingRepository.save(
-        Rating.builder().movie(savedMovie).source("IMDb").value("8.8").build());
-    reviewRepository.save(
-        Review.builder().movie(savedMovie).author("Roger Ebert").build());
+    ratingRepository.save(Rating.builder().movie(savedMovie).source("IMDb").value("8.8").build());
+    reviewRepository.save(Review.builder().movie(savedMovie).author("Roger Ebert").build());
   }
 
   @Test
@@ -121,8 +119,8 @@ public class MovieRelationshipRepositoryIT extends AbstractIntegrationTest {
   @DisplayName("Should return empty collections when movie has no relationships")
   void shouldReturnEmptyWhenMovieHasNoRelationships() {
     Library library = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
-    var emptyMovie = movieRepository.saveAndFlush(
-        Movie.builder().title("Empty Movie").library(library).build());
+    var emptyMovie =
+        movieRepository.saveAndFlush(Movie.builder().title("Empty Movie").library(library).build());
 
     assertThat(companyRepository.findByMovieId(emptyMovie.getId())).isEmpty();
     assertThat(personRepository.findCastByMovieId(emptyMovie.getId())).isEmpty();
