@@ -22,6 +22,7 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.exceptions.InvalidLibraryPathException;
+import com.streamarr.server.exceptions.LibraryAccessDeniedException;
 import com.streamarr.server.exceptions.LibraryAlreadyExistsException;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
@@ -588,8 +589,8 @@ public class LibraryManagementServiceTest {
   }
 
   @Test
-  @DisplayName("Should throw InvalidLibraryPathException when path access denied by security manager")
-  void shouldThrowInvalidLibraryPathExceptionWhenPathAccessDenied() {
+  @DisplayName("Should throw LibraryAccessDeniedException when path access denied by security manager")
+  void shouldThrowLibraryAccessDeniedExceptionWhenPathAccessDenied() {
     var securityExceptionFs = new SecurityExceptionFileSystem(fileSystem);
 
     var serviceWithSecurityFs =
@@ -611,10 +612,10 @@ public class LibraryManagementServiceTest {
 
     var exception =
         assertThrows(
-            InvalidLibraryPathException.class,
+            LibraryAccessDeniedException.class,
             () -> serviceWithSecurityFs.addLibrary(library));
 
-    assertThat(exception.getMessage()).contains("access denied");
+    assertThat(exception.getMessage()).contains("/secure-path");
   }
 
   @Test
