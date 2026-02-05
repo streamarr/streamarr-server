@@ -49,7 +49,6 @@ import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolve
 import com.streamarr.server.services.metadata.movie.TMDBMovieProvider;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
-import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
 import java.io.IOException;
@@ -88,9 +87,6 @@ public class LibraryManagementServiceTest {
   private final MovieService movieService = new MovieService(fakeMovieRepository, null, null);
   private final FileSystem fileSystem = Jimfs.newFileSystem(Configuration.unix());
 
-  private final DirectoryWatchingService directoryWatchingService =
-      mock(DirectoryWatchingService.class);
-  private final StreamingService streamingService = mock(StreamingService.class);
   private final CapturingEventPublisher capturingEventPublisher = new CapturingEventPublisher();
 
   private final LibraryManagementService libraryManagementService =
@@ -104,8 +100,6 @@ public class LibraryManagementServiceTest {
           movieService,
           personService,
           genreService,
-          directoryWatchingService,
-          streamingService,
           capturingEventPublisher,
           new MutexFactoryProvider(),
           fileSystem);
@@ -177,8 +171,6 @@ public class LibraryManagementServiceTest {
             movieService,
             personService,
             genreService,
-            directoryWatchingService,
-            streamingService,
             capturingEventPublisher,
             new MutexFactoryProvider(),
             throwingFileSystem);
@@ -213,8 +205,6 @@ public class LibraryManagementServiceTest {
             movieService,
             personService,
             genreService,
-            directoryWatchingService,
-            streamingService,
             capturingEventPublisher,
             new MutexFactoryProvider(),
             throwingFileSystem);
@@ -308,8 +298,6 @@ public class LibraryManagementServiceTest {
             movieService,
             personService,
             genreService,
-            directoryWatchingService,
-            streamingService,
             capturingEventPublisher,
             new MutexFactoryProvider(),
             throwingFileSystem);
@@ -690,8 +678,6 @@ public class LibraryManagementServiceTest {
               movieService,
               personService,
               genreService,
-              directoryWatchingService,
-              streamingService,
               capturingEventPublisher,
               new MutexFactoryProvider(),
               securityExceptionFs);
