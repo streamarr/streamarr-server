@@ -8,7 +8,9 @@ public record StreamingProperties(
     int maxConcurrentTranscodes,
     int segmentDurationSeconds,
     int sessionTimeoutSeconds,
-    String segmentBasePath) {
+    String segmentBasePath,
+    String ffmpegPath,
+    String ffprobePath) {
 
   public StreamingProperties {
     if (maxConcurrentTranscodes <= 0) {

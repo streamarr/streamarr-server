@@ -32,7 +32,7 @@ class SessionReaperTest {
   void setUp() {
     executor = new FakeTranscodeExecutor();
     streamingService = new InMemoryStreamingService();
-    var properties = new StreamingProperties(8, 6, 60, null);
+    var properties = new StreamingProperties(8, 6, 60, null, null, null);
     reaper = new SessionReaper(streamingService, executor, properties);
   }
 

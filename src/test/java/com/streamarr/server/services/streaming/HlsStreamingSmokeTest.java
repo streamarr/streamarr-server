@@ -88,17 +88,17 @@ class HlsStreamingSmokeTest {
 
     var capabilityService =
         new TranscodeCapabilityService(
-            command -> new ProcessBuilder(command).redirectErrorStream(false).start());
+            "ffmpeg", command -> new ProcessBuilder(command).redirectErrorStream(false).start());
     capabilityService.detectCapabilities();
 
-    var commandBuilder = new FfmpegCommandBuilder();
+    var commandBuilder = new FfmpegCommandBuilder("ffmpeg");
     var processManager = new LocalFfmpegProcessManager();
     var transcodeExecutor =
         new LocalTranscodeExecutor(commandBuilder, processManager, segmentStore, capabilityService);
 
     var decisionService = new TranscodeDecisionService();
     var qualityLadderService = new QualityLadderService();
-    var properties = new StreamingProperties(3, 6, 60, null);
+    var properties = new StreamingProperties(3, 6, 60, null, null, null);
 
     mediaFileRepository = new FakeMediaFileRepository();
     streamingService =

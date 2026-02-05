@@ -30,22 +30,33 @@ public class StreamingConfig {
   }
 
   @Bean
-  public TranscodeCapabilityService transcodeCapabilityService() {
+  public FfmpegPaths ffmpegPaths(StreamingProperties properties) {
+    return FfmpegPaths.resolve(properties.ffmpegPath(), properties.ffprobePath());
+  }
+
+  @Bean
+  public FfmpegCommandBuilder ffmpegCommandBuilder(FfmpegPaths ffmpegPaths) {
+    return new FfmpegCommandBuilder(ffmpegPaths.ffmpeg());
+  }
+
+  @Bean
+  public TranscodeCapabilityService transcodeCapabilityService(FfmpegPaths ffmpegPaths) {
     var service =
         new TranscodeCapabilityService(
+            ffmpegPaths.ffmpeg(),
             command -> new ProcessBuilder(command).redirectErrorStream(false).start());
     service.detectCapabilities();
     return service;
   }
 
   @Bean
-  public FfprobeService ffprobeService(ObjectMapper objectMapper) {
+  public FfprobeService ffprobeService(ObjectMapper objectMapper, FfmpegPaths ffmpegPaths) {
     return new LocalFfprobeService(
         objectMapper,
         filepath -> {
           try {
             return new ProcessBuilder(
-                    "ffprobe",
+                    ffmpegPaths.ffprobe(),
                     "-v",
                     "quiet",
                     "-print_format",

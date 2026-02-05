@@ -45,7 +45,7 @@ class HlsStreamingServiceTest {
     transcodeExecutor = new FakeTranscodeExecutor();
     segmentStore = new FakeSegmentStore();
     ffprobeService = new FakeFfprobeService();
-    var properties = new StreamingProperties(3, 6, 60, null);
+    var properties = new StreamingProperties(3, 6, 60, null, null, null);
     var decisionService = new TranscodeDecisionService();
 
     var qualityLadderService = new QualityLadderService();
@@ -440,7 +440,7 @@ class HlsStreamingServiceTest {
             ffprobeService,
             new TranscodeDecisionService(),
             new QualityLadderService(),
-            new StreamingProperties(3, 6, 60, null));
+            new StreamingProperties(3, 6, 60, null, null, null));
     serviceRef.set(spyService);
 
     var file = seedMediaFile();
@@ -487,7 +487,7 @@ class HlsStreamingServiceTest {
   @Test
   @DisplayName("Should truncate variants when exceeding available slots")
   void shouldTruncateVariantsWhenExceedingAvailableSlots() {
-    var properties = new StreamingProperties(2, 6, 60, null);
+    var properties = new StreamingProperties(2, 6, 60, null, null, null);
     var limitedService =
         new HlsStreamingService(
             mediaFileRepository,

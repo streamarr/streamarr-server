@@ -31,7 +31,7 @@ class HlsPlaylistServiceTest {
 
   @BeforeEach
   void setUp() {
-    properties = new StreamingProperties(8, 6, 60, null);
+    properties = new StreamingProperties(8, 6, 60, null, null, null);
     service = new HlsPlaylistService(properties);
   }
 

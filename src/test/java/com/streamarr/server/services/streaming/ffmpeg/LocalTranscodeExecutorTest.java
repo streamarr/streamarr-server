@@ -32,7 +32,7 @@ class LocalTranscodeExecutorTest {
   void setUp() {
     processManager = new FakeFfmpegProcessManager();
     segmentStore = new LocalSegmentStore(tempDir);
-    var commandBuilder = new FfmpegCommandBuilder();
+    var commandBuilder = new FfmpegCommandBuilder("ffmpeg");
 
     var hwCapability =
         HardwareEncodingCapability.builder()
@@ -90,7 +90,7 @@ class LocalTranscodeExecutorTest {
 
     executor =
         new LocalTranscodeExecutor(
-            new FfmpegCommandBuilder(), processManager, segmentStore, capabilityService);
+            new FfmpegCommandBuilder("ffmpeg"), processManager, segmentStore, capabilityService);
 
     var request = createRequest(TranscodeMode.FULL_TRANSCODE, "av1");
 
@@ -143,7 +143,7 @@ class LocalTranscodeExecutorTest {
 
     executor =
         new LocalTranscodeExecutor(
-            new FfmpegCommandBuilder(), processManager, segmentStore, capabilityService);
+            new FfmpegCommandBuilder("ffmpeg"), processManager, segmentStore, capabilityService);
 
     assertThat(executor.isHealthy()).isFalse();
   }
@@ -174,7 +174,7 @@ class LocalTranscodeExecutorTest {
       boolean available, HardwareEncodingCapability hwCapability) {
     var service =
         new TranscodeCapabilityService(
-            command -> new FakeProcess("ffmpeg version 7.0", available ? 0 : 1));
+            "ffmpeg", command -> new FakeProcess("ffmpeg version 7.0", available ? 0 : 1));
     if (available) {
       // Inject capability state via reflection-free approach: detect then override
       // We use a factory that returns the right result
@@ -193,6 +193,7 @@ class LocalTranscodeExecutorTest {
 
       var testService =
           new TranscodeCapabilityService(
+              "ffmpeg",
               command -> {
                 var cmdStr = String.join(" ", command);
                 if (cmdStr.contains("-version")) {
