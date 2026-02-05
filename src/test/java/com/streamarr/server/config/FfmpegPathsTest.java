@@ -2,12 +2,10 @@ package com.streamarr.server.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.io.IOException;
 import java.nio.file.Path;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
 @Tag("UnitTest")
 @DisplayName("FFmpeg Paths Tests")
@@ -30,31 +28,20 @@ class FfmpegPathsTest {
   }
 
   @Test
-  @DisplayName("Should resolve from search paths when no override provided")
-  void shouldResolveFromSearchPathsWhenNoOverrideProvided(@TempDir Path tempDir)
-      throws IOException {
+  @DisplayName("Should resolve absolute paths when no override provided")
+  void shouldResolveAbsolutePathsWhenNoOverrideProvided() {
     var paths = FfmpegPaths.resolve(null, null);
 
-    assertThat(paths.ffmpeg()).isNotBlank();
-    assertThat(paths.ffprobe()).isNotBlank();
+    assertThat(Path.of(paths.ffmpeg()).isAbsolute()).isTrue();
+    assertThat(Path.of(paths.ffprobe()).isAbsolute()).isTrue();
   }
 
   @Test
-  @DisplayName("Should ignore blank override and resolve from search paths")
-  void shouldIgnoreBlankOverrideAndResolveFromSearchPaths() {
-    var paths = FfmpegPaths.resolve("  ", "  ");
+  @DisplayName("Should treat blank override as absent")
+  void shouldTreatBlankOverrideAsAbsent() {
+    var withNull = FfmpegPaths.resolve(null, null);
+    var withBlank = FfmpegPaths.resolve("  ", "  ");
 
-    assertThat(paths.ffmpeg()).isNotBlank();
-    assertThat(paths.ffprobe()).isNotBlank();
-    assertThat(paths.ffmpeg().isBlank()).isFalse();
-  }
-
-  @Test
-  @DisplayName("Should fall back to first candidate when no executable found")
-  void shouldFallBackToFirstCandidateWhenNoExecutableFound() {
-    var paths = FfmpegPaths.resolve(null, null);
-
-    assertThat(paths.ffmpeg()).isNotNull();
-    assertThat(paths.ffprobe()).isNotNull();
+    assertThat(withBlank).isEqualTo(withNull);
   }
 }
