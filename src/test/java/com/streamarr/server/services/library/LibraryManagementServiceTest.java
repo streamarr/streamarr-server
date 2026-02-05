@@ -28,6 +28,7 @@ import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
+import com.streamarr.server.fakes.SecurityExceptionFileSystem;
 import com.streamarr.server.fakes.ThrowingFileSystemWrapper;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
@@ -584,6 +585,36 @@ public class LibraryManagementServiceTest {
                   .as("Library status should be HEALTHY after scan")
                   .isEqualTo(LibraryStatus.HEALTHY);
             });
+  }
+
+  @Test
+  @DisplayName("Should throw InvalidLibraryPathException when path access denied by security manager")
+  void shouldThrowInvalidLibraryPathExceptionWhenPathAccessDenied() {
+    var securityExceptionFs = new SecurityExceptionFileSystem(fileSystem);
+
+    var serviceWithSecurityFs =
+        new LibraryManagementService(
+            new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
+            new VideoExtensionValidator(),
+            defaultVideoFileMetadataParser,
+            movieMetadataProviderResolver,
+            fakeLibraryRepository,
+            fakeMediaFileRepository,
+            movieService,
+            personService,
+            genreService,
+            orphanedMediaFileCleanupService,
+            mutexFactoryProvider,
+            securityExceptionFs);
+
+    var library = LibraryFixtureCreator.buildUnsavedLibrary("Test Library", "/secure-path");
+
+    var exception =
+        assertThrows(
+            InvalidLibraryPathException.class,
+            () -> serviceWithSecurityFs.addLibrary(library));
+
+    assertThat(exception.getMessage()).contains("access denied");
   }
 
   private Path createRootLibraryDirectory() throws IOException {
