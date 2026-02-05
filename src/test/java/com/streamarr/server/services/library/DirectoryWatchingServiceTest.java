@@ -218,16 +218,6 @@ class DirectoryWatchingServiceTest {
   }
 
   @Test
-  @DisplayName("Should resolve correct library from path")
-  void shouldResolveCorrectLibraryFromPath() {
-    var path = fileSystem.getPath("/media/movies/subdir/file.mkv");
-
-    var result = watchingService.resolveLibrary(path);
-
-    assertThat(result).isPresent().contains(libraryId);
-  }
-
-  @Test
   @DisplayName("Should ignore file when no library matches path")
   void shouldIgnoreFileWhenNoLibraryMatchesPath() throws Exception {
     var otherDir = fileSystem.getPath("/other");
@@ -252,7 +242,7 @@ class DirectoryWatchingServiceTest {
 
   @Test
   @DisplayName("Should resolve to longest match when library paths overlap")
-  void shouldResolveToLongestMatchWhenLibraryPathsOverlap() throws IOException {
+  void shouldResolveToLongestMatchWhenLibraryPathsOverlap() throws Exception {
     var specialLibrary =
         Library.builder()
             .name("Special Movies")
@@ -266,22 +256,45 @@ class DirectoryWatchingServiceTest {
     var savedSpecial = libraryRepository.save(specialLibrary);
     Files.createDirectories(fileSystem.getPath("/media/movies/special"));
 
-    var path = fileSystem.getPath("/media/movies/special/Movie.mkv");
+    var path = createFileAt(fileSystem.getPath("/media/movies/special"), "Movie (2024).mkv");
+    var latch = new CountDownLatch(1);
 
-    var result = watchingService.resolveLibrary(path);
+    stabilityCheckerRef.set(
+        p -> {
+          latch.countDown();
+          return true;
+        });
 
-    assertThat(result).isPresent().contains(savedSpecial.getId());
+    watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+
+    assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
+    Thread.sleep(100);
+
+    var mediaFile = mediaFileRepository.findFirstByFilepath(path.toAbsolutePath().toString());
+    assertThat(mediaFile).isPresent();
+    assertThat(mediaFile.get().getLibraryId()).isEqualTo(savedSpecial.getId());
   }
 
   @Test
   @DisplayName("Should not match library when path shares string prefix but not path prefix")
-  void shouldNotMatchLibraryWhenPathSharesStringPrefixButNotPathPrefix() throws IOException {
+  void shouldNotMatchLibraryWhenPathSharesStringPrefixButNotPathPrefix() throws Exception {
     Files.createDirectories(fileSystem.getPath("/media/moviesfoo"));
-    var path = fileSystem.getPath("/media/moviesfoo/file.mkv");
+    var path = createFileAt(fileSystem.getPath("/media/moviesfoo"), "Movie (2024).mkv");
+    var latch = new CountDownLatch(1);
 
-    var result = watchingService.resolveLibrary(path);
+    stabilityCheckerRef.set(
+        p -> {
+          latch.countDown();
+          return true;
+        });
 
-    assertThat(result).isEmpty();
+    watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+
+    assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
+    Thread.sleep(100);
+
+    var mediaFile = mediaFileRepository.findFirstByFilepath(path.toAbsolutePath().toString());
+    assertThat(mediaFile).isEmpty();
   }
 
   @Test

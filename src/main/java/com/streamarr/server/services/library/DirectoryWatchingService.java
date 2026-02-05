@@ -134,7 +134,7 @@ public class DirectoryWatchingService implements InitializingBean {
     log.info("Watcher event type: DELETE -- filepath: {}", path);
   }
 
-  Optional<UUID> resolveLibrary(Path path) {
+  private Optional<UUID> resolveLibrary(Path path) {
     var absolutePath = path.toAbsolutePath();
     var fs = absolutePath.getFileSystem();
 
