@@ -108,11 +108,15 @@ public class LibraryManagementService {
 
   private void validatePathExistsAndIsDirectory(String filepath) {
     var path = fileSystem.getPath(filepath);
-    if (!Files.exists(path)) {
-      throw new InvalidLibraryPathException(filepath, "path does not exist");
-    }
-    if (!Files.isDirectory(path)) {
-      throw new InvalidLibraryPathException(filepath, "path is not a directory");
+    try {
+      if (!Files.exists(path)) {
+        throw new InvalidLibraryPathException(filepath, "path does not exist");
+      }
+      if (!Files.isDirectory(path)) {
+        throw new InvalidLibraryPathException(filepath, "path is not a directory");
+      }
+    } catch (SecurityException e) {
+      throw new InvalidLibraryPathException(filepath, "access denied");
     }
   }
 
