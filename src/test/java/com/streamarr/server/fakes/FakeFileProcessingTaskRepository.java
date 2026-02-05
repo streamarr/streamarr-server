@@ -87,7 +87,11 @@ public class FakeFileProcessingTaskRepository implements FileProcessingTaskRepos
 
   @Override
   public int extendLeases(String ownerInstanceId, Instant newLeaseExpiresAt) {
-    var tasks = findByOwnerInstanceId(ownerInstanceId);
+    var tasks =
+        database.values().stream()
+            .filter(task -> ownerInstanceId.equals(task.getOwnerInstanceId()))
+            .filter(task -> ACTIVE_STATUSES.contains(task.getStatus()))
+            .toList();
     tasks.forEach(task -> task.setLeaseExpiresAt(newLeaseExpiresAt));
     return tasks.size();
   }

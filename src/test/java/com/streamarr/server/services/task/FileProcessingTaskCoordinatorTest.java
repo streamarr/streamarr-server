@@ -182,4 +182,38 @@ class FileProcessingTaskCoordinatorTest {
     var updated = repository.findById(claimed.getId()).orElseThrow();
     assertThat(updated.getLeaseExpiresAt()).isAfter(originalLease);
   }
+
+  @Test
+  @DisplayName("Should not extend leases for completed tasks even if owner is set")
+  void shouldNotExtendLeasesForCompletedTasksEvenIfOwnerIsSet() {
+    // Manually create a COMPLETED task with ownerInstanceId set (edge case)
+    // This tests the status filter, not just the owner filter
+    var completedTask =
+        FileProcessingTask.builder()
+            .filepath("/media/movies/Completed (2024).mkv")
+            .libraryId(UUID.randomUUID())
+            .status(FileProcessingTaskStatus.COMPLETED)
+            .ownerInstanceId(coordinator.getInstanceId())
+            .leaseExpiresAt(NOW.plusSeconds(30))
+            .createdOn(NOW)
+            .completedOn(NOW)
+            .build();
+    repository.save(completedTask);
+
+    var originalLease = completedTask.getLeaseExpiresAt();
+
+    var newClock = Clock.fixed(NOW.plusSeconds(60), ZoneId.of("UTC"));
+    var newCoordinator =
+        new FileProcessingTaskCoordinator(repository, newClock, LEASE_DURATION) {
+          @Override
+          public String getInstanceId() {
+            return coordinator.getInstanceId();
+          }
+        };
+
+    newCoordinator.extendLeases();
+
+    var afterExtend = repository.findById(completedTask.getId()).orElseThrow();
+    assertThat(afterExtend.getLeaseExpiresAt()).isEqualTo(originalLease);
+  }
 }
