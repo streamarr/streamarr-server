@@ -45,22 +45,31 @@ public class IgnoredFileValidator {
       return true;
     }
 
+    if (hasIgnoredPrefix(path, filename)) {
+      return true;
+    }
+
+    var dotIndex = filename.lastIndexOf('.');
+    if (dotIndex < 0) {
+      return false;
+    }
+
+    var extension = filename.substring(dotIndex + 1).toLowerCase();
+    if (ignoredExtensions.contains(extension)) {
+      log.debug("Ignoring file with blocked extension '{}': {}", extension, path);
+      return true;
+    }
+
+    return false;
+  }
+
+  private boolean hasIgnoredPrefix(Path path, String filename) {
     for (var prefix : ignoredPrefixes) {
       if (filename.startsWith(prefix)) {
         log.debug("Ignoring file with blocked prefix '{}': {}", prefix, path);
         return true;
       }
     }
-
-    var dotIndex = filename.lastIndexOf('.');
-    if (dotIndex >= 0) {
-      var extension = filename.substring(dotIndex + 1).toLowerCase();
-      if (ignoredExtensions.contains(extension)) {
-        log.debug("Ignoring file with blocked extension '{}': {}", extension, path);
-        return true;
-      }
-    }
-
     return false;
   }
 
