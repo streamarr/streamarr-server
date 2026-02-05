@@ -29,6 +29,7 @@ public class OrphanedMediaFileCleanupService {
   private final MovieService movieService;
   private final FileSystem fileSystem;
 
+  @Transactional
   @EventListener
   public void onScanCompleted(ScanCompletedEvent event) {
     try {
@@ -42,7 +43,6 @@ public class OrphanedMediaFileCleanupService {
     }
   }
 
-  @Transactional
   public void cleanupOrphanedFiles(Library library) {
     var mediaFiles = mediaFileRepository.findByLibraryId(library.getId());
 
