@@ -92,7 +92,10 @@ class FileEventProcessor {
     try {
       scheduleStabilityCheck(path, optionalLibraryId.get());
     } catch (RejectedExecutionException e) {
-      log.warn("Executor shut down, ignoring event for: {}", path);
+      log.warn(
+          "Executor shut down while scheduling stability check for: {}. "
+              + "Any created task will be reclaimed by distributed lease recovery.",
+          path);
     }
   }
 
