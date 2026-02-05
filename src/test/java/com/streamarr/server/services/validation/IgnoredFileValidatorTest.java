@@ -18,79 +18,79 @@ class IgnoredFileValidatorTest {
       new IgnoredFileValidator(new LibraryScanProperties(null, null, null));
 
   @Test
-  @DisplayName("Should ignore .DS_Store file")
+  @DisplayName("Should ignore when given .DS_Store file")
   void shouldIgnoreWhenGivenDsStoreFile() {
     assertTrue(validator.shouldIgnore(Path.of(".DS_Store")));
   }
 
   @Test
-  @DisplayName("Should ignore Thumbs.db file")
+  @DisplayName("Should ignore when given Thumbs.db file")
   void shouldIgnoreWhenGivenThumbsDbFile() {
     assertTrue(validator.shouldIgnore(Path.of("Thumbs.db")));
   }
 
   @Test
-  @DisplayName("Should ignore desktop.ini file")
+  @DisplayName("Should ignore when given desktop.ini file")
   void shouldIgnoreWhenGivenDesktopIniFile() {
     assertTrue(validator.shouldIgnore(Path.of("desktop.ini")));
   }
 
   @Test
-  @DisplayName("Should ignore macOS resource fork file with ._ prefix")
+  @DisplayName("Should ignore when given macOS resource fork file")
   void shouldIgnoreWhenGivenMacResourceForkFile() {
     assertTrue(validator.shouldIgnore(Path.of("._movie.mkv")));
   }
 
   @Test
-  @DisplayName("Should ignore .nfo metadata file")
+  @DisplayName("Should ignore when given .nfo metadata file")
   void shouldIgnoreWhenGivenNfoExtension() {
     assertTrue(validator.shouldIgnore(Path.of("movie.nfo")));
   }
 
   @Test
-  @DisplayName("Should ignore .jpg image file")
+  @DisplayName("Should ignore when given .jpg image file")
   void shouldIgnoreWhenGivenImageExtension() {
     assertTrue(validator.shouldIgnore(Path.of("poster.jpg")));
   }
 
   @Test
-  @DisplayName("Should ignore .tmp temporary file")
+  @DisplayName("Should ignore when given .tmp temporary file")
   void shouldIgnoreWhenGivenTmpExtension() {
     assertTrue(validator.shouldIgnore(Path.of("download.tmp")));
   }
 
   @Test
-  @DisplayName("Should ignore .part partial download file")
+  @DisplayName("Should ignore when given .part partial download file")
   void shouldIgnoreWhenGivenPartExtension() {
     assertTrue(validator.shouldIgnore(Path.of("movie.mkv.part")));
   }
 
   @Test
-  @DisplayName("Should not ignore .mkv video file")
+  @DisplayName("Should not ignore when given .mkv video file")
   void shouldNotIgnoreWhenGivenMkvFile() {
     assertFalse(validator.shouldIgnore(Path.of("About Time (2013).mkv")));
   }
 
   @Test
-  @DisplayName("Should not ignore .mp4 video file")
+  @DisplayName("Should not ignore when given .mp4 video file")
   void shouldNotIgnoreWhenGivenMp4File() {
     assertFalse(validator.shouldIgnore(Path.of("movie.mp4")));
   }
 
   @Test
-  @DisplayName("Should ignore file extension case-insensitively")
-  void shouldIgnoreExtensionCaseInsensitively() {
+  @DisplayName("Should ignore when given uppercase extension")
+  void shouldIgnoreWhenGivenUppercaseExtension() {
     assertTrue(validator.shouldIgnore(Path.of("poster.JPG")));
   }
 
   @Test
-  @DisplayName("Should ignore filename case-insensitively")
-  void shouldIgnoreFilenameCaseInsensitively() {
+  @DisplayName("Should ignore when given uppercase filename")
+  void shouldIgnoreWhenGivenUppercaseFilename() {
     assertTrue(validator.shouldIgnore(Path.of("THUMBS.DB")));
   }
 
   @Test
-  @DisplayName("Should not ignore file with no extension")
+  @DisplayName("Should not ignore when given file with no extension")
   void shouldNotIgnoreWhenGivenFileWithNoExtension() {
     assertFalse(validator.shouldIgnore(Path.of("README")));
   }
