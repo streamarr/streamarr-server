@@ -20,7 +20,7 @@ import org.hibernate.type.SqlTypes;
 @Entity
 @Getter
 @Setter
-@SuperBuilder
+@SuperBuilder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
 public class Library extends BaseAuditableEntity<Library> {
