@@ -12,6 +12,7 @@ import com.streamarr.server.jooq.generated.enums.LibraryBackend;
 import com.streamarr.server.jooq.generated.enums.LibraryStatus;
 import com.streamarr.server.jooq.generated.enums.MediaType;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable.BaseCollectablePath;
+import com.streamarr.server.jooq.generated.tables.FileProcessingTask.FileProcessingTaskPath;
 import com.streamarr.server.jooq.generated.tables.MediaFile.MediaFilePath;
 import com.streamarr.server.jooq.generated.tables.records.LibraryRecord;
 
@@ -218,6 +219,19 @@ public class Library extends TableImpl<LibraryRecord> {
             _baseCollectable = new BaseCollectablePath(this, null, Keys.BASE_COLLECTABLE__FK_LIBRARY.getInverseKey());
 
         return _baseCollectable;
+    }
+
+    private transient FileProcessingTaskPath _fileProcessingTask;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.file_processing_task</code> table
+     */
+    public FileProcessingTaskPath fileProcessingTask() {
+        if (_fileProcessingTask == null)
+            _fileProcessingTask = new FileProcessingTaskPath(this, null, Keys.FILE_PROCESSING_TASK__FK_LIBRARY.getInverseKey());
+
+        return _fileProcessingTask;
     }
 
     private transient MediaFilePath _mediaFile;
