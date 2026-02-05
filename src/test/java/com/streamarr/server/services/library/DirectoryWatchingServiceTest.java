@@ -512,6 +512,34 @@ class DirectoryWatchingServiceTest {
     assertThat(mediaFile).isEmpty();
   }
 
+  @Test
+  @DisplayName("Should interrupt in-flight stability checks when stopping")
+  void shouldInterruptInFlightStabilityChecksWhenStopping() throws Exception {
+    var path = createFile("/media/movies/Movie (2024).mkv");
+    var enteredLatch = new CountDownLatch(1);
+    var interruptedLatch = new CountDownLatch(1);
+
+    stabilityCheckerRef.set(
+        p -> {
+          enteredLatch.countDown();
+          try {
+            new CountDownLatch(1).await(5, TimeUnit.SECONDS);
+          } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            interruptedLatch.countDown();
+            return false;
+          }
+          return false;
+        });
+
+    watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+    assertThat(enteredLatch.await(5, TimeUnit.SECONDS)).isTrue();
+
+    watchingService.stopWatching();
+
+    assertThat(interruptedLatch.await(2, TimeUnit.SECONDS)).isTrue();
+  }
+
   private Path createFile(String pathStr) throws IOException {
     var path = fileSystem.getPath(pathStr);
     Files.createDirectories(path.getParent());

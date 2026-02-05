@@ -62,7 +62,7 @@ public class DirectoryWatchingService implements InitializingBean {
       return;
     }
 
-    executor.close();
+    executor.shutdownNow();
     this.executor = Executors.newVirtualThreadPerTaskExecutor();
     this.cachedLibraries = List.copyOf(libraryRepository.findAll());
 
@@ -191,7 +191,7 @@ public class DirectoryWatchingService implements InitializingBean {
     if (watcher != null) {
       watcher.close();
     }
-    executor.close();
+    executor.shutdownNow();
     inFlightChecks.clear();
   }
 
