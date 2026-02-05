@@ -165,7 +165,8 @@ public class LibraryManagementService {
 
     switch (library.getType()) {
       case MOVIE -> processMovieFileType(library, mediaFile);
-      case SERIES -> throw new UnsupportedOperationException("Not implemented yet");
+      case SERIES -> throw new UnsupportedOperationException("Series not yet supported. See #40");
+      default -> throw new IllegalStateException("Unsupported media type: " + library.getType());
     }
   }
 
