@@ -4,10 +4,11 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.exceptions.InvalidLibraryPathException;
-import com.streamarr.server.exceptions.LibraryPathPermissionDeniedException;
 import com.streamarr.server.exceptions.LibraryAlreadyExistsException;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
+import com.streamarr.server.exceptions.LibraryPathPermissionDeniedException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
@@ -20,6 +21,7 @@ import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
+import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
 import java.io.IOException;
@@ -29,13 +31,18 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Slf4j
 @Service
@@ -51,6 +58,8 @@ public class LibraryManagementService {
   private final PersonService personService;
   private final GenreService genreService;
   private final OrphanedMediaFileCleanupService orphanedMediaFileCleanupService;
+  private final DirectoryWatchingService directoryWatchingService;
+  private final StreamingService streamingService;
   private final FileSystem fileSystem;
   private final MutexFactory<String> mutexFactory;
 
@@ -65,6 +74,8 @@ public class LibraryManagementService {
       PersonService personService,
       GenreService genreService,
       OrphanedMediaFileCleanupService orphanedMediaFileCleanupService,
+      @Lazy DirectoryWatchingService directoryWatchingService,
+      StreamingService streamingService,
       MutexFactoryProvider mutexFactoryProvider,
       FileSystem fileSystem) {
     this.ignoredFileValidator = ignoredFileValidator;
@@ -77,6 +88,8 @@ public class LibraryManagementService {
     this.personService = personService;
     this.genreService = genreService;
     this.orphanedMediaFileCleanupService = orphanedMediaFileCleanupService;
+    this.directoryWatchingService = directoryWatchingService;
+    this.streamingService = streamingService;
     this.fileSystem = fileSystem;
 
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
@@ -132,8 +145,73 @@ public class LibraryManagementService {
         });
   }
 
-  // TODO #39: implement removeLibrary mutation
-  public void removeLibrary() {}
+  @Transactional
+  public void removeLibrary(UUID libraryId) {
+    var libraryMutex = mutexFactory.getMutex(libraryId.toString());
+    libraryMutex.lock();
+    try {
+      var library = findLibraryOrThrow(libraryId);
+      rejectIfScanning(library);
+
+      var mediaFiles = mediaFileRepository.findByLibraryId(libraryId);
+      var mediaFileIds = extractMediaFileIds(mediaFiles);
+
+      deleteLibraryContent(libraryId, mediaFiles);
+      libraryRepository.delete(library);
+
+      cleanupExternalResources(library, mediaFileIds);
+    } finally {
+      libraryMutex.unlock();
+    }
+  }
+
+  private Library findLibraryOrThrow(UUID libraryId) {
+    return libraryRepository
+        .findById(libraryId)
+        .orElseThrow(() -> new LibraryNotFoundException(libraryId));
+  }
+
+  private void rejectIfScanning(Library library) {
+    if (library.getStatus() == LibraryStatus.SCANNING) {
+      throw new LibraryScanInProgressException(library.getId());
+    }
+  }
+
+  private Set<UUID> extractMediaFileIds(List<MediaFile> mediaFiles) {
+    return mediaFiles.stream().map(MediaFile::getId).collect(Collectors.toSet());
+  }
+
+  private void deleteLibraryContent(UUID libraryId, List<MediaFile> mediaFiles) {
+    movieService.deleteByLibraryId(libraryId);
+    mediaFileRepository.deleteAll(mediaFiles);
+  }
+
+  private void cleanupExternalResources(Library library, Set<UUID> mediaFileIds) {
+    stopFilesystemWatcher(library);
+    terminateStreamingSessionsForMediaFiles(mediaFileIds);
+  }
+
+  private void stopFilesystemWatcher(Library library) {
+    try {
+      directoryWatchingService.removeDirectory(Path.of(library.getFilepath()));
+    } catch (IOException | SecurityException e) {
+      log.warn("Failed to stop watcher for library {}: {}", library.getId(), e.getMessage());
+    }
+  }
+
+  private void terminateStreamingSessionsForMediaFiles(Set<UUID> mediaFileIds) {
+    try {
+      if (mediaFileIds.isEmpty()) {
+        return;
+      }
+      streamingService.getAllSessions().stream()
+          .filter(session -> mediaFileIds.contains(session.getMediaFileId()))
+          .map(StreamSession::getSessionId)
+          .forEach(streamingService::destroySession);
+    } catch (Exception e) {
+      log.warn("Failed to terminate streaming sessions: {}", e.getMessage());
+    }
+  }
 
   public void processDiscoveredFile(UUID libraryId, Path path) {
     var library =

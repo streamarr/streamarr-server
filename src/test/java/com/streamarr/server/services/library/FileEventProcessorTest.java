@@ -24,6 +24,7 @@ import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.metadata.movie.TMDBMovieProvider;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
+import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.task.FileProcessingTaskCoordinator;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
@@ -119,6 +120,9 @@ class FileEventProcessorTest {
     var orphanedMediaFileCleanupService =
         new OrphanedMediaFileCleanupService(mediaFileRepository, movieService, fileSystem);
 
+    var directoryWatchingService = mock(DirectoryWatchingService.class);
+    var streamingService = mock(StreamingService.class);
+
     var libraryManagementService =
         new LibraryManagementService(
             ignoredFileValidator,
@@ -131,6 +135,8 @@ class FileEventProcessorTest {
             personService,
             genreService,
             orphanedMediaFileCleanupService,
+            directoryWatchingService,
+            streamingService,
             new MutexFactoryProvider(),
             fileSystem);
 
@@ -600,7 +606,8 @@ class FileEventProcessorTest {
     eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
     assertThat(secondCheckCompleted.await(5, TimeUnit.SECONDS))
-        .as("Second stability check should complete, proving system recovered from cancelled first check")
+        .as(
+            "Second stability check should complete, proving system recovered from cancelled first check")
         .isTrue();
   }
 

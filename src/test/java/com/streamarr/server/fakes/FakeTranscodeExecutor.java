@@ -69,4 +69,10 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   public void markDead(UUID sessionId, String variantLabel) {
     running.remove(new ProcessKey(sessionId, variantLabel));
   }
+
+  public void reset() {
+    running.clear();
+    started.clear();
+    stopped.clear();
+  }
 }
