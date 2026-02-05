@@ -7,7 +7,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.Setter;
@@ -25,7 +24,6 @@ public class StreamSession {
   private final TranscodeDecision transcodeDecision;
   private final StreamingOptions options;
   private final Instant createdAt;
-  private final AtomicInteger activeRequestCount;
 
   @Builder.Default
   private final Map<String, TranscodeHandle> variantHandles = new ConcurrentHashMap<>();
