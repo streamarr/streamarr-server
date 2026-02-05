@@ -20,6 +20,7 @@ import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -122,7 +123,7 @@ public class LibraryManagementService {
           .filter(file -> !ignoredFileValidator.shouldIgnore(file))
           .forEach(file -> executor.submit(() -> processFile(library, file)));
 
-    } catch (IOException e) {
+    } catch (IOException | UncheckedIOException | SecurityException e) {
       var endTimeOfFailure = Instant.now();
 
       library.setStatus(LibraryStatus.UNHEALTHY);
@@ -164,7 +165,8 @@ public class LibraryManagementService {
 
     switch (library.getType()) {
       case MOVIE -> processMovieFileType(library, mediaFile);
-      case SERIES -> throw new UnsupportedOperationException("Not implemented yet");
+      case SERIES -> throw new UnsupportedOperationException("Series not yet supported. See #40");
+      default -> throw new IllegalStateException("Unsupported media type: " + library.getType());
     }
   }
 
