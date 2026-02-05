@@ -46,6 +46,7 @@ public class LibraryManagementService {
   private final MovieService movieService;
   private final PersonService personService;
   private final GenreService genreService;
+  private final OrphanedMediaFileCleanupService orphanedMediaFileCleanupService;
   private final FileSystem fileSystem;
   private final MutexFactory<String> mutexFactory;
 
@@ -59,6 +60,7 @@ public class LibraryManagementService {
       MovieService movieService,
       PersonService personService,
       GenreService genreService,
+      OrphanedMediaFileCleanupService orphanedMediaFileCleanupService,
       MutexFactoryProvider mutexFactoryProvider,
       FileSystem fileSystem) {
     this.ignoredFileValidator = ignoredFileValidator;
@@ -70,6 +72,7 @@ public class LibraryManagementService {
     this.movieService = movieService;
     this.personService = personService;
     this.genreService = genreService;
+    this.orphanedMediaFileCleanupService = orphanedMediaFileCleanupService;
     this.fileSystem = fileSystem;
 
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
@@ -122,6 +125,8 @@ public class LibraryManagementService {
       return;
     }
 
+    orphanedMediaFileCleanupService.cleanupOrphanedFiles(library);
+
     var endTime = Instant.now();
     var elapsedTime = Duration.between(startTime, endTime).getSeconds();
 
@@ -136,7 +141,9 @@ public class LibraryManagementService {
 
     if (!hasSupportedExtension(path)) {
       log.warn(
-          "Unsupported file extension: {} for filepath {}.", getExtension(path), path.toAbsolutePath());
+          "Unsupported file extension: {} for filepath {}.",
+          getExtension(path),
+          path.toAbsolutePath());
       return;
     }
 
@@ -301,7 +308,4 @@ public class LibraryManagementService {
     mediaFile.setStatus(MediaFileStatus.MATCHED);
     mediaFileRepository.save(mediaFile);
   }
-
-  // TODO #34: detect and clean up orphaned MediaFiles
-  private void deleteMissingMediaFiles() {}
 }
