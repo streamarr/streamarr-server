@@ -7,6 +7,7 @@ package com.streamarr.server.jooq.generated;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable;
 import com.streamarr.server.jooq.generated.tables.Company;
 import com.streamarr.server.jooq.generated.tables.ExternalIdentifier;
+import com.streamarr.server.jooq.generated.tables.FileProcessingTask;
 import com.streamarr.server.jooq.generated.tables.Genre;
 import com.streamarr.server.jooq.generated.tables.Library;
 import com.streamarr.server.jooq.generated.tables.MediaFile;
@@ -57,6 +58,11 @@ public class Public extends SchemaImpl {
      * The table <code>public.external_identifier</code>.
      */
     public final ExternalIdentifier EXTERNAL_IDENTIFIER = ExternalIdentifier.EXTERNAL_IDENTIFIER;
+
+    /**
+     * The table <code>public.file_processing_task</code>.
+     */
+    public final FileProcessingTask FILE_PROCESSING_TASK = FileProcessingTask.FILE_PROCESSING_TASK;
 
     /**
      * The table <code>public.genre</code>.
@@ -142,6 +148,7 @@ public class Public extends SchemaImpl {
             BaseCollectable.BASE_COLLECTABLE,
             Company.COMPANY,
             ExternalIdentifier.EXTERNAL_IDENTIFIER,
+            FileProcessingTask.FILE_PROCESSING_TASK,
             Genre.GENRE,
             Library.LIBRARY,
             MediaFile.MEDIA_FILE,
