@@ -23,6 +23,7 @@ import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
+import com.streamarr.server.fakes.ThrowingFileSystemWrapper;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
@@ -128,6 +129,37 @@ public class LibraryManagementServiceTest {
       "Should set library status to unhealthy when the library filepath cannot be accessed")
   void shouldSetLibraryStatusToUnhealthyWhenLibraryFilepathInaccessible() {
     libraryManagementService.scanLibrary(savedLibraryId);
+
+    assertTrue(fakeLibraryRepository.findById(savedLibraryId).isPresent());
+    assertThat(fakeLibraryRepository.findById(savedLibraryId).get().getStatus())
+        .isEqualTo(LibraryStatus.UNHEALTHY);
+  }
+
+  @Test
+  @DisplayName(
+      "Should set library status to unhealthy when file walk throws UncheckedIOException during iteration")
+  void shouldSetLibraryStatusToUnhealthyWhenFileWalkThrowsUncheckedIOException() throws IOException {
+    var rootPath = createRootLibraryDirectory();
+    createMovieFile(rootPath, "About Time", "About Time (2013).mkv");
+
+    var throwingFileSystem = new ThrowingFileSystemWrapper(fileSystem);
+
+    var serviceWithThrowingFs =
+        new LibraryManagementService(
+            new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
+            new VideoExtensionValidator(),
+            new DefaultVideoFileMetadataParser(),
+            fakeMovieMetadataProviderResolver,
+            fakeLibraryRepository,
+            fakeMediaFileRepository,
+            movieService,
+            personService,
+            genreService,
+            orphanedMediaFileCleanupService,
+            new MutexFactoryProvider(),
+            throwingFileSystem);
+
+    serviceWithThrowingFs.scanLibrary(savedLibraryId);
 
     assertTrue(fakeLibraryRepository.findById(savedLibraryId).isPresent());
     assertThat(fakeLibraryRepository.findById(savedLibraryId).get().getStatus())
