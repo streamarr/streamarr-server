@@ -8,7 +8,7 @@ import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.fakes.FakeFfmpegProcessManager;
-import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Set;
@@ -17,18 +17,21 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 @Tag("UnitTest")
 class LocalTranscodeExecutorTest {
 
+  @TempDir Path tempDir;
+
   private FakeFfmpegProcessManager processManager;
-  private FakeSegmentStore segmentStore;
+  private LocalSegmentStore segmentStore;
   private LocalTranscodeExecutor executor;
 
   @BeforeEach
   void setUp() {
     processManager = new FakeFfmpegProcessManager();
-    segmentStore = new FakeSegmentStore();
+    segmentStore = new LocalSegmentStore(tempDir);
     var commandBuilder = new FfmpegCommandBuilder();
 
     var hwCapability =

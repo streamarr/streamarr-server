@@ -6,8 +6,8 @@ import com.streamarr.server.domain.streaming.TranscodeJob;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
-import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
+import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import java.nio.file.Path;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -19,7 +19,7 @@ public class LocalTranscodeExecutor implements TranscodeExecutor {
 
   private final FfmpegCommandBuilder commandBuilder;
   private final FfmpegProcessManager processManager;
-  private final SegmentStore segmentStore;
+  private final LocalSegmentStore segmentStore;
   private final TranscodeCapabilityService capabilityService;
 
   @Override

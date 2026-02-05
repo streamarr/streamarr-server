@@ -25,7 +25,7 @@ import tools.jackson.databind.ObjectMapper;
 public class StreamingConfig {
 
   @Bean
-  public SegmentStore segmentStore(StreamingProperties properties) {
+  public LocalSegmentStore segmentStore(StreamingProperties properties) {
     return new LocalSegmentStore(Path.of(properties.segmentBasePath()));
   }
 
@@ -64,7 +64,7 @@ public class StreamingConfig {
   public TranscodeExecutor transcodeExecutor(
       FfmpegCommandBuilder commandBuilder,
       FfmpegProcessManager processManager,
-      SegmentStore segmentStore,
+      LocalSegmentStore segmentStore,
       TranscodeCapabilityService capabilityService) {
     return new LocalTranscodeExecutor(
         commandBuilder, processManager, segmentStore, capabilityService);
