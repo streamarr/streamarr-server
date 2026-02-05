@@ -1,12 +1,12 @@
 package com.streamarr.server.fakes;
 
-import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import org.springframework.context.ApplicationEventPublisher;
 
 public class CapturingEventPublisher implements ApplicationEventPublisher {
 
-  private final List<Object> publishedEvents = new ArrayList<>();
+  private final List<Object> publishedEvents = new CopyOnWriteArrayList<>();
 
   @Override
   public void publishEvent(Object event) {

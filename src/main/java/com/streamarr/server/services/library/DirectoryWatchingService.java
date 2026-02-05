@@ -120,6 +120,8 @@ public class DirectoryWatchingService implements InitializingBean {
     }
   }
 
+  // Watcher may detect files before the initial async scan processes them.
+  // FileProcessingTaskCoordinator deduplicates, so concurrent discovery is safe.
   @EventListener
   public void onLibraryAdded(LibraryAddedEvent event) {
     try {

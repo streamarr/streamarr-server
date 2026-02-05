@@ -42,7 +42,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -102,12 +101,9 @@ public class LibraryManagementService {
     eventPublisher.publishEvent(
         new LibraryAddedEvent(savedLibrary.getId(), savedLibrary.getFilepath()));
 
-    return savedLibrary;
-  }
+    triggerAsyncScan(savedLibrary.getId());
 
-  @EventListener
-  void onLibraryAdded(LibraryAddedEvent event) {
-    triggerAsyncScan(event.libraryId());
+    return savedLibrary;
   }
 
   private void validateFilepath(String filepath) {
