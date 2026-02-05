@@ -22,7 +22,7 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 @Getter
 @Setter
-@SuperBuilder
+@SuperBuilder(toBuilder = true)
 @MappedSuperclass
 @NoArgsConstructor
 @AllArgsConstructor
@@ -74,11 +74,11 @@ public abstract class BaseAuditableEntity<T extends BaseAuditableEntity<T>> {
       B extends BaseAuditableEntityBuilder<T, C, B>> {
 
     private B createdOn(Instant createdOn) {
-      throw new UnsupportedOperationException("createdOn method is unsupported");
+      return self();
     }
 
     private B lastModifiedOn(Instant lastModifiedOn) {
-      throw new UnsupportedOperationException("lastModifiedOn method is unsupported");
+      return self();
     }
   }
 }

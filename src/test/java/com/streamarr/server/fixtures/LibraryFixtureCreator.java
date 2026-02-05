@@ -21,4 +21,14 @@ public class LibraryFixtureCreator {
         .type(MediaType.MOVIE)
         .build();
   }
+
+  public Library buildUnsavedLibrary(String name, String filepath) {
+    return Library.builder()
+        .name(name)
+        .backend(LibraryBackend.LOCAL)
+        .filepath(filepath)
+        .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+        .type(MediaType.MOVIE)
+        .build();
+  }
 }
