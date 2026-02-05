@@ -42,7 +42,6 @@ class FileProcessingTaskCoordinatorTest {
 
     var task = coordinator.createTask(path, libraryId);
 
-    assertThat(task).isNotNull();
     assertThat(task.getFilepath()).isEqualTo(path.toAbsolutePath().toString());
     assertThat(task.getLibraryId()).isEqualTo(libraryId);
     assertThat(task.getStatus()).isEqualTo(FileProcessingTaskStatus.PENDING);
@@ -63,8 +62,8 @@ class FileProcessingTaskCoordinatorTest {
   }
 
   @Test
-  @DisplayName("Should claim task and set owner and lease")
-  void shouldClaimTaskAndSetOwnerAndLease() {
+  @DisplayName("Should set owner and lease when task claimed")
+  void shouldSetOwnerAndLeaseWhenTaskClaimed() {
     var path = Path.of("/media/movies/Claim (2024).mkv");
     var libraryId = UUID.randomUUID();
     coordinator.createTask(path, libraryId);
@@ -86,8 +85,8 @@ class FileProcessingTaskCoordinatorTest {
   }
 
   @Test
-  @DisplayName("Should complete task successfully")
-  void shouldCompleteTaskSuccessfully() {
+  @DisplayName("Should transition to completed when task completed")
+  void shouldTransitionToCompletedWhenTaskCompleted() {
     var path = Path.of("/media/movies/Complete (2024).mkv");
     var libraryId = UUID.randomUUID();
     coordinator.createTask(path, libraryId);
@@ -103,8 +102,8 @@ class FileProcessingTaskCoordinatorTest {
   }
 
   @Test
-  @DisplayName("Should fail task with error message")
-  void shouldFailTaskWithErrorMessage() {
+  @DisplayName("Should store error message when task failed")
+  void shouldStoreErrorMessageWhenTaskFailed() {
     var path = Path.of("/media/movies/Fail (2024).mkv");
     var libraryId = UUID.randomUUID();
     coordinator.createTask(path, libraryId);
@@ -144,14 +143,22 @@ class FileProcessingTaskCoordinatorTest {
   }
 
   @Test
-  @DisplayName("Should reclaim orphaned PENDING tasks with NULL lease")
-  void shouldReclaimOrphanedPendingTasksWithNullLease() {
+  @DisplayName("Should create task with null lease when file event received")
+  void shouldCreateTaskWithNullLeaseWhenFileEventReceived() {
     var path = Path.of("/media/movies/NullLease (2024).mkv");
     var libraryId = UUID.randomUUID();
+
     var task = coordinator.createTask(path, libraryId);
 
     assertThat(task.getLeaseExpiresAt()).isNull();
-    assertThat(task.getStatus()).isEqualTo(FileProcessingTaskStatus.PENDING);
+  }
+
+  @Test
+  @DisplayName("Should reclaim task when lease is null")
+  void shouldReclaimTaskWhenLeaseIsNull() {
+    var path = Path.of("/media/movies/NullLease (2024).mkv");
+    var libraryId = UUID.randomUUID();
+    var task = coordinator.createTask(path, libraryId);
 
     var reclaimed = coordinator.reclaimOrphanedTasks(10);
 
@@ -160,34 +167,27 @@ class FileProcessingTaskCoordinatorTest {
   }
 
   @Test
-  @DisplayName("Should extend leases for owned tasks")
-  void shouldExtendLeasesForOwnedTasks() {
+  @DisplayName("Should extend lease expiration when heartbeat fires")
+  void shouldExtendLeaseExpirationWhenHeartbeatFires() {
     var path = Path.of("/media/movies/Extend (2024).mkv");
     var libraryId = UUID.randomUUID();
     coordinator.createTask(path, libraryId);
     var claimed = coordinator.claimNextTask().orElseThrow();
     var originalLease = claimed.getLeaseExpiresAt();
 
-    var newClock = Clock.fixed(NOW.plusSeconds(30), ZoneId.of("UTC"));
-    var newCoordinator =
-        new FileProcessingTaskCoordinator(repository, newClock, LEASE_DURATION) {
-          @Override
-          public String getInstanceId() {
-            return coordinator.getInstanceId();
-          }
-        };
+    var laterClock = Clock.fixed(NOW.plusSeconds(30), ZoneId.of("UTC"));
+    var laterCoordinator =
+        new FileProcessingTaskCoordinator(repository, laterClock, LEASE_DURATION);
 
-    newCoordinator.extendLeases();
+    laterCoordinator.extendLeases();
 
     var updated = repository.findById(claimed.getId()).orElseThrow();
     assertThat(updated.getLeaseExpiresAt()).isAfter(originalLease);
   }
 
   @Test
-  @DisplayName("Should not extend leases for completed tasks even if owner is set")
-  void shouldNotExtendLeasesForCompletedTasksEvenIfOwnerIsSet() {
-    // Manually create a COMPLETED task with ownerInstanceId set (edge case)
-    // This tests the status filter, not just the owner filter
+  @DisplayName("Should not extend lease when task is completed")
+  void shouldNotExtendLeaseWhenTaskIsCompleted() {
     var completedTask =
         FileProcessingTask.builder()
             .filepath("/media/movies/Completed (2024).mkv")
@@ -202,16 +202,11 @@ class FileProcessingTaskCoordinatorTest {
 
     var originalLease = completedTask.getLeaseExpiresAt();
 
-    var newClock = Clock.fixed(NOW.plusSeconds(60), ZoneId.of("UTC"));
-    var newCoordinator =
-        new FileProcessingTaskCoordinator(repository, newClock, LEASE_DURATION) {
-          @Override
-          public String getInstanceId() {
-            return coordinator.getInstanceId();
-          }
-        };
+    var laterClock = Clock.fixed(NOW.plusSeconds(60), ZoneId.of("UTC"));
+    var laterCoordinator =
+        new FileProcessingTaskCoordinator(repository, laterClock, LEASE_DURATION);
 
-    newCoordinator.extendLeases();
+    laterCoordinator.extendLeases();
 
     var afterExtend = repository.findById(completedTask.getId()).orElseThrow();
     assertThat(afterExtend.getLeaseExpiresAt()).isEqualTo(originalLease);
