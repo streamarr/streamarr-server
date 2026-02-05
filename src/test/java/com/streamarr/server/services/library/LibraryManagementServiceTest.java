@@ -617,6 +617,22 @@ public class LibraryManagementServiceTest {
     assertThat(exception.getMessage()).contains("access denied");
   }
 
+  @Test
+  @DisplayName("Should not mutate input library when adding")
+  void shouldNotMutateInputLibraryWhenAdding() throws IOException {
+    var newLibraryPath = fileSystem.getPath("/no-mutate");
+    Files.createDirectories(newLibraryPath);
+
+    var library =
+        LibraryFixtureCreator.buildUnsavedLibrary("Test Library", newLibraryPath.toString());
+
+    libraryManagementService.addLibrary(library);
+
+    assertThat(library.getStatus())
+        .as("Input library should not be mutated")
+        .isNull();
+  }
+
   private Path createRootLibraryDirectory() throws IOException {
     var library = fakeLibraryRepository.findById(savedLibraryId);
 
