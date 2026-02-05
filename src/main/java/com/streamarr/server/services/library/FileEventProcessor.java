@@ -119,7 +119,8 @@ class FileEventProcessor {
     }
   }
 
-  private void runStabilityCheckWithCleanup(Path path, StabilityToken token, FileProcessingTask task) {
+  private void runStabilityCheckWithCleanup(
+      Path path, StabilityToken token, FileProcessingTask task) {
     try {
       processStableFile(path, task);
     } finally {
@@ -135,9 +136,7 @@ class FileEventProcessor {
       log.warn("File did not stabilize: {}", path);
       taskCoordinator
           .fail(task.getId(), "File did not stabilize within timeout")
-          .ifPresentOrElse(
-              t -> {},
-              () -> log.info("Task already cancelled for: {}", path));
+          .ifPresentOrElse(t -> {}, () -> log.info("Task already cancelled for: {}", path));
       return;
     }
 
@@ -145,16 +144,12 @@ class FileEventProcessor {
       libraryManagementService.processDiscoveredFile(task.getLibraryId(), path);
       taskCoordinator
           .complete(task.getId())
-          .ifPresentOrElse(
-              t -> {},
-              () -> log.info("Task already cancelled for: {}", path));
+          .ifPresentOrElse(t -> {}, () -> log.info("Task already cancelled for: {}", path));
     } catch (Exception e) {
       log.error("Failed to process discovered file: {}", path, e);
       taskCoordinator
           .fail(task.getId(), Optional.ofNullable(e.getMessage()).orElse(e.toString()))
-          .ifPresentOrElse(
-              t -> {},
-              () -> log.info("Task already cancelled for: {}", path));
+          .ifPresentOrElse(t -> {}, () -> log.info("Task already cancelled for: {}", path));
     }
   }
 
