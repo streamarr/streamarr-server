@@ -19,7 +19,9 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 class FileEventProcessor {
 
-  private record InFlightTask(Future<?> future, Object token) {}
+  private record StabilityToken() {}
+
+  private record InFlightTask(Future<?> future, StabilityToken token) {}
 
   private final FileStabilityChecker fileStabilityChecker;
   private final LibraryManagementService libraryManagementService;
@@ -86,7 +88,7 @@ class FileEventProcessor {
   private void scheduleStabilityCheck(Path path) {
     stateLock.readLock().lock();
     try {
-      var token = new Object();
+      var token = new StabilityToken();
       inFlightChecks.compute(
           path,
           (key, existing) -> {
@@ -102,7 +104,7 @@ class FileEventProcessor {
     }
   }
 
-  private void runStabilityCheckWithCleanup(Path path, Object token) {
+  private void runStabilityCheckWithCleanup(Path path, StabilityToken token) {
     try {
       processStableFile(path);
     } finally {
