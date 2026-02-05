@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -43,9 +44,13 @@ import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.Executors;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -333,6 +338,41 @@ public class LibraryManagementServiceTest {
         fakeMediaFileRepository.findFirstByFilepath(systemFilePath.toAbsolutePath().toString());
 
     assertTrue(mediaFile.isEmpty());
+  }
+
+  @Test
+  @DisplayName("Should create only one MediaFile when concurrent calls probe same filepath")
+  void shouldCreateOnlyOneMediaFileWhenConcurrentCallsProbeSameFilepath() throws Exception {
+    var rootPath = createRootLibraryDirectory();
+    var path = createMovieFile(rootPath, "Concurrent Test", "Concurrent Test (2024).mkv");
+    var barrier = new CyclicBarrier(2);
+    var exceptions = new CopyOnWriteArrayList<Exception>();
+
+    Runnable task =
+        () -> {
+          try {
+            barrier.await();
+            libraryManagementService.processDiscoveredFile(savedLibraryId, path);
+          } catch (Exception e) {
+            exceptions.add(e);
+          }
+        };
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      executor.submit(task);
+      executor.submit(task);
+    }
+
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () -> {
+              assertThat(exceptions).isEmpty();
+              var mediaFiles = fakeMediaFileRepository.findByLibraryId(savedLibraryId);
+              assertThat(mediaFiles)
+                  .as("Expected exactly one MediaFile for the same filepath")
+                  .hasSize(1);
+            });
   }
 
   private Path createRootLibraryDirectory() throws IOException {
