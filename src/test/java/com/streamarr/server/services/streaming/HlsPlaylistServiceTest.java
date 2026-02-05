@@ -17,7 +17,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -65,7 +64,6 @@ class HlsPlaylistServiceTest {
             .seekPosition(0)
             .createdAt(Instant.now())
             .lastAccessedAt(Instant.now())
-            .activeRequestCount(new AtomicInteger(0))
             .build();
     session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
     return session;
@@ -284,7 +282,6 @@ class HlsPlaylistServiceTest {
             .seekPosition(0)
             .createdAt(Instant.now())
             .lastAccessedAt(Instant.now())
-            .activeRequestCount(new AtomicInteger(0))
             .build();
     session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
     return session;
@@ -376,7 +373,6 @@ class HlsPlaylistServiceTest {
             .seekPosition(0)
             .createdAt(Instant.now())
             .lastAccessedAt(Instant.now())
-            .activeRequestCount(new AtomicInteger(0))
             .build();
 
     for (var variant : variants) {

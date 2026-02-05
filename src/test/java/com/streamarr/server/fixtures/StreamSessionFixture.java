@@ -13,7 +13,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicInteger;
 import lombok.experimental.UtilityClass;
 
 @UtilityClass
@@ -46,7 +45,6 @@ public class StreamSessionFixture {
             .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
             .createdAt(Instant.now())
             .lastAccessedAt(Instant.now())
-            .activeRequestCount(new AtomicInteger(0))
             .build();
     session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
     return session;
