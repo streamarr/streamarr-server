@@ -20,7 +20,6 @@ import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import java.time.Duration;
-import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CyclicBarrier;
@@ -30,7 +29,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.transaction.annotation.Transactional;
 
 @Tag("IntegrationTest")
 @DisplayName("Library Removal Integration Tests")
@@ -67,7 +65,6 @@ public class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName("Should remove all movies when library is removed")
-  @Transactional
   void shouldRemoveAllMoviesWhenLibraryIsRemoved() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
 
@@ -84,7 +81,6 @@ public class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName("Should remove matched media files when library is removed")
-  @Transactional
   void shouldRemoveMatchedMediaFilesWhenLibraryIsRemoved() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     var movie =
@@ -109,7 +105,6 @@ public class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName("Should remove orphaned media files when library is removed")
-  @Transactional
   void shouldRemoveOrphanedMediaFilesWhenLibraryIsRemoved() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
 
@@ -131,7 +126,6 @@ public class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName("Should not affect other libraries when removing one library")
-  @Transactional
   void shouldNotAffectOtherLibrariesWhenRemovingOneLibrary() {
     var libraryToRemove = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     var libraryToKeep = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
@@ -202,7 +196,6 @@ public class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName("Should preserve shared entities when library is removed")
-  @Transactional
   void shouldPreserveSharedEntitiesWhenLibraryIsRemoved() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
 
@@ -212,19 +205,19 @@ public class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
     var genre =
         genreRepository.saveAndFlush(Genre.builder().name("Drama").sourceId("tmdb-28").build());
 
-    var movie =
-        Movie.builder()
-            .title("Movie With Shared Entities")
-            .library(library)
-            .cast(List.of(person))
-            .genres(java.util.Set.of(genre))
-            .build();
-    movieRepository.saveAndFlush(movie);
+    var personId = person.getId();
+    var genreId = genre.getId();
+
+    var movie = Movie.builder().title("Movie With Shared Entities").library(library).build();
+    var savedMovie = movieRepository.saveAndFlush(movie);
+    savedMovie.getCast().add(person);
+    savedMovie.getGenres().add(genre);
+    movieRepository.saveAndFlush(savedMovie);
 
     libraryManagementService.removeLibrary(library.getId());
 
-    assertThat(personRepository.findById(person.getId())).isPresent();
-    assertThat(genreRepository.findById(genre.getId())).isPresent();
+    assertThat(personRepository.findById(personId)).isPresent();
+    assertThat(genreRepository.findById(genreId)).isPresent();
   }
 
   @Test

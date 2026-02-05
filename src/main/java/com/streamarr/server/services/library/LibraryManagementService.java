@@ -28,13 +28,16 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Slf4j
 @Service
@@ -90,8 +93,74 @@ public class LibraryManagementService {
   // TODO #39: implement addLibrary mutation
   public void addLibrary(Library library) {}
 
-  // TODO #39: implement removeLibrary mutation
-  public void removeLibrary(UUID libraryId) {}
+  @Transactional
+  public void removeLibrary(UUID libraryId) {
+    var libraryMutex = mutexFactory.getMutex(libraryId.toString());
+    libraryMutex.lock();
+    try {
+      var library = findLibraryOrThrow(libraryId);
+      rejectIfScanning(library);
+
+      var mediaFileIds = captureMediaFileIdsBeforeDeletion(libraryId);
+
+      deleteLibraryContent(libraryId);
+      libraryRepository.delete(library);
+
+      cleanupExternalResources(library, mediaFileIds);
+    } finally {
+      libraryMutex.unlock();
+    }
+  }
+
+  private Library findLibraryOrThrow(UUID libraryId) {
+    return libraryRepository
+        .findById(libraryId)
+        .orElseThrow(() -> new LibraryNotFoundException(libraryId));
+  }
+
+  private void rejectIfScanning(Library library) {
+    if (library.getStatus() == LibraryStatus.SCANNING) {
+      throw new LibraryScanInProgressException(library.getId());
+    }
+  }
+
+  private Set<UUID> captureMediaFileIdsBeforeDeletion(UUID libraryId) {
+    return mediaFileRepository.findByLibraryId(libraryId).stream()
+        .map(MediaFile::getId)
+        .collect(Collectors.toSet());
+  }
+
+  private void deleteLibraryContent(UUID libraryId) {
+    movieService.deleteByLibraryId(libraryId);
+    mediaFileRepository.deleteAll(mediaFileRepository.findByLibraryId(libraryId));
+  }
+
+  private void cleanupExternalResources(Library library, Set<UUID> mediaFileIds) {
+    stopFilesystemWatcher(library);
+    terminateStreamingSessionsForMediaFiles(mediaFileIds);
+  }
+
+  private void stopFilesystemWatcher(Library library) {
+    try {
+      directoryWatchingService.removeDirectory(Path.of(library.getFilepath()));
+    } catch (Exception e) {
+      log.warn("Failed to stop watcher for library {}: {}", library.getId(), e.getMessage());
+    }
+  }
+
+  private void terminateStreamingSessionsForMediaFiles(Set<UUID> mediaFileIds) {
+    try {
+      if (mediaFileIds.isEmpty()) {
+        return;
+      }
+      streamingService.getAllSessions().stream()
+          .filter(session -> mediaFileIds.contains(session.getMediaFileId()))
+          .map(session -> session.getSessionId())
+          .forEach(streamingService::destroySession);
+    } catch (Exception e) {
+      log.warn("Failed to terminate streaming sessions: {}", e.getMessage());
+    }
+  }
 
   public void processDiscoveredFile(UUID libraryId, Path path) {
     var library =

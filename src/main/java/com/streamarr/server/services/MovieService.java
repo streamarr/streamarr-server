@@ -50,7 +50,11 @@ public class MovieService {
 
   @Transactional
   public void deleteByLibraryId(UUID libraryId) {
-    movieRepository.deleteByLibrary_Id(libraryId);
+    var movies = movieRepository.findByLibrary_Id(libraryId);
+    if (movies.isEmpty()) {
+      return;
+    }
+    movieRepository.deleteAll(movies);
   }
 
   @Transactional

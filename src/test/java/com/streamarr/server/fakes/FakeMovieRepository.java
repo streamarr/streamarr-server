@@ -118,8 +118,9 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
   }
 
   @Override
-  public void deleteByLibrary_Id(UUID libraryId) {
-    database.values().removeIf(
-        movie -> movie.getLibrary() != null && libraryId.equals(movie.getLibrary().getId()));
+  public List<Movie> findByLibrary_Id(UUID libraryId) {
+    return database.values().stream()
+        .filter(movie -> movie.getLibrary() != null && libraryId.equals(movie.getLibrary().getId()))
+        .toList();
   }
 }
