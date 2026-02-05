@@ -133,23 +133,23 @@ class FileEventProcessor {
 
     if (!fileStabilityChecker.awaitStability(path)) {
       log.warn("File did not stabilize: {}", path);
-      taskCoordinator.fail(task, "File did not stabilize within timeout");
+      taskCoordinator.fail(task.getId(), "File did not stabilize within timeout");
       return;
     }
 
     try {
       libraryManagementService.processDiscoveredFile(task.getLibraryId(), path);
-      taskCoordinator.complete(task);
+      taskCoordinator.complete(task.getId());
     } catch (Exception e) {
       log.error("Failed to process discovered file: {}", path, e);
-      taskCoordinator.fail(task, Optional.ofNullable(e.getMessage()).orElse(e.toString()));
+      taskCoordinator.fail(task.getId(), Optional.ofNullable(e.getMessage()).orElse(e.toString()));
     }
   }
 
   private void handleDelete(Path path) {
     var inFlight = inFlightChecks.remove(path);
     if (inFlight != null) {
-      inFlight.future().cancel(true);
+      cancelInterrupting(inFlight.future());
       log.info("Cancelled in-flight check for deleted file: {}", path);
     }
     taskCoordinator.cancelTask(path);
@@ -169,5 +169,9 @@ class FileEventProcessor {
     } finally {
       stateLock.readLock().unlock();
     }
+  }
+
+  private static void cancelInterrupting(Future<?> future) {
+    future.cancel(true);
   }
 }

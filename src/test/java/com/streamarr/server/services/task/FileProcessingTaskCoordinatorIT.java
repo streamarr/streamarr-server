@@ -155,7 +155,7 @@ class FileProcessingTaskCoordinatorIT extends AbstractIntegrationTest {
     coordinator.createTask(path, testLibrary.getId());
     var claimed = coordinator.claimNextTask().orElseThrow();
 
-    coordinator.complete(claimed);
+    coordinator.complete(claimed.getId());
 
     var completed = taskRepository.findById(claimed.getId()).orElseThrow();
     assertThat(completed.getStatus()).isEqualTo(FileProcessingTaskStatus.COMPLETED);
@@ -171,7 +171,7 @@ class FileProcessingTaskCoordinatorIT extends AbstractIntegrationTest {
     coordinator.createTask(path, testLibrary.getId());
     var claimed = coordinator.claimNextTask().orElseThrow();
 
-    coordinator.fail(claimed, "Test error");
+    coordinator.fail(claimed.getId(), "Test error");
 
     var failed = taskRepository.findById(claimed.getId()).orElseThrow();
     assertThat(failed.getStatus()).isEqualTo(FileProcessingTaskStatus.FAILED);
@@ -186,7 +186,7 @@ class FileProcessingTaskCoordinatorIT extends AbstractIntegrationTest {
 
     var task1 = coordinator.createTask(path, testLibrary.getId());
     var claimed = coordinator.claimNextTask().orElseThrow();
-    coordinator.complete(claimed);
+    coordinator.complete(claimed.getId());
 
     var task2 = coordinator.createTask(path, testLibrary.getId());
 

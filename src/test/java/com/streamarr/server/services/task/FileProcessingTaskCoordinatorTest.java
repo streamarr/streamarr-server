@@ -93,7 +93,7 @@ class FileProcessingTaskCoordinatorTest {
     coordinator.createTask(path, libraryId);
     var claimed = coordinator.claimNextTask().orElseThrow();
 
-    coordinator.complete(claimed);
+    coordinator.complete(claimed.getId());
 
     var completed = repository.findById(claimed.getId()).orElseThrow();
     assertThat(completed.getStatus()).isEqualTo(FileProcessingTaskStatus.COMPLETED);
@@ -110,7 +110,7 @@ class FileProcessingTaskCoordinatorTest {
     coordinator.createTask(path, libraryId);
     var claimed = coordinator.claimNextTask().orElseThrow();
 
-    coordinator.fail(claimed, "Processing error");
+    coordinator.fail(claimed.getId(), "Processing error");
 
     var failed = repository.findById(claimed.getId()).orElseThrow();
     assertThat(failed.getStatus()).isEqualTo(FileProcessingTaskStatus.FAILED);

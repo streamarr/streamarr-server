@@ -97,7 +97,11 @@ public class FileProcessingTaskCoordinator {
     }
   }
 
-  public void complete(FileProcessingTask task) {
+  public void complete(UUID taskId) {
+    var task =
+        repository
+            .findById(taskId)
+            .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
     task.setStatus(FileProcessingTaskStatus.COMPLETED);
     task.setCompletedOn(clock.instant());
     task.setOwnerInstanceId(null);
@@ -106,7 +110,11 @@ public class FileProcessingTaskCoordinator {
     log.info("Completed task for: {}", task.getFilepath());
   }
 
-  public void fail(FileProcessingTask task, String errorMessage) {
+  public void fail(UUID taskId, String errorMessage) {
+    var task =
+        repository
+            .findById(taskId)
+            .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
     task.setStatus(FileProcessingTaskStatus.FAILED);
     task.setErrorMessage(errorMessage);
     task.setCompletedOn(clock.instant());

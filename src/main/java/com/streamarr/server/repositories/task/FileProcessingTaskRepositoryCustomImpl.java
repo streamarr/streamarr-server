@@ -40,7 +40,7 @@ public class FileProcessingTaskRepositoryCustomImpl implements FileProcessingTas
             .forUpdate()
             .skipLocked();
 
-    var ids = nativeQuery(entityManager, selectQuery, UUID.class);
+    var ids = executeJooqQuery(entityManager, selectQuery, UUID.class);
 
     if (ids.isEmpty()) {
       return Optional.empty();
@@ -75,7 +75,7 @@ public class FileProcessingTaskRepositoryCustomImpl implements FileProcessingTas
             .forUpdate()
             .skipLocked();
 
-    var ids = nativeQuery(entityManager, selectQuery, UUID.class);
+    var ids = executeJooqQuery(entityManager, selectQuery, UUID.class);
 
     if (ids.isEmpty()) {
       return List.of();
@@ -104,7 +104,7 @@ public class FileProcessingTaskRepositoryCustomImpl implements FileProcessingTas
   }
 
   @SuppressWarnings("unchecked")
-  private static <E> List<E> nativeQuery(EntityManager em, org.jooq.Query query, Class<E> type) {
+  private static <E> List<E> executeJooqQuery(EntityManager em, org.jooq.Query query, Class<E> type) {
     Query result = em.createNativeQuery(query.getSQL(), type);
     List<Object> values = query.getBindValues();
     for (int i = 0; i < values.size(); i++) {
