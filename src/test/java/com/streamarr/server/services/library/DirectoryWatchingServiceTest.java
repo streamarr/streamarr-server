@@ -115,6 +115,27 @@ class DirectoryWatchingServiceTest {
   }
 
   @Test
+  @DisplayName("Should not process events after stopping")
+  void shouldNotProcessEventsAfterStopping() throws Exception {
+    watchingService.stopWatching();
+
+    var path = createFile("/media/movies/Movie (2024).mkv");
+    var processed = new AtomicBoolean(false);
+    stabilityCheckerRef.set(
+        p -> {
+          processed.set(true);
+          return true;
+        });
+
+    watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+
+    await()
+        .during(Duration.ofMillis(100))
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(() -> assertThat(processed.get()).isFalse());
+  }
+
+  @Test
   @DisplayName("Should handle overflow event without throwing")
   void shouldHandleOverflowEventWithoutThrowing() {
     var path = fileSystem.getPath("/media/movies/file.mkv");

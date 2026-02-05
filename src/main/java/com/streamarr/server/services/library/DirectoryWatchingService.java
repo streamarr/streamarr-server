@@ -17,6 +17,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
@@ -59,6 +60,8 @@ public class DirectoryWatchingService implements InitializingBean {
       return;
     }
 
+    this.executor = Executors.newVirtualThreadPerTaskExecutor();
+
     this.watcher =
         DirectoryWatcher.builder()
             .paths(directoriesToWatch.stream().toList())
@@ -84,20 +87,25 @@ public class DirectoryWatchingService implements InitializingBean {
     }
 
     var submitted = new AtomicBoolean(false);
-    inFlightChecks.computeIfAbsent(
-        path,
-        key -> {
-          submitted.set(true);
-          return CompletableFuture.runAsync(
-              () -> {
-                try {
-                  processStableFile(key);
-                } finally {
-                  inFlightChecks.remove(key);
-                }
-              },
-              executor);
-        });
+    try {
+      inFlightChecks.computeIfAbsent(
+          path,
+          key -> {
+            submitted.set(true);
+            return CompletableFuture.runAsync(
+                () -> {
+                  try {
+                    processStableFile(key);
+                  } finally {
+                    inFlightChecks.remove(key);
+                  }
+                },
+                executor);
+          });
+    } catch (RejectedExecutionException e) {
+      log.warn("Executor shut down, ignoring event for: {}", path);
+      return;
+    }
 
     if (!submitted.get()) {
       log.debug("Stability check already in progress for: {}", path);
@@ -185,7 +193,6 @@ public class DirectoryWatchingService implements InitializingBean {
     }
     executor.close();
     inFlightChecks.clear();
-    executor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   public CompletableFuture<Void> watch() {
