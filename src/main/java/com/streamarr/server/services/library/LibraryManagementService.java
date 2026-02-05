@@ -143,7 +143,7 @@ public class LibraryManagementService {
   private void stopFilesystemWatcher(Library library) {
     try {
       directoryWatchingService.removeDirectory(Path.of(library.getFilepath()));
-    } catch (Exception e) {
+    } catch (IOException | SecurityException e) {
       log.warn("Failed to stop watcher for library {}: {}", library.getId(), e.getMessage());
     }
   }

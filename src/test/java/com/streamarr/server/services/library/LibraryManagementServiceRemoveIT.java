@@ -167,13 +167,8 @@ public class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should call destroySession for media files with active streaming sessions")
+  @DisplayName("Should terminate active streaming sessions when library is removed")
   void shouldTerminateActiveStreamingSessionsWhenLibraryIsRemoved() {
-    // This test verifies that streaming sessions are terminated for media files in the library.
-    // We verify this indirectly by checking that getAllSessions is called (tested via mock in unit
-    // tests)
-    // and that the library and its content are properly removed.
-    // The actual session termination logic is tested via unit tests with mocked StreamingService.
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     var movie =
         movieRepository.saveAndFlush(
