@@ -5,7 +5,7 @@ import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.exceptions.InvalidLibraryPathException;
-import com.streamarr.server.exceptions.LibraryAccessDeniedException;
+import com.streamarr.server.exceptions.LibraryPathPermissionDeniedException;
 import com.streamarr.server.exceptions.LibraryAlreadyExistsException;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
@@ -117,7 +117,7 @@ public class LibraryManagementService {
         throw new InvalidLibraryPathException(filepath, "path is not a directory");
       }
     } catch (SecurityException e) {
-      throw new LibraryAccessDeniedException(filepath);
+      throw new LibraryPathPermissionDeniedException(filepath);
     }
   }
 
