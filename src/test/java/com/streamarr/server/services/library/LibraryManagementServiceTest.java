@@ -168,6 +168,40 @@ public class LibraryManagementServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should set library status to unhealthy when file walk throws SecurityException during iteration")
+  void shouldSetLibraryStatusToUnhealthyWhenFileWalkThrowsSecurityException() throws IOException {
+    var rootPath = createRootLibraryDirectory();
+    createMovieFile(rootPath, "About Time", "About Time (2013).mkv");
+
+    var throwingFileSystem =
+        new ThrowingFileSystemWrapper(
+            fileSystem,
+            () -> new SecurityException("Simulated security manager denial during traversal"));
+
+    var serviceWithThrowingFs =
+        new LibraryManagementService(
+            new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
+            new VideoExtensionValidator(),
+            new DefaultVideoFileMetadataParser(),
+            fakeMovieMetadataProviderResolver,
+            fakeLibraryRepository,
+            fakeMediaFileRepository,
+            movieService,
+            personService,
+            genreService,
+            orphanedMediaFileCleanupService,
+            new MutexFactoryProvider(),
+            throwingFileSystem);
+
+    serviceWithThrowingFs.scanLibrary(savedLibraryId);
+
+    assertTrue(fakeLibraryRepository.findById(savedLibraryId).isPresent());
+    assertThat(fakeLibraryRepository.findById(savedLibraryId).get().getStatus())
+        .isEqualTo(LibraryStatus.UNHEALTHY);
+  }
+
+  @Test
   @DisplayName("Should set library status to healthy when the library filepath can be accessed")
   void shouldSetLibraryStatusToHealthyWhenLibraryFilepathAccessible() throws IOException {
     createRootLibraryDirectory();

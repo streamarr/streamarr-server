@@ -4,6 +4,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
+import java.util.function.Supplier;
 import java.nio.file.DirectoryStream;
 import java.nio.file.FileStore;
 import java.nio.file.FileSystem;
@@ -19,19 +20,30 @@ import java.util.Iterator;
 import java.util.Set;
 
 /**
- * A FileSystem wrapper that throws UncheckedIOException during Files.walk() iteration. Used to test
- * error handling when file system traversal fails mid-stream.
+ * A FileSystem wrapper that throws a configurable RuntimeException during Files.walk() iteration.
+ * Used to test error handling when file system traversal fails mid-stream.
  *
  * <p>Jimfs cannot simulate permission errors, so this wrapper intercepts directory stream iteration
- * and throws UncheckedIOException after returning the first element.
+ * and throws the configured exception after returning the first element.
  */
 public class ThrowingFileSystemWrapper extends FileSystem {
 
   private final FileSystem delegate;
   private final ThrowingFileSystemProvider throwingProvider;
+  private final Supplier<RuntimeException> exceptionSupplier;
 
   public ThrowingFileSystemWrapper(FileSystem delegate) {
+    this(
+        delegate,
+        () ->
+            new UncheckedIOException(
+                new IOException("Simulated permission denied during directory traversal")));
+  }
+
+  public ThrowingFileSystemWrapper(
+      FileSystem delegate, Supplier<RuntimeException> exceptionSupplier) {
     this.delegate = delegate;
+    this.exceptionSupplier = exceptionSupplier;
     this.throwingProvider = new ThrowingFileSystemProvider(delegate.provider(), this);
   }
 
@@ -387,8 +399,7 @@ public class ThrowingFileSystemWrapper extends FileSystem {
     @Override
     public boolean hasNext() {
       if (firstReturned) {
-        throw new UncheckedIOException(
-            new IOException("Simulated permission denied during directory traversal"));
+        throw fileSystem.exceptionSupplier.get();
       }
       return delegate.hasNext();
     }

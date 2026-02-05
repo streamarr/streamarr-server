@@ -123,7 +123,7 @@ public class LibraryManagementService {
           .filter(file -> !ignoredFileValidator.shouldIgnore(file))
           .forEach(file -> executor.submit(() -> processFile(library, file)));
 
-    } catch (IOException | UncheckedIOException e) {
+    } catch (IOException | UncheckedIOException | SecurityException e) {
       var endTimeOfFailure = Instant.now();
 
       library.setStatus(LibraryStatus.UNHEALTHY);
