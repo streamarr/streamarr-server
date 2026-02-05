@@ -35,10 +35,7 @@ public class FileProcessingTaskCoordinator {
       FileProcessingTaskRepository repository,
       Clock clock,
       @Value("${task.coordinator.lease-duration-seconds:60}") int leaseDurationSeconds) {
-    this.repository = repository;
-    this.clock = clock;
-    this.leaseDuration = Duration.ofSeconds(leaseDurationSeconds);
-    this.instanceId = generateInstanceId();
+    this(repository, clock, Duration.ofSeconds(leaseDurationSeconds));
   }
 
   public FileProcessingTaskCoordinator(
