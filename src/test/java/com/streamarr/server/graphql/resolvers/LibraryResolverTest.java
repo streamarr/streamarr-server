@@ -157,7 +157,8 @@ class LibraryResolverTest {
     when(libraryRepository.findAll()).thenReturn(List.of(moviesLibrary, showsLibrary));
 
     List<String> names =
-        dgsQueryExecutor.executeAndExtractJsonPath("{ libraries { name } }", "data.libraries[*].name");
+        dgsQueryExecutor.executeAndExtractJsonPath(
+            "{ libraries { name } }", "data.libraries[*].name");
 
     assertThat(names).containsExactly("Movies", "TV Shows");
   }

@@ -91,14 +91,12 @@ public class DevDataInitializer {
         companyRepository.save(
             Company.builder().sourceId("923").name("Legendary Pictures").build());
 
-    var action =
-        genreRepository.save(Genre.builder().sourceId("28").name("Action").build());
+    var action = genreRepository.save(Genre.builder().sourceId("28").name("Action").build());
 
     var sciFi =
         genreRepository.save(Genre.builder().sourceId("878").name("Science Fiction").build());
 
-    var thriller =
-        genreRepository.save(Genre.builder().sourceId("53").name("Thriller").build());
+    var thriller = genreRepository.save(Genre.builder().sourceId("53").name("Thriller").build());
 
     var inception =
         movieRepository.save(
@@ -163,7 +161,11 @@ public class DevDataInitializer {
             Review.builder().movie(darkKnight).author("Dev Reviewer").build()));
 
     var testVideoPath =
-        Path.of(System.getProperty("user.dir"), "src", "test", "resources",
+        Path.of(
+                System.getProperty("user.dir"),
+                "src",
+                "test",
+                "resources",
                 "BigBuckBunny_320x180_10s.mp4")
             .toString();
 
