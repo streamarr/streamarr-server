@@ -36,6 +36,7 @@ import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.PersonService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.metadata.MetadataProvider;
+import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.metadata.movie.TMDBMovieProvider;
@@ -80,6 +81,9 @@ public class LibraryManagementServiceTest {
 
   private final OrphanedMediaFileCleanupService orphanedMediaFileCleanupService =
       new OrphanedMediaFileCleanupService(fakeMediaFileRepository, movieService, fileSystem);
+  private final DirectoryWatchingService directoryWatchingService =
+      mock(DirectoryWatchingService.class);
+  private final StreamingService streamingService = mock(StreamingService.class);
 
   private final LibraryManagementService libraryManagementService =
       new LibraryManagementService(
@@ -93,6 +97,8 @@ public class LibraryManagementServiceTest {
           personService,
           genreService,
           orphanedMediaFileCleanupService,
+          directoryWatchingService,
+          streamingService,
           new MutexFactoryProvider(),
           fileSystem);
 
@@ -164,6 +170,8 @@ public class LibraryManagementServiceTest {
             personService,
             genreService,
             orphanedMediaFileCleanupService,
+            directoryWatchingService,
+            streamingService,
             new MutexFactoryProvider(),
             throwingFileSystem);
 
@@ -198,6 +206,8 @@ public class LibraryManagementServiceTest {
             personService,
             genreService,
             orphanedMediaFileCleanupService,
+            directoryWatchingService,
+            streamingService,
             new MutexFactoryProvider(),
             throwingFileSystem);
 

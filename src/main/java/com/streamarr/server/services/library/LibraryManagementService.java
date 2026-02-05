@@ -17,6 +17,7 @@ import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
+import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
 import java.io.IOException;
@@ -30,6 +31,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.Executors;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
@@ -48,6 +50,8 @@ public class LibraryManagementService {
   private final PersonService personService;
   private final GenreService genreService;
   private final OrphanedMediaFileCleanupService orphanedMediaFileCleanupService;
+  private final DirectoryWatchingService directoryWatchingService;
+  private final StreamingService streamingService;
   private final FileSystem fileSystem;
   private final MutexFactory<String> mutexFactory;
 
@@ -62,6 +66,8 @@ public class LibraryManagementService {
       PersonService personService,
       GenreService genreService,
       OrphanedMediaFileCleanupService orphanedMediaFileCleanupService,
+      @Lazy DirectoryWatchingService directoryWatchingService,
+      StreamingService streamingService,
       MutexFactoryProvider mutexFactoryProvider,
       FileSystem fileSystem) {
     this.ignoredFileValidator = ignoredFileValidator;
@@ -74,6 +80,8 @@ public class LibraryManagementService {
     this.personService = personService;
     this.genreService = genreService;
     this.orphanedMediaFileCleanupService = orphanedMediaFileCleanupService;
+    this.directoryWatchingService = directoryWatchingService;
+    this.streamingService = streamingService;
     this.fileSystem = fileSystem;
 
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
