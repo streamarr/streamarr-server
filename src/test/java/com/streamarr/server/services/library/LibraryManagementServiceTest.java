@@ -26,6 +26,7 @@ import com.streamarr.server.exceptions.LibraryAlreadyExistsException;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.exceptions.LibraryPathPermissionDeniedException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
@@ -85,10 +86,12 @@ public class LibraryManagementServiceTest {
   private final FileSystem fileSystem = Jimfs.newFileSystem(Configuration.unix());
 
   private final OrphanedMediaFileCleanupService orphanedMediaFileCleanupService =
-      new OrphanedMediaFileCleanupService(fakeMediaFileRepository, movieService, fileSystem);
+      new OrphanedMediaFileCleanupService(
+          fakeLibraryRepository, fakeMediaFileRepository, movieService, fileSystem);
   private final DirectoryWatchingService directoryWatchingService =
       mock(DirectoryWatchingService.class);
   private final StreamingService streamingService = mock(StreamingService.class);
+  private final CapturingEventPublisher capturingEventPublisher = new CapturingEventPublisher();
 
   private final LibraryManagementService libraryManagementService =
       new LibraryManagementService(
@@ -104,6 +107,7 @@ public class LibraryManagementServiceTest {
           orphanedMediaFileCleanupService,
           directoryWatchingService,
           streamingService,
+          capturingEventPublisher,
           new MutexFactoryProvider(),
           fileSystem);
 
@@ -177,6 +181,7 @@ public class LibraryManagementServiceTest {
             orphanedMediaFileCleanupService,
             directoryWatchingService,
             streamingService,
+            capturingEventPublisher,
             new MutexFactoryProvider(),
             throwingFileSystem);
 
@@ -213,6 +218,7 @@ public class LibraryManagementServiceTest {
             orphanedMediaFileCleanupService,
             directoryWatchingService,
             streamingService,
+            capturingEventPublisher,
             new MutexFactoryProvider(),
             throwingFileSystem);
 
@@ -621,6 +627,7 @@ public class LibraryManagementServiceTest {
               orphanedMediaFileCleanupService,
               directoryWatchingService,
               streamingService,
+              capturingEventPublisher,
               new MutexFactoryProvider(),
               securityExceptionFs);
 

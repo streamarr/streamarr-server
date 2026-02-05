@@ -118,7 +118,8 @@ class FileEventProcessorTest {
         mock(TMDBMovieProvider.class);
 
     var orphanedMediaFileCleanupService =
-        new OrphanedMediaFileCleanupService(mediaFileRepository, movieService, fileSystem);
+        new OrphanedMediaFileCleanupService(
+            libraryRepository, mediaFileRepository, movieService, fileSystem);
 
     var directoryWatchingService = mock(DirectoryWatchingService.class);
     var streamingService = mock(StreamingService.class);
@@ -137,6 +138,7 @@ class FileEventProcessorTest {
             orphanedMediaFileCleanupService,
             directoryWatchingService,
             streamingService,
+            event -> {},
             new MutexFactoryProvider(),
             fileSystem);
 

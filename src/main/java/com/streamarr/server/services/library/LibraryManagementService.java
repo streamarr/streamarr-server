@@ -40,6 +40,7 @@ import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -60,6 +61,7 @@ public class LibraryManagementService {
   private final OrphanedMediaFileCleanupService orphanedMediaFileCleanupService;
   private final DirectoryWatchingService directoryWatchingService;
   private final StreamingService streamingService;
+  private final ApplicationEventPublisher eventPublisher;
   private final FileSystem fileSystem;
   private final MutexFactory<String> mutexFactory;
 
@@ -76,6 +78,7 @@ public class LibraryManagementService {
       OrphanedMediaFileCleanupService orphanedMediaFileCleanupService,
       @Lazy DirectoryWatchingService directoryWatchingService,
       StreamingService streamingService,
+      ApplicationEventPublisher eventPublisher,
       MutexFactoryProvider mutexFactoryProvider,
       FileSystem fileSystem) {
     this.ignoredFileValidator = ignoredFileValidator;
@@ -90,6 +93,7 @@ public class LibraryManagementService {
     this.orphanedMediaFileCleanupService = orphanedMediaFileCleanupService;
     this.directoryWatchingService = directoryWatchingService;
     this.streamingService = streamingService;
+    this.eventPublisher = eventPublisher;
     this.fileSystem = fileSystem;
 
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
