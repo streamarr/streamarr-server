@@ -187,6 +187,10 @@ public class LibraryManagementService {
       return optionalMediaFile.get();
     }
 
+    return createNewMediaFile(library, path, absoluteFilepath);
+  }
+
+  private MediaFile createNewMediaFile(Library library, Path path, String absoluteFilepath) {
     long fileSize = 0;
     try {
       fileSize = Files.size(path);
