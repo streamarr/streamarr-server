@@ -223,25 +223,8 @@ public class LibraryManagementService {
   }
 
   public void scanLibrary(UUID libraryId) {
-    var optionalLibrary = libraryRepository.findById(libraryId);
-
-    if (optionalLibrary.isEmpty()) {
-      throw new LibraryNotFoundException(libraryId);
-    }
-
-    var library = optionalLibrary.get();
-
-    if (library.getStatus().equals(LibraryStatus.SCANNING)) {
-      throw new LibraryScanInProgressException(libraryId);
-    }
-
-    log.info("Starting {} library scan.", library.getName());
-
-    var startTime = Instant.now();
-
-    library.setStatus(LibraryStatus.SCANNING);
-    library.setScanStartedOn(startTime);
-    libraryRepository.save(library);
+    var library = transitionToScanning(libraryId);
+    var startTime = library.getScanStartedOn();
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor();
         var stream = Files.walk(fileSystem.getPath(library.getFilepath()))) {
@@ -273,6 +256,32 @@ public class LibraryManagementService {
     libraryRepository.save(library);
 
     log.info("Finished {} library scan in {} seconds.", library.getName(), elapsedTime);
+  }
+
+  private Library transitionToScanning(UUID libraryId) {
+    var libraryMutex = mutexFactory.getMutex(libraryId.toString());
+
+    libraryMutex.lock();
+    try {
+      var library =
+          libraryRepository
+              .findById(libraryId)
+              .orElseThrow(() -> new LibraryNotFoundException(libraryId));
+
+      if (library.getStatus().equals(LibraryStatus.SCANNING)) {
+        throw new LibraryScanInProgressException(libraryId);
+      }
+
+      log.info("Starting {} library scan.", library.getName());
+
+      library.setStatus(LibraryStatus.SCANNING);
+      library.setScanStartedOn(Instant.now());
+      libraryRepository.save(library);
+
+      return library;
+    } finally {
+      libraryMutex.unlock();
+    }
   }
 
   private void processFile(Library library, Path path) {

@@ -56,6 +56,10 @@ All PRs must pass these conditions on new code:
 - Prefer switch expressions over if/else-if chains
 - One level of indentation inside methods is ideal; two is acceptable; three means refactor
 
+### Concurrency Coordination
+- **In-memory mutex** (`MutexFactory`): guard brief check-then-act on DB state within a single JVM (e.g., prevent duplicate inserts). Not distributed — ineffective across multiple instances.
+- **Database locks** (`SELECT FOR UPDATE … skipLocked`): coordinate across multiple application instances. Pair with lease-based heartbeats for crash recovery.
+
 ### Defensive Programming
 - Fail fast with meaningful exceptions at system boundaries
 - Use custom exceptions that convey intent (not generic RuntimeException)
