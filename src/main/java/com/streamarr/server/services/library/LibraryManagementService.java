@@ -178,16 +178,23 @@ public class LibraryManagementService {
 
   private MediaFile probeFile(Library library, Path path) {
     var absoluteFilepath = path.toAbsolutePath().toString();
+    var filepathMutex = mutexFactory.getMutex(absoluteFilepath);
 
-    var optionalMediaFile = mediaFileRepository.findFirstByFilepath(absoluteFilepath);
+    filepathMutex.lock();
+    try {
+      var optionalMediaFile = mediaFileRepository.findFirstByFilepath(absoluteFilepath);
 
-    if (optionalMediaFile.isPresent()) {
-      log.info(
-          "MediaFile id: '{}' already exists, not adding again.", optionalMediaFile.get().getId());
-      return optionalMediaFile.get();
+      if (optionalMediaFile.isPresent()) {
+        log.info(
+            "MediaFile id: '{}' already exists, not adding again.",
+            optionalMediaFile.get().getId());
+        return optionalMediaFile.get();
+      }
+
+      return createNewMediaFile(library, path, absoluteFilepath);
+    } finally {
+      filepathMutex.unlock();
     }
-
-    return createNewMediaFile(library, path, absoluteFilepath);
   }
 
   private MediaFile createNewMediaFile(Library library, Path path, String absoluteFilepath) {
