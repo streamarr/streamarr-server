@@ -43,16 +43,14 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 @Tag("UnitTest")
-@DisplayName("Directory Watching Service Tests")
-class DirectoryWatchingServiceTest {
+@DisplayName("File Event Processor Tests")
+class FileEventProcessorTest {
 
   private FileSystem fileSystem;
   private LibraryRepository libraryRepository;
   private FakeMediaFileRepository mediaFileRepository;
-  private VideoExtensionValidator videoExtensionValidator;
   private AtomicReference<FileStabilityChecker> stabilityCheckerRef;
-  private AtomicReference<LibraryManagementService> libraryManagementServiceRef;
-  private DirectoryWatchingService watchingService;
+  private FileEventProcessor eventProcessor;
   private UUID libraryId;
   private UUID specialLibraryId;
 
@@ -61,9 +59,8 @@ class DirectoryWatchingServiceTest {
     fileSystem = Jimfs.newFileSystem(Configuration.unix());
     libraryRepository = new FakeLibraryRepository();
     mediaFileRepository = new FakeMediaFileRepository();
-    videoExtensionValidator = new VideoExtensionValidator();
+    var videoExtensionValidator = new VideoExtensionValidator();
     stabilityCheckerRef = new AtomicReference<>(path -> true);
-    libraryManagementServiceRef = new AtomicReference<>();
 
     var library =
         Library.builder()
@@ -123,26 +120,26 @@ class DirectoryWatchingServiceTest {
             genreService,
             new MutexFactoryProvider(),
             fileSystem);
-    libraryManagementServiceRef.set(libraryManagementService);
 
-    watchingService =
-        new DirectoryWatchingService(
-            libraryRepository,
+    eventProcessor =
+        new FileEventProcessor(
             path -> stabilityCheckerRef.get().awaitStability(path),
-            libraryManagementServiceRef.get(),
+            libraryManagementService,
             videoExtensionValidator);
+
+    eventProcessor.reset(libraryRepository.findAll());
   }
 
   @AfterEach
   void tearDown() throws IOException {
-    watchingService.stopWatching();
+    eventProcessor.shutdown();
     fileSystem.close();
   }
 
   @Test
-  @DisplayName("Should not process events after stopping")
-  void shouldNotProcessEventsAfterStopping() throws Exception {
-    watchingService.stopWatching();
+  @DisplayName("Should not process events when shut down")
+  void shouldNotProcessEventsWhenShutDown() throws Exception {
+    eventProcessor.shutdown();
 
     var path = createFile("/media/movies/Movie (2024).mkv");
     var processed = new AtomicBoolean(false);
@@ -152,7 +149,7 @@ class DirectoryWatchingServiceTest {
           return true;
         });
 
-    watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
     await()
         .during(Duration.ofMillis(100))
@@ -161,8 +158,8 @@ class DirectoryWatchingServiceTest {
   }
 
   @Test
-  @DisplayName("Should handle overflow event without throwing")
-  void shouldHandleOverflowEventWithoutThrowing() {
+  @DisplayName("Should not throw when overflow event received")
+  void shouldNotThrowWhenOverflowEventReceived() {
     var path = fileSystem.getPath("/media/movies/file.mkv");
     var processed = new AtomicBoolean(false);
     stabilityCheckerRef.set(
@@ -171,7 +168,7 @@ class DirectoryWatchingServiceTest {
           return true;
         });
 
-    watchingService.handleFileEvent(DirectoryChangeEvent.EventType.OVERFLOW, path);
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.OVERFLOW, path);
 
     assertThat(processed.get()).isFalse();
   }
@@ -187,7 +184,7 @@ class DirectoryWatchingServiceTest {
           return true;
         });
 
-    watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
     assertThat(processed.get()).isFalse();
   }
@@ -197,7 +194,7 @@ class DirectoryWatchingServiceTest {
   void shouldProcessFileWhenStable() throws Exception {
     var path = createFile("/media/movies/Movie (2024).mkv");
 
-    watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
     await()
         .atMost(Duration.ofSeconds(5))
@@ -221,7 +218,7 @@ class DirectoryWatchingServiceTest {
           return false;
         });
 
-    watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
     assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
 
@@ -230,8 +227,8 @@ class DirectoryWatchingServiceTest {
   }
 
   @Test
-  @DisplayName("Should deduplicate events for same path")
-  void shouldDeduplicateEventsForSamePath() throws Exception {
+  @DisplayName("Should deduplicate when multiple events for same path")
+  void shouldDeduplicateWhenMultipleEventsForSamePath() throws Exception {
     var path = createFile("/media/movies/Movie (2024).mkv");
     var stabilityCallCount = new AtomicInteger(0);
     var blockLatch = new CountDownLatch(1);
@@ -249,10 +246,10 @@ class DirectoryWatchingServiceTest {
           return true;
         });
 
-    watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
     assertThat(enteredLatch.await(5, TimeUnit.SECONDS)).isTrue();
 
-    watchingService.handleFileEvent(DirectoryChangeEvent.EventType.MODIFY, path);
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.MODIFY, path);
 
     blockLatch.countDown();
 
@@ -276,7 +273,7 @@ class DirectoryWatchingServiceTest {
           return true;
         });
 
-    watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
     assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
 
@@ -289,7 +286,7 @@ class DirectoryWatchingServiceTest {
   void shouldResolveToLongestMatchWhenLibraryPathsOverlap() throws Exception {
     var path = createFileAt(fileSystem.getPath("/media/movies/special"), "Movie (2024).mkv");
 
-    watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
     await()
         .atMost(Duration.ofSeconds(5))
@@ -315,7 +312,7 @@ class DirectoryWatchingServiceTest {
           return true;
         });
 
-    watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
     assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
 
@@ -324,8 +321,8 @@ class DirectoryWatchingServiceTest {
   }
 
   @Test
-  @DisplayName("Should clean up in-flight map after processing")
-  void shouldCleanUpInFlightMapAfterProcessing() throws Exception {
+  @DisplayName("Should clean up in-flight map when processing completes")
+  void shouldCleanUpInFlightMapWhenProcessingCompletes() throws Exception {
     var path = createFile("/media/movies/Movie (2024).mkv");
     var callCount = new AtomicInteger(0);
 
@@ -335,7 +332,7 @@ class DirectoryWatchingServiceTest {
           return true;
         });
 
-    watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
     await()
         .atMost(Duration.ofSeconds(5))
@@ -343,7 +340,7 @@ class DirectoryWatchingServiceTest {
         .until(
             () -> {
               if (callCount.get() < 2) {
-                watchingService.handleFileEvent(DirectoryChangeEvent.EventType.MODIFY, path);
+                eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.MODIFY, path);
               }
               return callCount.get() >= 2;
             });
@@ -363,7 +360,7 @@ class DirectoryWatchingServiceTest {
           return count != 1;
         });
 
-    watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
     await()
         .atMost(Duration.ofSeconds(5))
@@ -371,7 +368,7 @@ class DirectoryWatchingServiceTest {
         .until(
             () -> {
               if (callCount.get() < 2) {
-                watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+                eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
               }
               return callCount.get() >= 2;
             });
@@ -400,17 +397,17 @@ class DirectoryWatchingServiceTest {
           return false;
         });
 
-    watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
     assertThat(enteredLatch.await(5, TimeUnit.SECONDS)).isTrue();
 
-    watchingService.handleFileEvent(DirectoryChangeEvent.EventType.DELETE, path);
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.DELETE, path);
 
     assertThat(interruptedLatch.await(2, TimeUnit.SECONDS)).isTrue();
   }
 
   @Test
-  @DisplayName("Should remove from in-flight map on delete event")
-  void shouldRemoveFromInFlightMapOnDeleteEvent() throws Exception {
+  @DisplayName("Should remove from in-flight map when delete event received")
+  void shouldRemoveFromInFlightMapWhenDeleteEventReceived() throws Exception {
     var path = createFile("/media/movies/Movie (2024).mkv");
     var firstEnteredLatch = new CountDownLatch(1);
     var firstBlockLatch = new CountDownLatch(1);
@@ -432,10 +429,10 @@ class DirectoryWatchingServiceTest {
           return true;
         });
 
-    watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
     assertThat(firstEnteredLatch.await(5, TimeUnit.SECONDS)).isTrue();
 
-    watchingService.handleFileEvent(DirectoryChangeEvent.EventType.DELETE, path);
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.DELETE, path);
     firstBlockLatch.countDown();
 
     await()
@@ -444,7 +441,7 @@ class DirectoryWatchingServiceTest {
         .until(
             () -> {
               if (callCount.get() < 2) {
-                watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+                eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
               }
               return callCount.get() >= 2;
             });
@@ -464,7 +461,7 @@ class DirectoryWatchingServiceTest {
           return true;
         });
 
-    watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
     await()
         .atMost(Duration.ofSeconds(5))
@@ -472,7 +469,7 @@ class DirectoryWatchingServiceTest {
         .until(
             () -> {
               if (callCount.get() < 2) {
-                watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+                eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
               }
               return callCount.get() >= 2;
             });
@@ -481,8 +478,8 @@ class DirectoryWatchingServiceTest {
   }
 
   @Test
-  @DisplayName("Should resolve libraries from snapshot taken at construction")
-  void shouldResolveLibrariesFromSnapshotTakenAtConstruction() throws Exception {
+  @DisplayName("Should not resolve library when added after reset")
+  void shouldNotResolveLibraryWhenAddedAfterReset() throws Exception {
     var laterLibrary =
         Library.builder()
             .name("Anime")
@@ -504,7 +501,7 @@ class DirectoryWatchingServiceTest {
           return true;
         });
 
-    watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
     assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
 
@@ -513,8 +510,8 @@ class DirectoryWatchingServiceTest {
   }
 
   @Test
-  @DisplayName("Should interrupt in-flight stability checks when stopping")
-  void shouldInterruptInFlightStabilityChecksWhenStopping() throws Exception {
+  @DisplayName("Should interrupt in-flight stability checks when shut down")
+  void shouldInterruptInFlightStabilityChecksWhenShutDown() throws Exception {
     var path = createFile("/media/movies/Movie (2024).mkv");
     var enteredLatch = new CountDownLatch(1);
     var interruptedLatch = new CountDownLatch(1);
@@ -532,10 +529,10 @@ class DirectoryWatchingServiceTest {
           return false;
         });
 
-    watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
     assertThat(enteredLatch.await(5, TimeUnit.SECONDS)).isTrue();
 
-    watchingService.stopWatching();
+    eventProcessor.shutdown();
 
     assertThat(interruptedLatch.await(2, TimeUnit.SECONDS)).isTrue();
   }
