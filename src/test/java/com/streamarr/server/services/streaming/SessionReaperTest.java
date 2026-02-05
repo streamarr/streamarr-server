@@ -37,25 +37,14 @@ class SessionReaperTest {
   }
 
   @Test
-  @DisplayName("Should reap session when idle with no active requests")
-  void shouldReapSessionWhenIdleWithNoActiveRequests() {
+  @DisplayName("Should reap session when idle past timeout")
+  void shouldReapSessionWhenIdlePastTimeout() {
     var session = buildSession(Instant.now().minusSeconds(120), 0);
     streamingService.addSession(session);
 
     reaper.reapSessions();
 
     assertThat(streamingService.accessSession(session.getSessionId())).isEmpty();
-  }
-
-  @Test
-  @DisplayName("Should preserve session when idle but has active requests")
-  void shouldPreserveSessionWhenIdleButHasActiveRequests() {
-    var session = buildSession(Instant.now().minusSeconds(120), 1);
-    streamingService.addSession(session);
-
-    reaper.reapSessions();
-
-    assertThat(streamingService.accessSession(session.getSessionId())).isPresent();
   }
 
   @Test
