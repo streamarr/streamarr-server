@@ -13,9 +13,12 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class PollingFileStabilityChecker implements FileStabilityChecker {
 
-  private sealed interface PollResult permits PollResult.Continue, PollResult.Stabilized, PollResult.Failed {
+  private sealed interface PollResult
+      permits PollResult.Continue, PollResult.Stabilized, PollResult.Failed {
     record Continue(long lastSize, java.time.Instant lastChangeTime) implements PollResult {}
+
     record Stabilized() implements PollResult {}
+
     record Failed(String reason) implements PollResult {}
   }
 
@@ -40,7 +43,15 @@ public class PollingFileStabilityChecker implements FileStabilityChecker {
     var pollInterval = Duration.ofSeconds(properties.pollIntervalSeconds());
 
     while (true) {
-      var result = pollOnce(path, lastSize, lastChangeTime, startTime, stabilizationPeriod, maxWait, pollInterval);
+      var result =
+          pollOnce(
+              path,
+              lastSize,
+              lastChangeTime,
+              startTime,
+              stabilizationPeriod,
+              maxWait,
+              pollInterval);
 
       switch (result) {
         case PollResult.Continue c -> {

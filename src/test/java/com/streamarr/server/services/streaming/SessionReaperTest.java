@@ -37,9 +37,9 @@ class SessionReaperTest {
   }
 
   @Test
-  @DisplayName("Should reap session when idle with no active requests")
-  void shouldReapSessionWhenIdleWithNoActiveRequests() {
-    var session = buildSession(Instant.now().minusSeconds(120), 0);
+  @DisplayName("Should reap session when idle past timeout")
+  void shouldReapSessionWhenIdlePastTimeout() {
+    var session = buildSession(Instant.now().minusSeconds(120));
     streamingService.addSession(session);
 
     reaper.reapSessions();
@@ -48,20 +48,9 @@ class SessionReaperTest {
   }
 
   @Test
-  @DisplayName("Should preserve session when idle but has active requests")
-  void shouldPreserveSessionWhenIdleButHasActiveRequests() {
-    var session = buildSession(Instant.now().minusSeconds(120), 1);
-    streamingService.addSession(session);
-
-    reaper.reapSessions();
-
-    assertThat(streamingService.accessSession(session.getSessionId())).isPresent();
-  }
-
-  @Test
   @DisplayName("Should preserve session when recently accessed")
   void shouldPreserveSessionWhenRecentlyAccessed() {
-    var session = buildSession(Instant.now().minusSeconds(10), 0);
+    var session = buildSession(Instant.now().minusSeconds(10));
     streamingService.addSession(session);
 
     reaper.reapSessions();
@@ -72,7 +61,7 @@ class SessionReaperTest {
   @Test
   @DisplayName("Should update handle to failed when FFmpeg process dies")
   void shouldUpdateHandleToFailedWhenFfmpegProcessDies() {
-    var session = buildSession(Instant.now().minusSeconds(10), 0);
+    var session = buildSession(Instant.now().minusSeconds(10));
     session.setHandle(new TranscodeHandle(1234L, TranscodeStatus.ACTIVE));
     streamingService.addSession(session);
     executor.markDead(session.getSessionId());
@@ -86,7 +75,7 @@ class SessionReaperTest {
   @Test
   @DisplayName("Should not change handle when FFmpeg process is running")
   void shouldNotChangeHandleWhenFfmpegProcessIsRunning() {
-    var session = buildSession(Instant.now().minusSeconds(10), 0);
+    var session = buildSession(Instant.now().minusSeconds(10));
     session.setHandle(new TranscodeHandle(1234L, TranscodeStatus.ACTIVE));
     streamingService.addSession(session);
     executor.start(
@@ -133,17 +122,15 @@ class SessionReaperTest {
     assertThat(session.getVariantHandle("720p").status()).isEqualTo(TranscodeStatus.ACTIVE);
   }
 
-  private StreamSession buildSession(Instant lastAccessedAt, int activeRequests) {
+  private StreamSession buildSession(Instant lastAccessedAt) {
     var session = StreamSessionFixture.buildMpegtsSession();
     session.setLastAccessedAt(lastAccessedAt);
-    session.getActiveRequestCount().set(activeRequests);
     return session;
   }
 
   private StreamSession buildAbrSession(Instant lastAccessedAt) {
     var session = StreamSessionFixture.buildMpegtsSession();
     session.setLastAccessedAt(lastAccessedAt);
-    session.getActiveRequestCount().set(0);
 
     session.setVariantHandle("1080p", new TranscodeHandle(100L, TranscodeStatus.ACTIVE));
     session.setVariantHandle("720p", new TranscodeHandle(101L, TranscodeStatus.ACTIVE));

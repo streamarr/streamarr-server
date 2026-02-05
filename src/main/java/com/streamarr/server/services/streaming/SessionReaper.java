@@ -24,7 +24,7 @@ public class SessionReaper {
     var now = Instant.now();
 
     for (var session : streamingService.getAllSessions()) {
-      if (isIdleAndUnused(session, now)) {
+      if (isIdle(session, now)) {
         log.info("Reaping idle session {} (idle)", session.getSessionId());
         streamingService.destroySession(session.getSessionId());
         continue;
@@ -34,10 +34,9 @@ public class SessionReaper {
     }
   }
 
-  private boolean isIdleAndUnused(StreamSession session, Instant now) {
+  private boolean isIdle(StreamSession session, Instant now) {
     var idleSeconds = now.getEpochSecond() - session.getLastAccessedAt().getEpochSecond();
-    return idleSeconds > properties.sessionTimeoutSeconds()
-        && session.getActiveRequestCount().get() == 0;
+    return idleSeconds > properties.sessionTimeoutSeconds();
   }
 
   private void handleDeadProcesses(StreamSession session) {
