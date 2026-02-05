@@ -112,6 +112,9 @@ class FileEventProcessorTest {
     MetadataProvider<com.streamarr.server.domain.media.Movie> tmdbProvider =
         mock(TMDBMovieProvider.class);
 
+    var orphanedMediaFileCleanupService =
+        new OrphanedMediaFileCleanupService(mediaFileRepository, movieService, fileSystem);
+
     var libraryManagementService =
         new LibraryManagementService(
             ignoredFileValidator,
@@ -123,6 +126,7 @@ class FileEventProcessorTest {
             movieService,
             personService,
             genreService,
+            orphanedMediaFileCleanupService,
             new MutexFactoryProvider(),
             fileSystem);
 

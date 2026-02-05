@@ -22,9 +22,11 @@ import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
+import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
+import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.GenreService;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.PersonService;
@@ -57,7 +59,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @DisplayName("Library Management Service Tests")
 public class LibraryManagementServiceTest {
 
-  private final MovieService movieService = mock(MovieService.class);
   private final PersonService personService = mock(PersonService.class);
   private final GenreService genreService = mock(GenreService.class);
   private final MetadataProvider<Movie> tmdbMovieProvider = mock(TMDBMovieProvider.class);
@@ -65,7 +66,12 @@ public class LibraryManagementServiceTest {
       new MovieMetadataProviderResolver(List.of(tmdbMovieProvider));
   private final LibraryRepository fakeLibraryRepository = new FakeLibraryRepository();
   private final MediaFileRepository fakeMediaFileRepository = new FakeMediaFileRepository();
+  private final MovieRepository fakeMovieRepository = new FakeMovieRepository();
+  private final MovieService movieService = new MovieService(fakeMovieRepository, null, null);
   private final FileSystem fileSystem = Jimfs.newFileSystem(Configuration.unix());
+
+  private final OrphanedMediaFileCleanupService orphanedMediaFileCleanupService =
+      new OrphanedMediaFileCleanupService(fakeMediaFileRepository, movieService, fileSystem);
 
   private final LibraryManagementService libraryManagementService =
       new LibraryManagementService(
@@ -78,6 +84,7 @@ public class LibraryManagementServiceTest {
           movieService,
           personService,
           genreService,
+          orphanedMediaFileCleanupService,
           new MutexFactoryProvider(),
           fileSystem);
 
@@ -294,6 +301,23 @@ public class LibraryManagementServiceTest {
     assertThrows(
         LibraryNotFoundException.class,
         () -> libraryManagementService.processDiscoveredFile(UUID.randomUUID(), moviePath));
+  }
+
+  @Test
+  @DisplayName("Should not attempt cleanup when library path is inaccessible")
+  void shouldNotAttemptCleanupWhenLibraryPathInaccessible() {
+    var orphanedMediaFile =
+        fakeMediaFileRepository.save(
+            MediaFile.builder()
+                .libraryId(savedLibraryId)
+                .filepath("/library/nonexistent/movie.mkv")
+                .filename("movie.mkv")
+                .status(MediaFileStatus.MATCHED)
+                .build());
+
+    libraryManagementService.scanLibrary(savedLibraryId);
+
+    assertThat(fakeMediaFileRepository.findById(orphanedMediaFile.getId())).isPresent();
   }
 
   @Test
