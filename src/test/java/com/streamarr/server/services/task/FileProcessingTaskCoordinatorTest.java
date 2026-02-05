@@ -216,4 +216,52 @@ class FileProcessingTaskCoordinatorTest {
     var afterExtend = repository.findById(completedTask.getId()).orElseThrow();
     assertThat(afterExtend.getLeaseExpiresAt()).isEqualTo(originalLease);
   }
+
+  @Test
+  @DisplayName("Should return empty when completing deleted task")
+  void shouldReturnEmptyWhenCompletingDeletedTask() {
+    var nonExistentTaskId = UUID.randomUUID();
+
+    var result = coordinator.complete(nonExistentTaskId);
+
+    assertThat(result).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should return empty when failing deleted task")
+  void shouldReturnEmptyWhenFailingDeletedTask() {
+    var nonExistentTaskId = UUID.randomUUID();
+
+    var result = coordinator.fail(nonExistentTaskId, "Some error");
+
+    assertThat(result).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should return task when completing existing task")
+  void shouldReturnTaskWhenCompletingExistingTask() {
+    var path = Path.of("/media/movies/ReturnComplete (2024).mkv");
+    var libraryId = UUID.randomUUID();
+    coordinator.createTask(path, libraryId);
+    var claimed = coordinator.claimNextTask().orElseThrow();
+
+    var result = coordinator.complete(claimed.getId());
+
+    assertThat(result).isPresent();
+    assertThat(result.get().getStatus()).isEqualTo(FileProcessingTaskStatus.COMPLETED);
+  }
+
+  @Test
+  @DisplayName("Should return task when failing existing task")
+  void shouldReturnTaskWhenFailingExistingTask() {
+    var path = Path.of("/media/movies/ReturnFail (2024).mkv");
+    var libraryId = UUID.randomUUID();
+    coordinator.createTask(path, libraryId);
+    var claimed = coordinator.claimNextTask().orElseThrow();
+
+    var result = coordinator.fail(claimed.getId(), "Processing error");
+
+    assertThat(result).isPresent();
+    assertThat(result.get().getStatus()).isEqualTo(FileProcessingTaskStatus.FAILED);
+  }
 }

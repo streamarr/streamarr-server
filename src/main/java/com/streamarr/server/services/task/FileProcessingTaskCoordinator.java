@@ -97,24 +97,29 @@ public class FileProcessingTaskCoordinator {
     }
   }
 
-  public void complete(UUID taskId) {
-    var task =
-        repository
-            .findById(taskId)
-            .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
+  public Optional<FileProcessingTask> complete(UUID taskId) {
+    var optionalTask = repository.findById(taskId);
+    if (optionalTask.isEmpty()) {
+      log.debug("Task already deleted, skipping completion: {}", taskId);
+      return Optional.empty();
+    }
+    var task = optionalTask.get();
     task.setStatus(FileProcessingTaskStatus.COMPLETED);
     task.setCompletedOn(clock.instant());
     task.setOwnerInstanceId(null);
     task.setLeaseExpiresAt(null);
     repository.save(task);
     log.info("Completed task for: {}", task.getFilepath());
+    return Optional.of(task);
   }
 
-  public void fail(UUID taskId, String errorMessage) {
-    var task =
-        repository
-            .findById(taskId)
-            .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
+  public Optional<FileProcessingTask> fail(UUID taskId, String errorMessage) {
+    var optionalTask = repository.findById(taskId);
+    if (optionalTask.isEmpty()) {
+      log.debug("Task already deleted, skipping failure: {}", taskId);
+      return Optional.empty();
+    }
+    var task = optionalTask.get();
     task.setStatus(FileProcessingTaskStatus.FAILED);
     task.setErrorMessage(errorMessage);
     task.setCompletedOn(clock.instant());
@@ -122,6 +127,7 @@ public class FileProcessingTaskCoordinator {
     task.setLeaseExpiresAt(null);
     repository.save(task);
     log.warn("Failed task for: {} with error: {}", task.getFilepath(), errorMessage);
+    return Optional.of(task);
   }
 
   @Transactional
