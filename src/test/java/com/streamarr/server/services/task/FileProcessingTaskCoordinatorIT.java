@@ -1,6 +1,7 @@
 package com.streamarr.server.services.task;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.ExternalAgentStrategy;
@@ -8,12 +9,16 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaType;
+import com.streamarr.server.domain.task.FileProcessingTask;
 import com.streamarr.server.domain.task.FileProcessingTaskStatus;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.task.FileProcessingTaskRepository;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -21,6 +26,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -210,5 +216,62 @@ class FileProcessingTaskCoordinatorIT extends AbstractIntegrationTest {
     coordinator.cancelTask(path);
 
     assertThat(taskRepository.count()).isEqualTo(1);
+  }
+
+  @Test
+  @Disabled("Pending fix: DataIntegrityViolationException handling in createTask")
+  @DisplayName("Should handle race condition on concurrent createTask calls")
+  void shouldHandleRaceConditionOnConcurrentCreateTask() throws Exception {
+    var path = Path.of("/media/movies/RaceCondition (2024).mkv");
+    var threadCount = 10;
+    var executor = Executors.newFixedThreadPool(threadCount);
+    var startLatch = new CountDownLatch(1);
+    var doneLatch = new CountDownLatch(threadCount);
+    var createdTasks = new CopyOnWriteArrayList<FileProcessingTask>();
+    var exceptions = new CopyOnWriteArrayList<Exception>();
+
+    for (int i = 0; i < threadCount; i++) {
+      executor.submit(
+          () -> {
+            try {
+              startLatch.await();
+              var task = coordinator.createTask(path, testLibrary.getId());
+              createdTasks.add(task);
+            } catch (Exception e) {
+              exceptions.add(e);
+            } finally {
+              doneLatch.countDown();
+            }
+          });
+    }
+
+    startLatch.countDown();
+
+    await()
+        .atMost(Duration.ofSeconds(10))
+        .untilAsserted(() -> assertThat(doneLatch.getCount()).isZero());
+
+    executor.shutdown();
+
+    assertThat(exceptions).isEmpty();
+    assertThat(createdTasks).hasSize(threadCount);
+    assertThat(createdTasks.stream().map(FileProcessingTask::getId).distinct()).hasSize(1);
+    assertThat(taskRepository.count()).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("Should reclaim orphaned tasks with expired leases")
+  void shouldReclaimOrphanedTasksWithExpiredLeases() {
+    var path = Path.of("/media/movies/Orphan (2024).mkv");
+    coordinator.createTask(path, testLibrary.getId());
+    var claimed = coordinator.claimNextTask().orElseThrow();
+
+    claimed.setLeaseExpiresAt(Instant.now().minus(Duration.ofMinutes(5)));
+    taskRepository.save(claimed);
+
+    var reclaimed = coordinator.reclaimOrphanedTasks(10);
+
+    assertThat(reclaimed).hasSize(1);
+    assertThat(reclaimed.getFirst().getStatus()).isEqualTo(FileProcessingTaskStatus.PENDING);
   }
 }
