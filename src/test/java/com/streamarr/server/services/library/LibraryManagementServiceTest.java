@@ -577,7 +577,12 @@ public class LibraryManagementServiceTest {
             () -> {
               var refreshedLibrary =
                   fakeLibraryRepository.findById(savedLibrary.getId()).orElseThrow();
-              assertThat(refreshedLibrary.getScanStartedOn()).isNotNull();
+              assertThat(refreshedLibrary.getScanCompletedOn())
+                  .as("Library scan should complete")
+                  .isNotNull();
+              assertThat(refreshedLibrary.getStatus())
+                  .as("Library status should be HEALTHY after scan")
+                  .isEqualTo(LibraryStatus.HEALTHY);
             });
   }
 
