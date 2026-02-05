@@ -5,6 +5,7 @@ import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.server.services.streaming.HlsStreamingService;
 import com.streamarr.server.services.streaming.QualityLadderService;
 import com.streamarr.server.services.streaming.SegmentStore;
+import com.streamarr.server.services.streaming.StreamSessionRepository;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.streaming.TranscodeDecisionService;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
@@ -13,6 +14,7 @@ import com.streamarr.server.services.streaming.ffmpeg.FfmpegProcessManager;
 import com.streamarr.server.services.streaming.ffmpeg.LocalFfprobeService;
 import com.streamarr.server.services.streaming.ffmpeg.LocalTranscodeExecutor;
 import com.streamarr.server.services.streaming.ffmpeg.TranscodeCapabilityService;
+import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRepository;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -71,6 +73,11 @@ public class StreamingConfig {
   }
 
   @Bean
+  public StreamSessionRepository streamSessionRepository() {
+    return new InMemoryStreamSessionRepository();
+  }
+
+  @Bean
   public StreamingService streamingService(
       MediaFileRepository mediaFileRepository,
       TranscodeExecutor transcodeExecutor,
@@ -78,7 +85,8 @@ public class StreamingConfig {
       FfprobeService ffprobeService,
       TranscodeDecisionService transcodeDecisionService,
       QualityLadderService qualityLadderService,
-      StreamingProperties properties) {
+      StreamingProperties properties,
+      StreamSessionRepository streamSessionRepository) {
     return new HlsStreamingService(
         mediaFileRepository,
         transcodeExecutor,
@@ -86,6 +94,7 @@ public class StreamingConfig {
         ffprobeService,
         transcodeDecisionService,
         qualityLadderService,
-        properties);
+        properties,
+        streamSessionRepository);
   }
 }

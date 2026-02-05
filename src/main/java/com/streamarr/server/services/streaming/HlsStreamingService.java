@@ -20,7 +20,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -35,8 +34,7 @@ public class HlsStreamingService implements StreamingService {
   private final TranscodeDecisionService transcodeDecisionService;
   private final QualityLadderService qualityLadderService;
   private final StreamingProperties properties;
-
-  private final ConcurrentHashMap<UUID, StreamSession> sessions = new ConcurrentHashMap<>();
+  private final StreamSessionRepository sessionRepository;
 
   @Override
   public StreamSession createSession(UUID mediaFileId, StreamingOptions options) {
@@ -67,7 +65,7 @@ public class HlsStreamingService implements StreamingService {
             .lastAccessedAt(now)
             .build();
 
-    sessions.put(sessionId, session);
+    sessionRepository.save(session);
     startTranscodes(session, 0);
     log.info(
         "Created streaming session {} for media file {} (mode: {}, variants: {})",
@@ -81,19 +79,17 @@ public class HlsStreamingService implements StreamingService {
 
   @Override
   public Optional<StreamSession> accessSession(UUID sessionId) {
-    var session = sessions.get(sessionId);
-    if (session != null) {
-      session.setLastAccessedAt(Instant.now());
-    }
-    return Optional.ofNullable(session);
+    var session = sessionRepository.findById(sessionId);
+    session.ifPresent(s -> s.setLastAccessedAt(Instant.now()));
+    return session;
   }
 
   @Override
   public StreamSession seekSession(UUID sessionId, int positionSeconds) {
-    var session = sessions.get(sessionId);
-    if (session == null) {
-      throw new SessionNotFoundException(sessionId);
-    }
+    var session =
+        sessionRepository
+            .findById(sessionId)
+            .orElseThrow(() -> new SessionNotFoundException(sessionId));
 
     transcodeExecutor.stop(sessionId);
     segmentStore.deleteSession(sessionId);
@@ -108,24 +104,24 @@ public class HlsStreamingService implements StreamingService {
 
   @Override
   public void destroySession(UUID sessionId) {
-    var session = sessions.remove(sessionId);
-    if (session == null) {
-      return;
-    }
-
-    transcodeExecutor.stop(sessionId);
-    segmentStore.deleteSession(sessionId);
-    log.info("Destroyed streaming session {}", sessionId);
+    sessionRepository
+        .removeById(sessionId)
+        .ifPresent(
+            session -> {
+              transcodeExecutor.stop(sessionId);
+              segmentStore.deleteSession(sessionId);
+              log.info("Destroyed streaming session {}", sessionId);
+            });
   }
 
   @Override
   public Collection<StreamSession> getAllSessions() {
-    return Collections.unmodifiableCollection(sessions.values());
+    return sessionRepository.findAll();
   }
 
   @Override
   public int getActiveSessionCount() {
-    return sessions.size();
+    return sessionRepository.count();
   }
 
   private List<QualityVariant> resolveVariants(
@@ -216,7 +212,7 @@ public class HlsStreamingService implements StreamingService {
 
   private int availableTranscodeSlots() {
     var activeTranscodes =
-        sessions.values().stream()
+        sessionRepository.findAll().stream()
             .filter(s -> requiresTranscode(s.getTranscodeDecision().transcodeMode()))
             .mapToInt(s -> Math.max(1, s.getVariants().size()))
             .sum();
