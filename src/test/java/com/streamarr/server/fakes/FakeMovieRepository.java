@@ -116,4 +116,10 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
     var reversed = filter.getSortDirection() == SortOrder.DESC ? SortOrder.ASC : SortOrder.DESC;
     return filter.toBuilder().sortDirection(reversed).build();
   }
+
+  @Override
+  public void deleteByLibrary_Id(UUID libraryId) {
+    database.values().removeIf(
+        movie -> movie.getLibrary() != null && libraryId.equals(movie.getLibrary().getId()));
+  }
 }

@@ -49,6 +49,11 @@ public class MovieService {
   }
 
   @Transactional
+  public void deleteByLibraryId(UUID libraryId) {
+    movieRepository.deleteByLibrary_Id(libraryId);
+  }
+
+  @Transactional
   public Movie saveMovieWithMediaFile(Movie movie, MediaFile mediaFile) {
     var savedMovie = movieRepository.saveAndFlush(movie);
 
