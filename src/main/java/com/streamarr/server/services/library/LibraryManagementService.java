@@ -31,9 +31,9 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.Executors;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.annotation.Lazy;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 @Slf4j
@@ -91,7 +91,7 @@ public class LibraryManagementService {
   public void addLibrary(Library library) {}
 
   // TODO #39: implement removeLibrary mutation
-  public void removeLibrary() {}
+  public void removeLibrary(UUID libraryId) {}
 
   public void processDiscoveredFile(UUID libraryId, Path path) {
     var library =
