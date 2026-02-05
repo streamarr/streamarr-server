@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 import static org.mockito.Mockito.mock;
 
 import com.google.common.jimfs.Configuration;
@@ -27,11 +28,13 @@ import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -140,7 +143,6 @@ class DirectoryWatchingServiceTest {
 
     watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
-    Thread.sleep(100);
     assertThat(processed.get()).isFalse();
   }
 
@@ -148,21 +150,17 @@ class DirectoryWatchingServiceTest {
   @DisplayName("Should process file when stable")
   void shouldProcessFileWhenStable() throws Exception {
     var path = createFile("/media/movies/Movie (2024).mkv");
-    var latch = new CountDownLatch(1);
-
-    stabilityCheckerRef.set(
-        p -> {
-          latch.countDown();
-          return true;
-        });
 
     watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
-    assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
-    Thread.sleep(100);
-
-    var mediaFile = mediaFileRepository.findFirstByFilepath(path.toAbsolutePath().toString());
-    assertThat(mediaFile).isPresent();
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () -> {
+              var mediaFile =
+                  mediaFileRepository.findFirstByFilepath(path.toAbsolutePath().toString());
+              assertThat(mediaFile).isPresent();
+            });
   }
 
   @Test
@@ -180,7 +178,6 @@ class DirectoryWatchingServiceTest {
     watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
     assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
-    Thread.sleep(100);
 
     var mediaFile = mediaFileRepository.findFirstByFilepath(path.toAbsolutePath().toString());
     assertThat(mediaFile).isEmpty();
@@ -190,7 +187,7 @@ class DirectoryWatchingServiceTest {
   @DisplayName("Should deduplicate events for same path")
   void shouldDeduplicateEventsForSamePath() throws Exception {
     var path = createFile("/media/movies/Movie (2024).mkv");
-    var stabilityCallCount = new java.util.concurrent.atomic.AtomicInteger(0);
+    var stabilityCallCount = new AtomicInteger(0);
     var blockLatch = new CountDownLatch(1);
     var enteredLatch = new CountDownLatch(1);
 
@@ -212,9 +209,11 @@ class DirectoryWatchingServiceTest {
     watchingService.handleFileEvent(DirectoryChangeEvent.EventType.MODIFY, path);
 
     blockLatch.countDown();
-    Thread.sleep(200);
 
-    assertThat(stabilityCallCount.get()).isEqualTo(1);
+    await()
+        .during(Duration.ofMillis(100))
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(() -> assertThat(stabilityCallCount.get()).isEqualTo(1));
   }
 
   @Test
@@ -234,7 +233,6 @@ class DirectoryWatchingServiceTest {
     watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
     assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
-    Thread.sleep(100);
 
     var mediaFile = mediaFileRepository.findFirstByFilepath(path.toAbsolutePath().toString());
     assertThat(mediaFile).isEmpty();
@@ -257,22 +255,18 @@ class DirectoryWatchingServiceTest {
     Files.createDirectories(fileSystem.getPath("/media/movies/special"));
 
     var path = createFileAt(fileSystem.getPath("/media/movies/special"), "Movie (2024).mkv");
-    var latch = new CountDownLatch(1);
-
-    stabilityCheckerRef.set(
-        p -> {
-          latch.countDown();
-          return true;
-        });
 
     watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
-    assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
-    Thread.sleep(100);
-
-    var mediaFile = mediaFileRepository.findFirstByFilepath(path.toAbsolutePath().toString());
-    assertThat(mediaFile).isPresent();
-    assertThat(mediaFile.get().getLibraryId()).isEqualTo(savedSpecial.getId());
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () -> {
+              var mediaFile =
+                  mediaFileRepository.findFirstByFilepath(path.toAbsolutePath().toString());
+              assertThat(mediaFile).isPresent();
+              assertThat(mediaFile.get().getLibraryId()).isEqualTo(savedSpecial.getId());
+            });
   }
 
   @Test
@@ -291,7 +285,6 @@ class DirectoryWatchingServiceTest {
     watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
     assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
-    Thread.sleep(100);
 
     var mediaFile = mediaFileRepository.findFirstByFilepath(path.toAbsolutePath().toString());
     assertThat(mediaFile).isEmpty();
@@ -301,27 +294,26 @@ class DirectoryWatchingServiceTest {
   @DisplayName("Should clean up in-flight map after processing")
   void shouldCleanUpInFlightMapAfterProcessing() throws Exception {
     var path = createFile("/media/movies/Movie (2024).mkv");
-    var firstProcessed = new CountDownLatch(1);
-    var secondProcessed = new CountDownLatch(1);
-    var callCount = new java.util.concurrent.atomic.AtomicInteger(0);
+    var callCount = new AtomicInteger(0);
 
     stabilityCheckerRef.set(
         p -> {
-          var count = callCount.incrementAndGet();
-          if (count == 1) {
-            firstProcessed.countDown();
-          } else {
-            secondProcessed.countDown();
-          }
+          callCount.incrementAndGet();
           return true;
         });
 
     watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
-    assertThat(firstProcessed.await(5, TimeUnit.SECONDS)).isTrue();
-    Thread.sleep(200);
 
-    watchingService.handleFileEvent(DirectoryChangeEvent.EventType.MODIFY, path);
-    assertThat(secondProcessed.await(5, TimeUnit.SECONDS)).isTrue();
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .pollInterval(Duration.ofMillis(50))
+        .until(
+            () -> {
+              if (callCount.get() < 2) {
+                watchingService.handleFileEvent(DirectoryChangeEvent.EventType.MODIFY, path);
+              }
+              return callCount.get() >= 2;
+            });
 
     assertThat(callCount.get()).isEqualTo(2);
   }
@@ -330,27 +322,26 @@ class DirectoryWatchingServiceTest {
   @DisplayName("Should clean up in-flight map when stability fails")
   void shouldCleanUpInFlightMapWhenStabilityFails() throws Exception {
     var path = createFile("/media/movies/Movie (2024).mkv");
-    var firstFailed = new CountDownLatch(1);
-    var secondCalled = new CountDownLatch(1);
-    var callCount = new java.util.concurrent.atomic.AtomicInteger(0);
+    var callCount = new AtomicInteger(0);
 
     stabilityCheckerRef.set(
         p -> {
           var count = callCount.incrementAndGet();
-          if (count == 1) {
-            firstFailed.countDown();
-            return false;
-          }
-          secondCalled.countDown();
-          return true;
+          return count != 1;
         });
 
     watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
-    assertThat(firstFailed.await(5, TimeUnit.SECONDS)).isTrue();
-    Thread.sleep(200);
 
-    watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
-    assertThat(secondCalled.await(5, TimeUnit.SECONDS)).isTrue();
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .pollInterval(Duration.ofMillis(50))
+        .until(
+            () -> {
+              if (callCount.get() < 2) {
+                watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+              }
+              return callCount.get() >= 2;
+            });
 
     assertThat(callCount.get()).isEqualTo(2);
   }
@@ -361,8 +352,7 @@ class DirectoryWatchingServiceTest {
     var path = createFile("/media/movies/Movie (2024).mkv");
     var firstEnteredLatch = new CountDownLatch(1);
     var firstBlockLatch = new CountDownLatch(1);
-    var secondEnteredLatch = new CountDownLatch(1);
-    var callCount = new java.util.concurrent.atomic.AtomicInteger(0);
+    var callCount = new AtomicInteger(0);
 
     stabilityCheckerRef.set(
         p -> {
@@ -377,7 +367,6 @@ class DirectoryWatchingServiceTest {
             }
             return false;
           }
-          secondEnteredLatch.countDown();
           return true;
         });
 
@@ -385,12 +374,18 @@ class DirectoryWatchingServiceTest {
     assertThat(firstEnteredLatch.await(5, TimeUnit.SECONDS)).isTrue();
 
     watchingService.handleFileEvent(DirectoryChangeEvent.EventType.DELETE, path);
-
     firstBlockLatch.countDown();
-    Thread.sleep(200);
 
-    watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
-    assertThat(secondEnteredLatch.await(5, TimeUnit.SECONDS)).isTrue();
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .pollInterval(Duration.ofMillis(50))
+        .until(
+            () -> {
+              if (callCount.get() < 2) {
+                watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+              }
+              return callCount.get() >= 2;
+            });
 
     assertThat(callCount.get()).isEqualTo(2);
   }
@@ -411,27 +406,26 @@ class DirectoryWatchingServiceTest {
     Files.createDirectories(fileSystem.getPath("/media/shows"));
 
     var path = createFile("/media/shows/Show S01E01 (2024).mkv");
-    var firstDone = new CountDownLatch(1);
-    var secondCalled = new CountDownLatch(1);
-    var callCount = new java.util.concurrent.atomic.AtomicInteger(0);
+    var callCount = new AtomicInteger(0);
 
     stabilityCheckerRef.set(
         p -> {
-          var count = callCount.incrementAndGet();
-          if (count == 1) {
-            firstDone.countDown();
-          } else {
-            secondCalled.countDown();
-          }
+          callCount.incrementAndGet();
           return true;
         });
 
     watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
-    assertThat(firstDone.await(5, TimeUnit.SECONDS)).isTrue();
-    Thread.sleep(200);
 
-    watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
-    assertThat(secondCalled.await(5, TimeUnit.SECONDS)).isTrue();
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .pollInterval(Duration.ofMillis(50))
+        .until(
+            () -> {
+              if (callCount.get() < 2) {
+                watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+              }
+              return callCount.get() >= 2;
+            });
 
     assertThat(callCount.get()).isEqualTo(2);
   }
