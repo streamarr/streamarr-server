@@ -13,6 +13,12 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class PollingFileStabilityChecker implements FileStabilityChecker {
 
+  private sealed interface PollResult permits PollResult.Continue, PollResult.Stabilized, PollResult.Failed {
+    record Continue(long lastSize, java.time.Instant lastChangeTime) implements PollResult {}
+    record Stabilized() implements PollResult {}
+    record Failed(String reason) implements PollResult {}
+  }
+
   private final Clock clock;
   private final LibraryWatcherProperties properties;
   private final Sleeper sleeper;
@@ -34,38 +40,58 @@ public class PollingFileStabilityChecker implements FileStabilityChecker {
     var pollInterval = Duration.ofSeconds(properties.pollIntervalSeconds());
 
     while (true) {
-      try {
-        sleeper.sleep(pollInterval);
-      } catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-        log.warn("Stability check interrupted for {}", path);
-        return false;
-      }
+      var result = pollOnce(path, lastSize, lastChangeTime, startTime, stabilizationPeriod, maxWait, pollInterval);
 
-      long currentSize;
-      try {
-        currentSize = Files.size(path);
-      } catch (IOException | SecurityException e) {
-        log.warn("File became inaccessible during stability check: {}", path);
-        return false;
-      }
-
-      var now = clock.instant();
-
-      if (currentSize != lastSize) {
-        lastSize = currentSize;
-        lastChangeTime = now;
-      }
-
-      if (Duration.between(lastChangeTime, now).compareTo(stabilizationPeriod) >= 0) {
-        log.info("File stabilized: {}", path);
-        return true;
-      }
-
-      if (Duration.between(startTime, now).compareTo(maxWait) >= 0) {
-        log.warn("Max wait exceeded for file: {}", path);
-        return false;
+      switch (result) {
+        case PollResult.Continue c -> {
+          lastSize = c.lastSize();
+          lastChangeTime = c.lastChangeTime();
+        }
+        case PollResult.Stabilized() -> {
+          log.info("File stabilized: {}", path);
+          return true;
+        }
+        case PollResult.Failed f -> {
+          log.warn("{}: {}", f.reason(), path);
+          return false;
+        }
       }
     }
+  }
+
+  private PollResult pollOnce(
+      Path path,
+      long lastSize,
+      java.time.Instant lastChangeTime,
+      java.time.Instant startTime,
+      Duration stabilizationPeriod,
+      Duration maxWait,
+      Duration pollInterval) {
+    try {
+      sleeper.sleep(pollInterval);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      return new PollResult.Failed("Stability check interrupted for");
+    }
+
+    long currentSize;
+    try {
+      currentSize = Files.size(path);
+    } catch (IOException | SecurityException e) {
+      return new PollResult.Failed("File became inaccessible during stability check");
+    }
+
+    var now = clock.instant();
+    var updatedLastChangeTime = currentSize != lastSize ? now : lastChangeTime;
+
+    if (Duration.between(updatedLastChangeTime, now).compareTo(stabilizationPeriod) >= 0) {
+      return new PollResult.Stabilized();
+    }
+
+    if (Duration.between(startTime, now).compareTo(maxWait) >= 0) {
+      return new PollResult.Failed("Max wait exceeded for file");
+    }
+
+    return new PollResult.Continue(currentSize, updatedLastChangeTime);
   }
 }
