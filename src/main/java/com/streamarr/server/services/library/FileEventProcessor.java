@@ -139,7 +139,7 @@ class FileEventProcessor {
       taskCoordinator.complete(task);
     } catch (Exception e) {
       log.error("Failed to process discovered file: {}", path, e);
-      taskCoordinator.fail(task, e.getMessage());
+      taskCoordinator.fail(task, Optional.ofNullable(e.getMessage()).orElse(e.toString()));
     }
   }
 
