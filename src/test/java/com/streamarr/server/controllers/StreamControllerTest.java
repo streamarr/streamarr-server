@@ -25,7 +25,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -192,20 +191,6 @@ class StreamControllerTest {
         .andExpect(status().isNotFound());
   }
 
-  @Test
-  @DisplayName("Should increment and decrement active request count when serving segment")
-  void shouldIncrementAndDecrementActiveRequestCountWhenServingSegment() throws Exception {
-    var session = buildMpegtsSession();
-    streamingService.setSession(session);
-    segmentStore.addSegment(SESSION_ID, "segment0.ts", new byte[] {0x47});
-
-    assertThat(session.getActiveRequestCount().get()).isZero();
-
-    mockMvc.perform(get("/api/stream/{sessionId}/segment0.ts", SESSION_ID));
-
-    assertThat(session.getActiveRequestCount().get()).isZero();
-  }
-
   private StreamSession buildMpegtsSession() {
     return StreamSession.builder()
         .sessionId(SESSION_ID)
@@ -232,7 +217,6 @@ class StreamControllerTest {
         .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
         .createdAt(Instant.now())
         .lastAccessedAt(Instant.now())
-        .activeRequestCount(new AtomicInteger(0))
         .build();
   }
 
@@ -262,7 +246,6 @@ class StreamControllerTest {
         .options(StreamingOptions.builder().supportedCodecs(List.of("av1")).build())
         .createdAt(Instant.now())
         .lastAccessedAt(Instant.now())
-        .activeRequestCount(new AtomicInteger(0))
         .build();
   }
 
@@ -313,7 +296,6 @@ class StreamControllerTest {
             .variants(variants)
             .createdAt(Instant.now())
             .lastAccessedAt(Instant.now())
-            .activeRequestCount(new AtomicInteger(0))
             .build();
 
     for (var variant : variants) {

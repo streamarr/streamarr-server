@@ -139,32 +139,22 @@ public class StreamController {
       return ResponseEntity.notFound().build();
     }
 
-    session.getActiveRequestCount().incrementAndGet();
-    try {
-      if (!segmentStore.waitForSegment(sessionId, segmentName, SEGMENT_WAIT_TIMEOUT)) {
-        return ResponseEntity.notFound().build();
-      }
-      var data = segmentStore.readSegment(sessionId, segmentName);
-      return ResponseEntity.ok().contentType(MP4_MEDIA_TYPE).body(data);
-    } finally {
-      session.getActiveRequestCount().decrementAndGet();
+    if (!segmentStore.waitForSegment(sessionId, segmentName, SEGMENT_WAIT_TIMEOUT)) {
+      return ResponseEntity.notFound().build();
     }
+    var data = segmentStore.readSegment(sessionId, segmentName);
+    return ResponseEntity.ok().contentType(MP4_MEDIA_TYPE).body(data);
   }
 
   private ResponseEntity<byte[]> serveSegment(
       StreamSession session, UUID sessionId, String segmentName) {
-    session.getActiveRequestCount().incrementAndGet();
-    try {
-      if (!segmentStore.waitForSegment(sessionId, segmentName, SEGMENT_WAIT_TIMEOUT)) {
-        return ResponseEntity.notFound().build();
-      }
-
-      var data = segmentStore.readSegment(sessionId, segmentName);
-      var contentType = segmentName.endsWith(".ts") ? MPEGTS_MEDIA_TYPE : MP4_MEDIA_TYPE;
-      return ResponseEntity.ok().contentType(contentType).body(data);
-    } finally {
-      session.getActiveRequestCount().decrementAndGet();
+    if (!segmentStore.waitForSegment(sessionId, segmentName, SEGMENT_WAIT_TIMEOUT)) {
+      return ResponseEntity.notFound().build();
     }
+
+    var data = segmentStore.readSegment(sessionId, segmentName);
+    var contentType = segmentName.endsWith(".ts") ? MPEGTS_MEDIA_TYPE : MP4_MEDIA_TYPE;
+    return ResponseEntity.ok().contentType(contentType).body(data);
   }
 
   private boolean hasVariant(StreamSession session, String variantLabel) {
