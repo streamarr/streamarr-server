@@ -4,6 +4,8 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.exceptions.InvalidLibraryPathException;
+import com.streamarr.server.exceptions.LibraryAlreadyExistsException;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.repositories.LibraryRepository;
@@ -79,8 +81,51 @@ public class LibraryManagementService {
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
   }
 
-  // TODO #39: implement addLibrary mutation
-  public void addLibrary(Library library) {}
+  public Library addLibrary(Library library) {
+    validateFilepath(library.getFilepath());
+    validateFilepathNotAlreadyUsed(library.getFilepath());
+    validatePathExistsAndIsDirectory(library.getFilepath());
+
+    library.setStatus(LibraryStatus.HEALTHY);
+    var savedLibrary = libraryRepository.save(library);
+
+    triggerAsyncScan(savedLibrary.getId());
+
+    return savedLibrary;
+  }
+
+  private void validateFilepath(String filepath) {
+    if (filepath == null || filepath.isBlank()) {
+      throw new InvalidLibraryPathException(filepath, "filepath cannot be empty");
+    }
+  }
+
+  private void validateFilepathNotAlreadyUsed(String filepath) {
+    if (libraryRepository.existsByFilepath(filepath)) {
+      throw new LibraryAlreadyExistsException(filepath);
+    }
+  }
+
+  private void validatePathExistsAndIsDirectory(String filepath) {
+    var path = fileSystem.getPath(filepath);
+    if (!Files.exists(path)) {
+      throw new InvalidLibraryPathException(filepath, "path does not exist");
+    }
+    if (!Files.isDirectory(path)) {
+      throw new InvalidLibraryPathException(filepath, "path is not a directory");
+    }
+  }
+
+  private void triggerAsyncScan(UUID libraryId) {
+    Thread.startVirtualThread(
+        () -> {
+          try {
+            scanLibrary(libraryId);
+          } catch (Exception e) {
+            log.error("Async library scan failed for library: {}", libraryId, e);
+          }
+        });
+  }
 
   // TODO #39: implement removeLibrary mutation
   public void removeLibrary() {}

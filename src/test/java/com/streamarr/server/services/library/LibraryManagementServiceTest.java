@@ -21,6 +21,8 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.exceptions.InvalidLibraryPathException;
+import com.streamarr.server.exceptions.LibraryAlreadyExistsException;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.fakes.FakeLibraryRepository;
@@ -467,6 +469,168 @@ public class LibraryManagementServiceTest {
               assertThat(mediaFiles)
                   .as("Expected exactly one MediaFile for the same filepath")
                   .hasSize(1);
+            });
+  }
+
+  // ==================== addLibrary Tests ====================
+
+  @Test
+  @DisplayName("Should throw InvalidLibraryPathException when filepath is null")
+  void shouldThrowInvalidLibraryPathExceptionWhenFilepathIsNull() {
+    var library =
+        Library.builder()
+            .name("Test Library")
+            .backend(LibraryBackend.LOCAL)
+            .filepath(null)
+            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+            .type(MediaType.MOVIE)
+            .build();
+
+    assertThrows(
+        InvalidLibraryPathException.class, () -> libraryManagementService.addLibrary(library));
+  }
+
+  @Test
+  @DisplayName("Should throw InvalidLibraryPathException when filepath is blank")
+  void shouldThrowInvalidLibraryPathExceptionWhenFilepathIsBlank() {
+    var library =
+        Library.builder()
+            .name("Test Library")
+            .backend(LibraryBackend.LOCAL)
+            .filepath("   ")
+            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+            .type(MediaType.MOVIE)
+            .build();
+
+    assertThrows(
+        InvalidLibraryPathException.class, () -> libraryManagementService.addLibrary(library));
+  }
+
+  @Test
+  @DisplayName("Should throw LibraryAlreadyExistsException when filepath already exists")
+  void shouldThrowLibraryAlreadyExistsExceptionWhenFilepathExists() throws IOException {
+    var existingLibrary = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+    var existingFilepath = existingLibrary.getFilepath();
+
+    var libraryPath = fileSystem.getPath(existingFilepath);
+    Files.createDirectories(libraryPath);
+
+    var duplicateLibrary =
+        Library.builder()
+            .name("Duplicate Library")
+            .backend(LibraryBackend.LOCAL)
+            .filepath(existingFilepath)
+            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+            .type(MediaType.MOVIE)
+            .build();
+
+    assertThrows(
+        LibraryAlreadyExistsException.class,
+        () -> libraryManagementService.addLibrary(duplicateLibrary));
+  }
+
+  @Test
+  @DisplayName("Should throw InvalidLibraryPathException when path does not exist on disk")
+  void shouldThrowInvalidLibraryPathExceptionWhenPathDoesNotExist() {
+    var library =
+        Library.builder()
+            .name("Test Library")
+            .backend(LibraryBackend.LOCAL)
+            .filepath("/nonexistent/path")
+            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+            .type(MediaType.MOVIE)
+            .build();
+
+    assertThrows(
+        InvalidLibraryPathException.class, () -> libraryManagementService.addLibrary(library));
+  }
+
+  @Test
+  @DisplayName("Should throw InvalidLibraryPathException when path is not a directory")
+  void shouldThrowInvalidLibraryPathExceptionWhenPathIsNotDirectory() throws IOException {
+    var filePath = fileSystem.getPath("/library/file.txt");
+    Files.createDirectories(filePath.getParent());
+    Files.createFile(filePath);
+
+    var library =
+        Library.builder()
+            .name("Test Library")
+            .backend(LibraryBackend.LOCAL)
+            .filepath(filePath.toString())
+            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+            .type(MediaType.MOVIE)
+            .build();
+
+    assertThrows(
+        InvalidLibraryPathException.class, () -> libraryManagementService.addLibrary(library));
+  }
+
+  @Test
+  @DisplayName("Should save library and return with generated ID when valid library provided")
+  void shouldSaveLibraryAndReturnWithGeneratedId() throws IOException {
+    var newLibraryPath = fileSystem.getPath("/new-library");
+    Files.createDirectories(newLibraryPath);
+
+    var library =
+        Library.builder()
+            .name("New Library")
+            .backend(LibraryBackend.LOCAL)
+            .filepath(newLibraryPath.toString())
+            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+            .type(MediaType.MOVIE)
+            .build();
+
+    var savedLibrary = libraryManagementService.addLibrary(library);
+
+    assertThat(savedLibrary.getId()).isNotNull();
+    assertThat(fakeLibraryRepository.findById(savedLibrary.getId())).isPresent();
+  }
+
+  @Test
+  @DisplayName("Should set status to HEALTHY when adding library")
+  void shouldSetStatusToHealthyWhenAdding() throws IOException {
+    var newLibraryPath = fileSystem.getPath("/healthy-library");
+    Files.createDirectories(newLibraryPath);
+
+    var library =
+        Library.builder()
+            .name("Healthy Library")
+            .backend(LibraryBackend.LOCAL)
+            .filepath(newLibraryPath.toString())
+            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+            .type(MediaType.MOVIE)
+            .status(null)
+            .build();
+
+    var savedLibrary = libraryManagementService.addLibrary(library);
+
+    assertThat(savedLibrary.getStatus()).isEqualTo(LibraryStatus.HEALTHY);
+  }
+
+  @Test
+  @DisplayName("Should trigger library scan asynchronously after adding")
+  void shouldTriggerLibraryScanAsynchronouslyAfterAdding() throws IOException {
+    var newLibraryPath = fileSystem.getPath("/scan-library");
+    Files.createDirectories(newLibraryPath);
+
+    var library =
+        Library.builder()
+            .name("Scan Library")
+            .backend(LibraryBackend.LOCAL)
+            .filepath(newLibraryPath.toString())
+            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+            .type(MediaType.MOVIE)
+            .build();
+
+    var savedLibrary = libraryManagementService.addLibrary(library);
+
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () -> {
+              var refreshedLibrary =
+                  fakeLibraryRepository.findById(savedLibrary.getId()).orElseThrow();
+              assertThat(refreshedLibrary.getScanStartedOn()).isNotNull();
             });
   }
 
