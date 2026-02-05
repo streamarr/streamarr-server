@@ -597,15 +597,15 @@ public class LibraryManagementServiceTest {
         new LibraryManagementService(
             new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
             new VideoExtensionValidator(),
-            defaultVideoFileMetadataParser,
-            movieMetadataProviderResolver,
+            new DefaultVideoFileMetadataParser(),
+            fakeMovieMetadataProviderResolver,
             fakeLibraryRepository,
             fakeMediaFileRepository,
             movieService,
             personService,
             genreService,
             orphanedMediaFileCleanupService,
-            mutexFactoryProvider,
+            new MutexFactoryProvider(),
             securityExceptionFs);
 
     var library = LibraryFixtureCreator.buildUnsavedLibrary("Test Library", "/secure-path");

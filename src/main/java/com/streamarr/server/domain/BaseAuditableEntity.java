@@ -22,7 +22,7 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 @Getter
 @Setter
-@SuperBuilder(toBuilder = true)
+@SuperBuilder
 @MappedSuperclass
 @NoArgsConstructor
 @AllArgsConstructor
