@@ -22,9 +22,9 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.exceptions.InvalidLibraryPathException;
-import com.streamarr.server.exceptions.LibraryPathPermissionDeniedException;
 import com.streamarr.server.exceptions.LibraryAlreadyExistsException;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
+import com.streamarr.server.exceptions.LibraryPathPermissionDeniedException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
@@ -45,6 +45,7 @@ import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolve
 import com.streamarr.server.services.metadata.movie.TMDBMovieProvider;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
+import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
 import java.io.IOException;
@@ -85,6 +86,9 @@ public class LibraryManagementServiceTest {
 
   private final OrphanedMediaFileCleanupService orphanedMediaFileCleanupService =
       new OrphanedMediaFileCleanupService(fakeMediaFileRepository, movieService, fileSystem);
+  private final DirectoryWatchingService directoryWatchingService =
+      mock(DirectoryWatchingService.class);
+  private final StreamingService streamingService = mock(StreamingService.class);
 
   private final LibraryManagementService libraryManagementService =
       new LibraryManagementService(
@@ -98,6 +102,8 @@ public class LibraryManagementServiceTest {
           personService,
           genreService,
           orphanedMediaFileCleanupService,
+          directoryWatchingService,
+          streamingService,
           new MutexFactoryProvider(),
           fileSystem);
 
@@ -169,6 +175,8 @@ public class LibraryManagementServiceTest {
             personService,
             genreService,
             orphanedMediaFileCleanupService,
+            directoryWatchingService,
+            streamingService,
             new MutexFactoryProvider(),
             throwingFileSystem);
 
@@ -203,6 +211,8 @@ public class LibraryManagementServiceTest {
             personService,
             genreService,
             orphanedMediaFileCleanupService,
+            directoryWatchingService,
+            streamingService,
             new MutexFactoryProvider(),
             throwingFileSystem);
 
@@ -609,6 +619,8 @@ public class LibraryManagementServiceTest {
               personService,
               genreService,
               orphanedMediaFileCleanupService,
+              directoryWatchingService,
+              streamingService,
               new MutexFactoryProvider(),
               securityExceptionFs);
 
