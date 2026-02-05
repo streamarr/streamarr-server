@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.services.validation.IgnoredFileValidator;
 import io.methvin.watcher.DirectoryWatcher;
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
@@ -21,16 +22,11 @@ import org.springframework.stereotype.Service;
 public class DirectoryWatchingService implements InitializingBean {
 
   private final LibraryRepository libraryRepository;
+  private final IgnoredFileValidator ignoredFileValidator;
 
   private final Set<Path> directoriesToWatch = new HashSet<>();
   private DirectoryWatcher watcher;
 
-  // Server being setup, no libraries specified yet, early exit
-  // Server setup, libraries specified
-  // Server partially setup, library added, stop and recreate watcher
-
-  // No directory yet
-  // Given directory of library
   public void setup() throws IOException {
     if (directoriesToWatch.isEmpty()) {
       log.debug("No directories configured for watching, skipping setup.");
@@ -42,28 +38,28 @@ public class DirectoryWatchingService implements InitializingBean {
             .paths(directoriesToWatch.stream().toList())
             .listener(
                 event -> {
+                  if (ignoredFileValidator.shouldIgnore(event.path())) {
+                    return;
+                  }
+
                   switch (event.eventType()) {
                     case CREATE ->
                         log.info(
                             "Watcher event type: {} -- filepath: {}",
                             event.eventType(),
                             event.path());
-                    case MODIFY -> /* file modified */
+                    case MODIFY ->
                         log.info(
                             "Watcher event type: {} -- filepath: {}",
                             event.eventType(),
                             event.path());
-                    case DELETE -> /* file deleted */
+                    case DELETE ->
                         log.info(
                             "Watcher event type: {} -- filepath: {}",
                             event.eventType(),
                             event.path());
                   }
                 })
-            // .fileHashing(false) // defaults to true
-            // .logger(logger) // defaults to LoggerFactory.getLogger(DirectoryWatcher.class)
-            // .watchService(watchService) // defaults based on OS to either JVM WatchService or the
-            // JNA macOS WatchService
             .build();
 
     watch();
