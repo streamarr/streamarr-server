@@ -13,6 +13,11 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class FileProcessingTaskRepositoryCustomImpl implements FileProcessingTaskRepositoryCustom {
 
+  private static final String STATUS_PENDING = FileProcessingTaskStatus.PENDING.name();
+  private static final String STATUS_PROCESSING = FileProcessingTaskStatus.PROCESSING.name();
+  private static final String ACTIVE_STATUSES_SQL =
+      "('" + STATUS_PENDING + "', '" + STATUS_PROCESSING + "')";
+
   @PersistenceContext private final EntityManager entityManager;
 
   @Override
@@ -21,12 +26,13 @@ public class FileProcessingTaskRepositoryCustomImpl implements FileProcessingTas
     var selectSql =
         """
         SELECT id FROM file_processing_task
-        WHERE status = 'PENDING'
+        WHERE status = '%s'
           AND owner_instance_id IS NULL
         ORDER BY created_on ASC
         LIMIT 1
         FOR UPDATE SKIP LOCKED
-        """;
+        """
+            .formatted(STATUS_PENDING);
 
     var selectQuery = entityManager.createNativeQuery(selectSql);
 
@@ -42,11 +48,12 @@ public class FileProcessingTaskRepositoryCustomImpl implements FileProcessingTas
     var updateSql =
         """
         UPDATE file_processing_task
-        SET status = 'PROCESSING',
+        SET status = '%s',
             owner_instance_id = :ownerInstanceId,
             lease_expires_at = :leaseExpiresAt
         WHERE id = :id
-        """;
+        """
+            .formatted(STATUS_PROCESSING);
 
     entityManager
         .createNativeQuery(updateSql)
@@ -65,12 +72,13 @@ public class FileProcessingTaskRepositoryCustomImpl implements FileProcessingTas
     var selectSql =
         """
         SELECT id FROM file_processing_task
-        WHERE status IN ('PENDING', 'PROCESSING')
+        WHERE status IN %s
           AND lease_expires_at < :now
         ORDER BY created_on ASC
         LIMIT :limit
         FOR UPDATE SKIP LOCKED
-        """;
+        """
+            .formatted(ACTIVE_STATUSES_SQL);
 
     @SuppressWarnings("unchecked")
     var ids =
@@ -88,11 +96,12 @@ public class FileProcessingTaskRepositoryCustomImpl implements FileProcessingTas
     var updateSql =
         """
         UPDATE file_processing_task
-        SET status = 'PENDING',
+        SET status = '%s',
             owner_instance_id = :ownerInstanceId,
             lease_expires_at = :leaseExpiresAt
         WHERE id IN :ids
-        """;
+        """
+            .formatted(STATUS_PENDING);
 
     entityManager
         .createNativeQuery(updateSql)
@@ -114,8 +123,9 @@ public class FileProcessingTaskRepositoryCustomImpl implements FileProcessingTas
         UPDATE file_processing_task
         SET lease_expires_at = :newLeaseExpiresAt
         WHERE owner_instance_id = :ownerInstanceId
-          AND status IN ('PENDING', 'PROCESSING')
-        """;
+          AND status IN %s
+        """
+            .formatted(ACTIVE_STATUSES_SQL);
 
     return entityManager
         .createNativeQuery(sql)
