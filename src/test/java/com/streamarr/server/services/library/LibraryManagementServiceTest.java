@@ -40,6 +40,7 @@ import com.streamarr.server.services.GenreService;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.PersonService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
+import com.streamarr.server.services.library.events.LibraryAddedEvent;
 import com.streamarr.server.services.library.events.ScanCompletedEvent;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
@@ -633,29 +634,42 @@ public class LibraryManagementServiceTest {
     }
 
     @Test
-    @DisplayName("Should trigger library scan asynchronously after adding")
-    void shouldTriggerLibraryScanAsynchronouslyAfterAdding() throws IOException {
-      var newLibraryPath = fileSystem.getPath("/scan-library");
+    @DisplayName(
+        "Should publish LibraryAddedEvent with correct library ID and filepath when library is added")
+    void shouldPublishLibraryAddedEventWhenLibraryIsAdded() throws IOException {
+      var newLibraryPath = fileSystem.getPath("/event-library");
       Files.createDirectories(newLibraryPath);
 
       var library =
-          LibraryFixtureCreator.buildUnsavedLibrary("Scan Library", newLibraryPath.toString());
+          LibraryFixtureCreator.buildUnsavedLibrary("Event Library", newLibraryPath.toString());
 
       var savedLibrary = libraryManagementService.addLibrary(library);
 
-      await()
-          .atMost(Duration.ofSeconds(5))
-          .untilAsserted(
-              () -> {
-                var refreshedLibrary =
-                    fakeLibraryRepository.findById(savedLibrary.getId()).orElseThrow();
-                assertThat(refreshedLibrary.getScanCompletedOn())
-                    .as("Library scan should complete")
-                    .isNotNull();
-                assertThat(refreshedLibrary.getStatus())
-                    .as("Library status should be HEALTHY after scan")
-                    .isEqualTo(LibraryStatus.HEALTHY);
-              });
+      var events = capturingEventPublisher.getEventsOfType(LibraryAddedEvent.class);
+      assertThat(events).hasSize(1);
+      assertThat(events.getFirst().libraryId()).isEqualTo(savedLibrary.getId());
+      assertThat(events.getFirst().filepath()).isEqualTo(newLibraryPath.toString());
+    }
+
+    @Test
+    @DisplayName("Should publish LibraryAddedEvent with the persisted library ID, not the input")
+    void shouldPublishLibraryAddedEventWithSavedLibraryId() throws IOException {
+      var newLibraryPath = fileSystem.getPath("/persisted-id-library");
+      Files.createDirectories(newLibraryPath);
+
+      var library =
+          LibraryFixtureCreator.buildUnsavedLibrary(
+              "Persisted ID Library", newLibraryPath.toString());
+
+      assertThat(library.getId()).as("Input library should not have an ID").isNull();
+
+      var savedLibrary = libraryManagementService.addLibrary(library);
+
+      var events = capturingEventPublisher.getEventsOfType(LibraryAddedEvent.class);
+      assertThat(events.getFirst().libraryId())
+          .as("Event should carry the persisted ID")
+          .isEqualTo(savedLibrary.getId())
+          .isNotNull();
     }
 
     @Test

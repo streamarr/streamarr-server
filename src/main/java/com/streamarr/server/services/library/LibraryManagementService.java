@@ -17,6 +17,7 @@ import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.PersonService;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
+import com.streamarr.server.services.library.events.LibraryAddedEvent;
 import com.streamarr.server.services.library.events.ScanCompletedEvent;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
@@ -43,6 +44,7 @@ import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -105,9 +107,15 @@ public class LibraryManagementService {
     var libraryToSave = library.toBuilder().status(LibraryStatus.HEALTHY).build();
     var savedLibrary = libraryRepository.save(libraryToSave);
 
-    triggerAsyncScan(savedLibrary.getId());
+    eventPublisher.publishEvent(
+        new LibraryAddedEvent(savedLibrary.getId(), savedLibrary.getFilepath()));
 
     return savedLibrary;
+  }
+
+  @EventListener
+  void onLibraryAdded(LibraryAddedEvent event) {
+    triggerAsyncScan(event.libraryId());
   }
 
   private void validateFilepath(String filepath) {

@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.services.library.events.LibraryAddedEvent;
 import com.streamarr.server.services.task.FileProcessingTaskCoordinator;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import io.methvin.watcher.DirectoryWatcher;
@@ -13,6 +14,7 @@ import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.annotation.DependsOn;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 @Slf4j
@@ -112,6 +114,15 @@ public class DirectoryWatchingService implements InitializingBean {
       setup();
     } catch (IOException ex) {
       log.error("Failed to start library watcher", ex);
+    }
+  }
+
+  @EventListener
+  public void onLibraryAdded(LibraryAddedEvent event) {
+    try {
+      addDirectory(Path.of(event.filepath()));
+    } catch (IOException e) {
+      log.error("Failed to start watching directory for library: {}", event.filepath(), e);
     }
   }
 }
