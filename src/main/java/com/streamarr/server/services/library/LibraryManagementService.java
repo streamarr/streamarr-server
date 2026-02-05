@@ -30,6 +30,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -151,9 +152,10 @@ public class LibraryManagementService {
       var library = findLibraryOrThrow(libraryId);
       rejectIfScanning(library);
 
-      var mediaFileIds = captureMediaFileIdsBeforeDeletion(libraryId);
+      var mediaFiles = mediaFileRepository.findByLibraryId(libraryId);
+      var mediaFileIds = extractMediaFileIds(mediaFiles);
 
-      deleteLibraryContent(libraryId);
+      deleteLibraryContent(libraryId, mediaFiles);
       libraryRepository.delete(library);
 
       cleanupExternalResources(library, mediaFileIds);
@@ -174,15 +176,13 @@ public class LibraryManagementService {
     }
   }
 
-  private Set<UUID> captureMediaFileIdsBeforeDeletion(UUID libraryId) {
-    return mediaFileRepository.findByLibraryId(libraryId).stream()
-        .map(MediaFile::getId)
-        .collect(Collectors.toSet());
+  private Set<UUID> extractMediaFileIds(List<MediaFile> mediaFiles) {
+    return mediaFiles.stream().map(MediaFile::getId).collect(Collectors.toSet());
   }
 
-  private void deleteLibraryContent(UUID libraryId) {
+  private void deleteLibraryContent(UUID libraryId, List<MediaFile> mediaFiles) {
     movieService.deleteByLibraryId(libraryId);
-    mediaFileRepository.deleteAll(mediaFileRepository.findByLibraryId(libraryId));
+    mediaFileRepository.deleteAll(mediaFiles);
   }
 
   private void cleanupExternalResources(Library library, Set<UUID> mediaFileIds) {

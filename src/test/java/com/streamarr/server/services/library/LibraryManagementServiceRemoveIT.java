@@ -19,16 +19,22 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
 @Tag("IntegrationTest")
 @DisplayName("Library Removal Integration Tests")
@@ -244,18 +250,18 @@ public class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
     movieRepository.saveAndFlush(Movie.builder().title("Movie").library(library).build());
 
     var barrier = new CyclicBarrier(2);
-    var exceptions = new CopyOnWriteArrayList<Exception>();
-    var libraryNotFoundCount = new java.util.concurrent.atomic.AtomicInteger(0);
+    var unexpectedExceptions = new CopyOnWriteArrayList<Exception>();
+    var concurrentDeleteFailures = new AtomicInteger(0);
 
     Runnable task =
         () -> {
           try {
             barrier.await();
             libraryManagementService.removeLibrary(library.getId());
-          } catch (LibraryNotFoundException e) {
-            libraryNotFoundCount.incrementAndGet();
+          } catch (LibraryNotFoundException | ObjectOptimisticLockingFailureException e) {
+            concurrentDeleteFailures.incrementAndGet();
           } catch (Exception e) {
-            exceptions.add(e);
+            unexpectedExceptions.add(e);
           }
         };
 
@@ -268,11 +274,57 @@ public class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
         .atMost(Duration.ofSeconds(10))
         .untilAsserted(
             () -> {
-              assertThat(exceptions).isEmpty();
+              assertThat(unexpectedExceptions).isEmpty();
               assertThat(libraryRepository.findById(library.getId())).isEmpty();
-              assertThat(libraryNotFoundCount.get())
-                  .as("One thread succeeds, the other gets LibraryNotFoundException")
+              assertThat(concurrentDeleteFailures.get())
+                  .as("One thread succeeds, the other fails with concurrent delete exception")
                   .isEqualTo(1);
             });
+  }
+
+  @Test
+  @DisplayName("Should NOT delete actual files on disk when library is removed")
+  void shouldNotDeleteActualFilesOnDiskWhenLibraryIsRemoved(@TempDir Path tempDir)
+      throws IOException {
+    var movieFile = tempDir.resolve("Movie (2023).mkv");
+    var subtitleFile = tempDir.resolve("Movie (2023).srt");
+    Files.createFile(movieFile);
+    Files.createFile(subtitleFile);
+    Files.writeString(movieFile, "fake video content");
+    Files.writeString(subtitleFile, "fake subtitle content");
+
+    var library =
+        libraryRepository.saveAndFlush(
+            LibraryFixtureCreator.buildUnsavedLibrary("Test Library", tempDir.toString())
+                .toBuilder()
+                .status(LibraryStatus.HEALTHY)
+                .build());
+    var movie =
+        movieRepository.saveAndFlush(Movie.builder().title("Movie").library(library).build());
+    mediaFileRepository.saveAndFlush(
+        MediaFile.builder()
+            .libraryId(library.getId())
+            .mediaId(movie.getId())
+            .filepath(movieFile.toString())
+            .filename(movieFile.getFileName().toString())
+            .status(MediaFileStatus.MATCHED)
+            .build());
+
+    assertThat(Files.exists(movieFile)).isTrue();
+    assertThat(Files.exists(subtitleFile)).isTrue();
+
+    libraryManagementService.removeLibrary(library.getId());
+
+    assertThat(libraryRepository.findById(library.getId())).isEmpty();
+    assertThat(movieRepository.findById(movie.getId())).isEmpty();
+    assertThat(Files.exists(movieFile))
+        .as("Actual video file on disk must NOT be deleted")
+        .isTrue();
+    assertThat(Files.exists(subtitleFile))
+        .as("Other files in library directory must NOT be deleted")
+        .isTrue();
+    assertThat(Files.readString(movieFile))
+        .as("File content must remain intact")
+        .isEqualTo("fake video content");
   }
 }
