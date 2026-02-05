@@ -3,6 +3,7 @@ package com.streamarr.server.fakes;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.services.streaming.StreamSessionRepository;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -29,7 +30,7 @@ public class FakeStreamSessionRepository implements StreamSessionRepository {
 
   @Override
   public Collection<StreamSession> findAll() {
-    return sessions.values();
+    return Collections.unmodifiableCollection(sessions.values());
   }
 
   @Override
