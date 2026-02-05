@@ -144,6 +144,22 @@ class FileProcessingTaskCoordinatorTest {
   }
 
   @Test
+  @DisplayName("Should reclaim orphaned PENDING tasks with NULL lease")
+  void shouldReclaimOrphanedPendingTasksWithNullLease() {
+    var path = Path.of("/media/movies/NullLease (2024).mkv");
+    var libraryId = UUID.randomUUID();
+    var task = coordinator.createTask(path, libraryId);
+
+    assertThat(task.getLeaseExpiresAt()).isNull();
+    assertThat(task.getStatus()).isEqualTo(FileProcessingTaskStatus.PENDING);
+
+    var reclaimed = coordinator.reclaimOrphanedTasks(10);
+
+    assertThat(reclaimed).hasSize(1);
+    assertThat(reclaimed.getFirst().getId()).isEqualTo(task.getId());
+  }
+
+  @Test
   @DisplayName("Should extend leases for owned tasks")
   void shouldExtendLeasesForOwnedTasks() {
     var path = Path.of("/media/movies/Extend (2024).mkv");

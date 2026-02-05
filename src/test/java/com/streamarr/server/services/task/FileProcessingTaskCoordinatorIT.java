@@ -272,4 +272,19 @@ class FileProcessingTaskCoordinatorIT extends AbstractIntegrationTest {
     assertThat(reclaimed).hasSize(1);
     assertThat(reclaimed.getFirst().getStatus()).isEqualTo(FileProcessingTaskStatus.PENDING);
   }
+
+  @Test
+  @DisplayName("Should reclaim orphaned PENDING tasks with NULL lease")
+  void shouldReclaimOrphanedPendingTasksWithNullLease() {
+    var path = Path.of("/media/movies/NullLease (2024).mkv");
+    var task = coordinator.createTask(path, testLibrary.getId());
+
+    assertThat(task.getLeaseExpiresAt()).isNull();
+    assertThat(task.getStatus()).isEqualTo(FileProcessingTaskStatus.PENDING);
+
+    var reclaimed = coordinator.reclaimOrphanedTasks(10);
+
+    assertThat(reclaimed).hasSize(1);
+    assertThat(reclaimed.getFirst().getId()).isEqualTo(task.getId());
+  }
 }

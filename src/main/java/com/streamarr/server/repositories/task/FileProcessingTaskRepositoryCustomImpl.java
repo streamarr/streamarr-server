@@ -69,7 +69,9 @@ public class FileProcessingTaskRepositoryCustomImpl implements FileProcessingTas
             .from(FILE_PROCESSING_TASK)
             .where(FILE_PROCESSING_TASK.STATUS.in(
                 inline(FileProcessingTaskStatus.PENDING), inline(FileProcessingTaskStatus.PROCESSING)))
-            .and(FILE_PROCESSING_TASK.LEASE_EXPIRES_AT.lt(now.atOffset(ZoneOffset.UTC)))
+            .and(
+                FILE_PROCESSING_TASK.LEASE_EXPIRES_AT.isNull()
+                    .or(FILE_PROCESSING_TASK.LEASE_EXPIRES_AT.lt(now.atOffset(ZoneOffset.UTC))))
             .orderBy(FILE_PROCESSING_TASK.CREATED_ON.asc())
             .limit(limit)
             .forUpdate()
