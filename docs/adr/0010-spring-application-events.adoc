@@ -1,0 +1,28 @@
+= ADR 0010: Spring Application Events for Service Decoupling
+
+== Status
+
+Accepted
+
+== Context
+
+`LibraryManagementService` had direct dependencies on `DirectoryWatchingService` and `StreamingService` for cleanup side effects triggered during library add, remove, and scan operations. This created a circular dependency: `DirectoryWatchingService` -> `FileEventProcessor` -> `LibraryManagementService` -> `DirectoryWatchingService`, which was resolved via `@Lazy` -- a workaround that masked the underlying design problem.
+
+The side effects themselves (watcher registration/unregistration, streaming session termination, orphaned media file cleanup) are not core to the library CRUD operation. They are reactions that should not prevent the primary operation from succeeding, and they should not execute if the primary operation's transaction rolls back.
+
+== Decision
+
+Use Spring Application Events (`ApplicationEventPublisher` + `@EventListener` / `@TransactionalEventListener`) to decouple side effects from core operations.
+
+* `LibraryManagementService` publishes events (`LibraryAddedEvent`, `LibraryRemovedEvent`, `ScanCompletedEvent`) after completing its core work
+* Interested services register `@EventListener` or `@TransactionalEventListener` methods to react
+* `@TransactionalEventListener(phase = AFTER_COMMIT)` is used when the publisher operates inside a transaction, ensuring side effects only fire after a successful commit
+* Events are Java records in a `services.library.events` package, carrying only the data listeners need (IDs, paths)
+
+== Consequences
+
+* Circular dependency eliminated -- `@Lazy` removed from `LibraryManagementService`
+* Side effects are transactionally safe -- `@TransactionalEventListener(AFTER_COMMIT)` prevents cleanup if the transaction rolls back
+* Adding new reactions requires only a new `@EventListener` method -- no modification to the publishing service (Open/Closed Principle)
+* Event flow is less explicit than direct method calls -- requires understanding the event-to-listener relationship (mitigated by consistent naming and the `events` package convention)
+* Testing: publishers assert events via `CapturingEventPublisher` fake; listeners are tested by direct method invocation
