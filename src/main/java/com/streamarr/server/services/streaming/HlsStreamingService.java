@@ -21,7 +21,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -66,7 +65,6 @@ public class HlsStreamingService implements StreamingService {
             .seekPosition(0)
             .createdAt(now)
             .lastAccessedAt(now)
-            .activeRequestCount(new AtomicInteger(0))
             .build();
 
     sessions.put(sessionId, session);
