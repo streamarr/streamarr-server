@@ -10,8 +10,14 @@ import org.springframework.context.annotation.Configuration;
 public class LibraryWatcherConfig {
 
   @Bean
-  public FileStabilityChecker fileStabilityChecker(LibraryWatcherProperties properties) {
+  public Clock clock() {
+    return Clock.systemUTC();
+  }
+
+  @Bean
+  public FileStabilityChecker fileStabilityChecker(
+      Clock clock, LibraryWatcherProperties properties) {
     return new PollingFileStabilityChecker(
-        Clock.systemUTC(), properties, duration -> Thread.sleep(duration.toMillis()));
+        clock, properties, duration -> Thread.sleep(duration.toMillis()));
   }
 }

@@ -12,9 +12,11 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Slf4j
 @Service
@@ -28,6 +30,7 @@ public class FileProcessingTaskCoordinator {
   private final Duration leaseDuration;
   private final String instanceId;
 
+  @Autowired
   public FileProcessingTaskCoordinator(
       FileProcessingTaskRepository repository,
       Clock clock,
@@ -105,6 +108,7 @@ public class FileProcessingTaskCoordinator {
     log.warn("Failed task for: {} with error: {}", task.getFilepath(), errorMessage);
   }
 
+  @Transactional
   public void cancelTask(Path path) {
     var filepath = path.toAbsolutePath().toString();
     repository.deleteByFilepathAndStatusIn(filepath, List.of(FileProcessingTaskStatus.PENDING));
