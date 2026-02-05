@@ -15,9 +15,11 @@ import com.streamarr.server.config.LibraryScanProperties;
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.LibraryBackend;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
@@ -204,6 +206,32 @@ public class LibraryManagementServiceTest {
     assertTrue(fakeLibraryRepository.findById(savedLibraryId).isPresent());
     assertThat(fakeLibraryRepository.findById(savedLibraryId).get().getStatus())
         .isEqualTo(LibraryStatus.UNHEALTHY);
+  }
+
+  @Test
+  @DisplayName("Should throw IllegalStateException when library has unsupported media type")
+  void shouldThrowIllegalStateExceptionWhenLibraryHasUnsupportedMediaType() throws IOException {
+    var otherTypeLibrary =
+        fakeLibraryRepository.save(
+            Library.builder()
+                .name("Other Type Library")
+                .backend(LibraryBackend.LOCAL)
+                .status(LibraryStatus.HEALTHY)
+                .filepath("/library/" + UUID.randomUUID())
+                .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+                .type(MediaType.OTHER)
+                .build());
+
+    var libraryPath = fileSystem.getPath(otherTypeLibrary.getFilepath());
+    Files.createDirectories(libraryPath);
+    var movieFolder = libraryPath.resolve("Test Movie");
+    Files.createDirectory(movieFolder);
+    var movieFile = movieFolder.resolve("Test Movie (2024).mkv");
+    Files.createFile(movieFile);
+
+    assertThrows(
+        IllegalStateException.class,
+        () -> libraryManagementService.processDiscoveredFile(otherTypeLibrary.getId(), movieFile));
   }
 
   @Test
