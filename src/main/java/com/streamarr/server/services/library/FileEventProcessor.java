@@ -13,6 +13,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -25,9 +26,10 @@ class FileEventProcessor {
   private final IgnoredFileValidator ignoredFileValidator;
 
   private final ConcurrentHashMap<Path, InFlightTask> inFlightChecks = new ConcurrentHashMap<>();
+  private final ReentrantReadWriteLock stateLock = new ReentrantReadWriteLock();
 
-  private volatile ExecutorService executor;
-  private volatile List<Library> cachedLibraries;
+  private ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+  private List<Library> cachedLibraries = List.of();
 
   FileEventProcessor(
       FileStabilityChecker fileStabilityChecker,
@@ -36,8 +38,6 @@ class FileEventProcessor {
     this.fileStabilityChecker = fileStabilityChecker;
     this.libraryManagementService = libraryManagementService;
     this.ignoredFileValidator = ignoredFileValidator;
-    this.executor = Executors.newVirtualThreadPerTaskExecutor();
-    this.cachedLibraries = List.of();
   }
 
   void handleFileEvent(DirectoryChangeEvent.EventType eventType, Path path) {
@@ -49,15 +49,25 @@ class FileEventProcessor {
   }
 
   void reset(List<Library> libraries) {
-    executor.shutdownNow();
-    inFlightChecks.clear();
-    this.executor = Executors.newVirtualThreadPerTaskExecutor();
-    this.cachedLibraries = List.copyOf(libraries);
+    stateLock.writeLock().lock();
+    try {
+      executor.shutdownNow();
+      inFlightChecks.clear();
+      executor = Executors.newVirtualThreadPerTaskExecutor();
+      cachedLibraries = List.copyOf(libraries);
+    } finally {
+      stateLock.writeLock().unlock();
+    }
   }
 
   void shutdown() {
-    executor.shutdownNow();
-    inFlightChecks.clear();
+    stateLock.writeLock().lock();
+    try {
+      executor.shutdownNow();
+      inFlightChecks.clear();
+    } finally {
+      stateLock.writeLock().unlock();
+    }
   }
 
   private void handleCreateOrModify(Path path) {
@@ -74,17 +84,22 @@ class FileEventProcessor {
   }
 
   private void scheduleStabilityCheck(Path path) {
-    var token = new Object();
-    inFlightChecks.compute(
-        path,
-        (key, existing) -> {
-          if (existing != null && !existing.future().isDone()) {
-            log.debug("Stability check already in progress for: {}", path);
-            return existing;
-          }
-          var future = executor.submit(() -> runStabilityCheckWithCleanup(key, token));
-          return new InFlightTask(future, token);
-        });
+    stateLock.readLock().lock();
+    try {
+      var token = new Object();
+      inFlightChecks.compute(
+          path,
+          (key, existing) -> {
+            if (existing != null && !existing.future().isDone()) {
+              log.debug("Stability check already in progress for: {}", path);
+              return existing;
+            }
+            var future = executor.submit(() -> runStabilityCheckWithCleanup(key, token));
+            return new InFlightTask(future, token);
+          });
+    } finally {
+      stateLock.readLock().unlock();
+    }
   }
 
   private void runStabilityCheckWithCleanup(Path path, Object token) {
@@ -127,12 +142,17 @@ class FileEventProcessor {
   }
 
   private Optional<UUID> resolveLibrary(Path path) {
-    var absolutePath = path.toAbsolutePath();
-    var fs = absolutePath.getFileSystem();
+    stateLock.readLock().lock();
+    try {
+      var absolutePath = path.toAbsolutePath();
+      var fs = absolutePath.getFileSystem();
 
-    return cachedLibraries.stream()
-        .filter(library -> absolutePath.startsWith(fs.getPath(library.getFilepath())))
-        .max(Comparator.comparingInt(library -> library.getFilepath().length()))
-        .map(Library::getId);
+      return cachedLibraries.stream()
+          .filter(library -> absolutePath.startsWith(fs.getPath(library.getFilepath())))
+          .max(Comparator.comparingInt(library -> library.getFilepath().length()))
+          .map(Library::getId);
+    } finally {
+      stateLock.readLock().unlock();
+    }
   }
 }
