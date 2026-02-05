@@ -67,30 +67,32 @@ class FileEventProcessor {
     }
 
     try {
-      var token = new Object();
-      inFlightChecks.compute(
-          path,
-          (key, existing) -> {
-            if (existing != null && !existing.future().isDone()) {
-              log.debug("Stability check already in progress for: {}", path);
-              return existing;
-            }
-            var future =
-                executor.submit(
-                    () -> {
-                      try {
-                        processStableFile(key);
-                      } finally {
-                        inFlightChecks.compute(
-                            key,
-                            (k, current) ->
-                                current != null && current.token() == token ? null : current);
-                      }
-                    });
-            return new InFlightTask(future, token);
-          });
+      scheduleStabilityCheck(path);
     } catch (RejectedExecutionException e) {
       log.warn("Executor shut down, ignoring event for: {}", path);
+    }
+  }
+
+  private void scheduleStabilityCheck(Path path) {
+    var token = new Object();
+    inFlightChecks.compute(
+        path,
+        (key, existing) -> {
+          if (existing != null && !existing.future().isDone()) {
+            log.debug("Stability check already in progress for: {}", path);
+            return existing;
+          }
+          var future = executor.submit(() -> runStabilityCheckWithCleanup(key, token));
+          return new InFlightTask(future, token);
+        });
+  }
+
+  private void runStabilityCheckWithCleanup(Path path, Object token) {
+    try {
+      processStableFile(path);
+    } finally {
+      inFlightChecks.compute(
+          path, (k, current) -> current != null && current.token() == token ? null : current);
     }
   }
 
