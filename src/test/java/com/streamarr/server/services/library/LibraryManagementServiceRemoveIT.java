@@ -11,18 +11,28 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
+import com.streamarr.server.domain.streaming.StreamingOptions;
+import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
+import com.streamarr.server.fakes.FakeFfprobeService;
+import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.GenreRepository;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.services.streaming.FfprobeService;
+import com.streamarr.server.services.streaming.SegmentStore;
+import com.streamarr.server.services.streaming.StreamingService;
+import com.streamarr.server.services.streaming.TranscodeExecutor;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CyclicBarrier;
@@ -35,6 +45,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.test.context.bean.override.convention.TestBean;
 
 @Tag("IntegrationTest")
 @DisplayName("Library Removal Integration Tests")
@@ -52,11 +63,34 @@ public class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
 
   @Autowired private GenreRepository genreRepository;
 
+  @Autowired private StreamingService streamingService;
+
+  @TestBean TranscodeExecutor transcodeExecutor;
+  @TestBean FfprobeService ffprobeService;
+  @TestBean SegmentStore segmentStore;
+
+  private static final FakeTranscodeExecutor FAKE_EXECUTOR = new FakeTranscodeExecutor();
+  private static final FakeFfprobeService FAKE_FFPROBE = new FakeFfprobeService();
+  private static final FakeSegmentStore FAKE_SEGMENT_STORE = new FakeSegmentStore();
+
+  static TranscodeExecutor transcodeExecutor() {
+    return FAKE_EXECUTOR;
+  }
+
+  static FfprobeService ffprobeService() {
+    return FAKE_FFPROBE;
+  }
+
+  static SegmentStore segmentStore() {
+    return FAKE_SEGMENT_STORE;
+  }
+
   @BeforeEach
   void cleanupDatabase() {
     mediaFileRepository.deleteAll();
     movieRepository.deleteAll();
     libraryRepository.deleteAll();
+    FAKE_EXECUTOR.reset();
   }
 
   @Test
@@ -189,10 +223,23 @@ public class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
                 .status(MediaFileStatus.MATCHED)
                 .build());
 
+    var options =
+        StreamingOptions.builder()
+            .quality(VideoQuality.AUTO)
+            .supportedCodecs(List.of("h264"))
+            .build();
+    var session = streamingService.createSession(mediaFile.getId(), options);
+
+    assertThat(streamingService.getActiveSessionCount()).isEqualTo(1);
+
     libraryManagementService.removeLibrary(library.getId());
 
-    assertThat(libraryRepository.findById(library.getId())).isEmpty();
-    assertThat(mediaFileRepository.findById(mediaFile.getId())).isEmpty();
+    assertThat(streamingService.getActiveSessionCount())
+        .as("Streaming session should be terminated when library is removed")
+        .isZero();
+    assertThat(FAKE_EXECUTOR.getStopped())
+        .as("Transcode process should be stopped")
+        .contains(session.getSessionId());
   }
 
   @Test
