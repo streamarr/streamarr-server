@@ -75,11 +75,12 @@ public class FakeFileProcessingTaskRepository implements FileProcessingTaskRepos
         .filter(task -> ACTIVE_STATUSES.contains(task.getStatus()))
         .filter(task -> task.getLeaseExpiresAt() != null && task.getLeaseExpiresAt().isBefore(now))
         .limit(limit)
-        .peek(
+        .map(
             task -> {
               task.setOwnerInstanceId(ownerInstanceId);
               task.setLeaseExpiresAt(leaseExpiresAt);
               task.setStatus(FileProcessingTaskStatus.PENDING);
+              return task;
             })
         .toList();
   }
