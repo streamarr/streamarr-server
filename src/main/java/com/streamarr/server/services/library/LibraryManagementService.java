@@ -59,7 +59,6 @@ public class LibraryManagementService {
   private final MovieService movieService;
   private final PersonService personService;
   private final GenreService genreService;
-  private final OrphanedMediaFileCleanupService orphanedMediaFileCleanupService;
   private final DirectoryWatchingService directoryWatchingService;
   private final StreamingService streamingService;
   private final ApplicationEventPublisher eventPublisher;
@@ -76,7 +75,6 @@ public class LibraryManagementService {
       MovieService movieService,
       PersonService personService,
       GenreService genreService,
-      OrphanedMediaFileCleanupService orphanedMediaFileCleanupService,
       @Lazy DirectoryWatchingService directoryWatchingService,
       StreamingService streamingService,
       ApplicationEventPublisher eventPublisher,
@@ -91,7 +89,6 @@ public class LibraryManagementService {
     this.movieService = movieService;
     this.personService = personService;
     this.genreService = genreService;
-    this.orphanedMediaFileCleanupService = orphanedMediaFileCleanupService;
     this.directoryWatchingService = directoryWatchingService;
     this.streamingService = streamingService;
     this.eventPublisher = eventPublisher;

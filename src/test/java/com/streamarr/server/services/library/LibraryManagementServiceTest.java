@@ -86,9 +86,6 @@ public class LibraryManagementServiceTest {
   private final MovieService movieService = new MovieService(fakeMovieRepository, null, null);
   private final FileSystem fileSystem = Jimfs.newFileSystem(Configuration.unix());
 
-  private final OrphanedMediaFileCleanupService orphanedMediaFileCleanupService =
-      new OrphanedMediaFileCleanupService(
-          fakeLibraryRepository, fakeMediaFileRepository, movieService, fileSystem);
   private final DirectoryWatchingService directoryWatchingService =
       mock(DirectoryWatchingService.class);
   private final StreamingService streamingService = mock(StreamingService.class);
@@ -105,7 +102,6 @@ public class LibraryManagementServiceTest {
           movieService,
           personService,
           genreService,
-          orphanedMediaFileCleanupService,
           directoryWatchingService,
           streamingService,
           capturingEventPublisher,
@@ -179,7 +175,6 @@ public class LibraryManagementServiceTest {
             movieService,
             personService,
             genreService,
-            orphanedMediaFileCleanupService,
             directoryWatchingService,
             streamingService,
             capturingEventPublisher,
@@ -216,7 +211,6 @@ public class LibraryManagementServiceTest {
             movieService,
             personService,
             genreService,
-            orphanedMediaFileCleanupService,
             directoryWatchingService,
             streamingService,
             capturingEventPublisher,
@@ -312,7 +306,6 @@ public class LibraryManagementServiceTest {
             movieService,
             personService,
             genreService,
-            orphanedMediaFileCleanupService,
             directoryWatchingService,
             streamingService,
             capturingEventPublisher,
@@ -682,7 +675,6 @@ public class LibraryManagementServiceTest {
               movieService,
               personService,
               genreService,
-              orphanedMediaFileCleanupService,
               directoryWatchingService,
               streamingService,
               capturingEventPublisher,
