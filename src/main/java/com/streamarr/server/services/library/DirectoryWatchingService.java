@@ -62,6 +62,7 @@ public class DirectoryWatchingService implements InitializingBean {
       return;
     }
 
+    executor.close();
     this.executor = Executors.newVirtualThreadPerTaskExecutor();
     this.cachedLibraries = List.copyOf(libraryRepository.findAll());
 
