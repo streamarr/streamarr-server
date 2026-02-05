@@ -36,6 +36,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
@@ -61,6 +62,7 @@ public class LibraryManagementService {
   private final ApplicationEventPublisher eventPublisher;
   private final FileSystem fileSystem;
   private final MutexFactory<String> mutexFactory;
+  private final Set<UUID> activeScans = ConcurrentHashMap.newKeySet();
 
   public LibraryManagementService(
       IgnoredFileValidator ignoredFileValidator,
@@ -194,39 +196,46 @@ public class LibraryManagementService {
   }
 
   public void scanLibrary(UUID libraryId) {
-    var library = transitionToScanning(libraryId);
-    var startTime = library.getScanStartedOn();
+    if (!activeScans.add(libraryId)) {
+      throw new LibraryScanInProgressException(libraryId);
+    }
+    try {
+      var library = transitionToScanning(libraryId);
+      var startTime = library.getScanStartedOn();
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
-        var stream = Files.walk(fileSystem.getPath(library.getFilepath()))) {
+      try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+          var stream = Files.walk(fileSystem.getPath(library.getFilepath()))) {
 
-      stream
-          .filter(Files::isRegularFile)
-          .filter(file -> !ignoredFileValidator.shouldIgnore(file))
-          .forEach(file -> executor.submit(() -> processFile(library, file)));
+        stream
+            .filter(Files::isRegularFile)
+            .filter(file -> !ignoredFileValidator.shouldIgnore(file))
+            .forEach(file -> executor.submit(() -> processFile(library, file)));
 
-    } catch (IOException | UncheckedIOException | SecurityException e) {
-      var endTimeOfFailure = Instant.now();
+      } catch (IOException | UncheckedIOException | SecurityException e) {
+        var endTimeOfFailure = Instant.now();
 
-      library.setStatus(LibraryStatus.UNHEALTHY);
-      library.setScanCompletedOn(endTimeOfFailure);
+        library.setStatus(LibraryStatus.UNHEALTHY);
+        library.setScanCompletedOn(endTimeOfFailure);
+        libraryRepository.save(library);
+
+        log.error("Failed to access {} library during scan attempt.", library.getName(), e);
+
+        return;
+      }
+
+      eventPublisher.publishEvent(new ScanCompletedEvent(library.getId()));
+
+      var endTime = Instant.now();
+      var elapsedTime = Duration.between(startTime, endTime).getSeconds();
+
+      library.setStatus(LibraryStatus.HEALTHY);
+      library.setScanCompletedOn(endTime);
       libraryRepository.save(library);
 
-      log.error("Failed to access {} library during scan attempt.", library.getName(), e);
-
-      return;
+      log.info("Finished {} library scan in {} seconds.", library.getName(), elapsedTime);
+    } finally {
+      activeScans.remove(libraryId);
     }
-
-    eventPublisher.publishEvent(new ScanCompletedEvent(library.getId()));
-
-    var endTime = Instant.now();
-    var elapsedTime = Duration.between(startTime, endTime).getSeconds();
-
-    library.setStatus(LibraryStatus.HEALTHY);
-    library.setScanCompletedOn(endTime);
-    libraryRepository.save(library);
-
-    log.info("Finished {} library scan in {} seconds.", library.getName(), elapsedTime);
   }
 
   private Library transitionToScanning(UUID libraryId) {
