@@ -87,15 +87,7 @@ public class LibraryManagementService {
     validateFilepathNotAlreadyUsed(library.getFilepath());
     validatePathExistsAndIsDirectory(library.getFilepath());
 
-    var libraryToSave =
-        Library.builder()
-            .name(library.getName())
-            .filepath(library.getFilepath())
-            .backend(library.getBackend())
-            .type(library.getType())
-            .externalAgentStrategy(library.getExternalAgentStrategy())
-            .status(LibraryStatus.HEALTHY)
-            .build();
+    var libraryToSave = library.toBuilder().status(LibraryStatus.HEALTHY).build();
     var savedLibrary = libraryRepository.save(libraryToSave);
 
     triggerAsyncScan(savedLibrary.getId());
