@@ -12,6 +12,7 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaType;
+import com.streamarr.server.fakes.FakeFileProcessingTaskRepository;
 import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.repositories.LibraryRepository;
@@ -24,6 +25,7 @@ import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolve
 import com.streamarr.server.services.metadata.movie.TMDBMovieProvider;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
 import com.streamarr.server.services.streaming.StreamingService;
+import com.streamarr.server.services.task.FileProcessingTaskCoordinator;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
 import io.methvin.watcher.DirectoryChangeEvent;
@@ -31,7 +33,9 @@ import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -136,11 +140,17 @@ class FileEventProcessorTest {
             new MutexFactoryProvider(),
             fileSystem);
 
+    var taskRepository = new FakeFileProcessingTaskRepository();
+    var clock = Clock.fixed(java.time.Instant.now(), ZoneId.of("UTC"));
+    var taskCoordinator =
+        new FileProcessingTaskCoordinator(taskRepository, clock, Duration.ofSeconds(60));
+
     eventProcessor =
         new FileEventProcessor(
             path -> stabilityCheckerRef.get().awaitStability(path),
             libraryManagementService,
-            ignoredFileValidator);
+            ignoredFileValidator,
+            taskCoordinator);
 
     eventProcessor.reset(libraryRepository.findAll());
   }
@@ -275,22 +285,25 @@ class FileEventProcessorTest {
   }
 
   @Test
-  @DisplayName("Should ignore file when no library matches path")
-  void shouldIgnoreFileWhenNoLibraryMatchesPath() throws Exception {
+  @DisplayName("Should skip stability check when no library matches path")
+  void shouldSkipStabilityCheckWhenNoLibraryMatchesPath() throws Exception {
     var otherDir = fileSystem.getPath("/other");
     Files.createDirectories(otherDir);
     var path = createFileAt(otherDir, "Movie (2024).mkv");
-    var latch = new CountDownLatch(1);
+    var stabilityCheckerCalled = new AtomicBoolean(false);
 
     stabilityCheckerRef.set(
         p -> {
-          latch.countDown();
+          stabilityCheckerCalled.set(true);
           return true;
         });
 
     eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
-    assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
+    await()
+        .during(Duration.ofMillis(100))
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(() -> assertThat(stabilityCheckerCalled.get()).isFalse());
 
     var mediaFile = mediaFileRepository.findFirstByFilepath(path.toAbsolutePath().toString());
     assertThat(mediaFile).isEmpty();
@@ -315,21 +328,24 @@ class FileEventProcessorTest {
   }
 
   @Test
-  @DisplayName("Should not match library when path shares string prefix but not path prefix")
-  void shouldNotMatchLibraryWhenPathSharesStringPrefixButNotPathPrefix() throws Exception {
+  @DisplayName("Should skip stability check when path shares string prefix but not path prefix")
+  void shouldSkipStabilityCheckWhenPathSharesStringPrefixButNotPathPrefix() throws Exception {
     Files.createDirectories(fileSystem.getPath("/media/moviesfoo"));
     var path = createFileAt(fileSystem.getPath("/media/moviesfoo"), "Movie (2024).mkv");
-    var latch = new CountDownLatch(1);
+    var stabilityCheckerCalled = new AtomicBoolean(false);
 
     stabilityCheckerRef.set(
         p -> {
-          latch.countDown();
+          stabilityCheckerCalled.set(true);
           return true;
         });
 
     eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
-    assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
+    await()
+        .during(Duration.ofMillis(100))
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(() -> assertThat(stabilityCheckerCalled.get()).isFalse());
 
     var mediaFile = mediaFileRepository.findFirstByFilepath(path.toAbsolutePath().toString());
     assertThat(mediaFile).isEmpty();
@@ -493,8 +509,8 @@ class FileEventProcessorTest {
   }
 
   @Test
-  @DisplayName("Should not resolve library when added after reset")
-  void shouldNotResolveLibraryWhenAddedAfterReset() throws Exception {
+  @DisplayName("Should skip stability check when library added after reset")
+  void shouldSkipStabilityCheckWhenLibraryAddedAfterReset() throws Exception {
     var laterLibrary =
         Library.builder()
             .name("Anime")
@@ -508,17 +524,20 @@ class FileEventProcessorTest {
     Files.createDirectories(fileSystem.getPath("/media/anime"));
 
     var path = createFile("/media/anime/Movie (2024).mkv");
-    var latch = new CountDownLatch(1);
+    var stabilityCheckerCalled = new AtomicBoolean(false);
 
     stabilityCheckerRef.set(
         p -> {
-          latch.countDown();
+          stabilityCheckerCalled.set(true);
           return true;
         });
 
     eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
 
-    assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
+    await()
+        .during(Duration.ofMillis(100))
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(() -> assertThat(stabilityCheckerCalled.get()).isFalse());
 
     var mediaFile = mediaFileRepository.findFirstByFilepath(path.toAbsolutePath().toString());
     assertThat(mediaFile).isEmpty();
@@ -550,6 +569,46 @@ class FileEventProcessorTest {
     eventProcessor.shutdown();
 
     assertThat(interruptedLatch.await(2, TimeUnit.SECONDS)).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should reprocess file when delete cancels in-flight check")
+  void shouldReprocessFileWhenDeleteCancelsInFlightCheck() throws Exception {
+    var path = createFile("/media/movies/Movie (2024).mkv");
+    var firstCheckEntered = new CountDownLatch(1);
+    var firstCheckBlocked = new CountDownLatch(1);
+    var secondCheckCompleted = new CountDownLatch(1);
+    var callCount = new AtomicInteger(0);
+
+    stabilityCheckerRef.set(
+        p -> {
+          var count = callCount.incrementAndGet();
+          if (count == 1) {
+            firstCheckEntered.countDown();
+            try {
+              firstCheckBlocked.await(5, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+              Thread.currentThread().interrupt();
+              return false;
+            }
+            return false;
+          }
+          secondCheckCompleted.countDown();
+          return true;
+        });
+
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+    assertThat(firstCheckEntered.await(5, TimeUnit.SECONDS)).isTrue();
+
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.DELETE, path);
+    firstCheckBlocked.countDown();
+
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+
+    assertThat(secondCheckCompleted.await(5, TimeUnit.SECONDS))
+        .as(
+            "Second stability check should complete, proving system recovered from cancelled first check")
+        .isTrue();
   }
 
   private Path createFile(String pathStr) throws IOException {

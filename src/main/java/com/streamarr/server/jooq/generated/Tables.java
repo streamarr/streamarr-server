@@ -7,6 +7,7 @@ package com.streamarr.server.jooq.generated;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable;
 import com.streamarr.server.jooq.generated.tables.Company;
 import com.streamarr.server.jooq.generated.tables.ExternalIdentifier;
+import com.streamarr.server.jooq.generated.tables.FileProcessingTask;
 import com.streamarr.server.jooq.generated.tables.Genre;
 import com.streamarr.server.jooq.generated.tables.Library;
 import com.streamarr.server.jooq.generated.tables.MediaFile;
@@ -42,6 +43,11 @@ public class Tables {
      * The table <code>public.external_identifier</code>.
      */
     public static final ExternalIdentifier EXTERNAL_IDENTIFIER = ExternalIdentifier.EXTERNAL_IDENTIFIER;
+
+    /**
+     * The table <code>public.file_processing_task</code>.
+     */
+    public static final FileProcessingTask FILE_PROCESSING_TASK = FileProcessingTask.FILE_PROCESSING_TASK;
 
     /**
      * The table <code>public.genre</code>.

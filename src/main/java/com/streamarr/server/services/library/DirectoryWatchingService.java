@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.services.task.FileProcessingTaskCoordinator;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import io.methvin.watcher.DirectoryWatcher;
 import jakarta.annotation.PreDestroy;
@@ -29,11 +30,12 @@ public class DirectoryWatchingService implements InitializingBean {
       LibraryRepository libraryRepository,
       FileStabilityChecker fileStabilityChecker,
       LibraryManagementService libraryManagementService,
-      IgnoredFileValidator ignoredFileValidator) {
+      IgnoredFileValidator ignoredFileValidator,
+      FileProcessingTaskCoordinator taskCoordinator) {
     this.libraryRepository = libraryRepository;
     this.fileEventProcessor =
         new FileEventProcessor(
-            fileStabilityChecker, libraryManagementService, ignoredFileValidator);
+            fileStabilityChecker, libraryManagementService, ignoredFileValidator, taskCoordinator);
   }
 
   public void setup() throws IOException {

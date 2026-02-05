@@ -6,6 +6,7 @@ package com.streamarr.server.jooq.generated;
 
 import com.streamarr.server.jooq.generated.tables.BaseCollectable;
 import com.streamarr.server.jooq.generated.tables.ExternalIdentifier;
+import com.streamarr.server.jooq.generated.tables.FileProcessingTask;
 import com.streamarr.server.jooq.generated.tables.Library;
 import com.streamarr.server.jooq.generated.tables.MediaFile;
 import com.streamarr.server.jooq.generated.tables.MovieCompany;
@@ -33,6 +34,8 @@ public class Indexes {
     // -------------------------------------------------------------------------
 
     public static final Index EXTERNAL_IDENTIFIER_ID_IDX = Internal.createIndex(DSL.name("external_identifier_id_idx"), ExternalIdentifier.EXTERNAL_IDENTIFIER, new OrderField[] { ExternalIdentifier.EXTERNAL_IDENTIFIER.ID }, true);
+    public static final Index FILE_PROCESSING_TASK_CLAIMABLE_IDX = Internal.createIndex(DSL.name("file_processing_task_claimable_idx"), FileProcessingTask.FILE_PROCESSING_TASK, new OrderField[] { FileProcessingTask.FILE_PROCESSING_TASK.STATUS }, false);
+    public static final Index FILE_PROCESSING_TASK_FILEPATH_ACTIVE_IDX = Internal.createIndex(DSL.name("file_processing_task_filepath_active_idx"), FileProcessingTask.FILE_PROCESSING_TASK, new OrderField[] { FileProcessingTask.FILE_PROCESSING_TASK.FILEPATH }, true);
     public static final Index IDX_BASE_COLLECTABLE_LIBRARY_CREATED_ID = Internal.createIndex(DSL.name("idx_base_collectable_library_created_id"), BaseCollectable.BASE_COLLECTABLE, new OrderField[] { BaseCollectable.BASE_COLLECTABLE.LIBRARY_ID, BaseCollectable.BASE_COLLECTABLE.CREATED_ON, BaseCollectable.BASE_COLLECTABLE.ID }, false);
     public static final Index IDX_BASE_COLLECTABLE_LIBRARY_ID = Internal.createIndex(DSL.name("idx_base_collectable_library_id"), BaseCollectable.BASE_COLLECTABLE, new OrderField[] { BaseCollectable.BASE_COLLECTABLE.LIBRARY_ID }, false);
     public static final Index IDX_BASE_COLLECTABLE_LIBRARY_TITLE_ID = Internal.createIndex(DSL.name("idx_base_collectable_library_title_id"), BaseCollectable.BASE_COLLECTABLE, new OrderField[] { BaseCollectable.BASE_COLLECTABLE.LIBRARY_ID, BaseCollectable.BASE_COLLECTABLE.TITLE, BaseCollectable.BASE_COLLECTABLE.ID }, false);
