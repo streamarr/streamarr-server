@@ -84,6 +84,15 @@ public class LibraryManagementService {
   // TODO #39: implement removeLibrary mutation
   public void removeLibrary() {}
 
+  public void processDiscoveredFile(UUID libraryId, Path path) {
+    var library =
+        libraryRepository
+            .findById(libraryId)
+            .orElseThrow(() -> new LibraryNotFoundException(libraryId));
+
+    processFile(library, path);
+  }
+
   public void scanLibrary(UUID libraryId) {
     var optionalLibrary = libraryRepository.findById(libraryId);
 

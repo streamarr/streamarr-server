@@ -261,6 +261,49 @@ public class LibraryManagementServiceTest {
   }
 
   @Test
+  @DisplayName("Should process discovered file when library exists")
+  void shouldProcessDiscoveredFileWhenLibraryExists() throws IOException {
+    var movieFolder = "About Time";
+    var movieFilename = "About Time (2013).mkv";
+
+    var rootPath = createRootLibraryDirectory();
+    var moviePath = createMovieFile(rootPath, movieFolder, movieFilename);
+
+    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+
+    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
+        .thenReturn(
+            Optional.of(
+                RemoteSearchResult.builder()
+                    .title(movieFolder)
+                    .externalId("456")
+                    .externalSourceType(ExternalSourceType.TMDB)
+                    .build()));
+
+    when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
+        .thenReturn(Optional.of(Movie.builder().title(movieFolder).build()));
+
+    libraryManagementService.processDiscoveredFile(savedLibraryId, moviePath);
+
+    var mediaFile =
+        fakeMediaFileRepository.findFirstByFilepath(moviePath.toAbsolutePath().toString());
+
+    assertTrue(mediaFile.isPresent());
+    assertEquals(MediaFileStatus.MATCHED, mediaFile.get().getStatus());
+  }
+
+  @Test
+  @DisplayName("Should throw when library not found for discovered file")
+  void shouldThrowWhenLibraryNotFoundForDiscoveredFile() throws IOException {
+    var rootPath = createRootLibraryDirectory();
+    var moviePath = createMovieFile(rootPath, "Test", "Test (2024).mkv");
+
+    assertThrows(
+        LibraryNotFoundException.class,
+        () -> libraryManagementService.processDiscoveredFile(UUID.randomUUID(), moviePath));
+  }
+
+  @Test
   @DisplayName("Should not attempt cleanup when library path is inaccessible")
   void shouldNotAttemptCleanupWhenLibraryPathInaccessible() {
     var orphanedMediaFile =

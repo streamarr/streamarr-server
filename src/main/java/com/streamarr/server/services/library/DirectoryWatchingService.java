@@ -9,7 +9,6 @@ import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.annotation.DependsOn;
@@ -17,15 +16,25 @@ import org.springframework.stereotype.Service;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 @DependsOn("libraryRepository")
 public class DirectoryWatchingService implements InitializingBean {
 
   private final LibraryRepository libraryRepository;
-  private final IgnoredFileValidator ignoredFileValidator;
+  private final FileEventProcessor fileEventProcessor;
 
   private final Set<Path> directoriesToWatch = new HashSet<>();
   private DirectoryWatcher watcher;
+
+  public DirectoryWatchingService(
+      LibraryRepository libraryRepository,
+      FileStabilityChecker fileStabilityChecker,
+      LibraryManagementService libraryManagementService,
+      IgnoredFileValidator ignoredFileValidator) {
+    this.libraryRepository = libraryRepository;
+    this.fileEventProcessor =
+        new FileEventProcessor(
+            fileStabilityChecker, libraryManagementService, ignoredFileValidator);
+  }
 
   public void setup() throws IOException {
     if (directoriesToWatch.isEmpty()) {
@@ -33,33 +42,12 @@ public class DirectoryWatchingService implements InitializingBean {
       return;
     }
 
+    fileEventProcessor.reset(libraryRepository.findAll());
+
     this.watcher =
         DirectoryWatcher.builder()
             .paths(directoriesToWatch.stream().toList())
-            .listener(
-                event -> {
-                  if (ignoredFileValidator.shouldIgnore(event.path())) {
-                    return;
-                  }
-
-                  switch (event.eventType()) {
-                    case CREATE ->
-                        log.info(
-                            "Watcher event type: {} -- filepath: {}",
-                            event.eventType(),
-                            event.path());
-                    case MODIFY ->
-                        log.info(
-                            "Watcher event type: {} -- filepath: {}",
-                            event.eventType(),
-                            event.path());
-                    case DELETE ->
-                        log.info(
-                            "Watcher event type: {} -- filepath: {}",
-                            event.eventType(),
-                            event.path());
-                  }
-                })
+            .listener(event -> fileEventProcessor.handleFileEvent(event.eventType(), event.path()))
             .build();
 
     watch();
@@ -101,7 +89,10 @@ public class DirectoryWatchingService implements InitializingBean {
 
   @PreDestroy
   public void stopWatching() throws IOException {
-    watcher.close();
+    if (watcher != null) {
+      watcher.close();
+    }
+    fileEventProcessor.shutdown();
   }
 
   public CompletableFuture<Void> watch() {

@@ -99,8 +99,7 @@ class IgnoredFileValidatorTest {
   @DisplayName("Should ignore when given additional configured filename")
   void shouldIgnoreWhenGivenAdditionalConfiguredFilename() {
     var customValidator =
-        new IgnoredFileValidator(
-            new LibraryScanProperties(List.of(".hidden_file"), null, null));
+        new IgnoredFileValidator(new LibraryScanProperties(List.of(".hidden_file"), null, null));
 
     assertTrue(customValidator.shouldIgnore(Path.of(".hidden_file")));
   }
@@ -109,8 +108,7 @@ class IgnoredFileValidatorTest {
   @DisplayName("Should ignore when given additional configured extension")
   void shouldIgnoreWhenGivenAdditionalConfiguredExtension() {
     var customValidator =
-        new IgnoredFileValidator(
-            new LibraryScanProperties(null, List.of("srt"), null));
+        new IgnoredFileValidator(new LibraryScanProperties(null, List.of("srt"), null));
 
     assertTrue(customValidator.shouldIgnore(Path.of("movie.srt")));
   }
@@ -119,8 +117,7 @@ class IgnoredFileValidatorTest {
   @DisplayName("Should ignore when given additional configured prefix")
   void shouldIgnoreWhenGivenAdditionalConfiguredPrefix() {
     var customValidator =
-        new IgnoredFileValidator(
-            new LibraryScanProperties(null, null, List.of("~")));
+        new IgnoredFileValidator(new LibraryScanProperties(null, null, List.of("~")));
 
     assertTrue(customValidator.shouldIgnore(Path.of("~tempfile")));
   }

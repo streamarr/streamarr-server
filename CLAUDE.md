@@ -40,6 +40,16 @@
 - NEVER include Co-Authored-By trailers
 - Eliminate duplication ruthlessly; express intent through naming and structure
 
+### SonarCloud Quality Gate
+All PRs must pass these conditions on new code:
+- **Coverage** ≥80% (aim for 90%) — write tests for new code
+- **Duplicated Lines** ≤5% — extract shared logic, don't copy-paste
+- **Maintainability Rating** A — no code smells
+- **Reliability Rating** A — no bugs
+- **Security Rating** A — no vulnerabilities
+- **Security Hotspots Reviewed** 100% — review all flagged hotspots
+- **New Lines** ≤2,000 — aim for ≤1,500 to leave buffer for test coverage
+
 ### Flat Control Flow
 - Use early returns and guard clauses — avoid else/else-if chains
 - No nested conditionals — extract to well-named private methods or use early exits

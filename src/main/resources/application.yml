@@ -30,3 +30,9 @@ streaming:
   segment-duration-seconds: ${STREAMING_SEGMENT_DURATION:6}
   session-timeout-seconds: ${STREAMING_SESSION_TIMEOUT:60}
   segment-base-path: ${STREAMING_SEGMENT_BASE_PATH:}
+
+library:
+  watcher:
+    stabilization-period-seconds: ${LIBRARY_WATCHER_STABILIZATION_PERIOD:30}
+    poll-interval-seconds: ${LIBRARY_WATCHER_POLL_INTERVAL:5}
+    max-wait-seconds: ${LIBRARY_WATCHER_MAX_WAIT:3600}
