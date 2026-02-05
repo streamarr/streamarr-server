@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -40,6 +41,7 @@ public class DirectoryWatchingService implements InitializingBean {
 
   private DirectoryWatcher watcher;
   private ExecutorService executor;
+  private volatile List<Library> cachedLibraries;
 
   public DirectoryWatchingService(
       LibraryRepository libraryRepository,
@@ -51,6 +53,7 @@ public class DirectoryWatchingService implements InitializingBean {
     this.libraryManagementService = libraryManagementService;
     this.videoExtensionValidator = videoExtensionValidator;
     this.executor = Executors.newVirtualThreadPerTaskExecutor();
+    this.cachedLibraries = List.copyOf(libraryRepository.findAll());
   }
 
   public void setup() throws IOException {
@@ -60,6 +63,7 @@ public class DirectoryWatchingService implements InitializingBean {
     }
 
     this.executor = Executors.newVirtualThreadPerTaskExecutor();
+    this.cachedLibraries = List.copyOf(libraryRepository.findAll());
 
     this.watcher =
         DirectoryWatcher.builder()
@@ -134,7 +138,7 @@ public class DirectoryWatchingService implements InitializingBean {
     var absolutePath = path.toAbsolutePath();
     var fs = absolutePath.getFileSystem();
 
-    return libraryRepository.findAll().stream()
+    return cachedLibraries.stream()
         .filter(library -> absolutePath.startsWith(fs.getPath(library.getFilepath())))
         .max(Comparator.comparingInt(library -> library.getFilepath().length()))
         .map(Library::getId);

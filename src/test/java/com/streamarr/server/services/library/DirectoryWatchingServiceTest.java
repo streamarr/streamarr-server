@@ -54,6 +54,7 @@ class DirectoryWatchingServiceTest {
   private AtomicReference<LibraryManagementService> libraryManagementServiceRef;
   private DirectoryWatchingService watchingService;
   private UUID libraryId;
+  private UUID specialLibraryId;
 
   @BeforeEach
   void setUp() throws IOException {
@@ -77,7 +78,31 @@ class DirectoryWatchingServiceTest {
     var saved = libraryRepository.save(library);
     libraryId = saved.getId();
 
+    var specialLibrary =
+        Library.builder()
+            .name("Special Movies")
+            .backend(LibraryBackend.LOCAL)
+            .status(LibraryStatus.HEALTHY)
+            .filepath("/media/movies/special")
+            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+            .type(MediaType.MOVIE)
+            .build();
+    specialLibraryId = libraryRepository.save(specialLibrary).getId();
+
+    var seriesLibrary =
+        Library.builder()
+            .name("TV Shows")
+            .backend(LibraryBackend.LOCAL)
+            .status(LibraryStatus.HEALTHY)
+            .filepath("/media/shows")
+            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+            .type(MediaType.SERIES)
+            .build();
+    libraryRepository.save(seriesLibrary);
+
+    Files.createDirectories(fileSystem.getPath("/media/movies/special"));
     Files.createDirectories(fileSystem.getPath("/media/movies"));
+    Files.createDirectories(fileSystem.getPath("/media/shows"));
 
     var movieService = mock(MovieService.class);
     var personService = mock(PersonService.class);
@@ -262,19 +287,6 @@ class DirectoryWatchingServiceTest {
   @Test
   @DisplayName("Should resolve to longest match when library paths overlap")
   void shouldResolveToLongestMatchWhenLibraryPathsOverlap() throws Exception {
-    var specialLibrary =
-        Library.builder()
-            .name("Special Movies")
-            .backend(LibraryBackend.LOCAL)
-            .status(LibraryStatus.HEALTHY)
-            .filepath("/media/movies/special")
-            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
-            .type(MediaType.MOVIE)
-            .build();
-
-    var savedSpecial = libraryRepository.save(specialLibrary);
-    Files.createDirectories(fileSystem.getPath("/media/movies/special"));
-
     var path = createFileAt(fileSystem.getPath("/media/movies/special"), "Movie (2024).mkv");
 
     watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
@@ -286,7 +298,7 @@ class DirectoryWatchingServiceTest {
               var mediaFile =
                   mediaFileRepository.findFirstByFilepath(path.toAbsolutePath().toString());
               assertThat(mediaFile).isPresent();
-              assertThat(mediaFile.get().getLibraryId()).isEqualTo(savedSpecial.getId());
+              assertThat(mediaFile.get().getLibraryId()).isEqualTo(specialLibraryId);
             });
   }
 
@@ -443,18 +455,6 @@ class DirectoryWatchingServiceTest {
   @Test
   @DisplayName("Should clean up in-flight map when processing throws exception")
   void shouldCleanUpInFlightMapWhenProcessingThrowsException() throws Exception {
-    var seriesLibrary =
-        Library.builder()
-            .name("TV Shows")
-            .backend(LibraryBackend.LOCAL)
-            .status(LibraryStatus.HEALTHY)
-            .filepath("/media/shows")
-            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
-            .type(MediaType.SERIES)
-            .build();
-    libraryRepository.save(seriesLibrary);
-    Files.createDirectories(fileSystem.getPath("/media/shows"));
-
     var path = createFile("/media/shows/Show S01E01 (2024).mkv");
     var callCount = new AtomicInteger(0);
 
@@ -478,6 +478,38 @@ class DirectoryWatchingServiceTest {
             });
 
     assertThat(callCount.get()).isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName("Should resolve libraries from snapshot taken at construction")
+  void shouldResolveLibrariesFromSnapshotTakenAtConstruction() throws Exception {
+    var laterLibrary =
+        Library.builder()
+            .name("Anime")
+            .backend(LibraryBackend.LOCAL)
+            .status(LibraryStatus.HEALTHY)
+            .filepath("/media/anime")
+            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+            .type(MediaType.MOVIE)
+            .build();
+    libraryRepository.save(laterLibrary);
+    Files.createDirectories(fileSystem.getPath("/media/anime"));
+
+    var path = createFile("/media/anime/Movie (2024).mkv");
+    var latch = new CountDownLatch(1);
+
+    stabilityCheckerRef.set(
+        p -> {
+          latch.countDown();
+          return true;
+        });
+
+    watchingService.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, path);
+
+    assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
+
+    var mediaFile = mediaFileRepository.findFirstByFilepath(path.toAbsolutePath().toString());
+    assertThat(mediaFile).isEmpty();
   }
 
   private Path createFile(String pathStr) throws IOException {
