@@ -18,6 +18,7 @@ import com.streamarr.server.services.PersonService;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.library.events.LibraryAddedEvent;
+import com.streamarr.server.services.library.events.LibraryRemovedEvent;
 import com.streamarr.server.services.library.events.ScanCompletedEvent;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
@@ -169,7 +170,7 @@ public class LibraryManagementService {
       deleteLibraryContent(libraryId, mediaFiles);
       libraryRepository.delete(library);
 
-      cleanupExternalResources(library, mediaFileIds);
+      eventPublisher.publishEvent(new LibraryRemovedEvent(library.getFilepath(), mediaFileIds));
     } finally {
       libraryMutex.unlock();
     }

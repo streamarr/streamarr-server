@@ -41,6 +41,7 @@ import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.PersonService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.library.events.LibraryAddedEvent;
+import com.streamarr.server.services.library.events.LibraryRemovedEvent;
 import com.streamarr.server.services.library.events.ScanCompletedEvent;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
@@ -717,6 +718,72 @@ public class LibraryManagementServiceTest {
       libraryManagementService.addLibrary(library);
 
       assertThat(library.getStatus()).as("Input library should not be mutated").isNull();
+    }
+  }
+
+  @Nested
+  @DisplayName("Remove Library Tests")
+  class RemoveLibraryTests {
+
+    @Test
+    @DisplayName(
+        "Should publish LibraryRemovedEvent with correct filepath and media file IDs when library is removed")
+    void shouldPublishLibraryRemovedEventWhenLibraryIsRemoved() {
+      var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+      var expectedFilepath = library.getFilepath();
+
+      var mediaFile =
+          fakeMediaFileRepository.save(
+              MediaFile.builder()
+                  .libraryId(savedLibraryId)
+                  .filepath("/library/movie.mkv")
+                  .filename("movie.mkv")
+                  .status(MediaFileStatus.MATCHED)
+                  .build());
+
+      libraryManagementService.removeLibrary(savedLibraryId);
+
+      var events = capturingEventPublisher.getEventsOfType(LibraryRemovedEvent.class);
+      assertThat(events).hasSize(1);
+      assertThat(events.getFirst().filepath()).isEqualTo(expectedFilepath);
+      assertThat(events.getFirst().mediaFileIds()).containsExactly(mediaFile.getId());
+    }
+
+    @Test
+    @DisplayName(
+        "Should publish LibraryRemovedEvent with empty media file IDs when library has no media files")
+    void shouldPublishLibraryRemovedEventWithEmptyMediaFileIdsWhenNoMediaFiles() {
+      libraryManagementService.removeLibrary(savedLibraryId);
+
+      var events = capturingEventPublisher.getEventsOfType(LibraryRemovedEvent.class);
+      assertThat(events).hasSize(1);
+      assertThat(events.getFirst().mediaFileIds()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should not publish LibraryRemovedEvent when library does not exist")
+    void shouldNotPublishLibraryRemovedEventWhenLibraryNotFound() {
+      assertThrows(
+          LibraryNotFoundException.class,
+          () -> libraryManagementService.removeLibrary(UUID.randomUUID()));
+
+      var events = capturingEventPublisher.getEventsOfType(LibraryRemovedEvent.class);
+      assertThat(events).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should not publish LibraryRemovedEvent when library is currently scanning")
+    void shouldNotPublishLibraryRemovedEventWhenLibraryIsScanning() {
+      var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+      library.setStatus(LibraryStatus.SCANNING);
+      fakeLibraryRepository.save(library);
+
+      assertThrows(
+          LibraryScanInProgressException.class,
+          () -> libraryManagementService.removeLibrary(savedLibraryId));
+
+      var events = capturingEventPublisher.getEventsOfType(LibraryRemovedEvent.class);
+      assertThat(events).isEmpty();
     }
   }
 
