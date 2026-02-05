@@ -244,8 +244,8 @@ public class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should block concurrent removal attempts")
-  void shouldBlockConcurrentRemovalAttempts() throws Exception {
+  @DisplayName("Should allow only one removal when concurrent attempts occur")
+  void shouldAllowOnlyOneRemovalWhenConcurrentAttemptsOccur() throws Exception {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     movieRepository.saveAndFlush(Movie.builder().title("Movie").library(library).build());
 
