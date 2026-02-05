@@ -19,11 +19,13 @@ import org.apache.commons.io.FilenameUtils;
 @Slf4j
 class FileEventProcessor {
 
+  private record InFlightTask(Future<?> future, Object token) {}
+
   private final FileStabilityChecker fileStabilityChecker;
   private final LibraryManagementService libraryManagementService;
   private final VideoExtensionValidator videoExtensionValidator;
 
-  private final ConcurrentHashMap<Path, Future<?>> inFlightChecks = new ConcurrentHashMap<>();
+  private final ConcurrentHashMap<Path, InFlightTask> inFlightChecks = new ConcurrentHashMap<>();
 
   private volatile ExecutorService executor;
   private volatile List<Library> cachedLibraries;
@@ -67,21 +69,27 @@ class FileEventProcessor {
     }
 
     try {
+      var token = new Object();
       inFlightChecks.compute(
           path,
           (key, existing) -> {
-            if (existing != null && !existing.isDone()) {
+            if (existing != null && !existing.future().isDone()) {
               log.debug("Stability check already in progress for: {}", path);
               return existing;
             }
-            return executor.submit(
-                () -> {
-                  try {
-                    processStableFile(key);
-                  } finally {
-                    inFlightChecks.remove(key);
-                  }
-                });
+            var future =
+                executor.submit(
+                    () -> {
+                      try {
+                        processStableFile(key);
+                      } finally {
+                        inFlightChecks.compute(
+                            key,
+                            (k, current) ->
+                                current != null && current.token() == token ? null : current);
+                      }
+                    });
+            return new InFlightTask(future, token);
           });
     } catch (RejectedExecutionException e) {
       log.warn("Executor shut down, ignoring event for: {}", path);
@@ -110,9 +118,9 @@ class FileEventProcessor {
   }
 
   private void handleDelete(Path path) {
-    var future = inFlightChecks.remove(path);
-    if (future != null) {
-      future.cancel(true);
+    var task = inFlightChecks.remove(path);
+    if (task != null) {
+      task.future().cancel(true);
       log.info("Cancelled in-flight check for deleted file: {}", path);
     }
     log.info("Watcher event type: DELETE -- filepath: {}", path);
