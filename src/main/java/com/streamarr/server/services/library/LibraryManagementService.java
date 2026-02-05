@@ -17,6 +17,7 @@ import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
+import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
 import java.io.IOException;
 import java.nio.file.FileSystem;
@@ -36,6 +37,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class LibraryManagementService {
 
+  private final IgnoredFileValidator ignoredFileValidator;
   private final VideoExtensionValidator videoExtensionValidator;
   private final DefaultVideoFileMetadataParser defaultVideoFileMetadataParser;
   private final MovieMetadataProviderResolver movieMetadataProviderResolver;
@@ -49,6 +51,7 @@ public class LibraryManagementService {
   private final MutexFactory<String> mutexFactory;
 
   public LibraryManagementService(
+      IgnoredFileValidator ignoredFileValidator,
       VideoExtensionValidator videoExtensionValidator,
       DefaultVideoFileMetadataParser defaultVideoFileMetadataParser,
       MovieMetadataProviderResolver movieMetadataProviderResolver,
@@ -60,6 +63,7 @@ public class LibraryManagementService {
       OrphanedMediaFileCleanupService orphanedMediaFileCleanupService,
       MutexFactoryProvider mutexFactoryProvider,
       FileSystem fileSystem) {
+    this.ignoredFileValidator = ignoredFileValidator;
     this.videoExtensionValidator = videoExtensionValidator;
     this.defaultVideoFileMetadataParser = defaultVideoFileMetadataParser;
     this.movieMetadataProviderResolver = movieMetadataProviderResolver;
@@ -74,13 +78,11 @@ public class LibraryManagementService {
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
   }
 
-  public void addLibrary(Library library) {
-    throw new UnsupportedOperationException("Not implemented yet — see issue #82");
-  }
+  // TODO #39: implement addLibrary mutation
+  public void addLibrary(Library library) {}
 
-  public void removeLibrary() {
-    throw new UnsupportedOperationException("Not implemented yet — see issue #83");
-  }
+  // TODO #39: implement removeLibrary mutation
+  public void removeLibrary() {}
 
   public void scanLibrary(UUID libraryId) {
     var optionalLibrary = libraryRepository.findById(libraryId);
@@ -108,6 +110,7 @@ public class LibraryManagementService {
 
       stream
           .filter(Files::isRegularFile)
+          .filter(file -> !ignoredFileValidator.shouldIgnore(file))
           .forEach(file -> executor.submit(() -> processFile(library, file)));
 
     } catch (IOException e) {
@@ -136,7 +139,11 @@ public class LibraryManagementService {
 
   private void processFile(Library library, Path path) {
 
-    if (isUnsupportedFileExtension(path)) {
+    if (!hasSupportedExtension(path)) {
+      log.warn(
+          "Unsupported file extension: {} for filepath {}.",
+          getExtension(path),
+          path.toAbsolutePath());
       return;
     }
 
@@ -152,17 +159,8 @@ public class LibraryManagementService {
     }
   }
 
-  private boolean isUnsupportedFileExtension(Path path) {
-    var extension = getExtension(path);
-
-    var valid = videoExtensionValidator.validate(extension);
-
-    if (!valid) {
-      log.error(
-          "Unsupported file extension: {} for filepath {}.", extension, path.toAbsolutePath());
-    }
-
-    return !valid;
+  private boolean hasSupportedExtension(Path path) {
+    return videoExtensionValidator.validate(getExtension(path));
   }
 
   private String getExtension(Path path) {
@@ -259,18 +257,17 @@ public class LibraryManagementService {
   private void enrichMovieMetadata(
       Library library, MediaFile mediaFile, RemoteSearchResult remoteSearchResult) {
 
-    // Lock should use the library agent's external id.
-    var mutex = mutexFactory.getMutex(remoteSearchResult.externalId());
+    var externalIdMutex = mutexFactory.getMutex(remoteSearchResult.externalId());
 
     try {
-      mutex.lock();
+      externalIdMutex.lock();
 
       updateOrSaveEnrichedMovie(library, mediaFile, remoteSearchResult);
     } catch (Exception ex) {
       log.error("Failure enriching movie metadata:", ex);
     } finally {
-      if (mutex.isHeldByCurrentThread()) {
-        mutex.unlock();
+      if (externalIdMutex.isHeldByCurrentThread()) {
+        externalIdMutex.unlock();
       }
     }
   }
