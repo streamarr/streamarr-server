@@ -1,11 +1,9 @@
 package com.streamarr.server.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.streamarr.server.domain.metadata.Review;
-import java.lang.reflect.InvocationTargetException;
 import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -76,39 +74,33 @@ public class BaseAuditableEntityTest {
   public class BuilderTest {
 
     @Test
-    @DisplayName("Should throw exception when createdOn builder accessed")
-    void shouldThrowExceptionWhenCreatedOnBuilderAccessed() throws Exception {
+    @DisplayName("Should ignore createdOn when set via builder")
+    void shouldIgnoreCreatedOnWhenSetViaBuilder() throws Exception {
       var builder = Review.builder();
       var createdOnMethod =
           BaseAuditableEntity.BaseAuditableEntityBuilder.class.getDeclaredMethod(
               "createdOn", Instant.class);
 
       createdOnMethod.setAccessible(true);
-      var invocationEx =
-          assertThrows(
-              InvocationTargetException.class,
-              () -> createdOnMethod.invoke(builder, Instant.now()));
+      createdOnMethod.invoke(builder, Instant.parse("2020-01-01T00:00:00Z"));
+      var review = (Review) builder.build();
 
-      assertThat(invocationEx.getCause()).isInstanceOf(UnsupportedOperationException.class);
-      assertThat(invocationEx.getCause()).hasMessage("createdOn method is unsupported");
+      assertThat(review.getCreatedOn()).isNull();
     }
 
     @Test
-    @DisplayName("Should throw exception when lastModifiedOn builder accessed")
-    void shouldThrowExceptionWhenLastModifiedOnBuilderAccessed() throws Exception {
+    @DisplayName("Should ignore lastModifiedOn when set via builder")
+    void shouldIgnoreLastModifiedOnWhenSetViaBuilder() throws Exception {
       var builder = Review.builder();
       var lastModifiedOnMethod =
           BaseAuditableEntity.BaseAuditableEntityBuilder.class.getDeclaredMethod(
               "lastModifiedOn", Instant.class);
 
       lastModifiedOnMethod.setAccessible(true);
-      var invocationEx =
-          assertThrows(
-              InvocationTargetException.class,
-              () -> lastModifiedOnMethod.invoke(builder, Instant.now()));
+      lastModifiedOnMethod.invoke(builder, Instant.parse("2020-01-01T00:00:00Z"));
+      var review = (Review) builder.build();
 
-      assertThat(invocationEx.getCause()).isInstanceOf(UnsupportedOperationException.class);
-      assertThat(invocationEx.getCause()).hasMessage("lastModifiedOn method is unsupported");
+      assertThat(review.getLastModifiedOn()).isNull();
     }
   }
 }
