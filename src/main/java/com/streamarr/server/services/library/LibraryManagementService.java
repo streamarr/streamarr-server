@@ -181,22 +181,29 @@ public class LibraryManagementService {
   }
 
   private Library transitionToScanning(UUID libraryId) {
-    var library =
-        libraryRepository
-            .findById(libraryId)
-            .orElseThrow(() -> new LibraryNotFoundException(libraryId));
+    var libraryMutex = mutexFactory.getMutex(libraryId.toString());
 
-    if (library.getStatus().equals(LibraryStatus.SCANNING)) {
-      throw new LibraryScanInProgressException(libraryId);
+    libraryMutex.lock();
+    try {
+      var library =
+          libraryRepository
+              .findById(libraryId)
+              .orElseThrow(() -> new LibraryNotFoundException(libraryId));
+
+      if (library.getStatus().equals(LibraryStatus.SCANNING)) {
+        throw new LibraryScanInProgressException(libraryId);
+      }
+
+      log.info("Starting {} library scan.", library.getName());
+
+      library.setStatus(LibraryStatus.SCANNING);
+      library.setScanStartedOn(Instant.now());
+      libraryRepository.save(library);
+
+      return library;
+    } finally {
+      libraryMutex.unlock();
     }
-
-    log.info("Starting {} library scan.", library.getName());
-
-    library.setStatus(LibraryStatus.SCANNING);
-    library.setScanStartedOn(Instant.now());
-    libraryRepository.save(library);
-
-    return library;
   }
 
   private void processFile(Library library, Path path) {
