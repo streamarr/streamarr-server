@@ -705,6 +705,33 @@ public class LibraryManagementServiceTest {
 
       assertThat(library.getStatus()).as("Input library should not be mutated").isNull();
     }
+
+    @Test
+    @DisplayName("Should complete async library scan when library is added")
+    void shouldCompleteAsyncLibraryScanWhenLibraryIsAdded() throws IOException {
+      var newLibraryPath = fileSystem.getPath("/async-scan-library");
+      Files.createDirectories(newLibraryPath);
+
+      var library =
+          LibraryFixtureCreator.buildUnsavedLibrary(
+              "Async Scan Library", newLibraryPath.toString());
+
+      var savedLibrary = libraryManagementService.addLibrary(library);
+
+      await()
+          .atMost(Duration.ofSeconds(5))
+          .untilAsserted(
+              () -> {
+                var refreshedLibrary =
+                    fakeLibraryRepository.findById(savedLibrary.getId()).orElseThrow();
+                assertThat(refreshedLibrary.getScanCompletedOn())
+                    .as("Library scan should complete asynchronously")
+                    .isNotNull();
+                assertThat(refreshedLibrary.getStatus())
+                    .as("Library status should be HEALTHY after async scan")
+                    .isEqualTo(LibraryStatus.HEALTHY);
+              });
+    }
   }
 
   @Nested
