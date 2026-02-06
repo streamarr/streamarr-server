@@ -119,7 +119,8 @@ class FileEventProcessor {
     }
   }
 
-  private void runStabilityCheckWithCleanup(Path path, StabilityToken token, FileProcessingTask task) {
+  private void runStabilityCheckWithCleanup(
+      Path path, StabilityToken token, FileProcessingTask task) {
     try {
       processStableFile(path, task);
     } finally {
@@ -133,29 +134,29 @@ class FileEventProcessor {
 
     if (!fileStabilityChecker.awaitStability(path)) {
       log.warn("File did not stabilize: {}", path);
-      taskCoordinator
-          .fail(task.getId(), "File did not stabilize within timeout")
-          .ifPresentOrElse(
-              t -> {},
-              () -> log.info("Task already cancelled for: {}", path));
+      var result = taskCoordinator.fail(task.getId(), "File did not stabilize within timeout");
+      logIfTaskAlreadyCancelled(result, path);
       return;
     }
 
     try {
       libraryManagementService.processDiscoveredFile(task.getLibraryId(), path);
-      taskCoordinator
-          .complete(task.getId())
-          .ifPresentOrElse(
-              t -> {},
-              () -> log.info("Task already cancelled for: {}", path));
+      var result = taskCoordinator.complete(task.getId());
+      logIfTaskAlreadyCancelled(result, path);
     } catch (Exception e) {
       log.error("Failed to process discovered file: {}", path, e);
-      taskCoordinator
-          .fail(task.getId(), Optional.ofNullable(e.getMessage()).orElse(e.toString()))
-          .ifPresentOrElse(
-              t -> {},
-              () -> log.info("Task already cancelled for: {}", path));
+      var result =
+          taskCoordinator.fail(
+              task.getId(), Optional.ofNullable(e.getMessage()).orElse(e.toString()));
+      logIfTaskAlreadyCancelled(result, path);
     }
+  }
+
+  private void logIfTaskAlreadyCancelled(Optional<FileProcessingTask> result, Path path) {
+    if (result.isPresent()) {
+      return;
+    }
+    log.info("Task already cancelled for: {}", path);
   }
 
   private void handleDelete(Path path) {

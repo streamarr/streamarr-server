@@ -67,6 +67,7 @@ class FfmpegHealthIndicatorTest {
 
     var service =
         new TranscodeCapabilityService(
+            "ffmpeg",
             command -> {
               var cmdStr = String.join(" ", command);
               if (cmdStr.contains("-version")) {

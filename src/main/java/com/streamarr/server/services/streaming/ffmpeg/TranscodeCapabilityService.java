@@ -27,12 +27,14 @@ public class TranscodeCapabilityService {
           "hevc", "hevc_",
           "av1", "av1_");
 
+  private final String ffmpegPath;
   private final ProcessFactory processFactory;
   private boolean ffmpegAvailable;
   private HardwareEncodingCapability hardwareEncodingCapability =
       HardwareEncodingCapability.builder().available(false).encoders(Set.of()).build();
 
-  public TranscodeCapabilityService(ProcessFactory processFactory) {
+  public TranscodeCapabilityService(String ffmpegPath, ProcessFactory processFactory) {
+    this.ffmpegPath = ffmpegPath;
     this.processFactory = processFactory;
   }
 
@@ -89,7 +91,7 @@ public class TranscodeCapabilityService {
 
   private boolean checkFfmpegVersion() {
     try {
-      var process = processFactory.create(new String[] {"ffmpeg", "-version"});
+      var process = processFactory.create(new String[] {ffmpegPath, "-version"});
       var exitCode = process.waitFor();
       return exitCode == 0;
     } catch (InterruptedException e) {
@@ -104,7 +106,7 @@ public class TranscodeCapabilityService {
 
   private Set<String> detectHardwareEncoders() {
     try {
-      var process = processFactory.create(new String[] {"ffmpeg", "-encoders"});
+      var process = processFactory.create(new String[] {ffmpegPath, "-encoders"});
       var encoders = new HashSet<String>();
 
       try (var reader =
@@ -133,7 +135,7 @@ public class TranscodeCapabilityService {
 
   private String detectAccelerator() {
     try {
-      var process = processFactory.create(new String[] {"ffmpeg", "-hwaccels"});
+      var process = processFactory.create(new String[] {ffmpegPath, "-hwaccels"});
       var result = new StringBuilder();
 
       try (var reader =

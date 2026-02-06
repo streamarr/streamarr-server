@@ -8,9 +8,11 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.StreamingService;
+import com.streamarr.server.services.streaming.TranscodeExecutor;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Optional;
@@ -31,11 +33,13 @@ class StreamControllerIT extends AbstractIntegrationTest {
 
   private static final StubStreamingService STUB_SERVICE = new StubStreamingService();
   private static final FakeSegmentStore FAKE_SEGMENT_STORE = new FakeSegmentStore();
+  private static final FakeTranscodeExecutor FAKE_EXECUTOR = new FakeTranscodeExecutor();
 
   @Autowired private MockMvc mockMvc;
 
   @TestBean StreamingService streamingService;
   @TestBean SegmentStore segmentStore;
+  @TestBean TranscodeExecutor transcodeExecutor;
 
   static StreamingService streamingService() {
     return STUB_SERVICE;
@@ -43,6 +47,10 @@ class StreamControllerIT extends AbstractIntegrationTest {
 
   static SegmentStore segmentStore() {
     return FAKE_SEGMENT_STORE;
+  }
+
+  static TranscodeExecutor transcodeExecutor() {
+    return FAKE_EXECUTOR;
   }
 
   @Test
