@@ -9,11 +9,13 @@ import com.netflix.graphql.dgs.InputArgument;
 import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.exceptions.InvalidIdException;
 import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
 import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.MovieService;
+import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.library.LibraryManagementService;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
@@ -29,6 +31,7 @@ public class LibraryResolver {
   private final LibraryRepository libraryRepository;
   private final LibraryManagementService libraryManagementService;
   private final MovieService movieService;
+  private final SeriesService seriesService;
 
   @DgsMutation
   public boolean scanLibrary(String id) {
@@ -62,6 +65,8 @@ public class LibraryResolver {
 
     return switch (library.getType()) {
       case MOVIE -> movieService.getMoviesWithFilter(first, after, last, before, effectiveFilter);
+      case SERIES ->
+          seriesService.getSeriesWithFilter(first, after, last, before, effectiveFilter);
       default -> throw new UnsupportedMediaTypeException(library.getType().name());
     };
   }
@@ -70,6 +75,10 @@ public class LibraryResolver {
   public String resolveMedia(Object media) {
     if (media instanceof Movie) {
       return "Movie";
+    }
+
+    if (media instanceof Series) {
+      return "Series";
     }
 
     throw new UnsupportedMediaTypeException(media.getClass().getName());
