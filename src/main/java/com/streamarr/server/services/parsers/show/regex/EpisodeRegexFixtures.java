@@ -4,6 +4,8 @@ import java.util.List;
 import lombok.Getter;
 import org.springframework.stereotype.Component;
 
+// Patterns requiring path separators (\\|/) are intentional — the parser always receives full file
+// paths from SeriesFileProcessor.
 @Component
 @Getter
 public class EpisodeRegexFixtures {
@@ -11,8 +13,7 @@ public class EpisodeRegexFixtures {
   private final List<EpisodeRegexContainer> standardRegexContainerList =
       List.of(
               EpisodeRegexContainer.NamedGroupRegex.builder()
-                  // Extracts seriesName, seasonNumber, episodeNumber -> "/foo.s01.e01"
-                  // TODO(#40): Currently requires path... Do we want this?
+                  // Extracts seriesName, seasonNumber, episodeNumber. Ex -> "/foo.s01.e01"
                   .expression(
                       ".*(\\\\|\\/)(?<seriesname>((?![Ss]([0-9]+)[ ._-]*[Ee]([0-9]+))[^\\\\\\/])*)?[Ss](?<seasonnumber>[0-9]+)[ ._-]*[Ee](?<epnumber>[0-9]+)([^\\\\/]*)$")
                   .exampleMatch("/foo.s01.e01")
@@ -48,15 +49,13 @@ public class EpisodeRegexFixtures {
               EpisodeRegexContainer.NamedGroupRegex.builder()
                   // Extracts seriesName, episodeNumber, and optionally endingEpisodeNumber. Ex ->
                   // "/Season 1/foo 03", "/Season 1/foo 03-06"
-                  // TODO(#40): Currently requires path... Do we want this?
                   .expression(
                       ".*[\\\\\\/](?![Ee]pisode)(?<seriesname>[\\w\\s]+?)\\s(?<epnumber>[0-9]{1,3})(-(?<endingepnumber>[0-9]{2,3}))*[^\\\\\\/x]*$")
                   .exampleMatch("/Season 1/name episode 03-06")
                   .build(),
               EpisodeRegexContainer.IndexedGroupRegex.builder()
-                  // Extracts episodeNumber, seasonNumber. Ex -> "foo 2x2", "/Season 2/Elementary -
-                  // 02x03 - 02x04 - 02x15 - Ep Name"
-                  // TODO(#40): Currently requires path... Do we want this?
+                  // Extracts episodeNumber, seasonNumber. Matches any separator (path, dot, space,
+                  // underscore, bracket, paren). Ex -> "foo 2x2", "02x03 - Ep Name"
                   .expression(
                       "^.*?[\\\\\\/\\._ \\[\\(-]([0-9]+)x([0-9]+(?:(?:[a-i]|\\.[1-9])(?![0-9]))?)([^\\\\\\/]*)$")
                   .exampleMatch("foo 02x03")
@@ -76,10 +75,8 @@ public class EpisodeRegexFixtures {
                       "^.*?(?!.*\\/)(?<seriesname>(?![0-9]+[0-9][0-9])([^\\\\\\\\\\\\/_])*)[\\\\\\\\\\\\/._ -](?<seasonnumber>[0-9]+)(?<epnumber>[0-9][0-9](?:(?:[a-i]|\\\\.[1-9])(?![0-9]))?)([._ -][^\\\\\\/]*)?$")
                   .exampleMatch("/server/anything_102")
                   .build(),
-              // TODO(#40): Is this covered in unit tests or actually used?
               EpisodeRegexContainer.IndexedGroupRegex.builder()
-                  // Maybe extracts part number. Ex -> "/season 1/title_part_1.avi"
-                  // TODO(#40): Currently requires path... Do we want this?
+                  // Extracts episode from part number. Ex -> "/season 1/title_part_1.avi"
                   .expression(".*[\\\\/._ -]p(?:ar)?t[_. -]()([ivx]+|[0-9]+)([._ -][^\\\\/]*)$")
                   .exampleMatch("/season 1/title_part_1.avi")
                   .build(),
@@ -92,14 +89,12 @@ public class EpisodeRegexFixtures {
                   .build(),
               EpisodeRegexContainer.NamedGroupRegex.builder()
                   // Extracts seasonNumber and episodeNumber. Ex -> "/season 1/2x1 foo"
-                  // TODO(#40): Currently requires path... Do we want this?
                   .expression(
                       ".*(\\\\|\\/)[sS]?(?<seasonnumber>[0-9]+)[xX](?<epnumber>[0-9]+)[^\\\\\\/]*$")
                   .exampleMatch("/season 1/2x1 foo")
                   .build(),
               EpisodeRegexContainer.NamedGroupRegex.builder()
                   // Extracts seasonNumber and episodeNumber. Ex -> "/season 1/s2xe1 foo"
-                  // TODO(#40): Currently requires path... Do we want this?
                   .expression(
                       ".*(\\\\|\\/)[sS](?<seasonnumber>[0-9]+)[x,X]?[eE](?<epnumber>[0-9]+)[^\\\\\\/]*$")
                   .exampleMatch("/season 1/s2xe1 foo")
@@ -113,7 +108,6 @@ public class EpisodeRegexFixtures {
               EpisodeRegexContainer.NamedGroupRegex.builder()
                   // Extracts seriesName, seasonNumber, and episodeNumber. Ex ->
                   // "/server/the_simpsons-s02x01_18536"
-                  // TODO(#40): Currently requires path... Do we want this?
                   .expression(
                       ".*(\\\\|\\/)(?<seriesname>((?![sS]?[0-9]{1,4}[xX][0-9]{1,3})[^\\\\\\/])*)?([sS]?(?<seasonnumber>[0-9]{1,4})[xX](?<epnumber>[0-9]+))[^\\\\\\/]*$")
                   .exampleMatch("/server/the_simpsons-s02x01_18536.mp4")
@@ -121,7 +115,6 @@ public class EpisodeRegexFixtures {
               EpisodeRegexContainer.NamedGroupRegex.builder()
                   // Extracts seriesName, seasonNumber, and episodeNumber. Ex ->
                   // "/server/the_simpsons-s02e01_18536"
-                  // TODO(#40): Currently requires path... Do we want this?
                   .expression(
                       ".*(\\\\|\\/)(?<seriesname>[^\\\\\\/]*)[sS](?<seasonnumber>[0-9]{1,4})[xX\\.]?[eE](?<epnumber>[0-9]+)[^\\\\\\/]*$")
                   .exampleMatch("/server/the_simpsons-s02e01_18536.mp4")
@@ -129,7 +122,6 @@ public class EpisodeRegexFixtures {
               EpisodeRegexContainer.NamedGroupRegex.builder()
                   // Extracts episodeNumber and optionally endingEpisodeNumber. Ex -> "/01-03.avi",
                   // "/01.avi"
-                  // TODO(#40): Currently requires path AND extension... Do we want this?
                   .expression(".*[\\\\\\/](?<epnumber>[0-9]+)(-(?<endingepnumber>[0-9]+))*\\.\\w+$")
                   .exampleMatch("/01.avi")
                   .build(),
@@ -141,7 +133,6 @@ public class EpisodeRegexFixtures {
               EpisodeRegexContainer.NamedGroupRegex.builder()
                   // Extracts episodeNumber and optionally endingEpisodeNumber. Ex -> "/01 - blah",
                   // "/01-blah", "/01-02 - blah"
-                  // TODO(#40): Currently requires path... Do we want this?
                   .expression(
                       ".*(\\\\|\\/)(?<epnumber>[0-9]{1,3})(-(?<endingepnumber>[0-9]{2,3}))*\\s?-\\s?[^\\\\\\/]*$")
                   .exampleMatch("/01 - blah")
@@ -149,7 +140,6 @@ public class EpisodeRegexFixtures {
               EpisodeRegexContainer.NamedGroupRegex.builder()
                   // Extracts episodeNumber and optionally endingEpisodeNumber. Ex -> "/01.blah",
                   // "/01-02.blah"
-                  // TODO(#40): Currently requires path... Do we want this?
                   .expression(
                       ".*(\\\\|\\/)(?<epnumber>[0-9]{1,3})(-(?<endingepnumber>[0-9]{2,3}))*\\.[^\\\\\\/]+$")
                   .exampleMatch("/01.blah")
@@ -157,7 +147,6 @@ public class EpisodeRegexFixtures {
               EpisodeRegexContainer.NamedGroupRegex.builder()
                   // Extracts episodeNumber and optionally endingEpisodeNumber. Ex -> "/blah - 01",
                   // "/blah 2 - 01", "/blah 2 - 01-02"
-                  // TODO(#40): Currently requires path... Do we want this?
                   .expression(
                       ".*[\\\\\\/][^\\\\\\/]* - (?<epnumber>[0-9]{1,3})(-(?<endingepnumber>[0-9]{2,3}))*[^\\\\\\/]*$")
                   .exampleMatch("/blah - 01")

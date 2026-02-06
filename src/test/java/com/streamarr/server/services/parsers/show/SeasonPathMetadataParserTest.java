@@ -38,7 +38,14 @@ public class SeasonPathMetadataParserTest {
               new TestCase("/Drive/Stagione 7 (2016)", 7, false),
               new TestCase("/Drive/3.Staffel", 3, false),
               new TestCase("/Drive/extras", 0, true),
-              new TestCase("/Drive/specials", 0, true))
+              new TestCase("/Drive/specials", 0, true),
+
+              // i18n season folder names
+              new TestCase("/Drive/Sæson 3", 3, true),
+              new TestCase("/Drive/Temporada 5", 5, true),
+              new TestCase("/Drive/Saison 2", 2, true),
+              new TestCase("/Drive/Series 4", 4, true),
+              new TestCase("/Drive/Сезон 1", 1, true))
           .map(
               testCase ->
                   DynamicTest.dynamicTest(
