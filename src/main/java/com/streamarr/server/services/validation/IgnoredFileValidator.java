@@ -92,6 +92,7 @@ public class IgnoredFileValidator {
     if (additional.isEmpty()) {
       return defaults;
     }
+
     var merged = new HashSet<>(defaults);
     merged.addAll(additional);
     return Set.copyOf(merged);
