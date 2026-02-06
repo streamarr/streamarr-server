@@ -28,7 +28,7 @@ public class LibraryCrashRecoveryService {
     recoverOrphanedScans();
   }
 
-  void recoverOrphanedScans() {
+  private void recoverOrphanedScans() {
     var orphanedLibraries = libraryRepository.findAllByStatus(LibraryStatus.SCANNING);
 
     if (orphanedLibraries.isEmpty()) {

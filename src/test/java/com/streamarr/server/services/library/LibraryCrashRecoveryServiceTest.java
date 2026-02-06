@@ -1,7 +1,6 @@
 package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
 
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.Library;
@@ -25,13 +24,13 @@ class LibraryCrashRecoveryServiceTest {
 
   @Test
   @DisplayName(
-      "Should reset SCANNING library to UNHEALTHY on recovery without affecting other libraries")
-  void shouldResetScanningLibraryToUnhealthyOnRecovery() {
+      "Should reset SCANNING library to UNHEALTHY when recovering without affecting other libraries")
+  void shouldResetScanningLibraryToUnhealthyWhenRecovering() {
     var scanningLibrary = fakeLibraryRepository.save(buildLibrary(LibraryStatus.SCANNING));
     var healthyLibrary = fakeLibraryRepository.save(buildLibrary(LibraryStatus.HEALTHY));
     var unhealthyLibrary = fakeLibraryRepository.save(buildLibrary(LibraryStatus.UNHEALTHY));
 
-    recoveryService.recoverOrphanedScans();
+    recoveryService.onStartup();
 
     assertThat(fakeLibraryRepository.findById(scanningLibrary.getId()))
         .isPresent()
@@ -50,24 +49,14 @@ class LibraryCrashRecoveryServiceTest {
   }
 
   @Test
-  @DisplayName("Should not throw when no libraries are in SCANNING status")
+  @DisplayName("Should not modify libraries when no libraries are in SCANNING status")
   void shouldNotThrowWhenNoLibrariesAreInScanningStatus() {
-    assertThatCode(() -> recoveryService.recoverOrphanedScans()).doesNotThrowAnyException();
-  }
+    var healthyLibrary = fakeLibraryRepository.save(buildLibrary(LibraryStatus.HEALTHY));
 
-  @Test
-  @DisplayName("Should recover multiple libraries stuck in SCANNING status")
-  void shouldRecoverMultipleScanningLibraries() {
-    var scanning1 = fakeLibraryRepository.save(buildLibrary(LibraryStatus.SCANNING));
-    var scanning2 = fakeLibraryRepository.save(buildLibrary(LibraryStatus.SCANNING));
+    recoveryService.onStartup();
 
-    recoveryService.recoverOrphanedScans();
-
-    assertThat(fakeLibraryRepository.findAllByStatus(LibraryStatus.SCANNING)).isEmpty();
-    assertThat(fakeLibraryRepository.findById(scanning1.getId()).orElseThrow().getStatus())
-        .isEqualTo(LibraryStatus.UNHEALTHY);
-    assertThat(fakeLibraryRepository.findById(scanning2.getId()).orElseThrow().getStatus())
-        .isEqualTo(LibraryStatus.UNHEALTHY);
+    assertThat(fakeLibraryRepository.findById(healthyLibrary.getId()).orElseThrow().getStatus())
+        .isEqualTo(LibraryStatus.HEALTHY);
   }
 
   @Test
@@ -75,7 +64,7 @@ class LibraryCrashRecoveryServiceTest {
   void shouldSetScanCompletedOnWhenRecoveringLibrary() {
     var scanningLibrary = fakeLibraryRepository.save(buildLibrary(LibraryStatus.SCANNING));
 
-    recoveryService.recoverOrphanedScans();
+    recoveryService.onStartup();
 
     assertThat(fakeLibraryRepository.findById(scanningLibrary.getId()).orElseThrow())
         .satisfies(lib -> assertThat(lib.getScanCompletedOn()).isNotNull());
@@ -86,17 +75,22 @@ class LibraryCrashRecoveryServiceTest {
   void shouldBeIdempotentWhenCalledTwice() {
     fakeLibraryRepository.save(buildLibrary(LibraryStatus.SCANNING));
 
-    recoveryService.recoverOrphanedScans();
-    recoveryService.recoverOrphanedScans();
+    recoveryService.onStartup();
+    recoveryService.onStartup();
 
     assertThat(fakeLibraryRepository.findAllByStatus(LibraryStatus.SCANNING)).isEmpty();
     assertThat(fakeLibraryRepository.findAllByStatus(LibraryStatus.UNHEALTHY)).hasSize(1);
   }
 
   @Test
-  @DisplayName("Should not throw on shutdown when called via PreDestroy lifecycle")
-  void shouldNotThrowOnShutdown() {
-    assertThatCode(() -> recoveryService.onShutdown()).doesNotThrowAnyException();
+  @DisplayName("Should not modify libraries when shutdown called with no scanning libraries")
+  void shouldNotThrowWhenShutdownCalledWithNoScanningLibraries() {
+    var healthyLibrary = fakeLibraryRepository.save(buildLibrary(LibraryStatus.HEALTHY));
+
+    recoveryService.onShutdown();
+
+    assertThat(fakeLibraryRepository.findById(healthyLibrary.getId()).orElseThrow().getStatus())
+        .isEqualTo(LibraryStatus.HEALTHY);
   }
 
   private static Library buildLibrary(LibraryStatus status) {

@@ -26,11 +26,11 @@ class LibraryCrashRecoveryServiceIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should persist recovery status change and scanCompletedOn timestamp to database when library is stuck in SCANNING")
-  void shouldPersistRecoveryStatusChangesToDatabase() {
+      "Should persist status change and scanCompletedOn timestamp when recovering stuck library")
+  void shouldPersistStatusChangeWhenRecoveringStuckLibrary() {
     var stuckLibrary = libraryRepository.saveAndFlush(buildScanningLibrary());
 
-    recoveryService.recoverOrphanedScans();
+    recoveryService.onStartup();
 
     var recovered = libraryRepository.findById(stuckLibrary.getId()).orElseThrow();
     assertThat(recovered.getStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
@@ -42,7 +42,7 @@ class LibraryCrashRecoveryServiceIT extends AbstractIntegrationTest {
   void shouldAllowLibraryToBeRescannedAfterRecovery() {
     var stuckLibrary = libraryRepository.saveAndFlush(buildScanningLibrary());
 
-    recoveryService.recoverOrphanedScans();
+    recoveryService.onStartup();
 
     assertThatCode(() -> libraryManagementService.scanLibrary(stuckLibrary.getId()))
         .doesNotThrowAnyException();
