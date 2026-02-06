@@ -482,7 +482,7 @@ class FfmpegCommandBuilderTest {
 
     var cmd = builder.buildCommand(j);
 
-    assertThat(cmd).doesNotContain("-start_number");
+    assertThat(cmd).isNotEmpty().doesNotContain("-start_number");
   }
 
   @Test
