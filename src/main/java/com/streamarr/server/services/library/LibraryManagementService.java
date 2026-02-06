@@ -49,7 +49,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Slf4j
 @Service
-public class LibraryManagementService {
+public class LibraryManagementService implements ActiveScanChecker {
 
   private final IgnoredFileValidator ignoredFileValidator;
   private final VideoExtensionValidator videoExtensionValidator;
@@ -91,6 +91,11 @@ public class LibraryManagementService {
     this.fileSystem = fileSystem;
 
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
+  }
+
+  @Override
+  public boolean isActivelyScanning(UUID libraryId) {
+    return activeScans.contains(libraryId);
   }
 
   public Library addLibrary(Library library) {
@@ -219,10 +224,10 @@ public class LibraryManagementService {
     try (var executor = Executors.newVirtualThreadPerTaskExecutor();
         var stream = Files.walk(fileSystem.getPath(library.getFilepath()))) {
 
-        stream
-            .filter(Files::isRegularFile)
-            .filter(file -> !ignoredFileValidator.shouldIgnore(file))
-            .forEach(file -> executor.submit(() -> processFile(library, file)));
+      stream
+          .filter(Files::isRegularFile)
+          .filter(file -> !ignoredFileValidator.shouldIgnore(file))
+          .forEach(file -> executor.submit(() -> processFile(library, file)));
 
     } catch (IOException | UncheckedIOException | SecurityException e) {
       throw new LibraryScanFailedException(library.getName(), e);
