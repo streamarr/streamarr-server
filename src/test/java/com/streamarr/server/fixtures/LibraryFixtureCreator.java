@@ -22,6 +22,17 @@ public class LibraryFixtureCreator {
         .build();
   }
 
+  public Library buildFakeSeriesLibrary() {
+    return Library.builder()
+        .name("Test Series Library")
+        .backend(LibraryBackend.LOCAL)
+        .status(LibraryStatus.HEALTHY)
+        .filepath("/library/" + UUID.randomUUID())
+        .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+        .type(MediaType.SERIES)
+        .build();
+  }
+
   public Library buildUnsavedLibrary(String name, String filepath) {
     return Library.builder()
         .name(name)
