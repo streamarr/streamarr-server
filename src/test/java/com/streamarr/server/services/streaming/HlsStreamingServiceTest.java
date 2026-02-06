@@ -19,6 +19,7 @@ import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.fakes.FakeStreamSessionRepository;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import java.time.Duration;
 import java.util.List;
@@ -63,7 +64,8 @@ class HlsStreamingServiceTest {
             ffprobeService,
             decisionService,
             qualityLadderService,
-            properties);
+            properties,
+            new FakeStreamSessionRepository());
   }
 
   private StreamingOptions defaultOptions() {
@@ -449,7 +451,8 @@ class HlsStreamingServiceTest {
                 .maxConcurrentTranscodes(3)
                 .segmentDurationSeconds(6)
                 .sessionTimeoutSeconds(60)
-                .build());
+                .build(),
+            new FakeStreamSessionRepository());
     serviceRef.set(spyService);
 
     var file = seedMediaFile();
@@ -510,7 +513,8 @@ class HlsStreamingServiceTest {
             ffprobeService,
             new TranscodeDecisionService(),
             new QualityLadderService(),
-            properties);
+            properties,
+            new FakeStreamSessionRepository());
 
     ffprobeService.setDefaultProbe(
         MediaProbe.builder()

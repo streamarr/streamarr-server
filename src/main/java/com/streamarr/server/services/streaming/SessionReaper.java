@@ -18,6 +18,7 @@ public class SessionReaper {
   private final StreamingService streamingService;
   private final TranscodeExecutor transcodeExecutor;
   private final StreamingProperties properties;
+  private final StreamSessionRepository sessionRepository;
 
   @Scheduled(fixedDelayString = "${streaming.reaper-interval-ms:15000}")
   public void reapSessions() {
@@ -54,6 +55,7 @@ public class SessionReaper {
       log.warn("FFmpeg process died for session {} variant {}", session.getSessionId(), label);
       session.setVariantHandle(
           label, new TranscodeHandle(handle.processId(), TranscodeStatus.FAILED));
+      sessionRepository.save(session);
     }
   }
 }
