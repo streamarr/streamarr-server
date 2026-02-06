@@ -1,13 +1,17 @@
 package com.streamarr.server.services.streaming.ffmpeg;
 
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
+
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.NonNull;
 
 @Slf4j
 public class TranscodeCapabilityService {
@@ -29,7 +33,9 @@ public class TranscodeCapabilityService {
 
   private final String ffmpegPath;
   private final ProcessFactory processFactory;
+  @Getter
   private boolean ffmpegAvailable;
+  @Getter
   private HardwareEncodingCapability hardwareEncodingCapability =
       HardwareEncodingCapability.builder().available(false).encoders(Set.of()).build();
 
@@ -63,29 +69,24 @@ public class TranscodeCapabilityService {
         accelerator);
   }
 
-  public boolean isFfmpegAvailable() {
-    return ffmpegAvailable;
-  }
-
-  public HardwareEncodingCapability getHardwareEncodingCapability() {
-    return hardwareEncodingCapability;
-  }
-
   public String resolveEncoder(String codecFamily) {
     var softwareDefault = SOFTWARE_ENCODERS.getOrDefault(codecFamily, "libx264");
 
     if (!hardwareEncodingCapability.available()) {
       return softwareDefault;
     }
+
     var prefix = CODEC_HW_PREFIX.get(codecFamily);
     if (prefix == null) {
       return softwareDefault;
     }
+
     for (var encoder : hardwareEncodingCapability.encoders()) {
       if (encoder.startsWith(prefix)) {
         return encoder;
       }
     }
+
     return softwareDefault;
   }
 
@@ -136,22 +137,7 @@ public class TranscodeCapabilityService {
   private String detectAccelerator() {
     try {
       var process = processFactory.create(new String[] {ffmpegPath, "-hwaccels"});
-      var result = new StringBuilder();
-
-      try (var reader =
-          new BufferedReader(
-              new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-        String line;
-        while ((line = reader.readLine()) != null) {
-          var trimmed = line.trim();
-          if (!trimmed.isEmpty() && !trimmed.startsWith("Hardware")) {
-            if (!result.isEmpty()) {
-              result.append(",");
-            }
-            result.append(trimmed);
-          }
-        }
-      }
+      var result = getStringBuilder(process);
 
       process.waitFor();
       return result.toString();
@@ -163,6 +149,27 @@ public class TranscodeCapabilityService {
       log.debug("Accelerator detection failed", e);
       return "";
     }
+  }
+
+  private static @NonNull StringBuilder getStringBuilder(Process process) throws IOException {
+    var result = new StringBuilder();
+
+    try (var reader =
+        new BufferedReader(
+            new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+      String line;
+      while ((line = reader.readLine()) != null) {
+        var trimmed = line.trim();
+        if (trimmed.isEmpty() || trimmed.startsWith("Hardware")) {
+          continue;
+        }
+        if (!result.isEmpty()) {
+          result.append(",");
+        }
+        result.append(trimmed);
+      }
+    }
+    return result;
   }
 
   @FunctionalInterface
