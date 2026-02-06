@@ -8,7 +8,7 @@ import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.InvalidCursorException;
 import com.streamarr.server.graphql.cursor.MediaFilter;
-import com.streamarr.server.graphql.cursor.OrderMoviesBy;
+import com.streamarr.server.graphql.cursor.OrderMediaBy;
 import org.jooq.SortOrder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -51,7 +51,7 @@ class MovieServiceTest {
     movieRepository.save(Movie.builder().title("Zebra").build());
 
     var filter =
-        MediaFilter.builder().sortBy(OrderMoviesBy.TITLE).sortDirection(SortOrder.DESC).build();
+        MediaFilter.builder().sortBy(OrderMediaBy.TITLE).sortDirection(SortOrder.DESC).build();
 
     var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
 
@@ -118,7 +118,7 @@ class MovieServiceTest {
     var cursor = ascResult.getPageInfo().getEndCursor().getValue();
 
     var descFilter =
-        MediaFilter.builder().sortBy(OrderMoviesBy.TITLE).sortDirection(SortOrder.DESC).build();
+        MediaFilter.builder().sortBy(OrderMediaBy.TITLE).sortDirection(SortOrder.DESC).build();
 
     assertThatThrownBy(() -> movieService.getMoviesWithFilter(1, cursor, 0, null, descFilter))
         .isInstanceOf(InvalidCursorException.class);

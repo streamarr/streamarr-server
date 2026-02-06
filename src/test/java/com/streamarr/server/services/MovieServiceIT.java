@@ -9,7 +9,7 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.graphql.cursor.InvalidCursorException;
 import com.streamarr.server.graphql.cursor.MediaFilter;
-import com.streamarr.server.graphql.cursor.OrderMoviesBy;
+import com.streamarr.server.graphql.cursor.OrderMediaBy;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import java.util.List;
@@ -191,7 +191,7 @@ public class MovieServiceIT extends AbstractIntegrationTest {
 
     var filter =
         MediaFilter.builder()
-            .sortBy(OrderMoviesBy.ADDED)
+            .sortBy(OrderMediaBy.ADDED)
             .sortDirection(SortOrder.DESC)
             .libraryId(savedLibraryC.getId())
             .build();
@@ -209,7 +209,7 @@ public class MovieServiceIT extends AbstractIntegrationTest {
 
     var filter =
         MediaFilter.builder()
-            .sortBy(OrderMoviesBy.ADDED)
+            .sortBy(OrderMediaBy.ADDED)
             .sortDirection(SortOrder.ASC)
             .libraryId(savedLibraryC.getId())
             .build();
