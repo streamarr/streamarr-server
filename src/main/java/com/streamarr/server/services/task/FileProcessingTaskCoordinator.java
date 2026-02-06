@@ -11,6 +11,8 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -29,6 +31,7 @@ public class FileProcessingTaskCoordinator {
   private final FileProcessingTaskRepository repository;
   private final Clock clock;
   private final Duration leaseDuration;
+  @Getter
   private final String instanceId;
 
   @Autowired
@@ -103,30 +106,39 @@ public class FileProcessingTaskCoordinator {
       log.debug("Task already deleted, skipping completion: {}", taskId);
       return Optional.empty();
     }
+
     var task = optionalTask.get();
     task.setStatus(FileProcessingTaskStatus.COMPLETED);
     task.setCompletedOn(clock.instant());
     task.setOwnerInstanceId(null);
     task.setLeaseExpiresAt(null);
+
     repository.save(task);
+
     log.info("Completed task for: {}", task.getFilepath());
+
     return Optional.of(task);
   }
 
   public Optional<FileProcessingTask> fail(UUID taskId, String errorMessage) {
     var optionalTask = repository.findById(taskId);
+
     if (optionalTask.isEmpty()) {
       log.debug("Task already deleted, skipping failure: {}", taskId);
       return Optional.empty();
     }
+
     var task = optionalTask.get();
     task.setStatus(FileProcessingTaskStatus.FAILED);
     task.setErrorMessage(errorMessage);
     task.setCompletedOn(clock.instant());
     task.setOwnerInstanceId(null);
     task.setLeaseExpiresAt(null);
+
     repository.save(task);
+
     log.warn("Failed task for: {} with error: {}", task.getFilepath(), errorMessage);
+
     return Optional.of(task);
   }
 
@@ -135,10 +147,6 @@ public class FileProcessingTaskCoordinator {
     var filepath = path.toAbsolutePath().toString();
     repository.deleteByFilepathAndStatusIn(filepath, List.of(FileProcessingTaskStatus.PENDING));
     log.info("Cancelled pending task for: {}", filepath);
-  }
-
-  public String getInstanceId() {
-    return instanceId;
   }
 
   private static String generateInstanceId() {
