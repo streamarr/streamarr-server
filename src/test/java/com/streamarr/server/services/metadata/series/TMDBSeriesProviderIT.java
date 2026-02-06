@@ -302,6 +302,17 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should return null runtime when episode run time is absent")
+  void shouldReturnNullRuntimeWhenEpisodeRunTimeAbsent() {
+    stubMinimalSeriesResponse("1396");
+
+    var result = provider.getMetadata(buildSearchResult("1396"), savedLibrary);
+
+    assertThat(result).isPresent();
+    assertThat(result.get().getRuntime()).isNull();
+  }
+
+  @Test
   @DisplayName("Should map only TMDB external ID when IMDB ID is absent")
   void shouldMapOnlyTmdbExternalIdWhenImdbIdIsAbsent() {
     stubMinimalSeriesResponse("1396");
