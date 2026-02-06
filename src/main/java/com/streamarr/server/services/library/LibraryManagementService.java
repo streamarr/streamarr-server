@@ -8,6 +8,7 @@ import com.streamarr.server.exceptions.InvalidLibraryPathException;
 import com.streamarr.server.exceptions.LibraryAlreadyExistsException;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.exceptions.LibraryPathPermissionDeniedException;
+import com.streamarr.server.exceptions.LibraryScanFailedException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
@@ -203,39 +204,50 @@ public class LibraryManagementService {
       var library = transitionToScanning(libraryId);
       var startTime = library.getScanStartedOn();
 
-      try (var executor = Executors.newVirtualThreadPerTaskExecutor();
-          var stream = Files.walk(fileSystem.getPath(library.getFilepath()))) {
+      try {
+        walkAndProcessFiles(library);
+        completeScanSuccessfully(library, startTime);
+      } catch (LibraryScanFailedException e) {
+        completeScanWithFailure(library, e.getCause());
+      }
+    } finally {
+      activeScans.remove(libraryId);
+    }
+  }
+
+  private void walkAndProcessFiles(Library library) {
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor();
+        var stream = Files.walk(fileSystem.getPath(library.getFilepath()))) {
 
         stream
             .filter(Files::isRegularFile)
             .filter(file -> !ignoredFileValidator.shouldIgnore(file))
             .forEach(file -> executor.submit(() -> processFile(library, file)));
 
-      } catch (IOException | UncheckedIOException | SecurityException e) {
-        var endTimeOfFailure = Instant.now();
-
-        library.setStatus(LibraryStatus.UNHEALTHY);
-        library.setScanCompletedOn(endTimeOfFailure);
-        libraryRepository.save(library);
-
-        log.error("Failed to access {} library during scan attempt.", library.getName(), e);
-
-        return;
-      }
-
-      eventPublisher.publishEvent(new ScanCompletedEvent(library.getId()));
-
-      var endTime = Instant.now();
-      var elapsedTime = Duration.between(startTime, endTime).getSeconds();
-
-      library.setStatus(LibraryStatus.HEALTHY);
-      library.setScanCompletedOn(endTime);
-      libraryRepository.save(library);
-
-      log.info("Finished {} library scan in {} seconds.", library.getName(), elapsedTime);
-    } finally {
-      activeScans.remove(libraryId);
+    } catch (IOException | UncheckedIOException | SecurityException e) {
+      throw new LibraryScanFailedException(library.getName(), e);
     }
+  }
+
+  private void completeScanSuccessfully(Library library, Instant startTime) {
+    eventPublisher.publishEvent(new ScanCompletedEvent(library.getId()));
+
+    var endTime = Instant.now();
+    var elapsedSeconds = Duration.between(startTime, endTime).getSeconds();
+
+    library.setStatus(LibraryStatus.HEALTHY);
+    library.setScanCompletedOn(endTime);
+    libraryRepository.save(library);
+
+    log.info("Finished {} library scan in {} seconds.", library.getName(), elapsedSeconds);
+  }
+
+  private void completeScanWithFailure(Library library, Throwable cause) {
+    library.setStatus(LibraryStatus.UNHEALTHY);
+    library.setScanCompletedOn(Instant.now());
+    libraryRepository.save(library);
+
+    log.error("Failed to access {} library during scan attempt.", library.getName(), cause);
   }
 
   private Library transitionToScanning(UUID libraryId) {

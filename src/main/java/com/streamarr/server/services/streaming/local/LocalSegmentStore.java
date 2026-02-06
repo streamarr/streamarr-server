@@ -57,12 +57,10 @@ public class LocalSegmentStore implements SegmentStore {
     return Files.exists(segmentPath);
   }
 
-  @Override
   public Path getOutputDirectory(UUID sessionId) {
     return sessionDirs.computeIfAbsent(sessionId, this::createSessionDirectory);
   }
 
-  @Override
   public Path getOutputDirectory(UUID sessionId, String variantLabel) {
     var sessionDir = getOutputDirectory(sessionId);
     var variantDir = sessionDir.resolve(variantLabel);

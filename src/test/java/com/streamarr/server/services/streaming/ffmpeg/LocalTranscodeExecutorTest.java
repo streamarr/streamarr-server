@@ -8,7 +8,7 @@ import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.fakes.FakeFfmpegProcessManager;
-import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Set;
@@ -17,19 +17,22 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 @Tag("UnitTest")
 class LocalTranscodeExecutorTest {
 
+  @TempDir Path tempDir;
+
   private FakeFfmpegProcessManager processManager;
-  private FakeSegmentStore segmentStore;
+  private LocalSegmentStore segmentStore;
   private LocalTranscodeExecutor executor;
 
   @BeforeEach
   void setUp() {
     processManager = new FakeFfmpegProcessManager();
-    segmentStore = new FakeSegmentStore();
-    var commandBuilder = new FfmpegCommandBuilder();
+    segmentStore = new LocalSegmentStore(tempDir);
+    var commandBuilder = new FfmpegCommandBuilder("ffmpeg");
 
     var hwCapability =
         HardwareEncodingCapability.builder()
@@ -87,7 +90,7 @@ class LocalTranscodeExecutorTest {
 
     executor =
         new LocalTranscodeExecutor(
-            new FfmpegCommandBuilder(), processManager, segmentStore, capabilityService);
+            new FfmpegCommandBuilder("ffmpeg"), processManager, segmentStore, capabilityService);
 
     var request = createRequest(TranscodeMode.FULL_TRANSCODE, "av1");
 
@@ -140,7 +143,7 @@ class LocalTranscodeExecutorTest {
 
     executor =
         new LocalTranscodeExecutor(
-            new FfmpegCommandBuilder(), processManager, segmentStore, capabilityService);
+            new FfmpegCommandBuilder("ffmpeg"), processManager, segmentStore, capabilityService);
 
     assertThat(executor.isHealthy()).isFalse();
   }
@@ -171,7 +174,7 @@ class LocalTranscodeExecutorTest {
       boolean available, HardwareEncodingCapability hwCapability) {
     var service =
         new TranscodeCapabilityService(
-            command -> new FakeProcess("ffmpeg version 7.0", available ? 0 : 1));
+            "ffmpeg", command -> new FakeProcess("ffmpeg version 7.0", available ? 0 : 1));
     if (available) {
       // Inject capability state via reflection-free approach: detect then override
       // We use a factory that returns the right result
@@ -190,6 +193,7 @@ class LocalTranscodeExecutorTest {
 
       var testService =
           new TranscodeCapabilityService(
+              "ffmpeg",
               command -> {
                 var cmdStr = String.join(" ", command);
                 if (cmdStr.contains("-version")) {

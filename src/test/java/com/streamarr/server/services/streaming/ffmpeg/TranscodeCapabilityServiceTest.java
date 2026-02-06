@@ -14,7 +14,7 @@ class TranscodeCapabilityServiceTest {
   @Test
   @DisplayName("Should report unavailable when FFmpeg not installed")
   void shouldReportUnavailableWhenFfmpegNotInstalled() {
-    var service = new TranscodeCapabilityService(command -> createProcess("", 1));
+    var service = new TranscodeCapabilityService("ffmpeg", command -> createProcess("", 1));
 
     service.detectCapabilities();
 
@@ -30,7 +30,8 @@ class TranscodeCapabilityServiceTest {
             "hwaccels", createProcess("Hardware acceleration methods:\n", 0),
             "encoders", createProcess("", 0));
 
-    var service = new TranscodeCapabilityService(command -> resolveProcess(command, outputs));
+    var service =
+        new TranscodeCapabilityService("ffmpeg", command -> resolveProcess(command, outputs));
 
     service.detectCapabilities();
 
@@ -54,7 +55,8 @@ class TranscodeCapabilityServiceTest {
             "hwaccels", createProcess("Hardware acceleration methods:\ncuda\n", 0),
             "encoders", createProcess(encoderOutput, 0));
 
-    var service = new TranscodeCapabilityService(command -> resolveProcess(command, outputs));
+    var service =
+        new TranscodeCapabilityService("ffmpeg", command -> resolveProcess(command, outputs));
 
     service.detectCapabilities();
 
@@ -78,7 +80,8 @@ class TranscodeCapabilityServiceTest {
             "hwaccels", createProcess("Hardware acceleration methods:\ncuda\n", 0),
             "encoders", createProcess(encoderOutput, 0));
 
-    var service = new TranscodeCapabilityService(command -> resolveProcess(command, outputs));
+    var service =
+        new TranscodeCapabilityService("ffmpeg", command -> resolveProcess(command, outputs));
     service.detectCapabilities();
 
     assertThat(service.resolveEncoder("h264")).isEqualTo("h264_nvenc");
@@ -93,7 +96,8 @@ class TranscodeCapabilityServiceTest {
             "hwaccels", createProcess("Hardware acceleration methods:\n", 0),
             "encoders", createProcess("", 0));
 
-    var service = new TranscodeCapabilityService(command -> resolveProcess(command, outputs));
+    var service =
+        new TranscodeCapabilityService("ffmpeg", command -> resolveProcess(command, outputs));
     service.detectCapabilities();
 
     assertThat(service.resolveEncoder("av1")).isEqualTo("libsvtav1");
@@ -108,7 +112,8 @@ class TranscodeCapabilityServiceTest {
             "hwaccels", createProcess("Hardware acceleration methods:\n", 0),
             "encoders", createProcess("", 0));
 
-    var service = new TranscodeCapabilityService(command -> resolveProcess(command, outputs));
+    var service =
+        new TranscodeCapabilityService("ffmpeg", command -> resolveProcess(command, outputs));
     service.detectCapabilities();
 
     assertThat(service.resolveEncoder("h264")).isEqualTo("libx264");
@@ -128,7 +133,8 @@ class TranscodeCapabilityServiceTest {
             "hwaccels", createProcess("Hardware acceleration methods:\nqsv\n", 0),
             "encoders", createProcess(encoderOutput, 0));
 
-    var service = new TranscodeCapabilityService(command -> resolveProcess(command, outputs));
+    var service =
+        new TranscodeCapabilityService("ffmpeg", command -> resolveProcess(command, outputs));
     service.detectCapabilities();
 
     assertThat(service.getHardwareEncodingCapability().available()).isTrue();
@@ -163,7 +169,8 @@ class TranscodeCapabilityServiceTest {
             "hwaccels", createProcess("Hardware acceleration methods:\ncuda\n", 0),
             "encoders", createProcess(encoderOutput, 0));
 
-    var service = new TranscodeCapabilityService(command -> resolveProcess(command, outputs));
+    var service =
+        new TranscodeCapabilityService("ffmpeg", command -> resolveProcess(command, outputs));
     service.detectCapabilities();
 
     assertThat(service.resolveEncoder("hevc")).isEqualTo("hevc_nvenc");
@@ -183,7 +190,8 @@ class TranscodeCapabilityServiceTest {
             "hwaccels", createProcess("Hardware acceleration methods:\ncuda\n", 0),
             "encoders", createProcess(encoderOutput, 0));
 
-    var service = new TranscodeCapabilityService(command -> resolveProcess(command, outputs));
+    var service =
+        new TranscodeCapabilityService("ffmpeg", command -> resolveProcess(command, outputs));
     service.detectCapabilities();
 
     assertThat(service.resolveEncoder("vp9")).isEqualTo("libx264");
@@ -203,7 +211,8 @@ class TranscodeCapabilityServiceTest {
             "hwaccels", createProcess("Hardware acceleration methods:\ncuda\n", 0),
             "encoders", createProcess(encoderOutput, 0));
 
-    var service = new TranscodeCapabilityService(command -> resolveProcess(command, outputs));
+    var service =
+        new TranscodeCapabilityService("ffmpeg", command -> resolveProcess(command, outputs));
     service.detectCapabilities();
 
     assertThat(service.resolveEncoder("av1")).isEqualTo("libsvtav1");
@@ -223,7 +232,8 @@ class TranscodeCapabilityServiceTest {
             "hwaccels", createProcess("Hardware acceleration methods:\ncuda\n", 0),
             "encoders", createProcess(encoderOutput, 0));
 
-    var service = new TranscodeCapabilityService(command -> resolveProcess(command, outputs));
+    var service =
+        new TranscodeCapabilityService("ffmpeg", command -> resolveProcess(command, outputs));
     service.detectCapabilities();
 
     assertThat(service.getHardwareEncodingCapability().accelerator()).isEqualTo("cuda");
@@ -243,7 +253,8 @@ class TranscodeCapabilityServiceTest {
             "hwaccels", createProcess("Hardware acceleration methods:\ncuda\ncuvid\n", 0),
             "encoders", createProcess(encoderOutput, 0));
 
-    var service = new TranscodeCapabilityService(command -> resolveProcess(command, outputs));
+    var service =
+        new TranscodeCapabilityService("ffmpeg", command -> resolveProcess(command, outputs));
     service.detectCapabilities();
 
     assertThat(service.getHardwareEncodingCapability().accelerator()).isEqualTo("cuda,cuvid");
@@ -263,7 +274,8 @@ class TranscodeCapabilityServiceTest {
             "hwaccels", createProcess("Hardware acceleration methods:\nvideotoolbox\n", 0),
             "encoders", createProcess(encoderOutput, 0));
 
-    var service = new TranscodeCapabilityService(command -> resolveProcess(command, outputs));
+    var service =
+        new TranscodeCapabilityService("ffmpeg", command -> resolveProcess(command, outputs));
     service.detectCapabilities();
 
     assertThat(service.getHardwareEncodingCapability().encoders()).contains("h264_videotoolbox");
