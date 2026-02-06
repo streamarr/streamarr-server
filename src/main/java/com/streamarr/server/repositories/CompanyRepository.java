@@ -14,6 +14,8 @@ public interface CompanyRepository extends JpaRepository<Company, UUID> {
 
   Set<Company> findCompaniesBySourceIdIn(List<String> sourceIds);
 
+  java.util.Optional<Company> findBySourceId(String sourceId);
+
   @Query("SELECT c FROM Movie m JOIN m.studios c WHERE m.id = :movieId")
   List<Company> findByMovieId(@Param("movieId") UUID movieId);
 }

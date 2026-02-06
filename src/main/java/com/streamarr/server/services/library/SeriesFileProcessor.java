@@ -8,8 +8,6 @@ import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
-import com.streamarr.server.services.GenreService;
-import com.streamarr.server.services.PersonService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
@@ -32,8 +30,6 @@ public class SeriesFileProcessor {
   private final SeasonPathMetadataParser seasonPathMetadataParser;
   private final SeriesMetadataProviderResolver seriesMetadataProviderResolver;
   private final SeriesService seriesService;
-  private final PersonService personService;
-  private final GenreService genreService;
   private final MediaFileRepository mediaFileRepository;
   private final SeasonRepository seasonRepository;
   private final EpisodeRepository episodeRepository;
@@ -44,8 +40,6 @@ public class SeriesFileProcessor {
       SeasonPathMetadataParser seasonPathMetadataParser,
       SeriesMetadataProviderResolver seriesMetadataProviderResolver,
       SeriesService seriesService,
-      PersonService personService,
-      GenreService genreService,
       MediaFileRepository mediaFileRepository,
       SeasonRepository seasonRepository,
       EpisodeRepository episodeRepository,
@@ -54,8 +48,6 @@ public class SeriesFileProcessor {
     this.seasonPathMetadataParser = seasonPathMetadataParser;
     this.seriesMetadataProviderResolver = seriesMetadataProviderResolver;
     this.seriesService = seriesService;
-    this.personService = personService;
-    this.genreService = genreService;
     this.mediaFileRepository = mediaFileRepository;
     this.seasonRepository = seasonRepository;
     this.episodeRepository = episodeRepository;
@@ -221,18 +213,7 @@ public class SeriesFileProcessor {
       return null;
     }
 
-    var seriesToSave = seriesOpt.get();
-
-    var savedCast = personService.getOrCreatePersons(seriesToSave.getCast());
-    seriesToSave.setCast(savedCast);
-
-    var savedDirectors = personService.getOrCreatePersons(seriesToSave.getDirectors());
-    seriesToSave.setDirectors(savedDirectors);
-
-    var savedGenres = genreService.getOrCreateGenres(seriesToSave.getGenres());
-    seriesToSave.setGenres(savedGenres);
-
-    return seriesService.saveSeries(seriesToSave);
+    return seriesService.createSeriesWithAssociations(seriesOpt.get());
   }
 
   private Season createSeasonWithEpisodes(
