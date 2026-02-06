@@ -30,13 +30,20 @@ public class EpisodeRegexFixtures {
               EpisodeRegexContainer.DateRegex.builder()
                   // Extracts date from filename. Ex -> "PBS NewsHour 2020-04-17"
                   .expression(
-                      ".*(?<year>[0-9]{4})[\\\\.-](?<month>[0-9]{2})[\\\\.-](?<day>[0-9]{2})")
+                      ".*(?<year>[0-9]{4})[\\\\._ -](?<month>[0-9]{2})[\\\\._ -](?<day>[0-9]{2})")
                   .exampleMatch("PBS NewsHour 2020-04-17")
                   .build(),
               EpisodeRegexContainer.DateRegex.builder()
                   // Extracts date from filename. Ex -> "PBS NewsHour 17-04-2020"
-                  .expression(".*(?<day>[0-9]{2})[.-](?<month>[0-9]{2})[.-](?<year>[0-9]{4})")
+                  .expression(".*(?<day>[0-9]{2})[._ -](?<month>[0-9]{2})[._ -](?<year>[0-9]{4})")
                   .exampleMatch("PBS NewsHour 17-04-2020")
+                  .build(),
+              EpisodeRegexContainer.NamedGroupRegex.builder()
+                  // Extracts seriesName, seasonNumber, episodeNumber via verbose keywords.
+                  // Ex -> "/media/My Show Season 1 Episode 3.mkv", "/media/Show S02 Episode 05.mkv"
+                  .expression(
+                      ".*[\\\\\\/]((?<seriesname>[^\\\\\\/]+?)\\s)?[Ss](?:eason)?\\s*(?<seasonnumber>[0-9]+)\\s+[Ee](?:pisode)?\\s*(?<epnumber>[0-9]+).*$")
+                  .exampleMatch("/media/My Show Season 1 Episode 3.mkv")
                   .build(),
               EpisodeRegexContainer.NamedGroupRegex.builder()
                   // Extracts seriesName, episodeNumber, and optionally endingEpisodeNumber. Ex ->

@@ -80,7 +80,20 @@ public class EpisodePathMetadataParserTest {
               // TODO: name
               new TestCase(
                   "The Simpsons/The Simpsons.S25E08.Steal this episode.mp4", "The Simpsons", 25, 8),
-              new TestCase("Case Closed (1996-2007)/Case Closed - 317.mkv", "Case Closed", 3, 17)
+              new TestCase("Case Closed (1996-2007)/Case Closed - 317.mkv", "Case Closed", 3, 17),
+
+              // Verbose "Season X Episode Y" format
+              new TestCase(
+                  "/media/My Show Season 1 Episode 3.mkv", "My Show", 1, 3),
+              new TestCase(
+                  "/media/Show S02 Episode 05 - Title.mkv", "Show", 2, 5),
+              new TestCase(
+                  "/media/show season 2 episode 10.mkv", "show", 2, 10),
+              new TestCase(
+                  "/media/Show Season01 Episode03.mkv", "Show", 1, 3),
+
+              // Version marker (anime fansub releases)
+              new TestCase("/media/Show/Show.S01E01v2.mkv", "Show", 1, 1)
 
               //                [InlineData("The Wonder Years/The.Wonder.Years.S04.PDTV.x264-JCH/The
               // Wonder Years s04e07 Christmas Party NTSC PDTV.avi", 7)]
@@ -187,18 +200,13 @@ public class EpisodePathMetadataParserTest {
     Stream<DynamicNode> tests() {
       return Stream.of(
               new TestCase("/server/anything_1996.11.14", "anything", LocalDate.of(1996, 11, 14)),
-              new TestCase("/server/anything_1996-11-14", "anything", LocalDate.of(1996, 11, 14))
+              new TestCase("/server/anything_1996-11-14", "anything", LocalDate.of(1996, 11, 14)),
 
-              // TODO: Fix
-              //                new TestCase("when given complex filename and YYYY.MM.dd date
-              // format", "/server/james.corden.2017.04.20.anne.hathaway.720p.hdtv.x264-crooks",
-              // "james.corden", LocalDate.of(2017, 4, 20)),
-              //                new TestCase("when given complex filename and YYYY_MM_dd date
-              // format", "/server/ABC News 2018_03_24_19_00_00", "ABC News", LocalDate.of(2018, 4,
-              // 20))
-
-              //        // TODO: [InlineData(@"/server/anything_14.11.1996.mp4", "anything", 1996,
-              // 11, 14)]
+              // Underscore and space delimiters (DVR recordings)
+              new TestCase(
+                  "/server/anything_1996_11_14", "anything", LocalDate.of(1996, 11, 14)),
+              new TestCase(
+                  "/server/anything 1996 11 14", "anything", LocalDate.of(1996, 11, 14))
               //        // TODO: [InlineData(@"/server/A Daily Show - (2015-01-15) - Episode Name -
               // [720p].mkv", "A Daily Show", 2015, 01, 15)]
               //        // TODO: [InlineData(@"/server/Last Man
