@@ -89,17 +89,24 @@ public class LibraryManagementServiceTest {
 
   private final CapturingEventPublisher capturingEventPublisher = new CapturingEventPublisher();
 
+  private final MovieFileProcessor movieFileProcessor =
+      new MovieFileProcessor(
+          new DefaultVideoFileMetadataParser(),
+          fakeMovieMetadataProviderResolver,
+          movieService,
+          personService,
+          genreService,
+          fakeMediaFileRepository,
+          new MutexFactoryProvider());
+
   private final LibraryManagementService libraryManagementService =
       new LibraryManagementService(
           new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
           new VideoExtensionValidator(),
-          new DefaultVideoFileMetadataParser(),
-          fakeMovieMetadataProviderResolver,
+          movieFileProcessor,
           fakeLibraryRepository,
           fakeMediaFileRepository,
           movieService,
-          personService,
-          genreService,
           capturingEventPublisher,
           new MutexFactoryProvider(),
           fileSystem);
@@ -164,13 +171,10 @@ public class LibraryManagementServiceTest {
         new LibraryManagementService(
             new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
             new VideoExtensionValidator(),
-            new DefaultVideoFileMetadataParser(),
-            fakeMovieMetadataProviderResolver,
+            movieFileProcessor,
             fakeLibraryRepository,
             fakeMediaFileRepository,
             movieService,
-            personService,
-            genreService,
             capturingEventPublisher,
             new MutexFactoryProvider(),
             throwingFileSystem);
@@ -198,13 +202,10 @@ public class LibraryManagementServiceTest {
         new LibraryManagementService(
             new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
             new VideoExtensionValidator(),
-            new DefaultVideoFileMetadataParser(),
-            fakeMovieMetadataProviderResolver,
+            movieFileProcessor,
             fakeLibraryRepository,
             fakeMediaFileRepository,
             movieService,
-            personService,
-            genreService,
             capturingEventPublisher,
             new MutexFactoryProvider(),
             throwingFileSystem);
@@ -291,13 +292,10 @@ public class LibraryManagementServiceTest {
         new LibraryManagementService(
             new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
             new VideoExtensionValidator(),
-            new DefaultVideoFileMetadataParser(),
-            fakeMovieMetadataProviderResolver,
+            movieFileProcessor,
             fakeLibraryRepository,
             fakeMediaFileRepository,
             movieService,
-            personService,
-            genreService,
             capturingEventPublisher,
             new MutexFactoryProvider(),
             throwingFileSystem);
@@ -671,13 +669,10 @@ public class LibraryManagementServiceTest {
           new LibraryManagementService(
               new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
               new VideoExtensionValidator(),
-              new DefaultVideoFileMetadataParser(),
-              fakeMovieMetadataProviderResolver,
+              movieFileProcessor,
               fakeLibraryRepository,
               fakeMediaFileRepository,
               movieService,
-              personService,
-              genreService,
               capturingEventPublisher,
               new MutexFactoryProvider(),
               securityExceptionFs);

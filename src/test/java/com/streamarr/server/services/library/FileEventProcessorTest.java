@@ -116,17 +116,24 @@ class FileEventProcessorTest {
     MetadataProvider<com.streamarr.server.domain.media.Movie> tmdbProvider =
         mock(TMDBMovieProvider.class);
 
+    var movieFileProcessor =
+        new MovieFileProcessor(
+            new DefaultVideoFileMetadataParser(),
+            new MovieMetadataProviderResolver(List.of(tmdbProvider)),
+            movieService,
+            personService,
+            genreService,
+            mediaFileRepository,
+            new MutexFactoryProvider());
+
     var libraryManagementService =
         new LibraryManagementService(
             ignoredFileValidator,
             videoExtensionValidator,
-            new DefaultVideoFileMetadataParser(),
-            new MovieMetadataProviderResolver(List.of(tmdbProvider)),
+            movieFileProcessor,
             libraryRepository,
             mediaFileRepository,
             movieService,
-            personService,
-            genreService,
             event -> {},
             new MutexFactoryProvider(),
             fileSystem);

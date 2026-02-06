@@ -12,18 +12,12 @@ import com.streamarr.server.exceptions.LibraryScanFailedException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
-import com.streamarr.server.services.GenreService;
 import com.streamarr.server.services.MovieService;
-import com.streamarr.server.services.PersonService;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.library.events.LibraryAddedEvent;
 import com.streamarr.server.services.library.events.LibraryRemovedEvent;
 import com.streamarr.server.services.library.events.ScanCompletedEvent;
-import com.streamarr.server.services.metadata.RemoteSearchResult;
-import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
-import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
-import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
 import java.io.IOException;
@@ -34,7 +28,6 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -42,7 +35,6 @@ import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
-import org.apache.commons.lang3.StringUtils;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -53,13 +45,10 @@ public class LibraryManagementService {
 
   private final IgnoredFileValidator ignoredFileValidator;
   private final VideoExtensionValidator videoExtensionValidator;
-  private final DefaultVideoFileMetadataParser defaultVideoFileMetadataParser;
-  private final MovieMetadataProviderResolver movieMetadataProviderResolver;
+  private final MovieFileProcessor movieFileProcessor;
   private final LibraryRepository libraryRepository;
   private final MediaFileRepository mediaFileRepository;
   private final MovieService movieService;
-  private final PersonService personService;
-  private final GenreService genreService;
   private final ApplicationEventPublisher eventPublisher;
   private final FileSystem fileSystem;
   private final MutexFactory<String> mutexFactory;
@@ -68,25 +57,19 @@ public class LibraryManagementService {
   public LibraryManagementService(
       IgnoredFileValidator ignoredFileValidator,
       VideoExtensionValidator videoExtensionValidator,
-      DefaultVideoFileMetadataParser defaultVideoFileMetadataParser,
-      MovieMetadataProviderResolver movieMetadataProviderResolver,
+      MovieFileProcessor movieFileProcessor,
       LibraryRepository libraryRepository,
       MediaFileRepository mediaFileRepository,
       MovieService movieService,
-      PersonService personService,
-      GenreService genreService,
       ApplicationEventPublisher eventPublisher,
       MutexFactoryProvider mutexFactoryProvider,
       FileSystem fileSystem) {
     this.ignoredFileValidator = ignoredFileValidator;
     this.videoExtensionValidator = videoExtensionValidator;
-    this.defaultVideoFileMetadataParser = defaultVideoFileMetadataParser;
-    this.movieMetadataProviderResolver = movieMetadataProviderResolver;
+    this.movieFileProcessor = movieFileProcessor;
     this.libraryRepository = libraryRepository;
     this.mediaFileRepository = mediaFileRepository;
     this.movieService = movieService;
-    this.personService = personService;
-    this.genreService = genreService;
     this.eventPublisher = eventPublisher;
     this.fileSystem = fileSystem;
 
@@ -293,7 +276,7 @@ public class LibraryManagementService {
     }
 
     switch (library.getType()) {
-      case MOVIE -> processMovieFileType(library, mediaFile);
+      case MOVIE -> movieFileProcessor.process(library, mediaFile);
       case SERIES -> throw new UnsupportedOperationException("Series not yet supported. See #40");
       default -> throw new IllegalStateException("Unsupported media type: " + library.getType());
     }
@@ -348,115 +331,5 @@ public class LibraryManagementService {
 
   private boolean isAlreadyMatched(MediaFile file) {
     return file.getStatus().equals(MediaFileStatus.MATCHED);
-  }
-
-  private void processMovieFileType(Library library, MediaFile mediaFile) {
-    var mediaInformationResult = parseMediaFileForMovieInfo(mediaFile);
-
-    if (mediaInformationResult.isEmpty()) {
-      mediaFile.setStatus(MediaFileStatus.METADATA_PARSING_FAILED);
-      mediaFileRepository.save(mediaFile);
-
-      log.error(
-          "Failed to parse MediaFile id: {} at path: '{}'",
-          mediaFile.getId(),
-          mediaFile.getFilepath());
-
-      return;
-    }
-
-    log.info(
-        "Parsed filename for MediaFile id: {}. Title: {} and Year: {}",
-        mediaFile.getId(),
-        mediaInformationResult.get().title(),
-        mediaInformationResult.get().year());
-
-    var movieSearchResult =
-        movieMetadataProviderResolver.search(library, mediaInformationResult.get());
-
-    if (movieSearchResult.isEmpty()) {
-      mediaFile.setStatus(MediaFileStatus.METADATA_SEARCH_FAILED);
-      mediaFileRepository.save(mediaFile);
-
-      log.error(
-          "Failed to find matching search result for MediaFile id: {} at path: '{}'",
-          mediaFile.getId(),
-          mediaFile.getFilepath());
-
-      return;
-    }
-
-    log.info(
-        "Found metadata search result during enrichment for MediaFile id: {}. Metadata provider: {} and External id: {}",
-        mediaFile.getId(),
-        movieSearchResult.get().externalSourceType(),
-        movieSearchResult.get().externalId());
-
-    enrichMovieMetadata(library, mediaFile, movieSearchResult.get());
-  }
-
-  private Optional<VideoFileParserResult> parseMediaFileForMovieInfo(MediaFile mediaFile) {
-    var result = defaultVideoFileMetadataParser.parse(mediaFile.getFilename());
-
-    if (result.isEmpty() || StringUtils.isEmpty(result.get().title())) {
-      return Optional.empty();
-    }
-
-    return result;
-  }
-
-  private void enrichMovieMetadata(
-      Library library, MediaFile mediaFile, RemoteSearchResult remoteSearchResult) {
-
-    var externalIdMutex = mutexFactory.getMutex(remoteSearchResult.externalId());
-
-    try {
-      externalIdMutex.lock();
-
-      updateOrSaveEnrichedMovie(library, mediaFile, remoteSearchResult);
-    } catch (Exception ex) {
-      log.error("Failure enriching movie metadata:", ex);
-    } finally {
-      if (externalIdMutex.isHeldByCurrentThread()) {
-        externalIdMutex.unlock();
-      }
-    }
-  }
-
-  private void updateOrSaveEnrichedMovie(
-      Library library, MediaFile mediaFile, RemoteSearchResult remoteSearchResult) {
-    var optionalMovie =
-        movieService.addMediaFileToMovieByTmdbId(remoteSearchResult.externalId(), mediaFile);
-
-    if (optionalMovie.isPresent()) {
-      markMediaFileAsMatched(mediaFile);
-      return;
-    }
-
-    var movieToSave = movieMetadataProviderResolver.getMetadata(remoteSearchResult, library);
-
-    if (movieToSave.isEmpty()) {
-      return;
-    }
-
-    var cast = movieToSave.get().getCast();
-    var savedCast = personService.getOrCreatePersons(cast);
-    movieToSave.get().setCast(savedCast);
-
-    var directors = movieToSave.get().getDirectors();
-    var savedDirectors = personService.getOrCreatePersons(directors);
-    movieToSave.get().setDirectors(savedDirectors);
-
-    var genres = movieToSave.get().getGenres();
-    var savedGenres = genreService.getOrCreateGenres(genres);
-    movieToSave.get().setGenres(savedGenres);
-
-    movieService.saveMovieWithMediaFile(movieToSave.get(), mediaFile);
-    markMediaFileAsMatched(mediaFile);
-  }
-
-  private void markMediaFileAsMatched(MediaFile mediaFile) {
-    mediaFile.setStatus(MediaFileStatus.MATCHED);
-    mediaFileRepository.save(mediaFile);
   }
 }
