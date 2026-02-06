@@ -48,6 +48,7 @@ public class SessionReaper {
       if (handle.status() != TranscodeStatus.ACTIVE) {
         continue;
       }
+
       if (transcodeExecutor.isRunning(session.getSessionId(), label)) {
         continue;
       }
