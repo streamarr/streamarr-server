@@ -7,10 +7,12 @@ package com.streamarr.server.jooq.generated.tables;
 import com.streamarr.server.jooq.generated.Indexes;
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
+import com.streamarr.server.jooq.generated.tables.Episode.EpisodePath;
 import com.streamarr.server.jooq.generated.tables.ExternalIdentifier.ExternalIdentifierPath;
 import com.streamarr.server.jooq.generated.tables.Library.LibraryPath;
 import com.streamarr.server.jooq.generated.tables.MediaFile.MediaFilePath;
 import com.streamarr.server.jooq.generated.tables.Movie.MoviePath;
+import com.streamarr.server.jooq.generated.tables.Season.SeasonPath;
 import com.streamarr.server.jooq.generated.tables.Series.SeriesPath;
 import com.streamarr.server.jooq.generated.tables.records.BaseCollectableRecord;
 
@@ -203,6 +205,19 @@ public class BaseCollectable extends TableImpl<BaseCollectableRecord> {
         return _library;
     }
 
+    private transient EpisodePath _episode;
+
+    /**
+     * Get the implicit to-many join path to the <code>public.episode</code>
+     * table
+     */
+    public EpisodePath episode() {
+        if (_episode == null)
+            _episode = new EpisodePath(this, null, Keys.EPISODE__FK_BASE_COLLECTABLE.getInverseKey());
+
+        return _episode;
+    }
+
     private transient ExternalIdentifierPath _externalIdentifier;
 
     /**
@@ -227,6 +242,19 @@ public class BaseCollectable extends TableImpl<BaseCollectableRecord> {
             _mediaFile = new MediaFilePath(this, null, Keys.MEDIA_FILE__FK_BASE_COLLECTABLE.getInverseKey());
 
         return _mediaFile;
+    }
+
+    private transient SeasonPath _season;
+
+    /**
+     * Get the implicit to-many join path to the <code>public.season</code>
+     * table
+     */
+    public SeasonPath season() {
+        if (_season == null)
+            _season = new SeasonPath(this, null, Keys.SEASON__FK_BASE_COLLECTABLE.getInverseKey());
+
+        return _season;
     }
 
     private transient MoviePath _movie;

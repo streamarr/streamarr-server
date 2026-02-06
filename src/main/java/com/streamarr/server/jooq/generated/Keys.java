@@ -6,6 +6,7 @@ package com.streamarr.server.jooq.generated;
 
 import com.streamarr.server.jooq.generated.tables.BaseCollectable;
 import com.streamarr.server.jooq.generated.tables.Company;
+import com.streamarr.server.jooq.generated.tables.Episode;
 import com.streamarr.server.jooq.generated.tables.ExternalIdentifier;
 import com.streamarr.server.jooq.generated.tables.FileProcessingTask;
 import com.streamarr.server.jooq.generated.tables.Genre;
@@ -20,9 +21,15 @@ import com.streamarr.server.jooq.generated.tables.Person;
 import com.streamarr.server.jooq.generated.tables.Rating;
 import com.streamarr.server.jooq.generated.tables.Review;
 import com.streamarr.server.jooq.generated.tables.SchemaHistory;
+import com.streamarr.server.jooq.generated.tables.Season;
 import com.streamarr.server.jooq.generated.tables.Series;
+import com.streamarr.server.jooq.generated.tables.SeriesCompany;
+import com.streamarr.server.jooq.generated.tables.SeriesDirector;
+import com.streamarr.server.jooq.generated.tables.SeriesGenre;
+import com.streamarr.server.jooq.generated.tables.SeriesPerson;
 import com.streamarr.server.jooq.generated.tables.records.BaseCollectableRecord;
 import com.streamarr.server.jooq.generated.tables.records.CompanyRecord;
+import com.streamarr.server.jooq.generated.tables.records.EpisodeRecord;
 import com.streamarr.server.jooq.generated.tables.records.ExternalIdentifierRecord;
 import com.streamarr.server.jooq.generated.tables.records.FileProcessingTaskRecord;
 import com.streamarr.server.jooq.generated.tables.records.GenreRecord;
@@ -37,6 +44,11 @@ import com.streamarr.server.jooq.generated.tables.records.PersonRecord;
 import com.streamarr.server.jooq.generated.tables.records.RatingRecord;
 import com.streamarr.server.jooq.generated.tables.records.ReviewRecord;
 import com.streamarr.server.jooq.generated.tables.records.SchemaHistoryRecord;
+import com.streamarr.server.jooq.generated.tables.records.SeasonRecord;
+import com.streamarr.server.jooq.generated.tables.records.SeriesCompanyRecord;
+import com.streamarr.server.jooq.generated.tables.records.SeriesDirectorRecord;
+import com.streamarr.server.jooq.generated.tables.records.SeriesGenreRecord;
+import com.streamarr.server.jooq.generated.tables.records.SeriesPersonRecord;
 import com.streamarr.server.jooq.generated.tables.records.SeriesRecord;
 
 import org.jooq.ForeignKey;
@@ -61,7 +73,10 @@ public class Keys {
     public static final UniqueKey<BaseCollectableRecord> BASE_COLLECTABLE_PKEY = Internal.createUniqueKey(BaseCollectable.BASE_COLLECTABLE, DSL.name("base_collectable_pkey"), new TableField[] { BaseCollectable.BASE_COLLECTABLE.ID }, true);
     public static final UniqueKey<CompanyRecord> COMPANY_PKEY = Internal.createUniqueKey(Company.COMPANY, DSL.name("company_pkey"), new TableField[] { Company.COMPANY.ID }, true);
     public static final UniqueKey<CompanyRecord> COMPANY_SOURCE_ID_UNIQUE = Internal.createUniqueKey(Company.COMPANY, DSL.name("company_source_id_unique"), new TableField[] { Company.COMPANY.SOURCE_ID }, true);
-    public static final UniqueKey<ExternalIdentifierRecord> EXTERNAL_IDENTIFIER_PKEY = Internal.createUniqueKey(ExternalIdentifier.EXTERNAL_IDENTIFIER, DSL.name("external_identifier_pkey"), new TableField[] { ExternalIdentifier.EXTERNAL_IDENTIFIER.EXTERNAL_SOURCE_TYPE, ExternalIdentifier.EXTERNAL_IDENTIFIER.EXTERNAL_ID }, true);
+    public static final UniqueKey<EpisodeRecord> EPISODE_PKEY = Internal.createUniqueKey(Episode.EPISODE, DSL.name("episode_pkey"), new TableField[] { Episode.EPISODE.ID }, true);
+    public static final UniqueKey<EpisodeRecord> UQ_EPISODE = Internal.createUniqueKey(Episode.EPISODE, DSL.name("uq_episode"), new TableField[] { Episode.EPISODE.SEASON_ID, Episode.EPISODE.EPISODE_NUMBER }, true);
+    public static final UniqueKey<ExternalIdentifierRecord> EXTERNAL_IDENTIFIER_PKEY = Internal.createUniqueKey(ExternalIdentifier.EXTERNAL_IDENTIFIER, DSL.name("external_identifier_pkey"), new TableField[] { ExternalIdentifier.EXTERNAL_IDENTIFIER.ID }, true);
+    public static final UniqueKey<ExternalIdentifierRecord> UQ_EXTERNAL_SOURCE = Internal.createUniqueKey(ExternalIdentifier.EXTERNAL_IDENTIFIER, DSL.name("uq_external_source"), new TableField[] { ExternalIdentifier.EXTERNAL_IDENTIFIER.EXTERNAL_SOURCE_TYPE, ExternalIdentifier.EXTERNAL_IDENTIFIER.EXTERNAL_ID, ExternalIdentifier.EXTERNAL_IDENTIFIER.ENTITY_ID }, true);
     public static final UniqueKey<FileProcessingTaskRecord> FILE_PROCESSING_TASK_PKEY = Internal.createUniqueKey(FileProcessingTask.FILE_PROCESSING_TASK, DSL.name("file_processing_task_pkey"), new TableField[] { FileProcessingTask.FILE_PROCESSING_TASK.ID }, true);
     public static final UniqueKey<GenreRecord> GENRE_PKEY = Internal.createUniqueKey(Genre.GENRE, DSL.name("genre_pkey"), new TableField[] { Genre.GENRE.ID }, true);
     public static final UniqueKey<GenreRecord> GENRE_SOURCE_ID_UNIQUE = Internal.createUniqueKey(Genre.GENRE, DSL.name("genre_source_id_unique"), new TableField[] { Genre.GENRE.SOURCE_ID }, true);
@@ -77,13 +92,21 @@ public class Keys {
     public static final UniqueKey<RatingRecord> RATING_PKEY = Internal.createUniqueKey(Rating.RATING, DSL.name("rating_pkey"), new TableField[] { Rating.RATING.ID }, true);
     public static final UniqueKey<ReviewRecord> REVIEW_PKEY = Internal.createUniqueKey(Review.REVIEW, DSL.name("review_pkey"), new TableField[] { Review.REVIEW.ID }, true);
     public static final UniqueKey<SchemaHistoryRecord> SCHEMA_HISTORY_PK = Internal.createUniqueKey(SchemaHistory.SCHEMA_HISTORY, DSL.name("schema_history_pk"), new TableField[] { SchemaHistory.SCHEMA_HISTORY.INSTALLED_RANK }, true);
+    public static final UniqueKey<SeasonRecord> SEASON_PKEY = Internal.createUniqueKey(Season.SEASON, DSL.name("season_pkey"), new TableField[] { Season.SEASON.ID }, true);
+    public static final UniqueKey<SeasonRecord> UQ_SEASON = Internal.createUniqueKey(Season.SEASON, DSL.name("uq_season"), new TableField[] { Season.SEASON.SERIES_ID, Season.SEASON.SEASON_NUMBER }, true);
     public static final UniqueKey<SeriesRecord> SERIES_PKEY = Internal.createUniqueKey(Series.SERIES, DSL.name("series_pkey"), new TableField[] { Series.SERIES.ID }, true);
+    public static final UniqueKey<SeriesCompanyRecord> SERIES_COMPANY_PKEY = Internal.createUniqueKey(SeriesCompany.SERIES_COMPANY, DSL.name("series_company_pkey"), new TableField[] { SeriesCompany.SERIES_COMPANY.SERIES_ID, SeriesCompany.SERIES_COMPANY.COMPANY_ID }, true);
+    public static final UniqueKey<SeriesDirectorRecord> SERIES_DIRECTOR_PKEY = Internal.createUniqueKey(SeriesDirector.SERIES_DIRECTOR, DSL.name("series_director_pkey"), new TableField[] { SeriesDirector.SERIES_DIRECTOR.SERIES_ID, SeriesDirector.SERIES_DIRECTOR.PERSON_ID }, true);
+    public static final UniqueKey<SeriesGenreRecord> SERIES_GENRE_PKEY = Internal.createUniqueKey(SeriesGenre.SERIES_GENRE, DSL.name("series_genre_pkey"), new TableField[] { SeriesGenre.SERIES_GENRE.SERIES_ID, SeriesGenre.SERIES_GENRE.GENRE_ID }, true);
+    public static final UniqueKey<SeriesPersonRecord> SERIES_PERSON_PKEY = Internal.createUniqueKey(SeriesPerson.SERIES_PERSON, DSL.name("series_person_pkey"), new TableField[] { SeriesPerson.SERIES_PERSON.SERIES_ID, SeriesPerson.SERIES_PERSON.PERSON_ID }, true);
 
     // -------------------------------------------------------------------------
     // FOREIGN KEY definitions
     // -------------------------------------------------------------------------
 
     public static final ForeignKey<BaseCollectableRecord, LibraryRecord> BASE_COLLECTABLE__FK_LIBRARY = Internal.createForeignKey(BaseCollectable.BASE_COLLECTABLE, DSL.name("fk_library"), new TableField[] { BaseCollectable.BASE_COLLECTABLE.LIBRARY_ID }, Keys.LIBRARY_PKEY, new TableField[] { Library.LIBRARY.ID }, true, ForeignKeyRule.NO_ACTION, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<EpisodeRecord, BaseCollectableRecord> EPISODE__FK_BASE_COLLECTABLE = Internal.createForeignKey(Episode.EPISODE, DSL.name("fk_base_collectable"), new TableField[] { Episode.EPISODE.ID }, Keys.BASE_COLLECTABLE_PKEY, new TableField[] { BaseCollectable.BASE_COLLECTABLE.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<EpisodeRecord, SeasonRecord> EPISODE__FK_SEASON = Internal.createForeignKey(Episode.EPISODE, DSL.name("fk_season"), new TableField[] { Episode.EPISODE.SEASON_ID }, Keys.SEASON_PKEY, new TableField[] { Season.SEASON.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<ExternalIdentifierRecord, BaseCollectableRecord> EXTERNAL_IDENTIFIER__FK_BASE_COLLECTABLE = Internal.createForeignKey(ExternalIdentifier.EXTERNAL_IDENTIFIER, DSL.name("fk_base_collectable"), new TableField[] { ExternalIdentifier.EXTERNAL_IDENTIFIER.ENTITY_ID }, Keys.BASE_COLLECTABLE_PKEY, new TableField[] { BaseCollectable.BASE_COLLECTABLE.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<FileProcessingTaskRecord, LibraryRecord> FILE_PROCESSING_TASK__FK_LIBRARY = Internal.createForeignKey(FileProcessingTask.FILE_PROCESSING_TASK, DSL.name("fk_library"), new TableField[] { FileProcessingTask.FILE_PROCESSING_TASK.LIBRARY_ID }, Keys.LIBRARY_PKEY, new TableField[] { Library.LIBRARY.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<MediaFileRecord, BaseCollectableRecord> MEDIA_FILE__FK_BASE_COLLECTABLE = Internal.createForeignKey(MediaFile.MEDIA_FILE, DSL.name("fk_base_collectable"), new TableField[] { MediaFile.MEDIA_FILE.MEDIA_ID }, Keys.BASE_COLLECTABLE_PKEY, new TableField[] { BaseCollectable.BASE_COLLECTABLE.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
@@ -99,5 +122,15 @@ public class Keys {
     public static final ForeignKey<MoviePersonRecord, PersonRecord> MOVIE_PERSON__MOVIE_PERSON_PERSON_ID_FKEY = Internal.createForeignKey(MoviePerson.MOVIE_PERSON, DSL.name("movie_person_person_id_fkey"), new TableField[] { MoviePerson.MOVIE_PERSON.PERSON_ID }, Keys.PERSON_PKEY, new TableField[] { Person.PERSON.ID }, true, ForeignKeyRule.NO_ACTION, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<RatingRecord, MovieRecord> RATING__FK_MOVIE = Internal.createForeignKey(Rating.RATING, DSL.name("fk_movie"), new TableField[] { Rating.RATING.MOVIE_ID }, Keys.MOVIE_PKEY, new TableField[] { Movie.MOVIE.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<ReviewRecord, MovieRecord> REVIEW__FK_MOVIE = Internal.createForeignKey(Review.REVIEW, DSL.name("fk_movie"), new TableField[] { Review.REVIEW.MOVIE_ID }, Keys.MOVIE_PKEY, new TableField[] { Movie.MOVIE.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
-    public static final ForeignKey<SeriesRecord, BaseCollectableRecord> SERIES__FK_SERIES = Internal.createForeignKey(Series.SERIES, DSL.name("fk_series"), new TableField[] { Series.SERIES.ID }, Keys.BASE_COLLECTABLE_PKEY, new TableField[] { BaseCollectable.BASE_COLLECTABLE.ID }, true, ForeignKeyRule.NO_ACTION, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<SeasonRecord, BaseCollectableRecord> SEASON__FK_BASE_COLLECTABLE = Internal.createForeignKey(Season.SEASON, DSL.name("fk_base_collectable"), new TableField[] { Season.SEASON.ID }, Keys.BASE_COLLECTABLE_PKEY, new TableField[] { BaseCollectable.BASE_COLLECTABLE.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<SeasonRecord, SeriesRecord> SEASON__FK_SERIES = Internal.createForeignKey(Season.SEASON, DSL.name("fk_series"), new TableField[] { Season.SEASON.SERIES_ID }, Keys.SERIES_PKEY, new TableField[] { Series.SERIES.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<SeriesRecord, BaseCollectableRecord> SERIES__FK_SERIES = Internal.createForeignKey(Series.SERIES, DSL.name("fk_series"), new TableField[] { Series.SERIES.ID }, Keys.BASE_COLLECTABLE_PKEY, new TableField[] { BaseCollectable.BASE_COLLECTABLE.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<SeriesCompanyRecord, CompanyRecord> SERIES_COMPANY__SERIES_COMPANY_COMPANY_ID_FKEY = Internal.createForeignKey(SeriesCompany.SERIES_COMPANY, DSL.name("series_company_company_id_fkey"), new TableField[] { SeriesCompany.SERIES_COMPANY.COMPANY_ID }, Keys.COMPANY_PKEY, new TableField[] { Company.COMPANY.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<SeriesCompanyRecord, SeriesRecord> SERIES_COMPANY__SERIES_COMPANY_SERIES_ID_FKEY = Internal.createForeignKey(SeriesCompany.SERIES_COMPANY, DSL.name("series_company_series_id_fkey"), new TableField[] { SeriesCompany.SERIES_COMPANY.SERIES_ID }, Keys.SERIES_PKEY, new TableField[] { Series.SERIES.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<SeriesDirectorRecord, PersonRecord> SERIES_DIRECTOR__SERIES_DIRECTOR_PERSON_ID_FKEY = Internal.createForeignKey(SeriesDirector.SERIES_DIRECTOR, DSL.name("series_director_person_id_fkey"), new TableField[] { SeriesDirector.SERIES_DIRECTOR.PERSON_ID }, Keys.PERSON_PKEY, new TableField[] { Person.PERSON.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<SeriesDirectorRecord, SeriesRecord> SERIES_DIRECTOR__SERIES_DIRECTOR_SERIES_ID_FKEY = Internal.createForeignKey(SeriesDirector.SERIES_DIRECTOR, DSL.name("series_director_series_id_fkey"), new TableField[] { SeriesDirector.SERIES_DIRECTOR.SERIES_ID }, Keys.SERIES_PKEY, new TableField[] { Series.SERIES.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<SeriesGenreRecord, GenreRecord> SERIES_GENRE__SERIES_GENRE_GENRE_ID_FKEY = Internal.createForeignKey(SeriesGenre.SERIES_GENRE, DSL.name("series_genre_genre_id_fkey"), new TableField[] { SeriesGenre.SERIES_GENRE.GENRE_ID }, Keys.GENRE_PKEY, new TableField[] { Genre.GENRE.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<SeriesGenreRecord, SeriesRecord> SERIES_GENRE__SERIES_GENRE_SERIES_ID_FKEY = Internal.createForeignKey(SeriesGenre.SERIES_GENRE, DSL.name("series_genre_series_id_fkey"), new TableField[] { SeriesGenre.SERIES_GENRE.SERIES_ID }, Keys.SERIES_PKEY, new TableField[] { Series.SERIES.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<SeriesPersonRecord, PersonRecord> SERIES_PERSON__SERIES_PERSON_PERSON_ID_FKEY = Internal.createForeignKey(SeriesPerson.SERIES_PERSON, DSL.name("series_person_person_id_fkey"), new TableField[] { SeriesPerson.SERIES_PERSON.PERSON_ID }, Keys.PERSON_PKEY, new TableField[] { Person.PERSON.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<SeriesPersonRecord, SeriesRecord> SERIES_PERSON__SERIES_PERSON_SERIES_ID_FKEY = Internal.createForeignKey(SeriesPerson.SERIES_PERSON, DSL.name("series_person_series_id_fkey"), new TableField[] { SeriesPerson.SERIES_PERSON.SERIES_ID }, Keys.SERIES_PKEY, new TableField[] { Series.SERIES.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
 }

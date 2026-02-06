@@ -179,6 +179,11 @@ public class ExternalIdentifier extends TableImpl<ExternalIdentifierRecord> {
     }
 
     @Override
+    public List<UniqueKey<ExternalIdentifierRecord>> getUniqueKeys() {
+        return Arrays.asList(Keys.UQ_EXTERNAL_SOURCE);
+    }
+
+    @Override
     public List<ForeignKey<ExternalIdentifierRecord, ?>> getReferences() {
         return Arrays.asList(Keys.EXTERNAL_IDENTIFIER__FK_BASE_COLLECTABLE);
     }

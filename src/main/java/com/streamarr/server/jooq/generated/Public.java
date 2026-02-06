@@ -6,6 +6,7 @@ package com.streamarr.server.jooq.generated;
 
 import com.streamarr.server.jooq.generated.tables.BaseCollectable;
 import com.streamarr.server.jooq.generated.tables.Company;
+import com.streamarr.server.jooq.generated.tables.Episode;
 import com.streamarr.server.jooq.generated.tables.ExternalIdentifier;
 import com.streamarr.server.jooq.generated.tables.FileProcessingTask;
 import com.streamarr.server.jooq.generated.tables.Genre;
@@ -20,7 +21,12 @@ import com.streamarr.server.jooq.generated.tables.Person;
 import com.streamarr.server.jooq.generated.tables.Rating;
 import com.streamarr.server.jooq.generated.tables.Review;
 import com.streamarr.server.jooq.generated.tables.SchemaHistory;
+import com.streamarr.server.jooq.generated.tables.Season;
 import com.streamarr.server.jooq.generated.tables.Series;
+import com.streamarr.server.jooq.generated.tables.SeriesCompany;
+import com.streamarr.server.jooq.generated.tables.SeriesDirector;
+import com.streamarr.server.jooq.generated.tables.SeriesGenre;
+import com.streamarr.server.jooq.generated.tables.SeriesPerson;
 
 import java.util.Arrays;
 import java.util.List;
@@ -53,6 +59,11 @@ public class Public extends SchemaImpl {
      * The table <code>public.company</code>.
      */
     public final Company COMPANY = Company.COMPANY;
+
+    /**
+     * The table <code>public.episode</code>.
+     */
+    public final Episode EPISODE = Episode.EPISODE;
 
     /**
      * The table <code>public.external_identifier</code>.
@@ -125,9 +136,34 @@ public class Public extends SchemaImpl {
     public final SchemaHistory SCHEMA_HISTORY = SchemaHistory.SCHEMA_HISTORY;
 
     /**
+     * The table <code>public.season</code>.
+     */
+    public final Season SEASON = Season.SEASON;
+
+    /**
      * The table <code>public.series</code>.
      */
     public final Series SERIES = Series.SERIES;
+
+    /**
+     * The table <code>public.series_company</code>.
+     */
+    public final SeriesCompany SERIES_COMPANY = SeriesCompany.SERIES_COMPANY;
+
+    /**
+     * The table <code>public.series_director</code>.
+     */
+    public final SeriesDirector SERIES_DIRECTOR = SeriesDirector.SERIES_DIRECTOR;
+
+    /**
+     * The table <code>public.series_genre</code>.
+     */
+    public final SeriesGenre SERIES_GENRE = SeriesGenre.SERIES_GENRE;
+
+    /**
+     * The table <code>public.series_person</code>.
+     */
+    public final SeriesPerson SERIES_PERSON = SeriesPerson.SERIES_PERSON;
 
     /**
      * No further instances allowed
@@ -147,6 +183,7 @@ public class Public extends SchemaImpl {
         return Arrays.asList(
             BaseCollectable.BASE_COLLECTABLE,
             Company.COMPANY,
+            Episode.EPISODE,
             ExternalIdentifier.EXTERNAL_IDENTIFIER,
             FileProcessingTask.FILE_PROCESSING_TASK,
             Genre.GENRE,
@@ -161,7 +198,12 @@ public class Public extends SchemaImpl {
             Rating.RATING,
             Review.REVIEW,
             SchemaHistory.SCHEMA_HISTORY,
-            Series.SERIES
+            Season.SEASON,
+            Series.SERIES,
+            SeriesCompany.SERIES_COMPANY,
+            SeriesDirector.SERIES_DIRECTOR,
+            SeriesGenre.SERIES_GENRE,
+            SeriesPerson.SERIES_PERSON
         );
     }
 }

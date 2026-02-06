@@ -7,8 +7,17 @@ package com.streamarr.server.jooq.generated.tables;
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable.BaseCollectablePath;
+import com.streamarr.server.jooq.generated.tables.Company.CompanyPath;
+import com.streamarr.server.jooq.generated.tables.Genre.GenrePath;
+import com.streamarr.server.jooq.generated.tables.Person.PersonPath;
+import com.streamarr.server.jooq.generated.tables.Season.SeasonPath;
+import com.streamarr.server.jooq.generated.tables.SeriesCompany.SeriesCompanyPath;
+import com.streamarr.server.jooq.generated.tables.SeriesDirector.SeriesDirectorPath;
+import com.streamarr.server.jooq.generated.tables.SeriesGenre.SeriesGenrePath;
+import com.streamarr.server.jooq.generated.tables.SeriesPerson.SeriesPersonPath;
 import com.streamarr.server.jooq.generated.tables.records.SeriesRecord;
 
+import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
@@ -78,9 +87,39 @@ public class Series extends TableImpl<SeriesRecord> {
     public final TableField<SeriesRecord, String> LOGO_PATH = createField(DSL.name("logo_path"), SQLDataType.CLOB, this, "");
 
     /**
-     * The column <code>public.series.content_rating</code>.
+     * The column <code>public.series.content_rating_system</code>.
      */
-    public final TableField<SeriesRecord, String> CONTENT_RATING = createField(DSL.name("content_rating"), SQLDataType.CLOB, this, "");
+    public final TableField<SeriesRecord, String> CONTENT_RATING_SYSTEM = createField(DSL.name("content_rating_system"), SQLDataType.VARCHAR(20), this, "");
+
+    /**
+     * The column <code>public.series.content_rating_value</code>.
+     */
+    public final TableField<SeriesRecord, String> CONTENT_RATING_VALUE = createField(DSL.name("content_rating_value"), SQLDataType.VARCHAR(20), this, "");
+
+    /**
+     * The column <code>public.series.content_rating_country</code>.
+     */
+    public final TableField<SeriesRecord, String> CONTENT_RATING_COUNTRY = createField(DSL.name("content_rating_country"), SQLDataType.VARCHAR(5), this, "");
+
+    /**
+     * The column <code>public.series.summary</code>.
+     */
+    public final TableField<SeriesRecord, String> SUMMARY = createField(DSL.name("summary"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>public.series.tagline</code>.
+     */
+    public final TableField<SeriesRecord, String> TAGLINE = createField(DSL.name("tagline"), SQLDataType.CLOB, this, "");
+
+    /**
+     * The column <code>public.series.runtime</code>.
+     */
+    public final TableField<SeriesRecord, Integer> RUNTIME = createField(DSL.name("runtime"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column <code>public.series.first_air_date</code>.
+     */
+    public final TableField<SeriesRecord, LocalDate> FIRST_AIR_DATE = createField(DSL.name("first_air_date"), SQLDataType.LOCALDATE, this, "");
 
     private Series(Name alias, Table<SeriesRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
@@ -170,6 +209,103 @@ public class Series extends TableImpl<SeriesRecord> {
             _baseCollectable = new BaseCollectablePath(this, Keys.SERIES__FK_SERIES, null);
 
         return _baseCollectable;
+    }
+
+    private transient SeasonPath _season;
+
+    /**
+     * Get the implicit to-many join path to the <code>public.season</code>
+     * table
+     */
+    public SeasonPath season() {
+        if (_season == null)
+            _season = new SeasonPath(this, null, Keys.SEASON__FK_SERIES.getInverseKey());
+
+        return _season;
+    }
+
+    private transient SeriesCompanyPath _seriesCompany;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.series_company</code> table
+     */
+    public SeriesCompanyPath seriesCompany() {
+        if (_seriesCompany == null)
+            _seriesCompany = new SeriesCompanyPath(this, null, Keys.SERIES_COMPANY__SERIES_COMPANY_SERIES_ID_FKEY.getInverseKey());
+
+        return _seriesCompany;
+    }
+
+    private transient SeriesDirectorPath _seriesDirector;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.series_director</code> table
+     */
+    public SeriesDirectorPath seriesDirector() {
+        if (_seriesDirector == null)
+            _seriesDirector = new SeriesDirectorPath(this, null, Keys.SERIES_DIRECTOR__SERIES_DIRECTOR_SERIES_ID_FKEY.getInverseKey());
+
+        return _seriesDirector;
+    }
+
+    private transient SeriesGenrePath _seriesGenre;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.series_genre</code> table
+     */
+    public SeriesGenrePath seriesGenre() {
+        if (_seriesGenre == null)
+            _seriesGenre = new SeriesGenrePath(this, null, Keys.SERIES_GENRE__SERIES_GENRE_SERIES_ID_FKEY.getInverseKey());
+
+        return _seriesGenre;
+    }
+
+    private transient SeriesPersonPath _seriesPerson;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.series_person</code> table
+     */
+    public SeriesPersonPath seriesPerson() {
+        if (_seriesPerson == null)
+            _seriesPerson = new SeriesPersonPath(this, null, Keys.SERIES_PERSON__SERIES_PERSON_SERIES_ID_FKEY.getInverseKey());
+
+        return _seriesPerson;
+    }
+
+    /**
+     * Get the implicit many-to-many join path to the
+     * <code>public.company</code> table
+     */
+    public CompanyPath company() {
+        return seriesCompany().company();
+    }
+
+    /**
+     * Get the implicit many-to-many join path to the <code>public.person</code>
+     * table, via the <code>series_director_person_id_fkey</code> key
+     */
+    public PersonPath seriesDirectorPersonIdFkey() {
+        return seriesDirector().person();
+    }
+
+    /**
+     * Get the implicit many-to-many join path to the <code>public.genre</code>
+     * table
+     */
+    public GenrePath genre() {
+        return seriesGenre().genre();
+    }
+
+    /**
+     * Get the implicit many-to-many join path to the <code>public.person</code>
+     * table, via the <code>series_person_person_id_fkey</code> key
+     */
+    public PersonPath seriesPersonPersonIdFkey() {
+        return seriesPerson().person();
     }
 
     @Override
