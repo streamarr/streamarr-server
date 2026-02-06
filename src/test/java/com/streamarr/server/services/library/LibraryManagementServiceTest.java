@@ -26,6 +26,7 @@ import com.streamarr.server.exceptions.LibraryAlreadyExistsException;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.exceptions.LibraryPathPermissionDeniedException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
@@ -39,13 +40,15 @@ import com.streamarr.server.services.GenreService;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.PersonService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
+import com.streamarr.server.services.library.events.LibraryAddedEvent;
+import com.streamarr.server.services.library.events.LibraryRemovedEvent;
+import com.streamarr.server.services.library.events.ScanCompletedEvent;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.metadata.movie.TMDBMovieProvider;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
-import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
 import java.io.IOException;
@@ -84,11 +87,7 @@ public class LibraryManagementServiceTest {
   private final MovieService movieService = new MovieService(fakeMovieRepository, null, null);
   private final FileSystem fileSystem = Jimfs.newFileSystem(Configuration.unix());
 
-  private final OrphanedMediaFileCleanupService orphanedMediaFileCleanupService =
-      new OrphanedMediaFileCleanupService(fakeMediaFileRepository, movieService, fileSystem);
-  private final DirectoryWatchingService directoryWatchingService =
-      mock(DirectoryWatchingService.class);
-  private final StreamingService streamingService = mock(StreamingService.class);
+  private final CapturingEventPublisher capturingEventPublisher = new CapturingEventPublisher();
 
   private final LibraryManagementService libraryManagementService =
       new LibraryManagementService(
@@ -101,9 +100,7 @@ public class LibraryManagementServiceTest {
           movieService,
           personService,
           genreService,
-          orphanedMediaFileCleanupService,
-          directoryWatchingService,
-          streamingService,
+          capturingEventPublisher,
           new MutexFactoryProvider(),
           fileSystem);
 
@@ -174,9 +171,7 @@ public class LibraryManagementServiceTest {
             movieService,
             personService,
             genreService,
-            orphanedMediaFileCleanupService,
-            directoryWatchingService,
-            streamingService,
+            capturingEventPublisher,
             new MutexFactoryProvider(),
             throwingFileSystem);
 
@@ -210,9 +205,7 @@ public class LibraryManagementServiceTest {
             movieService,
             personService,
             genreService,
-            orphanedMediaFileCleanupService,
-            directoryWatchingService,
-            streamingService,
+            capturingEventPublisher,
             new MutexFactoryProvider(),
             throwingFileSystem);
 
@@ -259,6 +252,60 @@ public class LibraryManagementServiceTest {
     assertTrue(fakeLibraryRepository.findById(savedLibraryId).isPresent());
     assertThat(fakeLibraryRepository.findById(savedLibraryId).get().getStatus())
         .isEqualTo(LibraryStatus.HEALTHY);
+  }
+
+  @Test
+  @DisplayName(
+      "Should publish ScanCompletedEvent with correct library ID when scan completes successfully")
+  void shouldPublishScanCompletedEventWhenScanSucceeds() throws IOException {
+    createRootLibraryDirectory();
+
+    libraryManagementService.scanLibrary(savedLibraryId);
+
+    var events = capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class);
+    assertThat(events).hasSize(1);
+    assertThat(events.getFirst().libraryId()).isEqualTo(savedLibraryId);
+  }
+
+  @Test
+  @DisplayName("Should not publish ScanCompletedEvent when library path is inaccessible")
+  void shouldNotPublishScanCompletedEventWhenLibraryPathInaccessible() {
+    libraryManagementService.scanLibrary(savedLibraryId);
+
+    var events = capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class);
+    assertThat(events).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should not publish ScanCompletedEvent when file walk throws SecurityException")
+  void shouldNotPublishScanCompletedEventWhenFileWalkThrowsSecurityException() throws IOException {
+    var rootPath = createRootLibraryDirectory();
+    createMovieFile(rootPath, "About Time", "About Time (2013).mkv");
+
+    var throwingFileSystem =
+        new ThrowingFileSystemWrapper(
+            fileSystem,
+            () -> new SecurityException("Simulated security manager denial during traversal"));
+
+    var serviceWithThrowingFs =
+        new LibraryManagementService(
+            new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
+            new VideoExtensionValidator(),
+            new DefaultVideoFileMetadataParser(),
+            fakeMovieMetadataProviderResolver,
+            fakeLibraryRepository,
+            fakeMediaFileRepository,
+            movieService,
+            personService,
+            genreService,
+            capturingEventPublisher,
+            new MutexFactoryProvider(),
+            throwingFileSystem);
+
+    serviceWithThrowingFs.scanLibrary(savedLibraryId);
+
+    var events = capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class);
+    assertThat(events).isEmpty();
   }
 
   @Test
@@ -576,29 +623,42 @@ public class LibraryManagementServiceTest {
     }
 
     @Test
-    @DisplayName("Should trigger library scan asynchronously after adding")
-    void shouldTriggerLibraryScanAsynchronouslyAfterAdding() throws IOException {
-      var newLibraryPath = fileSystem.getPath("/scan-library");
+    @DisplayName(
+        "Should publish LibraryAddedEvent with correct library ID and filepath when library is added")
+    void shouldPublishLibraryAddedEventWhenLibraryIsAdded() throws IOException {
+      var newLibraryPath = fileSystem.getPath("/event-library");
       Files.createDirectories(newLibraryPath);
 
       var library =
-          LibraryFixtureCreator.buildUnsavedLibrary("Scan Library", newLibraryPath.toString());
+          LibraryFixtureCreator.buildUnsavedLibrary("Event Library", newLibraryPath.toString());
 
       var savedLibrary = libraryManagementService.addLibrary(library);
 
-      await()
-          .atMost(Duration.ofSeconds(5))
-          .untilAsserted(
-              () -> {
-                var refreshedLibrary =
-                    fakeLibraryRepository.findById(savedLibrary.getId()).orElseThrow();
-                assertThat(refreshedLibrary.getScanCompletedOn())
-                    .as("Library scan should complete")
-                    .isNotNull();
-                assertThat(refreshedLibrary.getStatus())
-                    .as("Library status should be HEALTHY after scan")
-                    .isEqualTo(LibraryStatus.HEALTHY);
-              });
+      var events = capturingEventPublisher.getEventsOfType(LibraryAddedEvent.class);
+      assertThat(events).hasSize(1);
+      assertThat(events.getFirst().libraryId()).isEqualTo(savedLibrary.getId());
+      assertThat(events.getFirst().filepath()).isEqualTo(newLibraryPath.toString());
+    }
+
+    @Test
+    @DisplayName("Should publish LibraryAddedEvent with the persisted library ID, not the input")
+    void shouldPublishLibraryAddedEventWithSavedLibraryId() throws IOException {
+      var newLibraryPath = fileSystem.getPath("/persisted-id-library");
+      Files.createDirectories(newLibraryPath);
+
+      var library =
+          LibraryFixtureCreator.buildUnsavedLibrary(
+              "Persisted ID Library", newLibraryPath.toString());
+
+      assertThat(library.getId()).as("Input library should not have an ID").isNull();
+
+      var savedLibrary = libraryManagementService.addLibrary(library);
+
+      var events = capturingEventPublisher.getEventsOfType(LibraryAddedEvent.class);
+      assertThat(events.getFirst().libraryId())
+          .as("Event should carry the persisted ID")
+          .isEqualTo(savedLibrary.getId())
+          .isNotNull();
     }
 
     @Test
@@ -618,9 +678,7 @@ public class LibraryManagementServiceTest {
               movieService,
               personService,
               genreService,
-              orphanedMediaFileCleanupService,
-              directoryWatchingService,
-              streamingService,
+              capturingEventPublisher,
               new MutexFactoryProvider(),
               securityExceptionFs);
 
@@ -646,6 +704,99 @@ public class LibraryManagementServiceTest {
       libraryManagementService.addLibrary(library);
 
       assertThat(library.getStatus()).as("Input library should not be mutated").isNull();
+    }
+
+    @Test
+    @DisplayName("Should complete async library scan when library is added")
+    void shouldCompleteAsyncLibraryScanWhenLibraryIsAdded() throws IOException {
+      var newLibraryPath = fileSystem.getPath("/async-scan-library");
+      Files.createDirectories(newLibraryPath);
+
+      var library =
+          LibraryFixtureCreator.buildUnsavedLibrary(
+              "Async Scan Library", newLibraryPath.toString());
+
+      var savedLibrary = libraryManagementService.addLibrary(library);
+
+      await()
+          .atMost(Duration.ofSeconds(5))
+          .untilAsserted(
+              () -> {
+                var refreshedLibrary =
+                    fakeLibraryRepository.findById(savedLibrary.getId()).orElseThrow();
+                assertThat(refreshedLibrary.getScanCompletedOn())
+                    .as("Library scan should complete asynchronously")
+                    .isNotNull();
+                assertThat(refreshedLibrary.getStatus())
+                    .as("Library status should be HEALTHY after async scan")
+                    .isEqualTo(LibraryStatus.HEALTHY);
+              });
+    }
+  }
+
+  @Nested
+  @DisplayName("Remove Library Tests")
+  class RemoveLibraryTests {
+
+    @Test
+    @DisplayName(
+        "Should publish LibraryRemovedEvent with correct filepath and media file IDs when library is removed")
+    void shouldPublishLibraryRemovedEventWhenLibraryIsRemoved() {
+      var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+      var expectedFilepath = library.getFilepath();
+
+      var mediaFile =
+          fakeMediaFileRepository.save(
+              MediaFile.builder()
+                  .libraryId(savedLibraryId)
+                  .filepath("/library/movie.mkv")
+                  .filename("movie.mkv")
+                  .status(MediaFileStatus.MATCHED)
+                  .build());
+
+      libraryManagementService.removeLibrary(savedLibraryId);
+
+      var events = capturingEventPublisher.getEventsOfType(LibraryRemovedEvent.class);
+      assertThat(events).hasSize(1);
+      assertThat(events.getFirst().filepath()).isEqualTo(expectedFilepath);
+      assertThat(events.getFirst().mediaFileIds()).containsExactly(mediaFile.getId());
+    }
+
+    @Test
+    @DisplayName(
+        "Should publish LibraryRemovedEvent with empty media file IDs when library has no media files")
+    void shouldPublishLibraryRemovedEventWithEmptyMediaFileIdsWhenNoMediaFiles() {
+      libraryManagementService.removeLibrary(savedLibraryId);
+
+      var events = capturingEventPublisher.getEventsOfType(LibraryRemovedEvent.class);
+      assertThat(events).hasSize(1);
+      assertThat(events.getFirst().mediaFileIds()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should not publish LibraryRemovedEvent when library does not exist")
+    void shouldNotPublishLibraryRemovedEventWhenLibraryNotFound() {
+      assertThrows(
+          LibraryNotFoundException.class,
+          () -> libraryManagementService.removeLibrary(UUID.randomUUID()));
+
+      var events = capturingEventPublisher.getEventsOfType(LibraryRemovedEvent.class);
+      assertThat(events).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should not publish LibraryRemovedEvent when library is currently scanning")
+    void shouldNotPublishLibraryRemovedEventWhenLibraryIsScanning() {
+      var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+      library.setStatus(LibraryStatus.SCANNING);
+      fakeLibraryRepository.save(library);
+
+      assertThrows(
+          LibraryScanInProgressException.class,
+          () -> libraryManagementService.removeLibrary(savedLibraryId));
+
+      var events = capturingEventPublisher.getEventsOfType(LibraryRemovedEvent.class);
+      assertThat(events).isEmpty();
     }
   }
 

@@ -4,7 +4,6 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
-import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.exceptions.InvalidLibraryPathException;
 import com.streamarr.server.exceptions.LibraryAlreadyExistsException;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
@@ -18,11 +17,13 @@ import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.PersonService;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
+import com.streamarr.server.services.library.events.LibraryAddedEvent;
+import com.streamarr.server.services.library.events.LibraryRemovedEvent;
+import com.streamarr.server.services.library.events.ScanCompletedEvent;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
-import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
 import java.io.IOException;
@@ -36,12 +37,13 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.springframework.context.annotation.Lazy;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -58,11 +60,10 @@ public class LibraryManagementService {
   private final MovieService movieService;
   private final PersonService personService;
   private final GenreService genreService;
-  private final OrphanedMediaFileCleanupService orphanedMediaFileCleanupService;
-  private final DirectoryWatchingService directoryWatchingService;
-  private final StreamingService streamingService;
+  private final ApplicationEventPublisher eventPublisher;
   private final FileSystem fileSystem;
   private final MutexFactory<String> mutexFactory;
+  private final Set<UUID> activeScans = ConcurrentHashMap.newKeySet();
 
   public LibraryManagementService(
       IgnoredFileValidator ignoredFileValidator,
@@ -74,9 +75,7 @@ public class LibraryManagementService {
       MovieService movieService,
       PersonService personService,
       GenreService genreService,
-      OrphanedMediaFileCleanupService orphanedMediaFileCleanupService,
-      @Lazy DirectoryWatchingService directoryWatchingService,
-      StreamingService streamingService,
+      ApplicationEventPublisher eventPublisher,
       MutexFactoryProvider mutexFactoryProvider,
       FileSystem fileSystem) {
     this.ignoredFileValidator = ignoredFileValidator;
@@ -88,9 +87,7 @@ public class LibraryManagementService {
     this.movieService = movieService;
     this.personService = personService;
     this.genreService = genreService;
-    this.orphanedMediaFileCleanupService = orphanedMediaFileCleanupService;
-    this.directoryWatchingService = directoryWatchingService;
-    this.streamingService = streamingService;
+    this.eventPublisher = eventPublisher;
     this.fileSystem = fileSystem;
 
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
@@ -103,6 +100,9 @@ public class LibraryManagementService {
 
     var libraryToSave = library.toBuilder().status(LibraryStatus.HEALTHY).build();
     var savedLibrary = libraryRepository.save(libraryToSave);
+
+    eventPublisher.publishEvent(
+        new LibraryAddedEvent(savedLibrary.getId(), savedLibrary.getFilepath()));
 
     triggerAsyncScan(savedLibrary.getId());
 
@@ -160,7 +160,7 @@ public class LibraryManagementService {
       deleteLibraryContent(libraryId, mediaFiles);
       libraryRepository.delete(library);
 
-      cleanupExternalResources(library, mediaFileIds);
+      eventPublisher.publishEvent(new LibraryRemovedEvent(library.getFilepath(), mediaFileIds));
     } finally {
       libraryMutex.unlock();
     }
@@ -187,33 +187,6 @@ public class LibraryManagementService {
     mediaFileRepository.deleteAll(mediaFiles);
   }
 
-  private void cleanupExternalResources(Library library, Set<UUID> mediaFileIds) {
-    stopFilesystemWatcher(library);
-    terminateStreamingSessionsForMediaFiles(mediaFileIds);
-  }
-
-  private void stopFilesystemWatcher(Library library) {
-    try {
-      directoryWatchingService.removeDirectory(Path.of(library.getFilepath()));
-    } catch (IOException | SecurityException e) {
-      log.warn("Failed to stop watcher for library {}: {}", library.getId(), e.getMessage());
-    }
-  }
-
-  private void terminateStreamingSessionsForMediaFiles(Set<UUID> mediaFileIds) {
-    try {
-      if (mediaFileIds.isEmpty()) {
-        return;
-      }
-      streamingService.getAllSessions().stream()
-          .filter(session -> mediaFileIds.contains(session.getMediaFileId()))
-          .map(StreamSession::getSessionId)
-          .forEach(streamingService::destroySession);
-    } catch (Exception e) {
-      log.warn("Failed to terminate streaming sessions: {}", e.getMessage());
-    }
-  }
-
   public void processDiscoveredFile(UUID libraryId, Path path) {
     var library =
         libraryRepository
@@ -224,14 +197,21 @@ public class LibraryManagementService {
   }
 
   public void scanLibrary(UUID libraryId) {
-    var library = transitionToScanning(libraryId);
-    var startTime = library.getScanStartedOn();
-
+    if (!activeScans.add(libraryId)) {
+      throw new LibraryScanInProgressException(libraryId);
+    }
     try {
-      walkAndProcessFiles(library);
-      completeScanSuccessfully(library, startTime);
-    } catch (LibraryScanFailedException e) {
-      completeScanWithFailure(library, e.getCause());
+      var library = transitionToScanning(libraryId);
+      var startTime = library.getScanStartedOn();
+
+      try {
+        walkAndProcessFiles(library);
+        completeScanSuccessfully(library, startTime);
+      } catch (LibraryScanFailedException e) {
+        completeScanWithFailure(library, e.getCause());
+      }
+    } finally {
+      activeScans.remove(libraryId);
     }
   }
 
@@ -239,10 +219,10 @@ public class LibraryManagementService {
     try (var executor = Executors.newVirtualThreadPerTaskExecutor();
         var stream = Files.walk(fileSystem.getPath(library.getFilepath()))) {
 
-      stream
-          .filter(Files::isRegularFile)
-          .filter(file -> !ignoredFileValidator.shouldIgnore(file))
-          .forEach(file -> executor.submit(() -> processFile(library, file)));
+        stream
+            .filter(Files::isRegularFile)
+            .filter(file -> !ignoredFileValidator.shouldIgnore(file))
+            .forEach(file -> executor.submit(() -> processFile(library, file)));
 
     } catch (IOException | UncheckedIOException | SecurityException e) {
       throw new LibraryScanFailedException(library.getName(), e);
@@ -250,7 +230,7 @@ public class LibraryManagementService {
   }
 
   private void completeScanSuccessfully(Library library, Instant startTime) {
-    orphanedMediaFileCleanupService.cleanupOrphanedFiles(library);
+    eventPublisher.publishEvent(new ScanCompletedEvent(library.getId()));
 
     var endTime = Instant.now();
     var elapsedSeconds = Duration.between(startTime, endTime).getSeconds();
