@@ -95,10 +95,12 @@ public class LocalSegmentStore implements SegmentStore {
     if (dir == null) {
       throw new TranscodeException("No output directory for session: " + sessionId);
     }
+
     var resolved = dir.resolve(segmentName).normalize();
     if (!resolved.startsWith(dir)) {
       throw new InvalidSegmentPathException(segmentName);
     }
+
     return resolved;
   }
 
