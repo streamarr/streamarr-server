@@ -410,4 +410,215 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
         .hasMessageContaining("rate limit exceeded")
         .satisfies(ex -> assertThat(((TmdbApiException) ex).getStatusCode()).isEqualTo(429));
   }
+
+  // --- TV Series methods ---
+
+  @Test
+  @DisplayName("Should return TV search results when searching with title and year")
+  void shouldReturnTvSearchResultsWhenSearchingWithTitleAndYear() throws Exception {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/search/tv"))
+            .withQueryParam("query", equalTo("Breaking Bad"))
+            .withQueryParam("first_air_date_year", equalTo("2008"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {
+                          "page": 1,
+                          "results": [
+                            {
+                              "id": 1396,
+                              "name": "Breaking Bad",
+                              "original_name": "Breaking Bad",
+                              "first_air_date": "2008-01-20",
+                              "overview": "A chemistry teacher.",
+                              "popularity": 150.0,
+                              "vote_count": 12000,
+                              "vote_average": 8.9
+                            }
+                          ],
+                          "total_results": 1,
+                          "total_pages": 1
+                        }
+                        """)));
+
+    var parserResult =
+        VideoFileParserResult.builder().title("Breaking Bad").year("2008").build();
+
+    var results = service.searchForTvSeries(parserResult);
+
+    assertThat(results.getResults()).hasSize(1);
+    assertThat(results.getResults().getFirst().getName()).isEqualTo("Breaking Bad");
+    assertThat(results.getResults().getFirst().getId()).isEqualTo(1396);
+    assertThat(results.getTotalResults()).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("Should search for TV series without year when year is blank")
+  void shouldSearchForTvSeriesWithoutYearWhenYearIsBlank() throws Exception {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/search/tv"))
+            .withQueryParam("query", equalTo("Breaking Bad"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {
+                          "page": 1,
+                          "results": [
+                            {
+                              "id": 1396,
+                              "name": "Breaking Bad",
+                              "original_name": "Breaking Bad",
+                              "first_air_date": "2008-01-20",
+                              "overview": "A chemistry teacher.",
+                              "popularity": 150.0,
+                              "vote_count": 12000,
+                              "vote_average": 8.9
+                            }
+                          ],
+                          "total_results": 1,
+                          "total_pages": 1
+                        }
+                        """)));
+
+    var parserResult = VideoFileParserResult.builder().title("Breaking Bad").year("").build();
+
+    var results = service.searchForTvSeries(parserResult);
+
+    assertThat(results.getResults()).hasSize(1);
+    assertThat(results.getResults().getFirst().getName()).isEqualTo("Breaking Bad");
+  }
+
+  @Test
+  @DisplayName("Should return TV series metadata with appended fields")
+  void shouldReturnTvSeriesMetadataWithAppendedFields() throws Exception {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/tv/1396"))
+            .withQueryParam(
+                "append_to_response", equalTo("content_ratings,credits,external_ids"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {
+                          "id": 1396,
+                          "name": "Breaking Bad",
+                          "original_name": "Breaking Bad",
+                          "overview": "A chemistry teacher.",
+                          "tagline": "All Hail the King.",
+                          "first_air_date": "2008-01-20",
+                          "episode_run_time": [45, 49],
+                          "genres": [
+                            {"id": 18, "name": "Drama"}
+                          ],
+                          "credits": {
+                            "id": 1396,
+                            "cast": [
+                              {
+                                "id": 17419,
+                                "name": "Bryan Cranston",
+                                "character": "Walter White",
+                                "order": 0,
+                                "adult": false,
+                                "gender": 2,
+                                "popularity": 50.0
+                              }
+                            ],
+                            "crew": []
+                          },
+                          "content_ratings": {
+                            "results": [
+                              {"iso_3166_1": "US", "rating": "TV-MA"}
+                            ]
+                          },
+                          "external_ids": {
+                            "imdb_id": "tt0903747"
+                          },
+                          "production_companies": [
+                            {
+                              "id": 2605,
+                              "name": "High Bridge Entertainment",
+                              "origin_country": "US"
+                            }
+                          ]
+                        }
+                        """)));
+
+    var series = service.getTvSeriesMetadata("1396");
+
+    assertThat(series.getName()).isEqualTo("Breaking Bad");
+    assertThat(series.getTagline()).isEqualTo("All Hail the King.");
+    assertThat(series.getEpisodeRunTime()).containsExactly(45, 49);
+    assertThat(series.getGenres()).hasSize(1);
+    assertThat(series.getGenres().getFirst().getName()).isEqualTo("Drama");
+    assertThat(series.getCredits().getCast()).hasSize(1);
+    assertThat(series.getCredits().getCast().getFirst().getName()).isEqualTo("Bryan Cranston");
+    assertThat(series.getContentRatings().getResults()).hasSize(1);
+    assertThat(series.getContentRatings().getResults().getFirst().getRating()).isEqualTo("TV-MA");
+    assertThat(series.getExternalIds().getImdbId()).isEqualTo("tt0903747");
+    assertThat(series.getProductionCompanies()).hasSize(1);
+    assertThat(series.getProductionCompanies().getFirst().getName())
+        .isEqualTo("High Bridge Entertainment");
+  }
+
+  @Test
+  @DisplayName("Should return TV season details with episodes")
+  void shouldReturnTvSeasonDetailsWithEpisodes() throws Exception {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/tv/1396/season/1"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {
+                          "id": 3577,
+                          "name": "Season 1",
+                          "overview": "The first season.",
+                          "season_number": 1,
+                          "air_date": "2008-01-20",
+                          "poster_path": "/1BP4xYv9ZG4ZVHkL7ocOziBbSYH.jpg",
+                          "episodes": [
+                            {
+                              "id": 62085,
+                              "name": "Pilot",
+                              "overview": "Walter White, a high school chemistry teacher.",
+                              "episode_number": 1,
+                              "season_number": 1,
+                              "air_date": "2008-01-20",
+                              "runtime": 58
+                            },
+                            {
+                              "id": 62086,
+                              "name": "Cat's in the Bag...",
+                              "overview": "Walt and Jesse attempt to tie up loose ends.",
+                              "episode_number": 2,
+                              "season_number": 1,
+                              "air_date": "2008-01-27",
+                              "runtime": 48
+                            }
+                          ]
+                        }
+                        """)));
+
+    var season = service.getTvSeasonDetails("1396", 1);
+
+    assertThat(season.getName()).isEqualTo("Season 1");
+    assertThat(season.getSeasonNumber()).isEqualTo(1);
+    assertThat(season.getAirDate()).isEqualTo("2008-01-20");
+    assertThat(season.getEpisodes()).hasSize(2);
+    assertThat(season.getEpisodes().getFirst().getName()).isEqualTo("Pilot");
+    assertThat(season.getEpisodes().getFirst().getEpisodeNumber()).isEqualTo(1);
+    assertThat(season.getEpisodes().getFirst().getRuntime()).isEqualTo(58);
+    assertThat(season.getEpisodes().get(1).getName()).isEqualTo("Cat's in the Bag...");
+  }
 }
