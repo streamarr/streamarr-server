@@ -55,6 +55,7 @@ public class EpisodePathMetadataParser implements MetadataParser<EpisodePathResu
   }
 
   private Optional<EpisodePathResult> attemptDateMatch(Pattern pattern, String filename) {
+    var originalFilename = filename;
     // This is a hack to handle wmc naming
     filename = filename.replace('_', '-');
 
@@ -69,9 +70,28 @@ public class EpisodePathMetadataParser implements MetadataParser<EpisodePathResu
     var day = Integer.parseInt(match.group("day"));
 
     var parsedDate = LocalDate.of(year, month, day);
+    var seriesName = extractSeriesNameBeforeDate(originalFilename, match);
 
     return Optional.of(
-        EpisodePathResult.builder().date(parsedDate).success(true).onlyDate(true).build());
+        EpisodePathResult.builder()
+            .date(parsedDate)
+            .seriesName(seriesName)
+            .success(true)
+            .onlyDate(true)
+            .build());
+  }
+
+  private String extractSeriesNameBeforeDate(String originalFilename, Matcher match) {
+    var dateStart =
+        Math.min(match.start("year"), Math.min(match.start("month"), match.start("day")));
+    var lastSep = Math.max(originalFilename.lastIndexOf('/'), originalFilename.lastIndexOf('\\'));
+    if (lastSep + 1 >= dateStart) {
+      return null;
+    }
+
+    var nameCandidate = originalFilename.substring(lastSep + 1, dateStart);
+    var cleaned = cleanSeriesName(nameCandidate);
+    return StringUtils.isBlank(cleaned) ? null : cleaned;
   }
 
   private Optional<EpisodePathResult> attemptNamedMatch(Pattern pattern, String filename) {

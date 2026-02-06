@@ -186,7 +186,20 @@ public class EpisodePathMetadataParserTest {
               new TestCase(
                   "/server/anything_1996_11_14", "anything", LocalDate.of(1996, 11, 14)),
               new TestCase(
-                  "/server/anything 1996 11 14", "anything", LocalDate.of(1996, 11, 14)))
+                  "/server/anything 1996 11 14", "anything", LocalDate.of(1996, 11, 14)),
+
+              // Reverse date (DD.MM.YYYY) with various delimiters
+              new TestCase(
+                  "/server/anything_14.11.1996", "anything", LocalDate.of(1996, 11, 14)),
+              new TestCase(
+                  "/server/anything_14_11_1996", "anything", LocalDate.of(1996, 11, 14)),
+
+              // No series name (file is just a date)
+              new TestCase("/server/1996.11.14", null, LocalDate.of(1996, 11, 14)),
+
+              // Multi-word series name
+              new TestCase(
+                  "/server/ABC News 2018-03-24", "ABC News", LocalDate.of(2018, 3, 24)))
           .map(
               testCase ->
                   DynamicTest.dynamicTest(
