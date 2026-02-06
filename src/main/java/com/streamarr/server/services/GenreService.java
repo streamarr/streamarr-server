@@ -21,11 +21,6 @@ public class GenreService {
 
   private Genre saveGenre(Genre genre) {
     var existing = genreRepository.findBySourceId(genre.getSourceId());
-
-    if (existing.isPresent()) {
-      return existing.get();
-    }
-
-    return genreRepository.save(genre);
+    return existing.orElseGet(() -> genreRepository.save(genre));
   }
 }
