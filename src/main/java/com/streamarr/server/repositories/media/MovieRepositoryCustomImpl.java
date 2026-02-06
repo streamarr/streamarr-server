@@ -139,5 +139,4 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
       case ADDED -> Tables.BASE_COLLECTABLE.CREATED_ON.sort(direction);
     };
   }
-
 }

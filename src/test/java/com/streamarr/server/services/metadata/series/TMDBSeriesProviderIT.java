@@ -97,8 +97,7 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
                         }
                         """)));
 
-    var result =
-        provider.search(VideoFileParserResult.builder().title("Breaking Bad").build());
+    var result = provider.search(VideoFileParserResult.builder().title("Breaking Bad").build());
 
     assertThat(result).isPresent();
     assertThat(result.get().title()).isEqualTo("Breaking Bad");
@@ -125,8 +124,7 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
                         }
                         """)));
 
-    var result =
-        provider.search(VideoFileParserResult.builder().title("Nonexistent Show").build());
+    var result = provider.search(VideoFileParserResult.builder().title("Nonexistent Show").build());
 
     assertThat(result).isEmpty();
   }
@@ -459,8 +457,7 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
 
     wireMock.stubFor(
         get(urlPathEqualTo("/tv/" + seriesId))
-            .withQueryParam(
-                "append_to_response", equalTo("content_ratings,credits,external_ids"))
+            .withQueryParam("append_to_response", equalTo("content_ratings,credits,external_ids"))
             .willReturn(
                 aResponse()
                     .withStatus(200)
@@ -471,8 +468,7 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
   private void stubFullSeriesResponse() {
     wireMock.stubFor(
         get(urlPathEqualTo("/tv/1396"))
-            .withQueryParam(
-                "append_to_response", equalTo("content_ratings,credits,external_ids"))
+            .withQueryParam("append_to_response", equalTo("content_ratings,credits,external_ids"))
             .willReturn(
                 aResponse()
                     .withStatus(200)

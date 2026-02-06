@@ -41,8 +41,7 @@ import org.springframework.test.context.bean.override.convention.TestBean;
 @DisplayName("Series Scanning Integration Tests")
 public class SeriesScanningIT extends AbstractIntegrationTest {
 
-  private static final WireMockServer wireMock =
-      new WireMockServer(wireMockConfig().dynamicPort());
+  private static final WireMockServer wireMock = new WireMockServer(wireMockConfig().dynamicPort());
 
   @DynamicPropertySource
   static void configureWireMock(DynamicPropertyRegistry registry) {
@@ -118,17 +117,13 @@ public class SeriesScanningIT extends AbstractIntegrationTest {
 
     var episodes = episodeRepository.findBySeasonId(season.getId());
     assertThat(episodes).hasSize(7);
-    assertThat(episodes)
-        .extracting("episodeNumber")
-        .containsExactlyInAnyOrder(1, 2, 3, 4, 5, 6, 7);
+    assertThat(episodes).extracting("episodeNumber").containsExactlyInAnyOrder(1, 2, 3, 4, 5, 6, 7);
 
-    var mediaFile =
-        mediaFileRepository.findFirstByFilepath(file.toAbsolutePath().toString());
+    var mediaFile = mediaFileRepository.findFirstByFilepath(file.toAbsolutePath().toString());
     assertThat(mediaFile).isPresent();
     assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.MATCHED);
 
-    var ep1 =
-        episodeRepository.findBySeasonIdAndEpisodeNumber(season.getId(), 1);
+    var ep1 = episodeRepository.findBySeasonIdAndEpisodeNumber(season.getId(), 1);
     assertThat(ep1).isPresent();
     assertThat(mediaFile.get().getMediaId()).isEqualTo(ep1.get().getId());
   }
@@ -199,8 +194,7 @@ public class SeriesScanningIT extends AbstractIntegrationTest {
 
     libraryManagementService.processDiscoveredFile(library.getId(), file);
 
-    var mediaFile =
-        mediaFileRepository.findFirstByFilepath(file.toAbsolutePath().toString());
+    var mediaFile = mediaFileRepository.findFirstByFilepath(file.toAbsolutePath().toString());
     assertThat(mediaFile).isPresent();
     assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.METADATA_PARSING_FAILED);
   }
@@ -215,8 +209,7 @@ public class SeriesScanningIT extends AbstractIntegrationTest {
 
     libraryManagementService.processDiscoveredFile(library.getId(), file);
 
-    var mediaFile =
-        mediaFileRepository.findFirstByFilepath(file.toAbsolutePath().toString());
+    var mediaFile = mediaFileRepository.findFirstByFilepath(file.toAbsolutePath().toString());
     assertThat(mediaFile).isPresent();
     assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.METADATA_SEARCH_FAILED);
   }
@@ -234,8 +227,7 @@ public class SeriesScanningIT extends AbstractIntegrationTest {
     libraryManagementService.processDiscoveredFile(library.getId(), file);
 
     wireMock.verify(
-        getRequestedFor(urlPathEqualTo("/search/tv"))
-            .withQueryParam("query", equalTo("The Wire")));
+        getRequestedFor(urlPathEqualTo("/search/tv")).withQueryParam("query", equalTo("The Wire")));
 
     assertThat(seriesRepository.findAll()).hasSize(1);
   }
@@ -291,14 +283,12 @@ public class SeriesScanningIT extends AbstractIntegrationTest {
     var episodes = episodeRepository.findBySeasonId(season.getId());
     assertThat(episodes).hasSize(8);
 
-    var ep99 =
-        episodeRepository.findBySeasonIdAndEpisodeNumber(season.getId(), 99);
+    var ep99 = episodeRepository.findBySeasonIdAndEpisodeNumber(season.getId(), 99);
     assertThat(ep99).isPresent();
     assertThat(ep99.get().getTitle()).isEqualTo("Episode 99");
     assertThat(ep99.get().getOverview()).isNull();
 
-    var mediaFile =
-        mediaFileRepository.findFirstByFilepath(file.toAbsolutePath().toString());
+    var mediaFile = mediaFileRepository.findFirstByFilepath(file.toAbsolutePath().toString());
     assertThat(mediaFile).isPresent();
     assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.MATCHED);
     assertThat(mediaFile.get().getMediaId()).isEqualTo(ep99.get().getId());
@@ -385,8 +375,7 @@ public class SeriesScanningIT extends AbstractIntegrationTest {
   private void stubTmdbSeriesMetadata(String tmdbId, String name) {
     wireMock.stubFor(
         get(urlPathEqualTo("/tv/" + tmdbId))
-            .withQueryParam(
-                "append_to_response", equalTo("content_ratings,credits,external_ids"))
+            .withQueryParam("append_to_response", equalTo("content_ratings,credits,external_ids"))
             .willReturn(
                 aResponse()
                     .withStatus(200)
@@ -504,6 +493,11 @@ public class SeriesScanningIT extends AbstractIntegrationTest {
           "episodes": %s
         }
         """
-        .formatted(5000 + seasonNumber, seasonNumber, seasonNumber, seasonNumber, episodesBuilder.toString());
+        .formatted(
+            5000 + seasonNumber,
+            seasonNumber,
+            seasonNumber,
+            seasonNumber,
+            episodesBuilder.toString());
   }
 }

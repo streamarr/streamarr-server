@@ -445,8 +445,7 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
                         }
                         """)));
 
-    var parserResult =
-        VideoFileParserResult.builder().title("Breaking Bad").year("2008").build();
+    var parserResult = VideoFileParserResult.builder().title("Breaking Bad").year("2008").build();
 
     var results = service.searchForTvSeries(parserResult);
 
@@ -500,8 +499,7 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
   void shouldReturnTvSeriesMetadataWithAppendedFields() throws Exception {
     wireMock.stubFor(
         get(urlPathEqualTo("/tv/1396"))
-            .withQueryParam(
-                "append_to_response", equalTo("content_ratings,credits,external_ids"))
+            .withQueryParam("append_to_response", equalTo("content_ratings,credits,external_ids"))
             .willReturn(
                 aResponse()
                     .withStatus(200)

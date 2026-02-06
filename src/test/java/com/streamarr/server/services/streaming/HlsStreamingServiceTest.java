@@ -758,12 +758,8 @@ class HlsStreamingServiceTest {
             .subList(requestsBefore, transcodeExecutor.getStartedRequests().size());
 
     assertThat(resumeRequests).hasSize(variantLabels.size());
-    assertThat(resumeRequests)
-        .extracting(TranscodeRequest::startNumber)
-        .containsOnly(5);
-    assertThat(resumeRequests)
-        .extracting(TranscodeRequest::seekPosition)
-        .containsOnly(30);
+    assertThat(resumeRequests).extracting(TranscodeRequest::startNumber).containsOnly(5);
+    assertThat(resumeRequests).extracting(TranscodeRequest::seekPosition).containsOnly(30);
     assertThat(resumeRequests)
         .extracting(TranscodeRequest::variantLabel)
         .containsExactlyInAnyOrderElementsOf(variantLabels);
