@@ -1,0 +1,463 @@
+package com.streamarr.server.services.metadata.series;
+
+import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
+import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.github.tomakehurst.wiremock.WireMockServer;
+import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.ExternalSourceType;
+import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.services.metadata.RemoteSearchResult;
+import com.streamarr.server.services.parsers.video.VideoFileParserResult;
+import java.time.LocalDate;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+
+@Tag("IntegrationTest")
+@DisplayName("TMDB Series Provider Integration Tests")
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+class TMDBSeriesProviderIT extends AbstractIntegrationTest {
+
+  private static final WireMockServer wireMock = new WireMockServer(wireMockConfig().dynamicPort());
+
+  @DynamicPropertySource
+  static void configureWireMock(DynamicPropertyRegistry registry) {
+    wireMock.start();
+
+    registry.add("tmdb.api.base-url", wireMock::baseUrl);
+    registry.add("tmdb.api.token", () -> "test-api-token");
+  }
+
+  @Autowired private TMDBSeriesProvider provider;
+
+  @Autowired private LibraryRepository libraryRepository;
+
+  private Library savedLibrary;
+
+  @BeforeAll
+  void setupLibrary() {
+    savedLibrary = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
+  }
+
+  @BeforeEach
+  void resetStubs() {
+    wireMock.resetAll();
+  }
+
+  @AfterAll
+  static void tearDown() {
+    wireMock.stop();
+  }
+
+  // --- search() tests ---
+
+  @Test
+  @DisplayName("Should return remote search result when TMDB returns TV results")
+  void shouldReturnRemoteSearchResultWhenTmdbReturnsTvResults() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/search/tv"))
+            .withQueryParam("query", equalTo("Breaking Bad"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {
+                          "page": 1,
+                          "results": [
+                            {
+                              "id": 1396,
+                              "name": "Breaking Bad",
+                              "original_name": "Breaking Bad",
+                              "first_air_date": "2008-01-20",
+                              "overview": "A chemistry teacher diagnosed with cancer.",
+                              "popularity": 150.0,
+                              "vote_count": 12000,
+                              "vote_average": 8.9
+                            }
+                          ],
+                          "total_results": 1,
+                          "total_pages": 1
+                        }
+                        """)));
+
+    var result =
+        provider.search(VideoFileParserResult.builder().title("Breaking Bad").build());
+
+    assertThat(result).isPresent();
+    assertThat(result.get().title()).isEqualTo("Breaking Bad");
+    assertThat(result.get().externalId()).isEqualTo("1396");
+    assertThat(result.get().externalSourceType()).isEqualTo(ExternalSourceType.TMDB);
+  }
+
+  @Test
+  @DisplayName("Should return empty when TMDB returns no TV results")
+  void shouldReturnEmptyWhenTmdbReturnsTvNoResults() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/search/tv"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {
+                          "page": 1,
+                          "results": [],
+                          "total_results": 0,
+                          "total_pages": 0
+                        }
+                        """)));
+
+    var result =
+        provider.search(VideoFileParserResult.builder().title("Nonexistent Show").build());
+
+    assertThat(result).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should return empty when TMDB TV search API returns error")
+  void shouldReturnEmptyWhenTmdbTvSearchApiReturnsError() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/search/tv"))
+            .willReturn(
+                aResponse()
+                    .withStatus(500)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {
+                          "status_message": "Internal error.",
+                          "success": false,
+                          "status_code": 11
+                        }
+                        """)));
+
+    var result = provider.search(VideoFileParserResult.builder().title("Test").build());
+
+    assertThat(result).isEmpty();
+  }
+
+  // --- getMetadata() tests ---
+
+  @Test
+  @DisplayName("Should map basic fields when TMDB returns TV series response")
+  void shouldMapBasicFieldsWhenTmdbReturnsTvSeriesResponse() {
+    var series = getMetadataFromFullResponse();
+
+    assertThat(series.getTitle()).isEqualTo("Breaking Bad");
+    assertThat(series.getTagline()).isEqualTo("All Hail the King.");
+    assertThat(series.getSummary())
+        .isEqualTo("A chemistry teacher diagnosed with inoperable lung cancer.");
+    assertThat(series.getFirstAirDate()).isEqualTo(LocalDate.of(2008, 1, 20));
+    assertThat(series.getRuntime()).isEqualTo(47);
+  }
+
+  @Test
+  @DisplayName("Should map content rating when TMDB returns TV series response")
+  void shouldMapContentRatingWhenTmdbReturnsTvSeriesResponse() {
+    var series = getMetadataFromFullResponse();
+
+    assertThat(series.getContentRating()).isNotNull();
+    assertThat(series.getContentRating().system()).isEqualTo("TV Parental Guidelines");
+    assertThat(series.getContentRating().value()).isEqualTo("TV-MA");
+    assertThat(series.getContentRating().country()).isEqualTo("US");
+  }
+
+  @Test
+  @DisplayName("Should map TMDB and IMDB external IDs when TMDB returns TV series response")
+  void shouldMapExternalIdsWhenTmdbReturnsTvSeriesResponse() {
+    var series = getMetadataFromFullResponse();
+
+    assertThat(series.getExternalIds()).hasSize(2);
+    assertThat(series.getExternalIds())
+        .extracting("externalSourceType")
+        .containsExactlyInAnyOrder(ExternalSourceType.TMDB, ExternalSourceType.IMDB);
+  }
+
+  @Test
+  @DisplayName("Should map cast in order when TMDB returns TV series response")
+  void shouldMapCastInOrderWhenTmdbReturnsTvSeriesResponse() {
+    var series = getMetadataFromFullResponse();
+
+    assertThat(series.getCast()).hasSize(2);
+    assertThat(series.getCast().get(0).getName()).isEqualTo("Bryan Cranston");
+    assertThat(series.getCast().get(0).getSourceId()).isEqualTo("17419");
+    assertThat(series.getCast().get(1).getName()).isEqualTo("Aaron Paul");
+  }
+
+  @Test
+  @DisplayName("Should map studios when TMDB returns TV series response")
+  void shouldMapStudiosWhenTmdbReturnsTvSeriesResponse() {
+    var series = getMetadataFromFullResponse();
+
+    assertThat(series.getStudios()).hasSize(1);
+    assertThat(series.getStudios().iterator().next().getName())
+        .isEqualTo("High Bridge Entertainment");
+    assertThat(series.getStudios().iterator().next().getSourceId()).isEqualTo("2605");
+  }
+
+  @Test
+  @DisplayName("Should map genres when TMDB returns TV series response")
+  void shouldMapGenresWhenTmdbReturnsTvSeriesResponse() {
+    var series = getMetadataFromFullResponse();
+
+    assertThat(series.getGenres()).hasSize(2);
+    assertThat(series.getGenres()).extracting("name").containsExactlyInAnyOrder("Drama", "Crime");
+  }
+
+  @Test
+  @DisplayName("Should map directors when TMDB returns TV series response")
+  void shouldMapDirectorsWhenTmdbReturnsTvSeriesResponse() {
+    var series = getMetadataFromFullResponse();
+
+    assertThat(series.getDirectors()).hasSize(1);
+    assertThat(series.getDirectors().get(0).getName()).isEqualTo("Vince Gilligan");
+    assertThat(series.getDirectors().get(0).getSourceId()).isEqualTo("66633");
+  }
+
+  @Test
+  @DisplayName("Should handle null credits when credits absent from TV response")
+  void shouldHandleNullCreditsWhenCreditsAbsentFromTvResponse() {
+    stubMinimalSeriesResponse("1396");
+
+    var result = provider.getMetadata(buildSearchResult("1396"), savedLibrary);
+
+    assertThat(result).isPresent();
+    assertThat(result.get().getCast()).isEmpty();
+    assertThat(result.get().getDirectors()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should return empty when TMDB TV metadata API returns error")
+  void shouldReturnEmptyWhenTmdbTvMetadataApiReturnsError() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/tv/1396"))
+            .willReturn(
+                aResponse()
+                    .withStatus(500)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {
+                          "status_message": "Internal error.",
+                          "success": false,
+                          "status_code": 11
+                        }
+                        """)));
+
+    var result = provider.getMetadata(buildSearchResult("1396"), savedLibrary);
+
+    assertThat(result).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should map original title and compute title sort when TV response includes original name")
+  void shouldMapOriginalTitleAndComputeTitleSortWhenResponseIncludesOriginalName() {
+    var series = getMetadataFromFullResponse();
+
+    assertThat(series.getOriginalTitle()).isEqualTo("Breaking Bad");
+    assertThat(series.getTitleSort()).isEqualTo("Breaking Bad");
+  }
+
+  @Test
+  @DisplayName("Should map backdrop and poster paths when TV response includes image paths")
+  void shouldMapBackdropAndPosterPathsWhenResponseIncludesImagePaths() {
+    var series = getMetadataFromFullResponse();
+
+    assertThat(series.getBackdropPath()).isEqualTo("/zzWGRQUhBaS2eSBzNkwpT2hKZVh.jpg");
+    assertThat(series.getPosterPath()).isEqualTo("/ggFHVNu6YYI5L9pCfOacjizRGt.jpg");
+  }
+
+  @Test
+  @DisplayName("Should skip content rating when no US rating exists")
+  void shouldSkipContentRatingWhenNoUsRatingExists() {
+    stubMinimalSeriesResponse(
+        "1396",
+        """
+        ,"content_ratings": {"results": [{"iso_3166_1": "GB", "rating": "18"}]}
+        """);
+
+    var result = provider.getMetadata(buildSearchResult("1396"), savedLibrary);
+
+    assertThat(result).isPresent();
+    assertThat(result.get().getContentRating()).isNull();
+  }
+
+  @Test
+  @DisplayName("Should map only TMDB external ID when IMDB ID is absent")
+  void shouldMapOnlyTmdbExternalIdWhenImdbIdIsAbsent() {
+    stubMinimalSeriesResponse("1396");
+
+    var result = provider.getMetadata(buildSearchResult("1396"), savedLibrary);
+
+    assertThat(result).isPresent();
+    assertThat(result.get().getExternalIds()).hasSize(1);
+    assertThat(
+            result.get().getExternalIds().stream()
+                .anyMatch(id -> id.getExternalSourceType() == ExternalSourceType.TMDB))
+        .isTrue();
+  }
+
+  // --- Helpers ---
+
+  private Series getMetadataFromFullResponse() {
+    stubFullSeriesResponse();
+    var result = provider.getMetadata(buildSearchResult("1396"), savedLibrary);
+    assertThat(result).isPresent();
+    return result.get();
+  }
+
+  private RemoteSearchResult buildSearchResult(String externalId) {
+    return RemoteSearchResult.builder()
+        .title("Breaking Bad")
+        .externalId(externalId)
+        .externalSourceType(ExternalSourceType.TMDB)
+        .build();
+  }
+
+  private void stubMinimalSeriesResponse(String seriesId) {
+    stubMinimalSeriesResponse(seriesId, "");
+  }
+
+  private void stubMinimalSeriesResponse(String seriesId, String additionalJson) {
+    var body =
+        """
+        {
+          "id": %s,
+          "name": "Breaking Bad",
+          "original_name": "Breaking Bad",
+          "first_air_date": "2008-01-20",
+          "overview": "A chemistry teacher.",
+          "popularity": 150.0,
+          "vote_count": 12000,
+          "vote_average": 8.9%s
+        }
+        """
+            .formatted(seriesId, additionalJson);
+
+    wireMock.stubFor(
+        get(urlPathEqualTo("/tv/" + seriesId))
+            .withQueryParam(
+                "append_to_response", equalTo("content_ratings,credits,external_ids"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(body)));
+  }
+
+  private void stubFullSeriesResponse() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/tv/1396"))
+            .withQueryParam(
+                "append_to_response", equalTo("content_ratings,credits,external_ids"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {
+                          "id": 1396,
+                          "name": "Breaking Bad",
+                          "original_name": "Breaking Bad",
+                          "overview": "A chemistry teacher diagnosed with inoperable lung cancer.",
+                          "tagline": "All Hail the King.",
+                          "first_air_date": "2008-01-20",
+                          "backdrop_path": "/zzWGRQUhBaS2eSBzNkwpT2hKZVh.jpg",
+                          "poster_path": "/ggFHVNu6YYI5L9pCfOacjizRGt.jpg",
+                          "popularity": 150.0,
+                          "vote_average": 8.9,
+                          "vote_count": 12000,
+                          "episode_run_time": [45, 49],
+                          "genres": [
+                            {"id": 18, "name": "Drama"},
+                            {"id": 80, "name": "Crime"}
+                          ],
+                          "credits": {
+                            "id": 1396,
+                            "cast": [
+                              {
+                                "id": 17419,
+                                "name": "Bryan Cranston",
+                                "character": "Walter White",
+                                "order": 0,
+                                "adult": false,
+                                "gender": 2,
+                                "popularity": 50.0,
+                                "profile_path": "/7Jahy5LZX2Fo8fGJltMreAI49hC.jpg"
+                              },
+                              {
+                                "id": 84497,
+                                "name": "Aaron Paul",
+                                "character": "Jesse Pinkman",
+                                "order": 1,
+                                "adult": false,
+                                "gender": 2,
+                                "popularity": 40.0
+                              }
+                            ],
+                            "crew": [
+                              {
+                                "id": 66633,
+                                "name": "Vince Gilligan",
+                                "job": "Director",
+                                "department": "Directing",
+                                "adult": false,
+                                "gender": 2,
+                                "popularity": 30.0
+                              }
+                            ]
+                          },
+                          "content_ratings": {
+                            "results": [
+                              {
+                                "iso_3166_1": "US",
+                                "rating": "TV-MA"
+                              }
+                            ]
+                          },
+                          "external_ids": {
+                            "imdb_id": "tt0903747"
+                          },
+                          "production_companies": [
+                            {
+                              "id": 2605,
+                              "name": "High Bridge Entertainment",
+                              "origin_country": "US",
+                              "logo_path": "/8M99Dkt23MjQMTTWukq4m5XsEuo.png"
+                            }
+                          ],
+                          "seasons": [
+                            {
+                              "id": 3577,
+                              "name": "Season 1",
+                              "overview": "The first season.",
+                              "season_number": 1,
+                              "air_date": "2008-01-20",
+                              "poster_path": "/1BP4xYv9ZG4ZVHkL7ocOziBbSYH.jpg",
+                              "episode_count": 7
+                            }
+                          ]
+                        }
+                        """)));
+  }
+}
