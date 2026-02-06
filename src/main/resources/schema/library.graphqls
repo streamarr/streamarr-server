@@ -67,4 +67,4 @@ type PageInfo {
     endCursor: String
 }
 
-union Media = Movie
+union Media = Movie | Series
