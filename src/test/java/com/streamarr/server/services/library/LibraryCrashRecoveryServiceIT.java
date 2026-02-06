@@ -38,8 +38,8 @@ class LibraryCrashRecoveryServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should allow library to be scanned after recovery from stuck SCANNING status")
-  void shouldAllowLibraryToBeRescannedAfterRecovery() {
+  @DisplayName("Should allow library to be rescanned when recovered from stuck SCANNING status")
+  void shouldAllowLibraryToBeRescannedWhenRecoveredFromStuckStatus() {
     var stuckLibrary = libraryRepository.saveAndFlush(buildScanningLibrary());
 
     recoveryService.onStartup();
