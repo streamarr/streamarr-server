@@ -226,6 +226,7 @@ public class HlsStreamingService implements StreamingService {
   private int availableTranscodeSlots() {
     var activeTranscodes =
         sessionRepository.findAll().stream()
+            .filter(s -> !s.isSuspended())
             .filter(s -> requiresTranscode(s.getTranscodeDecision().transcodeMode()))
             .mapToInt(s -> Math.max(1, s.getVariants().size()))
             .sum();

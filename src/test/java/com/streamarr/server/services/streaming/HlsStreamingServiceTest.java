@@ -20,6 +20,7 @@ import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeStreamSessionRepository;
+import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import java.time.Duration;
@@ -212,6 +213,41 @@ class HlsStreamingServiceTest {
     var oneMore = seedMediaFile();
     assertThatThrownBy(() -> service.createSession(oneMore.getId(), options))
         .isInstanceOf(MaxConcurrentTranscodesException.class);
+  }
+
+  @Test
+  @DisplayName("Should not count suspended sessions against transcode limit")
+  void shouldNotCountSuspendedSessionsAgainstTranscodeLimit() {
+    ffprobeService.setDefaultProbe(
+        MediaProbe.builder()
+            .duration(Duration.ofMinutes(120))
+            .framerate(23.976)
+            .width(1920)
+            .height(1080)
+            .videoCodec("hevc")
+            .audioCodec("aac")
+            .bitrate(5_000_000L)
+            .build());
+
+    var options =
+        StreamingOptions.builder()
+            .quality(VideoQuality.FULL_HD_1080P)
+            .supportedCodecs(List.of("h264"))
+            .build();
+
+    var sessions = new java.util.ArrayList<StreamSession>();
+    for (int i = 0; i < 3; i++) {
+      var file = seedMediaFile();
+      sessions.add(service.createSession(file.getId(), options));
+    }
+
+    var suspended = sessions.getFirst();
+    suspended.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
+
+    var oneMore = seedMediaFile();
+    var newSession = service.createSession(oneMore.getId(), options);
+
+    assertThat(newSession).isNotNull();
   }
 
   @Test
