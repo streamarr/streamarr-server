@@ -47,6 +47,26 @@ public class SeriesMetadataProviderResolver {
     return optionalProvider.get().getMetadata(remoteSearchResult, library);
   }
 
+  public Optional<SeasonDetails> getSeasonDetails(
+      Library library, String seriesExternalId, int seasonNumber) {
+    var optionalProvider = getProviderForLibrary(library);
+
+    if (optionalProvider.isEmpty()) {
+      log.error(
+          "No metadata provider found for {} library while fetching season details",
+          library.getName());
+      return Optional.empty();
+    }
+
+    if (optionalProvider.get() instanceof TMDBSeriesProvider tmdbProvider) {
+      return tmdbProvider.getSeasonDetails(seriesExternalId, seasonNumber);
+    }
+
+    log.error(
+        "Provider for {} library does not support season details", library.getName());
+    return Optional.empty();
+  }
+
   private Optional<MetadataProvider<Series>> getProviderForLibrary(Library library) {
     return seriesProviders.stream()
         .filter(provider -> library.getExternalAgentStrategy().equals(provider.getAgentStrategy()))

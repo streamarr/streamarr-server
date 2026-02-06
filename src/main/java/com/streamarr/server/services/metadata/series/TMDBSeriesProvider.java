@@ -170,6 +170,65 @@ public class TMDBSeriesProvider implements MetadataProvider<Series> {
     return Optional.empty();
   }
 
+  public Optional<SeasonDetails> getSeasonDetails(String seriesExternalId, int seasonNumber) {
+    try {
+      var tmdbSeason =
+          theMovieDatabaseHttpService.getTvSeasonDetails(seriesExternalId, seasonNumber);
+
+      var episodes =
+          Optional.ofNullable(tmdbSeason.getEpisodes()).orElse(Collections.emptyList()).stream()
+              .map(this::mapEpisodeDetails)
+              .toList();
+
+      var seasonBuilder =
+          SeasonDetails.builder()
+              .name(tmdbSeason.getName())
+              .seasonNumber(tmdbSeason.getSeasonNumber())
+              .overview(tmdbSeason.getOverview())
+              .posterPath(tmdbSeason.getPosterPath())
+              .episodes(episodes);
+
+      if (StringUtils.isNotBlank(tmdbSeason.getAirDate())) {
+        seasonBuilder.airDate(LocalDate.parse(tmdbSeason.getAirDate()));
+      }
+
+      return Optional.of(seasonBuilder.build());
+
+    } catch (IOException ex) {
+      log.error(
+          "Failure fetching season {} details for series TMDB id '{}'",
+          seasonNumber,
+          seriesExternalId,
+          ex);
+    } catch (InterruptedException ex) {
+      Thread.currentThread().interrupt();
+      log.error(
+          "Season details fetch interrupted for series TMDB id '{}' season {}",
+          seriesExternalId,
+          seasonNumber,
+          ex);
+    }
+
+    return Optional.empty();
+  }
+
+  private SeasonDetails.EpisodeDetails mapEpisodeDetails(
+      com.streamarr.server.services.metadata.tmdb.TmdbTvEpisode ep) {
+    var builder =
+        SeasonDetails.EpisodeDetails.builder()
+            .episodeNumber(ep.getEpisodeNumber())
+            .name(ep.getName())
+            .overview(ep.getOverview())
+            .stillPath(ep.getStillPath())
+            .runtime(ep.getRuntime());
+
+    if (StringUtils.isNotBlank(ep.getAirDate())) {
+      builder.airDate(LocalDate.parse(ep.getAirDate()));
+    }
+
+    return builder.build();
+  }
+
   private Integer computeRuntime(TmdbTvSeries tmdbSeries) {
     var episodeRunTime = tmdbSeries.getEpisodeRunTime();
 
