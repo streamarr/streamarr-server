@@ -16,10 +16,10 @@ public class CompanyService {
 
   @Transactional
   public Set<Company> getOrCreateCompanies(Set<Company> companies) {
-    return companies.stream().map(this::saveCompany).collect(Collectors.toSet());
+    return companies.stream().map(this::findOrCreateCompany).collect(Collectors.toSet());
   }
 
-  private Company saveCompany(Company company) {
+  private Company findOrCreateCompany(Company company) {
     var existing = companyRepository.findBySourceId(company.getSourceId());
 
     if (existing.isPresent()) {
