@@ -126,11 +126,14 @@ class FileEventProcessorTest {
             mediaFileRepository,
             new MutexFactoryProvider());
 
+    var seriesFileProcessor = mock(SeriesFileProcessor.class);
+
     var libraryManagementService =
         new LibraryManagementService(
             ignoredFileValidator,
             videoExtensionValidator,
             movieFileProcessor,
+            seriesFileProcessor,
             libraryRepository,
             mediaFileRepository,
             movieService,

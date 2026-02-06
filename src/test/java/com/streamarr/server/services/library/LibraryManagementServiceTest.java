@@ -99,11 +99,14 @@ public class LibraryManagementServiceTest {
           fakeMediaFileRepository,
           new MutexFactoryProvider());
 
+  private final SeriesFileProcessor seriesFileProcessor = mock(SeriesFileProcessor.class);
+
   private final LibraryManagementService libraryManagementService =
       new LibraryManagementService(
           new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
           new VideoExtensionValidator(),
           movieFileProcessor,
+          seriesFileProcessor,
           fakeLibraryRepository,
           fakeMediaFileRepository,
           movieService,
@@ -172,6 +175,7 @@ public class LibraryManagementServiceTest {
             new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
             new VideoExtensionValidator(),
             movieFileProcessor,
+            seriesFileProcessor,
             fakeLibraryRepository,
             fakeMediaFileRepository,
             movieService,
@@ -203,6 +207,7 @@ public class LibraryManagementServiceTest {
             new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
             new VideoExtensionValidator(),
             movieFileProcessor,
+            seriesFileProcessor,
             fakeLibraryRepository,
             fakeMediaFileRepository,
             movieService,
@@ -293,6 +298,7 @@ public class LibraryManagementServiceTest {
             new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
             new VideoExtensionValidator(),
             movieFileProcessor,
+            seriesFileProcessor,
             fakeLibraryRepository,
             fakeMediaFileRepository,
             movieService,
@@ -670,6 +676,7 @@ public class LibraryManagementServiceTest {
               new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
               new VideoExtensionValidator(),
               movieFileProcessor,
+              seriesFileProcessor,
               fakeLibraryRepository,
               fakeMediaFileRepository,
               movieService,

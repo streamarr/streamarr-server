@@ -46,6 +46,7 @@ public class LibraryManagementService {
   private final IgnoredFileValidator ignoredFileValidator;
   private final VideoExtensionValidator videoExtensionValidator;
   private final MovieFileProcessor movieFileProcessor;
+  private final SeriesFileProcessor seriesFileProcessor;
   private final LibraryRepository libraryRepository;
   private final MediaFileRepository mediaFileRepository;
   private final MovieService movieService;
@@ -58,6 +59,7 @@ public class LibraryManagementService {
       IgnoredFileValidator ignoredFileValidator,
       VideoExtensionValidator videoExtensionValidator,
       MovieFileProcessor movieFileProcessor,
+      SeriesFileProcessor seriesFileProcessor,
       LibraryRepository libraryRepository,
       MediaFileRepository mediaFileRepository,
       MovieService movieService,
@@ -67,6 +69,7 @@ public class LibraryManagementService {
     this.ignoredFileValidator = ignoredFileValidator;
     this.videoExtensionValidator = videoExtensionValidator;
     this.movieFileProcessor = movieFileProcessor;
+    this.seriesFileProcessor = seriesFileProcessor;
     this.libraryRepository = libraryRepository;
     this.mediaFileRepository = mediaFileRepository;
     this.movieService = movieService;
@@ -277,7 +280,7 @@ public class LibraryManagementService {
 
     switch (library.getType()) {
       case MOVIE -> movieFileProcessor.process(library, mediaFile);
-      case SERIES -> throw new UnsupportedOperationException("Series not yet supported. See #40");
+      case SERIES -> seriesFileProcessor.process(library, mediaFile);
       default -> throw new IllegalStateException("Unsupported media type: " + library.getType());
     }
   }
