@@ -28,7 +28,8 @@ public class FileProcessingTaskRepositoryCustomImpl implements FileProcessingTas
 
   @Override
   @Transactional
-  public Optional<FileProcessingTask> claimNextTask(String ownerInstanceId, Instant leaseExpiresAt) {
+  public Optional<FileProcessingTask> claimNextTask(
+      String ownerInstanceId, Instant leaseExpiresAt) {
     var selectQuery =
         context
             .select(FILE_PROCESSING_TASK.ID)
@@ -67,10 +68,14 @@ public class FileProcessingTaskRepositoryCustomImpl implements FileProcessingTas
         context
             .select(FILE_PROCESSING_TASK.ID)
             .from(FILE_PROCESSING_TASK)
-            .where(FILE_PROCESSING_TASK.STATUS.in(
-                inline(FileProcessingTaskStatus.PENDING), inline(FileProcessingTaskStatus.PROCESSING)))
+            .where(
+                FILE_PROCESSING_TASK.STATUS.in(
+                    inline(FileProcessingTaskStatus.PENDING),
+                    inline(FileProcessingTaskStatus.PROCESSING)))
             .and(
-                FILE_PROCESSING_TASK.LEASE_EXPIRES_AT.isNull()
+                FILE_PROCESSING_TASK
+                    .LEASE_EXPIRES_AT
+                    .isNull()
                     .or(FILE_PROCESSING_TASK.LEASE_EXPIRES_AT.lt(now.atOffset(ZoneOffset.UTC))))
             .orderBy(FILE_PROCESSING_TASK.CREATED_ON.asc())
             .limit(limit)
@@ -106,7 +111,8 @@ public class FileProcessingTaskRepositoryCustomImpl implements FileProcessingTas
   }
 
   @SuppressWarnings("unchecked")
-  private static <E> List<E> executeJooqQuery(EntityManager em, org.jooq.Query query, Class<E> type) {
+  private static <E> List<E> executeJooqQuery(
+      EntityManager em, org.jooq.Query query, Class<E> type) {
     Query result = em.createNativeQuery(query.getSQL(), type);
     List<Object> values = query.getBindValues();
     for (int i = 0; i < values.size(); i++) {
