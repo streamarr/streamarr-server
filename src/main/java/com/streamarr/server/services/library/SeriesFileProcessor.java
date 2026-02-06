@@ -19,6 +19,7 @@ import com.streamarr.server.services.parsers.show.EpisodePathResult;
 import com.streamarr.server.services.parsers.show.SeasonPathMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.nio.file.Path;
+import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -158,26 +159,30 @@ public class SeriesFileProcessor {
     try {
       externalIdMutex.lock();
 
-      var series =
+      var seriesOpt =
           seriesService
               .findByTmdbId(searchResult.externalId())
-              .orElseGet(() -> createSeries(library, searchResult));
+              .or(() -> createSeries(library, searchResult));
 
-      if (series == null) {
+      if (seriesOpt.isEmpty()) {
         return;
       }
 
-      var season =
+      var series = seriesOpt.get();
+
+      var seasonOpt =
           seasonRepository
               .findBySeriesIdAndSeasonNumber(series.getId(), seasonNumber)
-              .orElseGet(
+              .or(
                   () ->
                       createSeasonWithEpisodes(
                           library, searchResult.externalId(), seasonNumber, series));
 
-      if (season == null) {
+      if (seasonOpt.isEmpty()) {
         return;
       }
+
+      var season = seasonOpt.get();
 
       var episode =
           episodeRepository
@@ -204,18 +209,18 @@ public class SeriesFileProcessor {
     }
   }
 
-  private Series createSeries(Library library, RemoteSearchResult searchResult) {
+  private Optional<Series> createSeries(Library library, RemoteSearchResult searchResult) {
     var seriesOpt = seriesMetadataProviderResolver.getMetadata(searchResult, library);
 
     if (seriesOpt.isEmpty()) {
       log.error("Failed to fetch series metadata for TMDB id '{}'", searchResult.externalId());
-      return null;
+      return Optional.empty();
     }
 
-    return seriesService.createSeriesWithAssociations(seriesOpt.get());
+    return Optional.of(seriesService.createSeriesWithAssociations(seriesOpt.get()));
   }
 
-  private Season createSeasonWithEpisodes(
+  private Optional<Season> createSeasonWithEpisodes(
       Library library, String seriesExternalId, int seasonNumber, Series series) {
     var seasonDetailsOpt =
         seriesMetadataProviderResolver.getSeasonDetails(library, seriesExternalId, seasonNumber);
@@ -225,7 +230,7 @@ public class SeriesFileProcessor {
           "Failed to fetch season {} details for series TMDB id '{}'",
           seasonNumber,
           seriesExternalId);
-      return null;
+      return Optional.empty();
     }
 
     var details = seasonDetailsOpt.get();
@@ -260,7 +265,7 @@ public class SeriesFileProcessor {
 
     episodeRepository.saveAll(episodes);
 
-    return season;
+    return Optional.of(season);
   }
 
   private void markAs(MediaFile mediaFile, MediaFileStatus status) {
