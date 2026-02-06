@@ -50,7 +50,7 @@ class LibraryCrashRecoveryServiceTest {
 
   @Test
   @DisplayName("Should not modify libraries when no libraries are in SCANNING status")
-  void shouldNotThrowWhenNoLibrariesAreInScanningStatus() {
+  void shouldNotModifyLibrariesWhenNoLibrariesAreInScanningStatus() {
     var healthyLibrary = fakeLibraryRepository.save(buildLibrary(LibraryStatus.HEALTHY));
 
     recoveryService.onStartup();
@@ -84,7 +84,7 @@ class LibraryCrashRecoveryServiceTest {
 
   @Test
   @DisplayName("Should not modify libraries when shutdown called with no scanning libraries")
-  void shouldNotThrowWhenShutdownCalledWithNoScanningLibraries() {
+  void shouldNotModifyLibrariesWhenShutdownCalledWithNoScanningLibraries() {
     var healthyLibrary = fakeLibraryRepository.save(buildLibrary(LibraryStatus.HEALTHY));
 
     recoveryService.onShutdown();
