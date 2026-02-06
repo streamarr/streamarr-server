@@ -4,14 +4,14 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.services.streaming.StreamSessionRepository;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.Optional;
 import java.util.UUID;
 
 public class FakeStreamSessionRepository implements StreamSessionRepository {
 
-  private final Map<UUID, StreamSession> sessions = new HashMap<>();
+  private final Map<UUID, StreamSession> sessions = new ConcurrentHashMap<>();
 
   @Override
   public void save(StreamSession session) {
