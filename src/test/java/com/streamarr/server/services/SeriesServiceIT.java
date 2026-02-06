@@ -109,25 +109,19 @@ class SeriesServiceIT extends AbstractIntegrationTest {
             .size(2048L)
             .build();
 
-    var result = seriesService.addMediaFileToSeriesByTmdbId("1399", secondFile);
+    var found = seriesService.findByTmdbId("1399");
 
-    assertThat(result).isPresent();
-    assertThat(result.get().getFiles()).hasSize(2);
+    assertThat(found).isPresent();
+
+    var updated = seriesService.addMediaFile(found.get().getId(), secondFile);
+
+    assertThat(updated.getFiles()).hasSize(2);
   }
 
   @Test
   @DisplayName("Should return empty when series not found by TMDB ID")
   void shouldReturnEmptyWhenSeriesNotFoundByTmdbId() {
-    var mediaFile =
-        MediaFile.builder()
-            .filename("test.mkv")
-            .filepath("/tv/test.mkv")
-            .libraryId(savedLibrary.getId())
-            .status(MediaFileStatus.MATCHED)
-            .size(512L)
-            .build();
-
-    var result = seriesService.addMediaFileToSeriesByTmdbId("99999", mediaFile);
+    var result = seriesService.findByTmdbId("99999");
 
     assertThat(result).isEmpty();
   }
