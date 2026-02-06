@@ -5,6 +5,7 @@ import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Season;
+import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
@@ -12,7 +13,6 @@ import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
-import com.streamarr.server.services.metadata.series.SeasonDetails;
 import com.streamarr.server.services.metadata.series.SeriesMetadataProviderResolver;
 import com.streamarr.server.services.parsers.show.EpisodePathMetadataParser;
 import com.streamarr.server.services.parsers.show.EpisodePathResult;
@@ -204,8 +204,7 @@ public class SeriesFileProcessor {
     }
   }
 
-  private com.streamarr.server.domain.media.Series createSeries(
-      Library library, RemoteSearchResult searchResult) {
+  private Series createSeries(Library library, RemoteSearchResult searchResult) {
     var seriesOpt = seriesMetadataProviderResolver.getMetadata(searchResult, library);
 
     if (seriesOpt.isEmpty()) {
@@ -217,8 +216,7 @@ public class SeriesFileProcessor {
   }
 
   private Season createSeasonWithEpisodes(
-      Library library, String seriesExternalId, int seasonNumber,
-      com.streamarr.server.domain.media.Series series) {
+      Library library, String seriesExternalId, int seasonNumber, Series series) {
     var seasonDetailsOpt =
         seriesMetadataProviderResolver.getSeasonDetails(library, seriesExternalId, seasonNumber);
 
