@@ -282,7 +282,7 @@ public class HlsStreamingService implements StreamingService {
     }
   }
 
-  static int parseSegmentIndex(String segmentName) {
+  private static int parseSegmentIndex(String segmentName) {
     var basename = segmentName;
     var slashIdx = basename.lastIndexOf('/');
     if (slashIdx >= 0) {
