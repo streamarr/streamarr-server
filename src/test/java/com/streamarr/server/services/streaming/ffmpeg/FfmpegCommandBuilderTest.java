@@ -86,6 +86,40 @@ class FfmpegCommandBuilderTest {
         .build();
   }
 
+  private TranscodeJob jobWithStartNumber(
+      TranscodeMode mode,
+      String codecFamily,
+      String audioCodec,
+      ContainerFormat container,
+      String videoEncoder,
+      boolean needsKeyframeAlignment,
+      int startNumber) {
+    return TranscodeJob.builder()
+        .request(
+            TranscodeRequest.builder()
+                .sessionId(UUID.randomUUID())
+                .sourcePath(Path.of("/media/movie.mkv"))
+                .seekPosition(0)
+                .segmentDuration(6)
+                .framerate(23.976)
+                .transcodeDecision(
+                    TranscodeDecision.builder()
+                        .transcodeMode(mode)
+                        .videoCodecFamily(codecFamily)
+                        .audioCodec(audioCodec)
+                        .containerFormat(container)
+                        .needsKeyframeAlignment(needsKeyframeAlignment)
+                        .build())
+                .width(1920)
+                .height(1080)
+                .bitrate(5_000_000L)
+                .startNumber(startNumber)
+                .build())
+        .videoEncoder(videoEncoder)
+        .outputDir(Path.of("/tmp/session-123"))
+        .build();
+  }
+
   @Test
   @DisplayName("Should use copy codecs when mode is remux")
   void shouldUseCopyCodecsWhenModeIsRemux() {
@@ -427,6 +461,28 @@ class FfmpegCommandBuilderTest {
     var cmd = builder.buildCommand(j);
 
     assertThat(cmd).contains("-hls_time", "6");
+  }
+
+  @Test
+  @DisplayName("Should include start number when start number is non-zero")
+  void shouldIncludeStartNumberWhenStartNumberIsNonZero() {
+    var j =
+        jobWithStartNumber(
+            TranscodeMode.REMUX, "h264", "aac", ContainerFormat.MPEGTS, "copy", true, 5);
+
+    var cmd = builder.buildCommand(j);
+
+    assertThat(cmd).contains("-start_number", "5");
+  }
+
+  @Test
+  @DisplayName("Should not include start number when start number is zero")
+  void shouldNotIncludeStartNumberWhenStartNumberIsZero() {
+    var j = job(TranscodeMode.REMUX, "h264", "aac", ContainerFormat.MPEGTS, "copy", true);
+
+    var cmd = builder.buildCommand(j);
+
+    assertThat(cmd).isNotEmpty().doesNotContain("-start_number");
   }
 
   @Test

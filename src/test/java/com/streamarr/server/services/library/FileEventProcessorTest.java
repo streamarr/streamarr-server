@@ -16,10 +16,8 @@ import com.streamarr.server.fakes.FakeFileProcessingTaskRepository;
 import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.repositories.LibraryRepository;
-import com.streamarr.server.services.GenreService;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
-import com.streamarr.server.services.PersonService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
@@ -111,8 +109,6 @@ class FileEventProcessorTest {
     Files.createDirectories(fileSystem.getPath("/media/shows"));
 
     var movieService = mock(MovieService.class);
-    var personService = mock(PersonService.class);
-    var genreService = mock(GenreService.class);
     @SuppressWarnings("unchecked")
     MetadataProvider<com.streamarr.server.domain.media.Movie> tmdbProvider =
         mock(TMDBMovieProvider.class);
@@ -122,8 +118,6 @@ class FileEventProcessorTest {
             new DefaultVideoFileMetadataParser(),
             new MovieMetadataProviderResolver(List.of(tmdbProvider)),
             movieService,
-            personService,
-            genreService,
             mediaFileRepository,
             new MutexFactoryProvider());
 

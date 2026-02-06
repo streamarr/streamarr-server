@@ -139,6 +139,7 @@ public class StreamController {
       return ResponseEntity.notFound().build();
     }
 
+    streamingService.resumeSessionIfNeeded(sessionId, segmentName);
     if (!segmentStore.waitForSegment(sessionId, segmentName, SEGMENT_WAIT_TIMEOUT)) {
       return ResponseEntity.notFound().build();
     }
@@ -148,6 +149,7 @@ public class StreamController {
 
   private ResponseEntity<byte[]> serveSegment(
       StreamSession session, UUID sessionId, String segmentName) {
+    streamingService.resumeSessionIfNeeded(sessionId, segmentName);
     if (!segmentStore.waitForSegment(sessionId, segmentName, SEGMENT_WAIT_TIMEOUT)) {
       return ResponseEntity.notFound().build();
     }

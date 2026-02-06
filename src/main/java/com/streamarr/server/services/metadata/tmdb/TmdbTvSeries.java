@@ -38,7 +38,6 @@ public class TmdbTvSeries {
 
   private List<TmdbTvSeasonSummary> seasons;
 
-  // append_to_response
   private TmdbCredits credits;
 
   @JsonProperty("content_ratings")

@@ -147,6 +147,10 @@ public class FfmpegCommandBuilder {
     cmd.addAll(List.of("-hls_list_size", "0"));
     cmd.addAll(List.of("-hls_flags", "temp_file"));
 
+    if (request.startNumber() > 0) {
+      cmd.addAll(List.of("-start_number", String.valueOf(request.startNumber())));
+    }
+
     if (container == ContainerFormat.FMP4) {
       cmd.addAll(List.of("-hls_segment_type", "fmp4"));
       cmd.addAll(List.of("-hls_fmp4_init_filename", "init.mp4"));

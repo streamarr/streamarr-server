@@ -16,10 +16,10 @@ public class GenreService {
 
   @Transactional
   public Set<Genre> getOrCreateGenres(Set<Genre> genres) {
-    return genres.stream().map(this::saveGenre).collect(Collectors.toSet());
+    return genres.stream().map(this::findOrCreateGenre).collect(Collectors.toSet());
   }
 
-  private Genre saveGenre(Genre genre) {
+  private Genre findOrCreateGenre(Genre genre) {
     var existing = genreRepository.findBySourceId(genre.getSourceId());
 
     if (existing.isPresent()) {

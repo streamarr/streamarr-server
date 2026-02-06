@@ -9,7 +9,6 @@ import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
-import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.TheMovieDatabaseHttpService;
 import com.streamarr.server.services.metadata.tmdb.TmdbContentRatings;
@@ -33,7 +32,7 @@ import org.springframework.stereotype.Service;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class TMDBSeriesProvider implements MetadataProvider<Series> {
+public class TMDBSeriesProvider implements SeriesMetadataProvider {
 
   private final TheMovieDatabaseHttpService theMovieDatabaseHttpService;
 

@@ -49,6 +49,15 @@ public class StreamSession {
     return variantHandles.get(variantLabel);
   }
 
+  public boolean isSuspended() {
+    return !variantHandles.isEmpty()
+        && variantHandles.values().stream().allMatch(h -> h.status() == TranscodeStatus.SUSPENDED);
+  }
+
+  public boolean hasActiveTranscodes() {
+    return variantHandles.values().stream().anyMatch(h -> h.status() == TranscodeStatus.ACTIVE);
+  }
+
   public static String defaultVariant() {
     return DEFAULT_VARIANT;
   }

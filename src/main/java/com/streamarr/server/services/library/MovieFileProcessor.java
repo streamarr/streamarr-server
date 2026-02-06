@@ -4,9 +4,7 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.repositories.media.MediaFileRepository;
-import com.streamarr.server.services.GenreService;
 import com.streamarr.server.services.MovieService;
-import com.streamarr.server.services.PersonService;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
@@ -25,8 +23,6 @@ public class MovieFileProcessor {
   private final DefaultVideoFileMetadataParser defaultVideoFileMetadataParser;
   private final MovieMetadataProviderResolver movieMetadataProviderResolver;
   private final MovieService movieService;
-  private final PersonService personService;
-  private final GenreService genreService;
   private final MediaFileRepository mediaFileRepository;
   private final MutexFactory<String> mutexFactory;
 
@@ -34,15 +30,11 @@ public class MovieFileProcessor {
       DefaultVideoFileMetadataParser defaultVideoFileMetadataParser,
       MovieMetadataProviderResolver movieMetadataProviderResolver,
       MovieService movieService,
-      PersonService personService,
-      GenreService genreService,
       MediaFileRepository mediaFileRepository,
       MutexFactoryProvider mutexFactoryProvider) {
     this.defaultVideoFileMetadataParser = defaultVideoFileMetadataParser;
     this.movieMetadataProviderResolver = movieMetadataProviderResolver;
     this.movieService = movieService;
-    this.personService = personService;
-    this.genreService = genreService;
     this.mediaFileRepository = mediaFileRepository;
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
   }
@@ -136,19 +128,7 @@ public class MovieFileProcessor {
       return;
     }
 
-    var cast = movieToSave.get().getCast();
-    var savedCast = personService.getOrCreatePersons(cast);
-    movieToSave.get().setCast(savedCast);
-
-    var directors = movieToSave.get().getDirectors();
-    var savedDirectors = personService.getOrCreatePersons(directors);
-    movieToSave.get().setDirectors(savedDirectors);
-
-    var genres = movieToSave.get().getGenres();
-    var savedGenres = genreService.getOrCreateGenres(genres);
-    movieToSave.get().setGenres(savedGenres);
-
-    movieService.saveMovieWithMediaFile(movieToSave.get(), mediaFile);
+    movieService.createMovieWithAssociations(movieToSave.get(), mediaFile);
     markMediaFileAsMatched(mediaFile);
   }
 

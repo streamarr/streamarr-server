@@ -49,16 +49,19 @@ public class MovieRelationshipRepositoryIT extends AbstractIntegrationTest {
             Person.builder().name("Leonardo DiCaprio").sourceId("actor-1").build());
     var director =
         personRepository.save(Person.builder().name("Christopher Nolan").sourceId("dir-1").build());
+    var studio =
+        companyRepository.save(Company.builder().name("Warner Bros").sourceId("wb-1").build());
+    var genre = genreRepository.save(Genre.builder().name("Sci-Fi").sourceId("scifi-1").build());
 
     savedMovie =
         movieRepository.saveAndFlush(
             Movie.builder()
                 .title("Inception")
                 .library(library)
-                .studios(Set.of(Company.builder().name("Warner Bros").sourceId("wb-1").build()))
+                .studios(Set.of(studio))
                 .cast(List.of(actor))
                 .directors(List.of(director))
-                .genres(Set.of(Genre.builder().name("Sci-Fi").sourceId("scifi-1").build()))
+                .genres(Set.of(genre))
                 .build());
 
     ratingRepository.save(Rating.builder().movie(savedMovie).source("IMDb").value("8.8").build());
@@ -145,23 +148,22 @@ public class MovieRelationshipRepositoryIT extends AbstractIntegrationTest {
     var director =
         personRepository.save(
             Person.builder().name("Cascade Director").sourceId("cascade-dir-1").build());
+    var studio =
+        companyRepository.save(
+            Company.builder().name("Cascade Studio").sourceId("cascade-studio-1").build());
+    var genre =
+        genreRepository.save(
+            Genre.builder().name("Cascade Genre").sourceId("cascade-genre-1").build());
 
     var movie =
         movieRepository.saveAndFlush(
             Movie.builder()
                 .title("Cascade Delete Test")
                 .library(library)
-                .studios(
-                    Set.of(
-                        Company.builder()
-                            .name("Cascade Studio")
-                            .sourceId("cascade-studio-1")
-                            .build()))
+                .studios(Set.of(studio))
                 .cast(List.of(actor))
                 .directors(List.of(director))
-                .genres(
-                    Set.of(
-                        Genre.builder().name("Cascade Genre").sourceId("cascade-genre-1").build()))
+                .genres(Set.of(genre))
                 .build());
 
     ratingRepository.save(
@@ -203,23 +205,22 @@ public class MovieRelationshipRepositoryIT extends AbstractIntegrationTest {
     var director =
         personRepository.save(
             Person.builder().name("Surviving Director").sourceId("surv-dir-1").build());
+    var studio =
+        companyRepository.save(
+            Company.builder().name("Surviving Studio").sourceId("surv-studio-1").build());
+    var genre =
+        genreRepository.save(
+            Genre.builder().name("Surviving Genre").sourceId("surv-genre-1").build());
 
     var movie =
         movieRepository.saveAndFlush(
             Movie.builder()
                 .title("Delete Me Movie")
                 .library(library)
-                .studios(
-                    Set.of(
-                        Company.builder()
-                            .name("Surviving Studio")
-                            .sourceId("surv-studio-1")
-                            .build()))
+                .studios(Set.of(studio))
                 .cast(List.of(actor))
                 .directors(List.of(director))
-                .genres(
-                    Set.of(
-                        Genre.builder().name("Surviving Genre").sourceId("surv-genre-1").build()))
+                .genres(Set.of(genre))
                 .build());
 
     var studioIds =

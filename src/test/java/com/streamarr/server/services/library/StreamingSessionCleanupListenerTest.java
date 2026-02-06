@@ -107,5 +107,10 @@ public class StreamingSessionCleanupListenerTest {
     public int getActiveSessionCount() {
       return sessions.size();
     }
+
+    @Override
+    public void resumeSessionIfNeeded(UUID sessionId, String segmentName) {
+      throw new UnsupportedOperationException();
+    }
   }
 }
