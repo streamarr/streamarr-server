@@ -29,6 +29,7 @@ streaming:
   max-concurrent-transcodes: ${STREAMING_MAX_CONCURRENT_TRANSCODES:8}
   segment-duration-seconds: ${STREAMING_SEGMENT_DURATION:6}
   session-timeout-seconds: ${STREAMING_SESSION_TIMEOUT:60}
+  session-retention-seconds: ${STREAMING_SESSION_RETENTION:86400}
   segment-base-path: ${STREAMING_SEGMENT_BASE_PATH:}
 
 library:

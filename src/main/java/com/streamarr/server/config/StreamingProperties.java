@@ -10,6 +10,7 @@ public record StreamingProperties(
     int maxConcurrentTranscodes,
     int segmentDurationSeconds,
     int sessionTimeoutSeconds,
+    int sessionRetentionSeconds,
     String segmentBasePath,
     String ffmpegPath,
     String ffprobePath) {
@@ -23,6 +24,9 @@ public record StreamingProperties(
     }
     if (sessionTimeoutSeconds <= 0) {
       sessionTimeoutSeconds = 60;
+    }
+    if (sessionRetentionSeconds <= 0) {
+      sessionRetentionSeconds = 86400;
     }
     if (segmentBasePath == null || segmentBasePath.isBlank()) {
       segmentBasePath =
