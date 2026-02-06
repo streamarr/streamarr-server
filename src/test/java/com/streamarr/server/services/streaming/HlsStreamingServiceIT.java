@@ -7,6 +7,7 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.streaming.StreamingOptions;
+import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.MediaFileNotFoundException;
@@ -135,6 +136,21 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   void shouldThrowWhenSeekingNonexistentSession() {
     assertThatThrownBy(() -> streamingService.seekSession(UUID.randomUUID(), 300))
         .isInstanceOf(SessionNotFoundException.class);
+  }
+
+  @Test
+  @DisplayName("Should resume transcode when segment requested from suspended session")
+  void shouldResumeTranscodeWhenSegmentRequestedFromSuspendedSession() {
+    var session = streamingService.createSession(savedMediaFile.getId(), defaultOptions());
+    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
+
+    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
+    FAKE_EXECUTOR.markDead(session.getSessionId());
+
+    streamingService.resumeSessionIfNeeded(session.getSessionId(), "segment0.ts");
+
+    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
+    assertThat(FAKE_EXECUTOR.isRunning(session.getSessionId())).isTrue();
   }
 
   private StreamingOptions defaultOptions() {

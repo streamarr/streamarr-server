@@ -23,21 +23,46 @@ public class SessionReaper {
   @Scheduled(fixedDelayString = "${streaming.reaper-interval-ms:15000}")
   public void reapSessions() {
     var now = Instant.now();
-
     for (var session : streamingService.getAllSessions()) {
-      if (isIdle(session, now)) {
-        log.info("Reaping idle session {} (idle)", session.getSessionId());
-        streamingService.destroySession(session.getSessionId());
-        continue;
-      }
-
-      handleDeadProcesses(session);
+      processSession(session, now);
     }
+  }
+
+  private void processSession(StreamSession session, Instant now) {
+    if (isExpired(session, now)) {
+      log.info("Reaping expired session {}", session.getSessionId());
+      streamingService.destroySession(session.getSessionId());
+      return;
+    }
+    if (isIdle(session, now) && session.hasActiveTranscodes()) {
+      log.info("Suspending idle session {}", session.getSessionId());
+      suspendSession(session);
+      return;
+    }
+    handleDeadProcesses(session);
+  }
+
+  private boolean isExpired(StreamSession session, Instant now) {
+    var idleSeconds = now.getEpochSecond() - session.getLastAccessedAt().getEpochSecond();
+    return idleSeconds > properties.sessionRetention().toSeconds();
   }
 
   private boolean isIdle(StreamSession session, Instant now) {
     var idleSeconds = now.getEpochSecond() - session.getLastAccessedAt().getEpochSecond();
-    return idleSeconds > properties.sessionTimeoutSeconds();
+    return idleSeconds > properties.sessionTimeout().toSeconds();
+  }
+
+  private void suspendSession(StreamSession session) {
+    transcodeExecutor.stop(session.getSessionId());
+    for (var entry : session.getVariantHandles().entrySet()) {
+      var handle = entry.getValue();
+      if (handle.status() != TranscodeStatus.ACTIVE) {
+        continue;
+      }
+      session.setVariantHandle(
+          entry.getKey(), new TranscodeHandle(handle.processId(), TranscodeStatus.SUSPENDED));
+    }
+    sessionRepository.save(session);
   }
 
   private void handleDeadProcesses(StreamSession session) {
