@@ -72,7 +72,6 @@ Services coordinate library lifecycle events using Spring Application Events rat
 addLibrary()
     → LibraryAddedEvent
         → DirectoryWatchingService (register watcher)
-        → LibraryManagementService (trigger async scan)
 
 scanLibrary()
     → ScanCompletedEvent
