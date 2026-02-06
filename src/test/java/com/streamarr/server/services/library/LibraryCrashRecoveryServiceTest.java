@@ -93,6 +93,38 @@ class LibraryCrashRecoveryServiceTest {
         .isEqualTo(LibraryStatus.HEALTHY);
   }
 
+  @Test
+  @DisplayName("Should not reset actively scanned library when recovering on startup")
+  void shouldNotResetActivelyScannedLibraryWhenRecoveringOnStartup() {
+    var orphaned = fakeLibraryRepository.save(buildLibrary(LibraryStatus.SCANNING));
+    var active = fakeLibraryRepository.save(buildLibrary(LibraryStatus.SCANNING));
+
+    ActiveScanChecker checker = id -> id.equals(active.getId());
+    var service = new LibraryCrashRecoveryService(fakeLibraryRepository, checker);
+
+    service.onStartup();
+
+    assertThat(fakeLibraryRepository.findById(orphaned.getId()).orElseThrow().getStatus())
+        .isEqualTo(LibraryStatus.UNHEALTHY);
+    assertThat(fakeLibraryRepository.findById(active.getId()).orElseThrow().getStatus())
+        .isEqualTo(LibraryStatus.SCANNING);
+  }
+
+  @Test
+  @DisplayName(
+      "Should reset all SCANNING libraries when shutting down including actively scanned ones")
+  void shouldResetAllScanningLibrariesWhenShuttingDownIncludingActiveOnes() {
+    var active = fakeLibraryRepository.save(buildLibrary(LibraryStatus.SCANNING));
+
+    ActiveScanChecker allActive = id -> true;
+    var service = new LibraryCrashRecoveryService(fakeLibraryRepository, allActive);
+
+    service.onShutdown();
+
+    assertThat(fakeLibraryRepository.findById(active.getId()).orElseThrow().getStatus())
+        .isEqualTo(LibraryStatus.UNHEALTHY);
+  }
+
   private static Library buildLibrary(LibraryStatus status) {
     return Library.builder()
         .name("Test Library")

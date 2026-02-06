@@ -5,6 +5,7 @@ import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.repositories.LibraryRepository;
 import jakarta.annotation.PreDestroy;
 import java.time.Instant;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -21,26 +22,28 @@ public class LibraryCrashRecoveryService {
 
   @EventListener(ApplicationReadyEvent.class)
   public void onStartup() {
-    recoverOrphanedScans();
+    var orphaned =
+        libraryRepository.findAllByStatus(LibraryStatus.SCANNING).stream()
+            .filter(lib -> !activeScanChecker.isActivelyScanning(lib.getId()))
+            .toList();
+    resetLibraries(orphaned);
   }
 
   @PreDestroy
   public void onShutdown() {
-    recoverOrphanedScans();
+    resetLibraries(libraryRepository.findAllByStatus(LibraryStatus.SCANNING));
   }
 
-  private void recoverOrphanedScans() {
-    var orphanedLibraries = libraryRepository.findAllByStatus(LibraryStatus.SCANNING);
-
-    if (orphanedLibraries.isEmpty()) {
+  private void resetLibraries(List<Library> libraries) {
+    if (libraries.isEmpty()) {
       return;
     }
 
     log.warn(
         "Found {} library(ies) stuck in SCANNING status. Resetting to UNHEALTHY.",
-        orphanedLibraries.size());
+        libraries.size());
 
-    orphanedLibraries.forEach(this::resetToUnhealthy);
+    libraries.forEach(this::resetToUnhealthy);
   }
 
   private void resetToUnhealthy(Library library) {
