@@ -54,6 +54,7 @@ public class MovieService {
     if (movies.isEmpty()) {
       return;
     }
+
     movieRepository.deleteAll(movies);
   }
 
