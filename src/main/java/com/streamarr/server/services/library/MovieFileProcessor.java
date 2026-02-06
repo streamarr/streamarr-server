@@ -4,6 +4,7 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.repositories.media.MediaFileRepository;
+import com.streamarr.server.services.CompanyService;
 import com.streamarr.server.services.GenreService;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.PersonService;
@@ -27,6 +28,7 @@ public class MovieFileProcessor {
   private final MovieService movieService;
   private final PersonService personService;
   private final GenreService genreService;
+  private final CompanyService companyService;
   private final MediaFileRepository mediaFileRepository;
   private final MutexFactory<String> mutexFactory;
 
@@ -36,6 +38,7 @@ public class MovieFileProcessor {
       MovieService movieService,
       PersonService personService,
       GenreService genreService,
+      CompanyService companyService,
       MediaFileRepository mediaFileRepository,
       MutexFactoryProvider mutexFactoryProvider) {
     this.defaultVideoFileMetadataParser = defaultVideoFileMetadataParser;
@@ -43,6 +46,7 @@ public class MovieFileProcessor {
     this.movieService = movieService;
     this.personService = personService;
     this.genreService = genreService;
+    this.companyService = companyService;
     this.mediaFileRepository = mediaFileRepository;
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
   }
@@ -147,6 +151,10 @@ public class MovieFileProcessor {
     var genres = movieToSave.get().getGenres();
     var savedGenres = genreService.getOrCreateGenres(genres);
     movieToSave.get().setGenres(savedGenres);
+
+    var studios = movieToSave.get().getStudios();
+    var savedStudios = companyService.getOrCreateCompanies(studios);
+    movieToSave.get().setStudios(savedStudios);
 
     movieService.saveMovieWithMediaFile(movieToSave.get(), mediaFile);
     markMediaFileAsMatched(mediaFile);
