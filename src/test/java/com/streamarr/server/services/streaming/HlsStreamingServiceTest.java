@@ -651,6 +651,7 @@ class HlsStreamingServiceTest {
 
     service.resumeSessionIfNeeded(session.getSessionId(), "segment5.ts");
 
+    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
     var lastRequest = transcodeExecutor.getStartedRequests().getLast();
     assertThat(lastRequest.startNumber()).isEqualTo(5);
     assertThat(lastRequest.seekPosition()).isEqualTo(30);
@@ -666,6 +667,7 @@ class HlsStreamingServiceTest {
 
     service.resumeSessionIfNeeded(session.getSessionId(), "segment12.m4s");
 
+    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
     var lastRequest = transcodeExecutor.getStartedRequests().getLast();
     assertThat(lastRequest.startNumber()).isEqualTo(12);
     assertThat(lastRequest.seekPosition()).isEqualTo(72);
@@ -681,6 +683,7 @@ class HlsStreamingServiceTest {
 
     service.resumeSessionIfNeeded(session.getSessionId(), "720p/segment3.ts");
 
+    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
     var lastRequest = transcodeExecutor.getStartedRequests().getLast();
     assertThat(lastRequest.startNumber()).isEqualTo(3);
     assertThat(lastRequest.seekPosition()).isEqualTo(18);
@@ -696,6 +699,7 @@ class HlsStreamingServiceTest {
 
     service.resumeSessionIfNeeded(session.getSessionId(), "init.mp4");
 
+    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
     var lastRequest = transcodeExecutor.getStartedRequests().getLast();
     assertThat(lastRequest.startNumber()).isZero();
     assertThat(lastRequest.seekPosition()).isZero();
@@ -711,6 +715,7 @@ class HlsStreamingServiceTest {
 
     service.resumeSessionIfNeeded(session.getSessionId(), "segment0.ts");
 
+    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
     var lastRequest = transcodeExecutor.getStartedRequests().getLast();
     assertThat(lastRequest.startNumber()).isZero();
     assertThat(lastRequest.seekPosition()).isZero();
@@ -754,12 +759,16 @@ class HlsStreamingServiceTest {
 
     assertThat(resumeRequests).hasSize(variantLabels.size());
     assertThat(resumeRequests)
-        .isNotEmpty()
-        .allMatch(r -> r.startNumber() == 5);
+        .extracting(TranscodeRequest::startNumber)
+        .containsOnly(5);
     assertThat(resumeRequests)
-        .isNotEmpty()
-        .allMatch(r -> r.seekPosition() == 30);
-    assertThat(resumeRequests.stream().map(TranscodeRequest::variantLabel).toList())
+        .extracting(TranscodeRequest::seekPosition)
+        .containsOnly(30);
+    assertThat(resumeRequests)
+        .extracting(TranscodeRequest::variantLabel)
         .containsExactlyInAnyOrderElementsOf(variantLabels);
+    for (var label : variantLabels) {
+      assertThat(session.getVariantHandle(label).status()).isEqualTo(TranscodeStatus.ACTIVE);
+    }
   }
 }
