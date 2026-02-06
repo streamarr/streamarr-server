@@ -13,6 +13,7 @@ import com.streamarr.server.exceptions.MaxConcurrentTranscodesException;
 import com.streamarr.server.exceptions.MediaFileNotFoundException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
+import com.streamarr.server.services.concurrency.MutexFactory;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Collection;
@@ -35,6 +36,7 @@ public class HlsStreamingService implements StreamingService {
   private final QualityLadderService qualityLadderService;
   private final StreamingProperties properties;
   private final StreamSessionRepository sessionRepository;
+  private final MutexFactory<UUID> resumeMutex;
 
   @Override
   public StreamSession createSession(UUID mediaFileId, StreamingOptions options) {

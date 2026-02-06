@@ -21,6 +21,7 @@ import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeStreamSessionRepository;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
+import com.streamarr.server.services.concurrency.MutexFactory;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
@@ -65,7 +66,8 @@ class HlsStreamingServiceTest {
             decisionService,
             qualityLadderService,
             properties,
-            new FakeStreamSessionRepository());
+            new FakeStreamSessionRepository(),
+            new MutexFactory<>());
   }
 
   private StreamingOptions defaultOptions() {
@@ -452,7 +454,8 @@ class HlsStreamingServiceTest {
                 .segmentDurationSeconds(6)
                 .sessionTimeoutSeconds(60)
                 .build(),
-            new FakeStreamSessionRepository());
+            new FakeStreamSessionRepository(),
+            new MutexFactory<>());
     serviceRef.set(spyService);
 
     var file = seedMediaFile();
@@ -514,7 +517,8 @@ class HlsStreamingServiceTest {
             new TranscodeDecisionService(),
             new QualityLadderService(),
             properties,
-            new FakeStreamSessionRepository());
+            new FakeStreamSessionRepository(),
+            new MutexFactory<>());
 
     ffprobeService.setDefaultProbe(
         MediaProbe.builder()
