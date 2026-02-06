@@ -133,6 +133,58 @@ class SeriesServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should find series by TMDB ID when series exists")
+  void shouldFindSeriesByTmdbIdWhenSeriesExists() {
+    var tmdbId = "find-tmdb-" + UUID.randomUUID();
+    seriesRepository.saveAndFlush(
+        Series.builder()
+            .title("Findable Series")
+            .library(savedLibrary)
+            .externalIds(
+                Set.of(
+                    ExternalIdentifier.builder()
+                        .externalSourceType(ExternalSourceType.TMDB)
+                        .externalId(tmdbId)
+                        .build()))
+            .build());
+
+    var result = seriesService.findByTmdbId(tmdbId);
+
+    assertThat(result).isPresent();
+    assertThat(result.get().getTitle()).isEqualTo("Findable Series");
+  }
+
+  @Test
+  @DisplayName("Should return empty when no series with TMDB ID")
+  void shouldReturnEmptyWhenNoSeriesWithTmdbId() {
+    var result = seriesService.findByTmdbId("nonexistent-" + UUID.randomUUID());
+
+    assertThat(result).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should save series without media file")
+  void shouldSaveSeriesWithoutMediaFile() {
+    var series =
+        Series.builder()
+            .title("Saved Without File")
+            .library(savedLibrary)
+            .externalIds(
+                Set.of(
+                    ExternalIdentifier.builder()
+                        .externalSourceType(ExternalSourceType.TMDB)
+                        .externalId("save-" + UUID.randomUUID())
+                        .build()))
+            .build();
+
+    var saved = seriesService.saveSeries(series);
+
+    assertThat(saved.getId()).isNotNull();
+    assertThat(saved.getTitle()).isEqualTo("Saved Without File");
+    assertThat(seriesRepository.findById(saved.getId())).isPresent();
+  }
+
+  @Test
   @DisplayName("Should delete series by library ID")
   void shouldDeleteSeriesByLibraryId() {
     var deleteLibrary =

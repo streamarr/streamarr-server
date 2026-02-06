@@ -26,6 +26,15 @@ public class SeriesService {
     return seriesRepository.save(savedSeries);
   }
 
+  public Optional<Series> findByTmdbId(String tmdbId) {
+    return seriesRepository.findByTmdbId(tmdbId);
+  }
+
+  @Transactional
+  public Series saveSeries(Series series) {
+    return seriesRepository.saveAndFlush(series);
+  }
+
   @Transactional
   public Optional<Series> addMediaFileToSeriesByTmdbId(String tmdbId, MediaFile mediaFile) {
     var series = seriesRepository.findByTmdbId(tmdbId);
