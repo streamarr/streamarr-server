@@ -7,6 +7,8 @@ package com.streamarr.server.jooq.generated.tables;
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.tables.MovieCompany.MovieCompanyPath;
+import com.streamarr.server.jooq.generated.tables.Series.SeriesPath;
+import com.streamarr.server.jooq.generated.tables.SeriesCompany.SeriesCompanyPath;
 import com.streamarr.server.jooq.generated.tables.records.CompanyRecord;
 
 import java.time.OffsetDateTime;
@@ -186,6 +188,27 @@ public class Company extends TableImpl<CompanyRecord> {
             _movieCompany = new MovieCompanyPath(this, null, Keys.MOVIE_COMPANY__MOVIE_COMPANY_COMPANY_ID_FKEY.getInverseKey());
 
         return _movieCompany;
+    }
+
+    private transient SeriesCompanyPath _seriesCompany;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.series_company</code> table
+     */
+    public SeriesCompanyPath seriesCompany() {
+        if (_seriesCompany == null)
+            _seriesCompany = new SeriesCompanyPath(this, null, Keys.SERIES_COMPANY__SERIES_COMPANY_COMPANY_ID_FKEY.getInverseKey());
+
+        return _seriesCompany;
+    }
+
+    /**
+     * Get the implicit many-to-many join path to the <code>public.series</code>
+     * table
+     */
+    public SeriesPath series() {
+        return seriesCompany().series();
     }
 
     @Override

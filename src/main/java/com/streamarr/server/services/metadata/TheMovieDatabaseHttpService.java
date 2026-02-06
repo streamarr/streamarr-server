@@ -5,6 +5,9 @@ import com.streamarr.server.services.metadata.tmdb.TmdbCredits;
 import com.streamarr.server.services.metadata.tmdb.TmdbFailure;
 import com.streamarr.server.services.metadata.tmdb.TmdbMovie;
 import com.streamarr.server.services.metadata.tmdb.TmdbSearchResults;
+import com.streamarr.server.services.metadata.tmdb.TmdbTvSearchResults;
+import com.streamarr.server.services.metadata.tmdb.TmdbTvSeason;
+import com.streamarr.server.services.metadata.tmdb.TmdbTvSeries;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.io.IOException;
 import java.net.URI;
@@ -80,6 +83,51 @@ public class TheMovieDatabaseHttpService {
     var request = authenticatedRequest(uri).GET().build();
 
     return sendWithRetry(request, TmdbCredits.class);
+  }
+
+  public TmdbTvSearchResults searchForTvSeries(VideoFileParserResult parserResult)
+      throws IOException, InterruptedException {
+    var query = new LinkedMultiValueMap<String, String>();
+
+    query.add("query", parserResult.title());
+
+    if (StringUtils.isNotBlank(parserResult.year())) {
+      query.add("first_air_date_year", parserResult.year());
+    }
+
+    var uri = baseUrl().path("/search/tv").queryParams(query).build();
+    var request = authenticatedRequest(uri).GET().build();
+
+    return sendWithRetry(request, TmdbTvSearchResults.class);
+  }
+
+  public TmdbTvSeries getTvSeriesMetadata(String seriesId)
+      throws IOException, InterruptedException {
+    var uri =
+        baseUrl()
+            .path("/tv/")
+            .path(seriesId)
+            .queryParam("append_to_response", "content_ratings,credits,external_ids")
+            .build();
+
+    var request = authenticatedRequest(uri).GET().build();
+
+    return sendWithRetry(request, TmdbTvSeries.class);
+  }
+
+  public TmdbTvSeason getTvSeasonDetails(String seriesId, int seasonNumber)
+      throws IOException, InterruptedException {
+    var uri =
+        baseUrl()
+            .path("/tv/")
+            .path(seriesId)
+            .path("/season/")
+            .path(String.valueOf(seasonNumber))
+            .build();
+
+    var request = authenticatedRequest(uri).GET().build();
+
+    return sendWithRetry(request, TmdbTvSeason.class);
   }
 
   private TmdbSearchResults searchForMovieRequest(MultiValueMap<String, String> query)

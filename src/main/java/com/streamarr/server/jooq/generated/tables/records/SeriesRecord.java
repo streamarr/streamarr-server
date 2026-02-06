@@ -6,6 +6,7 @@ package com.streamarr.server.jooq.generated.tables.records;
 
 import com.streamarr.server.jooq.generated.tables.Series;
 
+import java.time.LocalDate;
 import java.util.UUID;
 
 import org.jooq.Record1;
@@ -77,17 +78,101 @@ public class SeriesRecord extends UpdatableRecordImpl<SeriesRecord> {
     }
 
     /**
-     * Setter for <code>public.series.content_rating</code>.
+     * Setter for <code>public.series.content_rating_system</code>.
      */
-    public void setContentRating(String value) {
+    public void setContentRatingSystem(String value) {
         set(4, value);
     }
 
     /**
-     * Getter for <code>public.series.content_rating</code>.
+     * Getter for <code>public.series.content_rating_system</code>.
      */
-    public String getContentRating() {
+    public String getContentRatingSystem() {
         return (String) get(4);
+    }
+
+    /**
+     * Setter for <code>public.series.content_rating_value</code>.
+     */
+    public void setContentRatingValue(String value) {
+        set(5, value);
+    }
+
+    /**
+     * Getter for <code>public.series.content_rating_value</code>.
+     */
+    public String getContentRatingValue() {
+        return (String) get(5);
+    }
+
+    /**
+     * Setter for <code>public.series.content_rating_country</code>.
+     */
+    public void setContentRatingCountry(String value) {
+        set(6, value);
+    }
+
+    /**
+     * Getter for <code>public.series.content_rating_country</code>.
+     */
+    public String getContentRatingCountry() {
+        return (String) get(6);
+    }
+
+    /**
+     * Setter for <code>public.series.summary</code>.
+     */
+    public void setSummary(String value) {
+        set(7, value);
+    }
+
+    /**
+     * Getter for <code>public.series.summary</code>.
+     */
+    public String getSummary() {
+        return (String) get(7);
+    }
+
+    /**
+     * Setter for <code>public.series.tagline</code>.
+     */
+    public void setTagline(String value) {
+        set(8, value);
+    }
+
+    /**
+     * Getter for <code>public.series.tagline</code>.
+     */
+    public String getTagline() {
+        return (String) get(8);
+    }
+
+    /**
+     * Setter for <code>public.series.runtime</code>.
+     */
+    public void setRuntime(Integer value) {
+        set(9, value);
+    }
+
+    /**
+     * Getter for <code>public.series.runtime</code>.
+     */
+    public Integer getRuntime() {
+        return (Integer) get(9);
+    }
+
+    /**
+     * Setter for <code>public.series.first_air_date</code>.
+     */
+    public void setFirstAirDate(LocalDate value) {
+        set(10, value);
+    }
+
+    /**
+     * Getter for <code>public.series.first_air_date</code>.
+     */
+    public LocalDate getFirstAirDate() {
+        return (LocalDate) get(10);
     }
 
     // -------------------------------------------------------------------------
@@ -113,14 +198,20 @@ public class SeriesRecord extends UpdatableRecordImpl<SeriesRecord> {
     /**
      * Create a detached, initialised SeriesRecord
      */
-    public SeriesRecord(UUID id, String backdropPath, String posterPath, String logoPath, String contentRating) {
+    public SeriesRecord(UUID id, String backdropPath, String posterPath, String logoPath, String contentRatingSystem, String contentRatingValue, String contentRatingCountry, String summary, String tagline, Integer runtime, LocalDate firstAirDate) {
         super(Series.SERIES);
 
         setId(id);
         setBackdropPath(backdropPath);
         setPosterPath(posterPath);
         setLogoPath(logoPath);
-        setContentRating(contentRating);
+        setContentRatingSystem(contentRatingSystem);
+        setContentRatingValue(contentRatingValue);
+        setContentRatingCountry(contentRatingCountry);
+        setSummary(summary);
+        setTagline(tagline);
+        setRuntime(runtime);
+        setFirstAirDate(firstAirDate);
         resetTouchedOnNotNull();
     }
 }

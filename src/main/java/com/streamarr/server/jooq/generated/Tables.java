@@ -6,6 +6,7 @@ package com.streamarr.server.jooq.generated;
 
 import com.streamarr.server.jooq.generated.tables.BaseCollectable;
 import com.streamarr.server.jooq.generated.tables.Company;
+import com.streamarr.server.jooq.generated.tables.Episode;
 import com.streamarr.server.jooq.generated.tables.ExternalIdentifier;
 import com.streamarr.server.jooq.generated.tables.FileProcessingTask;
 import com.streamarr.server.jooq.generated.tables.Genre;
@@ -20,7 +21,12 @@ import com.streamarr.server.jooq.generated.tables.Person;
 import com.streamarr.server.jooq.generated.tables.Rating;
 import com.streamarr.server.jooq.generated.tables.Review;
 import com.streamarr.server.jooq.generated.tables.SchemaHistory;
+import com.streamarr.server.jooq.generated.tables.Season;
 import com.streamarr.server.jooq.generated.tables.Series;
+import com.streamarr.server.jooq.generated.tables.SeriesCompany;
+import com.streamarr.server.jooq.generated.tables.SeriesDirector;
+import com.streamarr.server.jooq.generated.tables.SeriesGenre;
+import com.streamarr.server.jooq.generated.tables.SeriesPerson;
 
 
 /**
@@ -38,6 +44,11 @@ public class Tables {
      * The table <code>public.company</code>.
      */
     public static final Company COMPANY = Company.COMPANY;
+
+    /**
+     * The table <code>public.episode</code>.
+     */
+    public static final Episode EPISODE = Episode.EPISODE;
 
     /**
      * The table <code>public.external_identifier</code>.
@@ -110,7 +121,32 @@ public class Tables {
     public static final SchemaHistory SCHEMA_HISTORY = SchemaHistory.SCHEMA_HISTORY;
 
     /**
+     * The table <code>public.season</code>.
+     */
+    public static final Season SEASON = Season.SEASON;
+
+    /**
      * The table <code>public.series</code>.
      */
     public static final Series SERIES = Series.SERIES;
+
+    /**
+     * The table <code>public.series_company</code>.
+     */
+    public static final SeriesCompany SERIES_COMPANY = SeriesCompany.SERIES_COMPANY;
+
+    /**
+     * The table <code>public.series_director</code>.
+     */
+    public static final SeriesDirector SERIES_DIRECTOR = SeriesDirector.SERIES_DIRECTOR;
+
+    /**
+     * The table <code>public.series_genre</code>.
+     */
+    public static final SeriesGenre SERIES_GENRE = SeriesGenre.SERIES_GENRE;
+
+    /**
+     * The table <code>public.series_person</code>.
+     */
+    public static final SeriesPerson SERIES_PERSON = SeriesPerson.SERIES_PERSON;
 }
