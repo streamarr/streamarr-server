@@ -1,6 +1,5 @@
 package com.streamarr.server.services.parsers.show.regex;
 
-import java.util.ArrayList;
 import java.util.List;
 import lombok.Getter;
 import org.springframework.stereotype.Component;
@@ -10,8 +9,7 @@ import org.springframework.stereotype.Component;
 public class EpisodeRegexFixtures {
 
   private final List<EpisodeRegexContainer> standardRegexContainerList =
-      new ArrayList<>(
-          List.of(
+      List.of(
               EpisodeRegexContainer.NamedGroupRegex.builder()
                   // Extracts seriesName, seasonNumber, episodeNumber -> "/foo.s01.e01"
                   // TODO(#40): Currently requires path... Do we want this?
@@ -168,12 +166,10 @@ public class EpisodeRegexFixtures {
                   .expression(
                       "(.*(\\\\|\\/))*(?<seriesname>.+)[\\. _\\-]+[sS](eason)?[\\. _\\-]*(?<seasonnumber>[0-9]+)")
                   .exampleMatch("the show S01")
-                  .build()));
+                  .build());
 
-  // TODO(#40): Do we care about case sensitivity here?
   private final List<EpisodeRegexContainer> multipleEpisodeRegexContainerList =
-      new ArrayList<>(
-          List.of(
+      List.of(
               EpisodeRegexContainer.NamedGroupRegex.builder()
                   .expression(
                       ".*(\\\\|\\/)[sS]?(?<seasonnumber>[0-9]{1,4})[xX](?<epnumber>[0-9]{1,3})((-| - )[0-9]{1,4}[eExX](?<endingepnumber>[0-9]{1,3}))+[^\\\\\\/]*$")
@@ -213,5 +209,5 @@ public class EpisodeRegexFixtures {
               EpisodeRegexContainer.NamedGroupRegex.builder()
                   .expression(
                       ".*(\\\\|\\/)(?<seriesname>[^\\\\\\/]*)[sS](?<seasonnumber>[0-9]{1,4})[xX\\.]?[eE](?<epnumber>[0-9]{1,3})(-[xX]?[eE]?(?<endingepnumber>[0-9]{1,3}))+[^\\\\\\/]*$")
-                  .build()));
+                  .build());
 }

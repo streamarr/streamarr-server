@@ -4,6 +4,7 @@ import com.streamarr.server.services.parsers.MetadataParser;
 import com.streamarr.server.services.parsers.show.regex.EpisodeRegexContainer;
 import com.streamarr.server.services.parsers.show.regex.EpisodeRegexFixtures;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalInt;
@@ -199,7 +200,7 @@ public class EpisodePathMetadataParser implements MetadataParser<EpisodePathResu
   private EpisodePathResult fillAdditionalInfo(String filename, EpisodePathResult result) {
 
     var multipleEpisodeRegexContainerSet =
-        episodeRegexFixtures.getMultipleEpisodeRegexContainerList();
+        new ArrayList<>(episodeRegexFixtures.getMultipleEpisodeRegexContainerList());
 
     if (StringUtils.isBlank(result.getSeriesName())) {
       multipleEpisodeRegexContainerSet.addAll(
