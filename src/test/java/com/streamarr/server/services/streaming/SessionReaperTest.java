@@ -35,7 +35,9 @@ class SessionReaperTest {
     streamingService = new InMemoryStreamingService();
     var properties =
         StreamingProperties.builder().segmentDurationSeconds(6).sessionTimeoutSeconds(60).build();
-    reaper = new SessionReaper(streamingService, executor, properties, new FakeStreamSessionRepository());
+    reaper =
+        new SessionReaper(
+            streamingService, executor, properties, new FakeStreamSessionRepository());
   }
 
   @Test
