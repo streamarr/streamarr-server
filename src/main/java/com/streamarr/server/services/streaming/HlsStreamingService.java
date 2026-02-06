@@ -67,6 +67,7 @@ public class HlsStreamingService implements StreamingService {
 
     sessionRepository.save(session);
     startTranscodes(session, 0);
+    sessionRepository.save(session);
     log.info(
         "Created streaming session {} for media file {} (mode: {}, variants: {})",
         sessionId,
@@ -80,7 +81,11 @@ public class HlsStreamingService implements StreamingService {
   @Override
   public Optional<StreamSession> accessSession(UUID sessionId) {
     var session = sessionRepository.findById(sessionId);
-    session.ifPresent(s -> s.setLastAccessedAt(Instant.now()));
+    session.ifPresent(
+        s -> {
+          s.setLastAccessedAt(Instant.now());
+          sessionRepository.save(s);
+        });
     return session;
   }
 
@@ -97,6 +102,7 @@ public class HlsStreamingService implements StreamingService {
     startTranscodes(session, positionSeconds);
 
     session.setLastAccessedAt(Instant.now());
+    sessionRepository.save(session);
 
     log.info("Seeked session {} to position {}s", sessionId, positionSeconds);
     return session;
