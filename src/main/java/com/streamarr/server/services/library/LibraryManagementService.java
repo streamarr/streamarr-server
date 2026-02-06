@@ -13,6 +13,7 @@ import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.MovieService;
+import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.library.events.LibraryAddedEvent;
@@ -50,6 +51,7 @@ public class LibraryManagementService {
   private final LibraryRepository libraryRepository;
   private final MediaFileRepository mediaFileRepository;
   private final MovieService movieService;
+  private final SeriesService seriesService;
   private final ApplicationEventPublisher eventPublisher;
   private final FileSystem fileSystem;
   private final MutexFactory<String> mutexFactory;
@@ -63,6 +65,7 @@ public class LibraryManagementService {
       LibraryRepository libraryRepository,
       MediaFileRepository mediaFileRepository,
       MovieService movieService,
+      SeriesService seriesService,
       ApplicationEventPublisher eventPublisher,
       MutexFactoryProvider mutexFactoryProvider,
       FileSystem fileSystem) {
@@ -73,6 +76,7 @@ public class LibraryManagementService {
     this.libraryRepository = libraryRepository;
     this.mediaFileRepository = mediaFileRepository;
     this.movieService = movieService;
+    this.seriesService = seriesService;
     this.eventPublisher = eventPublisher;
     this.fileSystem = fileSystem;
 
@@ -170,6 +174,7 @@ public class LibraryManagementService {
 
   private void deleteLibraryContent(UUID libraryId, List<MediaFile> mediaFiles) {
     movieService.deleteByLibraryId(libraryId);
+    seriesService.deleteByLibraryId(libraryId);
     mediaFileRepository.deleteAll(mediaFiles);
   }
 

@@ -38,6 +38,7 @@ import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.GenreService;
 import com.streamarr.server.services.MovieService;
+import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.PersonService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.library.events.LibraryAddedEvent;
@@ -100,6 +101,7 @@ public class LibraryManagementServiceTest {
           new MutexFactoryProvider());
 
   private final SeriesFileProcessor seriesFileProcessor = mock(SeriesFileProcessor.class);
+  private final SeriesService seriesService = mock(SeriesService.class);
 
   private final LibraryManagementService libraryManagementService =
       new LibraryManagementService(
@@ -110,6 +112,7 @@ public class LibraryManagementServiceTest {
           fakeLibraryRepository,
           fakeMediaFileRepository,
           movieService,
+          seriesService,
           capturingEventPublisher,
           new MutexFactoryProvider(),
           fileSystem);
@@ -179,6 +182,7 @@ public class LibraryManagementServiceTest {
             fakeLibraryRepository,
             fakeMediaFileRepository,
             movieService,
+            seriesService,
             capturingEventPublisher,
             new MutexFactoryProvider(),
             throwingFileSystem);
@@ -211,6 +215,7 @@ public class LibraryManagementServiceTest {
             fakeLibraryRepository,
             fakeMediaFileRepository,
             movieService,
+            seriesService,
             capturingEventPublisher,
             new MutexFactoryProvider(),
             throwingFileSystem);
@@ -302,6 +307,7 @@ public class LibraryManagementServiceTest {
             fakeLibraryRepository,
             fakeMediaFileRepository,
             movieService,
+            seriesService,
             capturingEventPublisher,
             new MutexFactoryProvider(),
             throwingFileSystem);
@@ -680,6 +686,7 @@ public class LibraryManagementServiceTest {
               fakeLibraryRepository,
               fakeMediaFileRepository,
               movieService,
+              seriesService,
               capturingEventPublisher,
               new MutexFactoryProvider(),
               securityExceptionFs);
