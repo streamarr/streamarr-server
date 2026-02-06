@@ -437,5 +437,8 @@ class StreamControllerTest {
     public int getActiveSessionCount() {
       return session != null ? 1 : 0;
     }
+
+    @Override
+    public void resumeSessionIfNeeded(UUID sessionId, String segmentName) {}
   }
 }

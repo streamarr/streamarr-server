@@ -130,6 +130,11 @@ public class HlsStreamingService implements StreamingService {
     return sessionRepository.count();
   }
 
+  @Override
+  public void resumeSessionIfNeeded(UUID sessionId, String segmentName) {
+    // no-op — will be implemented in a behavioral commit
+  }
+
   private List<QualityVariant> resolveVariants(
       MediaProbe probe, StreamingOptions options, TranscodeDecision decision) {
     if (!isAutoQuality(options) || decision.transcodeMode() != TranscodeMode.FULL_TRANSCODE) {
