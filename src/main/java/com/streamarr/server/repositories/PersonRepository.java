@@ -22,4 +22,10 @@ public interface PersonRepository extends JpaRepository<Person, UUID> {
 
   @Query("SELECT p FROM Movie m JOIN m.directors p WHERE m.id = :movieId")
   List<Person> findDirectorsByMovieId(@Param("movieId") UUID movieId);
+
+  @Query("SELECT p FROM Series s JOIN s.cast p WHERE s.id = :seriesId")
+  List<Person> findCastBySeriesId(@Param("seriesId") UUID seriesId);
+
+  @Query("SELECT p FROM Series s JOIN s.directors p WHERE s.id = :seriesId")
+  List<Person> findDirectorsBySeriesId(@Param("seriesId") UUID seriesId);
 }

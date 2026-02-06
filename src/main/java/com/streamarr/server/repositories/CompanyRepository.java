@@ -18,4 +18,7 @@ public interface CompanyRepository extends JpaRepository<Company, UUID> {
 
   @Query("SELECT c FROM Movie m JOIN m.studios c WHERE m.id = :movieId")
   List<Company> findByMovieId(@Param("movieId") UUID movieId);
+
+  @Query("SELECT c FROM Series s JOIN s.studios c WHERE s.id = :seriesId")
+  List<Company> findBySeriesId(@Param("seriesId") UUID seriesId);
 }
