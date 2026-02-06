@@ -68,8 +68,16 @@ public class SeriesFileProcessor {
     }
 
     var episodeNumber = parseResult.get().getEpisodeNumber().getAsInt();
-    var seasonNumber = resolveSeasonNumber(mediaFile.getFilepath(), parseResult.get());
-    var seriesName = resolveSeriesName(mediaFile.getFilepath(), parseResult.get());
+
+    var filePath = Path.of(mediaFile.getFilepath());
+    var parentDir = filePath.getParent();
+    var seasonParseResult =
+        (parentDir != null)
+            ? seasonPathMetadataParser.parse(parentDir.getFileName().toString())
+            : Optional.<SeasonPathMetadataParser.Result>empty();
+
+    var seasonNumber = resolveSeasonNumber(parentDir, seasonParseResult, parseResult.get());
+    var seriesName = resolveSeriesName(parentDir, seasonParseResult, parseResult.get());
 
     if (seriesName == null || seriesName.isBlank()) {
       markAs(mediaFile, MediaFileStatus.METADATA_PARSING_FAILED);
@@ -103,32 +111,30 @@ public class SeriesFileProcessor {
     enrichSeriesMetadata(library, mediaFile, searchResult.get(), seasonNumber, episodeNumber);
   }
 
-  private int resolveSeasonNumber(String filepath, EpisodePathResult episodeResult) {
-    var filePath = Path.of(filepath);
-    var parentDir = filePath.getParent();
+  private int resolveSeasonNumber(
+      Path parentDir,
+      Optional<SeasonPathMetadataParser.Result> seasonParseResult,
+      EpisodePathResult episodeResult) {
 
-    if (parentDir != null) {
-      var seasonParseResult = seasonPathMetadataParser.parse(parentDir.getFileName().toString());
-
-      if (seasonParseResult.isPresent()
-          && seasonParseResult.get().isSeasonFolder()
-          && seasonParseResult.get().seasonNumber().isPresent()) {
-        return seasonParseResult.get().seasonNumber().getAsInt();
-      }
+    if (parentDir != null
+        && seasonParseResult.isPresent()
+        && seasonParseResult.get().isSeasonFolder()
+        && seasonParseResult.get().seasonNumber().isPresent()) {
+      return seasonParseResult.get().seasonNumber().getAsInt();
     }
 
     return episodeResult.getSeasonNumber().orElse(1);
   }
 
-  private String resolveSeriesName(String filepath, EpisodePathResult episodeResult) {
-    var filePath = Path.of(filepath);
-    var parentDir = filePath.getParent();
+  private String resolveSeriesName(
+      Path parentDir,
+      Optional<SeasonPathMetadataParser.Result> seasonParseResult,
+      EpisodePathResult episodeResult) {
 
     if (parentDir == null) {
       return episodeResult.getSeriesName();
     }
 
-    var seasonParseResult = seasonPathMetadataParser.parse(parentDir.getFileName().toString());
     var isSeasonFolder = seasonParseResult.isPresent() && seasonParseResult.get().isSeasonFolder();
 
     String dirName;
