@@ -34,19 +34,82 @@ class SessionReaperTest {
     executor = new FakeTranscodeExecutor();
     streamingService = new InMemoryStreamingService();
     var properties =
-        StreamingProperties.builder().segmentDurationSeconds(6).sessionTimeoutSeconds(60).build();
+        StreamingProperties.builder()
+            .segmentDurationSeconds(6)
+            .sessionTimeoutSeconds(60)
+            .sessionRetentionSeconds(86400)
+            .build();
     reaper = new SessionReaper(streamingService, executor, properties, new FakeStreamSessionRepository());
   }
 
   @Test
-  @DisplayName("Should reap session when idle past timeout")
-  void shouldReapSessionWhenIdlePastTimeout() {
+  @DisplayName("Should mark handle as suspended when session is idle past timeout")
+  void shouldMarkHandleAsSuspendedWhenIdlePastTimeout() {
     var session = buildSession(Instant.now().minusSeconds(120));
     streamingService.addSession(session);
 
     reaper.reapSessions();
 
+    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.SUSPENDED);
+  }
+
+  @Test
+  @DisplayName("Should preserve session when suspending idle session")
+  void shouldPreserveSessionWhenSuspendingIdleSession() {
+    var session = buildSession(Instant.now().minusSeconds(120));
+    streamingService.addSession(session);
+
+    reaper.reapSessions();
+
+    assertThat(streamingService.accessSession(session.getSessionId())).isPresent();
+  }
+
+  @Test
+  @DisplayName("Should destroy session when idle past retention timeout")
+  void shouldDestroySessionWhenIdlePastRetentionTimeout() {
+    var session = buildSession(Instant.now().minusSeconds(90_000));
+    streamingService.addSession(session);
+
+    reaper.reapSessions();
+
     assertThat(streamingService.accessSession(session.getSessionId())).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should not suspend session when already suspended")
+  void shouldNotSuspendSessionWhenAlreadySuspended() {
+    var session = buildSession(Instant.now().minusSeconds(120));
+    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
+    streamingService.addSession(session);
+
+    reaper.reapSessions();
+
+    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.SUSPENDED);
+    assertThat(streamingService.accessSession(session.getSessionId())).isPresent();
+  }
+
+  @Test
+  @DisplayName("Should not suspend session when handles are failed")
+  void shouldNotSuspendSessionWhenHandlesAreFailed() {
+    var session = buildSession(Instant.now().minusSeconds(120));
+    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.FAILED));
+    streamingService.addSession(session);
+
+    reaper.reapSessions();
+
+    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.FAILED);
+    assertThat(streamingService.accessSession(session.getSessionId())).isPresent();
+  }
+
+  @Test
+  @DisplayName("Should stop executor when suspending idle session")
+  void shouldStopExecutorWhenSuspendingIdleSession() {
+    var session = buildSession(Instant.now().minusSeconds(120));
+    streamingService.addSession(session);
+
+    reaper.reapSessions();
+
+    assertThat(executor.getStopped()).contains(session.getSessionId());
   }
 
   @Test
