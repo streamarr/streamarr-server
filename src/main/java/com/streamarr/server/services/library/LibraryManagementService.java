@@ -219,10 +219,10 @@ public class LibraryManagementService {
     try (var executor = Executors.newVirtualThreadPerTaskExecutor();
         var stream = Files.walk(fileSystem.getPath(library.getFilepath()))) {
 
-        stream
-            .filter(Files::isRegularFile)
-            .filter(file -> !ignoredFileValidator.shouldIgnore(file))
-            .forEach(file -> executor.submit(() -> processFile(library, file)));
+      stream
+          .filter(Files::isRegularFile)
+          .filter(file -> !ignoredFileValidator.shouldIgnore(file))
+          .forEach(file -> executor.submit(() -> processFile(library, file)));
 
     } catch (IOException | UncheckedIOException | SecurityException e) {
       throw new LibraryScanFailedException(library.getName(), e);
