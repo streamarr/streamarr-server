@@ -6,7 +6,6 @@ import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Series;
-import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.util.List;
@@ -31,7 +30,8 @@ class SeriesMetadataProviderResolverTest {
         new SeriesMetadataProviderResolver(
             List.of(new FakeSeriesMetadataProvider(expectedResult, null)));
 
-    var library = Library.builder().name("TV").externalAgentStrategy(ExternalAgentStrategy.TMDB).build();
+    var library =
+        Library.builder().name("TV").externalAgentStrategy(ExternalAgentStrategy.TMDB).build();
     var parserResult = VideoFileParserResult.builder().title("Breaking Bad").build();
 
     var result = resolver.search(library, parserResult);
@@ -46,7 +46,8 @@ class SeriesMetadataProviderResolverTest {
   void shouldReturnEmptyWhenNoProviderMatchesLibraryStrategyForSearch() {
     var resolver = new SeriesMetadataProviderResolver(List.of());
 
-    var library = Library.builder().name("TV").externalAgentStrategy(ExternalAgentStrategy.TMDB).build();
+    var library =
+        Library.builder().name("TV").externalAgentStrategy(ExternalAgentStrategy.TMDB).build();
     var parserResult = VideoFileParserResult.builder().title("Breaking Bad").build();
 
     var result = resolver.search(library, parserResult);
@@ -63,7 +64,8 @@ class SeriesMetadataProviderResolverTest {
         new SeriesMetadataProviderResolver(
             List.of(new FakeSeriesMetadataProvider(null, expectedSeries)));
 
-    var library = Library.builder().name("TV").externalAgentStrategy(ExternalAgentStrategy.TMDB).build();
+    var library =
+        Library.builder().name("TV").externalAgentStrategy(ExternalAgentStrategy.TMDB).build();
     var searchResult =
         RemoteSearchResult.builder()
             .title("Breaking Bad")
@@ -82,7 +84,8 @@ class SeriesMetadataProviderResolverTest {
   void shouldReturnEmptyWhenNoProviderMatchesLibraryStrategyForMetadata() {
     var resolver = new SeriesMetadataProviderResolver(List.of());
 
-    var library = Library.builder().name("TV").externalAgentStrategy(ExternalAgentStrategy.TMDB).build();
+    var library =
+        Library.builder().name("TV").externalAgentStrategy(ExternalAgentStrategy.TMDB).build();
     var searchResult =
         RemoteSearchResult.builder()
             .title("Breaking Bad")
@@ -95,7 +98,7 @@ class SeriesMetadataProviderResolverTest {
     assertThat(result).isEmpty();
   }
 
-  private static class FakeSeriesMetadataProvider implements MetadataProvider<Series> {
+  private static class FakeSeriesMetadataProvider implements SeriesMetadataProvider {
 
     private final RemoteSearchResult searchResult;
     private final Series series;
@@ -113,6 +116,11 @@ class SeriesMetadataProviderResolverTest {
     @Override
     public Optional<Series> getMetadata(RemoteSearchResult remoteSearchResult, Library library) {
       return Optional.ofNullable(series);
+    }
+
+    @Override
+    public Optional<SeasonDetails> getSeasonDetails(String seriesExternalId, int seasonNumber) {
+      return Optional.empty();
     }
 
     @Override
