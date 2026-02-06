@@ -24,7 +24,6 @@ import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.metadata.movie.TMDBMovieProvider;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
-import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.task.FileProcessingTaskCoordinator;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
@@ -117,12 +116,6 @@ class FileEventProcessorTest {
     MetadataProvider<com.streamarr.server.domain.media.Movie> tmdbProvider =
         mock(TMDBMovieProvider.class);
 
-    var orphanedMediaFileCleanupService =
-        new OrphanedMediaFileCleanupService(mediaFileRepository, movieService, fileSystem);
-
-    var directoryWatchingService = mock(DirectoryWatchingService.class);
-    var streamingService = mock(StreamingService.class);
-
     var libraryManagementService =
         new LibraryManagementService(
             ignoredFileValidator,
@@ -134,9 +127,7 @@ class FileEventProcessorTest {
             movieService,
             personService,
             genreService,
-            orphanedMediaFileCleanupService,
-            directoryWatchingService,
-            streamingService,
+            event -> {},
             new MutexFactoryProvider(),
             fileSystem);
 

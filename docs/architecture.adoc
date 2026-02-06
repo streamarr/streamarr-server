@@ -64,6 +64,29 @@ Library Scan
 
 The metadata provider abstraction (`MetadataProvider<T>`) allows swapping TMDB for another source without changing the scan pipeline.
 
+== Service Communication
+
+Services coordinate library lifecycle events using Spring Application Events rather than direct method calls. `LibraryManagementService` publishes events; interested services listen and react independently.
+
+----
+addLibrary()
+    → LibraryAddedEvent
+        → DirectoryWatchingService (register watcher)
+
+scanLibrary()
+    → ScanCompletedEvent
+        → OrphanedMediaFileCleanupService (remove orphaned files)
+
+removeLibrary()
+    → LibraryRemovedEvent
+        → DirectoryWatchingService (unregister watcher)
+        → StreamingSessionCleanupListener (terminate sessions)
+----
+
+Side effects triggered by transactional operations use `@TransactionalEventListener(AFTER_COMMIT)` to ensure they only execute after a successful commit. Non-transactional publishers use `@EventListener` for synchronous, same-thread delivery.
+
+See link:adr/0010-spring-application-events.adoc[ADR 0010] for full rationale.
+
 == Key Design Decisions
 
 See link:adr/[Architecture Decision Records] for detailed rationale. Summary:
@@ -88,4 +111,7 @@ See link:adr/[Architecture Decision Records] for detailed rationale. Summary:
 
 | TMDB metadata abstraction
 | Provider interface allows future sources without changing the pipeline
+
+| Spring Application Events
+| Decouples side effects from core operations, eliminates circular dependencies (link:adr/0010-spring-application-events.adoc[ADR 0010])
 |===

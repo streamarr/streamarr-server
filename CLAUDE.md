@@ -60,6 +60,27 @@ All PRs must pass these conditions on new code:
 - **In-memory mutex** (`MutexFactory`): guard brief check-then-act on DB state within a single JVM (e.g., prevent duplicate inserts). Not distributed — ineffective across multiple instances.
 - **Database locks** (`SELECT FOR UPDATE … skipLocked`): coordinate across multiple application instances. Pair with lease-based heartbeats for crash recovery.
 
+### Spring Application Events
+Use Spring's `ApplicationEventPublisher` to decouple side effects from core operations. See [ADR 0010](docs/adr/0010-spring-application-events.adoc) for full rationale.
+
+**When to use events:**
+- Breaking circular dependencies between services
+- Decoupling fire-and-forget side effects (watcher registration, session cleanup, orphaned file removal) from the operation that triggers them
+- When adding a new reaction to an operation should not require modifying the publishing service
+
+**When NOT to use events:**
+- Synchronous request-response where the caller needs the result
+- Simple method calls within the same service where no decoupling benefit exists
+
+**Listener annotations:**
+- `@EventListener` — for publishers that are non-transactional (synchronous, same thread)
+- `@TransactionalEventListener(phase = AFTER_COMMIT)` — for publishers inside a transaction; side effects only execute if the transaction commits
+
+**Conventions:**
+- Events are Java records in a `services.<domain>.events` package
+- Events carry only the data listeners need (IDs, paths) — not full entities
+- Testing: use `CapturingEventPublisher` fake to assert events published; test listeners by direct method invocation
+
 ### Defensive Programming
 - Fail fast with meaningful exceptions at system boundaries
 - Use custom exceptions that convey intent (not generic RuntimeException)

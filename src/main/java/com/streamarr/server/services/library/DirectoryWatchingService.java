@@ -1,6 +1,8 @@
 package com.streamarr.server.services.library;
 
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.services.library.events.LibraryAddedEvent;
+import com.streamarr.server.services.library.events.LibraryRemovedEvent;
 import com.streamarr.server.services.task.FileProcessingTaskCoordinator;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import io.methvin.watcher.DirectoryWatcher;
@@ -13,7 +15,10 @@ import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.annotation.DependsOn;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 @Slf4j
 @Service
@@ -112,6 +117,26 @@ public class DirectoryWatchingService implements InitializingBean {
       setup();
     } catch (IOException ex) {
       log.error("Failed to start library watcher", ex);
+    }
+  }
+
+  // Watcher may detect files before the initial async scan processes them.
+  // FileProcessingTaskCoordinator deduplicates, so concurrent discovery is safe.
+  @EventListener
+  public void onLibraryAdded(LibraryAddedEvent event) {
+    try {
+      addDirectory(Path.of(event.filepath()));
+    } catch (IOException e) {
+      log.error("Failed to start watching directory for library: {}", event.filepath(), e);
+    }
+  }
+
+  @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+  public void onLibraryRemoved(LibraryRemovedEvent event) {
+    try {
+      removeDirectory(Path.of(event.filepath()));
+    } catch (IOException e) {
+      log.warn("Failed to stop watching directory: {}", event.filepath(), e);
     }
   }
 }
