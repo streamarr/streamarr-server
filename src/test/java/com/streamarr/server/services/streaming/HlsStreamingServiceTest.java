@@ -24,6 +24,7 @@ import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -577,6 +578,67 @@ class HlsStreamingServiceTest {
     var session = limitedService.createSession(file.getId(), options);
 
     assertThat(session.getVariants()).hasSize(2);
+  }
+
+  @Test
+  @DisplayName("Should restart FFmpeg when segment is missing from suspended session")
+  void shouldRestartFfmpegWhenSegmentIsMissingFromSuspendedSession() {
+    var file = seedMediaFile();
+    var session = service.createSession(file.getId(), defaultOptions());
+    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
+    transcodeExecutor.markDead(session.getSessionId());
+
+    service.resumeSessionIfNeeded(session.getSessionId(), "segment5.ts");
+
+    assertThat(transcodeExecutor.isRunning(session.getSessionId())).isTrue();
+    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
+  }
+
+  @Test
+  @DisplayName("Should not restart FFmpeg when session is actively transcoding")
+  void shouldNotRestartFfmpegWhenSessionIsActivelyTranscoding() {
+    var file = seedMediaFile();
+    var session = service.createSession(file.getId(), defaultOptions());
+    var startedBefore = transcodeExecutor.getStarted().size();
+
+    service.resumeSessionIfNeeded(session.getSessionId(), "segment0.ts");
+
+    assertThat(transcodeExecutor.getStarted()).hasSize(startedBefore);
+  }
+
+  @Test
+  @DisplayName("Should not restart FFmpeg when segment already exists on disk")
+  void shouldNotRestartFfmpegWhenSegmentAlreadyExistsOnDisk() {
+    var file = seedMediaFile();
+    var session = service.createSession(file.getId(), defaultOptions());
+    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
+    transcodeExecutor.markDead(session.getSessionId());
+    segmentStore.addSegment(session.getSessionId(), "segment5.ts", new byte[] {0x47});
+
+    service.resumeSessionIfNeeded(session.getSessionId(), "segment5.ts");
+
+    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.SUSPENDED);
+  }
+
+  @Test
+  @DisplayName("Should not throw when resuming nonexistent session")
+  void shouldNotThrowWhenResumingNonexistentSession() {
+    service.resumeSessionIfNeeded(UUID.randomUUID(), "segment0.ts");
+  }
+
+  @Test
+  @DisplayName("Should update last accessed time when resuming suspended session")
+  void shouldUpdateLastAccessedTimeWhenResumingSuspendedSession() {
+    var file = seedMediaFile();
+    var session = service.createSession(file.getId(), defaultOptions());
+    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
+    session.setLastAccessedAt(Instant.now().minusSeconds(200));
+    transcodeExecutor.markDead(session.getSessionId());
+    var oldAccessTime = session.getLastAccessedAt();
+
+    service.resumeSessionIfNeeded(session.getSessionId(), "segment5.ts");
+
+    assertThat(session.getLastAccessedAt()).isAfter(oldAccessTime);
   }
 
   @Test

@@ -137,7 +137,99 @@ public class HlsStreamingService implements StreamingService {
 
   @Override
   public void resumeSessionIfNeeded(UUID sessionId, String segmentName) {
-    // no-op — will be implemented in a behavioral commit
+    var session = sessionRepository.findById(sessionId).orElse(null);
+    if (session == null || !session.isSuspended()) {
+      return;
+    }
+    if (segmentStore.segmentExists(sessionId, segmentName)) {
+      return;
+    }
+    resumeWithLock(sessionId, segmentName);
+  }
+
+  private void resumeWithLock(UUID sessionId, String segmentName) {
+    var lock = resumeMutex.getMutex(sessionId);
+    lock.lock();
+    try {
+      doResume(sessionId, segmentName);
+    } finally {
+      lock.unlock();
+    }
+  }
+
+  private void doResume(UUID sessionId, String segmentName) {
+    var session = sessionRepository.findById(sessionId).orElse(null);
+    if (session == null || !session.isSuspended()) {
+      return;
+    }
+
+    var segmentIndex = parseSegmentIndex(segmentName);
+    var resumeSeek = session.getSeekPosition()
+        + (segmentIndex * properties.segmentDurationSeconds());
+
+    resumeTranscodes(session, resumeSeek, segmentIndex);
+    session.setLastAccessedAt(Instant.now());
+    sessionRepository.save(session);
+
+    log.info(
+        "Resumed suspended session {} at segment {} (seek {}s)",
+        sessionId,
+        segmentIndex,
+        resumeSeek);
+  }
+
+  private void resumeTranscodes(StreamSession session, int seekPosition, int startNumber) {
+    if (!session.getVariants().isEmpty()) {
+      resumeVariantTranscodes(session, session.getVariants(), seekPosition, startNumber);
+      return;
+    }
+    resumeSingleTranscode(session, seekPosition, startNumber);
+  }
+
+  private void resumeVariantTranscodes(
+      StreamSession session,
+      List<QualityVariant> variants,
+      int seekPosition,
+      int startNumber) {
+    for (var variant : variants) {
+      var request =
+          TranscodeRequest.builder()
+              .sessionId(session.getSessionId())
+              .sourcePath(session.getSourcePath())
+              .seekPosition(seekPosition)
+              .segmentDuration(properties.segmentDurationSeconds())
+              .framerate(session.getMediaProbe().framerate())
+              .transcodeDecision(session.getTranscodeDecision())
+              .width(variant.width())
+              .height(variant.height())
+              .bitrate(variant.videoBitrate())
+              .variantLabel(variant.label())
+              .startNumber(startNumber)
+              .build();
+      var handle = transcodeExecutor.start(request);
+      session.setVariantHandle(variant.label(), handle);
+    }
+  }
+
+  private void resumeSingleTranscode(
+      StreamSession session, int seekPosition, int startNumber) {
+    var probe = session.getMediaProbe();
+    var request =
+        TranscodeRequest.builder()
+            .sessionId(session.getSessionId())
+            .sourcePath(session.getSourcePath())
+            .seekPosition(seekPosition)
+            .segmentDuration(properties.segmentDurationSeconds())
+            .framerate(probe.framerate())
+            .transcodeDecision(session.getTranscodeDecision())
+            .width(probe.width())
+            .height(probe.height())
+            .bitrate(probe.bitrate())
+            .variantLabel(StreamSession.defaultVariant())
+            .startNumber(startNumber)
+            .build();
+    var handle = transcodeExecutor.start(request);
+    session.setHandle(handle);
   }
 
   private List<QualityVariant> resolveVariants(
