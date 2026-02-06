@@ -106,6 +106,7 @@ public class LocalSegmentStore implements SegmentStore {
 
   private Path createSessionDirectory(UUID sessionId) {
     var dir = baseDir.resolve(sessionId.toString());
+
     try {
       Files.createDirectories(dir);
       return dir;
@@ -117,11 +118,11 @@ public class LocalSegmentStore implements SegmentStore {
   private void deleteDirectoryRecursively(Path dir) {
     try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir)) {
       for (var entry : stream) {
-        if (Files.isDirectory(entry)) {
-          deleteDirectoryRecursively(entry);
-        } else {
+        if (!Files.isDirectory(entry)) {
           Files.deleteIfExists(entry);
+          continue;
         }
+        deleteDirectoryRecursively(entry);
       }
       Files.deleteIfExists(dir);
     } catch (IOException e) {
