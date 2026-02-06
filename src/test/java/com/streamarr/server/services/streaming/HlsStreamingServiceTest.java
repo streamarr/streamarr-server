@@ -642,6 +642,81 @@ class HlsStreamingServiceTest {
   }
 
   @Test
+  @DisplayName("Should resume with correct start number when segment is TS format")
+  void shouldResumeWithCorrectStartNumberWhenSegmentIsTsFormat() {
+    var file = seedMediaFile();
+    var session = service.createSession(file.getId(), defaultOptions());
+    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
+    transcodeExecutor.markDead(session.getSessionId());
+
+    service.resumeSessionIfNeeded(session.getSessionId(), "segment5.ts");
+
+    var lastRequest = transcodeExecutor.getStartedRequests().getLast();
+    assertThat(lastRequest.startNumber()).isEqualTo(5);
+    assertThat(lastRequest.seekPosition()).isEqualTo(30);
+  }
+
+  @Test
+  @DisplayName("Should resume with correct start number when segment is fMP4 format")
+  void shouldResumeWithCorrectStartNumberWhenSegmentIsFmp4Format() {
+    var file = seedMediaFile();
+    var session = service.createSession(file.getId(), defaultOptions());
+    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
+    transcodeExecutor.markDead(session.getSessionId());
+
+    service.resumeSessionIfNeeded(session.getSessionId(), "segment12.m4s");
+
+    var lastRequest = transcodeExecutor.getStartedRequests().getLast();
+    assertThat(lastRequest.startNumber()).isEqualTo(12);
+    assertThat(lastRequest.seekPosition()).isEqualTo(72);
+  }
+
+  @Test
+  @DisplayName("Should resume with correct start number when segment includes variant path")
+  void shouldResumeWithCorrectStartNumberWhenSegmentIncludesVariantPath() {
+    var file = seedMediaFile();
+    var session = service.createSession(file.getId(), defaultOptions());
+    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
+    transcodeExecutor.markDead(session.getSessionId());
+
+    service.resumeSessionIfNeeded(session.getSessionId(), "720p/segment3.ts");
+
+    var lastRequest = transcodeExecutor.getStartedRequests().getLast();
+    assertThat(lastRequest.startNumber()).isEqualTo(3);
+    assertThat(lastRequest.seekPosition()).isEqualTo(18);
+  }
+
+  @Test
+  @DisplayName("Should resume at beginning when segment name has no index")
+  void shouldResumeAtBeginningWhenSegmentNameHasNoIndex() {
+    var file = seedMediaFile();
+    var session = service.createSession(file.getId(), defaultOptions());
+    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
+    transcodeExecutor.markDead(session.getSessionId());
+
+    service.resumeSessionIfNeeded(session.getSessionId(), "init.mp4");
+
+    var lastRequest = transcodeExecutor.getStartedRequests().getLast();
+    assertThat(lastRequest.startNumber()).isZero();
+    assertThat(lastRequest.seekPosition()).isZero();
+  }
+
+  @Test
+  @DisplayName("Should resume at beginning when segment is first")
+  void shouldResumeAtBeginningWhenSegmentIsFirst() {
+    var file = seedMediaFile();
+    var session = service.createSession(file.getId(), defaultOptions());
+    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
+    transcodeExecutor.markDead(session.getSessionId());
+
+    service.resumeSessionIfNeeded(session.getSessionId(), "segment0.ts");
+
+    var lastRequest = transcodeExecutor.getStartedRequests().getLast();
+    assertThat(lastRequest.startNumber()).isZero();
+    assertThat(lastRequest.seekPosition()).isZero();
+  }
+
+  @Test
   @DisplayName("Should parse segment index when segment name is simple TS")
   void shouldParseSegmentIndexWhenSegmentNameIsSimpleTs() {
     assertThat(HlsStreamingService.parseSegmentIndex("segment5.ts")).isEqualTo(5);
