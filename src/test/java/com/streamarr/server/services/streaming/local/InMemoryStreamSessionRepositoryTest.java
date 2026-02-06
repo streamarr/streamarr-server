@@ -88,4 +88,19 @@ class InMemoryStreamSessionRepositoryTest {
     repository.removeById(session1.getSessionId());
     assertThat(repository.count()).isEqualTo(1);
   }
+
+  @Test
+  @DisplayName("Should overwrite session when saving existing id")
+  void shouldOverwriteSessionWhenSavingExistingId() {
+    var session = StreamSessionFixture.buildMpegtsSession();
+    repository.save(session);
+
+    session.setSeekPosition(300);
+    repository.save(session);
+
+    assertThat(repository.count()).isEqualTo(1);
+    var found = repository.findById(session.getSessionId());
+    assertThat(found).isPresent();
+    assertThat(found.get().getSeekPosition()).isEqualTo(300);
+  }
 }
