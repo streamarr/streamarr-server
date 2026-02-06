@@ -113,6 +113,7 @@ public class FfmpegCommandBuilder {
       addGopSizeArgs(cmd, job);
       return;
     }
+
     if (FORCE_KEYFRAME_ENCODERS.contains(encoder)) {
       addForceKeyframeExprArgs(cmd, job);
     }
