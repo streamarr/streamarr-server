@@ -44,12 +44,12 @@ public class SessionReaper {
 
   private boolean isExpired(StreamSession session, Instant now) {
     var idleSeconds = now.getEpochSecond() - session.getLastAccessedAt().getEpochSecond();
-    return idleSeconds > properties.sessionRetentionSeconds();
+    return idleSeconds > properties.sessionRetention().toSeconds();
   }
 
   private boolean isIdle(StreamSession session, Instant now) {
     var idleSeconds = now.getEpochSecond() - session.getLastAccessedAt().getEpochSecond();
-    return idleSeconds > properties.sessionTimeoutSeconds();
+    return idleSeconds > properties.sessionTimeout().toSeconds();
   }
 
   private void suspendSession(StreamSession session) {

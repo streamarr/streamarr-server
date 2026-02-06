@@ -103,8 +103,8 @@ class HlsStreamingSmokeTest {
     var properties =
         StreamingProperties.builder()
             .maxConcurrentTranscodes(3)
-            .segmentDurationSeconds(6)
-            .sessionTimeoutSeconds(60)
+            .segmentDuration(Duration.ofSeconds(6))
+            .sessionTimeout(Duration.ofSeconds(60))
             .build();
 
     mediaFileRepository = new FakeMediaFileRepository();

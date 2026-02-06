@@ -1,6 +1,7 @@
 package com.streamarr.server.config;
 
 import java.nio.file.Path;
+import java.time.Duration;
 import lombok.Builder;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
@@ -8,9 +9,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "streaming")
 public record StreamingProperties(
     int maxConcurrentTranscodes,
-    int segmentDurationSeconds,
-    int sessionTimeoutSeconds,
-    int sessionRetentionSeconds,
+    Duration segmentDuration,
+    Duration sessionTimeout,
+    Duration sessionRetention,
     String segmentBasePath,
     String ffmpegPath,
     String ffprobePath) {
@@ -19,14 +20,14 @@ public record StreamingProperties(
     if (maxConcurrentTranscodes <= 0) {
       maxConcurrentTranscodes = 8;
     }
-    if (segmentDurationSeconds <= 0) {
-      segmentDurationSeconds = 6;
+    if (segmentDuration == null) {
+      segmentDuration = Duration.ofSeconds(6);
     }
-    if (sessionTimeoutSeconds <= 0) {
-      sessionTimeoutSeconds = 60;
+    if (sessionTimeout == null) {
+      sessionTimeout = Duration.ofSeconds(60);
     }
-    if (sessionRetentionSeconds <= 0) {
-      sessionRetentionSeconds = 86400;
+    if (sessionRetention == null) {
+      sessionRetention = Duration.ofHours(24);
     }
     if (segmentBasePath == null || segmentBasePath.isBlank()) {
       segmentBasePath =

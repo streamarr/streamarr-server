@@ -52,8 +52,8 @@ class HlsStreamingServiceTest {
     var properties =
         StreamingProperties.builder()
             .maxConcurrentTranscodes(3)
-            .segmentDurationSeconds(6)
-            .sessionTimeoutSeconds(60)
+            .segmentDuration(Duration.ofSeconds(6))
+            .sessionTimeout(Duration.ofSeconds(60))
             .build();
     var decisionService = new TranscodeDecisionService();
 
@@ -488,8 +488,8 @@ class HlsStreamingServiceTest {
             new QualityLadderService(),
             StreamingProperties.builder()
                 .maxConcurrentTranscodes(3)
-                .segmentDurationSeconds(6)
-                .sessionTimeoutSeconds(60)
+                .segmentDuration(Duration.ofSeconds(6))
+                .sessionTimeout(Duration.ofSeconds(60))
                 .build(),
             new FakeStreamSessionRepository(),
             new MutexFactory<>());
@@ -542,8 +542,8 @@ class HlsStreamingServiceTest {
     var properties =
         StreamingProperties.builder()
             .maxConcurrentTranscodes(2)
-            .segmentDurationSeconds(6)
-            .sessionTimeoutSeconds(60)
+            .segmentDuration(Duration.ofSeconds(6))
+            .sessionTimeout(Duration.ofSeconds(60))
             .build();
     var limitedService =
         new HlsStreamingService(

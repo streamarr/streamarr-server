@@ -11,6 +11,7 @@ import com.streamarr.server.fakes.FakeStreamSessionRepository;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.Collections;
@@ -35,9 +36,9 @@ class SessionReaperTest {
     streamingService = new InMemoryStreamingService();
     var properties =
         StreamingProperties.builder()
-            .segmentDurationSeconds(6)
-            .sessionTimeoutSeconds(60)
-            .sessionRetentionSeconds(86400)
+            .segmentDuration(Duration.ofSeconds(6))
+            .sessionTimeout(Duration.ofSeconds(60))
+            .sessionRetention(Duration.ofHours(24))
             .build();
     reaper =
         new SessionReaper(

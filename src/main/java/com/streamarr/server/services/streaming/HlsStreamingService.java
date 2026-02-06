@@ -165,7 +165,7 @@ public class HlsStreamingService implements StreamingService {
 
     var segmentIndex = parseSegmentIndex(segmentName);
     var resumeSeek =
-        session.getSeekPosition() + (segmentIndex * properties.segmentDurationSeconds());
+        session.getSeekPosition() + (segmentIndex * (int) properties.segmentDuration().toSeconds());
 
     startTranscodes(session, resumeSeek, segmentIndex);
     session.setLastAccessedAt(Instant.now());
@@ -213,7 +213,7 @@ public class HlsStreamingService implements StreamingService {
               .sessionId(session.getSessionId())
               .sourcePath(session.getSourcePath())
               .seekPosition(seekPosition)
-              .segmentDuration(properties.segmentDurationSeconds())
+              .segmentDuration((int) properties.segmentDuration().toSeconds())
               .framerate(session.getMediaProbe().framerate())
               .transcodeDecision(session.getTranscodeDecision())
               .width(variant.width())
@@ -234,7 +234,7 @@ public class HlsStreamingService implements StreamingService {
             .sessionId(session.getSessionId())
             .sourcePath(session.getSourcePath())
             .seekPosition(seekPosition)
-            .segmentDuration(properties.segmentDurationSeconds())
+            .segmentDuration((int) properties.segmentDuration().toSeconds())
             .framerate(probe.framerate())
             .transcodeDecision(session.getTranscodeDecision())
             .width(probe.width())
