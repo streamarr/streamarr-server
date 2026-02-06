@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test;
 @DisplayName("FFmpeg Command Builder Tests")
 class FfmpegCommandBuilderTest {
 
-  private final FfmpegCommandBuilder builder = new FfmpegCommandBuilder();
+  private final FfmpegCommandBuilder builder = new FfmpegCommandBuilder("ffmpeg");
 
   private TranscodeJob job(
       TranscodeMode mode,

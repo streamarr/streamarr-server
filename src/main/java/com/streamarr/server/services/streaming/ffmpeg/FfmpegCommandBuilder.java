@@ -7,10 +7,12 @@ import com.streamarr.server.domain.streaming.TranscodeRequest;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-import org.springframework.stereotype.Component;
+import lombok.RequiredArgsConstructor;
 
-@Component
+@RequiredArgsConstructor
 public class FfmpegCommandBuilder {
+
+  private final String ffmpegPath;
 
   private static final Set<String> GOP_ONLY_ENCODERS =
       Set.of(
@@ -36,7 +38,7 @@ public class FfmpegCommandBuilder {
     var decision = request.transcodeDecision();
     var mode = decision.transcodeMode();
 
-    cmd.add("ffmpeg");
+    cmd.add(ffmpegPath);
     cmd.add("-y");
 
     if (request.seekPosition() > 0) {
