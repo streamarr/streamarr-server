@@ -132,16 +132,11 @@ public class EpisodePathMetadataParser implements MetadataParser<EpisodePathResu
     // It avoids erroneous parsing of something like "series-s09e14-1080p.mkv" as a multi-episode
     // from E14 to E108.
     if (endingNumberGroupEndIndex >= filename.length()
-        || !containsChar("0123456789iIpP", filename.charAt(endingNumberGroupEndIndex))) {
+        || "0123456789iIpP".indexOf(filename.charAt(endingNumberGroupEndIndex)) < 0) {
       return endingEpisodeNumber;
     }
 
     return OptionalInt.empty();
-  }
-
-  private boolean containsChar(String s, char search) {
-    if (s.length() == 0) return false;
-    else return s.charAt(0) == search || containsChar(s.substring(1), search);
   }
 
   private String getSeriesName(Matcher match) {
