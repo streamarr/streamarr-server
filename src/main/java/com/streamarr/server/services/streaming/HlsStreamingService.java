@@ -104,7 +104,7 @@ public class HlsStreamingService implements StreamingService {
     session.setLastAccessedAt(Instant.now());
     sessionRepository.save(session);
 
-    log.info("Seeked session {} to position {}s", sessionId, positionSeconds);
+    log.info("Seek-ed session {} to position {}s", sessionId, positionSeconds);
     return session;
   }
 
@@ -138,6 +138,10 @@ public class HlsStreamingService implements StreamingService {
     return qualityLadderService.generateVariants(probe, options);
   }
 
+  private boolean isAutoQuality(StreamingOptions options) {
+    return options.quality() == null || options.quality() == VideoQuality.AUTO;
+  }
+
   private List<QualityVariant> enforceCapacityLimits(
       TranscodeMode mode, List<QualityVariant> variants) {
     if (!variants.isEmpty()) {
@@ -149,15 +153,64 @@ public class HlsStreamingService implements StreamingService {
     return variants;
   }
 
-  private void startTranscodes(StreamSession session, int seekPosition) {
-    if (!session.getVariants().isEmpty()) {
-      startVariantTranscodes(session, session.getVariants(), seekPosition);
-      return;
+  private List<QualityVariant> capVariantsToAvailableSlots(List<QualityVariant> variants) {
+    var slotsAvailable = availableTranscodeSlots();
+    if (slotsAvailable <= 0) {
+      throw new MaxConcurrentTranscodesException(properties.maxConcurrentTranscodes());
     }
-    startSingleTranscode(session, seekPosition);
+    if (variants.size() > slotsAvailable) {
+      return variants.subList(0, slotsAvailable);
+    }
+    return variants;
   }
 
-  private void startVariantTranscodes(
+  private int availableTranscodeSlots() {
+    var activeTranscodes =
+      sessionRepository.findAll().stream()
+        .filter(s -> requiresTranscode(s.getTranscodeDecision().transcodeMode()))
+        .mapToInt(s -> Math.max(1, s.getVariants().size()))
+        .sum();
+    return properties.maxConcurrentTranscodes() - activeTranscodes;
+  }
+
+  private boolean requiresTranscode(TranscodeMode mode) {
+    return mode == TranscodeMode.PARTIAL_TRANSCODE || mode == TranscodeMode.FULL_TRANSCODE;
+  }
+
+  private void enforceTranscodeLimit() {
+    if (availableTranscodeSlots() <= 0) {
+      throw new MaxConcurrentTranscodesException(properties.maxConcurrentTranscodes());
+    }
+  }
+
+  private void startTranscodes(StreamSession session, int seekPosition) {
+    if (session.getVariants().isEmpty()) {
+      startSingleTranscode(session, seekPosition);
+      return;
+    }
+    startMultipleVariantTranscodes(session, session.getVariants(), seekPosition);
+  }
+
+  private void startSingleTranscode(StreamSession session, int seekPosition) {
+    var probe = session.getMediaProbe();
+    var request =
+      TranscodeRequest.builder()
+        .sessionId(session.getSessionId())
+        .sourcePath(session.getSourcePath())
+        .seekPosition(seekPosition)
+        .segmentDuration(properties.segmentDurationSeconds())
+        .framerate(probe.framerate())
+        .transcodeDecision(session.getTranscodeDecision())
+        .width(probe.width())
+        .height(probe.height())
+        .bitrate(probe.bitrate())
+        .variantLabel(StreamSession.defaultVariant())
+        .build();
+    var handle = transcodeExecutor.start(request);
+    session.setHandle(handle);
+  }
+
+  private void startMultipleVariantTranscodes(
       StreamSession session, List<QualityVariant> variants, int seekPosition) {
     for (var variant : variants) {
       var request =
@@ -175,59 +228,6 @@ public class HlsStreamingService implements StreamingService {
               .build();
       var handle = transcodeExecutor.start(request);
       session.setVariantHandle(variant.label(), handle);
-    }
-  }
-
-  private void startSingleTranscode(StreamSession session, int seekPosition) {
-    var probe = session.getMediaProbe();
-    var request =
-        TranscodeRequest.builder()
-            .sessionId(session.getSessionId())
-            .sourcePath(session.getSourcePath())
-            .seekPosition(seekPosition)
-            .segmentDuration(properties.segmentDurationSeconds())
-            .framerate(probe.framerate())
-            .transcodeDecision(session.getTranscodeDecision())
-            .width(probe.width())
-            .height(probe.height())
-            .bitrate(probe.bitrate())
-            .variantLabel(StreamSession.defaultVariant())
-            .build();
-    var handle = transcodeExecutor.start(request);
-    session.setHandle(handle);
-  }
-
-  private List<QualityVariant> capVariantsToAvailableSlots(List<QualityVariant> variants) {
-    var slotsAvailable = availableTranscodeSlots();
-    if (slotsAvailable <= 0) {
-      throw new MaxConcurrentTranscodesException(properties.maxConcurrentTranscodes());
-    }
-    if (variants.size() > slotsAvailable) {
-      return variants.subList(0, slotsAvailable);
-    }
-    return variants;
-  }
-
-  private boolean isAutoQuality(StreamingOptions options) {
-    return options.quality() == null || options.quality() == VideoQuality.AUTO;
-  }
-
-  private boolean requiresTranscode(TranscodeMode mode) {
-    return mode == TranscodeMode.PARTIAL_TRANSCODE || mode == TranscodeMode.FULL_TRANSCODE;
-  }
-
-  private int availableTranscodeSlots() {
-    var activeTranscodes =
-        sessionRepository.findAll().stream()
-            .filter(s -> requiresTranscode(s.getTranscodeDecision().transcodeMode()))
-            .mapToInt(s -> Math.max(1, s.getVariants().size()))
-            .sum();
-    return properties.maxConcurrentTranscodes() - activeTranscodes;
-  }
-
-  private void enforceTranscodeLimit() {
-    if (availableTranscodeSlots() <= 0) {
-      throw new MaxConcurrentTranscodesException(properties.maxConcurrentTranscodes());
     }
   }
 }
