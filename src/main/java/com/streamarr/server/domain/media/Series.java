@@ -57,7 +57,7 @@ public class Series extends BaseCollectable<Series> {
 
   @Builder.Default
   @ManyToMany(
-      cascade = {CascadeType.PERSIST, CascadeType.MERGE},
+      cascade = {CascadeType.MERGE},
       fetch = FetchType.LAZY)
   @JoinTable(
       name = "series_company",
@@ -89,7 +89,7 @@ public class Series extends BaseCollectable<Series> {
 
   @Builder.Default
   @ManyToMany(
-      cascade = {CascadeType.PERSIST, CascadeType.MERGE},
+      cascade = {CascadeType.MERGE},
       fetch = FetchType.LAZY)
   @JoinTable(
       name = "series_genre",

@@ -117,8 +117,10 @@ public class SeriesScanningIT extends AbstractIntegrationTest {
     assertThat(season.getTitle()).isEqualTo("Season 1");
 
     var episodes = episodeRepository.findBySeasonId(season.getId());
-    assertThat(episodes).hasSize(3);
-    assertThat(episodes).extracting("episodeNumber").containsExactlyInAnyOrder(1, 2, 3);
+    assertThat(episodes).hasSize(7);
+    assertThat(episodes)
+        .extracting("episodeNumber")
+        .containsExactlyInAnyOrder(1, 2, 3, 4, 5, 6, 7);
 
     var mediaFile =
         mediaFileRepository.findFirstByFilepath(file.toAbsolutePath().toString());
@@ -149,7 +151,7 @@ public class SeriesScanningIT extends AbstractIntegrationTest {
     assertThat(seasonRepository.findAll()).hasSize(1);
 
     var season = seasonRepository.findAll().getFirst();
-    assertThat(episodeRepository.findBySeasonId(season.getId())).hasSize(3);
+    assertThat(episodeRepository.findBySeasonId(season.getId())).hasSize(7);
 
     var mediaFiles = mediaFileRepository.findByLibraryId(library.getId());
     assertThat(mediaFiles).hasSize(2);
@@ -182,7 +184,7 @@ public class SeriesScanningIT extends AbstractIntegrationTest {
 
     var season1 = seasons.stream().filter(s -> s.getSeasonNumber() == 1).findFirst().orElseThrow();
     var season2 = seasons.stream().filter(s -> s.getSeasonNumber() == 2).findFirst().orElseThrow();
-    assertThat(episodeRepository.findBySeasonId(season1.getId())).hasSize(3);
+    assertThat(episodeRepository.findBySeasonId(season1.getId())).hasSize(7);
     assertThat(episodeRepository.findBySeasonId(season2.getId())).hasSize(2);
   }
 
@@ -287,7 +289,7 @@ public class SeriesScanningIT extends AbstractIntegrationTest {
 
     var season = seasonRepository.findAll().getFirst();
     var episodes = episodeRepository.findBySeasonId(season.getId());
-    assertThat(episodes).hasSize(4);
+    assertThat(episodes).hasSize(8);
 
     var ep99 =
         episodeRepository.findBySeasonIdAndEpisodeNumber(season.getId(), 99);
@@ -396,13 +398,35 @@ public class SeriesScanningIT extends AbstractIntegrationTest {
                           "name": "%s",
                           "original_name": "%s",
                           "first_air_date": "2008-01-20",
-                          "overview": "A test series.",
-                          "episode_run_time": [47],
-                          "genres": [],
-                          "production_companies": [],
-                          "credits": {"id": %s, "cast": [], "crew": []},
-                          "content_ratings": {"results": []},
-                          "external_ids": {}
+                          "overview": "Walter White, a New Mexico chemistry teacher, is diagnosed with Stage III cancer and given a prognosis of only two years left to live.",
+                          "episode_run_time": [],
+                          "genres": [
+                            {"id": 18, "name": "Drama"},
+                            {"id": 80, "name": "Crime"}
+                          ],
+                          "production_companies": [
+                            {"id": 11073, "logo_path": "/wHs44fktdoj6c378ZbSWfzKsM2Z.png", "name": "Sony Pictures Television", "origin_country": "US"},
+                            {"id": 33742, "logo_path": "/2jdh2sEa0R6y6uT0F7g0IgA2WO8.png", "name": "High Bridge Productions", "origin_country": "US"}
+                          ],
+                          "credits": {
+                            "id": %s,
+                            "cast": [
+                              {"id": 17419, "adult": false, "gender": 2, "name": "Bryan Cranston", "original_name": "Bryan Cranston", "popularity": 7.13, "profile_path": "/npIIZJGSrcJIJ6yHdmbqO6Jzo5I.jpg", "character": "Walter White", "known_for_department": "Acting", "order": 0},
+                              {"id": 84497, "adult": false, "gender": 2, "name": "Aaron Paul", "original_name": "Aaron Paul", "popularity": 3.69, "profile_path": "/8Ac9uuoYwZoYVAIJfRLzzLsGGJn.jpg", "character": "Jesse Pinkman", "known_for_department": "Acting", "order": 1}
+                            ],
+                            "crew": [
+                              {"id": 66633, "adult": false, "gender": 2, "name": "Vince Gilligan", "original_name": "Vince Gilligan", "popularity": 2.85, "department": "Production", "job": "Executive Producer", "known_for_department": "Writing"}
+                            ]
+                          },
+                          "content_ratings": {
+                            "results": [
+                              {"iso_3166_1": "US", "rating": "TV-MA", "descriptors": []}
+                            ]
+                          },
+                          "external_ids": {
+                            "imdb_id": "tt0903747",
+                            "tvdb_id": 81189
+                          }
                         }
                         """
                             .formatted(tmdbId, name, name, tmdbId))));
@@ -424,13 +448,17 @@ public class SeriesScanningIT extends AbstractIntegrationTest {
           "id": 3572,
           "name": "Season 1",
           "season_number": 1,
-          "overview": "The first season.",
-          "poster_path": "/poster1.jpg",
+          "overview": "High school chemistry teacher Walter White's life is suddenly transformed by a dire medical diagnosis. Street-savvy former student Jesse Pinkman \\"teaches\\" Walter a new trade.",
+          "poster_path": "/1BP4xYv9ZG4ZVHkL7ocOziBbSYH.jpg",
           "air_date": "2008-01-20",
           "episodes": [
-            {"id": 62085, "episode_number": 1, "season_number": 1, "name": "Pilot", "overview": "Pilot episode.", "still_path": "/still1.jpg", "air_date": "2008-01-20", "runtime": 58},
-            {"id": 62086, "episode_number": 2, "season_number": 1, "name": "Second Episode", "overview": "Second ep.", "still_path": "/still2.jpg", "air_date": "2008-01-27", "runtime": 48},
-            {"id": 62087, "episode_number": 3, "season_number": 1, "name": "Third Episode", "overview": "Third ep.", "still_path": "/still3.jpg", "air_date": "2008-02-10", "runtime": 48}
+            {"id": 62085, "episode_number": 1, "season_number": 1, "name": "Pilot", "overview": "When an unassuming high school chemistry teacher discovers he has a rare form of lung cancer, he decides to team up with a former student and create a top of the line crystal meth in a used RV, to provide for his family once he is gone.", "still_path": "/88Z0fMP8a88EpQWMCs1593G0ngu.jpg", "air_date": "2008-01-20", "runtime": 59},
+            {"id": 62086, "episode_number": 2, "season_number": 1, "name": "Cat's in the Bag...", "overview": "Walt and Jesse attempt to tie up loose ends.", "still_path": "/AbMoecO0ZZio0LcgeLxlzdyGs6X.jpg", "air_date": "2008-01-27", "runtime": 49},
+            {"id": 62087, "episode_number": 3, "season_number": 1, "name": "...And the Bag's in the River", "overview": "Walter fights with Jesse over his drug use.", "still_path": "/2kBeBlxGqBOdWlKwzAxiwkfU5on.jpg", "air_date": "2008-02-10", "runtime": 49},
+            {"id": 62088, "episode_number": 4, "season_number": 1, "name": "Cancer Man", "overview": "Walter finally tells his family that he has been stricken with cancer.", "still_path": "/2UbRgW6apE4XPzhHPA726wUFyaR.jpg", "air_date": "2008-02-17", "runtime": 49},
+            {"id": 62089, "episode_number": 5, "season_number": 1, "name": "Gray Matter", "overview": "Walter and Skyler attend a former colleague's party.", "still_path": "/82G3wZgEvZLKcte6yoZJahUWBtx.jpg", "air_date": "2008-02-24", "runtime": 49},
+            {"id": 62090, "episode_number": 6, "season_number": 1, "name": "Crazy Handful of Nothin'", "overview": "The side effects of chemo begin to plague Walt.", "still_path": "/rCCLuycNPL30W3BtuB8HafxEMYz.jpg", "air_date": "2008-03-02", "runtime": 49},
+            {"id": 62091, "episode_number": 7, "season_number": 1, "name": "A No Rough Stuff Type Deal", "overview": "Walter accepts his new identity as a drug dealer after a PTA meeting.", "still_path": "/1dgFAsajUpUT7DLXgAxHb9GyXHH.jpg", "air_date": "2008-03-09", "runtime": 48}
           ]
         }
         """;
