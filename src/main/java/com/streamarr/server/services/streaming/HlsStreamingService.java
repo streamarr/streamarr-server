@@ -164,8 +164,8 @@ public class HlsStreamingService implements StreamingService {
     }
 
     var segmentIndex = parseSegmentIndex(segmentName);
-    var resumeSeek = session.getSeekPosition()
-        + (segmentIndex * properties.segmentDurationSeconds());
+    var resumeSeek =
+        session.getSeekPosition() + (segmentIndex * properties.segmentDurationSeconds());
 
     resumeTranscodes(session, resumeSeek, segmentIndex);
     session.setLastAccessedAt(Instant.now());
@@ -187,10 +187,7 @@ public class HlsStreamingService implements StreamingService {
   }
 
   private void resumeVariantTranscodes(
-      StreamSession session,
-      List<QualityVariant> variants,
-      int seekPosition,
-      int startNumber) {
+      StreamSession session, List<QualityVariant> variants, int seekPosition, int startNumber) {
     for (var variant : variants) {
       var request =
           TranscodeRequest.builder()
@@ -211,8 +208,7 @@ public class HlsStreamingService implements StreamingService {
     }
   }
 
-  private void resumeSingleTranscode(
-      StreamSession session, int seekPosition, int startNumber) {
+  private void resumeSingleTranscode(StreamSession session, int seekPosition, int startNumber) {
     var probe = session.getMediaProbe();
     var request =
         TranscodeRequest.builder()

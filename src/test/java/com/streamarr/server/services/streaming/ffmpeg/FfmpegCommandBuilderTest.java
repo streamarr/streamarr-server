@@ -466,7 +466,9 @@ class FfmpegCommandBuilderTest {
   @Test
   @DisplayName("Should include start number when start number is non-zero")
   void shouldIncludeStartNumberWhenStartNumberIsNonZero() {
-    var j = jobWithStartNumber(TranscodeMode.REMUX, "h264", "aac", ContainerFormat.MPEGTS, "copy", true, 5);
+    var j =
+        jobWithStartNumber(
+            TranscodeMode.REMUX, "h264", "aac", ContainerFormat.MPEGTS, "copy", true, 5);
 
     var cmd = builder.buildCommand(j);
 

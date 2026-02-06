@@ -39,7 +39,9 @@ class SessionReaperTest {
             .sessionTimeoutSeconds(60)
             .sessionRetentionSeconds(86400)
             .build();
-    reaper = new SessionReaper(streamingService, executor, properties, new FakeStreamSessionRepository());
+    reaper =
+        new SessionReaper(
+            streamingService, executor, properties, new FakeStreamSessionRepository());
   }
 
   @Test
