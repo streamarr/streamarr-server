@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 public class LibraryCrashRecoveryService {
 
   private final LibraryRepository libraryRepository;
+  private final ActiveScanChecker activeScanChecker;
 
   @EventListener(ApplicationReadyEvent.class)
   public void onStartup() {

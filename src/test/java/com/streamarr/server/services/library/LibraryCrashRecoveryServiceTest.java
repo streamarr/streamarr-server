@@ -20,7 +20,7 @@ class LibraryCrashRecoveryServiceTest {
 
   private final LibraryRepository fakeLibraryRepository = new FakeLibraryRepository();
   private final LibraryCrashRecoveryService recoveryService =
-      new LibraryCrashRecoveryService(fakeLibraryRepository);
+      new LibraryCrashRecoveryService(fakeLibraryRepository, id -> false);
 
   @Test
   @DisplayName(
