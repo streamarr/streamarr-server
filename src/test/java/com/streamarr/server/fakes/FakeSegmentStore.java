@@ -31,6 +31,11 @@ public class FakeSegmentStore implements SegmentStore {
   }
 
   @Override
+  public boolean segmentExists(UUID sessionId, String segmentName) {
+    return sessions.getOrDefault(sessionId, Map.of()).containsKey(segmentName);
+  }
+
+  @Override
   public void deleteSession(UUID sessionId) {
     sessions.remove(sessionId);
   }

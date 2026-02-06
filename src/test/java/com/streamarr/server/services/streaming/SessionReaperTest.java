@@ -11,6 +11,7 @@ import com.streamarr.server.fakes.FakeStreamSessionRepository;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.Collections;
@@ -34,21 +35,84 @@ class SessionReaperTest {
     executor = new FakeTranscodeExecutor();
     streamingService = new InMemoryStreamingService();
     var properties =
-        StreamingProperties.builder().segmentDurationSeconds(6).sessionTimeoutSeconds(60).build();
+        StreamingProperties.builder()
+            .segmentDuration(Duration.ofSeconds(6))
+            .sessionTimeout(Duration.ofSeconds(60))
+            .sessionRetention(Duration.ofHours(24))
+            .build();
     reaper =
         new SessionReaper(
             streamingService, executor, properties, new FakeStreamSessionRepository());
   }
 
   @Test
-  @DisplayName("Should reap session when idle past timeout")
-  void shouldReapSessionWhenIdlePastTimeout() {
+  @DisplayName("Should mark handle as suspended when session is idle past timeout")
+  void shouldMarkHandleAsSuspendedWhenIdlePastTimeout() {
     var session = buildSession(Instant.now().minusSeconds(120));
     streamingService.addSession(session);
 
     reaper.reapSessions();
 
+    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.SUSPENDED);
+  }
+
+  @Test
+  @DisplayName("Should preserve session when suspending idle session")
+  void shouldPreserveSessionWhenSuspendingIdleSession() {
+    var session = buildSession(Instant.now().minusSeconds(120));
+    streamingService.addSession(session);
+
+    reaper.reapSessions();
+
+    assertThat(streamingService.accessSession(session.getSessionId())).isPresent();
+  }
+
+  @Test
+  @DisplayName("Should destroy session when idle past retention timeout")
+  void shouldDestroySessionWhenIdlePastRetentionTimeout() {
+    var session = buildSession(Instant.now().minusSeconds(90_000));
+    streamingService.addSession(session);
+
+    reaper.reapSessions();
+
     assertThat(streamingService.accessSession(session.getSessionId())).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should not suspend session when already suspended")
+  void shouldNotSuspendSessionWhenAlreadySuspended() {
+    var session = buildSession(Instant.now().minusSeconds(120));
+    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
+    streamingService.addSession(session);
+
+    reaper.reapSessions();
+
+    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.SUSPENDED);
+    assertThat(streamingService.accessSession(session.getSessionId())).isPresent();
+  }
+
+  @Test
+  @DisplayName("Should not suspend session when handles are failed")
+  void shouldNotSuspendSessionWhenHandlesAreFailed() {
+    var session = buildSession(Instant.now().minusSeconds(120));
+    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.FAILED));
+    streamingService.addSession(session);
+
+    reaper.reapSessions();
+
+    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.FAILED);
+    assertThat(streamingService.accessSession(session.getSessionId())).isPresent();
+  }
+
+  @Test
+  @DisplayName("Should stop executor when suspending idle session")
+  void shouldStopExecutorWhenSuspendingIdleSession() {
+    var session = buildSession(Instant.now().minusSeconds(120));
+    streamingService.addSession(session);
+
+    reaper.reapSessions();
+
+    assertThat(executor.getStopped()).contains(session.getSessionId());
   }
 
   @Test
@@ -124,6 +188,35 @@ class SessionReaperTest {
 
     assertThat(session.getVariantHandle("1080p").status()).isEqualTo(TranscodeStatus.ACTIVE);
     assertThat(session.getVariantHandle("720p").status()).isEqualTo(TranscodeStatus.ACTIVE);
+  }
+
+  @Test
+  @DisplayName("Should skip already failed handles when suspending idle session")
+  void shouldSkipAlreadyFailedHandlesWhenSuspendingIdleSession() {
+    var session = buildSession(Instant.now().minusSeconds(120));
+    session.setVariantHandle("1080p", new TranscodeHandle(100L, TranscodeStatus.ACTIVE));
+    session.setVariantHandle("720p", new TranscodeHandle(101L, TranscodeStatus.FAILED));
+
+    executor.start(
+        com.streamarr.server.domain.streaming.TranscodeRequest.builder()
+            .sessionId(session.getSessionId())
+            .sourcePath(Path.of("/media/movie.mkv"))
+            .seekPosition(0)
+            .segmentDuration(6)
+            .framerate(24.0)
+            .transcodeDecision(session.getTranscodeDecision())
+            .width(1920)
+            .height(1080)
+            .bitrate(5_000_000)
+            .variantLabel("1080p")
+            .build());
+
+    streamingService.addSession(session);
+
+    reaper.reapSessions();
+
+    assertThat(session.getVariantHandle("1080p").status()).isEqualTo(TranscodeStatus.SUSPENDED);
+    assertThat(session.getVariantHandle("720p").status()).isEqualTo(TranscodeStatus.FAILED);
   }
 
   private StreamSession buildSession(Instant lastAccessedAt) {
@@ -205,6 +298,11 @@ class SessionReaperTest {
     @Override
     public int getActiveSessionCount() {
       return sessions.size();
+    }
+
+    @Override
+    public void resumeSessionIfNeeded(UUID sessionId, String segmentName) {
+      throw new UnsupportedOperationException();
     }
   }
 }

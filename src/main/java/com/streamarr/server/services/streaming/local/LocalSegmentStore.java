@@ -57,6 +57,15 @@ public class LocalSegmentStore implements SegmentStore {
     return Files.exists(segmentPath);
   }
 
+  @Override
+  public boolean segmentExists(UUID sessionId, String segmentName) {
+    try {
+      return Files.exists(resolveSegmentPath(sessionId, segmentName));
+    } catch (TranscodeException e) {
+      return false;
+    }
+  }
+
   public Path getOutputDirectory(UUID sessionId) {
     return sessionDirs.computeIfAbsent(sessionId, this::createSessionDirectory);
   }

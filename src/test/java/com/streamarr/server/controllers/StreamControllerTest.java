@@ -54,8 +54,8 @@ class StreamControllerTest {
         new HlsPlaylistService(
             StreamingProperties.builder()
                 .maxConcurrentTranscodes(8)
-                .segmentDurationSeconds(6)
-                .sessionTimeoutSeconds(60)
+                .segmentDuration(Duration.ofSeconds(6))
+                .sessionTimeout(Duration.ofSeconds(60))
                 .build());
     var controller = new StreamController(streamingService, playlistService, segmentStore);
     mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
@@ -437,5 +437,8 @@ class StreamControllerTest {
     public int getActiveSessionCount() {
       return session != null ? 1 : 0;
     }
+
+    @Override
+    public void resumeSessionIfNeeded(UUID sessionId, String segmentName) {}
   }
 }
