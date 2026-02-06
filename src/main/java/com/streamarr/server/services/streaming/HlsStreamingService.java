@@ -21,12 +21,15 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @RequiredArgsConstructor
 public class HlsStreamingService implements StreamingService {
+
+  private static final Pattern SEGMENT_INDEX_PATTERN = Pattern.compile("segment(\\d+)");
 
   private final MediaFileRepository mediaFileRepository;
   private final TranscodeExecutor transcodeExecutor;
@@ -237,5 +240,18 @@ public class HlsStreamingService implements StreamingService {
     if (availableTranscodeSlots() <= 0) {
       throw new MaxConcurrentTranscodesException(properties.maxConcurrentTranscodes());
     }
+  }
+
+  static int parseSegmentIndex(String segmentName) {
+    var basename = segmentName;
+    var slashIdx = basename.lastIndexOf('/');
+    if (slashIdx >= 0) {
+      basename = basename.substring(slashIdx + 1);
+    }
+    var matcher = SEGMENT_INDEX_PATTERN.matcher(basename);
+    if (!matcher.find()) {
+      return 0;
+    }
+    return Integer.parseInt(matcher.group(1));
   }
 }

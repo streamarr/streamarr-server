@@ -578,4 +578,34 @@ class HlsStreamingServiceTest {
 
     assertThat(session.getVariants()).hasSize(2);
   }
+
+  @Test
+  @DisplayName("Should parse segment index when segment name is simple TS")
+  void shouldParseSegmentIndexWhenSegmentNameIsSimpleTs() {
+    assertThat(HlsStreamingService.parseSegmentIndex("segment5.ts")).isEqualTo(5);
+  }
+
+  @Test
+  @DisplayName("Should parse segment index when segment name is fMP4")
+  void shouldParseSegmentIndexWhenSegmentNameIsFmp4() {
+    assertThat(HlsStreamingService.parseSegmentIndex("segment12.m4s")).isEqualTo(12);
+  }
+
+  @Test
+  @DisplayName("Should parse segment index when segment name includes variant path")
+  void shouldParseSegmentIndexWhenSegmentNameIncludesVariantPath() {
+    assertThat(HlsStreamingService.parseSegmentIndex("720p/segment3.ts")).isEqualTo(3);
+  }
+
+  @Test
+  @DisplayName("Should return zero when segment name has no index")
+  void shouldReturnZeroWhenSegmentNameHasNoIndex() {
+    assertThat(HlsStreamingService.parseSegmentIndex("init.mp4")).isZero();
+  }
+
+  @Test
+  @DisplayName("Should parse segment index zero when segment is first")
+  void shouldParseSegmentIndexZeroWhenSegmentIsFirst() {
+    assertThat(HlsStreamingService.parseSegmentIndex("segment0.ts")).isZero();
+  }
 }
