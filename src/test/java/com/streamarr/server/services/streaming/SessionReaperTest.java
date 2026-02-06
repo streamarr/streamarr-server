@@ -189,6 +189,35 @@ class SessionReaperTest {
     assertThat(session.getVariantHandle("720p").status()).isEqualTo(TranscodeStatus.ACTIVE);
   }
 
+  @Test
+  @DisplayName("Should skip already failed handles when suspending idle session")
+  void shouldSkipAlreadyFailedHandlesWhenSuspendingIdleSession() {
+    var session = buildSession(Instant.now().minusSeconds(120));
+    session.setVariantHandle("1080p", new TranscodeHandle(100L, TranscodeStatus.ACTIVE));
+    session.setVariantHandle("720p", new TranscodeHandle(101L, TranscodeStatus.FAILED));
+
+    executor.start(
+        com.streamarr.server.domain.streaming.TranscodeRequest.builder()
+            .sessionId(session.getSessionId())
+            .sourcePath(Path.of("/media/movie.mkv"))
+            .seekPosition(0)
+            .segmentDuration(6)
+            .framerate(24.0)
+            .transcodeDecision(session.getTranscodeDecision())
+            .width(1920)
+            .height(1080)
+            .bitrate(5_000_000)
+            .variantLabel("1080p")
+            .build());
+
+    streamingService.addSession(session);
+
+    reaper.reapSessions();
+
+    assertThat(session.getVariantHandle("1080p").status()).isEqualTo(TranscodeStatus.SUSPENDED);
+    assertThat(session.getVariantHandle("720p").status()).isEqualTo(TranscodeStatus.FAILED);
+  }
+
   private StreamSession buildSession(Instant lastAccessedAt) {
     var session = StreamSessionFixture.buildMpegtsSession();
     session.setLastAccessedAt(lastAccessedAt);
