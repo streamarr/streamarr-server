@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 
-import com.streamarr.server.domain.BaseAuditableEntity;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.exceptions.InvalidPaginationArgumentException;
 import com.streamarr.server.graphql.cursor.InvalidCursorException;
@@ -159,7 +158,7 @@ public class RelayPaginationServiceTest {
   @DisplayName("Should build connection when given first result in non-seek result list.")
   void shouldBuildConnectionWhenGivenSingleResultInNonSeekList() {
 
-    List<Edge<? extends BaseAuditableEntity<?>>> edges =
+    List<Edge<Movie>> edges =
         List.of(new DefaultEdge<>(Movie.builder().build(), new DefaultConnectionCursor("cursor")));
 
     var options =
@@ -185,7 +184,7 @@ public class RelayPaginationServiceTest {
       "Should build connection of one when limited by one given multiple results in non-seek result list.")
   void shouldBuildConnectionOfOneWhenLimitedByOneGivenMultipleResultsInNonSeekList() {
 
-    List<Edge<? extends BaseAuditableEntity<?>>> edges =
+    List<Edge<Movie>> edges =
         List.of(
             new DefaultEdge<>(Movie.builder().build(), new DefaultConnectionCursor("cursor")),
             new DefaultEdge<>(Movie.builder().build(), new DefaultConnectionCursor("cursor")));
@@ -212,7 +211,7 @@ public class RelayPaginationServiceTest {
   @DisplayName("Should build connection with empty edges when paginating forward given empty list")
   void shouldBuildEmptyConnectionWhenPaginatingForwardGivenEmptyList() {
 
-    List<Edge<? extends BaseAuditableEntity<?>>> edges = Collections.emptyList();
+    List<Edge<Movie>> edges = Collections.emptyList();
 
     var options =
         PaginationOptions.builder()
@@ -236,7 +235,7 @@ public class RelayPaginationServiceTest {
   @DisplayName("Should build connection with empty edges when paginating backward given empty list")
   void shouldBuildEmptyConnectionWhenPaginatingReverseGivenEmptyList() {
 
-    List<Edge<? extends BaseAuditableEntity<?>>> edges = Collections.emptyList();
+    List<Edge<Movie>> edges = Collections.emptyList();
 
     var options =
         PaginationOptions.builder()
@@ -264,7 +263,7 @@ public class RelayPaginationServiceTest {
     var itemId = UUID.randomUUID();
     var cursorString = "cursor-placeholder";
 
-    List<Edge<? extends BaseAuditableEntity<?>>> edges =
+    List<Edge<Movie>> edges =
         List.of(
             new DefaultEdge<>(
                 Movie.builder().id(itemId).build(), new DefaultConnectionCursor(cursorString)));
@@ -293,7 +292,7 @@ public class RelayPaginationServiceTest {
     var itemId = UUID.randomUUID();
     var cursorString = "cursor-placeholder";
 
-    List<Edge<? extends BaseAuditableEntity<?>>> edges =
+    List<Edge<Movie>> edges =
         List.of(
             new DefaultEdge<>(
                 Movie.builder().id(itemId).build(), new DefaultConnectionCursor(cursorString)));
@@ -324,7 +323,7 @@ public class RelayPaginationServiceTest {
 
     var cursorString = "cursor-placeholder";
 
-    List<Edge<? extends BaseAuditableEntity<?>>> edges =
+    List<Edge<Movie>> edges =
         List.of(
             new DefaultEdge<>(
                 Movie.builder().id(itemId1).build(), new DefaultConnectionCursor(cursorString)),
@@ -357,7 +356,7 @@ public class RelayPaginationServiceTest {
 
     var cursorString = "cursor-placeholder";
 
-    List<Edge<? extends BaseAuditableEntity<?>>> edges =
+    List<Edge<Movie>> edges =
         List.of(
             new DefaultEdge<>(
                 Movie.builder().id(itemId2).build(), new DefaultConnectionCursor(cursorString)),
@@ -391,7 +390,7 @@ public class RelayPaginationServiceTest {
 
     var cursorString = "cursor-placeholder";
 
-    List<Edge<? extends BaseAuditableEntity<?>>> edges =
+    List<Edge<Movie>> edges =
         List.of(
             new DefaultEdge<>(
                 Movie.builder().id(itemId1).build(), new DefaultConnectionCursor(cursorString)),
@@ -427,7 +426,7 @@ public class RelayPaginationServiceTest {
 
     var cursorString = "cursor-placeholder";
 
-    List<Edge<? extends BaseAuditableEntity<?>>> edges =
+    List<Edge<Movie>> edges =
         List.of(
             new DefaultEdge<>(
                 Movie.builder().id(itemId3).build(), new DefaultConnectionCursor(cursorString)),

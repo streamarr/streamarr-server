@@ -1,6 +1,5 @@
 package com.streamarr.server.services;
 
-import com.streamarr.server.domain.BaseAuditableEntity;
 import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Movie;
@@ -104,7 +103,7 @@ public class MovieService {
         edges, mediaOptions.getPaginationOptions(), mediaOptions.getCursorId());
   }
 
-  private List<Edge<? extends BaseAuditableEntity<?>>> mapItemsToEdges(
+  private List<Edge<Movie>> mapItemsToEdges(
       List<Movie> movies, MediaPaginationOptions options) {
     return movies.stream()
         .map(
