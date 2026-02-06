@@ -13,12 +13,12 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
-import lombok.experimental.UtilityClass;
 
-@UtilityClass
-public class StreamSessionFixture {
+public final class StreamSessionFixture {
 
-  public StreamSession buildMpegtsSession() {
+  private StreamSessionFixture() {}
+
+  public static StreamSession buildMpegtsSession() {
     var session =
         StreamSession.builder()
             .sessionId(UUID.randomUUID())
