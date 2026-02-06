@@ -1,0 +1,112 @@
+package com.streamarr.server.services.library;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+
+import com.streamarr.server.domain.ExternalAgentStrategy;
+import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.LibraryBackend;
+import com.streamarr.server.domain.LibraryStatus;
+import com.streamarr.server.domain.media.MediaType;
+import com.streamarr.server.fakes.FakeLibraryRepository;
+import com.streamarr.server.repositories.LibraryRepository;
+import java.util.UUID;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+
+@Tag("UnitTest")
+@DisplayName("Library Crash Recovery Service Tests")
+class LibraryCrashRecoveryServiceTest {
+
+  private final LibraryRepository fakeLibraryRepository = new FakeLibraryRepository();
+  private final LibraryCrashRecoveryService recoveryService =
+      new LibraryCrashRecoveryService(fakeLibraryRepository);
+
+  @Test
+  @DisplayName(
+      "Should reset SCANNING library to UNHEALTHY on recovery without affecting other libraries")
+  void shouldResetScanningLibraryToUnhealthyOnRecovery() {
+    var scanningLibrary = fakeLibraryRepository.save(buildLibrary(LibraryStatus.SCANNING));
+    var healthyLibrary = fakeLibraryRepository.save(buildLibrary(LibraryStatus.HEALTHY));
+    var unhealthyLibrary = fakeLibraryRepository.save(buildLibrary(LibraryStatus.UNHEALTHY));
+
+    recoveryService.recoverOrphanedScans();
+
+    assertThat(fakeLibraryRepository.findById(scanningLibrary.getId()))
+        .isPresent()
+        .get()
+        .satisfies(lib -> assertThat(lib.getStatus()).isEqualTo(LibraryStatus.UNHEALTHY));
+
+    assertThat(fakeLibraryRepository.findById(healthyLibrary.getId()))
+        .isPresent()
+        .get()
+        .satisfies(lib -> assertThat(lib.getStatus()).isEqualTo(LibraryStatus.HEALTHY));
+
+    assertThat(fakeLibraryRepository.findById(unhealthyLibrary.getId()))
+        .isPresent()
+        .get()
+        .satisfies(lib -> assertThat(lib.getStatus()).isEqualTo(LibraryStatus.UNHEALTHY));
+  }
+
+  @Test
+  @DisplayName("Should not throw when no libraries are in SCANNING status")
+  void shouldNotThrowWhenNoLibrariesAreInScanningStatus() {
+    assertThatCode(() -> recoveryService.recoverOrphanedScans()).doesNotThrowAnyException();
+  }
+
+  @Test
+  @DisplayName("Should recover multiple libraries stuck in SCANNING status")
+  void shouldRecoverMultipleScanningLibraries() {
+    var scanning1 = fakeLibraryRepository.save(buildLibrary(LibraryStatus.SCANNING));
+    var scanning2 = fakeLibraryRepository.save(buildLibrary(LibraryStatus.SCANNING));
+
+    recoveryService.recoverOrphanedScans();
+
+    assertThat(fakeLibraryRepository.findAllByStatus(LibraryStatus.SCANNING)).isEmpty();
+    assertThat(fakeLibraryRepository.findById(scanning1.getId()).orElseThrow().getStatus())
+        .isEqualTo(LibraryStatus.UNHEALTHY);
+    assertThat(fakeLibraryRepository.findById(scanning2.getId()).orElseThrow().getStatus())
+        .isEqualTo(LibraryStatus.UNHEALTHY);
+  }
+
+  @Test
+  @DisplayName("Should set scanCompletedOn timestamp when recovering library")
+  void shouldSetScanCompletedOnWhenRecoveringLibrary() {
+    var scanningLibrary = fakeLibraryRepository.save(buildLibrary(LibraryStatus.SCANNING));
+
+    recoveryService.recoverOrphanedScans();
+
+    assertThat(fakeLibraryRepository.findById(scanningLibrary.getId()).orElseThrow())
+        .satisfies(lib -> assertThat(lib.getScanCompletedOn()).isNotNull());
+  }
+
+  @Test
+  @DisplayName("Should be idempotent when called twice consecutively")
+  void shouldBeIdempotentWhenCalledTwice() {
+    fakeLibraryRepository.save(buildLibrary(LibraryStatus.SCANNING));
+
+    recoveryService.recoverOrphanedScans();
+    recoveryService.recoverOrphanedScans();
+
+    assertThat(fakeLibraryRepository.findAllByStatus(LibraryStatus.SCANNING)).isEmpty();
+    assertThat(fakeLibraryRepository.findAllByStatus(LibraryStatus.UNHEALTHY)).hasSize(1);
+  }
+
+  @Test
+  @DisplayName("Should not throw on shutdown when called via PreDestroy lifecycle")
+  void shouldNotThrowOnShutdown() {
+    assertThatCode(() -> recoveryService.onShutdown()).doesNotThrowAnyException();
+  }
+
+  private static Library buildLibrary(LibraryStatus status) {
+    return Library.builder()
+        .name("Test Library")
+        .backend(LibraryBackend.LOCAL)
+        .status(status)
+        .filepath("/library/" + UUID.randomUUID())
+        .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+        .type(MediaType.MOVIE)
+        .build();
+  }
+}
