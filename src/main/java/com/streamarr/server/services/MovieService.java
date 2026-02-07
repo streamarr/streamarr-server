@@ -75,6 +75,7 @@ public class MovieService {
     movie.setDirectors(personService.getOrCreatePersons(movie.getDirectors()));
     movie.setGenres(genreService.getOrCreateGenres(movie.getGenres()));
     movie.setStudios(companyService.getOrCreateCompanies(movie.getStudios()));
+
     return saveMovieWithMediaFile(movie, mediaFile);
   }
 

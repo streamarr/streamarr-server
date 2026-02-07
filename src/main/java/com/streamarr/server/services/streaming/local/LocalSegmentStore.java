@@ -29,6 +29,7 @@ public class LocalSegmentStore implements SegmentStore {
   @Override
   public byte[] readSegment(UUID sessionId, String segmentName) {
     var segmentPath = resolveSegmentPath(sessionId, segmentName);
+
     try {
       return Files.readAllBytes(segmentPath);
     } catch (NoSuchFileException e) {
@@ -73,6 +74,7 @@ public class LocalSegmentStore implements SegmentStore {
   public Path getOutputDirectory(UUID sessionId, String variantLabel) {
     var sessionDir = getOutputDirectory(sessionId);
     var variantDir = sessionDir.resolve(variantLabel);
+
     try {
       Files.createDirectories(variantDir);
       return variantDir;

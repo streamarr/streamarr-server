@@ -141,15 +141,18 @@ public class HlsStreamingService implements StreamingService {
     if (session == null || !session.isSuspended()) {
       return;
     }
+
     if (segmentStore.segmentExists(sessionId, segmentName)) {
       return;
     }
+
     resumeWithLock(sessionId, segmentName);
   }
 
   private void resumeWithLock(UUID sessionId, String segmentName) {
     var lock = resumeMutex.getMutex(sessionId);
     lock.lock();
+
     try {
       doResume(sessionId, segmentName);
     } finally {
@@ -183,6 +186,7 @@ public class HlsStreamingService implements StreamingService {
     if (!isAutoQuality(options) || decision.transcodeMode() != TranscodeMode.FULL_TRANSCODE) {
       return Collections.emptyList();
     }
+
     return qualityLadderService.generateVariants(probe, options);
   }
 
@@ -195,9 +199,11 @@ public class HlsStreamingService implements StreamingService {
     if (!variants.isEmpty()) {
       return capVariantsToAvailableSlots(variants);
     }
+
     if (requiresTranscode(mode)) {
       enforceTranscodeLimit();
     }
+
     return variants;
   }
 
@@ -206,9 +212,11 @@ public class HlsStreamingService implements StreamingService {
     if (slotsAvailable <= 0) {
       throw new MaxConcurrentTranscodesException(properties.maxConcurrentTranscodes());
     }
+
     if (variants.size() > slotsAvailable) {
       return variants.subList(0, slotsAvailable);
     }
+
     return variants;
   }
 
@@ -237,6 +245,7 @@ public class HlsStreamingService implements StreamingService {
       startSingleTranscode(session, seekPosition, startNumber);
       return;
     }
+
     startVariantTranscodes(session, session.getVariants(), seekPosition, startNumber);
   }
 
@@ -257,6 +266,7 @@ public class HlsStreamingService implements StreamingService {
             .startNumber(startNumber)
             .build();
     var handle = transcodeExecutor.start(request);
+
     session.setHandle(handle);
   }
 
@@ -278,6 +288,7 @@ public class HlsStreamingService implements StreamingService {
               .startNumber(startNumber)
               .build();
       var handle = transcodeExecutor.start(request);
+
       session.setVariantHandle(variant.label(), handle);
     }
   }
@@ -288,10 +299,12 @@ public class HlsStreamingService implements StreamingService {
     if (slashIdx >= 0) {
       basename = basename.substring(slashIdx + 1);
     }
+
     var matcher = SEGMENT_INDEX_PATTERN.matcher(basename);
     if (!matcher.find()) {
       return 0;
     }
+
     return Integer.parseInt(matcher.group(1));
   }
 }

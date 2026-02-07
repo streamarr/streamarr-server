@@ -56,6 +56,7 @@ public class SeriesService {
     series.setDirectors(personService.getOrCreatePersons(series.getDirectors()));
     series.setGenres(genreService.getOrCreateGenres(series.getGenres()));
     series.setStudios(companyService.getOrCreateCompanies(series.getStudios()));
+
     return seriesRepository.saveAndFlush(series);
   }
 
@@ -63,15 +64,18 @@ public class SeriesService {
   public Series addMediaFile(UUID seriesId, MediaFile mediaFile) {
     var series = seriesRepository.findById(seriesId).orElseThrow();
     series.addFile(mediaFile);
+
     return seriesRepository.saveAndFlush(series);
   }
 
   @Transactional
   public void deleteByLibraryId(UUID libraryId) {
     var seriesList = seriesRepository.findByLibrary_Id(libraryId);
+
     if (seriesList.isEmpty()) {
       return;
     }
+
     seriesRepository.deleteAll(seriesList);
   }
 

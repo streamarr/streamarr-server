@@ -49,6 +49,7 @@ public class StreamingConfig {
             ffmpegPaths.ffmpeg(),
             command -> new ProcessBuilder(command).redirectErrorStream(false).start());
     service.detectCapabilities();
+
     return service;
   }
 

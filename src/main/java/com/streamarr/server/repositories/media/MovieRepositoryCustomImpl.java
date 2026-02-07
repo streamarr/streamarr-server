@@ -95,7 +95,7 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
       return Optional.empty();
     }
 
-    return Optional.of(results.get(0));
+    return Optional.of(results.getFirst());
   }
 
   private MediaFilter reverseFilter(MediaFilter filter) {

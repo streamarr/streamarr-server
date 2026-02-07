@@ -41,6 +41,7 @@ public class StreamController {
     }
 
     var playlist = playlistService.generateMasterPlaylist(session.get());
+
     return ResponseEntity.ok().contentType(HLS_MEDIA_TYPE).body(playlist);
   }
 
@@ -52,6 +53,7 @@ public class StreamController {
     }
 
     var playlist = playlistService.generateMediaPlaylist(session.get());
+
     return ResponseEntity.ok().contentType(HLS_MEDIA_TYPE).body(playlist);
   }
 
@@ -87,11 +89,12 @@ public class StreamController {
     }
 
     var s = session.get();
-    if (!hasVariant(s, variantLabel)) {
+    if (hasNoVariant(s, variantLabel)) {
       return ResponseEntity.notFound().build();
     }
 
     var playlist = playlistService.generateMediaPlaylist(s);
+
     return ResponseEntity.ok().contentType(HLS_MEDIA_TYPE).body(playlist);
   }
 
@@ -105,7 +108,7 @@ public class StreamController {
     }
 
     var s = session.get();
-    if (!hasVariant(s, variantLabel)) {
+    if (hasNoVariant(s, variantLabel)) {
       return ResponseEntity.notFound().build();
     }
 
@@ -125,11 +128,12 @@ public class StreamController {
     }
 
     var s = session.get();
-    if (!hasVariant(s, variantLabel)) {
+    if (hasNoVariant(s, variantLabel)) {
       return ResponseEntity.notFound().build();
     }
 
     var qualifiedName = variantLabel + "/" + segmentName;
+
     return serveSegment(s, sessionId, qualifiedName);
   }
 
@@ -143,7 +147,9 @@ public class StreamController {
     if (!segmentStore.waitForSegment(sessionId, segmentName, SEGMENT_WAIT_TIMEOUT)) {
       return ResponseEntity.notFound().build();
     }
+
     var data = segmentStore.readSegment(sessionId, segmentName);
+
     return ResponseEntity.ok().contentType(MP4_MEDIA_TYPE).body(data);
   }
 
@@ -156,11 +162,12 @@ public class StreamController {
 
     var data = segmentStore.readSegment(sessionId, segmentName);
     var contentType = segmentName.endsWith(".ts") ? MPEGTS_MEDIA_TYPE : MP4_MEDIA_TYPE;
+
     return ResponseEntity.ok().contentType(contentType).body(data);
   }
 
-  private boolean hasVariant(StreamSession session, String variantLabel) {
-    return session.getVariants().stream().anyMatch(v -> v.label().equals(variantLabel));
+  private boolean hasNoVariant(StreamSession session, String variantLabel) {
+    return session.getVariants().stream().noneMatch(v -> v.label().equals(variantLabel));
   }
 
   private Optional<StreamSession> findSession(UUID sessionId) {
