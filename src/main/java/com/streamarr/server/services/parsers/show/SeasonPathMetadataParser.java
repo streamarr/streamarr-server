@@ -123,7 +123,6 @@ public class SeasonPathMetadataParser implements MetadataParser<SeasonPathMetada
     return Optional.empty();
   }
 
-  // TODO(#40): Clean this up
   private Optional<Result> getSeasonNumberFromPathSubstring(String path) {
     var numericStart = -1;
     var length = 0;
@@ -131,28 +130,19 @@ public class SeasonPathMetadataParser implements MetadataParser<SeasonPathMetada
     var hasOpenParenthesis = false;
     var isSeasonFolder = true;
 
-    // Find out where the numbers start, and then keep going until they end
     for (var i = 0; i < path.length(); i++) {
-      if (Character.isDigit(path.charAt(i))) {
-        if (!hasOpenParenthesis) {
-          if (numericStart == -1) {
-            numericStart = i;
-          }
+      var ch = path.charAt(i);
 
-          length++;
-        }
+      if (Character.isDigit(ch) && !hasOpenParenthesis) {
+        if (numericStart == -1) numericStart = i;
+        length++;
       } else if (numericStart != -1) {
-        // There's other stuff after the season number, e.g. episode number
         isSeasonFolder = false;
         break;
       }
 
-      var currentChar = path.charAt(i);
-      if (currentChar == '(') {
-        hasOpenParenthesis = true;
-      } else if (currentChar == ')') {
-        hasOpenParenthesis = false;
-      }
+      if (ch == '(') hasOpenParenthesis = true;
+      else if (ch == ')') hasOpenParenthesis = false;
     }
 
     if (numericStart == -1) {

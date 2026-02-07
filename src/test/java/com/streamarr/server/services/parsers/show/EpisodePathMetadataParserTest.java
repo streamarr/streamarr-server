@@ -77,33 +77,22 @@ public class EpisodePathMetadataParserTest {
                   1,
                   1),
 
-              // TODO: name
               new TestCase(
                   "The Simpsons/The Simpsons.S25E08.Steal this episode.mp4", "The Simpsons", 25, 8),
-              new TestCase("Case Closed (1996-2007)/Case Closed - 317.mkv", "Case Closed", 3, 17)
+              new TestCase("Case Closed (1996-2007)/Case Closed - 317.mkv", "Case Closed", 3, 17),
 
-              //                [InlineData("The Wonder Years/The.Wonder.Years.S04.PDTV.x264-JCH/The
-              // Wonder Years s04e07 Christmas Party NTSC PDTV.avi", 7)]
-              //                [InlineData("Running Man/Running Man S2017E368.mkv", 368)]
-              //                [InlineData("Season 2/[HorribleSubs] Hunter X Hunter - 136
-              // [720p].mkv", 136)] // triple digit episode number
-              //                [InlineData("Log Horizon 2/[HorribleSubs] Log Horizon 2 - 03
-              // [720p].mkv", 3)] // digit in series name
-              //                [InlineData("Season 1/seriesname 05.mkv", 5)] // no hyphen between
-              // series name and episode number
-              //                [InlineData("[BBT-RMX] Ranma ½ - 154 [50AC421A].mkv", 154)] //
-              // hyphens in the pre-name info, triple digit episode number
-              //                [InlineData("Season 2/Episode 21 - 94 Meetings.mp4", 21)] // Title
-              // starts with a number
-              //
-              // [InlineData("/The.Legend.of.Condor.Heroes.2017.V2.web-dl.1080p.h264.aac-hdctv/The.Legend.of.Condor.Heroes.2017.E07.V2.web-dl.1080p.h264.aac-hdctv.mkv", 7)]
-              //                [InlineData("Case Closed (1996-2007)/Case Closed - 317.mkv", 317)]
-              // // triple digit episode number
-              //                TODO: [InlineData("Season 2/16 12 Some Title.avi", 16)]
-              //                TODO: [InlineData("Season 4/Uchuu.Senkan.Yamato.2199.E03.avi", 3)]
-              //                TODO: [InlineData("Season 2/7 12 Angry Men.avi", 7)]
-              //                TODO: [InlineData("Season 02/02x03x04x15 - Ep Name.mp4", 2)]
-              )
+              // Verbose "Season X Episode Y" format
+              new TestCase(
+                  "/media/My Show Season 1 Episode 3.mkv", "My Show", 1, 3),
+              new TestCase(
+                  "/media/Show S02 Episode 05 - Title.mkv", "Show", 2, 5),
+              new TestCase(
+                  "/media/show season 2 episode 10.mkv", "show", 2, 10),
+              new TestCase(
+                  "/media/Show Season01 Episode03.mkv", "Show", 1, 3),
+
+              // Version marker (anime fansub releases)
+              new TestCase("/media/Show/Show.S01E01v2.mkv", "Show", 1, 1))
           .map(
               testCase ->
                   DynamicTest.dynamicTest(
@@ -157,7 +146,11 @@ public class EpisodePathMetadataParserTest {
               new TestCase("The Simpsons/The Simpsons 82.avi", "The Simpsons", 82),
               new TestCase("The Simpsons/The Simpsons 112.avi", "The Simpsons", 112),
               new TestCase("The Simpsons/The Simpsons 889.avi", "The Simpsons", 889),
-              new TestCase("The Simpsons/The Simpsons 101.avi", "The Simpsons", 101))
+              new TestCase("The Simpsons/The Simpsons 101.avi", "The Simpsons", 101),
+
+              // Version marker (anime fansub releases)
+              new TestCase(
+                  "/media/[SubsPlease] Show - 01v2 (1080p).mkv", "Show", 1))
           .map(
               testCase ->
                   DynamicTest.dynamicTest(
@@ -187,23 +180,26 @@ public class EpisodePathMetadataParserTest {
     Stream<DynamicNode> tests() {
       return Stream.of(
               new TestCase("/server/anything_1996.11.14", "anything", LocalDate.of(1996, 11, 14)),
-              new TestCase("/server/anything_1996-11-14", "anything", LocalDate.of(1996, 11, 14))
+              new TestCase("/server/anything_1996-11-14", "anything", LocalDate.of(1996, 11, 14)),
 
-              // TODO: Fix
-              //                new TestCase("when given complex filename and YYYY.MM.dd date
-              // format", "/server/james.corden.2017.04.20.anne.hathaway.720p.hdtv.x264-crooks",
-              // "james.corden", LocalDate.of(2017, 4, 20)),
-              //                new TestCase("when given complex filename and YYYY_MM_dd date
-              // format", "/server/ABC News 2018_03_24_19_00_00", "ABC News", LocalDate.of(2018, 4,
-              // 20))
+              // Underscore and space delimiters (DVR recordings)
+              new TestCase(
+                  "/server/anything_1996_11_14", "anything", LocalDate.of(1996, 11, 14)),
+              new TestCase(
+                  "/server/anything 1996 11 14", "anything", LocalDate.of(1996, 11, 14)),
 
-              //        // TODO: [InlineData(@"/server/anything_14.11.1996.mp4", "anything", 1996,
-              // 11, 14)]
-              //        // TODO: [InlineData(@"/server/A Daily Show - (2015-01-15) - Episode Name -
-              // [720p].mkv", "A Daily Show", 2015, 01, 15)]
-              //        // TODO: [InlineData(@"/server/Last Man
-              // Standing_KTLADT_2018_05_25_01_28_00.wtv", "Last Man Standing", 2018, 05, 25)]
-              )
+              // Reverse date (DD.MM.YYYY) with various delimiters
+              new TestCase(
+                  "/server/anything_14.11.1996", "anything", LocalDate.of(1996, 11, 14)),
+              new TestCase(
+                  "/server/anything_14_11_1996", "anything", LocalDate.of(1996, 11, 14)),
+
+              // No series name (file is just a date)
+              new TestCase("/server/1996.11.14", null, LocalDate.of(1996, 11, 14)),
+
+              // Multi-word series name
+              new TestCase(
+                  "/server/ABC News 2018-03-24", "ABC News", LocalDate.of(2018, 3, 24)))
           .map(
               testCase ->
                   DynamicTest.dynamicTest(
@@ -246,11 +242,11 @@ public class EpisodePathMetadataParserTest {
               new TestCase("Season 1/02 - blah.avi", 1, 2),
               new TestCase("Season 2/02 - blah 14 blah.avi", 2, 2),
               new TestCase("Season 1/02 - blah-02 a.avi", 1, 2),
-              new TestCase("Season 2/02.avi", 2, 2)
+              new TestCase("Season 2/02.avi", 2, 2),
 
-              //                [InlineData("Season 2/2. Infestation.avi", 2)]
-
-              )
+              // Case sensitivity variants
+              new TestCase("/server/Temp/s01e02 foo", 1, 2),
+              new TestCase("/server/Temp/S01e02 foo", 1, 2))
           .map(
               testCase ->
                   DynamicTest.dynamicTest(
@@ -279,14 +275,6 @@ public class EpisodePathMetadataParserTest {
     @TestFactory
     Stream<DynamicNode> tests() {
       return Stream.of(
-              // TODO: implement
-              //        // TODO: [InlineData(2, @"The Simpsons/The Simpsons 5 - 02 - Ep Name.avi")]
-              //        // TODO: [InlineData(2, @"The Simpsons/The Simpsons 5 - 02 Ep Name.avi")]
-              //        // TODO: [InlineData(7, @"Seinfeld/Seinfeld 0807 The Checks.avi")]
-              //        // This is not supported anymore after removing the episode number 365+ hack
-              // from EpisodePathParser
-              //        // TODO: [InlineData(13, @"Case Closed (1996-2007)/Case Closed - 13.mkv")]
-
               new TestCase("The Simpsons/The Simpsons - 02 - Ep Name.avi", 2),
               new TestCase("The Simpsons/02.avi", 2),
               new TestCase("The Simpsons/02 - Ep Name.avi", 2),
@@ -298,7 +286,12 @@ public class EpisodePathMetadataParserTest {
 
               // Absolute episode number
               new TestCase("The Simpsons/12.avi", 12),
-              new TestCase("The Simpsons/Foo_ep_02.avi", 2))
+              new TestCase("The Simpsons/Foo_ep_02.avi", 2),
+
+              // Part number extraction
+              new TestCase("/season 1/title_part_1.avi", 1),
+              new TestCase("/season 1/title.part.2.avi", 2),
+              new TestCase("/season 1/title-part-3.mkv", 3))
           .map(
               testCase ->
                   DynamicTest.dynamicTest(
@@ -387,18 +380,18 @@ public class EpisodePathMetadataParserTest {
   @DisplayName("Should not extract ending episode")
   public class FailedMultiEpisodeExtractionTests {
 
-    record TestCase(String filename) {}
+    record TestCase(String filename, int season, int episode) {}
 
     @TestFactory
     Stream<DynamicNode> tests() {
       return Stream.of(
-              new TestCase("/series-s09e14-1080p.mkv"),
-              new TestCase("Season 1/series-s09e14-1080i.mkv"),
-              new TestCase("Season 1/series-s09e14-720p.mkv"),
-              new TestCase("Season 1/series-s09e14-720i.mkv"),
-              new TestCase("Season 2/02x03 - 04 Ep Name.mp4"),
-              new TestCase("Season 2/My show name 02x03 - 04 Ep Name.mp4"),
-              new TestCase("Season 1/4x01 – 20 Hours in America (1).mkv"))
+              new TestCase("/series-s09e14-1080p.mkv", 9, 14),
+              new TestCase("Season 1/series-s09e14-1080i.mkv", 9, 14),
+              new TestCase("Season 1/series-s09e14-720p.mkv", 9, 14),
+              new TestCase("Season 1/series-s09e14-720i.mkv", 9, 14),
+              new TestCase("Season 2/02x03 - 04 Ep Name.mp4", 2, 3),
+              new TestCase("Season 2/My show name 02x03 - 04 Ep Name.mp4", 2, 3),
+              new TestCase("Season 1/4x01 – 20 Hours in America (1).mkv", 4, 1))
           .map(
               testCase ->
                   DynamicTest.dynamicTest(
@@ -407,11 +400,75 @@ public class EpisodePathMetadataParserTest {
                         var result =
                             episodePathExtractionService.parse(testCase.filename()).orElseThrow();
 
-                        // TODO: check other properties?
+                        assertThat(result.getSeasonNumber().orElseThrow())
+                            .isEqualTo(testCase.season());
+                        assertThat(result.getEpisodeNumber().orElseThrow())
+                            .isEqualTo(testCase.episode());
                         assertThat(result.getEndingEpisodeNumber()).isEmpty();
                         assertThat(result.getDate()).isNull();
                         assertThat(result.isSuccess()).isTrue();
                       }));
+    }
+  }
+
+  @Nested
+  @DisplayName("Should correctly validate season number boundaries")
+  public class SeasonValidationBoundaryTests {
+
+    @Nested
+    @DisplayName("Valid season numbers should succeed")
+    public class ValidSeasonNumbers {
+
+      record TestCase(String filename, int season, int episode) {}
+
+      @TestFactory
+      Stream<DynamicNode> tests() {
+        return Stream.of(
+                new TestCase("/server/show_s199e01", 199, 1),
+                new TestCase("/server/show_s1928e01", 1928, 1),
+                new TestCase("/server/show_s2500e01", 2500, 1))
+            .map(
+                testCase ->
+                    DynamicTest.dynamicTest(
+                        testCase.filename(),
+                        () -> {
+                          var result =
+                              episodePathExtractionService
+                                  .parse(testCase.filename())
+                                  .orElseThrow();
+
+                          assertThat(result.getSeasonNumber().orElseThrow())
+                              .isEqualTo(testCase.season());
+                          assertThat(result.getEpisodeNumber().orElseThrow())
+                              .isEqualTo(testCase.episode());
+                          assertThat(result.isSuccess()).isTrue();
+                        }));
+      }
+    }
+
+    @Nested
+    @DisplayName("Invalid season numbers should fail")
+    public class InvalidSeasonNumbers {
+
+      record TestCase(String filename) {}
+
+      @TestFactory
+      Stream<DynamicNode> tests() {
+        return Stream.of(
+                new TestCase("/server/show_s200e01"),
+                new TestCase("/server/show_s1927e01"),
+                new TestCase("/server/show_s1080e720"),
+                new TestCase("/server/show_s1920e1080"))
+            .map(
+                testCase ->
+                    DynamicTest.dynamicTest(
+                        testCase.filename(),
+                        () -> {
+                          var result = episodePathExtractionService.parse(testCase.filename());
+
+                          assertThat(result).isEmpty();
+                        }));
+      }
     }
   }
 
