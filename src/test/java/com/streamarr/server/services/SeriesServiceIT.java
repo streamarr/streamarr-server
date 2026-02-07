@@ -301,10 +301,10 @@ class SeriesServiceIT extends AbstractIntegrationTest {
     var secondPage = seriesService.getSeriesWithFilter(2, endCursor.getValue(), 0, null, filter);
     assertThat(secondPage.getEdges()).hasSize(1);
 
-    var firstPageIds = firstPage.getEdges().stream().map(e -> e.getNode().getId()).toList();
-    var secondPageId = secondPage.getEdges().get(0).getNode().getId();
-
-    assertThat(firstPageIds).doesNotContain(secondPageId);
+    assertThat(firstPage.getEdges())
+        .map(e -> e.getNode().getId())
+        .isNotEmpty()
+        .doesNotContain(secondPage.getEdges().get(0).getNode().getId());
   }
 
   @Test
