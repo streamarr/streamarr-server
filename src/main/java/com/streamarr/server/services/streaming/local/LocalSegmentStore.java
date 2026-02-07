@@ -29,6 +29,7 @@ public class LocalSegmentStore implements SegmentStore {
   @Override
   public byte[] readSegment(UUID sessionId, String segmentName) {
     var segmentPath = resolveSegmentPath(sessionId, segmentName);
+
     try {
       return Files.readAllBytes(segmentPath);
     } catch (NoSuchFileException e) {
@@ -73,6 +74,7 @@ public class LocalSegmentStore implements SegmentStore {
   public Path getOutputDirectory(UUID sessionId, String variantLabel) {
     var sessionDir = getOutputDirectory(sessionId);
     var variantDir = sessionDir.resolve(variantLabel);
+
     try {
       Files.createDirectories(variantDir);
       return variantDir;
@@ -104,15 +106,18 @@ public class LocalSegmentStore implements SegmentStore {
     if (dir == null) {
       throw new TranscodeException("No output directory for session: " + sessionId);
     }
+
     var resolved = dir.resolve(segmentName).normalize();
     if (!resolved.startsWith(dir)) {
       throw new InvalidSegmentPathException(segmentName);
     }
+
     return resolved;
   }
 
   private Path createSessionDirectory(UUID sessionId) {
     var dir = baseDir.resolve(sessionId.toString());
+
     try {
       Files.createDirectories(dir);
       return dir;
@@ -124,11 +129,11 @@ public class LocalSegmentStore implements SegmentStore {
   private void deleteDirectoryRecursively(Path dir) {
     try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir)) {
       for (var entry : stream) {
-        if (Files.isDirectory(entry)) {
-          deleteDirectoryRecursively(entry);
-        } else {
+        if (!Files.isDirectory(entry)) {
           Files.deleteIfExists(entry);
+          continue;
         }
+        deleteDirectoryRecursively(entry);
       }
       Files.deleteIfExists(dir);
     } catch (IOException e) {

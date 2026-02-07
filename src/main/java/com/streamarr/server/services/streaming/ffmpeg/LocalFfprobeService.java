@@ -51,12 +51,12 @@ public class LocalFfprobeService implements FfprobeService {
     var format = root.get("format");
 
     return MediaProbe.builder()
-        .videoCodec(videoStream.get("codec_name").asText())
-        .audioCodec(audioStream.map(s -> s.get("codec_name").asText()).orElse(null))
+        .videoCodec(videoStream.get("codec_name").asString())
+        .audioCodec(audioStream.map(s -> s.get("codec_name").asString()).orElse(null))
         .width(videoStream.get("width").asInt())
         .height(videoStream.get("height").asInt())
-        .framerate(parseFramerate(videoStream.get("r_frame_rate").asText()))
-        .duration(parseDuration(format.get("duration").asText()))
+        .framerate(parseFrameRate(videoStream.get("r_frame_rate").asString()))
+        .duration(parseDuration(format.get("duration").asString()))
         .bitrate(format.get("bit_rate").asLong())
         .build();
   }
@@ -66,19 +66,21 @@ public class LocalFfprobeService implements FfprobeService {
     if (streams == null) {
       return Optional.empty();
     }
+
     for (var stream : streams) {
-      if (codecType.equals(stream.get("codec_type").asText())) {
+      if (codecType.equals(stream.get("codec_type").asString())) {
         return Optional.of(stream);
       }
     }
     return Optional.empty();
   }
 
-  private double parseFramerate(String rFrameRate) {
+  private double parseFrameRate(String rFrameRate) {
     var parts = rFrameRate.split("/");
     if (parts.length == 2) {
       return Double.parseDouble(parts[0]) / Double.parseDouble(parts[1]);
     }
+
     return Double.parseDouble(rFrameRate);
   }
 

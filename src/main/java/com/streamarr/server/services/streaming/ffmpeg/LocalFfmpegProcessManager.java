@@ -52,6 +52,7 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
       if (process == null || !process.isAlive()) {
         continue;
       }
+
       sendQuitSignal(process, sessionId);
       awaitGracefulShutdown(process, sessionId);
     }
@@ -97,6 +98,7 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
     if (process == null) {
       return false;
     }
+
     return isAliveOrCleanup(key, process);
   }
 
@@ -105,6 +107,7 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
       processes.remove(key);
       return false;
     }
+
     return true;
   }
 }

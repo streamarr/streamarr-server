@@ -20,35 +20,28 @@ public class SeasonPathMetadataParser implements MetadataParser<SeasonPathMetada
   }
 
   public Optional<Result> parse(String path) {
-    return Optional.of(getSeasonNumberFromPath(path, true, true));
+    return Optional.of(getSeasonNumberFromPath(path));
   }
 
-  private Result getSeasonNumberFromPath(
-      String path, boolean supportSpecialAliases, boolean supportNumericSeasonFolders) {
+  private Result getSeasonNumberFromPath(String path) {
     path = Path.of(path).getFileName().toString().toLowerCase();
 
-    if (supportSpecialAliases) {
-      var result = evaluatePathForSpecialAliases(path);
+    var specialAliasResult = evaluatePathForSpecialAliases(path);
 
-      if (result.isPresent()) {
-        return result.get();
-      }
+    if (specialAliasResult.isPresent()) {
+      return specialAliasResult.get();
     }
 
-    if (supportNumericSeasonFolders) {
-      var result = evaluatePathForNumericSeasonFolders(path);
+    var numericFolderResult = evaluatePathForNumericSeasonFolders(path);
 
-      if (result.isPresent()) {
-        return result.get();
-      }
+    if (numericFolderResult.isPresent()) {
+      return numericFolderResult.get();
     }
 
-    if (path.startsWith("s")) {
-      var result = evaluatePathForOptimisticShortName(path);
+    var shortNameResult = evaluatePathForOptimisticShortName(path);
 
-      if (result.isPresent()) {
-        return result.get();
-      }
+    if (shortNameResult.isPresent()) {
+      return shortNameResult.get();
     }
 
     var folderEvaluationResult = evaluatePathUsingFolderNames(path);
@@ -94,6 +87,10 @@ public class SeasonPathMetadataParser implements MetadataParser<SeasonPathMetada
   }
 
   private Optional<Result> evaluatePathForOptimisticShortName(String path) {
+    if (!path.startsWith("s")) {
+      return Optional.empty();
+    }
+
     var seasonNumberString = path.substring(1);
 
     var result = tryStringToOptionalIntConversion(seasonNumberString);

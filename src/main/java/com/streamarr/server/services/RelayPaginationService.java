@@ -80,9 +80,8 @@ public class RelayPaginationService {
     return pageSize;
   }
 
-  @SuppressWarnings("unchecked")
-  public <T> Connection<T> buildConnection(
-      List<Edge<? extends BaseAuditableEntity<?>>> edges,
+  public <T extends BaseAuditableEntity<?>> Connection<T> buildConnection(
+      List<Edge<T>> edges,
       PaginationOptions options,
       Optional<UUID> cursorId) {
 
@@ -97,12 +96,12 @@ public class RelayPaginationService {
     var hasNextPage = false;
 
     if (cursorId.isPresent() && direction.equals(PaginationDirection.FORWARD)) {
-      hasPreviousPage = edges.get(0).getNode().getId().equals(cursorId.get());
+      hasPreviousPage = edges.getFirst().getNode().getId().equals(cursorId.get());
       edges = edges.subList(1, edges.size());
     }
 
     if (cursorId.isPresent() && direction.equals(PaginationDirection.REVERSE)) {
-      hasNextPage = edges.get(edges.size() - 1).getNode().getId().equals(cursorId.get());
+      hasNextPage = edges.getLast().getNode().getId().equals(cursorId.get());
       edges = edges.subList(0, edges.size() - 1);
     }
 
@@ -120,14 +119,14 @@ public class RelayPaginationService {
 
     edges = pruneListByLimitGivenDirection(edges, limit, direction);
 
-    var firstEdge = edges.get(0);
-    var lastEdge = edges.get(edges.size() - 1);
+    var firstEdge = edges.getFirst();
+    var lastEdge = edges.getLast();
 
     var pageInfo =
         new DefaultPageInfo(
             firstEdge.getCursor(), lastEdge.getCursor(), hasPreviousPage, hasNextPage);
 
-    return new DefaultConnection(edges, pageInfo);
+    return new DefaultConnection<>(edges, pageInfo);
   }
 
   private <T> Connection<T> emptyConnection() {

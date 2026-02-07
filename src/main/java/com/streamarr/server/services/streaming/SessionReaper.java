@@ -34,11 +34,13 @@ public class SessionReaper {
       streamingService.destroySession(session.getSessionId());
       return;
     }
+
     if (isIdle(session, now) && session.hasActiveTranscodes()) {
       log.info("Suspending idle session {}", session.getSessionId());
       suspendSession(session);
       return;
     }
+
     handleDeadProcesses(session);
   }
 
@@ -59,6 +61,7 @@ public class SessionReaper {
       if (handle.status() != TranscodeStatus.ACTIVE) {
         continue;
       }
+
       session.setVariantHandle(
           entry.getKey(), new TranscodeHandle(handle.processId(), TranscodeStatus.SUSPENDED));
     }
@@ -73,6 +76,7 @@ public class SessionReaper {
       if (handle.status() != TranscodeStatus.ACTIVE) {
         continue;
       }
+
       if (transcodeExecutor.isRunning(session.getSessionId(), label)) {
         continue;
       }

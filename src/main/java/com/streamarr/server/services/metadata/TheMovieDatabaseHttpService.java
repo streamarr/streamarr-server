@@ -32,11 +32,9 @@ public class TheMovieDatabaseHttpService {
   private static final long BASE_DELAY_MS = 1000;
 
   private final String tmdbApiToken;
-
   private final String tmdbApiBaseUrl;
 
   private final HttpClient client;
-
   private final ObjectMapper objectMapper;
 
   public TheMovieDatabaseHttpService(
@@ -153,24 +151,22 @@ public class TheMovieDatabaseHttpService {
         throw new TmdbApiException(response.statusCode(), failure.getStatusMessage());
       }
 
-      if (attempt == MAX_RETRIES) {
-        break;
+      if (attempt < MAX_RETRIES) {
+        var delaySeconds =
+            response
+                .headers()
+                .firstValue("Retry-After")
+                .map(Long::parseLong)
+                .orElse(BASE_DELAY_MS * (1L << attempt) / 1000);
+
+        log.warn(
+            "TMDB rate limited (429). Retrying after {}s (attempt {}/{})",
+            delaySeconds,
+            attempt + 1,
+            MAX_RETRIES);
+
+        Thread.sleep(delaySeconds * 1000);
       }
-
-      var delaySeconds =
-          response
-              .headers()
-              .firstValue("Retry-After")
-              .map(Long::parseLong)
-              .orElse(BASE_DELAY_MS * (1L << attempt) / 1000);
-
-      log.warn(
-          "TMDB rate limited (429). Retrying after {}s (attempt {}/{})",
-          delaySeconds,
-          attempt + 1,
-          MAX_RETRIES);
-
-      Thread.sleep(delaySeconds * 1000);
     }
 
     throw new TmdbApiException(429, "TMDB rate limit exceeded after " + MAX_RETRIES + " retries");

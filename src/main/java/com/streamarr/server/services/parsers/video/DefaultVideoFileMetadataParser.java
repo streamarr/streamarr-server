@@ -1,7 +1,7 @@
 package com.streamarr.server.services.parsers.video;
 
 import com.streamarr.server.services.parsers.MetadataParser;
-import io.micrometer.core.instrument.util.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import java.util.List;
 import java.util.Optional;
 import java.util.regex.Pattern;
@@ -15,14 +15,14 @@ public class DefaultVideoFileMetadataParser implements MetadataParser<VideoFileP
   private static final List<Pattern> EXTRACTION_REGEXES =
       List.of(
           Pattern.compile(
-              "(.*[^_\\,\\.\\-])[_\\.\\(\\)\\[\\]\\-](19[0-9]{2}|20[0-9]{2})(?![0-9]+|\\W[0-9]{2}\\W[0-9]{2})([ _\\,\\.\\(\\)\\[\\]\\-][^0-9]|).*(19[0-9]{2}|20[0-9]{2})*"),
+                  "(.*[^_,.\\-])[_.()\\[\\]\\-](19[0-9]{2}|20[0-9]{2})(?![0-9]+|\\W[0-9]{2}\\W[0-9]{2})([ _,.()\\[\\]\\-][^0-9]|).*(19[0-9]{2}|20[0-9]{2})*"),
           Pattern.compile(
-              "(.*[^_\\,\\.\\-])[ _\\.\\(\\)\\[\\]\\-]+(19[0-9]{2}|20[0-9]{2})(?![0-9]+|\\W[0-9]{2}\\W[0-9]{2})([ _\\,\\.\\(\\)\\[\\]\\-][^0-9]|).*(19[0-9]{2}|20[0-9]{2})*"));
+                  "(.*[^_,.\\-])[ _.()\\[\\]\\-]+(19[0-9]{2}|20[0-9]{2})(?![0-9]+|\\W[0-9]{2}\\W[0-9]{2})([ _,.()\\[\\]\\-][^0-9]|).*(19[0-9]{2}|20[0-9]{2})*"));
   private static final Pattern TAG_REGEX =
-      Pattern.compile("^\\s*\\[[^\\]]+\\](?!\\.\\w+$)\\s*(?<cleaned>.+)");
+      Pattern.compile("^\\s*\\[[^]]+](?!\\.\\w+$)\\s*(?<cleaned>.+)");
   private static final Pattern KNOWN_WORD_EXCLUSIONS_REGEX =
       Pattern.compile(
-          "[ _\\,\\.\\(\\)\\[\\]\\-](3d|sbs|tab|hsbs|htab|mvc|HDR|HDC|UHD|UltraHD|4k|ac3|dts|custom|dc|divx|divx5|dsr|dsrip|dutch|dvd|dvdrip|dvdscr|dvdscreener|screener|dvdivx|cam|fragment|fs|hdtv|hdrip|hdtvrip|internal|limited|multisubs|ntsc|ogg|ogm|pal|pdtv|proper|repack|rerip|retail|cd[1-9]|r3|r5|bd5|bd|se|svcd|swedish|german|read.nfo|nfofix|unrated|ws|telesync|ts|telecine|tc|brrip|bdrip|480p|480i|576p|576i|720p|720i|1080p|1080i|2160p|hrhd|hrhdtv|hddvd|bluray|blu-ray|x264|x265|h264|xvid|xvidvd|xxx|www.www|AAC|\\[.*\\])([ _\\,\\.\\(\\)\\[\\]\\-]|$)",
+              "[ _,.()\\[\\]\\-](3d|sbs|tab|hsbs|htab|mvc|HDR|HDC|UHD|UltraHD|4k|ac3|dts|custom|dc|divx|divx5|dsr|dsrip|dutch|dvd|dvdrip|dvdscr|dvdscreener|screener|dvdivx|cam|fragment|fs|hdtv|hdrip|hdtvrip|internal|limited|multisubs|ntsc|ogg|ogm|pal|pdtv|proper|repack|rerip|retail|cd[1-9]|r3|r5|bd5|bd|se|svcd|swedish|german|read.nfo|nfofix|unrated|ws|telesync|ts|telecine|tc|brrip|bdrip|480p|480i|576p|576i|720p|720i|1080p|1080i|2160p|hrhd|hrhdtv|hddvd|bluray|blu-ray|x264|x265|h264|xvid|xvidvd|xxx|www.www|AAC|\\[.*])([ _,.()\\[\\]\\-]|$)",
           Pattern.CASE_INSENSITIVE);
 
   public Optional<VideoFileParserResult> parse(String filename) {
@@ -65,9 +65,7 @@ public class DefaultVideoFileMetadataParser implements MetadataParser<VideoFileP
     var cleanTitle = rawTitle.trim();
 
     cleanTitle = removeExclusions(cleanTitle);
-
     cleanTitle = removeTags(cleanTitle);
-
     cleanTitle = removeTrailingSymbols(cleanTitle);
 
     return cleanTitle.trim();

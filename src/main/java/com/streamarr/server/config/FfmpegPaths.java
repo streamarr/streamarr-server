@@ -31,6 +31,7 @@ public record FfmpegPaths(@NonNull String ffmpeg, @NonNull String ffprobe) {
     if (override != null && !override.isBlank()) {
       return override;
     }
+
     return searchPaths.stream()
         .filter(path -> Files.isExecutable(Path.of(path)))
         .findFirst()

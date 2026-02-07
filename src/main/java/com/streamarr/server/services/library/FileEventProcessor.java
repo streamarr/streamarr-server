@@ -57,6 +57,7 @@ class FileEventProcessor {
 
   void reset(List<Library> libraries) {
     stateLock.writeLock().lock();
+
     try {
       executor.shutdownNow();
       inFlightChecks.clear();
@@ -69,6 +70,7 @@ class FileEventProcessor {
 
   void shutdown() {
     stateLock.writeLock().lock();
+
     try {
       executor.shutdownNow();
       inFlightChecks.clear();
@@ -101,6 +103,7 @@ class FileEventProcessor {
 
   private void scheduleStabilityCheck(Path path, UUID libraryId) {
     stateLock.readLock().lock();
+
     try {
       var token = new StabilityToken();
       inFlightChecks.compute(
@@ -132,7 +135,7 @@ class FileEventProcessor {
   private void processStableFile(Path path, FileProcessingTask task) {
     log.info("Starting stability check for: {}", path);
 
-    if (!fileStabilityChecker.awaitStability(path)) {
+    if (!fileStabilityChecker.waitForStability(path)) {
       log.warn("File did not stabilize: {}", path);
       var result = taskCoordinator.fail(task.getId(), "File did not stabilize within timeout");
       logIfTaskAlreadyCancelled(result, path);
@@ -161,16 +164,19 @@ class FileEventProcessor {
 
   private void handleDelete(Path path) {
     var inFlight = inFlightChecks.remove(path);
+
     if (inFlight != null) {
       cancelInterrupting(inFlight.future());
       log.info("Cancelled in-flight check for deleted file: {}", path);
     }
+
     taskCoordinator.cancelTask(path);
     log.info("Watcher event type: DELETE -- filepath: {}", path);
   }
 
   private Optional<UUID> resolveLibrary(Path path) {
     stateLock.readLock().lock();
+
     try {
       var absolutePath = path.toAbsolutePath();
       var fs = absolutePath.getFileSystem();
