@@ -9,7 +9,7 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.graphql.cursor.InvalidCursorException;
 import com.streamarr.server.graphql.cursor.MediaFilter;
-import com.streamarr.server.graphql.cursor.OrderMoviesBy;
+import com.streamarr.server.graphql.cursor.OrderMediaBy;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import java.util.List;
@@ -191,7 +191,7 @@ public class MovieServiceIT extends AbstractIntegrationTest {
 
     var filter =
         MediaFilter.builder()
-            .sortBy(OrderMoviesBy.ADDED)
+            .sortBy(OrderMediaBy.ADDED)
             .sortDirection(SortOrder.DESC)
             .libraryId(savedLibraryC.getId())
             .build();
@@ -209,7 +209,7 @@ public class MovieServiceIT extends AbstractIntegrationTest {
 
     var filter =
         MediaFilter.builder()
-            .sortBy(OrderMoviesBy.ADDED)
+            .sortBy(OrderMediaBy.ADDED)
             .sortDirection(SortOrder.ASC)
             .libraryId(savedLibraryC.getId())
             .build();
@@ -224,5 +224,48 @@ public class MovieServiceIT extends AbstractIntegrationTest {
 
     assertThat(secondPage.getEdges()).hasSize(1);
     assertThat(secondPage.getEdges().get(0).getNode().getTitle()).isEqualTo("Second");
+  }
+
+  @Test
+  @DisplayName(
+      "Should paginate all items with no duplicates or skips when title DESC and duplicate titles")
+  void shouldPaginateAllItemsWithNoDuplicatesWhenTitleDescAndDuplicateTitles() {
+    var duplicateLibrary = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+
+    movieRepository.saveAndFlush(
+        Movie.builder().title("Same Title").library(duplicateLibrary).build());
+    movieRepository.saveAndFlush(
+        Movie.builder().title("Same Title").library(duplicateLibrary).build());
+    movieRepository.saveAndFlush(
+        Movie.builder().title("Same Title").library(duplicateLibrary).build());
+
+    var filter =
+        MediaFilter.builder()
+            .sortBy(OrderMediaBy.TITLE)
+            .sortDirection(SortOrder.DESC)
+            .libraryId(duplicateLibrary.getId())
+            .build();
+
+    var firstPage = movieService.getMoviesWithFilter(1, null, 0, null, filter);
+    assertThat(firstPage.getEdges()).hasSize(1);
+    assertThat(firstPage.getPageInfo().isHasNextPage()).isTrue();
+
+    var firstCursor = firstPage.getPageInfo().getEndCursor().getValue();
+    var secondPage = movieService.getMoviesWithFilter(1, firstCursor, 0, null, filter);
+    assertThat(secondPage.getEdges()).hasSize(1);
+    assertThat(secondPage.getPageInfo().isHasNextPage()).isTrue();
+
+    var secondCursor = secondPage.getPageInfo().getEndCursor().getValue();
+    var thirdPage = movieService.getMoviesWithFilter(1, secondCursor, 0, null, filter);
+    assertThat(thirdPage.getEdges()).hasSize(1);
+    assertThat(thirdPage.getPageInfo().isHasNextPage()).isFalse();
+
+    var allIds =
+        List.of(
+            firstPage.getEdges().get(0).getNode().getId(),
+            secondPage.getEdges().get(0).getNode().getId(),
+            thirdPage.getEdges().get(0).getNode().getId());
+
+    assertThat(allIds).doesNotHaveDuplicates();
   }
 }

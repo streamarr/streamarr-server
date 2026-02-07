@@ -13,7 +13,7 @@ import org.jooq.SortOrder;
 @Builder(toBuilder = true)
 public class MediaFilter {
 
-  @Builder.Default private final OrderMoviesBy sortBy = OrderMoviesBy.TITLE;
+  @Builder.Default private final OrderMediaBy sortBy = OrderMediaBy.TITLE;
   @Builder.Default private final SortOrder sortDirection = SortOrder.ASC;
 
   private UUID libraryId;

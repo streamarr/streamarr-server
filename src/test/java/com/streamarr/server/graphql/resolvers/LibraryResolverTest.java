@@ -14,8 +14,10 @@ import com.streamarr.server.domain.LibraryBackend;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.MovieService;
+import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.library.LibraryManagementService;
 import graphql.relay.DefaultConnection;
 import graphql.relay.DefaultConnectionCursor;
@@ -44,6 +46,8 @@ class LibraryResolverTest {
   @MockitoBean private LibraryManagementService libraryManagementService;
 
   @MockitoBean private MovieService movieService;
+
+  @MockitoBean private SeriesService seriesService;
 
   @Test
   @DisplayName("Should return library when valid ID provided")
@@ -164,8 +168,8 @@ class LibraryResolverTest {
   }
 
   @Test
-  @DisplayName("Should return error when unsupported media type in items")
-  void shouldReturnErrorWhenUnsupportedMediaTypeInItems() {
+  @DisplayName("Should return series items when series library queried")
+  void shouldReturnSeriesItemsWhenSeriesLibraryQueried() {
     var libraryId = UUID.randomUUID();
     var library =
         Library.builder()
@@ -174,6 +178,47 @@ class LibraryResolverTest {
             .status(LibraryStatus.HEALTHY)
             .backend(LibraryBackend.LOCAL)
             .type(MediaType.SERIES)
+            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+            .build();
+    library.setId(libraryId);
+
+    var series = Series.builder().title("Breaking Bad").build();
+    series.setId(UUID.randomUUID());
+
+    var cursor = new DefaultConnectionCursor("cursor1");
+    var connection =
+        new DefaultConnection<>(
+            List.of(new DefaultEdge<>(series, cursor)),
+            new DefaultPageInfo(cursor, cursor, false, false));
+
+    when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
+    doReturn(connection)
+        .when(seriesService)
+        .getSeriesWithFilter(anyInt(), any(), anyInt(), any(), any());
+
+    String title =
+        dgsQueryExecutor.executeAndExtractJsonPath(
+            String.format(
+                """
+                { library(id: "%s") { items(first: 10) { edges { node { ... on Series { title } } cursor } pageInfo { hasNextPage } } } }
+                """,
+                libraryId),
+            "data.library.items.edges[0].node.title");
+
+    assertThat(title).isEqualTo("Breaking Bad");
+  }
+
+  @Test
+  @DisplayName("Should return error when unsupported media type in items")
+  void shouldReturnErrorWhenUnsupportedMediaTypeInItems() {
+    var libraryId = UUID.randomUUID();
+    var library =
+        Library.builder()
+            .name("Other Media")
+            .filepath("/mpool/media/other")
+            .status(LibraryStatus.HEALTHY)
+            .backend(LibraryBackend.LOCAL)
+            .type(MediaType.OTHER)
             .externalAgentStrategy(ExternalAgentStrategy.TMDB)
             .build();
     library.setId(libraryId);

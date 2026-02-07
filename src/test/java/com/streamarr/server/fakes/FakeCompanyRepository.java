@@ -26,4 +26,9 @@ public class FakeCompanyRepository extends FakeJpaRepository<Company> implements
   public List<Company> findByMovieId(UUID movieId) {
     throw new NotImplementedException();
   }
+
+  @Override
+  public List<Company> findBySeriesId(UUID seriesId) {
+    throw new NotImplementedException();
+  }
 }

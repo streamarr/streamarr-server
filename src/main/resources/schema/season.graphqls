@@ -1,0 +1,9 @@
+type Season {
+    id: ID!
+    title: String
+    seasonNumber: Int!
+    overview: String
+    posterPath: String
+    airDate: String
+    episodes: [Episode]!
+}

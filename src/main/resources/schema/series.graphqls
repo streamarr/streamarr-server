@@ -1,0 +1,24 @@
+type Series implements BaseCollectable {
+    id: ID!
+    createdBy: String!
+    createdOn: String!
+    lastModifiedBy: String
+    lastModifiedOn: String!
+    title: String
+    originalTitle: String
+    titleSort: String
+    backdropPath: String
+    logoPath: String
+    posterPath: String
+    tagline: String
+    summary: String
+    runtime: Int
+    contentRating: ContentRating
+    firstAirDate: String
+    studios: [Company]!
+    cast: [Person]!
+    directors: [Person]!
+    genres: [Genre]!
+    seasons: [Season]!
+    files: [MediaFile]!
+}

@@ -31,4 +31,14 @@ public class FakePersonRepository extends FakeJpaRepository<Person> implements P
   public List<Person> findDirectorsByMovieId(UUID movieId) {
     throw new NotImplementedException();
   }
+
+  @Override
+  public List<Person> findCastBySeriesId(UUID seriesId) {
+    throw new NotImplementedException();
+  }
+
+  @Override
+  public List<Person> findDirectorsBySeriesId(UUID seriesId) {
+    throw new NotImplementedException();
+  }
 }

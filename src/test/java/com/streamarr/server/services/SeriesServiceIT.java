@@ -1,6 +1,7 @@
 package com.streamarr.server.services;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.ExternalIdentifier;
@@ -12,12 +13,17 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.graphql.cursor.InvalidCursorException;
+import com.streamarr.server.graphql.cursor.MediaFilter;
+import com.streamarr.server.graphql.cursor.OrderMediaBy;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import org.jooq.SortOrder;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -37,10 +43,28 @@ class SeriesServiceIT extends AbstractIntegrationTest {
   @Autowired private LibraryRepository libraryRepository;
 
   private Library savedLibrary;
+  private Library savedLibraryB;
+  private Library savedLibraryC;
 
   @BeforeAll
   void setup() {
     savedLibrary = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
+
+    savedLibraryB = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
+
+    savedLibraryC = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
+
+    seriesRepository.saveAndFlush(
+        Series.builder().title("Alpha Show").library(savedLibraryB).build());
+    seriesRepository.saveAndFlush(
+        Series.builder().title("Beta Show").library(savedLibraryB).build());
+    seriesRepository.saveAndFlush(
+        Series.builder().title("Gamma Show").library(savedLibraryB).build());
+
+    seriesRepository.saveAndFlush(
+        Series.builder().title("First Show").library(savedLibraryC).build());
+    seriesRepository.saveAndFlush(
+        Series.builder().title("Second Show").library(savedLibraryC).build());
   }
 
   @Test
@@ -249,5 +273,136 @@ class SeriesServiceIT extends AbstractIntegrationTest {
 
     assertThat(seasonRepository.findById(seasonId)).isEmpty();
     assertThat(episodeRepository.findById(episodeId)).isEmpty();
+  }
+
+  private MediaFilter filterForLibrary(Library library) {
+    return MediaFilter.builder().libraryId(library.getId()).build();
+  }
+
+  @Test
+  @DisplayName("Should return first page of series with forward pagination")
+  void shouldReturnFirstPageOfSeriesForwardPagination() {
+    var filter = filterForLibrary(savedLibraryB);
+    var result = seriesService.getSeriesWithFilter(2, null, 0, null, filter);
+
+    assertThat(result.getEdges()).hasSize(2);
+    assertThat(result.getPageInfo().isHasNextPage()).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should return next page using after cursor")
+  void shouldReturnNextPageUsingAfterCursor() {
+    var filter = filterForLibrary(savedLibraryB);
+
+    var firstPage = seriesService.getSeriesWithFilter(2, null, 0, null, filter);
+    assertThat(firstPage.getEdges()).hasSize(2);
+
+    var endCursor = firstPage.getPageInfo().getEndCursor();
+    var secondPage = seriesService.getSeriesWithFilter(2, endCursor.getValue(), 0, null, filter);
+    assertThat(secondPage.getEdges()).hasSize(1);
+
+    assertThat(firstPage.getEdges())
+        .map(e -> e.getNode().getId())
+        .isNotEmpty()
+        .doesNotContain(secondPage.getEdges().get(0).getNode().getId());
+  }
+
+  @Test
+  @DisplayName("Should return series filtered by library")
+  void shouldReturnSeriesFilteredByLibrary() {
+    var filterB = filterForLibrary(savedLibraryB);
+    var filterC = filterForLibrary(savedLibraryC);
+
+    var libraryBSeries = seriesService.getSeriesWithFilter(10, null, 0, null, filterB);
+    var libraryCSeries = seriesService.getSeriesWithFilter(10, null, 0, null, filterC);
+
+    assertThat(libraryBSeries.getEdges()).hasSize(3);
+    assertThat(libraryCSeries.getEdges()).hasSize(2);
+  }
+
+  @Test
+  @DisplayName("Should return series sorted by title")
+  void shouldReturnSeriesSortedByTitle() {
+    var filter = filterForLibrary(savedLibraryB);
+    var result = seriesService.getSeriesWithFilter(10, null, 0, null, filter);
+
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactly("Alpha Show", "Beta Show", "Gamma Show");
+  }
+
+  @Test
+  @DisplayName("Should return series sorted by date added descending")
+  void shouldReturnSeriesSortedByDateAddedDescending() {
+    var filter =
+        MediaFilter.builder()
+            .sortBy(OrderMediaBy.ADDED)
+            .sortDirection(SortOrder.DESC)
+            .libraryId(savedLibraryC.getId())
+            .build();
+
+    var result = seriesService.getSeriesWithFilter(10, null, 0, null, filter);
+
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactly("Second Show", "First Show");
+  }
+
+  @Test
+  @DisplayName("Should reject cursor when libraryId does not match")
+  void shouldRejectCursorWhenLibraryIdMismatch() {
+    var filterB = filterForLibrary(savedLibraryB);
+    var filterC = filterForLibrary(savedLibraryC);
+
+    var libraryBSeries = seriesService.getSeriesWithFilter(1, null, 0, null, filterB);
+    var cursorFromLibraryB = libraryBSeries.getPageInfo().getEndCursor().getValue();
+
+    assertThatThrownBy(
+            () -> seriesService.getSeriesWithFilter(1, cursorFromLibraryB, 0, null, filterC))
+        .isInstanceOf(InvalidCursorException.class);
+  }
+
+  @Test
+  @DisplayName(
+      "Should paginate all items with no duplicates or skips when title DESC and duplicate titles")
+  void shouldPaginateAllItemsWithNoDuplicatesWhenTitleDescAndDuplicateTitles() {
+    var duplicateLibrary =
+        libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
+
+    seriesRepository.saveAndFlush(
+        Series.builder().title("Same Show").library(duplicateLibrary).build());
+    seriesRepository.saveAndFlush(
+        Series.builder().title("Same Show").library(duplicateLibrary).build());
+    seriesRepository.saveAndFlush(
+        Series.builder().title("Same Show").library(duplicateLibrary).build());
+
+    var filter =
+        MediaFilter.builder()
+            .sortBy(OrderMediaBy.TITLE)
+            .sortDirection(SortOrder.DESC)
+            .libraryId(duplicateLibrary.getId())
+            .build();
+
+    var firstPage = seriesService.getSeriesWithFilter(1, null, 0, null, filter);
+    assertThat(firstPage.getEdges()).hasSize(1);
+    assertThat(firstPage.getPageInfo().isHasNextPage()).isTrue();
+
+    var firstCursor = firstPage.getPageInfo().getEndCursor().getValue();
+    var secondPage = seriesService.getSeriesWithFilter(1, firstCursor, 0, null, filter);
+    assertThat(secondPage.getEdges()).hasSize(1);
+    assertThat(secondPage.getPageInfo().isHasNextPage()).isTrue();
+
+    var secondCursor = secondPage.getPageInfo().getEndCursor().getValue();
+    var thirdPage = seriesService.getSeriesWithFilter(1, secondCursor, 0, null, filter);
+    assertThat(thirdPage.getEdges()).hasSize(1);
+    assertThat(thirdPage.getPageInfo().isHasNextPage()).isFalse();
+
+    var allIds =
+        List.of(
+            firstPage.getEdges().get(0).getNode().getId(),
+            secondPage.getEdges().get(0).getNode().getId(),
+            thirdPage.getEdges().get(0).getNode().getId());
+
+    assertThat(allIds).doesNotHaveDuplicates();
   }
 }

@@ -16,4 +16,7 @@ public interface GenreRepository extends JpaRepository<Genre, UUID> {
 
   @Query("SELECT g FROM Movie m JOIN m.genres g WHERE m.id = :movieId")
   List<Genre> findByMovieId(@Param("movieId") UUID movieId);
+
+  @Query("SELECT g FROM Series s JOIN s.genres g WHERE s.id = :seriesId")
+  List<Genre> findBySeriesId(@Param("seriesId") UUID seriesId);
 }

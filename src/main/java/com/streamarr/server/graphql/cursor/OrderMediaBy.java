@@ -1,6 +1,6 @@
 package com.streamarr.server.graphql.cursor;
 
-public enum OrderMoviesBy {
+public enum OrderMediaBy {
   TITLE,
   ADDED;
 }
