@@ -9,6 +9,9 @@ import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.tables.Movie.MoviePath;
 import com.streamarr.server.jooq.generated.tables.MovieDirector.MovieDirectorPath;
 import com.streamarr.server.jooq.generated.tables.MoviePerson.MoviePersonPath;
+import com.streamarr.server.jooq.generated.tables.Series.SeriesPath;
+import com.streamarr.server.jooq.generated.tables.SeriesDirector.SeriesDirectorPath;
+import com.streamarr.server.jooq.generated.tables.SeriesPerson.SeriesPersonPath;
 import com.streamarr.server.jooq.generated.tables.records.PersonRecord;
 
 import java.time.OffsetDateTime;
@@ -203,12 +206,54 @@ public class Person extends TableImpl<PersonRecord> {
         return _moviePerson;
     }
 
+    private transient SeriesDirectorPath _seriesDirector;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.series_director</code> table
+     */
+    public SeriesDirectorPath seriesDirector() {
+        if (_seriesDirector == null)
+            _seriesDirector = new SeriesDirectorPath(this, null, Keys.SERIES_DIRECTOR__SERIES_DIRECTOR_PERSON_ID_FKEY.getInverseKey());
+
+        return _seriesDirector;
+    }
+
+    private transient SeriesPersonPath _seriesPerson;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.series_person</code> table
+     */
+    public SeriesPersonPath seriesPerson() {
+        if (_seriesPerson == null)
+            _seriesPerson = new SeriesPersonPath(this, null, Keys.SERIES_PERSON__SERIES_PERSON_PERSON_ID_FKEY.getInverseKey());
+
+        return _seriesPerson;
+    }
+
     /**
      * Get the implicit many-to-many join path to the <code>public.movie</code>
      * table
      */
     public MoviePath movie() {
         return movieDirector().movie();
+    }
+
+    /**
+     * Get the implicit many-to-many join path to the <code>public.series</code>
+     * table, via the <code>series_director_series_id_fkey</code> key
+     */
+    public SeriesPath seriesDirectorSeriesIdFkey() {
+        return seriesDirector().series();
+    }
+
+    /**
+     * Get the implicit many-to-many join path to the <code>public.series</code>
+     * table, via the <code>series_person_series_id_fkey</code> key
+     */
+    public SeriesPath seriesPersonSeriesIdFkey() {
+        return seriesPerson().series();
     }
 
     @Override

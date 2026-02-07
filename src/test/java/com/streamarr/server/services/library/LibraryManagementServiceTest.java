@@ -36,9 +36,11 @@ import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.services.CompanyService;
 import com.streamarr.server.services.GenreService;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.PersonService;
+import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.library.events.LibraryAddedEvent;
 import com.streamarr.server.services.library.events.LibraryRemovedEvent;
@@ -78,28 +80,41 @@ public class LibraryManagementServiceTest {
 
   private final PersonService personService = mock(PersonService.class);
   private final GenreService genreService = mock(GenreService.class);
+  private final CompanyService companyService = mock(CompanyService.class);
   private final MetadataProvider<Movie> tmdbMovieProvider = mock(TMDBMovieProvider.class);
   private final MovieMetadataProviderResolver fakeMovieMetadataProviderResolver =
       new MovieMetadataProviderResolver(List.of(tmdbMovieProvider));
   private final LibraryRepository fakeLibraryRepository = new FakeLibraryRepository();
   private final MediaFileRepository fakeMediaFileRepository = new FakeMediaFileRepository();
   private final MovieRepository fakeMovieRepository = new FakeMovieRepository();
-  private final MovieService movieService = new MovieService(fakeMovieRepository, null, null);
+  private final MovieService movieService =
+      new MovieService(
+          fakeMovieRepository, personService, genreService, companyService, null, null);
   private final FileSystem fileSystem = Jimfs.newFileSystem(Configuration.unix());
 
   private final CapturingEventPublisher capturingEventPublisher = new CapturingEventPublisher();
+
+  private final MovieFileProcessor movieFileProcessor =
+      new MovieFileProcessor(
+          new DefaultVideoFileMetadataParser(),
+          fakeMovieMetadataProviderResolver,
+          movieService,
+          fakeMediaFileRepository,
+          new MutexFactoryProvider());
+
+  private final SeriesFileProcessor seriesFileProcessor = mock(SeriesFileProcessor.class);
+  private final SeriesService seriesService = mock(SeriesService.class);
 
   private final LibraryManagementService libraryManagementService =
       new LibraryManagementService(
           new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
           new VideoExtensionValidator(),
-          new DefaultVideoFileMetadataParser(),
-          fakeMovieMetadataProviderResolver,
+          movieFileProcessor,
+          seriesFileProcessor,
           fakeLibraryRepository,
           fakeMediaFileRepository,
           movieService,
-          personService,
-          genreService,
+          seriesService,
           capturingEventPublisher,
           new MutexFactoryProvider(),
           fileSystem);
@@ -164,13 +179,12 @@ public class LibraryManagementServiceTest {
         new LibraryManagementService(
             new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
             new VideoExtensionValidator(),
-            new DefaultVideoFileMetadataParser(),
-            fakeMovieMetadataProviderResolver,
+            movieFileProcessor,
+            seriesFileProcessor,
             fakeLibraryRepository,
             fakeMediaFileRepository,
             movieService,
-            personService,
-            genreService,
+            seriesService,
             capturingEventPublisher,
             new MutexFactoryProvider(),
             throwingFileSystem);
@@ -198,13 +212,12 @@ public class LibraryManagementServiceTest {
         new LibraryManagementService(
             new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
             new VideoExtensionValidator(),
-            new DefaultVideoFileMetadataParser(),
-            fakeMovieMetadataProviderResolver,
+            movieFileProcessor,
+            seriesFileProcessor,
             fakeLibraryRepository,
             fakeMediaFileRepository,
             movieService,
-            personService,
-            genreService,
+            seriesService,
             capturingEventPublisher,
             new MutexFactoryProvider(),
             throwingFileSystem);
@@ -291,13 +304,12 @@ public class LibraryManagementServiceTest {
         new LibraryManagementService(
             new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
             new VideoExtensionValidator(),
-            new DefaultVideoFileMetadataParser(),
-            fakeMovieMetadataProviderResolver,
+            movieFileProcessor,
+            seriesFileProcessor,
             fakeLibraryRepository,
             fakeMediaFileRepository,
             movieService,
-            personService,
-            genreService,
+            seriesService,
             capturingEventPublisher,
             new MutexFactoryProvider(),
             throwingFileSystem);
@@ -671,13 +683,12 @@ public class LibraryManagementServiceTest {
           new LibraryManagementService(
               new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
               new VideoExtensionValidator(),
-              new DefaultVideoFileMetadataParser(),
-              fakeMovieMetadataProviderResolver,
+              movieFileProcessor,
+              seriesFileProcessor,
               fakeLibraryRepository,
               fakeMediaFileRepository,
               movieService,
-              personService,
-              genreService,
+              seriesService,
               capturingEventPublisher,
               new MutexFactoryProvider(),
               securityExceptionFs);

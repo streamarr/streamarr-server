@@ -16,9 +16,8 @@ import com.streamarr.server.fakes.FakeFileProcessingTaskRepository;
 import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.repositories.LibraryRepository;
-import com.streamarr.server.services.GenreService;
 import com.streamarr.server.services.MovieService;
-import com.streamarr.server.services.PersonService;
+import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
@@ -110,23 +109,31 @@ class FileEventProcessorTest {
     Files.createDirectories(fileSystem.getPath("/media/shows"));
 
     var movieService = mock(MovieService.class);
-    var personService = mock(PersonService.class);
-    var genreService = mock(GenreService.class);
     @SuppressWarnings("unchecked")
     MetadataProvider<com.streamarr.server.domain.media.Movie> tmdbProvider =
         mock(TMDBMovieProvider.class);
+
+    var movieFileProcessor =
+        new MovieFileProcessor(
+            new DefaultVideoFileMetadataParser(),
+            new MovieMetadataProviderResolver(List.of(tmdbProvider)),
+            movieService,
+            mediaFileRepository,
+            new MutexFactoryProvider());
+
+    var seriesFileProcessor = mock(SeriesFileProcessor.class);
+    var seriesService = mock(SeriesService.class);
 
     var libraryManagementService =
         new LibraryManagementService(
             ignoredFileValidator,
             videoExtensionValidator,
-            new DefaultVideoFileMetadataParser(),
-            new MovieMetadataProviderResolver(List.of(tmdbProvider)),
+            movieFileProcessor,
+            seriesFileProcessor,
             libraryRepository,
             mediaFileRepository,
             movieService,
-            personService,
-            genreService,
+            seriesService,
             event -> {},
             new MutexFactoryProvider(),
             fileSystem);

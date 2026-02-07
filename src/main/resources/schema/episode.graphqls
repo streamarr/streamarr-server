@@ -1,0 +1,10 @@
+type Episode {
+    id: ID!
+    title: String
+    episodeNumber: Int!
+    overview: String
+    stillPath: String
+    airDate: String
+    runtime: Int
+    files: [MediaFile]!
+}

@@ -10,9 +10,9 @@ import com.streamarr.server.graphql.cursor.MediaPaginationOptions;
 import com.streamarr.server.graphql.cursor.PaginationDirection;
 import com.streamarr.server.jooq.generated.Tables;
 import com.streamarr.server.jooq.generated.enums.ExternalSourceType;
+import com.streamarr.server.repositories.JooqQueryHelper;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
-import jakarta.persistence.Query;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -64,7 +64,7 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
             // N+2 (Allows us to efficiently check if there are items before AND after N)
             .limit(options.getPaginationOptions().getLimit() + 2);
 
-    var results = nativeQuery(entityManager, query, Movie.class);
+    var results = JooqQueryHelper.nativeQuery(entityManager, query, Movie.class);
 
     if (shouldReverse) {
       Collections.reverse(results);
@@ -89,7 +89,7 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
                     .and(Tables.EXTERNAL_IDENTIFIER.EXTERNAL_ID.eq(tmdbId)))
             .limit(1);
 
-    var results = nativeQuery(entityManager, query, Movie.class);
+    var results = JooqQueryHelper.nativeQuery(entityManager, query, Movie.class);
 
     if (results.isEmpty()) {
       return Optional.empty();
@@ -110,7 +110,8 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
 
     var orderByColumns =
         new SortField[] {
-          buildOrderBy(options.getMediaFilter()), Tables.BASE_COLLECTABLE.ID.sort(SortOrder.DEFAULT)
+          buildOrderBy(options.getMediaFilter()),
+          Tables.BASE_COLLECTABLE.ID.sort(options.getMediaFilter().getSortDirection())
         };
 
     var query =
@@ -123,7 +124,7 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
             .orderBy(orderByColumns)
             .limit(options.getPaginationOptions().getLimit() + 1);
 
-    return nativeQuery(entityManager, query, Movie.class);
+    return JooqQueryHelper.nativeQuery(entityManager, query, Movie.class);
   }
 
   private Condition libraryCondition(MediaFilter filter) {
@@ -131,6 +132,8 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
     return libraryId != null ? Tables.BASE_COLLECTABLE.LIBRARY_ID.eq(libraryId) : noCondition();
   }
 
+  // TODO(#45): new sort fields (RELEASE_DATE, RUNTIME, TITLE_SORT) need a composite index
+  // on (library_id, <sort_field>, id) and CursorUtil support for their value types.
   private SortField<?> buildOrderBy(MediaFilter filter) {
     var direction = filter.getSortDirection();
 
@@ -138,20 +141,5 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
       case TITLE -> Tables.BASE_COLLECTABLE.TITLE.sort(direction);
       case ADDED -> Tables.BASE_COLLECTABLE.CREATED_ON.sort(direction);
     };
-  }
-
-  @SuppressWarnings("unchecked")
-  public static <E> List<E> nativeQuery(EntityManager em, org.jooq.Query query, Class<E> type) {
-
-    // Extract the SQL statement from the jOOQ query:
-    Query result = em.createNativeQuery(query.getSQL(), type);
-
-    // Extract the bind values from the jOOQ query:
-    List<Object> values = query.getBindValues();
-    for (int i = 0; i < values.size(); i++) {
-      result.setParameter(i + 1, values.get(i));
-    }
-
-    return result.getResultList();
   }
 }

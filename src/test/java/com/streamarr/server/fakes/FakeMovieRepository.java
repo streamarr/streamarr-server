@@ -4,7 +4,7 @@ import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.graphql.cursor.MediaPaginationOptions;
-import com.streamarr.server.graphql.cursor.OrderMoviesBy;
+import com.streamarr.server.graphql.cursor.OrderMediaBy;
 import com.streamarr.server.graphql.cursor.PaginationDirection;
 import com.streamarr.server.repositories.media.MovieRepository;
 import java.util.ArrayList;
@@ -37,7 +37,7 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
     var limit = options.getPaginationOptions().getLimit();
 
     return filterByLibrary(filter)
-        .sorted(comparatorFor(filter, SortOrder.ASC))
+        .sorted(comparatorFor(filter, filter.getSortDirection()))
         .limit(limit + 1L)
         .toList();
   }
@@ -95,7 +95,7 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
 
   private Comparator<Movie> comparatorFor(MediaFilter filter, SortOrder idSortOrder) {
     Comparator<Movie> primary =
-        filter.getSortBy() == OrderMoviesBy.ADDED
+        filter.getSortBy() == OrderMediaBy.ADDED
             ? Comparator.comparing(
                 Movie::getCreatedOn, Comparator.nullsLast(Comparator.naturalOrder()))
             : Comparator.comparing(Movie::getTitle);

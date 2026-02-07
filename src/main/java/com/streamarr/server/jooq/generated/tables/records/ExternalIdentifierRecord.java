@@ -10,7 +10,7 @@ import com.streamarr.server.jooq.generated.tables.ExternalIdentifier;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
-import org.jooq.Record2;
+import org.jooq.Record1;
 import org.jooq.impl.UpdatableRecordImpl;
 
 
@@ -139,8 +139,8 @@ public class ExternalIdentifierRecord extends UpdatableRecordImpl<ExternalIdenti
     // -------------------------------------------------------------------------
 
     @Override
-    public Record2<ExternalSourceType, String> key() {
-        return (Record2) super.key();
+    public Record1<UUID> key() {
+        return (Record1) super.key();
     }
 
     // -------------------------------------------------------------------------

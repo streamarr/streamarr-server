@@ -1,0 +1,29 @@
+= ADR 0011: Remove MapStruct
+
+== Status
+
+Accepted
+
+== Context
+
+MapStruct was used in `PersonMappers` and `CompanyMappers` to copy mutable fields during dedup (find-or-create). The generated code was trivial -- a few setter calls per entity. Meanwhile, the entities lacked `@Setter`, so the mappers silently skipped the fields they were meant to update (`name`, `logoPath`, `profilePath`), making the "update" a no-op.
+
+We considered expanding MapStruct usage to create a full domain-object layer separate from JPA entities, similar to our TMDB ingest DTOs. However, GraphQL (via DGS) already provides that separation: the schema defines the API contract, resolvers fetch only requested fields, and JPA concerns like lazy proxies never leak to clients. A dedicated mapping layer would duplicate what GraphQL gives us for free.
+
+== Decision
+
+Remove MapStruct. Replace mapper calls with direct setters in `CompanyService` and `PersonService`.
+
+== When to Re-introduce
+
+MapStruct (or a similar mapping library) becomes worthwhile if:
+
+* We adopt REST or gRPC, where full object serialization exposes JPA internals
+* Domain objects diverge significantly from entity shape (different field names, nested transformations, type conversions)
+* The number of mapped fields per entity grows large enough that manual setters become a maintenance risk
+
+== Consequences
+
+* One fewer compile-time annotation processor (mapstruct-processor, lombok-mapstruct-binding)
+* Field updates are explicit and visible in the service method -- no indirection through generated code
+* Adding a new mutable field requires updating the service method manually

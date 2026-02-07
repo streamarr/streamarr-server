@@ -35,7 +35,7 @@ enum MediaType {
     OTHER
 }
 
-enum OrderMoviesBy {
+enum OrderMediaBy {
     TITLE
     ADDED
 }
@@ -46,7 +46,7 @@ enum SortOrder {
 }
 
 input Filter {
-    sortBy: OrderMoviesBy
+    sortBy: OrderMediaBy
     sortDirection: SortOrder
 }
 
@@ -67,4 +67,4 @@ type PageInfo {
     endCursor: String
 }
 
-union Media = Movie
+union Media = Movie | Series

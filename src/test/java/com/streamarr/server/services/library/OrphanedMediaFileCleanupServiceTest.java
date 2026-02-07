@@ -35,7 +35,8 @@ public class OrphanedMediaFileCleanupServiceTest {
   private final LibraryRepository fakeLibraryRepository = new FakeLibraryRepository();
   private final MediaFileRepository fakeMediaFileRepository = new FakeMediaFileRepository();
   private final MovieRepository fakeMovieRepository = new FakeMovieRepository();
-  private final MovieService movieService = new MovieService(fakeMovieRepository, null, null);
+  private final MovieService movieService =
+      new MovieService(fakeMovieRepository, null, null, null, null, null);
   private final FileSystem fileSystem = Jimfs.newFileSystem(Configuration.unix());
 
   private final OrphanedMediaFileCleanupService orphanedMediaFileCleanupService =

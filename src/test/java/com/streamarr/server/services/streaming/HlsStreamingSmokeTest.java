@@ -12,6 +12,7 @@ import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
+import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegCommandBuilder;
 import com.streamarr.server.services.streaming.ffmpeg.LocalFfmpegProcessManager;
 import com.streamarr.server.services.streaming.ffmpeg.LocalFfprobeService;
@@ -102,8 +103,8 @@ class HlsStreamingSmokeTest {
     var properties =
         StreamingProperties.builder()
             .maxConcurrentTranscodes(3)
-            .segmentDurationSeconds(6)
-            .sessionTimeoutSeconds(60)
+            .segmentDuration(Duration.ofSeconds(6))
+            .sessionTimeout(Duration.ofSeconds(60))
             .build();
 
     mediaFileRepository = new FakeMediaFileRepository();
@@ -116,7 +117,8 @@ class HlsStreamingSmokeTest {
             decisionService,
             qualityLadderService,
             properties,
-            new InMemoryStreamSessionRepository());
+            new InMemoryStreamSessionRepository(),
+            new MutexFactory<>());
 
     playlistService = new HlsPlaylistService(properties);
   }

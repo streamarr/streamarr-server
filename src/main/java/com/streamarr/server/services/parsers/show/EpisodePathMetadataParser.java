@@ -4,6 +4,7 @@ import com.streamarr.server.services.parsers.MetadataParser;
 import com.streamarr.server.services.parsers.show.regex.EpisodeRegexContainer;
 import com.streamarr.server.services.parsers.show.regex.EpisodeRegexFixtures;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalInt;
@@ -54,6 +55,7 @@ public class EpisodePathMetadataParser implements MetadataParser<EpisodePathResu
   }
 
   private Optional<EpisodePathResult> attemptDateMatch(Pattern pattern, String filename) {
+    var originalFilename = filename;
     // This is a hack to handle wmc naming
     filename = filename.replace('_', '-');
 
@@ -68,9 +70,28 @@ public class EpisodePathMetadataParser implements MetadataParser<EpisodePathResu
     var day = Integer.parseInt(match.group("day"));
 
     var parsedDate = LocalDate.of(year, month, day);
+    var seriesName = extractSeriesNameBeforeDate(originalFilename, match);
 
     return Optional.of(
-        EpisodePathResult.builder().date(parsedDate).success(true).onlyDate(true).build());
+        EpisodePathResult.builder()
+            .date(parsedDate)
+            .seriesName(seriesName)
+            .success(true)
+            .onlyDate(true)
+            .build());
+  }
+
+  private String extractSeriesNameBeforeDate(String originalFilename, Matcher match) {
+    var dateStart =
+        Math.min(match.start("year"), Math.min(match.start("month"), match.start("day")));
+    var lastSep = Math.max(originalFilename.lastIndexOf('/'), originalFilename.lastIndexOf('\\'));
+    if (lastSep + 1 >= dateStart) {
+      return null;
+    }
+
+    var nameCandidate = originalFilename.substring(lastSep + 1, dateStart);
+    var cleaned = cleanSeriesName(nameCandidate);
+    return StringUtils.isBlank(cleaned) ? null : cleaned;
   }
 
   private Optional<EpisodePathResult> attemptNamedMatch(Pattern pattern, String filename) {
@@ -132,16 +153,11 @@ public class EpisodePathMetadataParser implements MetadataParser<EpisodePathResu
     // It avoids erroneous parsing of something like "series-s09e14-1080p.mkv" as a multi-episode
     // from E14 to E108.
     if (endingNumberGroupEndIndex >= filename.length()
-        || !containsChar("0123456789iIpP", filename.charAt(endingNumberGroupEndIndex))) {
+        || "0123456789iIpP".indexOf(filename.charAt(endingNumberGroupEndIndex)) < 0) {
       return endingEpisodeNumber;
     }
 
     return OptionalInt.empty();
-  }
-
-  private boolean containsChar(String s, char search) {
-    if (s.length() == 0) return false;
-    else return s.charAt(0) == search || containsChar(s.substring(1), search);
   }
 
   private String getSeriesName(Matcher match) {
@@ -204,7 +220,7 @@ public class EpisodePathMetadataParser implements MetadataParser<EpisodePathResu
   private EpisodePathResult fillAdditionalInfo(String filename, EpisodePathResult result) {
 
     var multipleEpisodeRegexContainerSet =
-        episodeRegexFixtures.getMultipleEpisodeRegexContainerList();
+        new ArrayList<>(episodeRegexFixtures.getMultipleEpisodeRegexContainerList());
 
     if (StringUtils.isBlank(result.getSeriesName())) {
       multipleEpisodeRegexContainerSet.addAll(
