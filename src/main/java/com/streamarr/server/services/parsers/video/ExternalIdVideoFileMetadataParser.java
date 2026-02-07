@@ -2,7 +2,7 @@ package com.streamarr.server.services.parsers.video;
 
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.services.parsers.MetadataParser;
-import io.micrometer.core.instrument.util.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import java.util.Optional;
 import java.util.regex.Pattern;
 import org.springframework.core.annotation.Order;

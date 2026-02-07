@@ -85,6 +85,7 @@ public class EpisodePathMetadataParser implements MetadataParser<EpisodePathResu
     var dateStart =
         Math.min(match.start("year"), Math.min(match.start("month"), match.start("day")));
     var lastSep = Math.max(originalFilename.lastIndexOf('/'), originalFilename.lastIndexOf('\\'));
+
     if (lastSep + 1 >= dateStart) {
       return null;
     }
