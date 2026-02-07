@@ -2,7 +2,6 @@ package com.streamarr.server.services;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.domain.mappers.CompanyMappersImpl;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.fakes.FakeCompanyRepository;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
@@ -22,8 +21,7 @@ class CompanyServiceTest {
   @BeforeEach
   void setUp() {
     companyRepository = new FakeCompanyRepository();
-    companyService =
-        new CompanyService(companyRepository, new CompanyMappersImpl(), new MutexFactoryProvider());
+    companyService = new CompanyService(companyRepository, new MutexFactoryProvider());
   }
 
   @Test

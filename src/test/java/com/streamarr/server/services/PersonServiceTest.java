@@ -2,7 +2,6 @@ package com.streamarr.server.services;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.domain.mappers.PersonMappersImpl;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.fakes.FakePersonRepository;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
@@ -22,8 +21,7 @@ class PersonServiceTest {
   @BeforeEach
   void setUp() {
     personRepository = new FakePersonRepository();
-    personService =
-        new PersonService(personRepository, new PersonMappersImpl(), new MutexFactoryProvider());
+    personService = new PersonService(personRepository, new MutexFactoryProvider());
   }
 
   @Test

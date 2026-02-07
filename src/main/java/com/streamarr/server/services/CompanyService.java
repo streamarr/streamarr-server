@@ -1,6 +1,5 @@
 package com.streamarr.server.services;
 
-import com.streamarr.server.domain.mappers.CompanyMappers;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.repositories.CompanyRepository;
 import com.streamarr.server.services.concurrency.MutexFactory;
@@ -16,15 +15,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class CompanyService {
 
   private final CompanyRepository companyRepository;
-  private final CompanyMappers companyMappers;
   private final MutexFactory<String> mutexFactory;
 
   public CompanyService(
-      CompanyRepository companyRepository,
-      CompanyMappers companyMappers,
-      MutexFactoryProvider mutexFactoryProvider) {
+      CompanyRepository companyRepository, MutexFactoryProvider mutexFactoryProvider) {
     this.companyRepository = companyRepository;
-    this.companyMappers = companyMappers;
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
   }
 
@@ -42,8 +37,10 @@ public class CompanyService {
       var existing = companyRepository.findBySourceId(company.getSourceId());
 
       if (existing.isPresent()) {
-        companyMappers.updateCompany(company, existing.get());
-        return companyRepository.save(existing.get());
+        var target = existing.get();
+        target.setName(company.getName());
+        target.setLogoPath(company.getLogoPath());
+        return companyRepository.save(target);
       }
 
       return companyRepository.save(company);

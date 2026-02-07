@@ -1,6 +1,5 @@
 package com.streamarr.server.services;
 
-import com.streamarr.server.domain.mappers.PersonMappers;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.services.concurrency.MutexFactory;
@@ -14,15 +13,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class PersonService {
 
   private final PersonRepository personRepository;
-  private final PersonMappers personMappers;
   private final MutexFactory<String> mutexFactory;
 
   public PersonService(
-      PersonRepository personRepository,
-      PersonMappers personMappers,
-      MutexFactoryProvider mutexFactoryProvider) {
+      PersonRepository personRepository, MutexFactoryProvider mutexFactoryProvider) {
     this.personRepository = personRepository;
-    this.personMappers = personMappers;
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
   }
 
@@ -40,8 +35,10 @@ public class PersonService {
       var existingPerson = personRepository.findPersonBySourceId(person.getSourceId());
 
       if (existingPerson.isPresent()) {
-        personMappers.updatePerson(person, existingPerson.get());
-        return personRepository.save(existingPerson.get());
+        var target = existingPerson.get();
+        target.setName(person.getName());
+        target.setProfilePath(person.getProfilePath());
+        return personRepository.save(target);
       }
 
       return personRepository.save(person);
