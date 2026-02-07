@@ -7,12 +7,14 @@ import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.DgsTypeResolver;
 import com.netflix.graphql.dgs.InputArgument;
 import com.streamarr.server.domain.BaseCollectable;
+import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.exceptions.InvalidIdException;
 import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
 import com.streamarr.server.graphql.cursor.MediaFilter;
+import com.streamarr.server.graphql.inputs.AddLibraryInput;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
@@ -32,6 +34,29 @@ public class LibraryResolver {
   private final LibraryManagementService libraryManagementService;
   private final MovieService movieService;
   private final SeriesService seriesService;
+
+  @DgsMutation
+  public Library addLibrary(@InputArgument AddLibraryInput input) {
+    var library =
+        Library.builder()
+            .name(input.name())
+            .filepath(input.filepath())
+            .type(input.type())
+            .backend(input.backend())
+            .externalAgentStrategy(
+                input.externalAgentStrategy() != null
+                    ? input.externalAgentStrategy()
+                    : ExternalAgentStrategy.TMDB)
+            .build();
+
+    return libraryManagementService.addLibrary(library);
+  }
+
+  @DgsMutation
+  public boolean removeLibrary(String id) {
+    libraryManagementService.removeLibrary(parseUuid(id));
+    return true;
+  }
 
   @DgsMutation
   public boolean scanLibrary(String id) {

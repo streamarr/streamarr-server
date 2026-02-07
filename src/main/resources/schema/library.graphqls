@@ -68,3 +68,15 @@ type PageInfo {
 }
 
 union Media = Movie | Series
+
+enum ExternalAgentStrategy {
+    TMDB
+}
+
+input AddLibraryInput {
+    name: String!
+    filepath: String!
+    type: MediaType!
+    backend: LibraryBackend!
+    externalAgentStrategy: ExternalAgentStrategy
+}
