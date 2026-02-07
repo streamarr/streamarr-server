@@ -2,7 +2,6 @@ package com.streamarr.server.services.metadata.series;
 
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Series;
-import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.util.List;
@@ -16,7 +15,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class SeriesMetadataProviderResolver {
 
-  private final List<MetadataProvider<Series>> seriesProviders;
+  private final List<SeriesMetadataProvider> seriesProviders;
 
   public Optional<RemoteSearchResult> search(
       Library library, VideoFileParserResult videoFileParserResult) {
@@ -58,16 +57,10 @@ public class SeriesMetadataProviderResolver {
       return Optional.empty();
     }
 
-    if (optionalProvider.get() instanceof TMDBSeriesProvider tmdbProvider) {
-      return tmdbProvider.getSeasonDetails(seriesExternalId, seasonNumber);
-    }
-
-    log.error(
-        "Provider for {} library does not support season details", library.getName());
-    return Optional.empty();
+    return optionalProvider.get().getSeasonDetails(seriesExternalId, seasonNumber);
   }
 
-  private Optional<MetadataProvider<Series>> getProviderForLibrary(Library library) {
+  private Optional<SeriesMetadataProvider> getProviderForLibrary(Library library) {
     return seriesProviders.stream()
         .filter(provider -> library.getExternalAgentStrategy().equals(provider.getAgentStrategy()))
         .findFirst();

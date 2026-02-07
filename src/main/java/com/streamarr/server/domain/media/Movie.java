@@ -57,7 +57,7 @@ public class Movie extends BaseCollectable<Movie> {
 
   @Builder.Default
   @ManyToMany(
-      cascade = {CascadeType.PERSIST, CascadeType.MERGE},
+      cascade = {CascadeType.MERGE},
       fetch = FetchType.LAZY)
   @JoinTable(
       name = "movie_company",
@@ -89,7 +89,7 @@ public class Movie extends BaseCollectable<Movie> {
 
   @Builder.Default
   @ManyToMany(
-      cascade = {CascadeType.PERSIST, CascadeType.MERGE},
+      cascade = {CascadeType.MERGE},
       fetch = FetchType.LAZY)
   @JoinTable(
       name = "movie_genre",

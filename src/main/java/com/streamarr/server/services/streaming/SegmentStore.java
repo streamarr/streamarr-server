@@ -9,5 +9,7 @@ public interface SegmentStore {
 
   boolean waitForSegment(UUID sessionId, String segmentName, Duration timeout);
 
+  boolean segmentExists(UUID sessionId, String segmentName);
+
   void deleteSession(UUID sessionId);
 }

@@ -1,6 +1,7 @@
 package com.streamarr.server.config;
 
 import com.streamarr.server.repositories.media.MediaFileRepository;
+import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.server.services.streaming.HlsStreamingService;
 import com.streamarr.server.services.streaming.QualityLadderService;
@@ -97,7 +98,8 @@ public class StreamingConfig {
       TranscodeDecisionService transcodeDecisionService,
       QualityLadderService qualityLadderService,
       StreamingProperties properties,
-      StreamSessionRepository streamSessionRepository) {
+      StreamSessionRepository streamSessionRepository,
+      MutexFactoryProvider mutexFactoryProvider) {
     return new HlsStreamingService(
         mediaFileRepository,
         transcodeExecutor,
@@ -106,6 +108,7 @@ public class StreamingConfig {
         transcodeDecisionService,
         qualityLadderService,
         properties,
-        streamSessionRepository);
+        streamSessionRepository,
+        mutexFactoryProvider.getMutexFactory());
   }
 }

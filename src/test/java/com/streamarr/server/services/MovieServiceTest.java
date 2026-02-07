@@ -2,6 +2,7 @@ package com.streamarr.server.services;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
 
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fakes.FakeMovieRepository;
@@ -28,7 +29,14 @@ class MovieServiceTest {
     movieRepository = new FakeMovieRepository();
     var cursorUtil = new CursorUtil(new ObjectMapper());
     var relayPaginationService = new RelayPaginationService();
-    movieService = new MovieService(movieRepository, cursorUtil, relayPaginationService);
+    movieService =
+        new MovieService(
+            movieRepository,
+            mock(PersonService.class),
+            mock(GenreService.class),
+            mock(CompanyService.class),
+            cursorUtil,
+            relayPaginationService);
   }
 
   @Test

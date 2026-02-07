@@ -37,7 +37,7 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
     var limit = options.getPaginationOptions().getLimit();
 
     return filterByLibrary(filter)
-        .sorted(comparatorFor(filter, SortOrder.ASC))
+        .sorted(comparatorFor(filter, filter.getSortDirection()))
         .limit(limit + 1L)
         .toList();
   }

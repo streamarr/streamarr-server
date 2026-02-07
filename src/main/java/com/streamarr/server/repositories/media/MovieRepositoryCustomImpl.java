@@ -110,7 +110,8 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
 
     var orderByColumns =
         new SortField[] {
-          buildOrderBy(options.getMediaFilter()), Tables.BASE_COLLECTABLE.ID.sort(SortOrder.DEFAULT)
+          buildOrderBy(options.getMediaFilter()),
+          Tables.BASE_COLLECTABLE.ID.sort(options.getMediaFilter().getSortDirection())
         };
 
     var query =
@@ -131,6 +132,8 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
     return libraryId != null ? Tables.BASE_COLLECTABLE.LIBRARY_ID.eq(libraryId) : noCondition();
   }
 
+  // TODO(#45): new sort fields (RELEASE_DATE, RUNTIME, TITLE_SORT) need a composite index
+  // on (library_id, <sort_field>, id) and CursorUtil support for their value types.
   private SortField<?> buildOrderBy(MediaFilter filter) {
     var direction = filter.getSortDirection();
 
@@ -139,5 +142,4 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
       case ADDED -> Tables.BASE_COLLECTABLE.CREATED_ON.sort(direction);
     };
   }
-
 }
