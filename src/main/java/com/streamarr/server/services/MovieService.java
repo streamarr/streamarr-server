@@ -27,6 +27,9 @@ import org.springframework.transaction.annotation.Transactional;
 public class MovieService {
 
   private final MovieRepository movieRepository;
+  private final PersonService personService;
+  private final GenreService genreService;
+  private final CompanyService companyService;
   private final CursorUtil cursorUtil;
   private final RelayPaginationService relayPaginationService;
 
@@ -64,6 +67,15 @@ public class MovieService {
     savedMovie.addFile(mediaFile);
 
     return movieRepository.save(savedMovie);
+  }
+
+  @Transactional
+  public Movie createMovieWithAssociations(Movie movie, MediaFile mediaFile) {
+    movie.setCast(personService.getOrCreatePersons(movie.getCast()));
+    movie.setDirectors(personService.getOrCreatePersons(movie.getDirectors()));
+    movie.setGenres(genreService.getOrCreateGenres(movie.getGenres()));
+    movie.setStudios(companyService.getOrCreateCompanies(movie.getStudios()));
+    return saveMovieWithMediaFile(movie, mediaFile);
   }
 
   public Connection<? extends BaseCollectable<?>> getMoviesWithFilter(

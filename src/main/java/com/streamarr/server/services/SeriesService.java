@@ -14,6 +14,9 @@ import org.springframework.transaction.annotation.Transactional;
 public class SeriesService {
 
   private final SeriesRepository seriesRepository;
+  private final PersonService personService;
+  private final GenreService genreService;
+  private final CompanyService companyService;
 
   @Transactional
   public Series saveSeriesWithMediaFile(Series series, MediaFile mediaFile) {
@@ -27,6 +30,20 @@ public class SeriesService {
   @Transactional(readOnly = true)
   public Optional<Series> findByTmdbId(String tmdbId) {
     return seriesRepository.findByTmdbId(tmdbId);
+  }
+
+  @Transactional
+  public Series saveSeries(Series series) {
+    return seriesRepository.saveAndFlush(series);
+  }
+
+  @Transactional
+  public Series createSeriesWithAssociations(Series series) {
+    series.setCast(personService.getOrCreatePersons(series.getCast()));
+    series.setDirectors(personService.getOrCreatePersons(series.getDirectors()));
+    series.setGenres(genreService.getOrCreateGenres(series.getGenres()));
+    series.setStudios(companyService.getOrCreateCompanies(series.getStudios()));
+    return seriesRepository.saveAndFlush(series);
   }
 
   @Transactional

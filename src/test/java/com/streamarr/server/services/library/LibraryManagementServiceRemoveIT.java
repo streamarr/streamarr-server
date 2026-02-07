@@ -6,9 +6,12 @@ import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.LibraryStatus;
+import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.domain.media.Season;
+import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.domain.streaming.StreamingOptions;
@@ -22,8 +25,11 @@ import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.GenreRepository;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.PersonRepository;
+import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.repositories.media.SeasonRepository;
+import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.StreamingService;
@@ -57,6 +63,12 @@ public class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
 
   @Autowired private MovieRepository movieRepository;
 
+  @Autowired private SeriesRepository seriesRepository;
+
+  @Autowired private SeasonRepository seasonRepository;
+
+  @Autowired private EpisodeRepository episodeRepository;
+
   @Autowired private MediaFileRepository mediaFileRepository;
 
   @Autowired private PersonRepository personRepository;
@@ -88,6 +100,9 @@ public class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
   @BeforeEach
   void cleanupDatabase() {
     mediaFileRepository.deleteAll();
+    episodeRepository.deleteAll();
+    seasonRepository.deleteAll();
+    seriesRepository.deleteAll();
     movieRepository.deleteAll();
     libraryRepository.deleteAll();
     FAKE_EXECUTOR.reset();
@@ -327,6 +342,55 @@ public class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
                   .as("One thread succeeds, the other fails with concurrent delete exception")
                   .isEqualTo(1);
             });
+  }
+
+  @Test
+  @DisplayName("Should remove all series, seasons, and episodes when series library is removed")
+  void shouldRemoveAllSeriesSeasonsAndEpisodesWhenSeriesLibraryIsRemoved() {
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
+
+    var series =
+        seriesRepository.saveAndFlush(
+            Series.builder().title("Breaking Bad").library(library).build());
+    var season =
+        seasonRepository.saveAndFlush(
+            Season.builder()
+                .title("Season 1")
+                .seasonNumber(1)
+                .series(series)
+                .library(library)
+                .build());
+    var episode =
+        episodeRepository.saveAndFlush(
+            Episode.builder()
+                .title("Pilot")
+                .episodeNumber(1)
+                .season(season)
+                .library(library)
+                .build());
+
+    var mediaFile =
+        mediaFileRepository.saveAndFlush(
+            MediaFile.builder()
+                .libraryId(library.getId())
+                .mediaId(episode.getId())
+                .filepath("/test/breaking.bad.s01e01.mkv")
+                .filename("breaking.bad.s01e01.mkv")
+                .status(MediaFileStatus.MATCHED)
+                .build());
+
+    assertThat(seriesRepository.findAll()).hasSize(1);
+    assertThat(seasonRepository.findAll()).hasSize(1);
+    assertThat(episodeRepository.findAll()).hasSize(1);
+    assertThat(mediaFileRepository.findAll()).hasSize(1);
+
+    libraryManagementService.removeLibrary(library.getId());
+
+    assertThat(libraryRepository.findById(library.getId())).isEmpty();
+    assertThat(seriesRepository.findAll()).isEmpty();
+    assertThat(seasonRepository.findAll()).isEmpty();
+    assertThat(episodeRepository.findAll()).isEmpty();
+    assertThat(mediaFileRepository.findById(mediaFile.getId())).isEmpty();
   }
 
   @Test
