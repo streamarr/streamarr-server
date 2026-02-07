@@ -1,5 +1,7 @@
 type Mutation {
     addRating(input: RatingInput!): Rating!
+    addLibrary(input: AddLibraryInput!): Library!
+    removeLibrary(id: ID!): Boolean!
     scanLibrary(id: ID!): Boolean!
     createStreamSession(mediaFileId: ID!, options: StreamingOptionsInput): StreamSession!
     destroyStreamSession(sessionId: ID!): Boolean!

@@ -236,4 +236,59 @@ class LibraryResolverTest {
     assertThat(result.getErrors()).isNotEmpty();
     assertThat(result.getErrors().get(0).getMessage()).contains("Unsupported media type");
   }
+
+  @Test
+  @DisplayName("Should return library when addLibrary called with valid input")
+  void shouldReturnLibraryWhenAddLibraryCalledWithValidInput() {
+    var library =
+        Library.builder()
+            .name("Movies")
+            .filepath("/mpool/media/movies")
+            .status(LibraryStatus.HEALTHY)
+            .backend(LibraryBackend.LOCAL)
+            .type(MediaType.MOVIE)
+            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+            .build();
+    library.setId(UUID.randomUUID());
+
+    when(libraryManagementService.addLibrary(any(Library.class))).thenReturn(library);
+
+    String name =
+        dgsQueryExecutor.executeAndExtractJsonPath(
+            """
+            mutation {
+              addLibrary(input: {
+                name: "Movies"
+                filepath: "/mpool/media/movies"
+                type: MOVIE
+                backend: LOCAL
+                externalAgentStrategy: TMDB
+              }) { name filepath }
+            }
+            """,
+            "data.addLibrary.name");
+
+    assertThat(name).isEqualTo("Movies");
+  }
+
+  @Test
+  @DisplayName("Should return true when removeLibrary called with valid ID")
+  void shouldReturnTrueWhenRemoveLibraryCalledWithValidId() {
+    Boolean result =
+        dgsQueryExecutor.executeAndExtractJsonPath(
+            String.format("mutation { removeLibrary(id: \"%s\") }", UUID.randomUUID()),
+            "data.removeLibrary");
+
+    assertThat(result).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should return error when removeLibrary called with invalid ID")
+  void shouldReturnErrorWhenRemoveLibraryCalledWithInvalidId() {
+    var result =
+        dgsQueryExecutor.execute("mutation { removeLibrary(id: \"not-a-uuid\") }");
+
+    assertThat(result.getErrors()).isNotEmpty();
+    assertThat(result.getErrors().get(0).getMessage()).contains("Invalid ID format");
+  }
 }
