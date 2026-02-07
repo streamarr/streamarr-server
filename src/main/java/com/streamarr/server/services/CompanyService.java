@@ -2,17 +2,26 @@ package com.streamarr.server.services;
 
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.repositories.CompanyRepository;
+import com.streamarr.server.services.concurrency.MutexFactory;
+import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import java.util.Set;
 import java.util.stream.Collectors;
-import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@Slf4j
 @Service
-@RequiredArgsConstructor
 public class CompanyService {
 
   private final CompanyRepository companyRepository;
+  private final MutexFactory<String> mutexFactory;
+
+  public CompanyService(
+      CompanyRepository companyRepository, MutexFactoryProvider mutexFactoryProvider) {
+    this.companyRepository = companyRepository;
+    this.mutexFactory = mutexFactoryProvider.getMutexFactory();
+  }
 
   @Transactional
   public Set<Company> getOrCreateCompanies(Set<Company> companies) {
@@ -20,12 +29,25 @@ public class CompanyService {
   }
 
   private Company findOrCreateCompany(Company company) {
-    var existing = companyRepository.findBySourceId(company.getSourceId());
+    var mutex = mutexFactory.getMutex(company.getSourceId());
 
-    if (existing.isPresent()) {
-      return existing.get();
+    try {
+      mutex.lock();
+
+      var existing = companyRepository.findBySourceId(company.getSourceId());
+
+      if (existing.isPresent()) {
+        var target = existing.get();
+        target.setName(company.getName());
+        target.setLogoPath(company.getLogoPath());
+        return companyRepository.save(target);
+      }
+
+      return companyRepository.save(company);
+    } finally {
+      if (mutex.isHeldByCurrentThread()) {
+        mutex.unlock();
+      }
     }
-
-    return companyRepository.save(company);
   }
 }
