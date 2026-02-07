@@ -22,6 +22,7 @@ public class StreamingSessionCleanupListener {
       if (event.mediaFileIds().isEmpty()) {
         return;
       }
+
       streamingService.getAllSessions().stream()
           .filter(session -> event.mediaFileIds().contains(session.getMediaFileId()))
           .map(StreamSession::getSessionId)

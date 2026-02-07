@@ -99,6 +99,7 @@ public class DirectoryWatchingService implements InitializingBean {
     if (watcher != null) {
       watcher.close();
     }
+
     fileEventProcessor.shutdown();
   }
 

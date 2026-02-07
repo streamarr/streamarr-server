@@ -5,5 +5,5 @@ import java.nio.file.Path;
 @FunctionalInterface
 public interface FileStabilityChecker {
 
-  boolean awaitStability(Path path);
+  boolean waitForStability(Path path);
 }

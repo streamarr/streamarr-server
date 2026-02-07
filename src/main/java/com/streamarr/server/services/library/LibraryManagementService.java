@@ -118,6 +118,7 @@ public class LibraryManagementService implements ActiveScanChecker {
 
   private void validatePathExistsAndIsDirectory(String filepath) {
     var path = fileSystem.getPath(filepath);
+
     try {
       if (!Files.exists(path)) {
         throw new InvalidLibraryPathException(filepath, "path does not exist");
@@ -145,6 +146,7 @@ public class LibraryManagementService implements ActiveScanChecker {
   public void removeLibrary(UUID libraryId) {
     var libraryMutex = mutexFactory.getMutex(libraryId.toString());
     libraryMutex.lock();
+
     try {
       var library = findLibraryOrThrow(libraryId);
       rejectIfScanning(library);
@@ -196,6 +198,7 @@ public class LibraryManagementService implements ActiveScanChecker {
     if (!activeScans.add(libraryId)) {
       throw new LibraryScanInProgressException(libraryId);
     }
+
     try {
       var library = transitionToScanning(libraryId);
       var startTime = library.getScanStartedOn();
@@ -248,8 +251,8 @@ public class LibraryManagementService implements ActiveScanChecker {
 
   private Library transitionToScanning(UUID libraryId) {
     var libraryMutex = mutexFactory.getMutex(libraryId.toString());
-
     libraryMutex.lock();
+
     try {
       var library =
           libraryRepository
@@ -326,6 +329,7 @@ public class LibraryManagementService implements ActiveScanChecker {
 
   private MediaFile createNewMediaFile(Library library, Path path, String absoluteFilepath) {
     long fileSize = 0;
+
     try {
       fileSize = Files.size(path);
     } catch (IOException | SecurityException ex) {
