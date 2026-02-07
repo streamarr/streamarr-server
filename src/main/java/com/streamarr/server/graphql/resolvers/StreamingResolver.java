@@ -40,6 +40,7 @@ public class StreamingResolver {
   @DgsMutation
   public boolean destroyStreamSession(@InputArgument String sessionId) {
     streamingService.destroySession(parseUuid(sessionId));
+
     return true;
   }
 

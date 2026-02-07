@@ -27,8 +27,9 @@ public class PollingFileStabilityChecker implements FileStabilityChecker {
   private final Sleeper sleeper;
 
   @Override
-  public boolean awaitStability(Path path) {
+  public boolean waitForStability(Path path) {
     long lastSize;
+
     try {
       lastSize = Files.size(path);
     } catch (IOException | SecurityException e) {

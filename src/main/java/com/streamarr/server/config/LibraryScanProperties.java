@@ -13,9 +13,11 @@ public record LibraryScanProperties(
     if (additionalIgnoredFilenames == null) {
       additionalIgnoredFilenames = List.of();
     }
+
     if (additionalIgnoredExtensions == null) {
       additionalIgnoredExtensions = List.of();
     }
+
     if (additionalIgnoredPrefixes == null) {
       additionalIgnoredPrefixes = List.of();
     }

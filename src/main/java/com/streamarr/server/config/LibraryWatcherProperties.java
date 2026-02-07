@@ -10,9 +10,11 @@ public record LibraryWatcherProperties(
     if (stabilizationPeriodSeconds <= 0) {
       stabilizationPeriodSeconds = 30;
     }
+
     if (pollIntervalSeconds <= 0) {
       pollIntervalSeconds = 5;
     }
+
     if (maxWaitSeconds <= 0) {
       maxWaitSeconds = 3600;
     }

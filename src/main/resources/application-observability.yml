@@ -1,4 +1,6 @@
 otel:
+  sdk:
+    disabled: false
   exporter:
     otlp:
       endpoint: http://otel-collector:4318

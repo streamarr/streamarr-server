@@ -5,6 +5,8 @@ import lombok.Builder;
 
 public record VideoFileParserResult(
     String title, String year, String externalId, ExternalSourceType externalSource) {
+
   @Builder
   public VideoFileParserResult {}
+
 }

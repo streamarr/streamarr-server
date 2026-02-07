@@ -77,6 +77,7 @@ public class LocalTranscodeExecutor implements TranscodeExecutor {
     if (StreamSession.defaultVariant().equals(request.variantLabel())) {
       return segmentStore.getOutputDirectory(request.sessionId());
     }
+
     return segmentStore.getOutputDirectory(request.sessionId(), request.variantLabel());
   }
 
@@ -85,6 +86,7 @@ public class LocalTranscodeExecutor implements TranscodeExecutor {
     if (mode == TranscodeMode.REMUX || mode == TranscodeMode.PARTIAL_TRANSCODE) {
       return "copy";
     }
+
     return capabilityService.resolveEncoder(request.transcodeDecision().videoCodecFamily());
   }
 }

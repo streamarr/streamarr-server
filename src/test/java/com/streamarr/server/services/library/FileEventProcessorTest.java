@@ -145,7 +145,7 @@ class FileEventProcessorTest {
 
     eventProcessor =
         new FileEventProcessor(
-            path -> stabilityCheckerRef.get().awaitStability(path),
+            path -> stabilityCheckerRef.get().waitForStability(path),
             libraryManagementService,
             ignoredFileValidator,
             taskCoordinator);

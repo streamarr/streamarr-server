@@ -43,7 +43,7 @@ class PollingFileStabilityCheckerTest {
     var path = createFile("/stable.mkv", 1024);
     var checker = buildChecker(10, 5, 3600);
 
-    var result = checker.awaitStability(path);
+    var result = checker.waitForStability(path);
 
     assertThat(result).isTrue();
   }
@@ -71,7 +71,7 @@ class PollingFileStabilityCheckerTest {
               }
             });
 
-    var result = checker.awaitStability(path);
+    var result = checker.waitForStability(path);
 
     assertThat(result).isTrue();
   }
@@ -82,7 +82,7 @@ class PollingFileStabilityCheckerTest {
     var path = fileSystem.getPath("/nonexistent.mkv");
     var checker = buildChecker(10, 5, 3600);
 
-    var result = checker.awaitStability(path);
+    var result = checker.waitForStability(path);
 
     assertThat(result).isFalse();
   }
@@ -106,7 +106,7 @@ class PollingFileStabilityCheckerTest {
               }
             });
 
-    var result = checker.awaitStability(path);
+    var result = checker.waitForStability(path);
 
     assertThat(result).isFalse();
   }
@@ -132,7 +132,7 @@ class PollingFileStabilityCheckerTest {
               }
             });
 
-    var result = checker.awaitStability(path);
+    var result = checker.waitForStability(path);
 
     assertThat(result).isFalse();
   }
@@ -143,7 +143,7 @@ class PollingFileStabilityCheckerTest {
     var path = fileSystem.getPath("/no-access.mkv");
     var checker = buildChecker(10, 5, 3600);
 
-    var result = checker.awaitStability(path);
+    var result = checker.waitForStability(path);
 
     assertThat(result).isFalse();
   }
@@ -154,7 +154,7 @@ class PollingFileStabilityCheckerTest {
     var path = createFile("/empty.mkv", 0);
     var checker = buildChecker(10, 5, 3600);
 
-    var result = checker.awaitStability(path);
+    var result = checker.waitForStability(path);
 
     assertThat(result).isTrue();
   }
@@ -175,7 +175,7 @@ class PollingFileStabilityCheckerTest {
         new PollingFileStabilityChecker(
             new MutableClock(currentTime), properties, interruptingSleeper);
 
-    var result = checker.awaitStability(path);
+    var result = checker.waitForStability(path);
 
     assertThat(result).isFalse();
     assertThat(Thread.currentThread().isInterrupted()).isTrue();

@@ -50,12 +50,15 @@ public class QualityLadderService {
       if (tier.height() > source.height()) {
         continue;
       }
+
       if (tier.height() > maxHeight) {
         continue;
       }
+
       if (maxBitrate != null && tier.videoBitrate() > maxBitrate) {
         continue;
       }
+
       variants.add(tier);
     }
 
@@ -77,6 +80,7 @@ public class QualityLadderService {
     if (options.maxHeight() != null && options.maxHeight() > 0) {
       return Math.min(options.maxHeight(), source.height());
     }
+
     return source.height();
   }
 
@@ -84,6 +88,7 @@ public class QualityLadderService {
     if (options.maxBitrate() != null && options.maxBitrate() > 0) {
       return options.maxBitrate();
     }
+
     return null;
   }
 }

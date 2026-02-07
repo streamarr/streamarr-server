@@ -2,6 +2,8 @@ package com.streamarr.server.config.persistence;
 
 import java.util.Optional;
 import java.util.UUID;
+
+import org.jspecify.annotations.NonNull;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.domain.AuditorAware;
@@ -14,7 +16,7 @@ public class PersistenceConfig {
   // TODO: Placeholder auditor — replace with authenticated user's ID (see #41)
   public static class AuditorAwareImpl implements AuditorAware<UUID> {
     @Override
-    public Optional<UUID> getCurrentAuditor() {
+    public @NonNull Optional<UUID> getCurrentAuditor() {
       return Optional.of(UUID.fromString("cb46514c-04f8-4153-815d-fa044a4bf65e"));
     }
   }
