@@ -32,6 +32,10 @@ streaming:
   session-retention: ${STREAMING_SESSION_RETENTION:24h}
   segment-base-path: ${STREAMING_SEGMENT_BASE_PATH:}
 
+otel:
+  sdk:
+    disabled: true
+
 library:
   watcher:
     stabilization-period-seconds: ${LIBRARY_WATCHER_STABILIZATION_PERIOD:30}
