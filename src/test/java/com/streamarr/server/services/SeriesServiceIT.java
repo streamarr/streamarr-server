@@ -361,4 +361,48 @@ class SeriesServiceIT extends AbstractIntegrationTest {
             () -> seriesService.getSeriesWithFilter(1, cursorFromLibraryB, 0, null, filterC))
         .isInstanceOf(InvalidCursorException.class);
   }
+
+  @Test
+  @DisplayName(
+      "Should paginate all items with no duplicates or skips when title DESC and duplicate titles")
+  void shouldPaginateAllItemsWithNoDuplicatesWhenTitleDescAndDuplicateTitles() {
+    var duplicateLibrary =
+        libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
+
+    seriesRepository.saveAndFlush(
+        Series.builder().title("Same Show").library(duplicateLibrary).build());
+    seriesRepository.saveAndFlush(
+        Series.builder().title("Same Show").library(duplicateLibrary).build());
+    seriesRepository.saveAndFlush(
+        Series.builder().title("Same Show").library(duplicateLibrary).build());
+
+    var filter =
+        MediaFilter.builder()
+            .sortBy(OrderMediaBy.TITLE)
+            .sortDirection(SortOrder.DESC)
+            .libraryId(duplicateLibrary.getId())
+            .build();
+
+    var firstPage = seriesService.getSeriesWithFilter(1, null, 0, null, filter);
+    assertThat(firstPage.getEdges()).hasSize(1);
+    assertThat(firstPage.getPageInfo().isHasNextPage()).isTrue();
+
+    var firstCursor = firstPage.getPageInfo().getEndCursor().getValue();
+    var secondPage = seriesService.getSeriesWithFilter(1, firstCursor, 0, null, filter);
+    assertThat(secondPage.getEdges()).hasSize(1);
+    assertThat(secondPage.getPageInfo().isHasNextPage()).isTrue();
+
+    var secondCursor = secondPage.getPageInfo().getEndCursor().getValue();
+    var thirdPage = seriesService.getSeriesWithFilter(1, secondCursor, 0, null, filter);
+    assertThat(thirdPage.getEdges()).hasSize(1);
+    assertThat(thirdPage.getPageInfo().isHasNextPage()).isFalse();
+
+    var allIds =
+        List.of(
+            firstPage.getEdges().get(0).getNode().getId(),
+            secondPage.getEdges().get(0).getNode().getId(),
+            thirdPage.getEdges().get(0).getNode().getId());
+
+    assertThat(allIds).doesNotHaveDuplicates();
+  }
 }
