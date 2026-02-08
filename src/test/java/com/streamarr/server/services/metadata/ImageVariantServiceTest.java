@@ -252,5 +252,4 @@ class ImageVariantServiceTest {
           .hasCauseInstanceOf(IOException.class);
     }
   }
-
 }

@@ -120,8 +120,7 @@ public class TheMovieDatabaseHttpService {
   public byte[] downloadImage(String pathFragment) throws IOException, InterruptedException {
     var uri = URI.create(tmdbImageBaseUrl + pathFragment);
     var request = HttpRequest.newBuilder().uri(uri).GET().build();
-    var response =
-        executeWithRetry(request, HttpResponse.BodyHandlers.ofByteArray(), Set.of(429));
+    var response = executeWithRetry(request, HttpResponse.BodyHandlers.ofByteArray(), Set.of(429));
 
     if (response.statusCode() != 200) {
       throw new TmdbApiException(
@@ -157,8 +156,7 @@ public class TheMovieDatabaseHttpService {
 
   private <T> T sendWithRetry(HttpRequest request, Class<T> responseType)
       throws IOException, InterruptedException {
-    var response =
-        executeWithRetry(request, HttpResponse.BodyHandlers.ofString(), Set.of(429));
+    var response = executeWithRetry(request, HttpResponse.BodyHandlers.ofString(), Set.of(429));
 
     if (response.statusCode() == 200) {
       return objectMapper.readValue(response.body(), responseType);
@@ -169,9 +167,7 @@ public class TheMovieDatabaseHttpService {
   }
 
   private <T> HttpResponse<T> executeWithRetry(
-      HttpRequest request,
-      HttpResponse.BodyHandler<T> bodyHandler,
-      Set<Integer> retryableStatuses)
+      HttpRequest request, HttpResponse.BodyHandler<T> bodyHandler, Set<Integer> retryableStatuses)
       throws IOException, InterruptedException {
     for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       var response = client.send(request, bodyHandler);

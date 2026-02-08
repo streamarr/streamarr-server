@@ -158,5 +158,4 @@ class ImageServiceTest {
                     imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE))
         .isInstanceOf(ImageProcessingException.class);
   }
-
 }

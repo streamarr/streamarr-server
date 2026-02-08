@@ -35,8 +35,7 @@ public class ImageController {
 
       return ResponseEntity.ok()
           .contentType(MediaType.IMAGE_JPEG)
-          .cacheControl(
-              CacheControl.maxAge(Duration.ofDays(365)).cachePublic().immutable())
+          .cacheControl(CacheControl.maxAge(Duration.ofDays(365)).cachePublic().immutable())
           .eTag(imageId.toString())
           .body(imageData);
     } catch (IOException e) {

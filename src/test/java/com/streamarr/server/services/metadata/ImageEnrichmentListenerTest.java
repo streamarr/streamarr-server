@@ -183,8 +183,7 @@ class ImageEnrichmentListenerTest {
     }
 
     @Override
-    public byte[] downloadImage(String pathFragment)
-        throws IOException, InterruptedException {
+    public byte[] downloadImage(String pathFragment) throws IOException, InterruptedException {
       if (pathFragment.equals(failOnPath)) {
         throw new IOException("Simulated download failure for " + pathFragment);
       }

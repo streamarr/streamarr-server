@@ -34,8 +34,7 @@ class ImageDataLoaderTest {
     var movieId = UUID.randomUUID();
     var personId = UUID.randomUUID();
     saveImage(movieId, ImageEntityType.MOVIE, ImageType.POSTER, ImageSize.SMALL, 185, 278, null);
-    saveImage(
-        personId, ImageEntityType.PERSON, ImageType.PROFILE, ImageSize.SMALL, 185, 278, null);
+    saveImage(personId, ImageEntityType.PERSON, ImageType.PROFILE, ImageSize.SMALL, 185, 278, null);
 
     var keys =
         Set.of(
@@ -54,8 +53,7 @@ class ImageDataLoaderTest {
     var entityId = UUID.randomUUID();
     saveImage(entityId, ImageEntityType.MOVIE, ImageType.POSTER, ImageSize.SMALL, 185, 278, null);
     saveImage(entityId, ImageEntityType.MOVIE, ImageType.POSTER, ImageSize.LARGE, 500, 750, null);
-    saveImage(
-        entityId, ImageEntityType.MOVIE, ImageType.BACKDROP, ImageSize.SMALL, 300, 169, null);
+    saveImage(entityId, ImageEntityType.MOVIE, ImageType.BACKDROP, ImageSize.SMALL, 300, 169, null);
 
     var key = new ImageLoaderKey(entityId, ImageEntityType.MOVIE);
     var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();

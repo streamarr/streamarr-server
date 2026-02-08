@@ -51,7 +51,9 @@ class MovieServiceTest {
     var fileSystem = Jimfs.newFileSystem(Configuration.unix());
     var imageService =
         new ImageService(
-            imageRepository, new ImageVariantService(), new ImageProperties("/data/images"),
+            imageRepository,
+            new ImageVariantService(),
+            new ImageProperties("/data/images"),
             fileSystem);
     movieService =
         new MovieService(
