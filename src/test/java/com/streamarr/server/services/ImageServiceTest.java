@@ -1,5 +1,6 @@
 package com.streamarr.server.services;
 
+import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -10,17 +11,13 @@ import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
+import com.streamarr.server.exceptions.ImageProcessingException;
 import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.services.metadata.ImageVariantService;
-import java.awt.Color;
-import java.awt.image.BufferedImage;
-import com.streamarr.server.exceptions.ImageProcessingException;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.util.UUID;
-import javax.imageio.ImageIO;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -160,20 +157,5 @@ class ImageServiceTest {
                 imageService.processAndSaveImage(
                     imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE))
         .isInstanceOf(ImageProcessingException.class);
-  }
-
-  private byte[] createTestImage(int width, int height) {
-    var image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
-    var graphics = image.createGraphics();
-    graphics.setColor(Color.BLUE);
-    graphics.fillRect(0, 0, width, height);
-    graphics.dispose();
-
-    try (var outputStream = new ByteArrayOutputStream()) {
-      ImageIO.write(image, "jpg", outputStream);
-      return outputStream.toByteArray();
-    } catch (IOException e) {
-      throw new RuntimeException(e);
-    }
   }
 }

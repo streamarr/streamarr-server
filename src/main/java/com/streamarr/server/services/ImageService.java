@@ -2,9 +2,10 @@ package com.streamarr.server.services;
 
 import com.streamarr.server.config.ImageProperties;
 import com.streamarr.server.domain.media.Image;
-import com.streamarr.server.exceptions.ImageProcessingException;
 import com.streamarr.server.domain.media.ImageEntityType;
+import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
+import com.streamarr.server.exceptions.ImageProcessingException;
 import com.streamarr.server.repositories.media.ImageRepository;
 import com.streamarr.server.services.metadata.ImageVariantService;
 import java.io.IOException;
@@ -92,10 +93,7 @@ public class ImageService {
   }
 
   private String buildRelativePath(
-      ImageEntityType entityType,
-      UUID entityId,
-      ImageType imageType,
-      com.streamarr.server.domain.media.ImageSize variant) {
+      ImageEntityType entityType, UUID entityId, ImageType imageType, ImageSize variant) {
     return String.join(
         "/",
         entityType.name().toLowerCase(),

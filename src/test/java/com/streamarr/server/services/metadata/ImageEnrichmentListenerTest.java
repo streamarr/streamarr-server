@@ -1,5 +1,6 @@
 package com.streamarr.server.services.metadata;
 
+import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.google.common.jimfs.Configuration;
@@ -14,13 +15,9 @@ import com.streamarr.server.services.ImageService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
-import java.awt.Color;
-import java.awt.image.BufferedImage;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.List;
 import java.util.UUID;
-import javax.imageio.ImageIO;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -42,8 +39,7 @@ class ImageEnrichmentListenerTest {
     var imageService =
         new ImageService(imageRepository, imageVariantService, imageProperties, fileSystem);
     listener =
-        new ImageEnrichmentListener(
-            tmdbHttpService, imageService, imageRepository, new MutexFactoryProvider());
+        new ImageEnrichmentListener(tmdbHttpService, imageService, new MutexFactoryProvider());
   }
 
   @Test
@@ -164,21 +160,6 @@ class ImageEnrichmentListenerTest {
     assertThat(images).isEmpty();
   }
 
-  private byte[] createTestImage(int width, int height) {
-    var image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
-    var graphics = image.createGraphics();
-    graphics.setColor(Color.BLUE);
-    graphics.fillRect(0, 0, width, height);
-    graphics.dispose();
-
-    try (var outputStream = new ByteArrayOutputStream()) {
-      ImageIO.write(image, "jpg", outputStream);
-      return outputStream.toByteArray();
-    } catch (IOException e) {
-      throw new RuntimeException(e);
-    }
-  }
-
   private static class FakeTmdbHttpService extends TheMovieDatabaseHttpService {
 
     private byte[] imageData;
@@ -202,8 +183,7 @@ class ImageEnrichmentListenerTest {
     }
 
     @Override
-    public byte[] downloadImage(String pathFragment)
-        throws IOException, InterruptedException {
+    public byte[] downloadImage(String pathFragment) throws IOException, InterruptedException {
       if (pathFragment.equals(failOnPath)) {
         throw new IOException("Simulated download failure for " + pathFragment);
       }

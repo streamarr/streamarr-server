@@ -1,5 +1,6 @@
 package com.streamarr.server.services.metadata;
 
+import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -11,9 +12,7 @@ import static org.mockito.Mockito.when;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.exceptions.ImageProcessingException;
-import java.awt.Color;
 import java.awt.image.BufferedImage;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import javax.imageio.ImageIO;
@@ -196,13 +195,13 @@ class ImageVariantServiceTest {
   }
 
   @Test
-  @DisplayName("Should include data contents when converted to string")
-  void shouldIncludeDataContentsWhenConvertedToString() {
+  @DisplayName("Should include data length when converted to string")
+  void shouldIncludeDataLengthWhenConvertedToString() {
     var variant =
         new ImageVariantService.GeneratedVariant(
             ImageSize.SMALL, new byte[] {1, 2, 3}, 100, 150, "hash");
 
-    assertThat(variant.toString()).contains("[1, 2, 3]");
+    assertThat(variant.toString()).contains("dataLength=3");
   }
 
   @Test
@@ -251,21 +250,6 @@ class ImageVariantServiceTest {
       assertThatThrownBy(() -> imageVariantService.generateVariants(imageData, ImageType.POSTER))
           .isInstanceOf(ImageProcessingException.class)
           .hasCauseInstanceOf(IOException.class);
-    }
-  }
-
-  private byte[] createTestImage(int width, int height) {
-    var image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
-    var graphics = image.createGraphics();
-    graphics.setColor(Color.BLUE);
-    graphics.fillRect(0, 0, width, height);
-    graphics.dispose();
-
-    try (var outputStream = new ByteArrayOutputStream()) {
-      ImageIO.write(image, "jpg", outputStream);
-      return outputStream.toByteArray();
-    } catch (IOException e) {
-      throw new RuntimeException(e);
     }
   }
 }
