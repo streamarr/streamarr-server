@@ -63,7 +63,9 @@ class ImageEnrichmentListenerTest {
     listener.onMetadataEnriched(event);
 
     var images = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
-    assertThat(images).hasSize(8);
+    assertThat(images)
+        .extracting(Image::getImageType)
+        .containsOnly(ImageType.POSTER, ImageType.BACKDROP);
   }
 
   @Test
@@ -84,7 +86,7 @@ class ImageEnrichmentListenerTest {
     listener.onMetadataEnriched(event);
 
     var images = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
-    assertThat(images).hasSize(4);
+    assertThat(images).extracting(Image::getImageType).containsOnly(ImageType.BACKDROP);
   }
 
   @Test

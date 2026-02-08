@@ -185,6 +185,25 @@ class MovieServiceTest {
   }
 
   @Test
+  @DisplayName("Should include only poster source when movie backdrop path is null")
+  void shouldIncludeOnlyPosterSourceWhenMovieBackdropPathIsNull() {
+    var movie = Movie.builder().title("Inception").posterPath("/poster.jpg").build();
+    var mediaFile =
+        MediaFile.builder()
+            .filename("inception.mkv")
+            .filepath("/movies/inception.mkv")
+            .size(1000L)
+            .build();
+
+    movieService.createMovieWithAssociations(movie, mediaFile);
+
+    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
+    assertThat(events.getFirst().imageSources())
+        .extracting(ImageSource::imageType)
+        .containsExactly(ImageType.POSTER);
+  }
+
+  @Test
   @DisplayName("Should include only backdrop source when movie poster path is null")
   void shouldIncludeOnlyBackdropSourceWhenMoviePosterPathIsNull() {
     var movie = Movie.builder().title("Inception").backdropPath("/backdrop.jpg").build();
