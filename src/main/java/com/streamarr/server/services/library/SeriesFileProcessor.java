@@ -2,6 +2,7 @@ package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Episode;
+import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Season;
@@ -13,13 +14,19 @@ import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
+import com.streamarr.server.services.metadata.events.ImageSource;
+import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
+import com.streamarr.server.services.metadata.series.SeasonDetails;
 import com.streamarr.server.services.metadata.series.SeriesMetadataProviderResolver;
 import com.streamarr.server.services.parsers.show.EpisodePathMetadataParser;
 import com.streamarr.server.services.parsers.show.EpisodePathResult;
 import com.streamarr.server.services.parsers.show.SeasonPathMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.nio.file.Path;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -256,6 +263,8 @@ public class SeriesFileProcessor {
                 .library(library)
                 .build());
 
+    publishImageEvent(season.getId(), ImageEntityType.SEASON, details.imageSources());
+
     var episodes =
         details.episodes().stream()
             .map(
@@ -271,9 +280,32 @@ public class SeriesFileProcessor {
                         .build())
             .toList();
 
-    episodeRepository.saveAll(episodes);
+    var savedEpisodes = episodeRepository.saveAll(episodes);
+
+    publishEpisodeImageEvents(savedEpisodes, details.episodes());
 
     return Optional.of(season);
+  }
+
+  private void publishImageEvent(
+      UUID entityId, ImageEntityType entityType, List<ImageSource> sources) {
+    if (!sources.isEmpty()) {
+      eventPublisher.publishEvent(new MetadataEnrichedEvent(entityId, entityType, sources));
+    }
+  }
+
+  private void publishEpisodeImageEvents(
+      Collection<? extends Episode> savedEpisodes,
+      List<SeasonDetails.EpisodeDetails> episodeDetails) {
+    for (var episode : savedEpisodes) {
+      episodeDetails.stream()
+          .filter(ed -> ed.episodeNumber() == episode.getEpisodeNumber())
+          .findFirst()
+          .ifPresent(
+              ed ->
+                  publishImageEvent(
+                      episode.getId(), ImageEntityType.EPISODE, ed.imageSources()));
+    }
   }
 
   private void markAs(MediaFile mediaFile, MediaFileStatus status) {
