@@ -86,7 +86,7 @@ class ImageFieldResolverTest {
             String.format("{ movie(id: \"%s\") { images { imageType } } }", movie.getId()),
             "data.movie.images[*].imageType");
 
-    assertThat(imageTypes).hasSize(2);
+    assertThat(imageTypes).containsExactlyInAnyOrder("POSTER", "BACKDROP");
   }
 
   private Movie setupMovie() {

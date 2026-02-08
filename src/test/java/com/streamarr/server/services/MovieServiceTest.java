@@ -185,7 +185,9 @@ class MovieServiceTest {
     movieService.createMovieWithAssociations(metadataResult, mediaFile);
 
     var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
-    assertThat(events.getFirst().imageSources()).hasSize(2);
+    assertThat(events.getFirst().imageSources())
+        .extracting(ImageSource::imageType)
+        .containsExactlyInAnyOrder(ImageType.POSTER, ImageType.BACKDROP);
   }
 
   @Test

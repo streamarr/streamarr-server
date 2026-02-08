@@ -115,23 +115,26 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 - Integration tests: `*IT.java` suffix, `@Tag("IntegrationTest")`
 - Unit tests: `*Test.java` suffix
 - Always use `@DisplayName` on test methods for human-readable test output
-- Use TestContainers for all database tests — no H2, no mocks for repositories
-- Prefer "Fake" implementations (e.g., `FakeMovieRepository`) over mocks for collaborators
+- Use TestContainers for all database tests — no H2
+- Prefer "Fake" implementations (e.g., `FakeMovieRepository`) over Mockito for collaborators
+- Mockito **stubs** are acceptable when Fakes can't reach a code path (e.g., `mockStatic` for `ImageIO` IOException). Stubs provide canned answers — see [Mocks Aren't Stubs](https://martinfowler.com/articles/mocksArentStubs.html)
+- Mockito **mocks for verification** are banned — no `verify()`, no `ArgumentCaptor`
 - Test naming: `shouldExpectedBehaviorWhenCondition()`
 
 ## Test Strategy (Hexagonal)
 - **Service-layer tests** are the primary test type — test business behavior at the service API, protocol-agnostic
     - Use the lightest test that proves the behavior:
         - **Unit tests with Fakes** for business logic, orchestration, and behavioral contracts — fast, no Spring context
+        - **Mockito stubs** when Fakes can't reach a code path (e.g., static methods, checked exceptions from JDK/library APIs)
         - **Integration tests (TestContainers)** when the behavior depends on real database interactions (query correctness, constraints, transactions)
     - Test inputs → outputs, not internal wiring
 - **GraphQL resolver tests** are thin wiring tests only
     - Verify resolvers delegate to services correctly
     - Do NOT test business logic at the protocol layer
 - **Pure logic unit tests** for parsers, validators, and stateless utilities
-    - No database, no Spring context, no mocks of collaborators
+    - No database, no Spring context
 - **Anti-patterns to avoid:**
-    - Mocking repositories/services to verify interactions (no ArgumentCaptor, no verify()) — use Fakes instead
+    - Using Mockito to verify interactions (no ArgumentCaptor, no verify()) — use Fakes instead
     - Using reflection to set private fields (FieldUtils.writeField)
     - Testing implementation details that would break on refactoring
 

@@ -47,9 +47,8 @@ public class CompanyService {
   private Company findOrCreateCompany(Company company, List<ImageSource> imageSources) {
     var mutex = mutexFactory.getMutex(company.getSourceId());
 
+    mutex.lock();
     try {
-      mutex.lock();
-
       var existing = companyRepository.findBySourceId(company.getSourceId());
 
       if (existing.isPresent()) {
@@ -62,9 +61,7 @@ public class CompanyService {
       publishImageEvent(savedCompany, imageSources);
       return savedCompany;
     } finally {
-      if (mutex.isHeldByCurrentThread()) {
-        mutex.unlock();
-      }
+      mutex.unlock();
     }
   }
 

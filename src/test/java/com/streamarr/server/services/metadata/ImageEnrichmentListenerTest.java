@@ -11,6 +11,7 @@ import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.services.ImageService;
+import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import java.awt.Color;
@@ -40,7 +41,9 @@ class ImageEnrichmentListenerTest {
     var imageVariantService = new ImageVariantService();
     var imageService =
         new ImageService(imageRepository, imageVariantService, imageProperties, fileSystem);
-    listener = new ImageEnrichmentListener(tmdbHttpService, imageService, imageRepository);
+    listener =
+        new ImageEnrichmentListener(
+            tmdbHttpService, imageService, imageRepository, new MutexFactoryProvider());
   }
 
   @Test
@@ -60,7 +63,9 @@ class ImageEnrichmentListenerTest {
     listener.onMetadataEnriched(event);
 
     var images = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
-    assertThat(images).hasSize(8);
+    assertThat(images)
+        .extracting(Image::getImageType)
+        .containsOnly(ImageType.POSTER, ImageType.BACKDROP);
   }
 
   @Test
@@ -81,7 +86,7 @@ class ImageEnrichmentListenerTest {
     listener.onMetadataEnriched(event);
 
     var images = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
-    assertThat(images).hasSize(4);
+    assertThat(images).extracting(Image::getImageType).containsOnly(ImageType.BACKDROP);
   }
 
   @Test
@@ -113,6 +118,52 @@ class ImageEnrichmentListenerTest {
     assertThat(images).hasSize(1);
   }
 
+  @Test
+  @DisplayName("Should restore interrupt flag when download is interrupted")
+  void shouldRestoreInterruptFlagWhenDownloadInterrupted() {
+    var entityId = UUID.randomUUID();
+    tmdbHttpService.setImageData(createTestImage(600, 900));
+    tmdbHttpService.setInterruptOnPath("/poster.jpg");
+
+    var event =
+        new MetadataEnrichedEvent(
+            entityId,
+            ImageEntityType.MOVIE,
+            List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")));
+
+    try {
+      listener.onMetadataEnriched(event);
+      assertThat(Thread.currentThread().isInterrupted()).isTrue();
+    } finally {
+      Thread.interrupted();
+    }
+  }
+
+  @Test
+  @DisplayName("Should stop processing remaining sources when interrupted")
+  void shouldStopProcessingRemainingSourcesWhenInterrupted() {
+    var entityId = UUID.randomUUID();
+    tmdbHttpService.setImageData(createTestImage(600, 900));
+    tmdbHttpService.setInterruptOnPath("/poster.jpg");
+
+    var event =
+        new MetadataEnrichedEvent(
+            entityId,
+            ImageEntityType.MOVIE,
+            List.of(
+                new TmdbImageSource(ImageType.POSTER, "/poster.jpg"),
+                new TmdbImageSource(ImageType.BACKDROP, "/backdrop.jpg")));
+
+    try {
+      listener.onMetadataEnriched(event);
+    } finally {
+      Thread.interrupted();
+    }
+
+    var images = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
+    assertThat(images).isEmpty();
+  }
+
   private byte[] createTestImage(int width, int height) {
     var image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
     var graphics = image.createGraphics();
@@ -126,23 +177,6 @@ class ImageEnrichmentListenerTest {
     } catch (IOException e) {
       throw new RuntimeException(e);
     }
-  }
-
-  @Test
-  @DisplayName("Should restore interrupt flag when image download is interrupted")
-  void shouldRestoreInterruptFlagWhenImageDownloadIsInterrupted() {
-    tmdbHttpService.setInterruptOnPath("/poster.jpg");
-
-    var event =
-        new MetadataEnrichedEvent(
-            UUID.randomUUID(),
-            ImageEntityType.MOVIE,
-            List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")));
-
-    listener.onMetadataEnriched(event);
-
-    assertThat(Thread.currentThread().isInterrupted()).isTrue();
-    Thread.interrupted();
   }
 
   private static class FakeTmdbHttpService extends TheMovieDatabaseHttpService {
@@ -168,12 +202,13 @@ class ImageEnrichmentListenerTest {
     }
 
     @Override
-    public byte[] downloadImage(String pathFragment) throws IOException, InterruptedException {
-      if (pathFragment.equals(interruptOnPath)) {
-        throw new InterruptedException("Simulated interruption for " + pathFragment);
-      }
+    public byte[] downloadImage(String pathFragment)
+        throws IOException, InterruptedException {
       if (pathFragment.equals(failOnPath)) {
         throw new IOException("Simulated download failure for " + pathFragment);
+      }
+      if (pathFragment.equals(interruptOnPath)) {
+        throw new InterruptedException("Simulated interrupt for " + pathFragment);
       }
       return imageData;
     }

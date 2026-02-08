@@ -2,6 +2,7 @@ package com.streamarr.server.services;
 
 import com.streamarr.server.config.ImageProperties;
 import com.streamarr.server.domain.media.Image;
+import com.streamarr.server.exceptions.ImageProcessingException;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.repositories.media.ImageRepository;
@@ -62,7 +63,7 @@ public class ImageService {
       imageRepository.saveAll(images);
     } catch (Exception e) {
       deleteFiles(writtenFiles);
-      throw new RuntimeException("Failed to process and save image", e);
+      throw new ImageProcessingException("Failed to process and save image", e);
     }
   }
 
@@ -104,7 +105,7 @@ public class ImageService {
   }
 
   private Path resolveAbsolutePath(String relativePath) {
-    return fileSystem.getPath(imageProperties.basePath()).resolve(relativePath);
+    return fileSystem.getPath(imageProperties.storagePath()).resolve(relativePath);
   }
 
   private void deleteFiles(List<Path> files) {

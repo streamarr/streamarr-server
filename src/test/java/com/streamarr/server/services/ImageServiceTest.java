@@ -1,6 +1,7 @@
 package com.streamarr.server.services;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
@@ -13,6 +14,7 @@ import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.services.metadata.ImageVariantService;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
+import com.streamarr.server.exceptions.ImageProcessingException;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.file.FileSystem;
@@ -41,15 +43,14 @@ class ImageServiceTest {
   }
 
   @Test
-  @DisplayName("Should persist four image rows when processing image")
-  void shouldPersistFourImageRowsWhenProcessingImage() {
+  @DisplayName("Should persist all variant sizes when processing image")
+  void shouldPersistAllVariantSizesWhenProcessingImage() {
     var entityId = UUID.randomUUID();
     var imageData = createTestImage(600, 900);
 
     imageService.processAndSaveImage(imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE);
 
     var images = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
-    assertThat(images).hasSize(4);
     assertThat(images)
         .extracting(Image::getVariant)
         .containsExactlyInAnyOrder(
@@ -106,8 +107,8 @@ class ImageServiceTest {
   }
 
   @Test
-  @DisplayName("Should resolve file against base path when reading image file")
-  void shouldResolveFileAgainstBasePathWhenReadingImageFile() throws IOException {
+  @DisplayName("Should return file contents when reading image file")
+  void shouldReturnFileContentsWhenReadingImageFile() throws IOException {
     var relativePath = "movie/test/poster/small.jpg";
     var absolutePath = fileSystem.getPath("/data/images").resolve(relativePath);
     Files.createDirectories(absolutePath.getParent());
@@ -145,6 +146,20 @@ class ImageServiceTest {
   @DisplayName("Should not fail when deleting images for entity with no images")
   void shouldNotFailWhenDeletingImagesForEntityWithNoImages() {
     imageService.deleteImagesForEntity(UUID.randomUUID(), ImageEntityType.MOVIE);
+  }
+
+  @Test
+  @DisplayName("Should throw ImageProcessingException when file write fails")
+  void shouldThrowImageProcessingExceptionWhenFileWriteFails() throws IOException {
+    var entityId = UUID.randomUUID();
+    var imageData = createTestImage(600, 900);
+    fileSystem.close();
+
+    assertThatThrownBy(
+            () ->
+                imageService.processAndSaveImage(
+                    imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE))
+        .isInstanceOf(ImageProcessingException.class);
   }
 
   private byte[] createTestImage(int width, int height) {
