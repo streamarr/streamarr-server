@@ -128,10 +128,28 @@ class ImageEnrichmentListenerTest {
     }
   }
 
+  @Test
+  @DisplayName("Should restore interrupt flag when image download is interrupted")
+  void shouldRestoreInterruptFlagWhenImageDownloadIsInterrupted() {
+    tmdbHttpService.setInterruptOnPath("/poster.jpg");
+
+    var event =
+        new MetadataEnrichedEvent(
+            UUID.randomUUID(),
+            ImageEntityType.MOVIE,
+            List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")));
+
+    listener.onMetadataEnriched(event);
+
+    assertThat(Thread.currentThread().isInterrupted()).isTrue();
+    Thread.interrupted();
+  }
+
   private static class FakeTmdbHttpService extends TheMovieDatabaseHttpService {
 
     private byte[] imageData;
     private String failOnPath;
+    private String interruptOnPath;
 
     FakeTmdbHttpService() {
       super("", "", "", null, null);
@@ -145,8 +163,15 @@ class ImageEnrichmentListenerTest {
       this.failOnPath = path;
     }
 
+    void setInterruptOnPath(String path) {
+      this.interruptOnPath = path;
+    }
+
     @Override
-    public byte[] downloadImage(String pathFragment) throws IOException {
+    public byte[] downloadImage(String pathFragment) throws IOException, InterruptedException {
+      if (pathFragment.equals(interruptOnPath)) {
+        throw new InterruptedException("Simulated interruption for " + pathFragment);
+      }
       if (pathFragment.equals(failOnPath)) {
         throw new IOException("Simulated download failure for " + pathFragment);
       }

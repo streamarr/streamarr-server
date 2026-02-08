@@ -41,6 +41,13 @@ public class ImageEnrichmentListener {
 
         imageService.processAndSaveImage(
             imageData, source.imageType(), event.entityId(), event.entityType());
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        log.error(
+            "Image processing interrupted for {} entity {}",
+            source.imageType(),
+            event.entityId(),
+            e);
       } catch (Exception e) {
         log.error(
             "Failed to process image {} for entity {} ({})",
