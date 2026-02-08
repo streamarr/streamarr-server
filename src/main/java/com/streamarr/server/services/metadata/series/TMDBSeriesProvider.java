@@ -196,7 +196,7 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
               .name(tmdbSeason.getName())
               .seasonNumber(tmdbSeason.getSeasonNumber())
               .overview(tmdbSeason.getOverview())
-              .posterPath(tmdbSeason.getPosterPath())
+              .imageSources(List.of())
               .episodes(episodes);
 
       if (StringUtils.isNotBlank(tmdbSeason.getAirDate())) {
@@ -230,7 +230,7 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
             .episodeNumber(ep.getEpisodeNumber())
             .name(ep.getName())
             .overview(ep.getOverview())
-            .stillPath(ep.getStillPath())
+            .imageSources(List.of())
             .runtime(ep.getRuntime());
 
     if (StringUtils.isNotBlank(ep.getAirDate())) {

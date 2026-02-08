@@ -390,7 +390,7 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
     assertThat(season.name()).isEqualTo("Season 1");
     assertThat(season.seasonNumber()).isEqualTo(1);
     assertThat(season.overview()).isEqualTo("The first season of Breaking Bad.");
-    assertThat(season.posterPath()).isEqualTo("/1BP4xYv9ZG4ZVHkL7ocOziBbSYH.jpg");
+    assertThat(season.imageSources()).isEmpty();
     assertThat(season.airDate()).isEqualTo(LocalDate.of(2008, 1, 20));
     assertThat(season.episodes()).hasSize(2);
 
@@ -398,7 +398,7 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
     assertThat(ep1.episodeNumber()).isEqualTo(1);
     assertThat(ep1.name()).isEqualTo("Pilot");
     assertThat(ep1.overview()).isEqualTo("Walter White is a chemistry genius.");
-    assertThat(ep1.stillPath()).isEqualTo("/ydlY3iEN5qYVoW0gRgJyBRC9OjI.jpg");
+    assertThat(ep1.imageSources()).isEmpty();
     assertThat(ep1.airDate()).isEqualTo(LocalDate.of(2008, 1, 20));
     assertThat(ep1.runtime()).isEqualTo(58);
 
