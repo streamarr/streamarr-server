@@ -23,6 +23,9 @@ public class ImageVariantService {
   private static final int BLUR_HASH_COMPONENT_X = 4;
   private static final int BLUR_HASH_COMPONENT_Y = 3;
 
+  private static final List<ImageSize> RESIZABLE_SIZES =
+      List.of(ImageSize.SMALL, ImageSize.MEDIUM, ImageSize.LARGE);
+
   private static final Map<ImageType, Map<ImageSize, Integer>> WIDTH_TABLE =
       Map.of(
           ImageType.POSTER,
@@ -60,8 +63,8 @@ public class ImageVariantService {
     public String toString() {
       return "GeneratedVariant[variant="
           + variant
-          + ", data="
-          + Arrays.toString(data)
+          + ", dataLength="
+          + (data == null ? 0 : data.length)
           + ", width="
           + width
           + ", height="
@@ -77,16 +80,7 @@ public class ImageVariantService {
       throw new ImageProcessingException("Image input data must not be null.");
     }
 
-    BufferedImage sourceImage;
-    try {
-      sourceImage = ImageIO.read(new ByteArrayInputStream(originalImageData));
-    } catch (IOException e) {
-      throw new ImageProcessingException(e);
-    }
-
-    if (sourceImage == null) {
-      throw new ImageProcessingException("Failed to decode image data.");
-    }
+    var sourceImage = decodeImage(originalImageData);
 
     var widths = WIDTH_TABLE.get(imageType);
     if (widths == null) {
@@ -94,7 +88,7 @@ public class ImageVariantService {
     }
     var variants = new ArrayList<GeneratedVariant>();
 
-    for (var size : List.of(ImageSize.SMALL, ImageSize.MEDIUM, ImageSize.LARGE)) {
+    for (var size : RESIZABLE_SIZES) {
       var targetWidth = widths.get(size);
       var resized = resize(sourceImage, targetWidth);
       var blurHash = size == ImageSize.SMALL ? computeBlurHash(resized) : null;
@@ -112,6 +106,20 @@ public class ImageVariantService {
             null));
 
     return variants;
+  }
+
+  private BufferedImage decodeImage(byte[] imageData) {
+    BufferedImage image;
+    try {
+      image = ImageIO.read(new ByteArrayInputStream(imageData));
+    } catch (IOException e) {
+      throw new ImageProcessingException(e);
+    }
+
+    if (image == null) {
+      throw new ImageProcessingException("Failed to decode image data.");
+    }
+    return image;
   }
 
   private BufferedImage resize(BufferedImage source, int targetWidth) {

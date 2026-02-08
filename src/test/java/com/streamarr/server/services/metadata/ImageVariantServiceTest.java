@@ -196,13 +196,13 @@ class ImageVariantServiceTest {
   }
 
   @Test
-  @DisplayName("Should include data contents when converted to string")
-  void shouldIncludeDataContentsWhenConvertedToString() {
+  @DisplayName("Should include data length when converted to string")
+  void shouldIncludeDataLengthWhenConvertedToString() {
     var variant =
         new ImageVariantService.GeneratedVariant(
             ImageSize.SMALL, new byte[] {1, 2, 3}, 100, 150, "hash");
 
-    assertThat(variant.toString()).contains("[1, 2, 3]");
+    assertThat(variant.toString()).contains("dataLength=3");
   }
 
   @Test
