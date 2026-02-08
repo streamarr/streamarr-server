@@ -120,10 +120,11 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 - Test naming: `shouldExpectedBehaviorWhenCondition()`
 
 ## Test Strategy (Hexagonal)
-- **Service-layer integration tests** are the primary test type (e.g., MovieServiceIT)
-    - Inject the real service, backed by a real PostgreSQL via TestContainers
-    - Test business behavior: inputs → outputs, not internal wiring
-    - Protocol-agnostic: these tests don't know GraphQL exists
+- **Service-layer tests** are the primary test type — test business behavior at the service API, protocol-agnostic
+    - Use the lightest test that proves the behavior:
+        - **Unit tests with Fakes** for business logic, orchestration, and behavioral contracts — fast, no Spring context
+        - **Integration tests (TestContainers)** when the behavior depends on real database interactions (query correctness, constraints, transactions)
+    - Test inputs → outputs, not internal wiring
 - **GraphQL resolver tests** are thin wiring tests only
     - Verify resolvers delegate to services correctly
     - Do NOT test business logic at the protocol layer
