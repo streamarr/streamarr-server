@@ -1,6 +1,7 @@
 package com.streamarr.server.services;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
@@ -13,6 +14,7 @@ import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.services.metadata.ImageVariantService;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
+import com.streamarr.server.exceptions.ImageProcessingException;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.file.FileSystem;
@@ -145,6 +147,20 @@ class ImageServiceTest {
   @DisplayName("Should not fail when deleting images for entity with no images")
   void shouldNotFailWhenDeletingImagesForEntityWithNoImages() {
     imageService.deleteImagesForEntity(UUID.randomUUID(), ImageEntityType.MOVIE);
+  }
+
+  @Test
+  @DisplayName("Should throw ImageProcessingException when file write fails")
+  void shouldThrowImageProcessingExceptionWhenFileWriteFails() throws IOException {
+    var entityId = UUID.randomUUID();
+    var imageData = createTestImage(600, 900);
+    fileSystem.close();
+
+    assertThatThrownBy(
+            () ->
+                imageService.processAndSaveImage(
+                    imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE))
+        .isInstanceOf(ImageProcessingException.class);
   }
 
   private byte[] createTestImage(int width, int height) {
