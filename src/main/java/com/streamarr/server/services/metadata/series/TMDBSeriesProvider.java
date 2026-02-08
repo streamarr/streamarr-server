@@ -191,12 +191,14 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
               .map(this::mapEpisodeDetails)
               .toList();
 
+      var seasonImageSources = buildSeasonImageSources(tmdbSeason.getPosterPath());
+
       var seasonBuilder =
           SeasonDetails.builder()
               .name(tmdbSeason.getName())
               .seasonNumber(tmdbSeason.getSeasonNumber())
               .overview(tmdbSeason.getOverview())
-              .imageSources(List.of())
+              .imageSources(seasonImageSources)
               .episodes(episodes);
 
       if (StringUtils.isNotBlank(tmdbSeason.getAirDate())) {
@@ -230,7 +232,7 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
             .episodeNumber(ep.getEpisodeNumber())
             .name(ep.getName())
             .overview(ep.getOverview())
-            .imageSources(List.of())
+            .imageSources(buildEpisodeImageSources(ep.getStillPath()))
             .runtime(ep.getRuntime());
 
     if (StringUtils.isNotBlank(ep.getAirDate())) {
@@ -282,6 +284,20 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
     }
 
     return sources;
+  }
+
+  private List<ImageSource> buildSeasonImageSources(String posterPath) {
+    if (StringUtils.isNotBlank(posterPath)) {
+      return List.of(new TmdbImageSource(ImageType.POSTER, posterPath));
+    }
+    return List.of();
+  }
+
+  private List<ImageSource> buildEpisodeImageSources(String stillPath) {
+    if (StringUtils.isNotBlank(stillPath)) {
+      return List.of(new TmdbImageSource(ImageType.STILL, stillPath));
+    }
+    return List.of();
   }
 
   private Map<String, List<ImageSource>> buildPersonImageSources(
