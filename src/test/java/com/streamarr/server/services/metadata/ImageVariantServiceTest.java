@@ -2,6 +2,12 @@ package com.streamarr.server.services.metadata;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.when;
 
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
@@ -10,7 +16,10 @@ import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import javax.imageio.ImageIO;
+import net.coobird.thumbnailator.Thumbnails;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -211,6 +220,62 @@ class ImageVariantServiceTest {
     assertThatThrownBy(
             () -> imageVariantService.generateVariants(new byte[] {0, 1, 2}, ImageType.POSTER))
         .isInstanceOf(ImageProcessingException.class);
+  }
+
+  @Test
+  @DisplayName("Should wrap IOException when image reading fails")
+  void shouldWrapIOExceptionWhenImageReadingFails() {
+    var imageData = new byte[] {1, 2, 3};
+
+    try (var mockedImageIO = mockStatic(ImageIO.class)) {
+      mockedImageIO
+          .when(() -> ImageIO.read(any(InputStream.class)))
+          .thenThrow(new IOException("disk error"));
+
+      assertThatThrownBy(() -> imageVariantService.generateVariants(imageData, ImageType.POSTER))
+          .isInstanceOf(ImageProcessingException.class)
+          .hasCauseInstanceOf(IOException.class);
+    }
+  }
+
+  @SuppressWarnings("unchecked")
+  @Test
+  @DisplayName("Should wrap IOException when image resizing fails")
+  void shouldWrapIOExceptionWhenImageResizingFails() throws IOException {
+    var imageData = createTestImage(600, 900);
+
+    try (var mockedThumbnails = mockStatic(Thumbnails.class)) {
+      var mockBuilder = mock(Thumbnails.Builder.class);
+      mockedThumbnails.when(() -> Thumbnails.of(any(BufferedImage.class))).thenReturn(mockBuilder);
+      when(mockBuilder.width(anyInt())).thenReturn(mockBuilder);
+      when(mockBuilder.asBufferedImage()).thenThrow(new IOException("resize failed"));
+
+      assertThatThrownBy(() -> imageVariantService.generateVariants(imageData, ImageType.POSTER))
+          .isInstanceOf(ImageProcessingException.class)
+          .hasCauseInstanceOf(IOException.class);
+    }
+  }
+
+  @Test
+  @DisplayName("Should wrap IOException when image writing fails")
+  void shouldWrapIOExceptionWhenImageWritingFails() {
+    var imageData = createTestImage(600, 900);
+
+    try (var mockedImageIO = mockStatic(ImageIO.class)) {
+      mockedImageIO.when(() -> ImageIO.read(any(InputStream.class))).thenCallRealMethod();
+      mockedImageIO
+          .when(
+              () ->
+                  ImageIO.write(
+                      any(java.awt.image.RenderedImage.class),
+                      anyString(),
+                      any(OutputStream.class)))
+          .thenThrow(new IOException("disk error"));
+
+      assertThatThrownBy(() -> imageVariantService.generateVariants(imageData, ImageType.POSTER))
+          .isInstanceOf(ImageProcessingException.class)
+          .hasCauseInstanceOf(IOException.class);
+    }
   }
 
   private byte[] createTestImage(int width, int height) {
