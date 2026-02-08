@@ -43,15 +43,14 @@ class ImageServiceTest {
   }
 
   @Test
-  @DisplayName("Should persist four image rows when processing image")
-  void shouldPersistFourImageRowsWhenProcessingImage() {
+  @DisplayName("Should persist all variant sizes when processing image")
+  void shouldPersistAllVariantSizesWhenProcessingImage() {
     var entityId = UUID.randomUUID();
     var imageData = createTestImage(600, 900);
 
     imageService.processAndSaveImage(imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE);
 
     var images = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
-    assertThat(images).hasSize(4);
     assertThat(images)
         .extracting(Image::getVariant)
         .containsExactlyInAnyOrder(
@@ -108,8 +107,8 @@ class ImageServiceTest {
   }
 
   @Test
-  @DisplayName("Should resolve file against base path when reading image file")
-  void shouldResolveFileAgainstBasePathWhenReadingImageFile() throws IOException {
+  @DisplayName("Should return file contents when reading image file")
+  void shouldReturnFileContentsWhenReadingImageFile() throws IOException {
     var relativePath = "movie/test/poster/small.jpg";
     var absolutePath = fileSystem.getPath("/data/images").resolve(relativePath);
     Files.createDirectories(absolutePath.getParent());

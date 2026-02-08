@@ -12,6 +12,8 @@ import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.InvalidCursorException;
 import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.graphql.cursor.OrderMediaBy;
+import com.streamarr.server.domain.media.ImageType;
+import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import org.jooq.SortOrder;
 import org.junit.jupiter.api.BeforeEach;
@@ -177,12 +179,14 @@ class MovieServiceTest {
     movieService.createMovieWithAssociations(movie, mediaFile);
 
     var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
-    assertThat(events.getFirst().imageSources()).hasSize(2);
+    assertThat(events.getFirst().imageSources())
+        .extracting(ImageSource::imageType)
+        .containsExactlyInAnyOrder(ImageType.POSTER, ImageType.BACKDROP);
   }
 
   @Test
-  @DisplayName("Should exclude source when movie poster path is null")
-  void shouldExcludeSourceWhenMoviePosterPathIsNull() {
+  @DisplayName("Should include only backdrop source when movie poster path is null")
+  void shouldIncludeOnlyBackdropSourceWhenMoviePosterPathIsNull() {
     var movie = Movie.builder().title("Inception").backdropPath("/backdrop.jpg").build();
     var mediaFile =
         MediaFile.builder()
@@ -194,6 +198,8 @@ class MovieServiceTest {
     movieService.createMovieWithAssociations(movie, mediaFile);
 
     var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
-    assertThat(events.getFirst().imageSources()).hasSize(1);
+    assertThat(events.getFirst().imageSources())
+        .extracting(ImageSource::imageType)
+        .containsExactly(ImageType.BACKDROP);
   }
 }

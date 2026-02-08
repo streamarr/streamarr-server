@@ -29,8 +29,8 @@ class ImageDataLoaderTest {
   }
 
   @Test
-  @DisplayName("Should batch load images grouped by entity type")
-  void shouldBatchLoadImagesGroupedByEntityType() throws Exception {
+  @DisplayName("Should return images for each key when batch loading")
+  void shouldReturnImagesForEachKeyWhenBatchLoading() throws Exception {
     var movieId = UUID.randomUUID();
     var personId = UUID.randomUUID();
     saveImage(movieId, ImageEntityType.MOVIE, ImageType.POSTER, ImageSize.SMALL);
@@ -43,7 +43,6 @@ class ImageDataLoaderTest {
 
     var result = dataLoader.load(keys).toCompletableFuture().get();
 
-    assertThat(result).hasSize(2);
     assertThat(result.get(new ImageLoaderKey(movieId, ImageEntityType.MOVIE))).hasSize(1);
     assertThat(result.get(new ImageLoaderKey(personId, ImageEntityType.PERSON))).hasSize(1);
   }
@@ -70,8 +69,8 @@ class ImageDataLoaderTest {
   }
 
   @Test
-  @DisplayName("Should hoist blurHash from small variant to image level")
-  void shouldHoistBlurHashFromSmallVariantToImageLevel() {
+  @DisplayName("Should hoist blurHash to image level when small variant present")
+  void shouldHoistBlurHashToImageLevelWhenSmallVariantPresent() {
     var entityId = UUID.randomUUID();
     var smallImage = buildImage(entityId, ImageType.POSTER, ImageSize.SMALL, 185, 278);
     smallImage.setBlurHash("LEHV6nWB2yk8pyo0adR*.7kCMdnj");
@@ -84,15 +83,15 @@ class ImageDataLoaderTest {
   }
 
   @Test
-  @DisplayName("Should compute aspect ratio from small variant dimensions")
-  void shouldComputeAspectRatioFromSmallVariantDimensions() {
+  @DisplayName("Should compute aspect ratio when small variant present")
+  void shouldComputeAspectRatioWhenSmallVariantPresent() {
     var entityId = UUID.randomUUID();
     var images = List.of(buildImage(entityId, ImageType.POSTER, ImageSize.SMALL, 185, 278));
 
     var dtos = ImageDataLoader.buildImageDtos(images);
 
     assertThat(dtos.getFirst().aspectRatio())
-        .isCloseTo(185f / 278f, org.assertj.core.api.Assertions.within(0.001f));
+        .isCloseTo(0.6655f, org.assertj.core.api.Assertions.within(0.001f));
   }
 
   @Test
