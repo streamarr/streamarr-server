@@ -1,0 +1,29 @@
+type Image {
+    imageType: ImageType!
+    blurHash: String
+    aspectRatio: Float!
+    variants: [ImageVariant]!
+}
+
+type ImageVariant {
+    id: ID!
+    size: ImageSize!
+    width: Int!
+    height: Int!
+    url: String!
+}
+
+enum ImageType {
+    POSTER
+    BACKDROP
+    LOGO
+    STILL
+    PROFILE
+}
+
+enum ImageSize {
+    SMALL
+    MEDIUM
+    LARGE
+    ORIGINAL
+}
