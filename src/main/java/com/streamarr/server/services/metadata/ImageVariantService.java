@@ -89,6 +89,9 @@ public class ImageVariantService {
     }
 
     var widths = WIDTH_TABLE.get(imageType);
+    if (widths == null) {
+      throw new ImageProcessingException("No width configuration for image type: " + imageType);
+    }
     var variants = new ArrayList<GeneratedVariant>();
 
     for (var size : List.of(ImageSize.SMALL, ImageSize.MEDIUM, ImageSize.LARGE)) {

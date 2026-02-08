@@ -13,6 +13,8 @@ import java.io.IOException;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 @DisplayName("Image Variant Service Tests")
 class ImageVariantServiceTest {
@@ -111,6 +113,17 @@ class ImageVariantServiceTest {
     for (var variant : nonSmallVariants) {
       assertThat(variant.blurHash()).isNull();
     }
+  }
+
+  @ParameterizedTest
+  @EnumSource(ImageType.class)
+  @DisplayName("Should generate variants for every ImageType")
+  void shouldGenerateVariantsForEveryImageType(ImageType imageType) {
+    var imageData = createTestImage(600, 900);
+
+    var variants = imageVariantService.generateVariants(imageData, imageType);
+
+    assertThat(variants).hasSize(4);
   }
 
   @Test
