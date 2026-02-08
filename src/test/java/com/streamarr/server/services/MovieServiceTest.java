@@ -4,12 +4,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
+import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.InvalidCursorException;
 import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.graphql.cursor.OrderMediaBy;
+import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import org.jooq.SortOrder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -22,11 +25,13 @@ import tools.jackson.databind.ObjectMapper;
 class MovieServiceTest {
 
   private FakeMovieRepository movieRepository;
+  private CapturingEventPublisher eventPublisher;
   private MovieService movieService;
 
   @BeforeEach
   void setUp() {
     movieRepository = new FakeMovieRepository();
+    eventPublisher = new CapturingEventPublisher();
     var cursorUtil = new CursorUtil(new ObjectMapper());
     var relayPaginationService = new RelayPaginationService();
     movieService =
@@ -36,7 +41,9 @@ class MovieServiceTest {
             mock(GenreService.class),
             mock(CompanyService.class),
             cursorUtil,
-            relayPaginationService);
+            relayPaginationService,
+            eventPublisher,
+            mock(ImageService.class));
   }
 
   @Test
@@ -130,5 +137,63 @@ class MovieServiceTest {
 
     assertThatThrownBy(() -> movieService.getMoviesWithFilter(1, cursor, 0, null, descFilter))
         .isInstanceOf(InvalidCursorException.class);
+  }
+
+  @Test
+  @DisplayName("Should publish MetadataEnrichedEvent when creating movie with associations")
+  void shouldPublishMetadataEnrichedEventWhenCreatingMovieWithAssociations() {
+    var movie = Movie.builder().title("Inception").posterPath("/poster.jpg").build();
+    var mediaFile =
+        MediaFile.builder()
+            .filename("inception.mkv")
+            .filepath("/movies/inception.mkv")
+            .size(1000L)
+            .build();
+
+    movieService.createMovieWithAssociations(movie, mediaFile);
+
+    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
+    assertThat(events).hasSize(1);
+    assertThat(events.getFirst().entityId()).isNotNull();
+  }
+
+  @Test
+  @DisplayName(
+      "Should include poster and backdrop sources in published event when movie has both paths")
+  void shouldIncludePosterAndBackdropSourcesInPublishedEventWhenMovieHasBothPaths() {
+    var movie =
+        Movie.builder()
+            .title("Inception")
+            .posterPath("/poster.jpg")
+            .backdropPath("/backdrop.jpg")
+            .build();
+    var mediaFile =
+        MediaFile.builder()
+            .filename("inception.mkv")
+            .filepath("/movies/inception.mkv")
+            .size(1000L)
+            .build();
+
+    movieService.createMovieWithAssociations(movie, mediaFile);
+
+    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
+    assertThat(events.getFirst().imageSources()).hasSize(2);
+  }
+
+  @Test
+  @DisplayName("Should exclude source when movie poster path is null")
+  void shouldExcludeSourceWhenMoviePosterPathIsNull() {
+    var movie = Movie.builder().title("Inception").backdropPath("/backdrop.jpg").build();
+    var mediaFile =
+        MediaFile.builder()
+            .filename("inception.mkv")
+            .filepath("/movies/inception.mkv")
+            .size(1000L)
+            .build();
+
+    movieService.createMovieWithAssociations(movie, mediaFile);
+
+    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
+    assertThat(events.getFirst().imageSources()).hasSize(1);
   }
 }

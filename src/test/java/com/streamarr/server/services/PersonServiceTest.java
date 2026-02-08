@@ -2,9 +2,12 @@ package com.streamarr.server.services;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.metadata.Person;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakePersonRepository;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
+import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -16,12 +19,14 @@ import org.junit.jupiter.api.Test;
 class PersonServiceTest {
 
   private FakePersonRepository personRepository;
+  private CapturingEventPublisher eventPublisher;
   private PersonService personService;
 
   @BeforeEach
   void setUp() {
     personRepository = new FakePersonRepository();
-    personService = new PersonService(personRepository, new MutexFactoryProvider());
+    eventPublisher = new CapturingEventPublisher();
+    personService = new PersonService(personRepository, new MutexFactoryProvider(), eventPublisher);
   }
 
   @Test
@@ -101,5 +106,33 @@ class PersonServiceTest {
     assertThat(returnedNew.getName()).isEqualTo("Brand New Actor");
     assertThat(returnedNew.getProfilePath()).isEqualTo("/brand-new.jpg");
     assertThat(returnedNew.getId()).isNotNull();
+  }
+
+  @Test
+  @DisplayName("Should publish MetadataEnrichedEvent when creating new person")
+  void shouldPublishMetadataEnrichedEventWhenCreatingNewPerson() {
+    var person =
+        Person.builder().name("Tom Hanks").sourceId("actor-1").profilePath("/tom.jpg").build();
+
+    personService.getOrCreatePersons(List.of(person));
+
+    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
+    assertThat(events).hasSize(1);
+    assertThat(events.getFirst().entityType()).isEqualTo(ImageEntityType.PERSON);
+  }
+
+  @Test
+  @DisplayName("Should not publish event when person already exists")
+  void shouldNotPublishEventWhenPersonAlreadyExists() {
+    personRepository.save(
+        Person.builder().name("Tom Hanks").sourceId("actor-1").profilePath("/tom.jpg").build());
+
+    var updated =
+        Person.builder().name("Tom Hanks").sourceId("actor-1").profilePath("/updated.jpg").build();
+
+    personService.getOrCreatePersons(List.of(updated));
+
+    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
+    assertThat(events).isEmpty();
   }
 }

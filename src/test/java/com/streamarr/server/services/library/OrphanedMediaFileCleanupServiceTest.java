@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
@@ -15,6 +16,7 @@ import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.services.ImageService;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.library.events.ScanCompletedEvent;
 import java.io.IOException;
@@ -36,7 +38,8 @@ public class OrphanedMediaFileCleanupServiceTest {
   private final MediaFileRepository fakeMediaFileRepository = new FakeMediaFileRepository();
   private final MovieRepository fakeMovieRepository = new FakeMovieRepository();
   private final MovieService movieService =
-      new MovieService(fakeMovieRepository, null, null, null, null, null);
+      new MovieService(
+          fakeMovieRepository, null, null, null, null, null, event -> {}, mock(ImageService.class));
   private final FileSystem fileSystem = Jimfs.newFileSystem(Configuration.unix());
 
   private final OrphanedMediaFileCleanupService orphanedMediaFileCleanupService =

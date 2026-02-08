@@ -87,12 +87,18 @@ public class LibraryManagementServiceTest {
   private final LibraryRepository fakeLibraryRepository = new FakeLibraryRepository();
   private final MediaFileRepository fakeMediaFileRepository = new FakeMediaFileRepository();
   private final MovieRepository fakeMovieRepository = new FakeMovieRepository();
+  private final CapturingEventPublisher capturingEventPublisher = new CapturingEventPublisher();
   private final MovieService movieService =
       new MovieService(
-          fakeMovieRepository, personService, genreService, companyService, null, null);
+          fakeMovieRepository,
+          personService,
+          genreService,
+          companyService,
+          null,
+          null,
+          capturingEventPublisher,
+          null);
   private final FileSystem fileSystem = Jimfs.newFileSystem(Configuration.unix());
-
-  private final CapturingEventPublisher capturingEventPublisher = new CapturingEventPublisher();
 
   private final MovieFileProcessor movieFileProcessor =
       new MovieFileProcessor(

@@ -2,9 +2,12 @@ package com.streamarr.server.services;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.metadata.Company;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeCompanyRepository;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
+import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -16,12 +19,15 @@ import org.junit.jupiter.api.Test;
 class CompanyServiceTest {
 
   private FakeCompanyRepository companyRepository;
+  private CapturingEventPublisher eventPublisher;
   private CompanyService companyService;
 
   @BeforeEach
   void setUp() {
     companyRepository = new FakeCompanyRepository();
-    companyService = new CompanyService(companyRepository, new MutexFactoryProvider());
+    eventPublisher = new CapturingEventPublisher();
+    companyService =
+        new CompanyService(companyRepository, new MutexFactoryProvider(), eventPublisher);
   }
 
   @Test
@@ -101,5 +107,33 @@ class CompanyServiceTest {
     assertThat(returnedNew.getName()).isEqualTo("Brand New Studio");
     assertThat(returnedNew.getLogoPath()).isEqualTo("/brand-new.png");
     assertThat(returnedNew.getId()).isNotNull();
+  }
+
+  @Test
+  @DisplayName("Should publish MetadataEnrichedEvent when creating new company")
+  void shouldPublishMetadataEnrichedEventWhenCreatingNewCompany() {
+    var company =
+        Company.builder().name("Warner Bros.").sourceId("wb-123").logoPath("/wb.png").build();
+
+    companyService.getOrCreateCompanies(Set.of(company));
+
+    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
+    assertThat(events).hasSize(1);
+    assertThat(events.getFirst().entityType()).isEqualTo(ImageEntityType.COMPANY);
+  }
+
+  @Test
+  @DisplayName("Should not publish event when company already exists")
+  void shouldNotPublishEventWhenCompanyAlreadyExists() {
+    companyRepository.save(
+        Company.builder().name("Existing").sourceId("wb-123").logoPath("/wb.png").build());
+
+    var updated =
+        Company.builder().name("Updated").sourceId("wb-123").logoPath("/updated.png").build();
+
+    companyService.getOrCreateCompanies(Set.of(updated));
+
+    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
+    assertThat(events).isEmpty();
   }
 }
