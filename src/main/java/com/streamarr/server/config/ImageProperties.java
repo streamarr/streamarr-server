@@ -4,11 +4,11 @@ import java.nio.file.Path;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "image")
-public record ImageProperties(String basePath) {
+public record ImageProperties(String storagePath) {
 
   public ImageProperties {
-    if (basePath == null || basePath.isBlank()) {
-      basePath = Path.of(System.getProperty("java.io.tmpdir"), "streamarr-images").toString();
+    if (storagePath == null || storagePath.isBlank()) {
+      storagePath = Path.of(System.getProperty("java.io.tmpdir"), "streamarr-images").toString();
     }
   }
 }

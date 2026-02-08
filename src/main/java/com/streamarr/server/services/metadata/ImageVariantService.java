@@ -9,8 +9,10 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import javax.imageio.ImageIO;
 import net.coobird.thumbnailator.Thumbnails;
 import org.springframework.stereotype.Service;
@@ -34,7 +36,41 @@ public class ImageVariantService {
           ImageType.LOGO, Map.of(ImageSize.SMALL, 92, ImageSize.MEDIUM, 185, ImageSize.LARGE, 500));
 
   public record GeneratedVariant(
-      ImageSize variant, byte[] data, int width, int height, String blurHash) {}
+      ImageSize variant, byte[] data, int width, int height, String blurHash) {
+
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) return true;
+      if (!(o instanceof GeneratedVariant that)) return false;
+      return width == that.width
+          && height == that.height
+          && variant == that.variant
+          && Arrays.equals(data, that.data)
+          && Objects.equals(blurHash, that.blurHash);
+    }
+
+    @Override
+    public int hashCode() {
+      int result = Objects.hash(variant, width, height, blurHash);
+      result = 31 * result + Arrays.hashCode(data);
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return "GeneratedVariant[variant="
+          + variant
+          + ", data="
+          + Arrays.toString(data)
+          + ", width="
+          + width
+          + ", height="
+          + height
+          + ", blurHash="
+          + blurHash
+          + "]";
+    }
+  }
 
   public List<GeneratedVariant> generateVariants(byte[] originalImageData, ImageType imageType) {
     if (originalImageData == null) {
@@ -53,6 +89,9 @@ public class ImageVariantService {
     }
 
     var widths = WIDTH_TABLE.get(imageType);
+    if (widths == null) {
+      throw new ImageProcessingException("No width configuration for image type: " + imageType);
+    }
     var variants = new ArrayList<GeneratedVariant>();
 
     for (var size : List.of(ImageSize.SMALL, ImageSize.MEDIUM, ImageSize.LARGE)) {

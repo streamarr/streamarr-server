@@ -13,6 +13,8 @@ import java.io.IOException;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 @DisplayName("Image Variant Service Tests")
 class ImageVariantServiceTest {
@@ -26,7 +28,6 @@ class ImageVariantServiceTest {
 
     var variants = imageVariantService.generateVariants(imageData, ImageType.POSTER);
 
-    assertThat(variants).hasSize(4);
     assertThat(variants)
         .extracting(ImageVariantService.GeneratedVariant::variant)
         .containsExactlyInAnyOrder(
@@ -34,8 +35,8 @@ class ImageVariantServiceTest {
   }
 
   @Test
-  @DisplayName("Should resize small poster variant to 185px width")
-  void shouldResizeSmallPosterVariantTo185pxWidth() {
+  @DisplayName("Should resize small variant to 185px width when image type is poster")
+  void shouldResizeSmallVariantTo185pxWidthWhenImageTypeIsPoster() {
     var imageData = createTestImage(600, 900);
 
     var variants = imageVariantService.generateVariants(imageData, ImageType.POSTER);
@@ -46,8 +47,8 @@ class ImageVariantServiceTest {
   }
 
   @Test
-  @DisplayName("Should resize small backdrop variant to 300px width")
-  void shouldResizeSmallBackdropVariantTo300pxWidth() {
+  @DisplayName("Should resize small variant to 300px width when image type is backdrop")
+  void shouldResizeSmallVariantTo300pxWidthWhenImageTypeIsBackdrop() {
     var imageData = createTestImage(1920, 1080);
 
     var variants = imageVariantService.generateVariants(imageData, ImageType.BACKDROP);
@@ -73,8 +74,8 @@ class ImageVariantServiceTest {
   }
 
   @Test
-  @DisplayName("Should include original variant with unmodified dimensions")
-  void shouldIncludeOriginalVariantWithUnmodifiedDimensions() {
+  @DisplayName("Should preserve original dimensions when variant is original")
+  void shouldPreserveOriginalDimensionsWhenVariantIsOriginal() {
     var imageData = createTestImage(600, 900);
 
     var variants = imageVariantService.generateVariants(imageData, ImageType.POSTER);
@@ -86,21 +87,20 @@ class ImageVariantServiceTest {
   }
 
   @Test
-  @DisplayName("Should compute BlurHash on small variant only")
-  void shouldComputeBlurHashOnSmallVariantOnly() {
+  @DisplayName("Should compute BlurHash when variant is small")
+  void shouldComputeBlurHashWhenVariantIsSmall() {
     var imageData = createTestImage(600, 900);
 
     var variants = imageVariantService.generateVariants(imageData, ImageType.POSTER);
 
     var small =
         variants.stream().filter(v -> v.variant() == ImageSize.SMALL).findFirst().orElseThrow();
-    assertThat(small.blurHash()).isNotNull();
     assertThat(small.blurHash()).isNotBlank();
   }
 
   @Test
-  @DisplayName("Should return null BlurHash for non-small variants")
-  void shouldReturnNullBlurHashForNonSmallVariants() {
+  @DisplayName("Should return null BlurHash when variant is not small")
+  void shouldReturnNullBlurHashWhenVariantIsNotSmall() {
     var imageData = createTestImage(600, 900);
 
     var variants = imageVariantService.generateVariants(imageData, ImageType.POSTER);
@@ -111,6 +111,17 @@ class ImageVariantServiceTest {
     for (var variant : nonSmallVariants) {
       assertThat(variant.blurHash()).isNull();
     }
+  }
+
+  @ParameterizedTest
+  @EnumSource(ImageType.class)
+  @DisplayName("Should generate four variants when given any ImageType")
+  void shouldGenerateFourVariantsWhenGivenAnyImageType(ImageType imageType) {
+    var imageData = createTestImage(600, 900);
+
+    var variants = imageVariantService.generateVariants(imageData, imageType);
+
+    assertThat(variants).hasSize(4);
   }
 
   @Test
