@@ -125,6 +125,80 @@ class ImageVariantServiceTest {
   }
 
   @Test
+  @DisplayName("Should consider variants equal when all fields match")
+  void shouldConsiderVariantsEqualWhenAllFieldsMatch() {
+    var a =
+        new ImageVariantService.GeneratedVariant(
+            ImageSize.SMALL, new byte[] {1, 2, 3}, 100, 150, "hash");
+    var b =
+        new ImageVariantService.GeneratedVariant(
+            ImageSize.SMALL, new byte[] {1, 2, 3}, 100, 150, "hash");
+
+    assertThat(a).isEqualTo(b);
+    assertThat(a.hashCode()).isEqualTo(b.hashCode());
+  }
+
+  @Test
+  @DisplayName("Should not consider variants equal when data differs")
+  void shouldNotConsiderVariantsEqualWhenDataDiffers() {
+    var a =
+        new ImageVariantService.GeneratedVariant(ImageSize.SMALL, new byte[] {1}, 100, 150, "hash");
+    var b =
+        new ImageVariantService.GeneratedVariant(ImageSize.SMALL, new byte[] {2}, 100, 150, "hash");
+
+    assertThat(a).isNotEqualTo(b);
+  }
+
+  @Test
+  @DisplayName("Should not consider variants equal when variant size differs")
+  void shouldNotConsiderVariantsEqualWhenVariantSizeDiffers() {
+    var data = new byte[] {1};
+    var a = new ImageVariantService.GeneratedVariant(ImageSize.SMALL, data, 100, 150, "hash");
+    var b = new ImageVariantService.GeneratedVariant(ImageSize.LARGE, data, 100, 150, "hash");
+
+    assertThat(a).isNotEqualTo(b);
+  }
+
+  @Test
+  @DisplayName("Should not consider variants equal when dimensions differ")
+  void shouldNotConsiderVariantsEqualWhenDimensionsDiffer() {
+    var data = new byte[] {1};
+    var a = new ImageVariantService.GeneratedVariant(ImageSize.SMALL, data, 100, 150, "hash");
+    var b = new ImageVariantService.GeneratedVariant(ImageSize.SMALL, data, 200, 300, "hash");
+
+    assertThat(a).isNotEqualTo(b);
+  }
+
+  @Test
+  @DisplayName("Should not consider variants equal when blurHash differs")
+  void shouldNotConsiderVariantsEqualWhenBlurHashDiffers() {
+    var data = new byte[] {1};
+    var a = new ImageVariantService.GeneratedVariant(ImageSize.SMALL, data, 100, 150, "hash1");
+    var b = new ImageVariantService.GeneratedVariant(ImageSize.SMALL, data, 100, 150, "hash2");
+
+    assertThat(a).isNotEqualTo(b);
+  }
+
+  @Test
+  @DisplayName("Should not consider variant equal to null")
+  void shouldNotConsiderVariantEqualToNull() {
+    var variant =
+        new ImageVariantService.GeneratedVariant(ImageSize.SMALL, new byte[] {1}, 100, 150, "hash");
+
+    assertThat(variant).isNotEqualTo(null);
+  }
+
+  @Test
+  @DisplayName("Should include array content in toString")
+  void shouldIncludeArrayContentInToStringWhenCalled() {
+    var variant =
+        new ImageVariantService.GeneratedVariant(
+            ImageSize.SMALL, new byte[] {1, 2, 3}, 100, 150, "hash");
+
+    assertThat(variant.toString()).contains("[1, 2, 3]");
+  }
+
+  @Test
   @DisplayName("Should throw when image data is null")
   void shouldThrowWhenImageDataIsNull() {
     assertThatThrownBy(() -> imageVariantService.generateVariants(null, ImageType.POSTER))
