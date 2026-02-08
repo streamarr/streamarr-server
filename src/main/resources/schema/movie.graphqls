@@ -21,6 +21,7 @@ type Movie implements BaseCollectable {
     genres: [Genre]!
     ratings: [Rating]!
     reviews: [Review]!
+    images(type: ImageType): [Image]!
 }
 
 type ContentRating {

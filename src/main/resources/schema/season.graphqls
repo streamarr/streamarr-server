@@ -6,4 +6,5 @@ type Season {
     posterPath: String
     airDate: String
     episodes: [Episode]!
+    images(type: ImageType): [Image]!
 }
