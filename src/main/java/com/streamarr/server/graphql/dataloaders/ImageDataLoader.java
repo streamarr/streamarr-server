@@ -52,7 +52,7 @@ public class ImageDataLoader implements MappedBatchLoader<ImageLoaderKey, List<I
         });
   }
 
-  static List<ImageDto> buildImageDtos(List<Image> images) {
+  private static List<ImageDto> buildImageDtos(List<Image> images) {
     var byType = images.stream().collect(Collectors.groupingBy(Image::getImageType));
 
     return byType.entrySet().stream()
