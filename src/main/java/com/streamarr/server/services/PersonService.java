@@ -38,9 +38,8 @@ public class PersonService {
   private Person findOrCreatePerson(Person person) {
     var mutex = mutexFactory.getMutex(person.getSourceId());
 
+    mutex.lock();
     try {
-      mutex.lock();
-
       var existingPerson = personRepository.findPersonBySourceId(person.getSourceId());
 
       if (existingPerson.isPresent()) {
@@ -54,9 +53,7 @@ public class PersonService {
       publishImageEvent(savedPerson);
       return savedPerson;
     } finally {
-      if (mutex.isHeldByCurrentThread()) {
-        mutex.unlock();
-      }
+      mutex.unlock();
     }
   }
 
