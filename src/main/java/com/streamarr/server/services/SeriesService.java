@@ -1,6 +1,5 @@
 package com.streamarr.server.services;
 
-import com.streamarr.server.domain.BaseAuditableEntity;
 import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Series;

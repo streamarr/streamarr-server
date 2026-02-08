@@ -90,8 +90,7 @@ public class LibraryResolver {
 
     return switch (library.getType()) {
       case MOVIE -> movieService.getMoviesWithFilter(first, after, last, before, effectiveFilter);
-      case SERIES ->
-          seriesService.getSeriesWithFilter(first, after, last, before, effectiveFilter);
+      case SERIES -> seriesService.getSeriesWithFilter(first, after, last, before, effectiveFilter);
       default -> throw new UnsupportedMediaTypeException(library.getType().name());
     };
   }

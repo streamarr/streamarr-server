@@ -81,9 +81,7 @@ public class RelayPaginationService {
   }
 
   public <T extends BaseAuditableEntity<?>> Connection<T> buildConnection(
-      List<Edge<T>> edges,
-      PaginationOptions options,
-      Optional<UUID> cursorId) {
+      List<Edge<T>> edges, PaginationOptions options, Optional<UUID> cursorId) {
 
     if (edges.isEmpty()) {
       return emptyConnection();

@@ -8,7 +8,6 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
-
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
@@ -33,8 +32,8 @@ public class TranscodeCapabilityService {
 
   private final String ffmpegPath;
   private final ProcessFactory processFactory;
-  @Getter
-  private boolean ffmpegAvailable;
+  @Getter private boolean ffmpegAvailable;
+
   @Getter
   private HardwareEncodingCapability hardwareEncodingCapability =
       HardwareEncodingCapability.builder().available(false).encoders(Set.of()).build();

@@ -15,8 +15,7 @@ public class GenreService {
   private final GenreRepository genreRepository;
   private final MutexFactory<String> mutexFactory;
 
-  public GenreService(
-      GenreRepository genreRepository, MutexFactoryProvider mutexFactoryProvider) {
+  public GenreService(GenreRepository genreRepository, MutexFactoryProvider mutexFactoryProvider) {
     this.genreRepository = genreRepository;
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
   }

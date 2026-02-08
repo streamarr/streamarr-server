@@ -8,5 +8,4 @@ public record VideoFileParserResult(
 
   @Builder
   public VideoFileParserResult {}
-
 }

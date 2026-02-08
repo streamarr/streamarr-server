@@ -116,8 +116,7 @@ public class MovieService {
         edges, mediaOptions.getPaginationOptions(), mediaOptions.getCursorId());
   }
 
-  private List<Edge<Movie>> mapItemsToEdges(
-      List<Movie> movies, MediaPaginationOptions options) {
+  private List<Edge<Movie>> mapItemsToEdges(List<Movie> movies, MediaPaginationOptions options) {
     return movies.stream()
         .map(
             result -> {
