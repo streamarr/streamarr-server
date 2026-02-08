@@ -180,8 +180,8 @@ class ImageVariantServiceTest {
   }
 
   @Test
-  @DisplayName("Should not consider variant equal to null")
-  void shouldNotConsiderVariantEqualToNull() {
+  @DisplayName("Should not consider variant equal when compared to null")
+  void shouldNotConsiderVariantEqualWhenComparedToNull() {
     var variant =
         new ImageVariantService.GeneratedVariant(ImageSize.SMALL, new byte[] {1}, 100, 150, "hash");
 
@@ -189,8 +189,8 @@ class ImageVariantServiceTest {
   }
 
   @Test
-  @DisplayName("Should include array content in toString")
-  void shouldIncludeArrayContentInToStringWhenCalled() {
+  @DisplayName("Should include data contents when converted to string")
+  void shouldIncludeDataContentsWhenConvertedToString() {
     var variant =
         new ImageVariantService.GeneratedVariant(
             ImageSize.SMALL, new byte[] {1, 2, 3}, 100, 150, "hash");
