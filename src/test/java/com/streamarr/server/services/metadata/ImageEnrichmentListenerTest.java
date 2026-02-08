@@ -39,8 +39,7 @@ class ImageEnrichmentListenerTest {
     var imageService =
         new ImageService(imageRepository, imageVariantService, imageProperties, fileSystem);
     listener =
-        new ImageEnrichmentListener(
-            tmdbHttpService, imageService, imageRepository, new MutexFactoryProvider());
+        new ImageEnrichmentListener(tmdbHttpService, imageService, new MutexFactoryProvider());
   }
 
   @Test

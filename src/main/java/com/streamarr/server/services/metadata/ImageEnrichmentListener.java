@@ -1,6 +1,5 @@
 package com.streamarr.server.services.metadata;
 
-import com.streamarr.server.repositories.media.ImageRepository;
 import com.streamarr.server.services.ImageService;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
@@ -17,17 +16,14 @@ public class ImageEnrichmentListener {
 
   private final TheMovieDatabaseHttpService tmdbHttpService;
   private final ImageService imageService;
-  private final ImageRepository imageRepository;
   private final MutexFactory<String> mutexFactory;
 
   public ImageEnrichmentListener(
       TheMovieDatabaseHttpService tmdbHttpService,
       ImageService imageService,
-      ImageRepository imageRepository,
       MutexFactoryProvider mutexFactoryProvider) {
     this.tmdbHttpService = tmdbHttpService;
     this.imageService = imageService;
-    this.imageRepository = imageRepository;
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
   }
 
@@ -37,8 +33,7 @@ public class ImageEnrichmentListener {
 
     mutex.lock();
     try {
-      var existingImages =
-          imageRepository.findByEntityIdAndEntityType(event.entityId(), event.entityType());
+      var existingImages = imageService.findByEntity(event.entityId(), event.entityType());
 
       if (!existingImages.isEmpty()) {
         log.debug(
