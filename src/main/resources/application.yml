@@ -26,7 +26,7 @@ tmdb:
     token: ${TMDB_API_TOKEN:}
 
 image:
-  base-path: ${IMAGE_BASE_PATH:}
+  storage-path: ${IMAGE_STORAGE_PATH:}
 
 streaming:
   max-concurrent-transcodes: ${STREAMING_MAX_CONCURRENT_TRANSCODES:8}
