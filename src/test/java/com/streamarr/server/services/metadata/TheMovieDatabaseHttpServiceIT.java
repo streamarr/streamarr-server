@@ -640,6 +640,33 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should retry image download when rate limited")
+  void shouldRetryImageDownloadWhenRateLimited() throws Exception {
+    var imageBytes = new byte[] {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0};
+
+    wireMock.stubFor(
+        get(urlPathEqualTo("/rate-limited.jpg"))
+            .inScenario("Image Rate Limit")
+            .whenScenarioStateIs(STARTED)
+            .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "0"))
+            .willSetStateTo("Recovered"));
+
+    wireMock.stubFor(
+        get(urlPathEqualTo("/rate-limited.jpg"))
+            .inScenario("Image Rate Limit")
+            .whenScenarioStateIs("Recovered")
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "image/jpeg")
+                    .withBody(imageBytes)));
+
+    var result = service.downloadImage("/rate-limited.jpg");
+
+    assertThat(result).isEqualTo(imageBytes);
+  }
+
+  @Test
   @DisplayName("Should throw when image endpoint returns 404")
   void shouldThrowWhenImageEndpointReturns404() {
     wireMock.stubFor(

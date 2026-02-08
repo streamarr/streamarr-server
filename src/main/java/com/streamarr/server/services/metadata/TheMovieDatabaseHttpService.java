@@ -120,7 +120,8 @@ public class TheMovieDatabaseHttpService {
   public byte[] downloadImage(String pathFragment) throws IOException, InterruptedException {
     var uri = URI.create(tmdbImageBaseUrl + pathFragment);
     var request = HttpRequest.newBuilder().uri(uri).GET().build();
-    var response = client.send(request, HttpResponse.BodyHandlers.ofByteArray());
+    var response =
+        executeWithRetry(request, HttpResponse.BodyHandlers.ofByteArray(), Set.of(429));
 
     if (response.statusCode() != 200) {
       throw new TmdbApiException(
