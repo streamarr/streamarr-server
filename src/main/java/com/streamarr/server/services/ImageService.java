@@ -105,7 +105,7 @@ public class ImageService {
   }
 
   private Path resolveAbsolutePath(String relativePath) {
-    return fileSystem.getPath(imageProperties.basePath()).resolve(relativePath);
+    return fileSystem.getPath(imageProperties.storagePath()).resolve(relativePath);
   }
 
   private void deleteFiles(List<Path> files) {
