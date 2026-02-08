@@ -119,20 +119,6 @@ public class PersonRecord extends UpdatableRecordImpl<PersonRecord> {
         return (String) get(6);
     }
 
-    /**
-     * Setter for <code>public.person.profile_path</code>.
-     */
-    public void setProfilePath(String value) {
-        set(7, value);
-    }
-
-    /**
-     * Getter for <code>public.person.profile_path</code>.
-     */
-    public String getProfilePath() {
-        return (String) get(7);
-    }
-
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -156,7 +142,7 @@ public class PersonRecord extends UpdatableRecordImpl<PersonRecord> {
     /**
      * Create a detached, initialised PersonRecord
      */
-    public PersonRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, String name, String sourceId, String profilePath) {
+    public PersonRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, String name, String sourceId) {
         super(Person.PERSON);
 
         setId(id);
@@ -166,7 +152,6 @@ public class PersonRecord extends UpdatableRecordImpl<PersonRecord> {
         setLastModifiedBy(lastModifiedBy);
         setName(name);
         setSourceId(sourceId);
-        setProfilePath(profilePath);
         resetTouchedOnNotNull();
     }
 }

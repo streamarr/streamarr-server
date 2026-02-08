@@ -72,16 +72,6 @@ public class Movie extends TableImpl<MovieRecord> {
     public final TableField<MovieRecord, UUID> ID = createField(DSL.name("id"), SQLDataType.UUID.nullable(false), this, "");
 
     /**
-     * The column <code>public.movie.backdrop_path</code>.
-     */
-    public final TableField<MovieRecord, String> BACKDROP_PATH = createField(DSL.name("backdrop_path"), SQLDataType.CLOB, this, "");
-
-    /**
-     * The column <code>public.movie.poster_path</code>.
-     */
-    public final TableField<MovieRecord, String> POSTER_PATH = createField(DSL.name("poster_path"), SQLDataType.CLOB, this, "");
-
-    /**
      * The column <code>public.movie.tagline</code>.
      */
     public final TableField<MovieRecord, String> TAGLINE = createField(DSL.name("tagline"), SQLDataType.CLOB, this, "");
@@ -99,7 +89,7 @@ public class Movie extends TableImpl<MovieRecord> {
     /**
      * The column <code>public.movie.content_rating_system</code>.
      */
-    public final TableField<MovieRecord, String> CONTENT_RATING_SYSTEM = createField(DSL.name("content_rating_system"), SQLDataType.VARCHAR(20), this, "");
+    public final TableField<MovieRecord, String> CONTENT_RATING_SYSTEM = createField(DSL.name("content_rating_system"), SQLDataType.VARCHAR(50), this, "");
 
     /**
      * The column <code>public.movie.content_rating_value</code>.

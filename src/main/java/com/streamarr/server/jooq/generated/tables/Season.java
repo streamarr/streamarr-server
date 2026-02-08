@@ -83,11 +83,6 @@ public class Season extends TableImpl<SeasonRecord> {
     public final TableField<SeasonRecord, String> OVERVIEW = createField(DSL.name("overview"), SQLDataType.CLOB, this, "");
 
     /**
-     * The column <code>public.season.poster_path</code>.
-     */
-    public final TableField<SeasonRecord, String> POSTER_PATH = createField(DSL.name("poster_path"), SQLDataType.CLOB, this, "");
-
-    /**
      * The column <code>public.season.air_date</code>.
      */
     public final TableField<SeasonRecord, LocalDate> AIR_DATE = createField(DSL.name("air_date"), SQLDataType.LOCALDATE, this, "");

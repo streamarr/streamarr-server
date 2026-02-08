@@ -122,13 +122,13 @@ public class MovieFileProcessor {
       return;
     }
 
-    var movieToSave = movieMetadataProviderResolver.getMetadata(remoteSearchResult, library);
+    var metadataResult = movieMetadataProviderResolver.getMetadata(remoteSearchResult, library);
 
-    if (movieToSave.isEmpty()) {
+    if (metadataResult.isEmpty()) {
       return;
     }
 
-    movieService.createMovieWithAssociations(movieToSave.get(), mediaFile);
+    movieService.createMovieWithAssociations(metadataResult.get(), mediaFile);
     markMediaFileAsMatched(mediaFile);
   }
 

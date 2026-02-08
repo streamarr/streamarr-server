@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
+import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fakes.CapturingEventPublisher;
@@ -12,7 +13,12 @@ import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.InvalidCursorException;
 import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.graphql.cursor.OrderMediaBy;
+import com.streamarr.server.services.metadata.MetadataResult;
+import com.streamarr.server.services.metadata.events.ImageSource;
+import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
+import java.util.List;
+import java.util.Map;
 import org.jooq.SortOrder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -142,7 +148,9 @@ class MovieServiceTest {
   @Test
   @DisplayName("Should publish MetadataEnrichedEvent when creating movie with associations")
   void shouldPublishMetadataEnrichedEventWhenCreatingMovieWithAssociations() {
-    var movie = Movie.builder().title("Inception").posterPath("/poster.jpg").build();
+    var movie = Movie.builder().title("Inception").build();
+    var imageSources = List.<ImageSource>of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg"));
+    var metadataResult = new MetadataResult<>(movie, imageSources, Map.of(), Map.of());
     var mediaFile =
         MediaFile.builder()
             .filename("inception.mkv")
@@ -150,7 +158,7 @@ class MovieServiceTest {
             .size(1000L)
             .build();
 
-    movieService.createMovieWithAssociations(movie, mediaFile);
+    movieService.createMovieWithAssociations(metadataResult, mediaFile);
 
     var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
     assertThat(events).hasSize(1);
@@ -159,14 +167,14 @@ class MovieServiceTest {
 
   @Test
   @DisplayName(
-      "Should include poster and backdrop sources in published event when movie has both paths")
-  void shouldIncludePosterAndBackdropSourcesInPublishedEventWhenMovieHasBothPaths() {
-    var movie =
-        Movie.builder()
-            .title("Inception")
-            .posterPath("/poster.jpg")
-            .backdropPath("/backdrop.jpg")
-            .build();
+      "Should include poster and backdrop sources in published event when metadata has both")
+  void shouldIncludePosterAndBackdropSourcesInPublishedEventWhenMetadataHasBoth() {
+    var movie = Movie.builder().title("Inception").build();
+    var imageSources =
+        List.<ImageSource>of(
+            new TmdbImageSource(ImageType.POSTER, "/poster.jpg"),
+            new TmdbImageSource(ImageType.BACKDROP, "/backdrop.jpg"));
+    var metadataResult = new MetadataResult<>(movie, imageSources, Map.of(), Map.of());
     var mediaFile =
         MediaFile.builder()
             .filename("inception.mkv")
@@ -174,16 +182,17 @@ class MovieServiceTest {
             .size(1000L)
             .build();
 
-    movieService.createMovieWithAssociations(movie, mediaFile);
+    movieService.createMovieWithAssociations(metadataResult, mediaFile);
 
     var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
     assertThat(events.getFirst().imageSources()).hasSize(2);
   }
 
   @Test
-  @DisplayName("Should exclude source when movie poster path is null")
-  void shouldExcludeSourceWhenMoviePosterPathIsNull() {
-    var movie = Movie.builder().title("Inception").backdropPath("/backdrop.jpg").build();
+  @DisplayName("Should not publish event when image sources list is empty")
+  void shouldNotPublishEventWhenImageSourcesListIsEmpty() {
+    var movie = Movie.builder().title("Inception").build();
+    var metadataResult = new MetadataResult<>(movie, List.of(), Map.of(), Map.of());
     var mediaFile =
         MediaFile.builder()
             .filename("inception.mkv")
@@ -191,9 +200,9 @@ class MovieServiceTest {
             .size(1000L)
             .build();
 
-    movieService.createMovieWithAssociations(movie, mediaFile);
+    movieService.createMovieWithAssociations(metadataResult, mediaFile);
 
     var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
-    assertThat(events.getFirst().imageSources()).hasSize(1);
+    assertThat(events).isEmpty();
   }
 }

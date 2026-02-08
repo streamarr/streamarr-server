@@ -10,6 +10,7 @@ import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.services.metadata.MetadataProvider;
+import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.TheMovieDatabaseHttpService;
 import com.streamarr.server.services.metadata.tmdb.TmdbCredits;
@@ -20,6 +21,8 @@ import java.io.IOException;
 import java.time.LocalDate;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -65,7 +68,8 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
     return Optional.empty();
   }
 
-  public Optional<Movie> getMetadata(RemoteSearchResult remoteSearchResult, Library library) {
+  public Optional<MetadataResult<Movie>> getMetadata(
+      RemoteSearchResult remoteSearchResult, Library library) {
     try {
       var tmdbMovie = theMovieDatabaseHttpService.getMovieMetadata(remoteSearchResult.externalId());
 
@@ -91,8 +95,6 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
               .externalIds(mapExternalIds(tmdbMovie))
               .tagline(tmdbMovie.getTagline())
               .summary(tmdbMovie.getOverview())
-              .backdropPath(tmdbMovie.getBackdropPath())
-              .posterPath(tmdbMovie.getPosterPath())
               .runtime(tmdbMovie.getRuntime())
               .originalTitle(tmdbMovie.getOriginalTitle())
               .titleSort(TitleSortUtil.computeTitleSort(tmdbMovie.getTitle()))
@@ -103,7 +105,6 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
                               Company.builder()
                                   .sourceId(String.valueOf(c.getId()))
                                   .name(c.getName())
-                                  .logoPath(c.getLogoPath())
                                   .build())
                       .collect(Collectors.toSet()))
               .cast(
@@ -113,7 +114,6 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
                               Person.builder()
                                   .sourceId(String.valueOf(credit.getId()))
                                   .name(credit.getName())
-                                  .profilePath(credit.getProfilePath())
                                   .build())
                       .collect(Collectors.toList()))
               .directors(
@@ -124,7 +124,6 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
                               Person.builder()
                                   .sourceId(String.valueOf(crew.getId()))
                                   .name(crew.getName())
-                                  .profilePath(crew.getProfilePath())
                                   .build())
                       .collect(Collectors.toList()))
               .genres(
@@ -146,7 +145,7 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
               movieBuilder.contentRating(
                   new ContentRating("MPAA", movieRelease.getCertification(), "US")));
 
-      return Optional.of(movieBuilder.build());
+      return Optional.of(new MetadataResult<>(movieBuilder.build(), List.of(), Map.of(), Map.of()));
 
     } catch (IOException ex) {
       log.error(

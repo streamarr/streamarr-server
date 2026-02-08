@@ -216,14 +216,14 @@ public class SeriesFileProcessor {
   }
 
   private Optional<Series> createSeries(Library library, RemoteSearchResult searchResult) {
-    var seriesOpt = seriesMetadataProviderResolver.getMetadata(searchResult, library);
+    var metadataResult = seriesMetadataProviderResolver.getMetadata(searchResult, library);
 
-    if (seriesOpt.isEmpty()) {
+    if (metadataResult.isEmpty()) {
       log.error("Failed to fetch series metadata for TMDB id '{}'", searchResult.externalId());
       return Optional.empty();
     }
 
-    return Optional.of(seriesService.createSeriesWithAssociations(seriesOpt.get()));
+    return Optional.of(seriesService.createSeriesWithAssociations(metadataResult.get()));
   }
 
   private Optional<Season> createSeasonWithEpisodes(
@@ -247,7 +247,6 @@ public class SeriesFileProcessor {
                 .title(details.name())
                 .seasonNumber(details.seasonNumber())
                 .overview(details.overview())
-                .posterPath(details.posterPath())
                 .airDate(details.airDate())
                 .series(series)
                 .library(library)
@@ -261,7 +260,6 @@ public class SeriesFileProcessor {
                         .title(ep.name())
                         .episodeNumber(ep.episodeNumber())
                         .overview(ep.overview())
-                        .stillPath(ep.stillPath())
                         .airDate(ep.airDate())
                         .runtime(ep.runtime())
                         .season(season)

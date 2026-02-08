@@ -9,6 +9,7 @@ import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
+import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.TheMovieDatabaseHttpService;
 import com.streamarr.server.services.metadata.tmdb.TmdbContentRatings;
@@ -20,6 +21,8 @@ import java.io.IOException;
 import java.time.LocalDate;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -65,7 +68,8 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
     return Optional.empty();
   }
 
-  public Optional<Series> getMetadata(RemoteSearchResult remoteSearchResult, Library library) {
+  public Optional<MetadataResult<Series>> getMetadata(
+      RemoteSearchResult remoteSearchResult, Library library) {
     try {
       var tmdbSeries =
           theMovieDatabaseHttpService.getTvSeriesMetadata(remoteSearchResult.externalId());
@@ -98,8 +102,6 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
               .externalIds(mapExternalIds(tmdbSeries))
               .tagline(tmdbSeries.getTagline())
               .summary(tmdbSeries.getOverview())
-              .backdropPath(tmdbSeries.getBackdropPath())
-              .posterPath(tmdbSeries.getPosterPath())
               .runtime(runtime)
               .studios(
                   productionCompanies.stream()
@@ -108,7 +110,6 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
                               Company.builder()
                                   .sourceId(String.valueOf(c.getId()))
                                   .name(c.getName())
-                                  .logoPath(c.getLogoPath())
                                   .build())
                       .collect(Collectors.toSet()))
               .cast(
@@ -118,7 +119,6 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
                               Person.builder()
                                   .sourceId(String.valueOf(credit.getId()))
                                   .name(credit.getName())
-                                  .profilePath(credit.getProfilePath())
                                   .build())
                       .collect(Collectors.toList()))
               .directors(
@@ -129,7 +129,6 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
                               Person.builder()
                                   .sourceId(String.valueOf(crew.getId()))
                                   .name(crew.getName())
-                                  .profilePath(crew.getProfilePath())
                                   .build())
                       .collect(Collectors.toList()))
               .genres(
@@ -151,7 +150,8 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
               seriesBuilder.contentRating(
                   new ContentRating("TV Parental Guidelines", rating.getRating(), "US")));
 
-      return Optional.of(seriesBuilder.build());
+      return Optional.of(
+          new MetadataResult<>(seriesBuilder.build(), List.of(), Map.of(), Map.of()));
 
     } catch (IOException ex) {
       log.error(

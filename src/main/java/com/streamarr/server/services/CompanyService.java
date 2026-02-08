@@ -1,14 +1,14 @@
 package com.streamarr.server.services;
 
 import com.streamarr.server.domain.media.ImageEntityType;
-import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.repositories.CompanyRepository;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
-import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
+import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
@@ -34,11 +34,17 @@ public class CompanyService {
   }
 
   @Transactional
-  public Set<Company> getOrCreateCompanies(Set<Company> companies) {
-    return companies.stream().map(this::findOrCreateCompany).collect(Collectors.toSet());
+  public Set<Company> getOrCreateCompanies(
+      Set<Company> companies, Map<String, List<ImageSource>> imageSourcesBySourceId) {
+    return companies.stream()
+        .map(
+            c ->
+                findOrCreateCompany(
+                    c, imageSourcesBySourceId.getOrDefault(c.getSourceId(), List.of())))
+        .collect(Collectors.toSet());
   }
 
-  private Company findOrCreateCompany(Company company) {
+  private Company findOrCreateCompany(Company company, List<ImageSource> imageSources) {
     var mutex = mutexFactory.getMutex(company.getSourceId());
 
     try {
@@ -49,12 +55,11 @@ public class CompanyService {
       if (existing.isPresent()) {
         var target = existing.get();
         target.setName(company.getName());
-        target.setLogoPath(company.getLogoPath());
         return companyRepository.save(target);
       }
 
       var savedCompany = companyRepository.save(company);
-      publishImageEvent(savedCompany);
+      publishImageEvent(savedCompany, imageSources);
       return savedCompany;
     } finally {
       if (mutex.isHeldByCurrentThread()) {
@@ -63,15 +68,12 @@ public class CompanyService {
     }
   }
 
-  private void publishImageEvent(Company company) {
-    if (company.getLogoPath() == null) {
+  private void publishImageEvent(Company company, List<ImageSource> imageSources) {
+    if (imageSources.isEmpty()) {
       return;
     }
 
     eventPublisher.publishEvent(
-        new MetadataEnrichedEvent(
-            company.getId(),
-            ImageEntityType.COMPANY,
-            List.of(new TmdbImageSource(ImageType.LOGO, company.getLogoPath()))));
+        new MetadataEnrichedEvent(company.getId(), ImageEntityType.COMPANY, imageSources));
   }
 }

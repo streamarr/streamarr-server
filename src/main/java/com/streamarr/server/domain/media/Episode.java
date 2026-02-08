@@ -24,8 +24,6 @@ public class Episode extends BaseCollectable<Episode> {
 
   private String overview;
 
-  private String stillPath;
-
   private LocalDate airDate;
 
   private Integer runtime;

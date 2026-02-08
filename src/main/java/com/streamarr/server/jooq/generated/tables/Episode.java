@@ -82,11 +82,6 @@ public class Episode extends TableImpl<EpisodeRecord> {
     public final TableField<EpisodeRecord, String> OVERVIEW = createField(DSL.name("overview"), SQLDataType.CLOB, this, "");
 
     /**
-     * The column <code>public.episode.still_path</code>.
-     */
-    public final TableField<EpisodeRecord, String> STILL_PATH = createField(DSL.name("still_path"), SQLDataType.CLOB, this, "");
-
-    /**
      * The column <code>public.episode.air_date</code>.
      */
     public final TableField<EpisodeRecord, LocalDate> AIR_DATE = createField(DSL.name("air_date"), SQLDataType.LOCALDATE, this, "");

@@ -7,9 +7,6 @@ type Series implements BaseCollectable {
     title: String
     originalTitle: String
     titleSort: String
-    backdropPath: String
-    logoPath: String
-    posterPath: String
     tagline: String
     summary: String
     runtime: Int

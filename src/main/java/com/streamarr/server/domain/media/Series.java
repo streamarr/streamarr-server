@@ -35,12 +35,6 @@ import lombok.experimental.SuperBuilder;
 @AllArgsConstructor
 public class Series extends BaseCollectable<Series> {
 
-  private String backdropPath;
-
-  private String logoPath;
-
-  private String posterPath;
-
   private String tagline;
 
   private String summary;

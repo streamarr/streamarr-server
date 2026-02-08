@@ -14,6 +14,7 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.time.LocalDate;
@@ -238,8 +239,8 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
     var result = provider.getMetadata(buildSearchResult("1396"), savedLibrary);
 
     assertThat(result).isPresent();
-    assertThat(result.get().getCast()).isEmpty();
-    assertThat(result.get().getDirectors()).isEmpty();
+    assertThat(result.get().entity().getCast()).isEmpty();
+    assertThat(result.get().entity().getDirectors()).isEmpty();
   }
 
   @Test
@@ -276,12 +277,13 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should map backdrop and poster paths when TV response includes image paths")
-  void shouldMapBackdropAndPosterPathsWhenResponseIncludesImagePaths() {
-    var series = getMetadataFromFullResponse();
+  @DisplayName("Should return empty image sources in MetadataResult")
+  void shouldReturnEmptyImageSourcesInMetadataResult() {
+    var result = getFullMetadataResult();
 
-    assertThat(series.getBackdropPath()).isEqualTo("/zzWGRQUhBaS2eSBzNkwpT2hKZVh.jpg");
-    assertThat(series.getPosterPath()).isEqualTo("/ggFHVNu6YYI5L9pCfOacjizRGt.jpg");
+    assertThat(result.imageSources()).isEmpty();
+    assertThat(result.personImageSources()).isEmpty();
+    assertThat(result.companyImageSources()).isEmpty();
   }
 
   @Test
@@ -296,7 +298,7 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
     var result = provider.getMetadata(buildSearchResult("1396"), savedLibrary);
 
     assertThat(result).isPresent();
-    assertThat(result.get().getContentRating()).isNull();
+    assertThat(result.get().entity().getContentRating()).isNull();
   }
 
   @Test
@@ -307,7 +309,7 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
     var result = provider.getMetadata(buildSearchResult("1396"), savedLibrary);
 
     assertThat(result).isPresent();
-    assertThat(result.get().getRuntime()).isNull();
+    assertThat(result.get().entity().getRuntime()).isNull();
   }
 
   @Test
@@ -318,9 +320,9 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
     var result = provider.getMetadata(buildSearchResult("1396"), savedLibrary);
 
     assertThat(result).isPresent();
-    assertThat(result.get().getExternalIds()).hasSize(1);
+    assertThat(result.get().entity().getExternalIds()).hasSize(1);
     assertThat(
-            result.get().getExternalIds().stream()
+            result.get().entity().getExternalIds().stream()
                 .anyMatch(id -> id.getExternalSourceType() == ExternalSourceType.TMDB))
         .isTrue();
   }
@@ -420,11 +422,15 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
 
   // --- Helpers ---
 
-  private Series getMetadataFromFullResponse() {
+  private MetadataResult<Series> getFullMetadataResult() {
     stubFullSeriesResponse();
     var result = provider.getMetadata(buildSearchResult("1396"), savedLibrary);
     assertThat(result).isPresent();
     return result.get();
+  }
+
+  private Series getMetadataFromFullResponse() {
+    return getFullMetadataResult().entity();
   }
 
   private RemoteSearchResult buildSearchResult(String externalId) {

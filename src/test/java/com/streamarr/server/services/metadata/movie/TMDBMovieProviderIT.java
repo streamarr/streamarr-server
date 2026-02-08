@@ -14,6 +14,7 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.time.LocalDate;
@@ -232,9 +233,9 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
     var result = provider.getMetadata(buildSearchResult("27205"), savedLibrary);
 
     assertThat(result).isPresent();
-    assertThat(result.get().getExternalIds()).hasSize(1);
+    assertThat(result.get().entity().getExternalIds()).hasSize(1);
     assertThat(
-            result.get().getExternalIds().stream()
+            result.get().entity().getExternalIds().stream()
                 .anyMatch(id -> id.getExternalSourceType() == ExternalSourceType.TMDB))
         .isTrue();
   }
@@ -251,7 +252,7 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
     var result = provider.getMetadata(buildSearchResult("27205"), savedLibrary);
 
     assertThat(result).isPresent();
-    assertThat(result.get().getContentRating()).isNull();
+    assertThat(result.get().entity().getContentRating()).isNull();
   }
 
   @Test
@@ -262,7 +263,7 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
     var result = provider.getMetadata(buildSearchResult("27205"), savedLibrary);
 
     assertThat(result).isPresent();
-    assertThat(result.get().getCast()).isEmpty();
+    assertThat(result.get().entity().getCast()).isEmpty();
   }
 
   @Test
@@ -273,7 +274,7 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
     var result = provider.getMetadata(buildSearchResult("27205"), savedLibrary);
 
     assertThat(result).isPresent();
-    assertThat(result.get().getContentRating()).isNull();
+    assertThat(result.get().entity().getContentRating()).isNull();
   }
 
   @Test
@@ -284,7 +285,7 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
     var result = provider.getMetadata(buildSearchResult("27205"), savedLibrary);
 
     assertThat(result).isPresent();
-    assertThat(result.get().getStudios()).isEmpty();
+    assertThat(result.get().entity().getStudios()).isEmpty();
   }
 
   @Test
@@ -299,7 +300,7 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
     var result = provider.getMetadata(buildSearchResult("27205"), savedLibrary);
 
     assertThat(result).isPresent();
-    assertThat(result.get().getReleaseDate()).isNull();
+    assertThat(result.get().entity().getReleaseDate()).isNull();
   }
 
   @Test
@@ -363,39 +364,26 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should map profile path when TMDB response includes cast profile path")
-  void shouldMapProfilePathWhenResponseIncludesCastProfilePath() {
-    var movie = getMetadataFromFullResponse();
+  @DisplayName("Should return empty image sources in MetadataResult")
+  void shouldReturnEmptyImageSourcesInMetadataResult() {
+    var result = getFullMetadataResult();
 
-    assertThat(movie.getCast().get(0).getProfilePath())
-        .isEqualTo("/wo2hJpn04vbtmh0B9utCFdsQhxM.jpg");
-  }
-
-  @Test
-  @DisplayName("Should map logo path when TMDB response includes company logo path")
-  void shouldMapLogoPathWhenResponseIncludesCompanyLogoPath() {
-    var movie = getMetadataFromFullResponse();
-
-    assertThat(movie.getStudios().iterator().next().getLogoPath())
-        .isEqualTo("/8M99Dkt23MjQMTTWukq4m5XsEuo.png");
-  }
-
-  @Test
-  @DisplayName("Should map backdrop and poster paths when TMDB response includes image paths")
-  void shouldMapBackdropAndPosterPathsWhenResponseIncludesImagePaths() {
-    var movie = getMetadataFromFullResponse();
-
-    assertThat(movie.getBackdropPath()).isEqualTo("/s3TBrRGB1iav7gFOCNx3H31MoES.jpg");
-    assertThat(movie.getPosterPath()).isEqualTo("/oYuLEt3zVCKq57qu2F8dT7NIa6f.jpg");
+    assertThat(result.imageSources()).isEmpty();
+    assertThat(result.personImageSources()).isEmpty();
+    assertThat(result.companyImageSources()).isEmpty();
   }
 
   // --- Helpers ---
 
-  private Movie getMetadataFromFullResponse() {
+  private MetadataResult<Movie> getFullMetadataResult() {
     stubFullMovieResponse();
     var result = provider.getMetadata(buildSearchResult("27205"), savedLibrary);
     assertThat(result).isPresent();
     return result.get();
+  }
+
+  private Movie getMetadataFromFullResponse() {
+    return getFullMetadataResult().entity();
   }
 
   private RemoteSearchResult buildSearchResult(String externalId) {

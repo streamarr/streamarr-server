@@ -119,20 +119,6 @@ public class CompanyRecord extends UpdatableRecordImpl<CompanyRecord> {
         return (String) get(6);
     }
 
-    /**
-     * Setter for <code>public.company.logo_path</code>.
-     */
-    public void setLogoPath(String value) {
-        set(7, value);
-    }
-
-    /**
-     * Getter for <code>public.company.logo_path</code>.
-     */
-    public String getLogoPath() {
-        return (String) get(7);
-    }
-
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -156,7 +142,7 @@ public class CompanyRecord extends UpdatableRecordImpl<CompanyRecord> {
     /**
      * Create a detached, initialised CompanyRecord
      */
-    public CompanyRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, String name, String sourceId, String logoPath) {
+    public CompanyRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, String name, String sourceId) {
         super(Company.COMPANY);
 
         setId(id);
@@ -166,7 +152,6 @@ public class CompanyRecord extends UpdatableRecordImpl<CompanyRecord> {
         setLastModifiedBy(lastModifiedBy);
         setName(name);
         setSourceId(sourceId);
-        setLogoPath(logoPath);
         resetTouchedOnNotNull();
     }
 }

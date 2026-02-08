@@ -9,7 +9,7 @@ public interface MetadataProvider<T> {
 
   Optional<RemoteSearchResult> search(VideoFileParserResult parserResult);
 
-  Optional<T> getMetadata(RemoteSearchResult remoteSearchResult, Library library);
+  Optional<MetadataResult<T>> getMetadata(RemoteSearchResult remoteSearchResult, Library library);
 
   ExternalAgentStrategy getAgentStrategy();
 }

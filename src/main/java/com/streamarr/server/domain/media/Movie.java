@@ -37,10 +37,6 @@ import lombok.experimental.SuperBuilder;
 @AllArgsConstructor
 public class Movie extends BaseCollectable<Movie> {
 
-  private String backdropPath;
-
-  private String posterPath;
-
   private String tagline;
 
   private String summary;

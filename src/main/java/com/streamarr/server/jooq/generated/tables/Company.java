@@ -95,11 +95,6 @@ public class Company extends TableImpl<CompanyRecord> {
      */
     public final TableField<CompanyRecord, String> SOURCE_ID = createField(DSL.name("source_id"), SQLDataType.CLOB.nullable(false), this, "");
 
-    /**
-     * The column <code>public.company.logo_path</code>.
-     */
-    public final TableField<CompanyRecord, String> LOGO_PATH = createField(DSL.name("logo_path"), SQLDataType.CLOB, this, "");
-
     private Company(Name alias, Table<CompanyRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }

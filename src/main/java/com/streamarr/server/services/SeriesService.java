@@ -2,7 +2,6 @@ package com.streamarr.server.services;
 
 import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.media.ImageEntityType;
-import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.graphql.cursor.CursorUtil;
@@ -10,13 +9,12 @@ import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.graphql.cursor.MediaPaginationOptions;
 import com.streamarr.server.graphql.cursor.PaginationOptions;
 import com.streamarr.server.repositories.media.SeriesRepository;
+import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.events.ImageSource;
-import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import graphql.relay.Connection;
 import graphql.relay.DefaultEdge;
 import graphql.relay.Edge;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -59,32 +57,27 @@ public class SeriesService {
   }
 
   @Transactional
-  public Series createSeriesWithAssociations(Series series) {
-    series.setCast(personService.getOrCreatePersons(series.getCast()));
-    series.setDirectors(personService.getOrCreatePersons(series.getDirectors()));
+  public Series createSeriesWithAssociations(MetadataResult<Series> metadataResult) {
+    var series = metadataResult.entity();
+
+    series.setCast(
+        personService.getOrCreatePersons(series.getCast(), metadataResult.personImageSources()));
+    series.setDirectors(
+        personService.getOrCreatePersons(
+            series.getDirectors(), metadataResult.personImageSources()));
     series.setGenres(genreService.getOrCreateGenres(series.getGenres()));
-    series.setStudios(companyService.getOrCreateCompanies(series.getStudios()));
+    series.setStudios(
+        companyService.getOrCreateCompanies(
+            series.getStudios(), metadataResult.companyImageSources()));
 
     var savedSeries = seriesRepository.saveAndFlush(series);
 
-    publishImageEvent(savedSeries);
+    publishImageEvent(savedSeries, metadataResult.imageSources());
 
     return savedSeries;
   }
 
-  private void publishImageEvent(Series series) {
-    var sources = new ArrayList<ImageSource>();
-
-    if (series.getPosterPath() != null) {
-      sources.add(new TmdbImageSource(ImageType.POSTER, series.getPosterPath()));
-    }
-    if (series.getBackdropPath() != null) {
-      sources.add(new TmdbImageSource(ImageType.BACKDROP, series.getBackdropPath()));
-    }
-    if (series.getLogoPath() != null) {
-      sources.add(new TmdbImageSource(ImageType.LOGO, series.getLogoPath()));
-    }
-
+  private void publishImageEvent(Series series, List<ImageSource> sources) {
     if (!sources.isEmpty()) {
       eventPublisher.publishEvent(
           new MetadataEnrichedEvent(series.getId(), ImageEntityType.SERIES, sources));
