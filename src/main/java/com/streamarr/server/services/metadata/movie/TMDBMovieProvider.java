@@ -5,6 +5,7 @@ import com.streamarr.server.domain.ExternalIdentifier;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.ContentRating;
+import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Genre;
@@ -13,13 +14,19 @@ import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.TheMovieDatabaseHttpService;
+import com.streamarr.server.services.metadata.events.ImageSource;
+import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
+import com.streamarr.server.services.metadata.tmdb.TmdbCredit;
 import com.streamarr.server.services.metadata.tmdb.TmdbCredits;
 import com.streamarr.server.services.metadata.tmdb.TmdbMovie;
+import com.streamarr.server.services.metadata.tmdb.TmdbProductionCompany;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import com.streamarr.server.utils.TitleSortUtil;
 import java.io.IOException;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -145,7 +152,13 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
               movieBuilder.contentRating(
                   new ContentRating("MPAA", movieRelease.getCertification(), "US")));
 
-      return Optional.of(new MetadataResult<>(movieBuilder.build(), List.of(), Map.of(), Map.of()));
+      var imageSources = buildImageSources(tmdbMovie);
+      var personImageSources = buildPersonImageSources(castList, crewList);
+      var companyImageSources = buildCompanyImageSources(productionCompanies);
+
+      return Optional.of(
+          new MetadataResult<>(
+              movieBuilder.build(), imageSources, personImageSources, companyImageSources));
 
     } catch (IOException ex) {
       log.error(
@@ -180,5 +193,57 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
     }
 
     return externalIdSet;
+  }
+
+  private List<ImageSource> buildImageSources(TmdbMovie tmdbMovie) {
+    var sources = new ArrayList<ImageSource>();
+
+    if (StringUtils.isNotBlank(tmdbMovie.getPosterPath())) {
+      sources.add(new TmdbImageSource(ImageType.POSTER, tmdbMovie.getPosterPath()));
+    }
+    if (StringUtils.isNotBlank(tmdbMovie.getBackdropPath())) {
+      sources.add(new TmdbImageSource(ImageType.BACKDROP, tmdbMovie.getBackdropPath()));
+    }
+
+    return sources;
+  }
+
+  private Map<String, List<ImageSource>> buildPersonImageSources(
+      List<TmdbCredit> castList, List<TmdbCredit> crewList) {
+    var sources = new HashMap<String, List<ImageSource>>();
+
+    for (var credit : castList) {
+      addPersonImageSource(sources, credit);
+    }
+    for (var crew : crewList) {
+      if ("Director".equals(crew.getJob())) {
+        addPersonImageSource(sources, crew);
+      }
+    }
+
+    return sources;
+  }
+
+  private void addPersonImageSource(Map<String, List<ImageSource>> sources, TmdbCredit credit) {
+    if (StringUtils.isNotBlank(credit.getProfilePath())) {
+      sources
+          .computeIfAbsent(String.valueOf(credit.getId()), k -> new ArrayList<>())
+          .add(new TmdbImageSource(ImageType.PROFILE, credit.getProfilePath()));
+    }
+  }
+
+  private Map<String, List<ImageSource>> buildCompanyImageSources(
+      List<TmdbProductionCompany> companies) {
+    var sources = new HashMap<String, List<ImageSource>>();
+
+    for (var company : companies) {
+      if (StringUtils.isNotBlank(company.getLogoPath())) {
+        sources
+            .computeIfAbsent(String.valueOf(company.getId()), k -> new ArrayList<>())
+            .add(new TmdbImageSource(ImageType.LOGO, company.getLogoPath()));
+      }
+    }
+
+    return sources;
   }
 }

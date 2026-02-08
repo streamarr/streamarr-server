@@ -11,11 +11,13 @@ import com.github.tomakehurst.wiremock.WireMockServer;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
+import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.time.LocalDate;
 import org.junit.jupiter.api.AfterAll;
@@ -277,13 +279,22 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should return empty image sources in MetadataResult")
-  void shouldReturnEmptyImageSourcesInMetadataResult() {
+  @DisplayName("Should build image sources when TV response includes backdrop and poster paths")
+  void shouldBuildImageSourcesWhenResponseIncludesBackdropAndPosterPaths() {
     var result = getFullMetadataResult();
 
-    assertThat(result.imageSources()).isEmpty();
-    assertThat(result.personImageSources()).isEmpty();
-    assertThat(result.companyImageSources()).isEmpty();
+    assertThat(result.imageSources()).hasSize(2);
+    assertThat(result.imageSources())
+        .anyMatch(
+            s ->
+                s instanceof TmdbImageSource t
+                    && t.imageType() == ImageType.POSTER
+                    && "/ggFHVNu6YYI5L9pCfOacjizRGt.jpg".equals(t.pathFragment()))
+        .anyMatch(
+            s ->
+                s instanceof TmdbImageSource t
+                    && t.imageType() == ImageType.BACKDROP
+                    && "/zzWGRQUhBaS2eSBzNkwpT2hKZVh.jpg".equals(t.pathFragment()));
   }
 
   @Test

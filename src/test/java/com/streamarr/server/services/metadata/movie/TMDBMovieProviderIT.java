@@ -11,11 +11,13 @@ import com.github.tomakehurst.wiremock.WireMockServer;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
+import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.time.LocalDate;
 import org.junit.jupiter.api.AfterAll;
@@ -364,13 +366,49 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should return empty image sources in MetadataResult")
-  void shouldReturnEmptyImageSourcesInMetadataResult() {
+  @DisplayName("Should build person image sources when TMDB response includes cast profile path")
+  void shouldBuildPersonImageSourcesWhenResponseIncludesCastProfilePath() {
     var result = getFullMetadataResult();
 
-    assertThat(result.imageSources()).isEmpty();
-    assertThat(result.personImageSources()).isEmpty();
-    assertThat(result.companyImageSources()).isEmpty();
+    assertThat(result.personImageSources()).containsKey("6193");
+    var sources = result.personImageSources().get("6193");
+    assertThat(sources).hasSize(1);
+    assertThat(sources.getFirst()).isInstanceOf(TmdbImageSource.class);
+    var tmdbSource = (TmdbImageSource) sources.getFirst();
+    assertThat(tmdbSource.imageType()).isEqualTo(ImageType.PROFILE);
+    assertThat(tmdbSource.pathFragment()).isEqualTo("/wo2hJpn04vbtmh0B9utCFdsQhxM.jpg");
+  }
+
+  @Test
+  @DisplayName("Should build company image sources when TMDB response includes company logo path")
+  void shouldBuildCompanyImageSourcesWhenResponseIncludesCompanyLogoPath() {
+    var result = getFullMetadataResult();
+
+    assertThat(result.companyImageSources()).containsKey("923");
+    var sources = result.companyImageSources().get("923");
+    assertThat(sources).hasSize(1);
+    var tmdbSource = (TmdbImageSource) sources.getFirst();
+    assertThat(tmdbSource.imageType()).isEqualTo(ImageType.LOGO);
+    assertThat(tmdbSource.pathFragment()).isEqualTo("/8M99Dkt23MjQMTTWukq4m5XsEuo.png");
+  }
+
+  @Test
+  @DisplayName("Should build image sources when TMDB response includes backdrop and poster paths")
+  void shouldBuildImageSourcesWhenResponseIncludesBackdropAndPosterPaths() {
+    var result = getFullMetadataResult();
+
+    assertThat(result.imageSources()).hasSize(2);
+    assertThat(result.imageSources())
+        .anyMatch(
+            s ->
+                s instanceof TmdbImageSource t
+                    && t.imageType() == ImageType.POSTER
+                    && "/oYuLEt3zVCKq57qu2F8dT7NIa6f.jpg".equals(t.pathFragment()))
+        .anyMatch(
+            s ->
+                s instanceof TmdbImageSource t
+                    && t.imageType() == ImageType.BACKDROP
+                    && "/s3TBrRGB1iav7gFOCNx3H31MoES.jpg".equals(t.pathFragment()));
   }
 
   // --- Helpers ---
