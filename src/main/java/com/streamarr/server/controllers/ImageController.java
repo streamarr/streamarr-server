@@ -2,6 +2,7 @@ package com.streamarr.server.controllers;
 
 import com.streamarr.server.services.ImageService;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,8 +20,6 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class ImageController {
 
-  private static final MediaType JPEG_MEDIA_TYPE = MediaType.IMAGE_JPEG;
-
   private final ImageService imageService;
 
   @GetMapping("/{imageId}")
@@ -35,9 +34,9 @@ public class ImageController {
       var imageData = imageService.readImageFile(imageOpt.get());
 
       return ResponseEntity.ok()
-          .contentType(JPEG_MEDIA_TYPE)
+          .contentType(MediaType.IMAGE_JPEG)
           .cacheControl(
-              CacheControl.maxAge(java.time.Duration.ofDays(365)).cachePublic().immutable())
+              CacheControl.maxAge(Duration.ofDays(365)).cachePublic().immutable())
           .eTag(imageId.toString())
           .body(imageData);
     } catch (IOException e) {
