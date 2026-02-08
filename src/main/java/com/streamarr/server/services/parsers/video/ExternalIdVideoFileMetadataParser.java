@@ -2,9 +2,9 @@ package com.streamarr.server.services.parsers.video;
 
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.services.parsers.MetadataParser;
-import org.apache.commons.lang3.StringUtils;
 import java.util.Optional;
 import java.util.regex.Pattern;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Service;
 

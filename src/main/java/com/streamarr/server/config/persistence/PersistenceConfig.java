@@ -2,7 +2,6 @@ package com.streamarr.server.config.persistence;
 
 import java.util.Optional;
 import java.util.UUID;
-
 import org.jspecify.annotations.NonNull;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

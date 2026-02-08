@@ -25,6 +25,9 @@ tmdb:
   api:
     token: ${TMDB_API_TOKEN:}
 
+image:
+  storage-path: ${IMAGE_STORAGE_PATH:}
+
 streaming:
   max-concurrent-transcodes: ${STREAMING_MAX_CONCURRENT_TRANSCODES:8}
   segment-duration: ${STREAMING_SEGMENT_DURATION:6s}

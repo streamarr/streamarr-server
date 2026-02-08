@@ -102,11 +102,9 @@ class SeasonFieldResolverTest {
     String filepath =
         dgsQueryExecutor.executeAndExtractJsonPath(
             String.format(
-                "{ series(id: \"%s\") { seasons { episodes { files { filepath } } } } }",
-                seriesId),
+                "{ series(id: \"%s\") { seasons { episodes { files { filepath } } } } }", seriesId),
             "data.series.seasons[0].episodes[0].files[0].filepath");
 
-    assertThat(filepath)
-        .isEqualTo("/media/shows/Breaking Bad/Season 1/breaking.bad.s01e01.mkv");
+    assertThat(filepath).isEqualTo("/media/shows/Breaking Bad/Season 1/breaking.bad.s01e01.mkv");
   }
 }

@@ -285,8 +285,7 @@ class LibraryResolverTest {
   @Test
   @DisplayName("Should return error when removeLibrary called with invalid ID")
   void shouldReturnErrorWhenRemoveLibraryCalledWithInvalidId() {
-    var result =
-        dgsQueryExecutor.execute("mutation { removeLibrary(id: \"not-a-uuid\") }");
+    var result = dgsQueryExecutor.execute("mutation { removeLibrary(id: \"not-a-uuid\") }");
 
     assertThat(result.getErrors()).isNotEmpty();
     assertThat(result.getErrors().get(0).getMessage()).contains("Invalid ID format");

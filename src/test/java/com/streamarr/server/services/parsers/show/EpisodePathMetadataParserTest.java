@@ -76,20 +76,15 @@ public class EpisodePathMetadataParserTest {
                   "Love.Death.and.Robots",
                   1,
                   1),
-
               new TestCase(
                   "The Simpsons/The Simpsons.S25E08.Steal this episode.mp4", "The Simpsons", 25, 8),
               new TestCase("Case Closed (1996-2007)/Case Closed - 317.mkv", "Case Closed", 3, 17),
 
               // Verbose "Season X Episode Y" format
-              new TestCase(
-                  "/media/My Show Season 1 Episode 3.mkv", "My Show", 1, 3),
-              new TestCase(
-                  "/media/Show S02 Episode 05 - Title.mkv", "Show", 2, 5),
-              new TestCase(
-                  "/media/show season 2 episode 10.mkv", "show", 2, 10),
-              new TestCase(
-                  "/media/Show Season01 Episode03.mkv", "Show", 1, 3),
+              new TestCase("/media/My Show Season 1 Episode 3.mkv", "My Show", 1, 3),
+              new TestCase("/media/Show S02 Episode 05 - Title.mkv", "Show", 2, 5),
+              new TestCase("/media/show season 2 episode 10.mkv", "show", 2, 10),
+              new TestCase("/media/Show Season01 Episode03.mkv", "Show", 1, 3),
 
               // Version marker (anime fansub releases)
               new TestCase("/media/Show/Show.S01E01v2.mkv", "Show", 1, 1))
@@ -149,8 +144,7 @@ public class EpisodePathMetadataParserTest {
               new TestCase("The Simpsons/The Simpsons 101.avi", "The Simpsons", 101),
 
               // Version marker (anime fansub releases)
-              new TestCase(
-                  "/media/[SubsPlease] Show - 01v2 (1080p).mkv", "Show", 1))
+              new TestCase("/media/[SubsPlease] Show - 01v2 (1080p).mkv", "Show", 1))
           .map(
               testCase ->
                   DynamicTest.dynamicTest(
@@ -183,23 +177,18 @@ public class EpisodePathMetadataParserTest {
               new TestCase("/server/anything_1996-11-14", "anything", LocalDate.of(1996, 11, 14)),
 
               // Underscore and space delimiters (DVR recordings)
-              new TestCase(
-                  "/server/anything_1996_11_14", "anything", LocalDate.of(1996, 11, 14)),
-              new TestCase(
-                  "/server/anything 1996 11 14", "anything", LocalDate.of(1996, 11, 14)),
+              new TestCase("/server/anything_1996_11_14", "anything", LocalDate.of(1996, 11, 14)),
+              new TestCase("/server/anything 1996 11 14", "anything", LocalDate.of(1996, 11, 14)),
 
               // Reverse date (DD.MM.YYYY) with various delimiters
-              new TestCase(
-                  "/server/anything_14.11.1996", "anything", LocalDate.of(1996, 11, 14)),
-              new TestCase(
-                  "/server/anything_14_11_1996", "anything", LocalDate.of(1996, 11, 14)),
+              new TestCase("/server/anything_14.11.1996", "anything", LocalDate.of(1996, 11, 14)),
+              new TestCase("/server/anything_14_11_1996", "anything", LocalDate.of(1996, 11, 14)),
 
               // No series name (file is just a date)
               new TestCase("/server/1996.11.14", null, LocalDate.of(1996, 11, 14)),
 
               // Multi-word series name
-              new TestCase(
-                  "/server/ABC News 2018-03-24", "ABC News", LocalDate.of(2018, 3, 24)))
+              new TestCase("/server/ABC News 2018-03-24", "ABC News", LocalDate.of(2018, 3, 24)))
           .map(
               testCase ->
                   DynamicTest.dynamicTest(
@@ -433,9 +422,7 @@ public class EpisodePathMetadataParserTest {
                         testCase.filename(),
                         () -> {
                           var result =
-                              episodePathExtractionService
-                                  .parse(testCase.filename())
-                                  .orElseThrow();
+                              episodePathExtractionService.parse(testCase.filename()).orElseThrow();
 
                           assertThat(result.getSeasonNumber().orElseThrow())
                               .isEqualTo(testCase.season());

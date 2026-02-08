@@ -11,7 +11,6 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,8 +30,7 @@ public class FileProcessingTaskCoordinator {
   private final FileProcessingTaskRepository repository;
   private final Clock clock;
   private final Duration leaseDuration;
-  @Getter
-  private final String instanceId;
+  @Getter private final String instanceId;
 
   @Autowired
   public FileProcessingTaskCoordinator(

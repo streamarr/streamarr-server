@@ -8,5 +8,4 @@ public record RemoteSearchResult(
 
   @Builder
   public RemoteSearchResult {}
-
 }
