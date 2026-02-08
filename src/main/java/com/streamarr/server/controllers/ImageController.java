@@ -41,7 +41,7 @@ public class ImageController {
           .body(imageData);
     } catch (IOException e) {
       log.error("Failed to read image file for id: {}", imageId, e);
-      return ResponseEntity.notFound().build();
+      return ResponseEntity.internalServerError().build();
     }
   }
 }
