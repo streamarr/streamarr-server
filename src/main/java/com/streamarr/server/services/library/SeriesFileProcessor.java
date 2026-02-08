@@ -21,6 +21,7 @@ import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.nio.file.Path;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 @Slf4j
@@ -35,6 +36,7 @@ public class SeriesFileProcessor {
   private final SeasonRepository seasonRepository;
   private final EpisodeRepository episodeRepository;
   private final MutexFactory<String> mutexFactory;
+  private final ApplicationEventPublisher eventPublisher;
 
   public SeriesFileProcessor(
       EpisodePathMetadataParser episodePathMetadataParser,
@@ -44,7 +46,8 @@ public class SeriesFileProcessor {
       MediaFileRepository mediaFileRepository,
       SeasonRepository seasonRepository,
       EpisodeRepository episodeRepository,
-      MutexFactoryProvider mutexFactoryProvider) {
+      MutexFactoryProvider mutexFactoryProvider,
+      ApplicationEventPublisher eventPublisher) {
     this.episodePathMetadataParser = episodePathMetadataParser;
     this.seasonPathMetadataParser = seasonPathMetadataParser;
     this.seriesMetadataProviderResolver = seriesMetadataProviderResolver;
@@ -53,6 +56,7 @@ public class SeriesFileProcessor {
     this.seasonRepository = seasonRepository;
     this.episodeRepository = episodeRepository;
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
+    this.eventPublisher = eventPublisher;
   }
 
   public void process(Library library, MediaFile mediaFile) {
