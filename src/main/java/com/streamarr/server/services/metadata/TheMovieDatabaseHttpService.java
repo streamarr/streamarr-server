@@ -33,6 +33,7 @@ public class TheMovieDatabaseHttpService {
 
   private final String tmdbApiToken;
   private final String tmdbApiBaseUrl;
+  private final String tmdbImageBaseUrl;
 
   private final HttpClient client;
   private final ObjectMapper objectMapper;
@@ -40,10 +41,12 @@ public class TheMovieDatabaseHttpService {
   public TheMovieDatabaseHttpService(
       @Value("${tmdb.api.token:}") String tmdbApiToken,
       @Value("${tmdb.api.base-url:https://api.themoviedb.org/3}") String tmdbApiBaseUrl,
+      @Value("${tmdb.image.base-url:https://image.tmdb.org/t/p/original}") String tmdbImageBaseUrl,
       HttpClient client,
       ObjectMapper objectMapper) {
     this.tmdbApiToken = tmdbApiToken;
     this.tmdbApiBaseUrl = tmdbApiBaseUrl;
+    this.tmdbImageBaseUrl = tmdbImageBaseUrl;
     this.client = client;
     this.objectMapper = objectMapper;
   }
@@ -111,6 +114,19 @@ public class TheMovieDatabaseHttpService {
     var request = authenticatedRequest(uri).GET().build();
 
     return sendWithRetry(request, TmdbTvSeries.class);
+  }
+
+  public byte[] downloadImage(String pathFragment) throws IOException, InterruptedException {
+    var uri = URI.create(tmdbImageBaseUrl + pathFragment);
+    var request = HttpRequest.newBuilder().uri(uri).GET().build();
+    var response = client.send(request, HttpResponse.BodyHandlers.ofByteArray());
+
+    if (response.statusCode() != 200) {
+      throw new TmdbApiException(
+          response.statusCode(), "Failed to download image: " + pathFragment);
+    }
+
+    return response.body();
   }
 
   public TmdbTvSeason getTvSeasonDetails(String seriesId, int seasonNumber)

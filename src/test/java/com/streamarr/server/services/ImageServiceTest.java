@@ -1,0 +1,164 @@
+package com.streamarr.server.services;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.google.common.jimfs.Configuration;
+import com.google.common.jimfs.Jimfs;
+import com.streamarr.server.config.ImageProperties;
+import com.streamarr.server.domain.media.Image;
+import com.streamarr.server.domain.media.ImageEntityType;
+import com.streamarr.server.domain.media.ImageSize;
+import com.streamarr.server.domain.media.ImageType;
+import com.streamarr.server.fakes.FakeImageRepository;
+import com.streamarr.server.services.metadata.ImageVariantService;
+import java.awt.Color;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.nio.file.FileSystem;
+import java.nio.file.Files;
+import java.util.UUID;
+import javax.imageio.ImageIO;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+@DisplayName("Image Service Tests")
+class ImageServiceTest {
+
+  private FakeImageRepository imageRepository;
+  private ImageService imageService;
+  private FileSystem fileSystem;
+
+  @BeforeEach
+  void setUp() {
+    imageRepository = new FakeImageRepository();
+    fileSystem = Jimfs.newFileSystem(Configuration.unix());
+    var imageProperties = new ImageProperties("/data/images");
+    var imageVariantService = new ImageVariantService();
+    imageService =
+        new ImageService(imageRepository, imageVariantService, imageProperties, fileSystem);
+  }
+
+  @Test
+  @DisplayName("Should persist four image rows when processing image")
+  void shouldPersistFourImageRowsWhenProcessingImage() {
+    var entityId = UUID.randomUUID();
+    var imageData = createTestImage(600, 900);
+
+    imageService.processAndSaveImage(imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE);
+
+    var images = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
+    assertThat(images).hasSize(4);
+    assertThat(images)
+        .extracting(Image::getVariant)
+        .containsExactlyInAnyOrder(
+            ImageSize.SMALL, ImageSize.MEDIUM, ImageSize.LARGE, ImageSize.ORIGINAL);
+  }
+
+  @Test
+  @DisplayName("Should write variant files to disk when processing image")
+  void shouldWriteVariantFilesToDiskWhenProcessingImage() {
+    var entityId = UUID.randomUUID();
+    var imageData = createTestImage(600, 900);
+
+    imageService.processAndSaveImage(imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE);
+
+    var basePath = fileSystem.getPath("/data/images/movie", entityId.toString(), "poster");
+    assertThat(Files.exists(basePath.resolve("small.jpg"))).isTrue();
+    assertThat(Files.exists(basePath.resolve("medium.jpg"))).isTrue();
+    assertThat(Files.exists(basePath.resolve("large.jpg"))).isTrue();
+    assertThat(Files.exists(basePath.resolve("original.jpg"))).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should store relative path on image rows when saving")
+  void shouldStoreRelativePathOnImageRowsWhenSaving() {
+    var entityId = UUID.randomUUID();
+    var imageData = createTestImage(600, 900);
+
+    imageService.processAndSaveImage(imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE);
+
+    var images = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
+    var smallImage =
+        images.stream().filter(i -> i.getVariant() == ImageSize.SMALL).findFirst().orElseThrow();
+
+    assertThat(smallImage.getPath()).isEqualTo("movie/" + entityId + "/poster/small.jpg");
+  }
+
+  @Test
+  @DisplayName("Should return image when found by ID")
+  void shouldReturnImageWhenFoundById() {
+    var image = imageRepository.save(Image.builder().path("test/path.jpg").build());
+
+    var result = imageService.findById(image.getId());
+
+    assertThat(result).isPresent();
+    assertThat(result.get().getPath()).isEqualTo("test/path.jpg");
+  }
+
+  @Test
+  @DisplayName("Should return empty when image not found by ID")
+  void shouldReturnEmptyWhenImageNotFoundById() {
+    var result = imageService.findById(UUID.randomUUID());
+
+    assertThat(result).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should resolve file against base path when reading image file")
+  void shouldResolveFileAgainstBasePathWhenReadingImageFile() throws IOException {
+    var relativePath = "movie/test/poster/small.jpg";
+    var absolutePath = fileSystem.getPath("/data/images").resolve(relativePath);
+    Files.createDirectories(absolutePath.getParent());
+    var content = new byte[] {1, 2, 3};
+    Files.write(absolutePath, content);
+
+    var image = Image.builder().path(relativePath).build();
+
+    var result = imageService.readImageFile(image);
+
+    assertThat(result).isEqualTo(content);
+  }
+
+  @Test
+  @DisplayName("Should delete image rows and files when deleting for entity")
+  void shouldDeleteImageRowsAndFilesWhenDeletingForEntity() throws IOException {
+    var entityId = UUID.randomUUID();
+    var imageData = createTestImage(600, 900);
+
+    imageService.processAndSaveImage(imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE);
+
+    assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
+        .hasSize(4);
+
+    imageService.deleteImagesForEntity(entityId, ImageEntityType.MOVIE);
+
+    assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
+        .isEmpty();
+
+    var basePath = fileSystem.getPath("/data/images/movie", entityId.toString(), "poster");
+    assertThat(Files.exists(basePath.resolve("small.jpg"))).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should not fail when deleting images for entity with no images")
+  void shouldNotFailWhenDeletingImagesForEntityWithNoImages() {
+    imageService.deleteImagesForEntity(UUID.randomUUID(), ImageEntityType.MOVIE);
+  }
+
+  private byte[] createTestImage(int width, int height) {
+    var image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+    var graphics = image.createGraphics();
+    graphics.setColor(Color.BLUE);
+    graphics.fillRect(0, 0, width, height);
+    graphics.dispose();
+
+    try (var outputStream = new ByteArrayOutputStream()) {
+      ImageIO.write(image, "jpg", outputStream);
+      return outputStream.toByteArray();
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    }
+  }
+}
