@@ -14,6 +14,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
@@ -155,16 +156,27 @@ public class TheMovieDatabaseHttpService {
 
   private <T> T sendWithRetry(HttpRequest request, Class<T> responseType)
       throws IOException, InterruptedException {
+    var response =
+        executeWithRetry(request, HttpResponse.BodyHandlers.ofString(), Set.of(429));
+
+    if (response.statusCode() == 200) {
+      return objectMapper.readValue(response.body(), responseType);
+    }
+
+    var failure = objectMapper.readValue(response.body(), TmdbFailure.class);
+    throw new TmdbApiException(response.statusCode(), failure.getStatusMessage());
+  }
+
+  private <T> HttpResponse<T> executeWithRetry(
+      HttpRequest request,
+      HttpResponse.BodyHandler<T> bodyHandler,
+      Set<Integer> retryableStatuses)
+      throws IOException, InterruptedException {
     for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      var response = client.send(request, HttpResponse.BodyHandlers.ofString());
+      var response = client.send(request, bodyHandler);
 
-      if (response.statusCode() == 200) {
-        return objectMapper.readValue(response.body(), responseType);
-      }
-
-      if (response.statusCode() != 429) {
-        var failure = objectMapper.readValue(response.body(), TmdbFailure.class);
-        throw new TmdbApiException(response.statusCode(), failure.getStatusMessage());
+      if (!retryableStatuses.contains(response.statusCode())) {
+        return response;
       }
 
       if (attempt < MAX_RETRIES) {
@@ -176,7 +188,8 @@ public class TheMovieDatabaseHttpService {
                 .orElse(BASE_DELAY_MS * (1L << attempt) / 1000);
 
         log.warn(
-            "TMDB rate limited (429). Retrying after {}s (attempt {}/{})",
+            "TMDB rate limited ({}). Retrying after {}s (attempt {}/{})",
+            response.statusCode(),
             delaySeconds,
             attempt + 1,
             MAX_RETRIES);
