@@ -155,6 +155,43 @@ class DirectoryWatchingServiceTest {
     assertTimeout(Duration.ofMillis(500), () -> slowService.afterPropertiesSet());
   }
 
+  @Test
+  @DisplayName("Should not propagate exception when watcher setup fails on library added")
+  void shouldNotPropagateExceptionWhenSetupFailsOnLibraryAdded() throws InterruptedException {
+    var failingService = buildFailingSetupService();
+    var event = new LibraryAddedEvent(UUID.randomUUID(), tempDir.toString());
+
+    failingService.onLibraryAdded(event);
+
+    Thread.sleep(50);
+  }
+
+  @Test
+  @DisplayName("Should not propagate exception when watcher setup fails on initialization")
+  void shouldNotPropagateExceptionWhenSetupFailsOnInitialization() throws InterruptedException {
+    fakeLibraryRepository.save(
+        LibraryFixtureCreator.buildFakeLibrary().toBuilder().filepath(tempDir.toString()).build());
+    var failingService = buildFailingSetupService();
+
+    failingService.afterPropertiesSet();
+
+    Thread.sleep(50);
+  }
+
+  private DirectoryWatchingService buildFailingSetupService() {
+    return new DirectoryWatchingService(
+        fakeLibraryRepository,
+        path -> true,
+        null,
+        new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
+        null) {
+      @Override
+      public void setup() throws IOException {
+        throw new IOException("simulated failure");
+      }
+    };
+  }
+
   private DirectoryWatchingService buildSlowSetupService() {
     return new DirectoryWatchingService(
         fakeLibraryRepository,
