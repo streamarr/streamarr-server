@@ -134,7 +134,7 @@ class ImageEnrichmentListenerTest {
     listener.onMetadataEnriched(event);
 
     var images = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
-    assertThat(images).extracting(Image::getImageType).doesNotContain(ImageType.POSTER);
+    assertThat(images).extracting(Image::getImageType).containsOnly(ImageType.BACKDROP);
   }
 
   private static class FakeTmdbHttpService extends TheMovieDatabaseHttpService {
