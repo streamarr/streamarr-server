@@ -24,6 +24,7 @@ dgs:
 tmdb:
   api:
     token: ${TMDB_API_TOKEN:}
+    max-concurrent-requests: ${TMDB_API_MAX_CONCURRENT_REQUESTS:10}
   image:
     base-url: ${TMDB_IMAGE_BASE_URL:https://image.tmdb.org/t/p/original}
 

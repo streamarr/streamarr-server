@@ -13,6 +13,9 @@ import com.github.tomakehurst.wiremock.WireMockServer;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.services.metadata.tmdb.TmdbApiException;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
+import java.util.ArrayList;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -674,5 +677,54 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
 
     assertThatThrownBy(() -> service.downloadImage("/nonexistent.jpg"))
         .isInstanceOf(TmdbApiException.class);
+  }
+
+  @Test
+  @DisplayName("Should complete concurrent search requests without errors")
+  void shouldCompleteConcurrentSearchRequestsWithoutErrors() throws Exception {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/search/movie"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withFixedDelay(100)
+                    .withBody(
+                        """
+                    {
+                      "page": 1,
+                      "results": [
+                        {
+                          "id": 1,
+                          "title": "Test",
+                          "adult": false,
+                          "popularity": 1.0,
+                          "vote_count": 0,
+                          "vote_average": 0,
+                          "video": false
+                        }
+                      ],
+                      "total_results": 1,
+                      "total_pages": 1
+                    }
+                    """)));
+
+    var futures = new ArrayList<Future<?>>();
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      for (int i = 0; i < 20; i++) {
+        futures.add(
+            executor.submit(
+                () -> {
+                  var parserResult =
+                      VideoFileParserResult.builder().title("Test").year("2020").build();
+                  return service.searchForMovie(parserResult);
+                }));
+      }
+    }
+
+    for (var future : futures) {
+      assertThat(future.get()).isNotNull();
+    }
   }
 }
