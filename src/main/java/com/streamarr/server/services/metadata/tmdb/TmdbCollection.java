@@ -12,7 +12,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class TmdbCollection {
 
-  private int id;
+  private Integer id;
   private String name;
 
   @JsonProperty("poster_path")

@@ -16,7 +16,7 @@ public class TmdbSearchResult {
   @JsonProperty("poster_path")
   private String posterPath;
 
-  private boolean adult;
+  private Boolean adult;
   private String overview;
 
   @JsonProperty("release_date")
@@ -25,7 +25,7 @@ public class TmdbSearchResult {
   @JsonProperty("genre_ids")
   private List<Integer> genreIds;
 
-  private int id;
+  private Integer id;
 
   @JsonProperty("original_title")
   private String originalTitle;
@@ -38,13 +38,13 @@ public class TmdbSearchResult {
   @JsonProperty("backdrop_path")
   private String backdropPath;
 
-  private double popularity;
+  private Double popularity;
 
   @JsonProperty("vote_count")
-  private int voteCount;
+  private Integer voteCount;
 
-  private boolean video;
+  private Boolean video;
 
   @JsonProperty("vote_average")
-  private double voteAverage;
+  private Double voteAverage;
 }

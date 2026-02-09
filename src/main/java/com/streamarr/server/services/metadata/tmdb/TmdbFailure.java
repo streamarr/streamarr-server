@@ -15,8 +15,8 @@ public class TmdbFailure {
   @JsonProperty("status_message")
   private String statusMessage;
 
-  private boolean success;
+  private Boolean success;
 
   @JsonProperty("status_code")
-  private int statusCode;
+  private Integer statusCode;
 }

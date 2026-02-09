@@ -13,7 +13,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class TmdbTvSeries {
 
-  private int id;
+  private Integer id;
   private String name;
 
   @JsonProperty("original_name")

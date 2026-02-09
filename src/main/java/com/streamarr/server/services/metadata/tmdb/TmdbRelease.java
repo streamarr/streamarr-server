@@ -24,5 +24,5 @@ public class TmdbRelease {
   @JsonProperty("release_date")
   private String releaseDate;
 
-  private int type;
+  private Integer type;
 }

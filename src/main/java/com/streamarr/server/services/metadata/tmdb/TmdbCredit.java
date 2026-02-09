@@ -12,9 +12,9 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class TmdbCredit {
 
-  private int id;
-  private boolean adult;
-  private int gender;
+  private Integer id;
+  private Boolean adult;
+  private Integer gender;
 
   @JsonProperty("known_for_department")
   private String knownForDepartment;
@@ -24,7 +24,7 @@ public class TmdbCredit {
   @JsonProperty("original_name")
   private String originalName;
 
-  private double popularity;
+  private Double popularity;
 
   @JsonProperty("profile_path")
   private String profilePath;

@@ -13,12 +13,12 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class TmdbTvSeason {
 
-  private int id;
+  private Integer id;
   private String name;
   private String overview;
 
   @JsonProperty("season_number")
-  private int seasonNumber;
+  private Integer seasonNumber;
 
   @JsonProperty("air_date")
   private String airDate;

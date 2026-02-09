@@ -12,7 +12,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class TmdbProductionCompany {
 
-  private int id;
+  private Integer id;
   private String name;
 
   @JsonProperty("logo_path")
