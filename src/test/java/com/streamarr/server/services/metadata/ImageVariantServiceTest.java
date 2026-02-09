@@ -75,7 +75,7 @@ class ImageVariantServiceTest {
     for (var variant : variants) {
       var variantAspectRatio = (double) variant.width() / variant.height();
       assertThat(variantAspectRatio)
-          .isCloseTo(sourceAspectRatio, org.assertj.core.data.Offset.offset(0.02));
+          .isCloseTo(sourceAspectRatio, org.assertj.core.data.Offset.offset(0.005));
     }
   }
 

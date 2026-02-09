@@ -91,16 +91,17 @@ class ImageEnrichmentListenerTest {
     var entityId = UUID.randomUUID();
     tmdbHttpService.setImageData(createTestImage(600, 900));
 
-    imageRepository.save(
-        Image.builder()
-            .entityId(entityId)
-            .entityType(ImageEntityType.MOVIE)
-            .imageType(ImageType.POSTER)
-            .variant(ImageSize.SMALL)
-            .width(185)
-            .height(278)
-            .path("movie/" + entityId + "/poster/small.jpg")
-            .build());
+    var existingImage =
+        imageRepository.save(
+            Image.builder()
+                .entityId(entityId)
+                .entityType(ImageEntityType.MOVIE)
+                .imageType(ImageType.POSTER)
+                .variant(ImageSize.SMALL)
+                .width(185)
+                .height(278)
+                .path("movie/" + entityId + "/poster/small.jpg")
+                .build());
 
     var event =
         new MetadataEnrichedEvent(
@@ -112,6 +113,7 @@ class ImageEnrichmentListenerTest {
 
     var images = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
     assertThat(images).hasSize(1);
+    assertThat(images.getFirst().getId()).isEqualTo(existingImage.getId());
   }
 
   @Test
