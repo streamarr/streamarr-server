@@ -6,6 +6,7 @@ import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
+import java.util.concurrent.Executors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
@@ -44,15 +45,17 @@ public class ImageEnrichmentListener {
         return;
       }
 
-      for (var source : event.imageSources()) {
-        downloadAndProcessImage(source, event);
-
-        if (Thread.currentThread().isInterrupted()) {
-          return;
-        }
-      }
+      downloadAllImages(event);
     } finally {
       mutex.unlock();
+    }
+  }
+
+  private void downloadAllImages(MetadataEnrichedEvent event) {
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      for (var source : event.imageSources()) {
+        executor.submit(() -> downloadAndProcessImage(source, event));
+      }
     }
   }
 
