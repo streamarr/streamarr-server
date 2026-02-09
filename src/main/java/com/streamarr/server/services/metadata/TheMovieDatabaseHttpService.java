@@ -48,6 +48,10 @@ public class TheMovieDatabaseHttpService {
       @Value("${tmdb.api.max-concurrent-requests:10}") int maxConcurrentRequests,
       HttpClient client,
       ObjectMapper objectMapper) {
+    if (maxConcurrentRequests <= 0) {
+      throw new IllegalArgumentException(
+          "tmdb.api.max-concurrent-requests must be positive, got: " + maxConcurrentRequests);
+    }
     this.tmdbApiToken = tmdbApiToken;
     this.tmdbApiBaseUrl = tmdbApiBaseUrl;
     this.tmdbImageBaseUrl = tmdbImageBaseUrl;
