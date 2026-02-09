@@ -3,6 +3,7 @@ package com.streamarr.server.services.metadata;
 import com.streamarr.server.services.ImageService;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
+import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import lombok.extern.slf4j.Slf4j;
@@ -44,32 +45,37 @@ public class ImageEnrichmentListener {
       }
 
       for (var source : event.imageSources()) {
-        try {
-          var imageData =
-              switch (source) {
-                case TmdbImageSource tmdb -> tmdbHttpService.downloadImage(tmdb.pathFragment());
-              };
+        downloadAndProcessImage(source, event);
 
-          imageService.processAndSaveImage(
-              imageData, source.imageType(), event.entityId(), event.entityType());
-        } catch (InterruptedException e) {
-          Thread.currentThread().interrupt();
-          log.warn(
-              "Image processing interrupted for entity {} ({})",
-              event.entityId(),
-              event.entityType());
+        if (Thread.currentThread().isInterrupted()) {
           return;
-        } catch (Exception e) {
-          log.error(
-              "Failed to process image {} for entity {} ({})",
-              source.imageType(),
-              event.entityId(),
-              event.entityType(),
-              e);
         }
       }
     } finally {
       mutex.unlock();
+    }
+  }
+
+  private void downloadAndProcessImage(ImageSource source, MetadataEnrichedEvent event) {
+    try {
+      var imageData =
+          switch (source) {
+            case TmdbImageSource tmdb -> tmdbHttpService.downloadImage(tmdb.pathFragment());
+          };
+
+      imageService.processAndSaveImage(
+          imageData, source.imageType(), event.entityId(), event.entityType());
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      log.warn(
+          "Image processing interrupted for entity {} ({})", event.entityId(), event.entityType());
+    } catch (Exception e) {
+      log.error(
+          "Failed to process image {} for entity {} ({})",
+          source.imageType(),
+          event.entityId(),
+          event.entityType(),
+          e);
     }
   }
 }

@@ -116,7 +116,7 @@ class ImageEnrichmentListenerTest {
 
   @Test
   @DisplayName("Should restore interrupt flag when download is interrupted")
-  void shouldRestoreInterruptFlagWhenDownloadInterrupted() {
+  void shouldRestoreInterruptFlagWhenDownloadIsInterrupted() {
     var entityId = UUID.randomUUID();
     tmdbHttpService.setImageData(createTestImage(600, 900));
     tmdbHttpService.setInterruptOnPath("/poster.jpg");
