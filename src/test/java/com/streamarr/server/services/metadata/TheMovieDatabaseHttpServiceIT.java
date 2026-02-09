@@ -12,6 +12,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.services.metadata.tmdb.TmdbApiException;
+import com.streamarr.server.services.metadata.tmdb.TmdbSearchResults;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.util.ArrayList;
 import java.util.concurrent.Executors;
@@ -709,7 +710,7 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
                     }
                     """)));
 
-    var futures = new ArrayList<Future<?>>();
+    var futures = new ArrayList<Future<TmdbSearchResults>>();
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       for (int i = 0; i < 20; i++) {
@@ -724,7 +725,7 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
     }
 
     for (var future : futures) {
-      assertThat(future.get()).isNotNull();
+      assertThat(future.get().getResults()).hasSize(1);
     }
   }
 }

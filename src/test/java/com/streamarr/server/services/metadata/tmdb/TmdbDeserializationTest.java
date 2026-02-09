@@ -1,6 +1,6 @@
 package com.streamarr.server.services.metadata.tmdb;
 
-import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -31,7 +31,8 @@ class TmdbDeserializationTest {
         }
         """;
 
-    assertThatCode(() -> objectMapper.readValue(json, TmdbMovie.class))
-        .doesNotThrowAnyException();
+    var movie = objectMapper.readValue(json, TmdbMovie.class);
+
+    assertThat(movie.getCredits().getId()).isNull();
   }
 }
