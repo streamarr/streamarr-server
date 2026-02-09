@@ -55,5 +55,3 @@ buildNumber.properties
 
 ### Test fixtures ###
 src/test/resources/BigBuckBunny_320x180.mp4
-
-### jEnv ###
