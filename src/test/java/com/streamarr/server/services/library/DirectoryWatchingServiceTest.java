@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.junit.jupiter.api.Assertions.assertTimeout;
 
 import com.streamarr.server.config.LibraryScanProperties;
 import com.streamarr.server.fakes.FakeLibraryRepository;
@@ -11,6 +12,7 @@ import com.streamarr.server.services.library.events.LibraryRemovedEvent;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -125,14 +127,6 @@ class DirectoryWatchingServiceTest {
   }
 
   @Test
-  @DisplayName("Should start watching directory on LibraryAddedEvent")
-  void shouldStartWatchingDirectoryOnLibraryAddedEvent() {
-    var event = new LibraryAddedEvent(UUID.randomUUID(), tempDir.toString());
-
-    assertThatCode(() -> service.onLibraryAdded(event)).doesNotThrowAnyException();
-  }
-
-  @Test
   @DisplayName("Should stop watching directory on LibraryRemovedEvent")
   void shouldStopWatchingDirectoryOnLibraryRemovedEvent() throws IOException {
     service.addDirectory(tempDir);
@@ -143,11 +137,76 @@ class DirectoryWatchingServiceTest {
   }
 
   @Test
-  @DisplayName("Should load existing libraries on initialization")
-  void shouldLoadExistingLibrariesOnInitialization() {
+  @DisplayName("Should not block calling thread when library is added")
+  void shouldNotBlockCallingThreadWhenLibraryAdded() {
+    var slowService = buildSlowSetupService();
+    var event = new LibraryAddedEvent(UUID.randomUUID(), tempDir.toString());
+
+    assertTimeout(Duration.ofMillis(500), () -> slowService.onLibraryAdded(event));
+  }
+
+  @Test
+  @DisplayName("Should not block calling thread when initializing with existing libraries")
+  void shouldNotBlockCallingThreadWhenInitializingWithExistingLibraries() {
     fakeLibraryRepository.save(
         LibraryFixtureCreator.buildFakeLibrary().toBuilder().filepath(tempDir.toString()).build());
+    var slowService = buildSlowSetupService();
 
-    assertThatCode(() -> service.afterPropertiesSet()).doesNotThrowAnyException();
+    assertTimeout(Duration.ofMillis(500), () -> slowService.afterPropertiesSet());
+  }
+
+  @Test
+  @DisplayName("Should not propagate exception when watcher setup fails on library added")
+  void shouldNotPropagateExceptionWhenSetupFailsOnLibraryAdded() throws InterruptedException {
+    var failingService = buildFailingSetupService();
+    var event = new LibraryAddedEvent(UUID.randomUUID(), tempDir.toString());
+
+    failingService.onLibraryAdded(event);
+
+    Thread.sleep(50);
+  }
+
+  @Test
+  @DisplayName("Should not propagate exception when watcher setup fails on initialization")
+  void shouldNotPropagateExceptionWhenSetupFailsOnInitialization() throws InterruptedException {
+    fakeLibraryRepository.save(
+        LibraryFixtureCreator.buildFakeLibrary().toBuilder().filepath(tempDir.toString()).build());
+    var failingService = buildFailingSetupService();
+
+    failingService.afterPropertiesSet();
+
+    Thread.sleep(50);
+  }
+
+  private DirectoryWatchingService buildFailingSetupService() {
+    return new DirectoryWatchingService(
+        fakeLibraryRepository,
+        path -> true,
+        null,
+        new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
+        null) {
+      @Override
+      public void setup() throws IOException {
+        throw new IOException("simulated failure");
+      }
+    };
+  }
+
+  private DirectoryWatchingService buildSlowSetupService() {
+    return new DirectoryWatchingService(
+        fakeLibraryRepository,
+        path -> true,
+        null,
+        new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
+        null) {
+      @Override
+      public void setup() throws IOException {
+        try {
+          Thread.sleep(5_000);
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+        }
+      }
+    };
   }
 }
