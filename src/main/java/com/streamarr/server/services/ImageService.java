@@ -31,8 +31,9 @@ public class ImageService {
   private final ImageProperties imageProperties;
   private final FileSystem fileSystem;
 
-  @Transactional
-  public void processAndSaveImage(
+  public record ProcessedImage(List<Image> images, List<Path> writtenFiles) {}
+
+  public ProcessedImage processImage(
       byte[] originalData, ImageType imageType, UUID entityId, ImageEntityType entityType) {
     var variants = imageVariantService.generateVariants(originalData, imageType);
     var writtenFiles = new ArrayList<Path>();
@@ -61,11 +62,23 @@ public class ImageService {
                 .build());
       }
 
-      imageRepository.saveAll(images);
+      return new ProcessedImage(images, writtenFiles);
     } catch (Exception e) {
       deleteFiles(writtenFiles);
       throw new ImageProcessingException("Failed to process and save image", e);
     }
+  }
+
+  @Transactional
+  public void saveImages(List<Image> images) {
+    imageRepository.saveAll(images);
+  }
+
+  @Transactional
+  public void processAndSaveImage(
+      byte[] originalData, ImageType imageType, UUID entityId, ImageEntityType entityType) {
+    var result = processImage(originalData, imageType, entityId, entityType);
+    saveImages(result.images());
   }
 
   public Optional<Image> findById(UUID imageId) {
@@ -106,7 +119,7 @@ public class ImageService {
     return fileSystem.getPath(imageProperties.storagePath()).resolve(relativePath);
   }
 
-  private void deleteFiles(List<Path> files) {
+  public void deleteFiles(List<Path> files) {
     for (var file : files) {
       deleteFile(file);
     }
