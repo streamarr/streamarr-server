@@ -28,9 +28,8 @@ public class GenreService {
   private Genre findOrCreateGenre(Genre genre) {
     var mutex = mutexFactory.getMutex(genre.getSourceId());
 
+    mutex.lock();
     try {
-      mutex.lock();
-
       var existing = genreRepository.findBySourceId(genre.getSourceId());
 
       if (existing.isPresent()) {
@@ -41,9 +40,7 @@ public class GenreService {
 
       return genreRepository.save(genre);
     } finally {
-      if (mutex.isHeldByCurrentThread()) {
-        mutex.unlock();
-      }
+      mutex.unlock();
     }
   }
 }
