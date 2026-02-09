@@ -166,8 +166,9 @@ class CompanyServiceTest {
   @DisplayName("Should throw when company source ID is null")
   void shouldThrowWhenCompanySourceIdIsNull() {
     var company = Company.builder().name("Warner Bros.").sourceId(null).logoPath("/wb.png").build();
+    var companies = Set.of(company);
 
-    assertThatThrownBy(() -> companyService.getOrCreateCompanies(Set.of(company)))
+    assertThatThrownBy(() -> companyService.getOrCreateCompanies(companies))
         .isInstanceOf(IllegalArgumentException.class);
   }
 

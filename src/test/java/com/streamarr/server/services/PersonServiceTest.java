@@ -165,8 +165,9 @@ class PersonServiceTest {
   @DisplayName("Should throw when person source ID is null")
   void shouldThrowWhenPersonSourceIdIsNull() {
     var person = Person.builder().name("Tom Hanks").sourceId(null).profilePath("/tom.jpg").build();
+    var persons = List.of(person);
 
-    assertThatThrownBy(() -> personService.getOrCreatePersons(List.of(person)))
+    assertThatThrownBy(() -> personService.getOrCreatePersons(persons))
         .isInstanceOf(IllegalArgumentException.class);
   }
 

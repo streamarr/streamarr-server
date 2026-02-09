@@ -80,10 +80,10 @@ class ImageControllerTest {
             .andExpect(status().isOk())
             .andReturn();
 
-    var cacheControl = result.getResponse().getHeader("Cache-Control");
-    assertThat(cacheControl).contains("max-age=31536000");
-    assertThat(cacheControl).contains("public");
-    assertThat(cacheControl).contains("immutable");
+    assertThat(result.getResponse().getHeader("Cache-Control"))
+        .contains("max-age=31536000")
+        .contains("public")
+        .contains("immutable");
   }
 
   @Test

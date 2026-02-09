@@ -95,8 +95,9 @@ class GenreServiceTest {
   @DisplayName("Should throw when genre source ID is null")
   void shouldThrowWhenGenreSourceIdIsNull() {
     var genre = Genre.builder().name("Action").sourceId(null).build();
+    var genres = Set.of(genre);
 
-    assertThatThrownBy(() -> genreService.getOrCreateGenres(Set.of(genre)))
+    assertThatThrownBy(() -> genreService.getOrCreateGenres(genres))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
