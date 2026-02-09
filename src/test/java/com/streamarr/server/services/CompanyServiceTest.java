@@ -44,7 +44,7 @@ class CompanyServiceTest {
     assertThat(saved.getSourceId()).isEqualTo("wb-123");
     assertThat(saved.getLogoPath()).isEqualTo("/wb.png");
     assertThat(saved.getId()).isNotNull();
-    assertThat(companyRepository.database).hasSize(1);
+    assertThat(companyRepository.count()).isEqualTo(1);
   }
 
   @Test
@@ -64,7 +64,7 @@ class CompanyServiceTest {
     assertThat(returned.getId()).isEqualTo(existing.getId());
     assertThat(returned.getName()).isEqualTo("New Name");
     assertThat(returned.getLogoPath()).isEqualTo("/new.png");
-    assertThat(companyRepository.database).hasSize(1);
+    assertThat(companyRepository.count()).isEqualTo(1);
   }
 
   @Test
@@ -94,7 +94,7 @@ class CompanyServiceTest {
     var result = companyService.getOrCreateCompanies(Set.of(updatedExisting, brandNew));
 
     assertThat(result).hasSize(2);
-    assertThat(companyRepository.database).hasSize(2);
+    assertThat(companyRepository.count()).isEqualTo(2);
 
     var returnedExisting =
         result.stream().filter(c -> "existing-1".equals(c.getSourceId())).findFirst().orElseThrow();

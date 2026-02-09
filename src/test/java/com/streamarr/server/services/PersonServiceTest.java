@@ -43,7 +43,7 @@ class PersonServiceTest {
     assertThat(saved.getSourceId()).isEqualTo("actor-1");
     assertThat(saved.getProfilePath()).isEqualTo("/tom.jpg");
     assertThat(saved.getId()).isNotNull();
-    assertThat(personRepository.database).hasSize(1);
+    assertThat(personRepository.count()).isEqualTo(1);
   }
 
   @Test
@@ -63,7 +63,7 @@ class PersonServiceTest {
     assertThat(returned.getId()).isEqualTo(existing.getId());
     assertThat(returned.getName()).isEqualTo("New Name");
     assertThat(returned.getProfilePath()).isEqualTo("/new.jpg");
-    assertThat(personRepository.database).hasSize(1);
+    assertThat(personRepository.count()).isEqualTo(1);
   }
 
   @Test
@@ -93,7 +93,7 @@ class PersonServiceTest {
     var result = personService.getOrCreatePersons(List.of(updatedExisting, brandNew));
 
     assertThat(result).hasSize(2);
-    assertThat(personRepository.database).hasSize(2);
+    assertThat(personRepository.count()).isEqualTo(2);
 
     var returnedExisting =
         result.stream().filter(p -> "existing-1".equals(p.getSourceId())).findFirst().orElseThrow();
