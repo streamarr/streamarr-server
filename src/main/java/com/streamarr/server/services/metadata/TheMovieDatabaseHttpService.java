@@ -16,6 +16,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.Set;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.ThreadLocalRandom;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
@@ -31,7 +32,7 @@ import tools.jackson.databind.ObjectMapper;
 public class TheMovieDatabaseHttpService {
 
   private static final int MAX_RETRIES = 3;
-  private static final long BASE_DELAY_MS = 1000;
+  private static final long BASE_DELAY_MS = 2000;
 
   private final String tmdbApiToken;
   private final String tmdbApiBaseUrl;
@@ -179,42 +180,48 @@ public class TheMovieDatabaseHttpService {
       throws IOException, InterruptedException {
     var lastStatusCode = 0;
 
-    for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      concurrencyLimit.acquire();
-      HttpResponse<T> response;
-      try {
-        response = client.send(request, bodyHandler);
-      } finally {
-        concurrencyLimit.release();
-      }
+    concurrencyLimit.acquire();
+    try {
+      for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        var response = client.send(request, bodyHandler);
 
-      if (!retryableStatuses.contains(response.statusCode())) {
-        return response;
-      }
+        if (!retryableStatuses.contains(response.statusCode())) {
+          return response;
+        }
 
-      lastStatusCode = response.statusCode();
+        lastStatusCode = response.statusCode();
 
-      if (attempt < MAX_RETRIES) {
-        var delaySeconds =
-            response
-                .headers()
-                .firstValue("Retry-After")
-                .map(Long::parseLong)
-                .orElse(BASE_DELAY_MS * (1L << attempt) / 1000);
+        if (attempt == MAX_RETRIES) {
+          break;
+        }
 
+        var delayMs = calculateRetryDelayMs(response, attempt);
         log.warn(
-            "TMDB rate limited ({}). Retrying after {}s (attempt {}/{})",
+            "TMDB rate limited ({}). Retrying after {}ms (attempt {}/{})",
             lastStatusCode,
-            delaySeconds,
+            delayMs,
             attempt + 1,
             MAX_RETRIES);
-
-        Thread.sleep(delaySeconds * 1000);
+        Thread.sleep(delayMs);
       }
+    } finally {
+      concurrencyLimit.release();
     }
 
     throw new TmdbApiException(
         lastStatusCode, "TMDB retryable status persisted after " + MAX_RETRIES + " retries");
+  }
+
+  private long calculateRetryDelayMs(HttpResponse<?> response, int attempt) {
+    var baseDelayMs =
+        response
+            .headers()
+            .firstValue("Retry-After")
+            .map(Long::parseLong)
+            .map(seconds -> seconds * 1000)
+            .orElse(BASE_DELAY_MS * (1L << attempt));
+    var jitterMs = ThreadLocalRandom.current().nextLong(BASE_DELAY_MS / 2);
+    return baseDelayMs + jitterMs;
   }
 
   private HttpRequest.Builder authenticatedRequest(URI uri) {
