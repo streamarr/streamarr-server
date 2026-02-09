@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.junit.jupiter.api.Assertions.assertTimeout;
 
 import com.streamarr.server.config.LibraryScanProperties;
 import com.streamarr.server.fakes.FakeLibraryRepository;
@@ -11,6 +12,7 @@ import com.streamarr.server.services.library.events.LibraryRemovedEvent;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -149,5 +151,42 @@ class DirectoryWatchingServiceTest {
         LibraryFixtureCreator.buildFakeLibrary().toBuilder().filepath(tempDir.toString()).build());
 
     assertThatCode(() -> service.afterPropertiesSet()).doesNotThrowAnyException();
+  }
+
+  @Test
+  @DisplayName("Should not block calling thread when library is added")
+  void shouldNotBlockCallingThreadWhenLibraryAdded() {
+    var slowService = buildSlowSetupService();
+    var event = new LibraryAddedEvent(UUID.randomUUID(), tempDir.toString());
+
+    assertTimeout(Duration.ofMillis(500), () -> slowService.onLibraryAdded(event));
+  }
+
+  @Test
+  @DisplayName("Should not block calling thread when initializing with existing libraries")
+  void shouldNotBlockCallingThreadWhenInitializingWithExistingLibraries() {
+    fakeLibraryRepository.save(
+        LibraryFixtureCreator.buildFakeLibrary().toBuilder().filepath(tempDir.toString()).build());
+    var slowService = buildSlowSetupService();
+
+    assertTimeout(Duration.ofMillis(500), () -> slowService.afterPropertiesSet());
+  }
+
+  private DirectoryWatchingService buildSlowSetupService() {
+    return new DirectoryWatchingService(
+        fakeLibraryRepository,
+        path -> true,
+        null,
+        new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
+        null) {
+      @Override
+      public void setup() throws IOException {
+        try {
+          Thread.sleep(5_000);
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+        }
+      }
+    };
   }
 }

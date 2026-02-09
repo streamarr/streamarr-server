@@ -6,6 +6,7 @@ import com.streamarr.server.services.library.events.LibraryRemovedEvent;
 import com.streamarr.server.services.task.FileProcessingTaskCoordinator;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import io.methvin.watcher.DirectoryWatcher;
+import io.methvin.watcher.hashing.FileHasher;
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -55,6 +56,7 @@ public class DirectoryWatchingService implements InitializingBean {
         DirectoryWatcher.builder()
             .paths(directoriesToWatch.stream().toList())
             .listener(event -> fileEventProcessor.handleFileEvent(event.eventType(), event.path()))
+            .fileHasher(FileHasher.LAST_MODIFIED_TIME)
             .build();
 
     watch();
@@ -109,27 +111,33 @@ public class DirectoryWatchingService implements InitializingBean {
 
   @Override
   public void afterPropertiesSet() {
-
     var repositories = libraryRepository.findAll();
 
     repositories.forEach(rep -> directoriesToWatch.add(Path.of(rep.getFilepath())));
 
-    try {
-      setup();
-    } catch (IOException ex) {
-      log.error("Failed to start library watcher", ex);
-    }
+    Thread.startVirtualThread(
+        () -> {
+          try {
+            setup();
+          } catch (IOException ex) {
+            log.error("Failed to start library watcher", ex);
+          }
+        });
   }
 
   // Watcher may detect files before the initial async scan processes them.
   // FileProcessingTaskCoordinator deduplicates, so concurrent discovery is safe.
   @EventListener
   public void onLibraryAdded(LibraryAddedEvent event) {
-    try {
-      addDirectory(Path.of(event.filepath()));
-    } catch (IOException e) {
-      log.error("Failed to start watching directory for library: {}", event.filepath(), e);
-    }
+    Thread.startVirtualThread(
+        () -> {
+          try {
+            addDirectory(Path.of(event.filepath()));
+          } catch (IOException e) {
+            log.error(
+                "Failed to start watching directory for library: {}", event.filepath(), e);
+          }
+        });
   }
 
   @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
