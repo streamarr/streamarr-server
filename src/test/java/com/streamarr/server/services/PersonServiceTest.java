@@ -67,8 +67,8 @@ class PersonServiceTest {
   }
 
   @Test
-  @DisplayName("Should handle multiple persons with mix of new and existing")
-  void shouldHandleMultiplePersonsWithMixOfNewAndExisting() {
+  @DisplayName("Should update existing person when batch contains duplicate source ID")
+  void shouldUpdateExistingPersonWhenBatchContainsDuplicate() {
     var existing =
         personRepository.save(
             Person.builder()
@@ -92,20 +92,44 @@ class PersonServiceTest {
 
     var result = personService.getOrCreatePersons(List.of(updatedExisting, brandNew));
 
-    assertThat(result).hasSize(2);
-    assertThat(personRepository.count()).isEqualTo(2);
-
     var returnedExisting =
         result.stream().filter(p -> "existing-1".equals(p.getSourceId())).findFirst().orElseThrow();
     assertThat(returnedExisting.getId()).isEqualTo(existing.getId());
     assertThat(returnedExisting.getName()).isEqualTo("Updated Actor");
     assertThat(returnedExisting.getProfilePath()).isEqualTo("/updated.jpg");
+  }
+
+  @Test
+  @DisplayName("Should create new person when batch contains unknown source ID")
+  void shouldCreateNewPersonWhenBatchContainsUnknownSourceId() {
+    personRepository.save(
+        Person.builder()
+            .name("Existing Actor")
+            .sourceId("existing-1")
+            .profilePath("/existing.jpg")
+            .build());
+
+    var updatedExisting =
+        Person.builder()
+            .name("Updated Actor")
+            .sourceId("existing-1")
+            .profilePath("/updated.jpg")
+            .build();
+    var brandNew =
+        Person.builder()
+            .name("Brand New Actor")
+            .sourceId("new-1")
+            .profilePath("/brand-new.jpg")
+            .build();
+
+    var result = personService.getOrCreatePersons(List.of(updatedExisting, brandNew));
 
     var returnedNew =
         result.stream().filter(p -> "new-1".equals(p.getSourceId())).findFirst().orElseThrow();
     assertThat(returnedNew.getName()).isEqualTo("Brand New Actor");
     assertThat(returnedNew.getProfilePath()).isEqualTo("/brand-new.jpg");
     assertThat(returnedNew.getId()).isNotNull();
+    assertThat(personRepository.count()).isEqualTo(2);
   }
 
   @Test

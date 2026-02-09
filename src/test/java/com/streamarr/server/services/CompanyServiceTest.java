@@ -68,8 +68,8 @@ class CompanyServiceTest {
   }
 
   @Test
-  @DisplayName("Should handle multiple companies with mix of new and existing")
-  void shouldHandleMultipleCompaniesWithMixOfNewAndExisting() {
+  @DisplayName("Should update existing company when batch contains duplicate source ID")
+  void shouldUpdateExistingCompanyWhenBatchContainsDuplicate() {
     var existing =
         companyRepository.save(
             Company.builder()
@@ -93,20 +93,44 @@ class CompanyServiceTest {
 
     var result = companyService.getOrCreateCompanies(Set.of(updatedExisting, brandNew));
 
-    assertThat(result).hasSize(2);
-    assertThat(companyRepository.count()).isEqualTo(2);
-
     var returnedExisting =
         result.stream().filter(c -> "existing-1".equals(c.getSourceId())).findFirst().orElseThrow();
     assertThat(returnedExisting.getId()).isEqualTo(existing.getId());
     assertThat(returnedExisting.getName()).isEqualTo("Updated Studio");
     assertThat(returnedExisting.getLogoPath()).isEqualTo("/updated.png");
+  }
+
+  @Test
+  @DisplayName("Should create new company when batch contains unknown source ID")
+  void shouldCreateNewCompanyWhenBatchContainsUnknownSourceId() {
+    companyRepository.save(
+        Company.builder()
+            .name("Existing Studio")
+            .sourceId("existing-1")
+            .logoPath("/existing.png")
+            .build());
+
+    var updatedExisting =
+        Company.builder()
+            .name("Updated Studio")
+            .sourceId("existing-1")
+            .logoPath("/updated.png")
+            .build();
+    var brandNew =
+        Company.builder()
+            .name("Brand New Studio")
+            .sourceId("new-1")
+            .logoPath("/brand-new.png")
+            .build();
+
+    var result = companyService.getOrCreateCompanies(Set.of(updatedExisting, brandNew));
 
     var returnedNew =
         result.stream().filter(c -> "new-1".equals(c.getSourceId())).findFirst().orElseThrow();
     assertThat(returnedNew.getName()).isEqualTo("Brand New Studio");
     assertThat(returnedNew.getLogoPath()).isEqualTo("/brand-new.png");
     assertThat(returnedNew.getId()).isNotNull();
+    assertThat(companyRepository.count()).isEqualTo(2);
   }
 
   @Test
