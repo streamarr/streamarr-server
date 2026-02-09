@@ -36,15 +36,22 @@ public class CompanyService {
   @Transactional
   public Set<Company> getOrCreateCompanies(
       Set<Company> companies, Map<String, List<ImageSource>> imageSourcesBySourceId) {
+    if (companies == null) {
+      return Set.of();
+    }
+
     return companies.stream()
-        .map(
-            c ->
-                findOrCreateCompany(
-                    c, imageSourcesBySourceId.getOrDefault(c.getSourceId(), List.of())))
+        .map(c -> findOrCreateCompany(c, imageSourcesBySourceId))
         .collect(Collectors.toSet());
   }
 
-  private Company findOrCreateCompany(Company company, List<ImageSource> imageSources) {
+  private Company findOrCreateCompany(
+      Company company, Map<String, List<ImageSource>> imageSourcesBySourceId) {
+    if (company.getSourceId() == null) {
+      throw new IllegalArgumentException("Company sourceId must not be null");
+    }
+
+    var imageSources = imageSourcesBySourceId.getOrDefault(company.getSourceId(), List.of());
     var mutex = mutexFactory.getMutex(company.getSourceId());
 
     mutex.lock();

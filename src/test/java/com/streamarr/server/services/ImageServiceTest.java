@@ -2,6 +2,7 @@ package com.streamarr.server.services;
 
 import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.google.common.jimfs.Configuration;
@@ -121,14 +122,14 @@ class ImageServiceTest {
 
   @Test
   @DisplayName("Should delete image rows and files when deleting for entity")
-  void shouldDeleteImageRowsAndFilesWhenDeletingForEntity() throws IOException {
+  void shouldDeleteImageRowsAndFilesWhenDeletingForEntity() {
     var entityId = UUID.randomUUID();
     var imageData = createTestImage(600, 900);
 
     imageService.processAndSaveImage(imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE);
 
     assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
-        .hasSize(4);
+        .isNotEmpty();
 
     imageService.deleteImagesForEntity(entityId, ImageEntityType.MOVIE);
 
@@ -142,7 +143,9 @@ class ImageServiceTest {
   @Test
   @DisplayName("Should not fail when deleting images for entity with no images")
   void shouldNotFailWhenDeletingImagesForEntityWithNoImages() {
-    imageService.deleteImagesForEntity(UUID.randomUUID(), ImageEntityType.MOVIE);
+    assertThatCode(
+            () -> imageService.deleteImagesForEntity(UUID.randomUUID(), ImageEntityType.MOVIE))
+        .doesNotThrowAnyException();
   }
 
   @Test

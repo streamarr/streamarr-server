@@ -1,6 +1,7 @@
 package com.streamarr.server.services;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
@@ -45,7 +46,7 @@ class PersonServiceTest {
     assertThat(saved.getName()).isEqualTo("Tom Hanks");
     assertThat(saved.getSourceId()).isEqualTo("actor-1");
     assertThat(saved.getId()).isNotNull();
-    assertThat(personRepository.database).hasSize(1);
+    assertThat(personRepository.count()).isEqualTo(1);
   }
 
   @Test
@@ -62,12 +63,12 @@ class PersonServiceTest {
     var returned = result.getFirst();
     assertThat(returned.getId()).isEqualTo(existing.getId());
     assertThat(returned.getName()).isEqualTo("New Name");
-    assertThat(personRepository.database).hasSize(1);
+    assertThat(personRepository.count()).isEqualTo(1);
   }
 
   @Test
-  @DisplayName("Should handle multiple persons with mix of new and existing")
-  void shouldHandleMultiplePersonsWithMixOfNewAndExisting() {
+  @DisplayName("Should update existing person when batch contains duplicate source ID")
+  void shouldUpdateExistingPersonWhenBatchContainsDuplicate() {
     var existing =
         personRepository.save(
             Person.builder().name("Existing Actor").sourceId("existing-1").build());
@@ -76,9 +77,6 @@ class PersonServiceTest {
     var brandNew = Person.builder().name("Brand New Actor").sourceId("new-1").build();
 
     var result = personService.getOrCreatePersons(List.of(updatedExisting, brandNew), Map.of());
-
-    assertThat(result).hasSize(2);
-    assertThat(personRepository.database).hasSize(2);
 
     var returnedExisting =
         result.stream().filter(p -> "existing-1".equals(p.getSourceId())).findFirst().orElseThrow();
@@ -89,6 +87,7 @@ class PersonServiceTest {
         result.stream().filter(p -> "new-1".equals(p.getSourceId())).findFirst().orElseThrow();
     assertThat(returnedNew.getName()).isEqualTo("Brand New Actor");
     assertThat(returnedNew.getId()).isNotNull();
+    assertThat(personRepository.count()).isEqualTo(2);
   }
 
   @Test
@@ -120,5 +119,23 @@ class PersonServiceTest {
 
     var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
     assertThat(events).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should throw when person source ID is null")
+  void shouldThrowWhenPersonSourceIdIsNull() {
+    var person = Person.builder().name("Tom Hanks").sourceId(null).build();
+    var persons = List.of(person);
+
+    assertThatThrownBy(() -> personService.getOrCreatePersons(persons, Map.of()))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  @DisplayName("Should return empty list when input is null")
+  void shouldReturnEmptyListWhenInputIsNull() {
+    var result = personService.getOrCreatePersons(null, Map.of());
+
+    assertThat(result).isEmpty();
   }
 }

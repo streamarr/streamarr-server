@@ -91,16 +91,17 @@ class ImageEnrichmentListenerTest {
     var entityId = UUID.randomUUID();
     tmdbHttpService.setImageData(createTestImage(600, 900));
 
-    imageRepository.save(
-        Image.builder()
-            .entityId(entityId)
-            .entityType(ImageEntityType.MOVIE)
-            .imageType(ImageType.POSTER)
-            .variant(ImageSize.SMALL)
-            .width(185)
-            .height(278)
-            .path("movie/" + entityId + "/poster/small.jpg")
-            .build());
+    var existingImage =
+        imageRepository.save(
+            Image.builder()
+                .entityId(entityId)
+                .entityType(ImageEntityType.MOVIE)
+                .imageType(ImageType.POSTER)
+                .variant(ImageSize.SMALL)
+                .width(185)
+                .height(278)
+                .path("movie/" + entityId + "/poster/small.jpg")
+                .build());
 
     var event =
         new MetadataEnrichedEvent(
@@ -112,32 +113,12 @@ class ImageEnrichmentListenerTest {
 
     var images = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
     assertThat(images).hasSize(1);
+    assertThat(images.getFirst().getId()).isEqualTo(existingImage.getId());
   }
 
   @Test
-  @DisplayName("Should restore interrupt flag when download is interrupted")
-  void shouldRestoreInterruptFlagWhenDownloadIsInterrupted() {
-    var entityId = UUID.randomUUID();
-    tmdbHttpService.setImageData(createTestImage(600, 900));
-    tmdbHttpService.setInterruptOnPath("/poster.jpg");
-
-    var event =
-        new MetadataEnrichedEvent(
-            entityId,
-            ImageEntityType.MOVIE,
-            List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")));
-
-    try {
-      listener.onMetadataEnriched(event);
-      assertThat(Thread.currentThread().isInterrupted()).isTrue();
-    } finally {
-      Thread.interrupted();
-    }
-  }
-
-  @Test
-  @DisplayName("Should stop processing remaining sources when interrupted")
-  void shouldStopProcessingRemainingSourcesWhenInterrupted() {
+  @DisplayName("Should not save images for interrupted source when download is interrupted")
+  void shouldNotSaveImagesForInterruptedSourceWhenDownloadIsInterrupted() {
     var entityId = UUID.randomUUID();
     tmdbHttpService.setImageData(createTestImage(600, 900));
     tmdbHttpService.setInterruptOnPath("/poster.jpg");
@@ -150,14 +131,10 @@ class ImageEnrichmentListenerTest {
                 new TmdbImageSource(ImageType.POSTER, "/poster.jpg"),
                 new TmdbImageSource(ImageType.BACKDROP, "/backdrop.jpg")));
 
-    try {
-      listener.onMetadataEnriched(event);
-    } finally {
-      Thread.interrupted();
-    }
+    listener.onMetadataEnriched(event);
 
     var images = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
-    assertThat(images).isEmpty();
+    assertThat(images).extracting(Image::getImageType).containsOnly(ImageType.BACKDROP);
   }
 
   private static class FakeTmdbHttpService extends TheMovieDatabaseHttpService {

@@ -33,15 +33,22 @@ public class PersonService {
   @Transactional
   public List<Person> getOrCreatePersons(
       List<Person> persons, Map<String, List<ImageSource>> imageSourcesBySourceId) {
+    if (persons == null) {
+      return List.of();
+    }
+
     return persons.stream()
-        .map(
-            p ->
-                findOrCreatePerson(
-                    p, imageSourcesBySourceId.getOrDefault(p.getSourceId(), List.of())))
+        .map(p -> findOrCreatePerson(p, imageSourcesBySourceId))
         .collect(Collectors.toList());
   }
 
-  private Person findOrCreatePerson(Person person, List<ImageSource> imageSources) {
+  private Person findOrCreatePerson(
+      Person person, Map<String, List<ImageSource>> imageSourcesBySourceId) {
+    if (person.getSourceId() == null) {
+      throw new IllegalArgumentException("Person sourceId must not be null");
+    }
+
+    var imageSources = imageSourcesBySourceId.getOrDefault(person.getSourceId(), List.of());
     var mutex = mutexFactory.getMutex(person.getSourceId());
 
     mutex.lock();

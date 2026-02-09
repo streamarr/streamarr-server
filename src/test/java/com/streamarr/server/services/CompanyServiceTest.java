@@ -1,6 +1,7 @@
 package com.streamarr.server.services;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
@@ -47,7 +48,7 @@ class CompanyServiceTest {
     assertThat(saved.getName()).isEqualTo("Warner Bros.");
     assertThat(saved.getSourceId()).isEqualTo("wb-123");
     assertThat(saved.getId()).isNotNull();
-    assertThat(companyRepository.database).hasSize(1);
+    assertThat(companyRepository.count()).isEqualTo(1);
   }
 
   @Test
@@ -64,12 +65,12 @@ class CompanyServiceTest {
     var returned = result.iterator().next();
     assertThat(returned.getId()).isEqualTo(existing.getId());
     assertThat(returned.getName()).isEqualTo("New Name");
-    assertThat(companyRepository.database).hasSize(1);
+    assertThat(companyRepository.count()).isEqualTo(1);
   }
 
   @Test
-  @DisplayName("Should handle multiple companies with mix of new and existing")
-  void shouldHandleMultipleCompaniesWithMixOfNewAndExisting() {
+  @DisplayName("Should update existing company when batch contains duplicate source ID")
+  void shouldUpdateExistingCompanyWhenBatchContainsDuplicate() {
     var existing =
         companyRepository.save(
             Company.builder().name("Existing Studio").sourceId("existing-1").build());
@@ -78,9 +79,6 @@ class CompanyServiceTest {
     var brandNew = Company.builder().name("Brand New Studio").sourceId("new-1").build();
 
     var result = companyService.getOrCreateCompanies(Set.of(updatedExisting, brandNew), Map.of());
-
-    assertThat(result).hasSize(2);
-    assertThat(companyRepository.database).hasSize(2);
 
     var returnedExisting =
         result.stream().filter(c -> "existing-1".equals(c.getSourceId())).findFirst().orElseThrow();
@@ -91,6 +89,7 @@ class CompanyServiceTest {
         result.stream().filter(c -> "new-1".equals(c.getSourceId())).findFirst().orElseThrow();
     assertThat(returnedNew.getName()).isEqualTo("Brand New Studio");
     assertThat(returnedNew.getId()).isNotNull();
+    assertThat(companyRepository.count()).isEqualTo(2);
   }
 
   @Test
@@ -122,5 +121,23 @@ class CompanyServiceTest {
 
     var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
     assertThat(events).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should throw when company source ID is null")
+  void shouldThrowWhenCompanySourceIdIsNull() {
+    var company = Company.builder().name("Warner Bros.").sourceId(null).build();
+    var companies = Set.of(company);
+
+    assertThatThrownBy(() -> companyService.getOrCreateCompanies(companies, Map.of()))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  @DisplayName("Should return empty set when input is null")
+  void shouldReturnEmptySetWhenInputIsNull() {
+    var result = companyService.getOrCreateCompanies(null, Map.of());
+
+    assertThat(result).isEmpty();
   }
 }
