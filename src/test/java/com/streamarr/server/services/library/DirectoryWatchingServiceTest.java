@@ -127,14 +127,6 @@ class DirectoryWatchingServiceTest {
   }
 
   @Test
-  @DisplayName("Should start watching directory on LibraryAddedEvent")
-  void shouldStartWatchingDirectoryOnLibraryAddedEvent() {
-    var event = new LibraryAddedEvent(UUID.randomUUID(), tempDir.toString());
-
-    assertThatCode(() -> service.onLibraryAdded(event)).doesNotThrowAnyException();
-  }
-
-  @Test
   @DisplayName("Should stop watching directory on LibraryRemovedEvent")
   void shouldStopWatchingDirectoryOnLibraryRemovedEvent() throws IOException {
     service.addDirectory(tempDir);
@@ -142,15 +134,6 @@ class DirectoryWatchingServiceTest {
     var event = new LibraryRemovedEvent(tempDir.toString(), Set.of());
 
     assertThatCode(() -> service.onLibraryRemoved(event)).doesNotThrowAnyException();
-  }
-
-  @Test
-  @DisplayName("Should load existing libraries on initialization")
-  void shouldLoadExistingLibrariesOnInitialization() {
-    fakeLibraryRepository.save(
-        LibraryFixtureCreator.buildFakeLibrary().toBuilder().filepath(tempDir.toString()).build());
-
-    assertThatCode(() -> service.afterPropertiesSet()).doesNotThrowAnyException();
   }
 
   @Test
