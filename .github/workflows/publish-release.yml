@@ -35,6 +35,8 @@ jobs:
           pack build index.docker.io/streamarr/streamarr-server:latest \
               --tag streamarr/streamarr-server:${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }} \
               --builder paketobuildpacks/builder-jammy-base \
+              --buildpack paketo-buildpacks/apt \
+              --buildpack paketo-buildpacks/java \
               --env BP_JVM_VERSION=25 \
               --path . \
               --cache-image index.docker.io/streamarr/spring-boot-buildpack-paketo-cache-image:latest \
