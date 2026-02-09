@@ -1,5 +1,6 @@
 package com.streamarr.server.services.metadata;
 
+import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import org.junit.jupiter.api.DisplayName;
@@ -23,9 +24,7 @@ class TheMovieDatabaseHttpServiceTest {
   @Test
   @DisplayName("Should accept valid max concurrent requests")
   void shouldAcceptValidMaxConcurrentRequests() {
-    var service = new TheMovieDatabaseHttpService("", "", "", 1, null, null);
-
-    // Construction succeeds without throwing
-    assert service != null;
+    assertThatNoException()
+        .isThrownBy(() -> new TheMovieDatabaseHttpService("", "", "", 1, null, null));
   }
 }
