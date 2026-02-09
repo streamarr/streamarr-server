@@ -408,7 +408,7 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
 
     assertThatThrownBy(() -> service.searchForMovie(parserResult))
         .isInstanceOf(TmdbApiException.class)
-        .hasMessageContaining("rate limit exceeded")
+        .hasMessageContaining("retryable status persisted")
         .satisfies(ex -> assertThat(((TmdbApiException) ex).getStatusCode()).isEqualTo(429));
   }
 

@@ -169,12 +169,16 @@ public class TheMovieDatabaseHttpService {
   private <T> HttpResponse<T> executeWithRetry(
       HttpRequest request, HttpResponse.BodyHandler<T> bodyHandler, Set<Integer> retryableStatuses)
       throws IOException, InterruptedException {
+    var lastStatusCode = 0;
+
     for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       var response = client.send(request, bodyHandler);
 
       if (!retryableStatuses.contains(response.statusCode())) {
         return response;
       }
+
+      lastStatusCode = response.statusCode();
 
       if (attempt < MAX_RETRIES) {
         var delaySeconds =
@@ -186,7 +190,7 @@ public class TheMovieDatabaseHttpService {
 
         log.warn(
             "TMDB rate limited ({}). Retrying after {}s (attempt {}/{})",
-            response.statusCode(),
+            lastStatusCode,
             delaySeconds,
             attempt + 1,
             MAX_RETRIES);
@@ -195,7 +199,8 @@ public class TheMovieDatabaseHttpService {
       }
     }
 
-    throw new TmdbApiException(429, "TMDB rate limit exceeded after " + MAX_RETRIES + " retries");
+    throw new TmdbApiException(
+        lastStatusCode, "TMDB retryable status persisted after " + MAX_RETRIES + " retries");
   }
 
   private HttpRequest.Builder authenticatedRequest(URI uri) {
