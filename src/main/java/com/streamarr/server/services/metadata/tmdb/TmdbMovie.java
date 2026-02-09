@@ -13,8 +13,8 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class TmdbMovie {
 
-  private int id;
-  private boolean adult;
+  private Integer id;
+  private Boolean adult;
 
   @JsonProperty("backdrop_path")
   private String backdropPath;
@@ -48,7 +48,7 @@ public class TmdbMovie {
   private Integer runtime;
   private String status;
   private String tagline;
-  private boolean video;
+  private Boolean video;
 
   @JsonProperty("vote_average")
   private Double voteAverage;

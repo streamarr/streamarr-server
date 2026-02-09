@@ -15,6 +15,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.Set;
+import java.util.concurrent.Semaphore;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
@@ -38,18 +39,25 @@ public class TheMovieDatabaseHttpService {
 
   private final HttpClient client;
   private final ObjectMapper objectMapper;
+  private final Semaphore concurrencyLimit;
 
   public TheMovieDatabaseHttpService(
       @Value("${tmdb.api.token:}") String tmdbApiToken,
       @Value("${tmdb.api.base-url:https://api.themoviedb.org/3}") String tmdbApiBaseUrl,
       @Value("${tmdb.image.base-url:https://image.tmdb.org/t/p/original}") String tmdbImageBaseUrl,
+      @Value("${tmdb.api.max-concurrent-requests:10}") int maxConcurrentRequests,
       HttpClient client,
       ObjectMapper objectMapper) {
+    if (maxConcurrentRequests <= 0) {
+      throw new IllegalArgumentException(
+          "tmdb.api.max-concurrent-requests must be positive, got: " + maxConcurrentRequests);
+    }
     this.tmdbApiToken = tmdbApiToken;
     this.tmdbApiBaseUrl = tmdbApiBaseUrl;
     this.tmdbImageBaseUrl = tmdbImageBaseUrl;
     this.client = client;
     this.objectMapper = objectMapper;
+    this.concurrencyLimit = new Semaphore(maxConcurrentRequests);
   }
 
   public TmdbSearchResults searchForMovie(VideoFileParserResult videoFileParserResult)
@@ -172,7 +180,13 @@ public class TheMovieDatabaseHttpService {
     var lastStatusCode = 0;
 
     for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      var response = client.send(request, bodyHandler);
+      concurrencyLimit.acquire();
+      HttpResponse<T> response;
+      try {
+        response = client.send(request, bodyHandler);
+      } finally {
+        concurrencyLimit.release();
+      }
 
       if (!retryableStatuses.contains(response.statusCode())) {
         return response;

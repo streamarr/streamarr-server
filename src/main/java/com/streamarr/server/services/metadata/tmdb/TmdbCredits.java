@@ -12,7 +12,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class TmdbCredits {
 
-  private int id;
+  private Integer id;
   private List<TmdbCredit> cast;
   private List<TmdbCredit> crew;
 }

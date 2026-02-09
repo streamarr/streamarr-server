@@ -12,7 +12,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class TmdbTvSearchResult {
 
-  private int id;
+  private Integer id;
   private String name;
 
   @JsonProperty("original_name")
@@ -28,11 +28,11 @@ public class TmdbTvSearchResult {
   private String backdropPath;
 
   private String overview;
-  private double popularity;
+  private Double popularity;
 
   @JsonProperty("vote_count")
-  private int voteCount;
+  private Integer voteCount;
 
   @JsonProperty("vote_average")
-  private double voteAverage;
+  private Double voteAverage;
 }

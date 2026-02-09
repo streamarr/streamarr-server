@@ -24,6 +24,7 @@ import com.streamarr.server.services.validation.VideoExtensionValidator;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.FileSystem;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -223,7 +224,7 @@ public class LibraryManagementService implements ActiveScanChecker {
           .filter(file -> !ignoredFileValidator.shouldIgnore(file))
           .forEach(file -> executor.submit(() -> processFile(library, file)));
 
-    } catch (IOException | UncheckedIOException | SecurityException e) {
+    } catch (IOException | UncheckedIOException | SecurityException | InvalidPathException e) {
       throw new LibraryScanFailedException(library.getName(), e);
     }
   }

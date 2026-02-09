@@ -144,7 +144,7 @@ class ImageEnrichmentListenerTest {
     private String interruptOnPath;
 
     FakeTmdbHttpService() {
-      super("", "", "", null, null);
+      super("", "", "", 10, null, null);
     }
 
     void setImageData(byte[] imageData) {
