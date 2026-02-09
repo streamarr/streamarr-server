@@ -26,6 +26,10 @@ public class GenreService {
   }
 
   private Genre findOrCreateGenre(Genre genre) {
+    if (genre.getSourceId() == null) {
+      throw new IllegalArgumentException("Genre sourceId must not be null");
+    }
+
     var mutex = mutexFactory.getMutex(genre.getSourceId());
 
     mutex.lock();

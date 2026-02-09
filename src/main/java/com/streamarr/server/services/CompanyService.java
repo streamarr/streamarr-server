@@ -39,6 +39,10 @@ public class CompanyService {
   }
 
   private Company findOrCreateCompany(Company company) {
+    if (company.getSourceId() == null) {
+      throw new IllegalArgumentException("Company sourceId must not be null");
+    }
+
     var mutex = mutexFactory.getMutex(company.getSourceId());
 
     mutex.lock();

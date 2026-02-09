@@ -1,6 +1,7 @@
 package com.streamarr.server.services;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.metadata.Company;
@@ -159,5 +160,14 @@ class CompanyServiceTest {
 
     var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
     assertThat(events).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should throw when company source ID is null")
+  void shouldThrowWhenCompanySourceIdIsNull() {
+    var company = Company.builder().name("Warner Bros.").sourceId(null).logoPath("/wb.png").build();
+
+    assertThatThrownBy(() -> companyService.getOrCreateCompanies(Set.of(company)))
+        .isInstanceOf(IllegalArgumentException.class);
   }
 }

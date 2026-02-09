@@ -36,6 +36,10 @@ public class PersonService {
   }
 
   private Person findOrCreatePerson(Person person) {
+    if (person.getSourceId() == null) {
+      throw new IllegalArgumentException("Person sourceId must not be null");
+    }
+
     var mutex = mutexFactory.getMutex(person.getSourceId());
 
     mutex.lock();

@@ -1,6 +1,7 @@
 package com.streamarr.server.services;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.fakes.FakeGenreRepository;
@@ -88,5 +89,14 @@ class GenreServiceTest {
     assertThat(returnedNew.getName()).isEqualTo("Brand New Genre");
     assertThat(returnedNew.getId()).isNotNull();
     assertThat(genreRepository.count()).isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName("Should throw when genre source ID is null")
+  void shouldThrowWhenGenreSourceIdIsNull() {
+    var genre = Genre.builder().name("Action").sourceId(null).build();
+
+    assertThatThrownBy(() -> genreService.getOrCreateGenres(Set.of(genre)))
+        .isInstanceOf(IllegalArgumentException.class);
   }
 }

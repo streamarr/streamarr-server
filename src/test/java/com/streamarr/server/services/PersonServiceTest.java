@@ -1,6 +1,7 @@
 package com.streamarr.server.services;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.metadata.Person;
@@ -158,5 +159,14 @@ class PersonServiceTest {
 
     var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
     assertThat(events).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should throw when person source ID is null")
+  void shouldThrowWhenPersonSourceIdIsNull() {
+    var person = Person.builder().name("Tom Hanks").sourceId(null).profilePath("/tom.jpg").build();
+
+    assertThatThrownBy(() -> personService.getOrCreatePersons(List.of(person)))
+        .isInstanceOf(IllegalArgumentException.class);
   }
 }
