@@ -11,8 +11,6 @@ type Movie implements BaseCollectable {
     summary: String
     runtime: Int
     releaseDate: String
-    backdropPath: String
-    posterPath: String
     contentRating: ContentRating
     files: [MediaFile]!
     studios: [Company]!

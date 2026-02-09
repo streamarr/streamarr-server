@@ -2,6 +2,7 @@ package com.streamarr.server.services.metadata.series;
 
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.util.List;
@@ -32,7 +33,8 @@ public class SeriesMetadataProviderResolver {
     return optionalProvider.get().search(videoFileParserResult);
   }
 
-  public Optional<Series> getMetadata(RemoteSearchResult remoteSearchResult, Library library) {
+  public Optional<MetadataResult<Series>> getMetadata(
+      RemoteSearchResult remoteSearchResult, Library library) {
     var optionalProvider = getProviderForLibrary(library);
 
     if (optionalProvider.isEmpty()) {

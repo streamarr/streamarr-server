@@ -2,7 +2,6 @@ package com.streamarr.server.services;
 
 import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.media.ImageEntityType;
-import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.graphql.cursor.CursorUtil;
@@ -10,13 +9,12 @@ import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.graphql.cursor.MediaPaginationOptions;
 import com.streamarr.server.graphql.cursor.PaginationOptions;
 import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.events.ImageSource;
-import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import graphql.relay.Connection;
 import graphql.relay.DefaultEdge;
 import graphql.relay.Edge;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -84,29 +82,28 @@ public class MovieService {
   }
 
   @Transactional
-  public Movie createMovieWithAssociations(Movie movie, MediaFile mediaFile) {
-    movie.setCast(personService.getOrCreatePersons(movie.getCast()));
-    movie.setDirectors(personService.getOrCreatePersons(movie.getDirectors()));
+  public Movie createMovieWithAssociations(
+      MetadataResult<Movie> metadataResult, MediaFile mediaFile) {
+    var movie = metadataResult.entity();
+
+    movie.setCast(
+        personService.getOrCreatePersons(movie.getCast(), metadataResult.personImageSources()));
+    movie.setDirectors(
+        personService.getOrCreatePersons(
+            movie.getDirectors(), metadataResult.personImageSources()));
     movie.setGenres(genreService.getOrCreateGenres(movie.getGenres()));
-    movie.setStudios(companyService.getOrCreateCompanies(movie.getStudios()));
+    movie.setStudios(
+        companyService.getOrCreateCompanies(
+            movie.getStudios(), metadataResult.companyImageSources()));
 
     var savedMovie = saveMovieWithMediaFile(movie, mediaFile);
 
-    publishImageEvent(savedMovie);
+    publishImageEvent(savedMovie, metadataResult.imageSources());
 
     return savedMovie;
   }
 
-  private void publishImageEvent(Movie movie) {
-    var sources = new ArrayList<ImageSource>();
-
-    if (movie.getPosterPath() != null) {
-      sources.add(new TmdbImageSource(ImageType.POSTER, movie.getPosterPath()));
-    }
-    if (movie.getBackdropPath() != null) {
-      sources.add(new TmdbImageSource(ImageType.BACKDROP, movie.getBackdropPath()));
-    }
-
+  private void publishImageEvent(Movie movie, List<ImageSource> sources) {
     if (!sources.isEmpty()) {
       eventPublisher.publishEvent(
           new MetadataEnrichedEvent(movie.getId(), ImageEntityType.MOVIE, sources));

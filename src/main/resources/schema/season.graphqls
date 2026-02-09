@@ -3,7 +3,6 @@ type Season {
     title: String
     seasonNumber: Int!
     overview: String
-    posterPath: String
     airDate: String
     episodes: [Episode]!
     images(type: ImageType): [Image]!

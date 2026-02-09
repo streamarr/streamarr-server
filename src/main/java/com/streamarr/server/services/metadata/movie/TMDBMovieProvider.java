@@ -6,12 +6,11 @@ import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.ContentRating;
 import com.streamarr.server.domain.media.Movie;
-import com.streamarr.server.domain.metadata.Company;
-import com.streamarr.server.domain.metadata.Genre;
-import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.services.metadata.MetadataProvider;
+import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.TheMovieDatabaseHttpService;
+import com.streamarr.server.services.metadata.TmdbMetadataMapper;
 import com.streamarr.server.services.metadata.tmdb.TmdbCredits;
 import com.streamarr.server.services.metadata.tmdb.TmdbMovie;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
@@ -22,7 +21,6 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
-import java.util.stream.Collectors;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -65,7 +63,8 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
     return Optional.empty();
   }
 
-  public Optional<Movie> getMetadata(RemoteSearchResult remoteSearchResult, Library library) {
+  public Optional<MetadataResult<Movie>> getMetadata(
+      RemoteSearchResult remoteSearchResult, Library library) {
     try {
       var tmdbMovie = theMovieDatabaseHttpService.getMovieMetadata(remoteSearchResult.externalId());
 
@@ -91,51 +90,13 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
               .externalIds(mapExternalIds(tmdbMovie))
               .tagline(tmdbMovie.getTagline())
               .summary(tmdbMovie.getOverview())
-              .backdropPath(tmdbMovie.getBackdropPath())
-              .posterPath(tmdbMovie.getPosterPath())
               .runtime(tmdbMovie.getRuntime())
               .originalTitle(tmdbMovie.getOriginalTitle())
               .titleSort(TitleSortUtil.computeTitleSort(tmdbMovie.getTitle()))
-              .studios(
-                  productionCompanies.stream()
-                      .map(
-                          c ->
-                              Company.builder()
-                                  .sourceId(String.valueOf(c.getId()))
-                                  .name(c.getName())
-                                  .logoPath(c.getLogoPath())
-                                  .build())
-                      .collect(Collectors.toSet()))
-              .cast(
-                  castList.stream()
-                      .map(
-                          credit ->
-                              Person.builder()
-                                  .sourceId(String.valueOf(credit.getId()))
-                                  .name(credit.getName())
-                                  .profilePath(credit.getProfilePath())
-                                  .build())
-                      .collect(Collectors.toList()))
-              .directors(
-                  crewList.stream()
-                      .filter(crew -> "Director".equals(crew.getJob()))
-                      .map(
-                          crew ->
-                              Person.builder()
-                                  .sourceId(String.valueOf(crew.getId()))
-                                  .name(crew.getName())
-                                  .profilePath(crew.getProfilePath())
-                                  .build())
-                      .collect(Collectors.toList()))
-              .genres(
-                  tmdbGenres.stream()
-                      .map(
-                          g ->
-                              Genre.builder()
-                                  .sourceId(String.valueOf(g.getId()))
-                                  .name(g.getName())
-                                  .build())
-                      .collect(Collectors.toSet()));
+              .studios(TmdbMetadataMapper.mapCompanies(productionCompanies))
+              .cast(TmdbMetadataMapper.mapCast(castList))
+              .directors(TmdbMetadataMapper.mapDirectors(crewList))
+              .genres(TmdbMetadataMapper.mapGenres(tmdbGenres));
 
       if (StringUtils.isNotBlank(tmdbMovie.getReleaseDate())) {
         movieBuilder.releaseDate(LocalDate.parse(tmdbMovie.getReleaseDate()));
@@ -146,7 +107,15 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
               movieBuilder.contentRating(
                   new ContentRating("MPAA", movieRelease.getCertification(), "US")));
 
-      return Optional.of(movieBuilder.build());
+      var imageSources =
+          TmdbMetadataMapper.buildPosterAndBackdropSources(
+              tmdbMovie.getPosterPath(), tmdbMovie.getBackdropPath());
+      var personImageSources = TmdbMetadataMapper.buildPersonImageSources(castList, crewList);
+      var companyImageSources = TmdbMetadataMapper.buildCompanyImageSources(productionCompanies);
+
+      return Optional.of(
+          new MetadataResult<>(
+              movieBuilder.build(), imageSources, personImageSources, companyImageSources));
 
     } catch (IOException ex) {
       log.error(

@@ -46,6 +46,7 @@ import com.streamarr.server.services.library.events.LibraryAddedEvent;
 import com.streamarr.server.services.library.events.LibraryRemovedEvent;
 import com.streamarr.server.services.library.events.ScanCompletedEvent;
 import com.streamarr.server.services.metadata.MetadataProvider;
+import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.metadata.movie.TMDBMovieProvider;
@@ -59,6 +60,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -392,7 +394,10 @@ public class LibraryManagementServiceTest {
                     .build()));
 
     when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
-        .thenReturn(Optional.of(Movie.builder().title(movieFolder).build()));
+        .thenReturn(
+            Optional.of(
+                new MetadataResult<>(
+                    Movie.builder().title(movieFolder).build(), List.of(), Map.of(), Map.of())));
 
     libraryManagementService.scanLibrary(savedLibraryId);
 
@@ -429,7 +434,9 @@ public class LibraryManagementServiceTest {
             Optional.of(RemoteSearchResult.builder().title(movieFolder).externalId("123").build()));
 
     when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
-        .thenReturn(Optional.of(Movie.builder().build()));
+        .thenReturn(
+            Optional.of(
+                new MetadataResult<>(Movie.builder().build(), List.of(), Map.of(), Map.of())));
 
     libraryManagementService.scanLibrary(savedLibraryId);
 
@@ -461,7 +468,10 @@ public class LibraryManagementServiceTest {
                     .build()));
 
     when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
-        .thenReturn(Optional.of(Movie.builder().title(movieFolder).build()));
+        .thenReturn(
+            Optional.of(
+                new MetadataResult<>(
+                    Movie.builder().title(movieFolder).build(), List.of(), Map.of(), Map.of())));
 
     libraryManagementService.processDiscoveredFile(savedLibraryId, moviePath);
 

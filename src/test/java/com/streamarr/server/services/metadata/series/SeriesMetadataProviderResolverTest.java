@@ -6,9 +6,11 @@ import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -76,7 +78,7 @@ class SeriesMetadataProviderResolverTest {
     var result = resolver.getMetadata(searchResult, library);
 
     assertThat(result).isPresent();
-    assertThat(result.get().getTitle()).isEqualTo("Breaking Bad");
+    assertThat(result.get().entity().getTitle()).isEqualTo("Breaking Bad");
   }
 
   @Test
@@ -114,8 +116,12 @@ class SeriesMetadataProviderResolverTest {
     }
 
     @Override
-    public Optional<Series> getMetadata(RemoteSearchResult remoteSearchResult, Library library) {
-      return Optional.ofNullable(series);
+    public Optional<MetadataResult<Series>> getMetadata(
+        RemoteSearchResult remoteSearchResult, Library library) {
+      if (series == null) {
+        return Optional.empty();
+      }
+      return Optional.of(new MetadataResult<>(series, List.of(), Map.of(), Map.of()));
     }
 
     @Override

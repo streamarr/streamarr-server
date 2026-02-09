@@ -98,11 +98,6 @@ public class Person extends TableImpl<PersonRecord> {
      */
     public final TableField<PersonRecord, String> SOURCE_ID = createField(DSL.name("source_id"), SQLDataType.CLOB.nullable(false), this, "");
 
-    /**
-     * The column <code>public.person.profile_path</code>.
-     */
-    public final TableField<PersonRecord, String> PROFILE_PATH = createField(DSL.name("profile_path"), SQLDataType.CLOB, this, "");
-
     private Person(Name alias, Table<PersonRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }

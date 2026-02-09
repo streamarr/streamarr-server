@@ -36,129 +36,101 @@ public class MovieRecord extends UpdatableRecordImpl<MovieRecord> {
     }
 
     /**
-     * Setter for <code>public.movie.backdrop_path</code>.
-     */
-    public void setBackdropPath(String value) {
-        set(1, value);
-    }
-
-    /**
-     * Getter for <code>public.movie.backdrop_path</code>.
-     */
-    public String getBackdropPath() {
-        return (String) get(1);
-    }
-
-    /**
-     * Setter for <code>public.movie.poster_path</code>.
-     */
-    public void setPosterPath(String value) {
-        set(2, value);
-    }
-
-    /**
-     * Getter for <code>public.movie.poster_path</code>.
-     */
-    public String getPosterPath() {
-        return (String) get(2);
-    }
-
-    /**
      * Setter for <code>public.movie.tagline</code>.
      */
     public void setTagline(String value) {
-        set(3, value);
+        set(1, value);
     }
 
     /**
      * Getter for <code>public.movie.tagline</code>.
      */
     public String getTagline() {
-        return (String) get(3);
+        return (String) get(1);
     }
 
     /**
      * Setter for <code>public.movie.summary</code>.
      */
     public void setSummary(String value) {
-        set(4, value);
+        set(2, value);
     }
 
     /**
      * Getter for <code>public.movie.summary</code>.
      */
     public String getSummary() {
-        return (String) get(4);
+        return (String) get(2);
     }
 
     /**
      * Setter for <code>public.movie.release_date</code>.
      */
     public void setReleaseDate(LocalDate value) {
-        set(5, value);
+        set(3, value);
     }
 
     /**
      * Getter for <code>public.movie.release_date</code>.
      */
     public LocalDate getReleaseDate() {
-        return (LocalDate) get(5);
+        return (LocalDate) get(3);
     }
 
     /**
      * Setter for <code>public.movie.content_rating_system</code>.
      */
     public void setContentRatingSystem(String value) {
-        set(6, value);
+        set(4, value);
     }
 
     /**
      * Getter for <code>public.movie.content_rating_system</code>.
      */
     public String getContentRatingSystem() {
-        return (String) get(6);
+        return (String) get(4);
     }
 
     /**
      * Setter for <code>public.movie.content_rating_value</code>.
      */
     public void setContentRatingValue(String value) {
-        set(7, value);
+        set(5, value);
     }
 
     /**
      * Getter for <code>public.movie.content_rating_value</code>.
      */
     public String getContentRatingValue() {
-        return (String) get(7);
+        return (String) get(5);
     }
 
     /**
      * Setter for <code>public.movie.content_rating_country</code>.
      */
     public void setContentRatingCountry(String value) {
-        set(8, value);
+        set(6, value);
     }
 
     /**
      * Getter for <code>public.movie.content_rating_country</code>.
      */
     public String getContentRatingCountry() {
-        return (String) get(8);
+        return (String) get(6);
     }
 
     /**
      * Setter for <code>public.movie.runtime</code>.
      */
     public void setRuntime(Integer value) {
-        set(9, value);
+        set(7, value);
     }
 
     /**
      * Getter for <code>public.movie.runtime</code>.
      */
     public Integer getRuntime() {
-        return (Integer) get(9);
+        return (Integer) get(7);
     }
 
     // -------------------------------------------------------------------------
@@ -184,12 +156,10 @@ public class MovieRecord extends UpdatableRecordImpl<MovieRecord> {
     /**
      * Create a detached, initialised MovieRecord
      */
-    public MovieRecord(UUID id, String backdropPath, String posterPath, String tagline, String summary, LocalDate releaseDate, String contentRatingSystem, String contentRatingValue, String contentRatingCountry, Integer runtime) {
+    public MovieRecord(UUID id, String tagline, String summary, LocalDate releaseDate, String contentRatingSystem, String contentRatingValue, String contentRatingCountry, Integer runtime) {
         super(Movie.MOVIE);
 
         setId(id);
-        setBackdropPath(backdropPath);
-        setPosterPath(posterPath);
         setTagline(tagline);
         setSummary(summary);
         setReleaseDate(releaseDate);

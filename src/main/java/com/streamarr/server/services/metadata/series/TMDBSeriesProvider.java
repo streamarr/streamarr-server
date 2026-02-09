@@ -5,12 +5,14 @@ import com.streamarr.server.domain.ExternalIdentifier;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.ContentRating;
+import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.Series;
-import com.streamarr.server.domain.metadata.Company;
-import com.streamarr.server.domain.metadata.Genre;
-import com.streamarr.server.domain.metadata.Person;
+import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.TheMovieDatabaseHttpService;
+import com.streamarr.server.services.metadata.TmdbMetadataMapper;
+import com.streamarr.server.services.metadata.events.ImageSource;
+import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.tmdb.TmdbContentRatings;
 import com.streamarr.server.services.metadata.tmdb.TmdbCredits;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSeries;
@@ -20,9 +22,9 @@ import java.io.IOException;
 import java.time.LocalDate;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.stream.Collectors;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -65,7 +67,8 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
     return Optional.empty();
   }
 
-  public Optional<Series> getMetadata(RemoteSearchResult remoteSearchResult, Library library) {
+  public Optional<MetadataResult<Series>> getMetadata(
+      RemoteSearchResult remoteSearchResult, Library library) {
     try {
       var tmdbSeries =
           theMovieDatabaseHttpService.getTvSeriesMetadata(remoteSearchResult.externalId());
@@ -98,49 +101,11 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
               .externalIds(mapExternalIds(tmdbSeries))
               .tagline(tmdbSeries.getTagline())
               .summary(tmdbSeries.getOverview())
-              .backdropPath(tmdbSeries.getBackdropPath())
-              .posterPath(tmdbSeries.getPosterPath())
               .runtime(runtime)
-              .studios(
-                  productionCompanies.stream()
-                      .map(
-                          c ->
-                              Company.builder()
-                                  .sourceId(String.valueOf(c.getId()))
-                                  .name(c.getName())
-                                  .logoPath(c.getLogoPath())
-                                  .build())
-                      .collect(Collectors.toSet()))
-              .cast(
-                  castList.stream()
-                      .map(
-                          credit ->
-                              Person.builder()
-                                  .sourceId(String.valueOf(credit.getId()))
-                                  .name(credit.getName())
-                                  .profilePath(credit.getProfilePath())
-                                  .build())
-                      .collect(Collectors.toList()))
-              .directors(
-                  crewList.stream()
-                      .filter(crew -> "Director".equals(crew.getJob()))
-                      .map(
-                          crew ->
-                              Person.builder()
-                                  .sourceId(String.valueOf(crew.getId()))
-                                  .name(crew.getName())
-                                  .profilePath(crew.getProfilePath())
-                                  .build())
-                      .collect(Collectors.toList()))
-              .genres(
-                  tmdbGenres.stream()
-                      .map(
-                          g ->
-                              Genre.builder()
-                                  .sourceId(String.valueOf(g.getId()))
-                                  .name(g.getName())
-                                  .build())
-                      .collect(Collectors.toSet()));
+              .studios(TmdbMetadataMapper.mapCompanies(productionCompanies))
+              .cast(TmdbMetadataMapper.mapCast(castList))
+              .directors(TmdbMetadataMapper.mapDirectors(crewList))
+              .genres(TmdbMetadataMapper.mapGenres(tmdbGenres));
 
       if (StringUtils.isNotBlank(tmdbSeries.getFirstAirDate())) {
         seriesBuilder.firstAirDate(LocalDate.parse(tmdbSeries.getFirstAirDate()));
@@ -151,7 +116,15 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
               seriesBuilder.contentRating(
                   new ContentRating("TV Parental Guidelines", rating.getRating(), "US")));
 
-      return Optional.of(seriesBuilder.build());
+      var imageSources =
+          TmdbMetadataMapper.buildPosterAndBackdropSources(
+              tmdbSeries.getPosterPath(), tmdbSeries.getBackdropPath());
+      var personImageSources = TmdbMetadataMapper.buildPersonImageSources(castList, crewList);
+      var companyImageSources = TmdbMetadataMapper.buildCompanyImageSources(productionCompanies);
+
+      return Optional.of(
+          new MetadataResult<>(
+              seriesBuilder.build(), imageSources, personImageSources, companyImageSources));
 
     } catch (IOException ex) {
       log.error(
@@ -179,12 +152,14 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
               .map(this::mapEpisodeDetails)
               .toList();
 
+      var seasonImageSources = buildSeasonImageSources(tmdbSeason.getPosterPath());
+
       var seasonBuilder =
           SeasonDetails.builder()
               .name(tmdbSeason.getName())
               .seasonNumber(tmdbSeason.getSeasonNumber())
               .overview(tmdbSeason.getOverview())
-              .posterPath(tmdbSeason.getPosterPath())
+              .imageSources(seasonImageSources)
               .episodes(episodes);
 
       if (StringUtils.isNotBlank(tmdbSeason.getAirDate())) {
@@ -218,7 +193,7 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
             .episodeNumber(ep.getEpisodeNumber())
             .name(ep.getName())
             .overview(ep.getOverview())
-            .stillPath(ep.getStillPath())
+            .imageSources(buildEpisodeImageSources(ep.getStillPath()))
             .runtime(ep.getRuntime());
 
     if (StringUtils.isNotBlank(ep.getAirDate())) {
@@ -257,5 +232,19 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
     }
 
     return externalIdSet;
+  }
+
+  private List<ImageSource> buildSeasonImageSources(String posterPath) {
+    if (StringUtils.isNotBlank(posterPath)) {
+      return List.of(new TmdbImageSource(ImageType.POSTER, posterPath));
+    }
+    return List.of();
+  }
+
+  private List<ImageSource> buildEpisodeImageSources(String stillPath) {
+    if (StringUtils.isNotBlank(stillPath)) {
+      return List.of(new TmdbImageSource(ImageType.STILL, stillPath));
+    }
+    return List.of();
   }
 }

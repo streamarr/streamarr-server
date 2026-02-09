@@ -22,8 +22,12 @@ import com.streamarr.server.graphql.cursor.InvalidCursorException;
 import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.graphql.cursor.OrderMediaBy;
 import com.streamarr.server.services.metadata.ImageVariantService;
+import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.events.ImageSource;
+import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.jooq.SortOrder;
 import org.junit.jupiter.api.BeforeEach;
@@ -161,9 +165,11 @@ class MovieServiceTest {
   }
 
   @Test
-  @DisplayName("Should publish MetadataEnrichedEvent when creating movie with associations")
-  void shouldPublishMetadataEnrichedEventWhenCreatingMovieWithAssociations() {
-    var movie = Movie.builder().title("Inception").posterPath("/poster.jpg").build();
+  @DisplayName("Should publish MetadataEnrichedEvent when creating movie")
+  void shouldPublishMetadataEnrichedEventWhenCreatingMovie() {
+    var movie = Movie.builder().title("Inception").build();
+    var imageSources = List.<ImageSource>of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg"));
+    var metadataResult = new MetadataResult<>(movie, imageSources, Map.of(), Map.of());
     var mediaFile =
         MediaFile.builder()
             .filename("inception.mkv")
@@ -171,7 +177,7 @@ class MovieServiceTest {
             .size(1000L)
             .build();
 
-    movieService.createMovieWithAssociations(movie, mediaFile);
+    movieService.createMovieWithAssociations(metadataResult, mediaFile);
 
     var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
     assertThat(events).hasSize(1);
@@ -179,15 +185,10 @@ class MovieServiceTest {
   }
 
   @Test
-  @DisplayName(
-      "Should include poster and backdrop sources in published event when movie has both paths")
-  void shouldIncludePosterAndBackdropSourcesInPublishedEventWhenMovieHasBothPaths() {
-    var movie =
-        Movie.builder()
-            .title("Inception")
-            .posterPath("/poster.jpg")
-            .backdropPath("/backdrop.jpg")
-            .build();
+  @DisplayName("Should not publish event when image sources list is empty")
+  void shouldNotPublishEventWhenImageSourcesListIsEmpty() {
+    var movie = Movie.builder().title("Inception").build();
+    var metadataResult = new MetadataResult<>(movie, List.of(), Map.of(), Map.of());
     var mediaFile =
         MediaFile.builder()
             .filename("inception.mkv")
@@ -195,50 +196,10 @@ class MovieServiceTest {
             .size(1000L)
             .build();
 
-    movieService.createMovieWithAssociations(movie, mediaFile);
+    movieService.createMovieWithAssociations(metadataResult, mediaFile);
 
     var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
-    assertThat(events.getFirst().imageSources())
-        .extracting(ImageSource::imageType)
-        .containsExactlyInAnyOrder(ImageType.POSTER, ImageType.BACKDROP);
-  }
-
-  @Test
-  @DisplayName("Should include only poster source when movie backdrop path is null")
-  void shouldIncludeOnlyPosterSourceWhenMovieBackdropPathIsNull() {
-    var movie = Movie.builder().title("Inception").posterPath("/poster.jpg").build();
-    var mediaFile =
-        MediaFile.builder()
-            .filename("inception.mkv")
-            .filepath("/movies/inception.mkv")
-            .size(1000L)
-            .build();
-
-    movieService.createMovieWithAssociations(movie, mediaFile);
-
-    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
-    assertThat(events.getFirst().imageSources())
-        .extracting(ImageSource::imageType)
-        .containsExactly(ImageType.POSTER);
-  }
-
-  @Test
-  @DisplayName("Should include only backdrop source when movie poster path is null")
-  void shouldIncludeOnlyBackdropSourceWhenMoviePosterPathIsNull() {
-    var movie = Movie.builder().title("Inception").backdropPath("/backdrop.jpg").build();
-    var mediaFile =
-        MediaFile.builder()
-            .filename("inception.mkv")
-            .filepath("/movies/inception.mkv")
-            .size(1000L)
-            .build();
-
-    movieService.createMovieWithAssociations(movie, mediaFile);
-
-    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
-    assertThat(events.getFirst().imageSources())
-        .extracting(ImageSource::imageType)
-        .containsExactly(ImageType.BACKDROP);
+    assertThat(events).isEmpty();
   }
 
   @Test

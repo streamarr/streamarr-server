@@ -28,8 +28,6 @@ public class Season extends BaseCollectable<Season> {
 
   private String overview;
 
-  private String posterPath;
-
   private LocalDate airDate;
 
   @ManyToOne(fetch = FetchType.LAZY)

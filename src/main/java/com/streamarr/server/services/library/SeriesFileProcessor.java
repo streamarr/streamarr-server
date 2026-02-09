@@ -2,6 +2,7 @@ package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Episode;
+import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Season;
@@ -13,14 +14,21 @@ import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
+import com.streamarr.server.services.metadata.events.ImageSource;
+import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
+import com.streamarr.server.services.metadata.series.SeasonDetails;
 import com.streamarr.server.services.metadata.series.SeriesMetadataProviderResolver;
 import com.streamarr.server.services.parsers.show.EpisodePathMetadataParser;
 import com.streamarr.server.services.parsers.show.EpisodePathResult;
 import com.streamarr.server.services.parsers.show.SeasonPathMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.nio.file.Path;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 @Slf4j
@@ -35,6 +43,7 @@ public class SeriesFileProcessor {
   private final SeasonRepository seasonRepository;
   private final EpisodeRepository episodeRepository;
   private final MutexFactory<String> mutexFactory;
+  private final ApplicationEventPublisher eventPublisher;
 
   public SeriesFileProcessor(
       EpisodePathMetadataParser episodePathMetadataParser,
@@ -44,7 +53,8 @@ public class SeriesFileProcessor {
       MediaFileRepository mediaFileRepository,
       SeasonRepository seasonRepository,
       EpisodeRepository episodeRepository,
-      MutexFactoryProvider mutexFactoryProvider) {
+      MutexFactoryProvider mutexFactoryProvider,
+      ApplicationEventPublisher eventPublisher) {
     this.episodePathMetadataParser = episodePathMetadataParser;
     this.seasonPathMetadataParser = seasonPathMetadataParser;
     this.seriesMetadataProviderResolver = seriesMetadataProviderResolver;
@@ -53,6 +63,7 @@ public class SeriesFileProcessor {
     this.seasonRepository = seasonRepository;
     this.episodeRepository = episodeRepository;
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
+    this.eventPublisher = eventPublisher;
   }
 
   public void process(Library library, MediaFile mediaFile) {
@@ -216,14 +227,14 @@ public class SeriesFileProcessor {
   }
 
   private Optional<Series> createSeries(Library library, RemoteSearchResult searchResult) {
-    var seriesOpt = seriesMetadataProviderResolver.getMetadata(searchResult, library);
+    var metadataResult = seriesMetadataProviderResolver.getMetadata(searchResult, library);
 
-    if (seriesOpt.isEmpty()) {
+    if (metadataResult.isEmpty()) {
       log.error("Failed to fetch series metadata for TMDB id '{}'", searchResult.externalId());
       return Optional.empty();
     }
 
-    return Optional.of(seriesService.createSeriesWithAssociations(seriesOpt.get()));
+    return Optional.of(seriesService.createSeriesWithAssociations(metadataResult.get()));
   }
 
   private Optional<Season> createSeasonWithEpisodes(
@@ -247,11 +258,12 @@ public class SeriesFileProcessor {
                 .title(details.name())
                 .seasonNumber(details.seasonNumber())
                 .overview(details.overview())
-                .posterPath(details.posterPath())
                 .airDate(details.airDate())
                 .series(series)
                 .library(library)
                 .build());
+
+    publishImageEvent(season.getId(), ImageEntityType.SEASON, details.imageSources());
 
     var episodes =
         details.episodes().stream()
@@ -261,7 +273,6 @@ public class SeriesFileProcessor {
                         .title(ep.name())
                         .episodeNumber(ep.episodeNumber())
                         .overview(ep.overview())
-                        .stillPath(ep.stillPath())
                         .airDate(ep.airDate())
                         .runtime(ep.runtime())
                         .season(season)
@@ -269,9 +280,30 @@ public class SeriesFileProcessor {
                         .build())
             .toList();
 
-    episodeRepository.saveAll(episodes);
+    var savedEpisodes = episodeRepository.saveAll(episodes);
+
+    publishEpisodeImageEvents(savedEpisodes, details.episodes());
 
     return Optional.of(season);
+  }
+
+  private void publishImageEvent(
+      UUID entityId, ImageEntityType entityType, List<ImageSource> sources) {
+    if (!sources.isEmpty()) {
+      eventPublisher.publishEvent(new MetadataEnrichedEvent(entityId, entityType, sources));
+    }
+  }
+
+  private void publishEpisodeImageEvents(
+      Collection<? extends Episode> savedEpisodes,
+      List<SeasonDetails.EpisodeDetails> episodeDetails) {
+    for (var episode : savedEpisodes) {
+      episodeDetails.stream()
+          .filter(ed -> ed.episodeNumber() == episode.getEpisodeNumber())
+          .findFirst()
+          .ifPresent(
+              ed -> publishImageEvent(episode.getId(), ImageEntityType.EPISODE, ed.imageSources()));
+    }
   }
 
   private void markAs(MediaFile mediaFile, MediaFileStatus status) {

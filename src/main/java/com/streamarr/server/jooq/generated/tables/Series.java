@@ -72,24 +72,9 @@ public class Series extends TableImpl<SeriesRecord> {
     public final TableField<SeriesRecord, UUID> ID = createField(DSL.name("id"), SQLDataType.UUID.nullable(false), this, "");
 
     /**
-     * The column <code>public.series.backdrop_path</code>.
-     */
-    public final TableField<SeriesRecord, String> BACKDROP_PATH = createField(DSL.name("backdrop_path"), SQLDataType.CLOB, this, "");
-
-    /**
-     * The column <code>public.series.poster_path</code>.
-     */
-    public final TableField<SeriesRecord, String> POSTER_PATH = createField(DSL.name("poster_path"), SQLDataType.CLOB, this, "");
-
-    /**
-     * The column <code>public.series.logo_path</code>.
-     */
-    public final TableField<SeriesRecord, String> LOGO_PATH = createField(DSL.name("logo_path"), SQLDataType.CLOB, this, "");
-
-    /**
      * The column <code>public.series.content_rating_system</code>.
      */
-    public final TableField<SeriesRecord, String> CONTENT_RATING_SYSTEM = createField(DSL.name("content_rating_system"), SQLDataType.VARCHAR(20), this, "");
+    public final TableField<SeriesRecord, String> CONTENT_RATING_SYSTEM = createField(DSL.name("content_rating_system"), SQLDataType.VARCHAR(50), this, "");
 
     /**
      * The column <code>public.series.content_rating_value</code>.

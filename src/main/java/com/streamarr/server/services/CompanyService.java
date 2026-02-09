@@ -1,14 +1,14 @@
 package com.streamarr.server.services;
 
 import com.streamarr.server.domain.media.ImageEntityType;
-import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.repositories.CompanyRepository;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
-import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
+import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
@@ -34,19 +34,24 @@ public class CompanyService {
   }
 
   @Transactional
-  public Set<Company> getOrCreateCompanies(Set<Company> companies) {
+  public Set<Company> getOrCreateCompanies(
+      Set<Company> companies, Map<String, List<ImageSource>> imageSourcesBySourceId) {
     if (companies == null) {
       return Set.of();
     }
 
-    return companies.stream().map(this::findOrCreateCompany).collect(Collectors.toSet());
+    return companies.stream()
+        .map(c -> findOrCreateCompany(c, imageSourcesBySourceId))
+        .collect(Collectors.toSet());
   }
 
-  private Company findOrCreateCompany(Company company) {
+  private Company findOrCreateCompany(
+      Company company, Map<String, List<ImageSource>> imageSourcesBySourceId) {
     if (company.getSourceId() == null) {
       throw new IllegalArgumentException("Company sourceId must not be null");
     }
 
+    var imageSources = imageSourcesBySourceId.getOrDefault(company.getSourceId(), List.of());
     var mutex = mutexFactory.getMutex(company.getSourceId());
 
     mutex.lock();
@@ -56,27 +61,23 @@ public class CompanyService {
       if (existing.isPresent()) {
         var target = existing.get();
         target.setName(company.getName());
-        target.setLogoPath(company.getLogoPath());
         return companyRepository.save(target);
       }
 
       var savedCompany = companyRepository.save(company);
-      publishImageEvent(savedCompany);
+      publishImageEvent(savedCompany, imageSources);
       return savedCompany;
     } finally {
       mutex.unlock();
     }
   }
 
-  private void publishImageEvent(Company company) {
-    if (company.getLogoPath() == null) {
+  private void publishImageEvent(Company company, List<ImageSource> imageSources) {
+    if (imageSources.isEmpty()) {
       return;
     }
 
     eventPublisher.publishEvent(
-        new MetadataEnrichedEvent(
-            company.getId(),
-            ImageEntityType.COMPANY,
-            List.of(new TmdbImageSource(ImageType.LOGO, company.getLogoPath()))));
+        new MetadataEnrichedEvent(company.getId(), ImageEntityType.COMPANY, imageSources));
   }
 }

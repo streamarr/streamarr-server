@@ -78,31 +78,17 @@ public class SeasonRecord extends UpdatableRecordImpl<SeasonRecord> {
     }
 
     /**
-     * Setter for <code>public.season.poster_path</code>.
-     */
-    public void setPosterPath(String value) {
-        set(4, value);
-    }
-
-    /**
-     * Getter for <code>public.season.poster_path</code>.
-     */
-    public String getPosterPath() {
-        return (String) get(4);
-    }
-
-    /**
      * Setter for <code>public.season.air_date</code>.
      */
     public void setAirDate(LocalDate value) {
-        set(5, value);
+        set(4, value);
     }
 
     /**
      * Getter for <code>public.season.air_date</code>.
      */
     public LocalDate getAirDate() {
-        return (LocalDate) get(5);
+        return (LocalDate) get(4);
     }
 
     // -------------------------------------------------------------------------
@@ -128,14 +114,13 @@ public class SeasonRecord extends UpdatableRecordImpl<SeasonRecord> {
     /**
      * Create a detached, initialised SeasonRecord
      */
-    public SeasonRecord(UUID id, UUID seriesId, Integer seasonNumber, String overview, String posterPath, LocalDate airDate) {
+    public SeasonRecord(UUID id, UUID seriesId, Integer seasonNumber, String overview, LocalDate airDate) {
         super(Season.SEASON);
 
         setId(id);
         setSeriesId(seriesId);
         setSeasonNumber(seasonNumber);
         setOverview(overview);
-        setPosterPath(posterPath);
         setAirDate(airDate);
         resetTouchedOnNotNull();
     }

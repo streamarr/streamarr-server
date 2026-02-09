@@ -25,8 +25,6 @@ public class Person extends BaseAuditableEntity<Person> {
 
   private String sourceId;
 
-  private String profilePath;
-
   @ManyToMany(mappedBy = "cast", fetch = FetchType.LAZY)
   private Set<Movie> movies = new HashSet<>();
 

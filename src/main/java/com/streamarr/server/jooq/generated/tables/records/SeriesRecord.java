@@ -36,143 +36,101 @@ public class SeriesRecord extends UpdatableRecordImpl<SeriesRecord> {
     }
 
     /**
-     * Setter for <code>public.series.backdrop_path</code>.
-     */
-    public void setBackdropPath(String value) {
-        set(1, value);
-    }
-
-    /**
-     * Getter for <code>public.series.backdrop_path</code>.
-     */
-    public String getBackdropPath() {
-        return (String) get(1);
-    }
-
-    /**
-     * Setter for <code>public.series.poster_path</code>.
-     */
-    public void setPosterPath(String value) {
-        set(2, value);
-    }
-
-    /**
-     * Getter for <code>public.series.poster_path</code>.
-     */
-    public String getPosterPath() {
-        return (String) get(2);
-    }
-
-    /**
-     * Setter for <code>public.series.logo_path</code>.
-     */
-    public void setLogoPath(String value) {
-        set(3, value);
-    }
-
-    /**
-     * Getter for <code>public.series.logo_path</code>.
-     */
-    public String getLogoPath() {
-        return (String) get(3);
-    }
-
-    /**
      * Setter for <code>public.series.content_rating_system</code>.
      */
     public void setContentRatingSystem(String value) {
-        set(4, value);
+        set(1, value);
     }
 
     /**
      * Getter for <code>public.series.content_rating_system</code>.
      */
     public String getContentRatingSystem() {
-        return (String) get(4);
+        return (String) get(1);
     }
 
     /**
      * Setter for <code>public.series.content_rating_value</code>.
      */
     public void setContentRatingValue(String value) {
-        set(5, value);
+        set(2, value);
     }
 
     /**
      * Getter for <code>public.series.content_rating_value</code>.
      */
     public String getContentRatingValue() {
-        return (String) get(5);
+        return (String) get(2);
     }
 
     /**
      * Setter for <code>public.series.content_rating_country</code>.
      */
     public void setContentRatingCountry(String value) {
-        set(6, value);
+        set(3, value);
     }
 
     /**
      * Getter for <code>public.series.content_rating_country</code>.
      */
     public String getContentRatingCountry() {
-        return (String) get(6);
+        return (String) get(3);
     }
 
     /**
      * Setter for <code>public.series.summary</code>.
      */
     public void setSummary(String value) {
-        set(7, value);
+        set(4, value);
     }
 
     /**
      * Getter for <code>public.series.summary</code>.
      */
     public String getSummary() {
-        return (String) get(7);
+        return (String) get(4);
     }
 
     /**
      * Setter for <code>public.series.tagline</code>.
      */
     public void setTagline(String value) {
-        set(8, value);
+        set(5, value);
     }
 
     /**
      * Getter for <code>public.series.tagline</code>.
      */
     public String getTagline() {
-        return (String) get(8);
+        return (String) get(5);
     }
 
     /**
      * Setter for <code>public.series.runtime</code>.
      */
     public void setRuntime(Integer value) {
-        set(9, value);
+        set(6, value);
     }
 
     /**
      * Getter for <code>public.series.runtime</code>.
      */
     public Integer getRuntime() {
-        return (Integer) get(9);
+        return (Integer) get(6);
     }
 
     /**
      * Setter for <code>public.series.first_air_date</code>.
      */
     public void setFirstAirDate(LocalDate value) {
-        set(10, value);
+        set(7, value);
     }
 
     /**
      * Getter for <code>public.series.first_air_date</code>.
      */
     public LocalDate getFirstAirDate() {
-        return (LocalDate) get(10);
+        return (LocalDate) get(7);
     }
 
     // -------------------------------------------------------------------------
@@ -198,13 +156,10 @@ public class SeriesRecord extends UpdatableRecordImpl<SeriesRecord> {
     /**
      * Create a detached, initialised SeriesRecord
      */
-    public SeriesRecord(UUID id, String backdropPath, String posterPath, String logoPath, String contentRatingSystem, String contentRatingValue, String contentRatingCountry, String summary, String tagline, Integer runtime, LocalDate firstAirDate) {
+    public SeriesRecord(UUID id, String contentRatingSystem, String contentRatingValue, String contentRatingCountry, String summary, String tagline, Integer runtime, LocalDate firstAirDate) {
         super(Series.SERIES);
 
         setId(id);
-        setBackdropPath(backdropPath);
-        setPosterPath(posterPath);
-        setLogoPath(logoPath);
         setContentRatingSystem(contentRatingSystem);
         setContentRatingValue(contentRatingValue);
         setContentRatingCountry(contentRatingCountry);

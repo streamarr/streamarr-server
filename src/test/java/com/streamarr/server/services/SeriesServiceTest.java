@@ -21,8 +21,12 @@ import com.streamarr.server.graphql.cursor.InvalidCursorException;
 import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.graphql.cursor.OrderMediaBy;
 import com.streamarr.server.services.metadata.ImageVariantService;
+import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.events.ImageSource;
+import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.jooq.SortOrder;
 import org.junit.jupiter.api.BeforeEach;
@@ -67,11 +71,13 @@ class SeriesServiceTest {
   }
 
   @Test
-  @DisplayName("Should publish MetadataEnrichedEvent when creating series with associations")
-  void shouldPublishMetadataEnrichedEventWhenCreatingSeriesWithAssociations() {
-    var series = Series.builder().title("Breaking Bad").posterPath("/poster.jpg").build();
+  @DisplayName("Should publish MetadataEnrichedEvent when creating series")
+  void shouldPublishMetadataEnrichedEventWhenCreatingSeries() {
+    var series = Series.builder().title("Breaking Bad").build();
+    var imageSources = List.<ImageSource>of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg"));
+    var metadataResult = new MetadataResult<>(series, imageSources, Map.of(), Map.of());
 
-    seriesService.createSeriesWithAssociations(series);
+    seriesService.createSeriesWithAssociations(metadataResult);
 
     var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
     assertThat(events).hasSize(1);
@@ -79,70 +85,12 @@ class SeriesServiceTest {
   }
 
   @Test
-  @DisplayName(
-      "Should include poster, backdrop, and logo sources in published event when series has all paths")
-  void shouldIncludePosterBackdropAndLogoSourcesInPublishedEventWhenSeriesHasAllPaths() {
-    var series =
-        Series.builder()
-            .title("Breaking Bad")
-            .posterPath("/poster.jpg")
-            .backdropPath("/backdrop.jpg")
-            .logoPath("/logo.png")
-            .build();
-
-    seriesService.createSeriesWithAssociations(series);
-
-    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
-    assertThat(events.getFirst().imageSources())
-        .extracting(ImageSource::imageType)
-        .containsExactlyInAnyOrder(ImageType.POSTER, ImageType.BACKDROP, ImageType.LOGO);
-  }
-
-  @Test
-  @DisplayName("Should include only poster source when series backdrop and logo paths are null")
-  void shouldIncludeOnlyPosterSourceWhenSeriesBackdropAndLogoPathsAreNull() {
-    var series = Series.builder().title("Breaking Bad").posterPath("/poster.jpg").build();
-
-    seriesService.createSeriesWithAssociations(series);
-
-    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
-    assertThat(events.getFirst().imageSources())
-        .extracting(ImageSource::imageType)
-        .containsExactly(ImageType.POSTER);
-  }
-
-  @Test
-  @DisplayName("Should include only backdrop source when series poster and logo paths are null")
-  void shouldIncludeOnlyBackdropSourceWhenSeriesPosterAndLogoPathsAreNull() {
-    var series = Series.builder().title("Breaking Bad").backdropPath("/backdrop.jpg").build();
-
-    seriesService.createSeriesWithAssociations(series);
-
-    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
-    assertThat(events.getFirst().imageSources())
-        .extracting(ImageSource::imageType)
-        .containsExactly(ImageType.BACKDROP);
-  }
-
-  @Test
-  @DisplayName("Should include only logo source when series poster and backdrop paths are null")
-  void shouldIncludeOnlyLogoSourceWhenSeriesPosterAndBackdropPathsAreNull() {
-    var series = Series.builder().title("Breaking Bad").logoPath("/logo.png").build();
-
-    seriesService.createSeriesWithAssociations(series);
-
-    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
-    assertThat(events.getFirst().imageSources())
-        .extracting(ImageSource::imageType)
-        .containsExactly(ImageType.LOGO);
-  }
-
-  @Test
-  @DisplayName("Should not publish event when series has no image paths")
-  void shouldNotPublishEventWhenSeriesHasNoImagePaths() {
+  @DisplayName("Should not publish event when image sources list is empty")
+  void shouldNotPublishEventWhenImageSourcesListIsEmpty() {
     var series = Series.builder().title("Breaking Bad").build();
+    var metadataResult = new MetadataResult<>(series, List.of(), Map.of(), Map.of());
 
-    seriesService.createSeriesWithAssociations(series);
+    seriesService.createSeriesWithAssociations(metadataResult);
 
     var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
     assertThat(events).isEmpty();

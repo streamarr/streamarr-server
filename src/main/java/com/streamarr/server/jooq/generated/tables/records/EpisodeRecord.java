@@ -78,45 +78,31 @@ public class EpisodeRecord extends UpdatableRecordImpl<EpisodeRecord> {
     }
 
     /**
-     * Setter for <code>public.episode.still_path</code>.
-     */
-    public void setStillPath(String value) {
-        set(4, value);
-    }
-
-    /**
-     * Getter for <code>public.episode.still_path</code>.
-     */
-    public String getStillPath() {
-        return (String) get(4);
-    }
-
-    /**
      * Setter for <code>public.episode.air_date</code>.
      */
     public void setAirDate(LocalDate value) {
-        set(5, value);
+        set(4, value);
     }
 
     /**
      * Getter for <code>public.episode.air_date</code>.
      */
     public LocalDate getAirDate() {
-        return (LocalDate) get(5);
+        return (LocalDate) get(4);
     }
 
     /**
      * Setter for <code>public.episode.runtime</code>.
      */
     public void setRuntime(Integer value) {
-        set(6, value);
+        set(5, value);
     }
 
     /**
      * Getter for <code>public.episode.runtime</code>.
      */
     public Integer getRuntime() {
-        return (Integer) get(6);
+        return (Integer) get(5);
     }
 
     // -------------------------------------------------------------------------
@@ -142,14 +128,13 @@ public class EpisodeRecord extends UpdatableRecordImpl<EpisodeRecord> {
     /**
      * Create a detached, initialised EpisodeRecord
      */
-    public EpisodeRecord(UUID id, UUID seasonId, Integer episodeNumber, String overview, String stillPath, LocalDate airDate, Integer runtime) {
+    public EpisodeRecord(UUID id, UUID seasonId, Integer episodeNumber, String overview, LocalDate airDate, Integer runtime) {
         super(Episode.EPISODE);
 
         setId(id);
         setSeasonId(seasonId);
         setEpisodeNumber(episodeNumber);
         setOverview(overview);
-        setStillPath(stillPath);
         setAirDate(airDate);
         setRuntime(runtime);
         resetTouchedOnNotNull();

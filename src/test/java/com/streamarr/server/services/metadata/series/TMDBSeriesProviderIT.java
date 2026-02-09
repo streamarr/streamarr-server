@@ -11,10 +11,13 @@ import com.github.tomakehurst.wiremock.WireMockServer;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
+import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.time.LocalDate;
 import org.junit.jupiter.api.AfterAll;
@@ -238,8 +241,8 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
     var result = provider.getMetadata(buildSearchResult("1396"), savedLibrary);
 
     assertThat(result).isPresent();
-    assertThat(result.get().getCast()).isEmpty();
-    assertThat(result.get().getDirectors()).isEmpty();
+    assertThat(result.get().entity().getCast()).isEmpty();
+    assertThat(result.get().entity().getDirectors()).isEmpty();
   }
 
   @Test
@@ -276,12 +279,22 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should map backdrop and poster paths when TV response includes image paths")
-  void shouldMapBackdropAndPosterPathsWhenResponseIncludesImagePaths() {
-    var series = getMetadataFromFullResponse();
+  @DisplayName("Should build image sources when TV response includes backdrop and poster paths")
+  void shouldBuildImageSourcesWhenResponseIncludesBackdropAndPosterPaths() {
+    var result = getFullMetadataResult();
 
-    assertThat(series.getBackdropPath()).isEqualTo("/zzWGRQUhBaS2eSBzNkwpT2hKZVh.jpg");
-    assertThat(series.getPosterPath()).isEqualTo("/ggFHVNu6YYI5L9pCfOacjizRGt.jpg");
+    assertThat(result.imageSources()).hasSize(2);
+    assertThat(result.imageSources())
+        .anyMatch(
+            s ->
+                s instanceof TmdbImageSource t
+                    && t.imageType() == ImageType.POSTER
+                    && "/ggFHVNu6YYI5L9pCfOacjizRGt.jpg".equals(t.pathFragment()))
+        .anyMatch(
+            s ->
+                s instanceof TmdbImageSource t
+                    && t.imageType() == ImageType.BACKDROP
+                    && "/zzWGRQUhBaS2eSBzNkwpT2hKZVh.jpg".equals(t.pathFragment()));
   }
 
   @Test
@@ -296,7 +309,7 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
     var result = provider.getMetadata(buildSearchResult("1396"), savedLibrary);
 
     assertThat(result).isPresent();
-    assertThat(result.get().getContentRating()).isNull();
+    assertThat(result.get().entity().getContentRating()).isNull();
   }
 
   @Test
@@ -307,7 +320,7 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
     var result = provider.getMetadata(buildSearchResult("1396"), savedLibrary);
 
     assertThat(result).isPresent();
-    assertThat(result.get().getRuntime()).isNull();
+    assertThat(result.get().entity().getRuntime()).isNull();
   }
 
   @Test
@@ -318,9 +331,9 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
     var result = provider.getMetadata(buildSearchResult("1396"), savedLibrary);
 
     assertThat(result).isPresent();
-    assertThat(result.get().getExternalIds()).hasSize(1);
+    assertThat(result.get().entity().getExternalIds()).hasSize(1);
     assertThat(
-            result.get().getExternalIds().stream()
+            result.get().entity().getExternalIds().stream()
                 .anyMatch(id -> id.getExternalSourceType() == ExternalSourceType.TMDB))
         .isTrue();
   }
@@ -377,7 +390,9 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
     assertThat(season.name()).isEqualTo("Season 1");
     assertThat(season.seasonNumber()).isEqualTo(1);
     assertThat(season.overview()).isEqualTo("The first season of Breaking Bad.");
-    assertThat(season.posterPath()).isEqualTo("/1BP4xYv9ZG4ZVHkL7ocOziBbSYH.jpg");
+    assertThat(season.imageSources()).hasSize(1);
+    assertThat(season.imageSources().getFirst())
+        .isEqualTo(new TmdbImageSource(ImageType.POSTER, "/1BP4xYv9ZG4ZVHkL7ocOziBbSYH.jpg"));
     assertThat(season.airDate()).isEqualTo(LocalDate.of(2008, 1, 20));
     assertThat(season.episodes()).hasSize(2);
 
@@ -385,7 +400,9 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
     assertThat(ep1.episodeNumber()).isEqualTo(1);
     assertThat(ep1.name()).isEqualTo("Pilot");
     assertThat(ep1.overview()).isEqualTo("Walter White is a chemistry genius.");
-    assertThat(ep1.stillPath()).isEqualTo("/ydlY3iEN5qYVoW0gRgJyBRC9OjI.jpg");
+    assertThat(ep1.imageSources()).hasSize(1);
+    assertThat(ep1.imageSources().getFirst())
+        .isEqualTo(new TmdbImageSource(ImageType.STILL, "/ydlY3iEN5qYVoW0gRgJyBRC9OjI.jpg"));
     assertThat(ep1.airDate()).isEqualTo(LocalDate.of(2008, 1, 20));
     assertThat(ep1.runtime()).isEqualTo(58);
 
@@ -418,13 +435,139 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
     assertThat(result).isEmpty();
   }
 
+  @Test
+  @DisplayName("Should build season poster image source when TMDB returns poster path")
+  void shouldBuildSeasonPosterImageSourceWhenTmdbReturnsPosterPath() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/tv/1396/season/1"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {
+                          "id": 3577,
+                          "name": "Season 1",
+                          "season_number": 1,
+                          "poster_path": "/1BP4xYv9ZG4ZVHkL7ocOziBbSYH.jpg",
+                          "episodes": []
+                        }
+                        """)));
+
+    var result = provider.getSeasonDetails("1396", 1);
+
+    assertThat(result).isPresent();
+    assertThat(result.get().imageSources()).hasSize(1);
+    assertThat(result.get().imageSources().getFirst())
+        .isEqualTo(new TmdbImageSource(ImageType.POSTER, "/1BP4xYv9ZG4ZVHkL7ocOziBbSYH.jpg"));
+  }
+
+  @Test
+  @DisplayName("Should build episode still image source when TMDB returns still path")
+  void shouldBuildEpisodeStillImageSourceWhenTmdbReturnsStillPath() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/tv/1396/season/1"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {
+                          "id": 3577,
+                          "name": "Season 1",
+                          "season_number": 1,
+                          "episodes": [
+                            {
+                              "id": 62085,
+                              "name": "Pilot",
+                              "episode_number": 1,
+                              "season_number": 1,
+                              "still_path": "/ydlY3iEN5qYVoW0gRgJyBRC9OjI.jpg"
+                            }
+                          ]
+                        }
+                        """)));
+
+    var result = provider.getSeasonDetails("1396", 1);
+
+    assertThat(result).isPresent();
+    var ep1 = result.get().episodes().getFirst();
+    assertThat(ep1.imageSources()).hasSize(1);
+    assertThat(ep1.imageSources().getFirst())
+        .isEqualTo(new TmdbImageSource(ImageType.STILL, "/ydlY3iEN5qYVoW0gRgJyBRC9OjI.jpg"));
+  }
+
+  @Test
+  @DisplayName("Should return empty season image sources when poster path is null")
+  void shouldReturnEmptySeasonImageSourcesWhenPosterPathIsNull() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/tv/1396/season/1"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {
+                          "id": 3577,
+                          "name": "Season 1",
+                          "season_number": 1,
+                          "episodes": []
+                        }
+                        """)));
+
+    var result = provider.getSeasonDetails("1396", 1);
+
+    assertThat(result).isPresent();
+    assertThat(result.get().imageSources()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should return empty episode image sources when still path is null")
+  void shouldReturnEmptyEpisodeImageSourcesWhenStillPathIsNull() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/tv/1396/season/1"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {
+                          "id": 3577,
+                          "name": "Season 1",
+                          "season_number": 1,
+                          "episodes": [
+                            {
+                              "id": 62085,
+                              "name": "Pilot",
+                              "episode_number": 1,
+                              "season_number": 1
+                            }
+                          ]
+                        }
+                        """)));
+
+    var result = provider.getSeasonDetails("1396", 1);
+
+    assertThat(result).isPresent();
+    var ep1 = result.get().episodes().getFirst();
+    assertThat(ep1.imageSources()).isEmpty();
+  }
+
   // --- Helpers ---
 
-  private Series getMetadataFromFullResponse() {
+  private MetadataResult<Series> getFullMetadataResult() {
     stubFullSeriesResponse();
     var result = provider.getMetadata(buildSearchResult("1396"), savedLibrary);
     assertThat(result).isPresent();
     return result.get();
+  }
+
+  private Series getMetadataFromFullResponse() {
+    return getFullMetadataResult().entity();
   }
 
   private RemoteSearchResult buildSearchResult(String externalId) {
