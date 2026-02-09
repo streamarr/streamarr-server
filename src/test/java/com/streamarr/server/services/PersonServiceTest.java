@@ -67,8 +67,8 @@ class PersonServiceTest {
   }
 
   @Test
-  @DisplayName("Should update existing person when batch contains duplicate source ID")
-  void shouldUpdateExistingPersonWhenBatchContainsDuplicate() {
+  @DisplayName("Should update existing person when batch contains known source ID")
+  void shouldUpdateExistingPersonWhenBatchContainsKnownSourceId() {
     var existing =
         personRepository.save(
             Person.builder().name("Existing Actor").sourceId("existing-1").build());
@@ -82,6 +82,17 @@ class PersonServiceTest {
         result.stream().filter(p -> "existing-1".equals(p.getSourceId())).findFirst().orElseThrow();
     assertThat(returnedExisting.getId()).isEqualTo(existing.getId());
     assertThat(returnedExisting.getName()).isEqualTo("Updated Actor");
+  }
+
+  @Test
+  @DisplayName("Should create new person when batch contains unknown source ID")
+  void shouldCreateNewPersonWhenBatchContainsUnknownSourceId() {
+    personRepository.save(Person.builder().name("Existing Actor").sourceId("existing-1").build());
+
+    var updatedExisting = Person.builder().name("Updated Actor").sourceId("existing-1").build();
+    var brandNew = Person.builder().name("Brand New Actor").sourceId("new-1").build();
+
+    var result = personService.getOrCreatePersons(List.of(updatedExisting, brandNew), Map.of());
 
     var returnedNew =
         result.stream().filter(p -> "new-1".equals(p.getSourceId())).findFirst().orElseThrow();

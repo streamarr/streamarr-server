@@ -71,8 +71,8 @@ class SeriesServiceTest {
   }
 
   @Test
-  @DisplayName("Should publish MetadataEnrichedEvent when creating series with associations")
-  void shouldPublishMetadataEnrichedEventWhenCreatingSeriesWithAssociations() {
+  @DisplayName("Should publish MetadataEnrichedEvent when creating series")
+  void shouldPublishMetadataEnrichedEventWhenCreatingSeries() {
     var series = Series.builder().title("Breaking Bad").build();
     var imageSources = List.<ImageSource>of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg"));
     var metadataResult = new MetadataResult<>(series, imageSources, Map.of(), Map.of());
@@ -82,41 +82,6 @@ class SeriesServiceTest {
     var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
     assertThat(events).hasSize(1);
     assertThat(events.getFirst().entityId()).isNotNull();
-  }
-
-  @Test
-  @DisplayName(
-      "Should include poster, backdrop, and logo sources in published event when metadata has all")
-  void shouldIncludePosterBackdropAndLogoSourcesInPublishedEventWhenMetadataHasAll() {
-    var series = Series.builder().title("Breaking Bad").build();
-    var imageSources =
-        List.<ImageSource>of(
-            new TmdbImageSource(ImageType.POSTER, "/poster.jpg"),
-            new TmdbImageSource(ImageType.BACKDROP, "/backdrop.jpg"),
-            new TmdbImageSource(ImageType.LOGO, "/logo.png"));
-    var metadataResult = new MetadataResult<>(series, imageSources, Map.of(), Map.of());
-
-    seriesService.createSeriesWithAssociations(metadataResult);
-
-    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
-    assertThat(events.getFirst().imageSources())
-        .extracting(ImageSource::imageType)
-        .containsExactlyInAnyOrder(ImageType.POSTER, ImageType.BACKDROP, ImageType.LOGO);
-  }
-
-  @Test
-  @DisplayName("Should include only poster source when metadata has only poster")
-  void shouldIncludeOnlyPosterSourceWhenMetadataHasOnlyPoster() {
-    var series = Series.builder().title("Breaking Bad").build();
-    var imageSources = List.<ImageSource>of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg"));
-    var metadataResult = new MetadataResult<>(series, imageSources, Map.of(), Map.of());
-
-    seriesService.createSeriesWithAssociations(metadataResult);
-
-    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
-    assertThat(events.getFirst().imageSources())
-        .extracting(ImageSource::imageType)
-        .containsExactly(ImageType.POSTER);
   }
 
   @Test

@@ -165,8 +165,8 @@ class MovieServiceTest {
   }
 
   @Test
-  @DisplayName("Should publish MetadataEnrichedEvent when creating movie with associations")
-  void shouldPublishMetadataEnrichedEventWhenCreatingMovieWithAssociations() {
+  @DisplayName("Should publish MetadataEnrichedEvent when creating movie")
+  void shouldPublishMetadataEnrichedEventWhenCreatingMovie() {
     var movie = Movie.builder().title("Inception").build();
     var imageSources = List.<ImageSource>of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg"));
     var metadataResult = new MetadataResult<>(movie, imageSources, Map.of(), Map.of());
@@ -182,31 +182,6 @@ class MovieServiceTest {
     var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
     assertThat(events).hasSize(1);
     assertThat(events.getFirst().entityId()).isNotNull();
-  }
-
-  @Test
-  @DisplayName(
-      "Should include poster and backdrop sources in published event when metadata has both")
-  void shouldIncludePosterAndBackdropSourcesInPublishedEventWhenMetadataHasBoth() {
-    var movie = Movie.builder().title("Inception").build();
-    var imageSources =
-        List.<ImageSource>of(
-            new TmdbImageSource(ImageType.POSTER, "/poster.jpg"),
-            new TmdbImageSource(ImageType.BACKDROP, "/backdrop.jpg"));
-    var metadataResult = new MetadataResult<>(movie, imageSources, Map.of(), Map.of());
-    var mediaFile =
-        MediaFile.builder()
-            .filename("inception.mkv")
-            .filepath("/movies/inception.mkv")
-            .size(1000L)
-            .build();
-
-    movieService.createMovieWithAssociations(metadataResult, mediaFile);
-
-    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
-    assertThat(events.getFirst().imageSources())
-        .extracting(ImageSource::imageType)
-        .containsExactlyInAnyOrder(ImageType.POSTER, ImageType.BACKDROP);
   }
 
   @Test

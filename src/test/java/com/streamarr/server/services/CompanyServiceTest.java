@@ -69,8 +69,8 @@ class CompanyServiceTest {
   }
 
   @Test
-  @DisplayName("Should update existing company when batch contains duplicate source ID")
-  void shouldUpdateExistingCompanyWhenBatchContainsDuplicate() {
+  @DisplayName("Should update existing company when batch contains known source ID")
+  void shouldUpdateExistingCompanyWhenBatchContainsKnownSourceId() {
     var existing =
         companyRepository.save(
             Company.builder().name("Existing Studio").sourceId("existing-1").build());
@@ -84,6 +84,18 @@ class CompanyServiceTest {
         result.stream().filter(c -> "existing-1".equals(c.getSourceId())).findFirst().orElseThrow();
     assertThat(returnedExisting.getId()).isEqualTo(existing.getId());
     assertThat(returnedExisting.getName()).isEqualTo("Updated Studio");
+  }
+
+  @Test
+  @DisplayName("Should create new company when batch contains unknown source ID")
+  void shouldCreateNewCompanyWhenBatchContainsUnknownSourceId() {
+    companyRepository.save(
+        Company.builder().name("Existing Studio").sourceId("existing-1").build());
+
+    var updatedExisting = Company.builder().name("Updated Studio").sourceId("existing-1").build();
+    var brandNew = Company.builder().name("Brand New Studio").sourceId("new-1").build();
+
+    var result = companyService.getOrCreateCompanies(Set.of(updatedExisting, brandNew), Map.of());
 
     var returnedNew =
         result.stream().filter(c -> "new-1".equals(c.getSourceId())).findFirst().orElseThrow();
