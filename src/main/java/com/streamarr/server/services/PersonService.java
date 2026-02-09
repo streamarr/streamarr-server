@@ -32,6 +32,10 @@ public class PersonService {
 
   @Transactional
   public List<Person> getOrCreatePersons(List<Person> persons) {
+    if (persons == null) {
+      return List.of();
+    }
+
     return persons.stream().map(this::findOrCreatePerson).collect(Collectors.toList());
   }
 

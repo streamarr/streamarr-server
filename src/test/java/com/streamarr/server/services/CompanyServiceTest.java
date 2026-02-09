@@ -170,4 +170,12 @@ class CompanyServiceTest {
     assertThatThrownBy(() -> companyService.getOrCreateCompanies(Set.of(company)))
         .isInstanceOf(IllegalArgumentException.class);
   }
+
+  @Test
+  @DisplayName("Should return empty set when input is null")
+  void shouldReturnEmptySetWhenInputIsNull() {
+    var result = companyService.getOrCreateCompanies(null);
+
+    assertThat(result).isEmpty();
+  }
 }

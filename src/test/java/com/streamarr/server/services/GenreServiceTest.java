@@ -99,4 +99,12 @@ class GenreServiceTest {
     assertThatThrownBy(() -> genreService.getOrCreateGenres(Set.of(genre)))
         .isInstanceOf(IllegalArgumentException.class);
   }
+
+  @Test
+  @DisplayName("Should return empty set when input is null")
+  void shouldReturnEmptySetWhenInputIsNull() {
+    var result = genreService.getOrCreateGenres(null);
+
+    assertThat(result).isEmpty();
+  }
 }

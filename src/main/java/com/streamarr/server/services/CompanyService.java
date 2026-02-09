@@ -35,6 +35,10 @@ public class CompanyService {
 
   @Transactional
   public Set<Company> getOrCreateCompanies(Set<Company> companies) {
+    if (companies == null) {
+      return Set.of();
+    }
+
     return companies.stream().map(this::findOrCreateCompany).collect(Collectors.toSet());
   }
 

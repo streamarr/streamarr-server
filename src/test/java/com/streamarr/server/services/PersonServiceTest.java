@@ -169,4 +169,12 @@ class PersonServiceTest {
     assertThatThrownBy(() -> personService.getOrCreatePersons(List.of(person)))
         .isInstanceOf(IllegalArgumentException.class);
   }
+
+  @Test
+  @DisplayName("Should return empty list when input is null")
+  void shouldReturnEmptyListWhenInputIsNull() {
+    var result = personService.getOrCreatePersons(null);
+
+    assertThat(result).isEmpty();
+  }
 }

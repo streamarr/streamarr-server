@@ -22,6 +22,10 @@ public class GenreService {
 
   @Transactional
   public Set<Genre> getOrCreateGenres(Set<Genre> genres) {
+    if (genres == null) {
+      return Set.of();
+    }
+
     return genres.stream().map(this::findOrCreateGenre).collect(Collectors.toSet());
   }
 
