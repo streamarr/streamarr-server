@@ -681,6 +681,65 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should complete concurrent requests when intermittently rate limited")
+  void shouldCompleteConcurrentRequestsWhenIntermittentlyRateLimited() throws Exception {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/search/movie"))
+            .inScenario("Concurrent Rate Limit")
+            .whenScenarioStateIs(STARTED)
+            .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "0"))
+            .willSetStateTo("Recovered"));
+
+    wireMock.stubFor(
+        get(urlPathEqualTo("/search/movie"))
+            .inScenario("Concurrent Rate Limit")
+            .whenScenarioStateIs("Recovered")
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                    {
+                      "page": 1,
+                      "results": [
+                        {
+                          "id": 1,
+                          "title": "Recovered",
+                          "adult": false,
+                          "popularity": 1.0,
+                          "vote_count": 0,
+                          "vote_average": 0,
+                          "video": false
+                        }
+                      ],
+                      "total_results": 1,
+                      "total_pages": 1
+                    }
+                    """)));
+
+    var futures = new ArrayList<Future<TmdbSearchResults>>();
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      for (int i = 0; i < 20; i++) {
+        futures.add(
+            executor.submit(
+                () -> {
+                  var parserResult =
+                      VideoFileParserResult.builder().title("Test").year("2020").build();
+                  return service.searchForMovie(parserResult);
+                }));
+      }
+    }
+
+    for (var future : futures) {
+      var results = future.get();
+      assertThat(results.getResults()).hasSize(1);
+      assertThat(results.getResults().getFirst().getTitle()).isEqualTo("Recovered");
+    }
+  }
+
+  @Test
   @DisplayName("Should complete concurrent search requests without errors")
   void shouldCompleteConcurrentSearchRequestsWithoutErrors() throws Exception {
     wireMock.stubFor(
