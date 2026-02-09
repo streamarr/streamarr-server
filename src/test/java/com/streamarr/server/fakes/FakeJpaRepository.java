@@ -4,7 +4,7 @@ import com.streamarr.server.domain.AuditFieldSetter;
 import com.streamarr.server.domain.BaseAuditableEntity;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -19,7 +19,7 @@ import org.springframework.data.repository.query.FluentQuery;
 
 public class FakeJpaRepository<L extends BaseAuditableEntity> implements JpaRepository<L, UUID> {
 
-  public final HashMap<UUID, L> database = new HashMap<>();
+  public final ConcurrentHashMap<UUID, L> database = new ConcurrentHashMap<>();
 
   @Override
   public List<L> findAll() {
