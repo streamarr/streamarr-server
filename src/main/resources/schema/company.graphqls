@@ -2,4 +2,5 @@ type Company {
     id: ID!
     name: String!
     logoPath: String
+    images(type: ImageType): [Image]!
 }

@@ -14,6 +14,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
@@ -33,6 +34,7 @@ public class TheMovieDatabaseHttpService {
 
   private final String tmdbApiToken;
   private final String tmdbApiBaseUrl;
+  private final String tmdbImageBaseUrl;
 
   private final HttpClient client;
   private final ObjectMapper objectMapper;
@@ -40,10 +42,12 @@ public class TheMovieDatabaseHttpService {
   public TheMovieDatabaseHttpService(
       @Value("${tmdb.api.token:}") String tmdbApiToken,
       @Value("${tmdb.api.base-url:https://api.themoviedb.org/3}") String tmdbApiBaseUrl,
+      @Value("${tmdb.image.base-url:https://image.tmdb.org/t/p/original}") String tmdbImageBaseUrl,
       HttpClient client,
       ObjectMapper objectMapper) {
     this.tmdbApiToken = tmdbApiToken;
     this.tmdbApiBaseUrl = tmdbApiBaseUrl;
+    this.tmdbImageBaseUrl = tmdbImageBaseUrl;
     this.client = client;
     this.objectMapper = objectMapper;
   }
@@ -113,6 +117,19 @@ public class TheMovieDatabaseHttpService {
     return sendWithRetry(request, TmdbTvSeries.class);
   }
 
+  public byte[] downloadImage(String pathFragment) throws IOException, InterruptedException {
+    var uri = URI.create(tmdbImageBaseUrl + pathFragment);
+    var request = HttpRequest.newBuilder().uri(uri).GET().build();
+    var response = executeWithRetry(request, HttpResponse.BodyHandlers.ofByteArray(), Set.of(429));
+
+    if (response.statusCode() != 200) {
+      throw new TmdbApiException(
+          response.statusCode(), "Failed to download image: " + pathFragment);
+    }
+
+    return response.body();
+  }
+
   public TmdbTvSeason getTvSeasonDetails(String seriesId, int seasonNumber)
       throws IOException, InterruptedException {
     var uri =
@@ -139,17 +156,29 @@ public class TheMovieDatabaseHttpService {
 
   private <T> T sendWithRetry(HttpRequest request, Class<T> responseType)
       throws IOException, InterruptedException {
+    var response = executeWithRetry(request, HttpResponse.BodyHandlers.ofString(), Set.of(429));
+
+    if (response.statusCode() == 200) {
+      return objectMapper.readValue(response.body(), responseType);
+    }
+
+    var failure = objectMapper.readValue(response.body(), TmdbFailure.class);
+    throw new TmdbApiException(response.statusCode(), failure.getStatusMessage());
+  }
+
+  private <T> HttpResponse<T> executeWithRetry(
+      HttpRequest request, HttpResponse.BodyHandler<T> bodyHandler, Set<Integer> retryableStatuses)
+      throws IOException, InterruptedException {
+    var lastStatusCode = 0;
+
     for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      var response = client.send(request, HttpResponse.BodyHandlers.ofString());
+      var response = client.send(request, bodyHandler);
 
-      if (response.statusCode() == 200) {
-        return objectMapper.readValue(response.body(), responseType);
+      if (!retryableStatuses.contains(response.statusCode())) {
+        return response;
       }
 
-      if (response.statusCode() != 429) {
-        var failure = objectMapper.readValue(response.body(), TmdbFailure.class);
-        throw new TmdbApiException(response.statusCode(), failure.getStatusMessage());
-      }
+      lastStatusCode = response.statusCode();
 
       if (attempt < MAX_RETRIES) {
         var delaySeconds =
@@ -160,7 +189,8 @@ public class TheMovieDatabaseHttpService {
                 .orElse(BASE_DELAY_MS * (1L << attempt) / 1000);
 
         log.warn(
-            "TMDB rate limited (429). Retrying after {}s (attempt {}/{})",
+            "TMDB rate limited ({}). Retrying after {}s (attempt {}/{})",
+            lastStatusCode,
             delaySeconds,
             attempt + 1,
             MAX_RETRIES);
@@ -169,7 +199,8 @@ public class TheMovieDatabaseHttpService {
       }
     }
 
-    throw new TmdbApiException(429, "TMDB rate limit exceeded after " + MAX_RETRIES + " retries");
+    throw new TmdbApiException(
+        lastStatusCode, "TMDB retryable status persisted after " + MAX_RETRIES + " retries");
   }
 
   private HttpRequest.Builder authenticatedRequest(URI uri) {

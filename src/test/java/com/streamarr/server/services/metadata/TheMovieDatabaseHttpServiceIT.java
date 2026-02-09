@@ -33,6 +33,7 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
     wireMock.start();
 
     registry.add("tmdb.api.base-url", wireMock::baseUrl);
+    registry.add("tmdb.image.base-url", wireMock::baseUrl);
     registry.add("tmdb.api.token", () -> "test-api-token");
   }
 
@@ -407,7 +408,7 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
 
     assertThatThrownBy(() -> service.searchForMovie(parserResult))
         .isInstanceOf(TmdbApiException.class)
-        .hasMessageContaining("rate limit exceeded")
+        .hasMessageContaining("retryable status persisted")
         .satisfies(ex -> assertThat(((TmdbApiException) ex).getStatusCode()).isEqualTo(429));
   }
 
@@ -618,5 +619,60 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
     assertThat(season.getEpisodes().getFirst().getEpisodeNumber()).isEqualTo(1);
     assertThat(season.getEpisodes().getFirst().getRuntime()).isEqualTo(58);
     assertThat(season.getEpisodes().get(1).getName()).isEqualTo("Cat's in the Bag...");
+  }
+
+  @Test
+  @DisplayName("Should return image bytes when download succeeds")
+  void shouldReturnImageBytesWhenDownloadSucceeds() throws Exception {
+    var imageBytes = new byte[] {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0};
+
+    wireMock.stubFor(
+        get(urlPathEqualTo("/abc123.jpg"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "image/jpeg")
+                    .withBody(imageBytes)));
+
+    var result = service.downloadImage("/abc123.jpg");
+
+    assertThat(result).isEqualTo(imageBytes);
+  }
+
+  @Test
+  @DisplayName("Should retry image download when rate limited")
+  void shouldRetryImageDownloadWhenRateLimited() throws Exception {
+    var imageBytes = new byte[] {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0};
+
+    wireMock.stubFor(
+        get(urlPathEqualTo("/rate-limited.jpg"))
+            .inScenario("Image Rate Limit")
+            .whenScenarioStateIs(STARTED)
+            .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "0"))
+            .willSetStateTo("Recovered"));
+
+    wireMock.stubFor(
+        get(urlPathEqualTo("/rate-limited.jpg"))
+            .inScenario("Image Rate Limit")
+            .whenScenarioStateIs("Recovered")
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "image/jpeg")
+                    .withBody(imageBytes)));
+
+    var result = service.downloadImage("/rate-limited.jpg");
+
+    assertThat(result).isEqualTo(imageBytes);
+  }
+
+  @Test
+  @DisplayName("Should throw when image endpoint returns 404")
+  void shouldThrowWhenImageEndpointReturns404() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/nonexistent.jpg")).willReturn(aResponse().withStatus(404)));
+
+    assertThatThrownBy(() -> service.downloadImage("/nonexistent.jpg"))
+        .isInstanceOf(TmdbApiException.class);
   }
 }

@@ -7,4 +7,5 @@ type Episode {
     airDate: String
     runtime: Int
     files: [MediaFile]!
+    images(type: ImageType): [Image]!
 }

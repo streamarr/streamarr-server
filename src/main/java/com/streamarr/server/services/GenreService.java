@@ -22,15 +22,22 @@ public class GenreService {
 
   @Transactional
   public Set<Genre> getOrCreateGenres(Set<Genre> genres) {
+    if (genres == null) {
+      return Set.of();
+    }
+
     return genres.stream().map(this::findOrCreateGenre).collect(Collectors.toSet());
   }
 
   private Genre findOrCreateGenre(Genre genre) {
+    if (genre.getSourceId() == null) {
+      throw new IllegalArgumentException("Genre sourceId must not be null");
+    }
+
     var mutex = mutexFactory.getMutex(genre.getSourceId());
 
+    mutex.lock();
     try {
-      mutex.lock();
-
       var existing = genreRepository.findBySourceId(genre.getSourceId());
 
       if (existing.isPresent()) {
@@ -41,9 +48,7 @@ public class GenreService {
 
       return genreRepository.save(genre);
     } finally {
-      if (mutex.isHeldByCurrentThread()) {
-        mutex.unlock();
-      }
+      mutex.unlock();
     }
   }
 }

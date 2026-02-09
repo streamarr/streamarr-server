@@ -1,6 +1,8 @@
 package com.streamarr.server.services;
 
 import com.streamarr.server.domain.BaseCollectable;
+import com.streamarr.server.domain.media.ImageEntityType;
+import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.graphql.cursor.CursorUtil;
@@ -8,15 +10,20 @@ import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.graphql.cursor.MediaPaginationOptions;
 import com.streamarr.server.graphql.cursor.PaginationOptions;
 import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.services.metadata.events.ImageSource;
+import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
+import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import graphql.relay.Connection;
 import graphql.relay.DefaultEdge;
 import graphql.relay.Edge;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,6 +38,8 @@ public class MovieService {
   private final CompanyService companyService;
   private final CursorUtil cursorUtil;
   private final RelayPaginationService relayPaginationService;
+  private final ApplicationEventPublisher eventPublisher;
+  private final ImageService imageService;
 
   @Transactional
   public Optional<Movie> addMediaFileToMovieByTmdbId(String id, MediaFile mediaFile) {
@@ -47,6 +56,7 @@ public class MovieService {
 
   @Transactional
   public void deleteMovieById(UUID movieId) {
+    imageService.deleteImagesForEntity(movieId, ImageEntityType.MOVIE);
     movieRepository.deleteById(movieId);
   }
 
@@ -55,6 +65,10 @@ public class MovieService {
     var movies = movieRepository.findByLibrary_Id(libraryId);
     if (movies.isEmpty()) {
       return;
+    }
+
+    for (var movie : movies) {
+      imageService.deleteImagesForEntity(movie.getId(), ImageEntityType.MOVIE);
     }
 
     movieRepository.deleteAll(movies);
@@ -76,7 +90,27 @@ public class MovieService {
     movie.setGenres(genreService.getOrCreateGenres(movie.getGenres()));
     movie.setStudios(companyService.getOrCreateCompanies(movie.getStudios()));
 
-    return saveMovieWithMediaFile(movie, mediaFile);
+    var savedMovie = saveMovieWithMediaFile(movie, mediaFile);
+
+    publishImageEvent(savedMovie);
+
+    return savedMovie;
+  }
+
+  private void publishImageEvent(Movie movie) {
+    var sources = new ArrayList<ImageSource>();
+
+    if (movie.getPosterPath() != null) {
+      sources.add(new TmdbImageSource(ImageType.POSTER, movie.getPosterPath()));
+    }
+    if (movie.getBackdropPath() != null) {
+      sources.add(new TmdbImageSource(ImageType.BACKDROP, movie.getBackdropPath()));
+    }
+
+    if (!sources.isEmpty()) {
+      eventPublisher.publishEvent(
+          new MetadataEnrichedEvent(movie.getId(), ImageEntityType.MOVIE, sources));
+    }
   }
 
   public Connection<? extends BaseCollectable<?>> getMoviesWithFilter(

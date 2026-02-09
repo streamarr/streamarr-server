@@ -4,12 +4,27 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
+import com.google.common.jimfs.Configuration;
+import com.google.common.jimfs.Jimfs;
+import com.streamarr.server.config.ImageProperties;
+import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.media.Image;
+import com.streamarr.server.domain.media.ImageEntityType;
+import com.streamarr.server.domain.media.ImageSize;
+import com.streamarr.server.domain.media.ImageType;
+import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.fakes.CapturingEventPublisher;
+import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.InvalidCursorException;
 import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.graphql.cursor.OrderMediaBy;
+import com.streamarr.server.services.metadata.ImageVariantService;
+import com.streamarr.server.services.metadata.events.ImageSource;
+import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
+import java.util.UUID;
 import org.jooq.SortOrder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -22,13 +37,24 @@ import tools.jackson.databind.ObjectMapper;
 class MovieServiceTest {
 
   private FakeMovieRepository movieRepository;
+  private FakeImageRepository imageRepository;
+  private CapturingEventPublisher eventPublisher;
   private MovieService movieService;
 
   @BeforeEach
   void setUp() {
     movieRepository = new FakeMovieRepository();
+    imageRepository = new FakeImageRepository();
+    eventPublisher = new CapturingEventPublisher();
     var cursorUtil = new CursorUtil(new ObjectMapper());
     var relayPaginationService = new RelayPaginationService();
+    var fileSystem = Jimfs.newFileSystem(Configuration.unix());
+    var imageService =
+        new ImageService(
+            imageRepository,
+            new ImageVariantService(),
+            new ImageProperties("/data/images"),
+            fileSystem);
     movieService =
         new MovieService(
             movieRepository,
@@ -36,7 +62,9 @@ class MovieServiceTest {
             mock(GenreService.class),
             mock(CompanyService.class),
             cursorUtil,
-            relayPaginationService);
+            relayPaginationService,
+            eventPublisher,
+            imageService);
   }
 
   @Test
@@ -130,5 +158,126 @@ class MovieServiceTest {
 
     assertThatThrownBy(() -> movieService.getMoviesWithFilter(1, cursor, 0, null, descFilter))
         .isInstanceOf(InvalidCursorException.class);
+  }
+
+  @Test
+  @DisplayName("Should publish MetadataEnrichedEvent when creating movie with associations")
+  void shouldPublishMetadataEnrichedEventWhenCreatingMovieWithAssociations() {
+    var movie = Movie.builder().title("Inception").posterPath("/poster.jpg").build();
+    var mediaFile =
+        MediaFile.builder()
+            .filename("inception.mkv")
+            .filepath("/movies/inception.mkv")
+            .size(1000L)
+            .build();
+
+    movieService.createMovieWithAssociations(movie, mediaFile);
+
+    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
+    assertThat(events).hasSize(1);
+    assertThat(events.getFirst().entityId()).isNotNull();
+  }
+
+  @Test
+  @DisplayName(
+      "Should include poster and backdrop sources in published event when movie has both paths")
+  void shouldIncludePosterAndBackdropSourcesInPublishedEventWhenMovieHasBothPaths() {
+    var movie =
+        Movie.builder()
+            .title("Inception")
+            .posterPath("/poster.jpg")
+            .backdropPath("/backdrop.jpg")
+            .build();
+    var mediaFile =
+        MediaFile.builder()
+            .filename("inception.mkv")
+            .filepath("/movies/inception.mkv")
+            .size(1000L)
+            .build();
+
+    movieService.createMovieWithAssociations(movie, mediaFile);
+
+    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
+    assertThat(events.getFirst().imageSources())
+        .extracting(ImageSource::imageType)
+        .containsExactlyInAnyOrder(ImageType.POSTER, ImageType.BACKDROP);
+  }
+
+  @Test
+  @DisplayName("Should include only poster source when movie backdrop path is null")
+  void shouldIncludeOnlyPosterSourceWhenMovieBackdropPathIsNull() {
+    var movie = Movie.builder().title("Inception").posterPath("/poster.jpg").build();
+    var mediaFile =
+        MediaFile.builder()
+            .filename("inception.mkv")
+            .filepath("/movies/inception.mkv")
+            .size(1000L)
+            .build();
+
+    movieService.createMovieWithAssociations(movie, mediaFile);
+
+    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
+    assertThat(events.getFirst().imageSources())
+        .extracting(ImageSource::imageType)
+        .containsExactly(ImageType.POSTER);
+  }
+
+  @Test
+  @DisplayName("Should include only backdrop source when movie poster path is null")
+  void shouldIncludeOnlyBackdropSourceWhenMoviePosterPathIsNull() {
+    var movie = Movie.builder().title("Inception").backdropPath("/backdrop.jpg").build();
+    var mediaFile =
+        MediaFile.builder()
+            .filename("inception.mkv")
+            .filepath("/movies/inception.mkv")
+            .size(1000L)
+            .build();
+
+    movieService.createMovieWithAssociations(movie, mediaFile);
+
+    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
+    assertThat(events.getFirst().imageSources())
+        .extracting(ImageSource::imageType)
+        .containsExactly(ImageType.BACKDROP);
+  }
+
+  @Test
+  @DisplayName("Should delete images for entity when deleting movie by ID")
+  void shouldDeleteImagesForEntityWhenDeletingMovieById() {
+    var movie = movieRepository.save(Movie.builder().title("Inception").build());
+    seedImage(movie.getId());
+
+    movieService.deleteMovieById(movie.getId());
+
+    assertThat(imageRepository.findByEntityId(movie.getId())).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should delete images for each movie when deleting by library ID")
+  void shouldDeleteImagesForEachMovieWhenDeletingByLibraryId() {
+    var libraryId = UUID.randomUUID();
+    var library = Library.builder().id(libraryId).name("Movies").build();
+    var movie1 = movieRepository.save(Movie.builder().title("Movie 1").library(library).build());
+    var movie2 = movieRepository.save(Movie.builder().title("Movie 2").library(library).build());
+    seedImage(movie1.getId());
+    seedImage(movie2.getId());
+
+    movieService.deleteByLibraryId(libraryId);
+
+    assertThat(imageRepository.findByEntityId(movie1.getId())).isEmpty();
+    assertThat(imageRepository.findByEntityId(movie2.getId())).isEmpty();
+  }
+
+  private void seedImage(UUID entityId) {
+    imageRepository.save(
+        Image.builder()
+            .entityId(entityId)
+            .entityType(ImageEntityType.MOVIE)
+            .imageType(ImageType.POSTER)
+            .variant(ImageSize.SMALL)
+            .width(185)
+            .height(278)
+            .path("movie/" + entityId + "/poster/small.jpg")
+            .build());
   }
 }

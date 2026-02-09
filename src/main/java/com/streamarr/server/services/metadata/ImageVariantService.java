@@ -90,6 +90,10 @@ public class ImageVariantService {
 
     for (var size : RESIZABLE_SIZES) {
       var targetWidth = widths.get(size);
+      if (targetWidth == null) {
+        throw new ImageProcessingException(
+            "No width configuration for image size: " + size + " on image type: " + imageType);
+      }
       var resized = resize(sourceImage, targetWidth);
       var blurHash = size == ImageSize.SMALL ? computeBlurHash(resized) : null;
       var data = toJpegBytes(resized);

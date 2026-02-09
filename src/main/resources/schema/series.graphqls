@@ -21,4 +21,5 @@ type Series implements BaseCollectable {
     genres: [Genre]!
     seasons: [Season]!
     files: [MediaFile]!
+    images(type: ImageType): [Image]!
 }

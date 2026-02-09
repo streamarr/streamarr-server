@@ -1,10 +1,14 @@
 package com.streamarr.server.services;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.metadata.Person;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakePersonRepository;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
+import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -16,12 +20,14 @@ import org.junit.jupiter.api.Test;
 class PersonServiceTest {
 
   private FakePersonRepository personRepository;
+  private CapturingEventPublisher eventPublisher;
   private PersonService personService;
 
   @BeforeEach
   void setUp() {
     personRepository = new FakePersonRepository();
-    personService = new PersonService(personRepository, new MutexFactoryProvider());
+    eventPublisher = new CapturingEventPublisher();
+    personService = new PersonService(personRepository, new MutexFactoryProvider(), eventPublisher);
   }
 
   @Test
@@ -38,7 +44,7 @@ class PersonServiceTest {
     assertThat(saved.getSourceId()).isEqualTo("actor-1");
     assertThat(saved.getProfilePath()).isEqualTo("/tom.jpg");
     assertThat(saved.getId()).isNotNull();
-    assertThat(personRepository.database).hasSize(1);
+    assertThat(personRepository.count()).isEqualTo(1);
   }
 
   @Test
@@ -58,12 +64,12 @@ class PersonServiceTest {
     assertThat(returned.getId()).isEqualTo(existing.getId());
     assertThat(returned.getName()).isEqualTo("New Name");
     assertThat(returned.getProfilePath()).isEqualTo("/new.jpg");
-    assertThat(personRepository.database).hasSize(1);
+    assertThat(personRepository.count()).isEqualTo(1);
   }
 
   @Test
-  @DisplayName("Should handle multiple persons with mix of new and existing")
-  void shouldHandleMultiplePersonsWithMixOfNewAndExisting() {
+  @DisplayName("Should update existing person when batch contains duplicate source ID")
+  void shouldUpdateExistingPersonWhenBatchContainsDuplicate() {
     var existing =
         personRepository.save(
             Person.builder()
@@ -87,19 +93,89 @@ class PersonServiceTest {
 
     var result = personService.getOrCreatePersons(List.of(updatedExisting, brandNew));
 
-    assertThat(result).hasSize(2);
-    assertThat(personRepository.database).hasSize(2);
-
     var returnedExisting =
         result.stream().filter(p -> "existing-1".equals(p.getSourceId())).findFirst().orElseThrow();
     assertThat(returnedExisting.getId()).isEqualTo(existing.getId());
     assertThat(returnedExisting.getName()).isEqualTo("Updated Actor");
     assertThat(returnedExisting.getProfilePath()).isEqualTo("/updated.jpg");
+  }
+
+  @Test
+  @DisplayName("Should create new person when batch contains unknown source ID")
+  void shouldCreateNewPersonWhenBatchContainsUnknownSourceId() {
+    personRepository.save(
+        Person.builder()
+            .name("Existing Actor")
+            .sourceId("existing-1")
+            .profilePath("/existing.jpg")
+            .build());
+
+    var updatedExisting =
+        Person.builder()
+            .name("Updated Actor")
+            .sourceId("existing-1")
+            .profilePath("/updated.jpg")
+            .build();
+    var brandNew =
+        Person.builder()
+            .name("Brand New Actor")
+            .sourceId("new-1")
+            .profilePath("/brand-new.jpg")
+            .build();
+
+    var result = personService.getOrCreatePersons(List.of(updatedExisting, brandNew));
 
     var returnedNew =
         result.stream().filter(p -> "new-1".equals(p.getSourceId())).findFirst().orElseThrow();
     assertThat(returnedNew.getName()).isEqualTo("Brand New Actor");
     assertThat(returnedNew.getProfilePath()).isEqualTo("/brand-new.jpg");
     assertThat(returnedNew.getId()).isNotNull();
+    assertThat(personRepository.count()).isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName("Should publish MetadataEnrichedEvent when creating new person")
+  void shouldPublishMetadataEnrichedEventWhenCreatingNewPerson() {
+    var person =
+        Person.builder().name("Tom Hanks").sourceId("actor-1").profilePath("/tom.jpg").build();
+
+    personService.getOrCreatePersons(List.of(person));
+
+    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
+    assertThat(events).hasSize(1);
+    assertThat(events.getFirst().entityType()).isEqualTo(ImageEntityType.PERSON);
+  }
+
+  @Test
+  @DisplayName("Should not publish event when person already exists")
+  void shouldNotPublishEventWhenPersonAlreadyExists() {
+    personRepository.save(
+        Person.builder().name("Tom Hanks").sourceId("actor-1").profilePath("/tom.jpg").build());
+
+    var updated =
+        Person.builder().name("Tom Hanks").sourceId("actor-1").profilePath("/updated.jpg").build();
+
+    personService.getOrCreatePersons(List.of(updated));
+
+    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
+    assertThat(events).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should throw when person source ID is null")
+  void shouldThrowWhenPersonSourceIdIsNull() {
+    var person = Person.builder().name("Tom Hanks").sourceId(null).profilePath("/tom.jpg").build();
+    var persons = List.of(person);
+
+    assertThatThrownBy(() -> personService.getOrCreatePersons(persons))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  @DisplayName("Should return empty list when input is null")
+  void shouldReturnEmptyListWhenInputIsNull() {
+    var result = personService.getOrCreatePersons(null);
+
+    assertThat(result).isEmpty();
   }
 }

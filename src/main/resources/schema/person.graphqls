@@ -2,4 +2,5 @@ type Person {
     id: ID!
     name: String!
     profilePath: String
+    images(type: ImageType): [Image]!
 }

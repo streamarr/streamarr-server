@@ -24,6 +24,8 @@ dgs:
 tmdb:
   api:
     token: ${TMDB_API_TOKEN:}
+  image:
+    base-url: ${TMDB_IMAGE_BASE_URL:https://image.tmdb.org/t/p/original}
 
 image:
   storage-path: ${IMAGE_STORAGE_PATH:}
