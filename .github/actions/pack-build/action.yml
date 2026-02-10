@@ -29,14 +29,17 @@ runs:
 
     - name: Build with pack CLI
       shell: bash
+      env:
+        INPUT_TAGS: ${{ inputs.tags }}
+        INPUT_PUBLISH: ${{ inputs.publish }}
       run: |
         tag_args=""
-        for tag in ${{ inputs.tags }}; do
+        for tag in ${INPUT_TAGS}; do
           tag_args="${tag_args} --tag ${tag}"
         done
 
         publish_flag=""
-        if [ "${{ inputs.publish }}" = "true" ]; then
+        if [ "${INPUT_PUBLISH}" = "true" ]; then
           publish_flag="--publish"
         fi
 
