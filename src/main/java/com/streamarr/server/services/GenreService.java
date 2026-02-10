@@ -28,13 +28,6 @@ public class GenreService {
       throw new IllegalArgumentException("Genre sourceId must not be null");
     }
 
-    var existing = genreRepository.findBySourceId(genre.getSourceId());
-    if (existing.isPresent()) {
-      var target = existing.get();
-      target.setName(genre.getName());
-      return target;
-    }
-
     genreRepository.insertOnConflictDoNothing(genre.getSourceId(), genre.getName());
     var saved =
         genreRepository

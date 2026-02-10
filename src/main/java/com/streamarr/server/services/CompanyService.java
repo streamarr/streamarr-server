@@ -43,13 +43,6 @@ public class CompanyService {
 
     var imageSources = imageSourcesBySourceId.getOrDefault(company.getSourceId(), List.of());
 
-    var existing = companyRepository.findBySourceId(company.getSourceId());
-    if (existing.isPresent()) {
-      var target = existing.get();
-      target.setName(company.getName());
-      return target;
-    }
-
     boolean inserted =
         companyRepository.insertOnConflictDoNothing(company.getSourceId(), company.getName());
     var saved =
