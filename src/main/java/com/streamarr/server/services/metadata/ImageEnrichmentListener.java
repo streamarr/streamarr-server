@@ -1,12 +1,16 @@
 package com.streamarr.server.services.metadata;
 
 import com.streamarr.server.services.ImageService;
+import com.streamarr.server.services.ImageService.ProcessedImage;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
+import java.util.ArrayList;
+import java.util.Objects;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
@@ -52,26 +56,42 @@ public class ImageEnrichmentListener {
   }
 
   private void downloadAllImages(MetadataEnrichedEvent event) {
+    var futures = new ArrayList<Future<ProcessedImage>>();
+
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       for (var source : event.imageSources()) {
-        executor.submit(() -> downloadAndProcessImage(source, event));
+        futures.add(executor.submit(() -> downloadAndProcessImage(source, event)));
       }
+    }
+
+    var allImages =
+        futures.stream().map(ImageEnrichmentListener::getQuietly).filter(Objects::nonNull).toList();
+
+    var allWrittenFiles = allImages.stream().flatMap(r -> r.writtenFiles().stream()).toList();
+
+    try {
+      imageService.saveImages(allImages.stream().flatMap(r -> r.images().stream()).toList());
+    } catch (Exception e) {
+      imageService.deleteFiles(allWrittenFiles);
+      log.error(
+          "Failed to save images for entity {} ({})", event.entityId(), event.entityType(), e);
     }
   }
 
-  private void downloadAndProcessImage(ImageSource source, MetadataEnrichedEvent event) {
+  private ProcessedImage downloadAndProcessImage(ImageSource source, MetadataEnrichedEvent event) {
     try {
       var imageData =
           switch (source) {
             case TmdbImageSource tmdb -> tmdbHttpService.downloadImage(tmdb.pathFragment());
           };
 
-      imageService.processAndSaveImage(
+      return imageService.processImage(
           imageData, source.imageType(), event.entityId(), event.entityType());
     } catch (InterruptedException _) {
       Thread.currentThread().interrupt();
       log.warn(
           "Image processing interrupted for entity {} ({})", event.entityId(), event.entityType());
+      return null;
     } catch (Exception e) {
       log.error(
           "Failed to process image {} for entity {} ({})",
@@ -79,6 +99,15 @@ public class ImageEnrichmentListener {
           event.entityId(),
           event.entityType(),
           e);
+      return null;
+    }
+  }
+
+  private static ProcessedImage getQuietly(Future<ProcessedImage> future) {
+    try {
+      return future.get();
+    } catch (Exception _) {
+      return null;
     }
   }
 }
