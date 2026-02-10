@@ -8,7 +8,6 @@ import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeCompanyRepository;
-import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
@@ -32,8 +31,7 @@ class CompanyServiceTest {
   void setUp() {
     companyRepository = new FakeCompanyRepository();
     eventPublisher = new CapturingEventPublisher();
-    companyService =
-        new CompanyService(companyRepository, new MutexFactoryProvider(), eventPublisher);
+    companyService = new CompanyService(companyRepository, eventPublisher);
   }
 
   @Test

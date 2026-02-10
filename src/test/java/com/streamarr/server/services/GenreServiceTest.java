@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.fakes.FakeGenreRepository;
-import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -22,7 +21,7 @@ class GenreServiceTest {
   @BeforeEach
   void setUp() {
     genreRepository = new FakeGenreRepository();
-    genreService = new GenreService(genreRepository, new MutexFactoryProvider());
+    genreService = new GenreService(genreRepository);
   }
 
   @Test

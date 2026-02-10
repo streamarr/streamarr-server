@@ -11,6 +11,17 @@ import org.apache.commons.lang3.NotImplementedException;
 public class FakePersonRepository extends FakeJpaRepository<Person> implements PersonRepository {
 
   @Override
+  public boolean insertIfAbsent(String sourceId, String name) {
+    boolean exists =
+        database.values().stream().anyMatch(p -> sourceId.equals(p.getSourceId()));
+    if (exists) {
+      return false;
+    }
+    save(Person.builder().sourceId(sourceId).name(name).build());
+    return true;
+  }
+
+  @Override
   public Optional<Person> findPersonBySourceId(String sourceId) {
     return database.values().stream()
         .filter(person -> sourceId.equals(person.getSourceId()))

@@ -11,6 +11,17 @@ import org.apache.commons.lang3.NotImplementedException;
 public class FakeCompanyRepository extends FakeJpaRepository<Company> implements CompanyRepository {
 
   @Override
+  public boolean insertIfAbsent(String sourceId, String name) {
+    boolean exists =
+        database.values().stream().anyMatch(c -> sourceId.equals(c.getSourceId()));
+    if (exists) {
+      return false;
+    }
+    save(Company.builder().sourceId(sourceId).name(name).build());
+    return true;
+  }
+
+  @Override
   public Optional<Company> findBySourceId(String sourceId) {
     return database.values().stream()
         .filter(company -> sourceId.equals(company.getSourceId()))

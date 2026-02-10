@@ -8,7 +8,6 @@ import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakePersonRepository;
-import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
@@ -31,7 +30,7 @@ class PersonServiceTest {
   void setUp() {
     personRepository = new FakePersonRepository();
     eventPublisher = new CapturingEventPublisher();
-    personService = new PersonService(personRepository, new MutexFactoryProvider(), eventPublisher);
+    personService = new PersonService(personRepository, eventPublisher);
   }
 
   @Test
