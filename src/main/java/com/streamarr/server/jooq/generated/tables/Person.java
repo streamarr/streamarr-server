@@ -172,7 +172,7 @@ public class Person extends TableImpl<PersonRecord> {
 
     @Override
     public List<UniqueKey<PersonRecord>> getUniqueKeys() {
-        return Arrays.asList(Keys.PERSON_UC);
+        return Arrays.asList(Keys.PERSON_SOURCE_ID_UNIQUE);
     }
 
     private transient MovieDirectorPath _movieDirector;

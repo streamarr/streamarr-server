@@ -36,16 +36,17 @@ public class PersonRepositoryCustomImplIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should return false without inserting when conflict on source ID and name")
-  void shouldReturnFalseWithoutInsertingWhenConflictOnSourceIdAndName() {
+  @DisplayName("Should return false without inserting when source ID already exists")
+  void shouldReturnFalseWithoutInsertingWhenSourceIdAlreadyExists() {
     var sourceId = "conflict-test-" + UUID.randomUUID();
-    var firstInsert = personRepository.insertOnConflictDoNothing(sourceId, "Same Name");
+    var firstInsert = personRepository.insertOnConflictDoNothing(sourceId, "Original Name");
 
     assertThat(firstInsert).isTrue();
 
-    var secondInsert = personRepository.insertOnConflictDoNothing(sourceId, "Same Name");
+    var secondInsert = personRepository.insertOnConflictDoNothing(sourceId, "Different Name");
 
     assertThat(secondInsert).isFalse();
-    assertThat(personRepository.findPersonBySourceId(sourceId)).isPresent();
+    var person = personRepository.findPersonBySourceId(sourceId).orElseThrow();
+    assertThat(person.getName()).isEqualTo("Original Name");
   }
 }

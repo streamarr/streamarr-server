@@ -91,7 +91,7 @@ public class Keys {
     public static final UniqueKey<MovieGenreRecord> MOVIE_GENRE_PKEY = Internal.createUniqueKey(MovieGenre.MOVIE_GENRE, DSL.name("movie_genre_pkey"), new TableField[] { MovieGenre.MOVIE_GENRE.MOVIE_ID, MovieGenre.MOVIE_GENRE.GENRE_ID }, true);
     public static final UniqueKey<MoviePersonRecord> MOVIE_PERSON_PKEY = Internal.createUniqueKey(MoviePerson.MOVIE_PERSON, DSL.name("movie_person_pkey"), new TableField[] { MoviePerson.MOVIE_PERSON.ID }, true);
     public static final UniqueKey<PersonRecord> PERSON_PKEY = Internal.createUniqueKey(Person.PERSON, DSL.name("person_pkey"), new TableField[] { Person.PERSON.ID }, true);
-    public static final UniqueKey<PersonRecord> PERSON_UC = Internal.createUniqueKey(Person.PERSON, DSL.name("person_uc"), new TableField[] { Person.PERSON.SOURCE_ID, Person.PERSON.NAME }, true);
+    public static final UniqueKey<PersonRecord> PERSON_SOURCE_ID_UNIQUE = Internal.createUniqueKey(Person.PERSON, DSL.name("person_source_id_unique"), new TableField[] { Person.PERSON.SOURCE_ID }, true);
     public static final UniqueKey<RatingRecord> RATING_PKEY = Internal.createUniqueKey(Rating.RATING, DSL.name("rating_pkey"), new TableField[] { Rating.RATING.ID }, true);
     public static final UniqueKey<ReviewRecord> REVIEW_PKEY = Internal.createUniqueKey(Review.REVIEW, DSL.name("review_pkey"), new TableField[] { Review.REVIEW.ID }, true);
     public static final UniqueKey<SchemaHistoryRecord> SCHEMA_HISTORY_PK = Internal.createUniqueKey(SchemaHistory.SCHEMA_HISTORY, DSL.name("schema_history_pk"), new TableField[] { SchemaHistory.SCHEMA_HISTORY.INSTALLED_RANK }, true);

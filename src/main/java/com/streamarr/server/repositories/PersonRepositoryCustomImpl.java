@@ -22,7 +22,7 @@ public class PersonRepositoryCustomImpl implements PersonRepositoryCustom {
             .set(PERSON.NAME, name)
             .set(PERSON.CREATED_BY, auditUser)
             .set(PERSON.LAST_MODIFIED_BY, auditUser)
-            .onConflict(PERSON.SOURCE_ID, PERSON.NAME)
+            .onConflict(PERSON.SOURCE_ID)
             .doNothing()
             .execute();
     return rowsAffected > 0;

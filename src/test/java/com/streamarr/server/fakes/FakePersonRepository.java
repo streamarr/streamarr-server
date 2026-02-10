@@ -20,8 +20,7 @@ public class FakePersonRepository extends FakeJpaRepository<Person> implements P
       return false;
     }
     boolean exists =
-        database.values().stream()
-            .anyMatch(p -> sourceId.equals(p.getSourceId()) && name.equals(p.getName()));
+        database.values().stream().anyMatch(p -> sourceId.equals(p.getSourceId()));
     if (exists) {
       return false;
     }
