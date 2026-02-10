@@ -1,0 +1,64 @@
+name: Preview Image Cleanup
+
+on:
+  pull_request:
+    types:
+      - closed
+
+permissions:
+  contents: read
+
+jobs:
+  delete_preview_tag:
+    runs-on: ubuntu-latest
+
+    env:
+      DOCKERHUB_REPO: streamarr/streamarr-server
+      IMAGE_TAG: pr-${{ github.event.pull_request.number }}
+
+    steps:
+      - name: Authenticate with Docker Hub
+        id: auth
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          token=$(curl -s -f -X POST "https://hub.docker.com/v2/users/login" \
+            -H "Content-Type: application/json" \
+            -d "{\"username\":\"${DOCKERHUB_USERNAME}\",\"password\":\"${DOCKERHUB_TOKEN}\"}" \
+            | jq -r .token)
+
+          if [ -z "$token" ] || [ "$token" = "null" ]; then
+            echo "::error::Failed to authenticate with Docker Hub"
+            exit 1
+          fi
+
+          echo "::add-mask::${token}"
+          echo "token=${token}" >> "$GITHUB_OUTPUT"
+
+      - name: Delete preview tag if it exists
+        env:
+          HUB_TOKEN: ${{ steps.auth.outputs.token }}
+        run: |
+          api_url="https://hub.docker.com/v2/repositories/${DOCKERHUB_REPO}/tags/${IMAGE_TAG}"
+
+          status=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer ${HUB_TOKEN}" \
+            "${api_url}")
+
+          if [ "$status" = "404" ]; then
+            echo "Tag ${IMAGE_TAG} does not exist — nothing to delete"
+            exit 0
+          fi
+
+          delete_status=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X DELETE \
+            -H "Authorization: Bearer ${HUB_TOKEN}" \
+            "${api_url}")
+
+          if [ "$delete_status" = "204" ]; then
+            echo "Successfully deleted tag ${IMAGE_TAG}"
+          else
+            echo "::error::Failed to delete tag ${IMAGE_TAG} (HTTP ${delete_status})"
+            exit 1
+          fi
