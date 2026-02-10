@@ -6,9 +6,27 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import lombok.Setter;
 import org.apache.commons.lang3.NotImplementedException;
 
 public class FakeCompanyRepository extends FakeJpaRepository<Company> implements CompanyRepository {
+
+  @Setter private boolean simulateConflict;
+
+  @Override
+  public boolean insertOnConflictDoNothing(String sourceId, String name) {
+    if (simulateConflict) {
+      save(Company.builder().sourceId(sourceId).name(name).build());
+      return false;
+    }
+    boolean exists =
+        database.values().stream().anyMatch(c -> sourceId.equals(c.getSourceId()));
+    if (exists) {
+      return false;
+    }
+    save(Company.builder().sourceId(sourceId).name(name).build());
+    return true;
+  }
 
   @Override
   public Optional<Company> findBySourceId(String sourceId) {

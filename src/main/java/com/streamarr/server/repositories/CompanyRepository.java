@@ -11,7 +11,8 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public interface CompanyRepository extends JpaRepository<Company, UUID> {
+public interface CompanyRepository
+    extends JpaRepository<Company, UUID>, CompanyRepositoryCustom {
 
   Set<Company> findCompaniesBySourceIdIn(List<String> sourceIds);
 
