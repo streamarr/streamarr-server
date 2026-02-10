@@ -44,16 +44,29 @@ public class CompanyService {
     var imageSources = imageSourcesBySourceId.getOrDefault(company.getSourceId(), List.of());
 
     var existing = companyRepository.findBySourceId(company.getSourceId());
-
     if (existing.isPresent()) {
       var target = existing.get();
       target.setName(company.getName());
-      return companyRepository.save(target);
+      return target;
     }
 
-    var savedCompany = companyRepository.save(company);
-    publishImageEvent(savedCompany, imageSources);
-    return savedCompany;
+    boolean inserted =
+        companyRepository.insertOnConflictDoNothing(company.getSourceId(), company.getName());
+    var saved =
+        companyRepository
+            .findBySourceId(company.getSourceId())
+            .orElseThrow(
+                () ->
+                    new IllegalStateException(
+                        "Company not found after upsert for sourceId: "
+                            + company.getSourceId()));
+
+    saved.setName(company.getName());
+
+    if (inserted) {
+      publishImageEvent(saved, imageSources);
+    }
+    return saved;
   }
 
   private void publishImageEvent(Company company, List<ImageSource> imageSources) {
