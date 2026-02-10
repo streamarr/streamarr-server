@@ -115,7 +115,7 @@ public class LibraryManagementServiceTest {
 
   private final LibraryManagementService libraryManagementService =
       new LibraryManagementService(
-          new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
+          new IgnoredFileValidator(new LibraryScanProperties(null, null, null, null)),
           new VideoExtensionValidator(),
           movieFileProcessor,
           seriesFileProcessor,
@@ -125,7 +125,8 @@ public class LibraryManagementServiceTest {
           seriesService,
           capturingEventPublisher,
           new MutexFactoryProvider(),
-          fileSystem);
+          fileSystem,
+          new LibraryScanProperties(null, null, null, null));
 
   private UUID savedLibraryId;
 
@@ -185,7 +186,7 @@ public class LibraryManagementServiceTest {
 
     var serviceWithThrowingFs =
         new LibraryManagementService(
-            new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
+            new IgnoredFileValidator(new LibraryScanProperties(null, null, null, null)),
             new VideoExtensionValidator(),
             movieFileProcessor,
             seriesFileProcessor,
@@ -195,7 +196,8 @@ public class LibraryManagementServiceTest {
             seriesService,
             capturingEventPublisher,
             new MutexFactoryProvider(),
-            throwingFileSystem);
+            throwingFileSystem,
+            new LibraryScanProperties(null, null, null, null));
 
     serviceWithThrowingFs.scanLibrary(savedLibraryId);
 
@@ -218,7 +220,7 @@ public class LibraryManagementServiceTest {
 
     var serviceWithThrowingFs =
         new LibraryManagementService(
-            new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
+            new IgnoredFileValidator(new LibraryScanProperties(null, null, null, null)),
             new VideoExtensionValidator(),
             movieFileProcessor,
             seriesFileProcessor,
@@ -228,7 +230,8 @@ public class LibraryManagementServiceTest {
             seriesService,
             capturingEventPublisher,
             new MutexFactoryProvider(),
-            throwingFileSystem);
+            throwingFileSystem,
+            new LibraryScanProperties(null, null, null, null));
 
     serviceWithThrowingFs.scanLibrary(savedLibraryId);
 
@@ -310,7 +313,7 @@ public class LibraryManagementServiceTest {
 
     var serviceWithThrowingFs =
         new LibraryManagementService(
-            new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
+            new IgnoredFileValidator(new LibraryScanProperties(null, null, null, null)),
             new VideoExtensionValidator(),
             movieFileProcessor,
             seriesFileProcessor,
@@ -320,7 +323,8 @@ public class LibraryManagementServiceTest {
             seriesService,
             capturingEventPublisher,
             new MutexFactoryProvider(),
-            throwingFileSystem);
+            throwingFileSystem,
+            new LibraryScanProperties(null, null, null, null));
 
     serviceWithThrowingFs.scanLibrary(savedLibraryId);
 
@@ -697,7 +701,7 @@ public class LibraryManagementServiceTest {
 
       var serviceWithSecurityFs =
           new LibraryManagementService(
-              new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
+              new IgnoredFileValidator(new LibraryScanProperties(null, null, null, null)),
               new VideoExtensionValidator(),
               movieFileProcessor,
               seriesFileProcessor,
@@ -707,7 +711,8 @@ public class LibraryManagementServiceTest {
               seriesService,
               capturingEventPublisher,
               new MutexFactoryProvider(),
-              securityExceptionFs);
+              securityExceptionFs,
+              new LibraryScanProperties(null, null, null, null));
 
       var library = LibraryFixtureCreator.buildUnsavedLibrary("Test Library", "/secure-path");
 

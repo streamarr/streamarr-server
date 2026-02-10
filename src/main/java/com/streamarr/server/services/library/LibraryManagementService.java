@@ -1,5 +1,6 @@
 package com.streamarr.server.services.library;
 
+import com.streamarr.server.config.LibraryScanProperties;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaFile;
@@ -56,6 +57,7 @@ public class LibraryManagementService implements ActiveScanChecker {
   private final ApplicationEventPublisher eventPublisher;
   private final FileSystem fileSystem;
   private final MutexFactory<String> mutexFactory;
+  private final int maxConcurrentFiles;
   private final Set<UUID> activeScans = ConcurrentHashMap.newKeySet();
 
   public LibraryManagementService(
@@ -69,7 +71,14 @@ public class LibraryManagementService implements ActiveScanChecker {
       SeriesService seriesService,
       ApplicationEventPublisher eventPublisher,
       MutexFactoryProvider mutexFactoryProvider,
-      FileSystem fileSystem) {
+      FileSystem fileSystem,
+      LibraryScanProperties libraryScanProperties) {
+    if (libraryScanProperties.maxConcurrentFiles() <= 0) {
+      throw new IllegalArgumentException(
+          "library.scan.max-concurrent-files must be positive, got: "
+              + libraryScanProperties.maxConcurrentFiles());
+    }
+
     this.ignoredFileValidator = ignoredFileValidator;
     this.videoExtensionValidator = videoExtensionValidator;
     this.movieFileProcessor = movieFileProcessor;
@@ -80,6 +89,7 @@ public class LibraryManagementService implements ActiveScanChecker {
     this.seriesService = seriesService;
     this.eventPublisher = eventPublisher;
     this.fileSystem = fileSystem;
+    this.maxConcurrentFiles = libraryScanProperties.maxConcurrentFiles();
 
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
   }

@@ -65,7 +65,7 @@ class FileEventProcessorTest {
     libraryRepository = new FakeLibraryRepository();
     mediaFileRepository = new FakeMediaFileRepository();
     var ignoredFileValidator =
-        new IgnoredFileValidator(new LibraryScanProperties(null, null, null));
+        new IgnoredFileValidator(new LibraryScanProperties(null, null, null, null));
     var videoExtensionValidator = new VideoExtensionValidator();
     stabilityCheckerRef = new AtomicReference<>(path -> true);
 
@@ -136,7 +136,8 @@ class FileEventProcessorTest {
             seriesService,
             event -> {},
             new MutexFactoryProvider(),
-            fileSystem);
+            fileSystem,
+            new LibraryScanProperties(null, null, null, null));
 
     var taskRepository = new FakeFileProcessingTaskRepository();
     var clock = Clock.fixed(java.time.Instant.now(), ZoneId.of("UTC"));

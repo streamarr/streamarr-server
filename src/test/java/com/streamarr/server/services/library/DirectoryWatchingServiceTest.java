@@ -38,7 +38,7 @@ class DirectoryWatchingServiceTest {
             fakeLibraryRepository,
             path -> true,
             null,
-            new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
+            new IgnoredFileValidator(new LibraryScanProperties(null, null, null, null)),
             null);
   }
 
@@ -183,7 +183,7 @@ class DirectoryWatchingServiceTest {
         fakeLibraryRepository,
         path -> true,
         null,
-        new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
+        new IgnoredFileValidator(new LibraryScanProperties(null, null, null, null)),
         null) {
       @Override
       public void setup() throws IOException {
@@ -197,7 +197,7 @@ class DirectoryWatchingServiceTest {
         fakeLibraryRepository,
         path -> true,
         null,
-        new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
+        new IgnoredFileValidator(new LibraryScanProperties(null, null, null, null)),
         null) {
       @Override
       public void setup() throws IOException {
