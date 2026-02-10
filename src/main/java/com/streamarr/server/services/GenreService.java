@@ -29,13 +29,22 @@ public class GenreService {
     }
 
     var existing = genreRepository.findBySourceId(genre.getSourceId());
-
     if (existing.isPresent()) {
       var target = existing.get();
       target.setName(genre.getName());
-      return genreRepository.save(target);
+      return target;
     }
 
-    return genreRepository.save(genre);
+    genreRepository.insertOnConflictDoNothing(genre.getSourceId(), genre.getName());
+    var saved =
+        genreRepository
+            .findBySourceId(genre.getSourceId())
+            .orElseThrow(
+                () ->
+                    new IllegalStateException(
+                        "Genre not found after upsert for sourceId: " + genre.getSourceId()));
+
+    saved.setName(genre.getName());
+    return saved;
   }
 }
