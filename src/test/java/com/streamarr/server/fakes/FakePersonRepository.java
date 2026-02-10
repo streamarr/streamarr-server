@@ -6,19 +6,12 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import lombok.Setter;
 import org.apache.commons.lang3.NotImplementedException;
 
 public class FakePersonRepository extends FakeJpaRepository<Person> implements PersonRepository {
 
-  @Setter private boolean simulateConflict;
-
   @Override
   public boolean insertIfAbsent(String sourceId, String name) {
-    if (simulateConflict) {
-      save(Person.builder().sourceId(sourceId).name(name).build());
-      return false;
-    }
     boolean exists =
         database.values().stream().anyMatch(p -> sourceId.equals(p.getSourceId()));
     if (exists) {

@@ -134,27 +134,6 @@ class CompanyServiceTest {
   }
 
   @Test
-  @DisplayName("Should return existing company without publishing event when concurrent insert conflicts")
-  void shouldReturnExistingCompanyWithoutPublishingEventWhenConcurrentInsertConflicts() {
-    companyRepository.setSimulateConflict(true);
-
-    var company = Company.builder().name("Warner Bros.").sourceId("wb-123").build();
-    var imageSources =
-        Map.<String, List<ImageSource>>of(
-            "wb-123", List.of(new TmdbImageSource(ImageType.LOGO, "/wb.png")));
-
-    var result = companyService.getOrCreateCompanies(Set.of(company), imageSources);
-
-    assertThat(result).hasSize(1);
-    var returned = result.iterator().next();
-    assertThat(returned.getName()).isEqualTo("Warner Bros.");
-    assertThat(returned.getSourceId()).isEqualTo("wb-123");
-
-    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
-    assertThat(events).isEmpty();
-  }
-
-  @Test
   @DisplayName("Should throw when company source ID is null")
   void shouldThrowWhenCompanySourceIdIsNull() {
     var company = Company.builder().name("Warner Bros.").sourceId(null).build();

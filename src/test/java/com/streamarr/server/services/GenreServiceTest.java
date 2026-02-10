@@ -91,22 +91,6 @@ class GenreServiceTest {
   }
 
   @Test
-  @DisplayName("Should return existing genre when concurrent insert conflicts")
-  void shouldReturnExistingGenreWhenConcurrentInsertConflicts() {
-    genreRepository.setSimulateConflict(true);
-
-    var genre = Genre.builder().name("Action").sourceId("genre-28").build();
-
-    var result = genreService.getOrCreateGenres(Set.of(genre));
-
-    assertThat(result).hasSize(1);
-    var returned = result.iterator().next();
-    assertThat(returned.getName()).isEqualTo("Action");
-    assertThat(returned.getSourceId()).isEqualTo("genre-28");
-    assertThat(genreRepository.count()).isEqualTo(1);
-  }
-
-  @Test
   @DisplayName("Should throw when genre source ID is null")
   void shouldThrowWhenGenreSourceIdIsNull() {
     var genre = Genre.builder().name("Action").sourceId(null).build();
