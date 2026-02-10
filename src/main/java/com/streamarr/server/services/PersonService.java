@@ -40,13 +40,6 @@ public class PersonService {
 
     var imageSources = imageSourcesBySourceId.getOrDefault(person.getSourceId(), List.of());
 
-    var existingPerson = personRepository.findPersonBySourceId(person.getSourceId());
-    if (existingPerson.isPresent()) {
-      var target = existingPerson.get();
-      target.setName(person.getName());
-      return target;
-    }
-
     boolean inserted =
         personRepository.insertOnConflictDoNothing(person.getSourceId(), person.getName());
     var saved =
