@@ -66,6 +66,7 @@ import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -562,6 +563,55 @@ public class LibraryManagementServiceTest {
                   .as("Expected exactly one MediaFile for the same filepath")
                   .hasSize(1);
             });
+  }
+
+  @Test
+  @DisplayName(
+      "Should limit concurrent file processing to configured maxConcurrentFiles during scan")
+  void shouldLimitConcurrentFileProcessingToConfiguredMax() throws IOException {
+    var rootPath = createRootLibraryDirectory();
+
+    for (int i = 0; i < 10; i++) {
+      createMovieFile(rootPath, "Movie " + i, "Movie " + i + " (2024).mkv");
+    }
+
+    var maxConcurrent = new AtomicInteger(0);
+    var currentConcurrent = new AtomicInteger(0);
+
+    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
+        .thenAnswer(
+            invocation -> {
+              var current = currentConcurrent.incrementAndGet();
+              maxConcurrent.accumulateAndGet(current, Math::max);
+              try {
+                Thread.sleep(200);
+              } finally {
+                currentConcurrent.decrementAndGet();
+              }
+              return Optional.empty();
+            });
+
+    var concurrencyLimitedService =
+        new LibraryManagementService(
+            new IgnoredFileValidator(new LibraryScanProperties(null, null, null, null)),
+            new VideoExtensionValidator(),
+            movieFileProcessor,
+            seriesFileProcessor,
+            fakeLibraryRepository,
+            fakeMediaFileRepository,
+            movieService,
+            seriesService,
+            capturingEventPublisher,
+            new MutexFactoryProvider(),
+            fileSystem,
+            new LibraryScanProperties(null, null, null, 2));
+
+    concurrencyLimitedService.scanLibrary(savedLibraryId);
+
+    assertThat(maxConcurrent.get())
+        .as("Concurrent file processing should not exceed maxConcurrentFiles")
+        .isLessThanOrEqualTo(2);
   }
 
   @Nested
