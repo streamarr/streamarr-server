@@ -31,7 +31,7 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 public class TheMovieDatabaseHttpService {
 
-  private static final int MAX_RETRIES = 3;
+  private static final int MAX_RETRIES = 5;
   private static final long BASE_DELAY_MS = 2000;
 
   private final String tmdbApiToken;

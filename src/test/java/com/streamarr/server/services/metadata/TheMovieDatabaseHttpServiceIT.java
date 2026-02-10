@@ -681,6 +681,73 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should succeed when rate limited for four consecutive attempts")
+  void shouldSucceedWhenRateLimitedForFourConsecutiveAttempts() throws Exception {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/search/movie"))
+            .inScenario("Four Retries")
+            .whenScenarioStateIs(STARTED)
+            .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "0"))
+            .willSetStateTo("Retry2"));
+
+    wireMock.stubFor(
+        get(urlPathEqualTo("/search/movie"))
+            .inScenario("Four Retries")
+            .whenScenarioStateIs("Retry2")
+            .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "0"))
+            .willSetStateTo("Retry3"));
+
+    wireMock.stubFor(
+        get(urlPathEqualTo("/search/movie"))
+            .inScenario("Four Retries")
+            .whenScenarioStateIs("Retry3")
+            .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "0"))
+            .willSetStateTo("Retry4"));
+
+    wireMock.stubFor(
+        get(urlPathEqualTo("/search/movie"))
+            .inScenario("Four Retries")
+            .whenScenarioStateIs("Retry4")
+            .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "0"))
+            .willSetStateTo("Recovered"));
+
+    wireMock.stubFor(
+        get(urlPathEqualTo("/search/movie"))
+            .inScenario("Four Retries")
+            .whenScenarioStateIs("Recovered")
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                    {
+                      "page": 1,
+                      "results": [
+                        {
+                          "id": 1,
+                          "title": "Recovered After Four",
+                          "adult": false,
+                          "popularity": 1.0,
+                          "vote_count": 0,
+                          "vote_average": 0,
+                          "video": false
+                        }
+                      ],
+                      "total_results": 1,
+                      "total_pages": 1
+                    }
+                    """)));
+
+    var parserResult = VideoFileParserResult.builder().title("Test").build();
+
+    var results = service.searchForMovie(parserResult);
+
+    assertThat(results.getResults()).hasSize(1);
+    assertThat(results.getResults().getFirst().getTitle()).isEqualTo("Recovered After Four");
+  }
+
+  @Test
   @DisplayName("Should complete concurrent requests when intermittently rate limited")
   void shouldCompleteConcurrentRequestsWhenIntermittentlyRateLimited() throws Exception {
     wireMock.stubFor(
