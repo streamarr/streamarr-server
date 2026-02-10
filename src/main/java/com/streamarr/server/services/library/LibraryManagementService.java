@@ -35,6 +35,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Semaphore;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
@@ -57,7 +58,7 @@ public class LibraryManagementService implements ActiveScanChecker {
   private final ApplicationEventPublisher eventPublisher;
   private final FileSystem fileSystem;
   private final MutexFactory<String> mutexFactory;
-  private final int maxConcurrentFiles;
+  private final Semaphore fileProcessingLimit;
   private final Set<UUID> activeScans = ConcurrentHashMap.newKeySet();
 
   public LibraryManagementService(
@@ -89,7 +90,7 @@ public class LibraryManagementService implements ActiveScanChecker {
     this.seriesService = seriesService;
     this.eventPublisher = eventPublisher;
     this.fileSystem = fileSystem;
-    this.maxConcurrentFiles = libraryScanProperties.maxConcurrentFiles();
+    this.fileProcessingLimit = new Semaphore(libraryScanProperties.maxConcurrentFiles());
 
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
   }
@@ -232,10 +233,23 @@ public class LibraryManagementService implements ActiveScanChecker {
       stream
           .filter(Files::isRegularFile)
           .filter(file -> !ignoredFileValidator.shouldIgnore(file))
-          .forEach(file -> executor.submit(() -> processFile(library, file)));
+          .forEach(file -> executor.submit(() -> processFileWithLimit(library, file)));
 
     } catch (IOException | UncheckedIOException | SecurityException | InvalidPathException e) {
       throw new LibraryScanFailedException(library.getName(), e);
+    }
+  }
+
+  private void processFileWithLimit(Library library, Path file) {
+    try {
+      fileProcessingLimit.acquire();
+      try {
+        processFile(library, file);
+      } finally {
+        fileProcessingLimit.release();
+      }
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
     }
   }
 
