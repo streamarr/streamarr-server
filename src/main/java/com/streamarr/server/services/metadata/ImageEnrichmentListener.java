@@ -106,6 +106,9 @@ public class ImageEnrichmentListener {
   private static ProcessedImage getQuietly(Future<ProcessedImage> future) {
     try {
       return future.get();
+    } catch (InterruptedException _) {
+      Thread.currentThread().interrupt();
+      return null;
     } catch (Exception _) {
       return null;
     }
