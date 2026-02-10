@@ -6,6 +6,9 @@ on:
     types:
       - released
 
+permissions:
+  contents: read
+
 jobs:
   publish_release:
     runs-on: ubuntu-latest
@@ -14,6 +17,7 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Docker Metadata
         id: meta
