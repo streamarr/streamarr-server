@@ -4,11 +4,29 @@ import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.repositories.media.ImageRepository;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
 public class FakeImageRepository extends FakeJpaRepository<Image> implements ImageRepository {
+
+  private boolean failOnSaveAll;
+
+  public void setFailOnSaveAll(boolean failOnSaveAll) {
+    this.failOnSaveAll = failOnSaveAll;
+  }
+
+  @Override
+  public <S extends Image> List<S> saveAll(Iterable<S> entities) {
+    if (failOnSaveAll) {
+      throw new RuntimeException("Simulated saveAll failure");
+    }
+
+    List<S> entityList = new ArrayList<>();
+    entities.forEach(entity -> entityList.add(save(entity)));
+    return entityList;
+  }
 
   @Override
   public List<Image> findByEntityIdAndEntityType(UUID entityId, ImageEntityType entityType) {

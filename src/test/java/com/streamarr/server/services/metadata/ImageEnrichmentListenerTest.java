@@ -16,6 +16,8 @@ import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import java.io.IOException;
+import java.nio.file.FileSystem;
+import java.nio.file.Files;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,13 +29,14 @@ class ImageEnrichmentListenerTest {
 
   private FakeImageRepository imageRepository;
   private FakeTmdbHttpService tmdbHttpService;
+  private FileSystem fileSystem;
   private ImageEnrichmentListener listener;
 
   @BeforeEach
   void setUp() {
     imageRepository = new FakeImageRepository();
     tmdbHttpService = new FakeTmdbHttpService();
-    var fileSystem = Jimfs.newFileSystem(Configuration.unix());
+    fileSystem = Jimfs.newFileSystem(Configuration.unix());
     var imageProperties = new ImageProperties("/data/images");
     var imageVariantService = new ImageVariantService();
     var imageService =
@@ -137,11 +140,57 @@ class ImageEnrichmentListenerTest {
     assertThat(images).extracting(Image::getImageType).containsOnly(ImageType.BACKDROP);
   }
 
+  @Test
+  @DisplayName("Should clean up written files when batch save fails")
+  void shouldCleanUpWrittenFilesWhenBatchSaveFails() throws IOException {
+    var entityId = UUID.randomUUID();
+    tmdbHttpService.setImageData(createTestImage(600, 900));
+    imageRepository.setFailOnSaveAll(true);
+
+    var event =
+        new MetadataEnrichedEvent(
+            entityId,
+            ImageEntityType.MOVIE,
+            List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")));
+
+    listener.onMetadataEnriched(event);
+
+    assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
+        .isEmpty();
+
+    var entityDir =
+        fileSystem.getPath("/data/images/movie").resolve(entityId.toString()).resolve("poster");
+    try (var files = Files.list(entityDir)) {
+      assertThat(files).isEmpty();
+    }
+  }
+
+  @Test
+  @DisplayName("Should not save images when all downloads fail")
+  void shouldNotSaveImagesWhenAllDownloadsFail() {
+    var entityId = UUID.randomUUID();
+    tmdbHttpService.setFailAll(true);
+
+    var event =
+        new MetadataEnrichedEvent(
+            entityId,
+            ImageEntityType.MOVIE,
+            List.of(
+                new TmdbImageSource(ImageType.POSTER, "/poster.jpg"),
+                new TmdbImageSource(ImageType.BACKDROP, "/backdrop.jpg")));
+
+    listener.onMetadataEnriched(event);
+
+    assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
+        .isEmpty();
+  }
+
   private static class FakeTmdbHttpService extends TheMovieDatabaseHttpService {
 
     private byte[] imageData;
     private String failOnPath;
     private String interruptOnPath;
+    private boolean failAll;
 
     FakeTmdbHttpService() {
       super("", "", "", 10, null, null);
@@ -159,8 +208,15 @@ class ImageEnrichmentListenerTest {
       this.interruptOnPath = path;
     }
 
+    void setFailAll(boolean failAll) {
+      this.failAll = failAll;
+    }
+
     @Override
     public byte[] downloadImage(String pathFragment) throws IOException, InterruptedException {
+      if (failAll) {
+        throw new IOException("Simulated download failure for " + pathFragment);
+      }
       if (pathFragment.equals(failOnPath)) {
         throw new IOException("Simulated download failure for " + pathFragment);
       }
