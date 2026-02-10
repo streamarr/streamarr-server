@@ -65,20 +65,13 @@ public class ImageService {
       return new ProcessedImage(images, writtenFiles);
     } catch (Exception e) {
       deleteFiles(writtenFiles);
-      throw new ImageProcessingException("Failed to process and save image", e);
+      throw new ImageProcessingException("Failed to process image", e);
     }
   }
 
   @Transactional
   public void saveImages(List<Image> images) {
     imageRepository.saveAll(images);
-  }
-
-  @Transactional
-  public void processAndSaveImage(
-      byte[] originalData, ImageType imageType, UUID entityId, ImageEntityType entityType) {
-    var result = processImage(originalData, imageType, entityId, entityType);
-    saveImages(result.images());
   }
 
   public Optional<Image> findById(UUID imageId) {

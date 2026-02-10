@@ -46,7 +46,9 @@ class ImageServiceTest {
     var entityId = UUID.randomUUID();
     var imageData = createTestImage(600, 900);
 
-    imageService.processAndSaveImage(imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE);
+    var result =
+        imageService.processImage(imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE);
+    imageService.saveImages(result.images());
 
     var images = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
     assertThat(images)
@@ -61,7 +63,9 @@ class ImageServiceTest {
     var entityId = UUID.randomUUID();
     var imageData = createTestImage(600, 900);
 
-    imageService.processAndSaveImage(imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE);
+    var result =
+        imageService.processImage(imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE);
+    imageService.saveImages(result.images());
 
     var basePath = fileSystem.getPath("/data/images/movie", entityId.toString(), "poster");
     assertThat(Files.exists(basePath.resolve("small.jpg"))).isTrue();
@@ -76,7 +80,9 @@ class ImageServiceTest {
     var entityId = UUID.randomUUID();
     var imageData = createTestImage(600, 900);
 
-    imageService.processAndSaveImage(imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE);
+    var result =
+        imageService.processImage(imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE);
+    imageService.saveImages(result.images());
 
     var images = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
     var smallImage =
@@ -126,7 +132,9 @@ class ImageServiceTest {
     var entityId = UUID.randomUUID();
     var imageData = createTestImage(600, 900);
 
-    imageService.processAndSaveImage(imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE);
+    var result =
+        imageService.processImage(imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE);
+    imageService.saveImages(result.images());
 
     assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
         .isNotEmpty();
@@ -157,7 +165,7 @@ class ImageServiceTest {
 
     assertThatThrownBy(
             () ->
-                imageService.processAndSaveImage(
+                imageService.processImage(
                     imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE))
         .isInstanceOf(ImageProcessingException.class);
   }
