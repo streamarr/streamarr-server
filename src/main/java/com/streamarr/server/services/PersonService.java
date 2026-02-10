@@ -41,16 +41,28 @@ public class PersonService {
     var imageSources = imageSourcesBySourceId.getOrDefault(person.getSourceId(), List.of());
 
     var existingPerson = personRepository.findPersonBySourceId(person.getSourceId());
-
     if (existingPerson.isPresent()) {
       var target = existingPerson.get();
       target.setName(person.getName());
-      return personRepository.save(target);
+      return target;
     }
 
-    var savedPerson = personRepository.save(person);
-    publishImageEvent(savedPerson, imageSources);
-    return savedPerson;
+    boolean inserted =
+        personRepository.insertOnConflictDoNothing(person.getSourceId(), person.getName());
+    var saved =
+        personRepository
+            .findPersonBySourceId(person.getSourceId())
+            .orElseThrow(
+                () ->
+                    new IllegalStateException(
+                        "Person not found after upsert for sourceId: " + person.getSourceId()));
+
+    saved.setName(person.getName());
+
+    if (inserted) {
+      publishImageEvent(saved, imageSources);
+    }
+    return saved;
   }
 
   private void publishImageEvent(Person person, List<ImageSource> imageSources) {

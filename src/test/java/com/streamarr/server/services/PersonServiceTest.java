@@ -132,6 +132,27 @@ class PersonServiceTest {
   }
 
   @Test
+  @DisplayName("Should return existing person without publishing event when concurrent insert conflicts")
+  void shouldReturnExistingPersonWithoutPublishingEventWhenConcurrentInsertConflicts() {
+    personRepository.setSimulateConflict(true);
+
+    var person = Person.builder().name("Tom Hanks").sourceId("actor-1").build();
+    var imageSources =
+        Map.<String, List<ImageSource>>of(
+            "actor-1", List.of(new TmdbImageSource(ImageType.PROFILE, "/tom.jpg")));
+
+    var result = personService.getOrCreatePersons(List.of(person), imageSources);
+
+    assertThat(result).hasSize(1);
+    var returned = result.getFirst();
+    assertThat(returned.getName()).isEqualTo("Tom Hanks");
+    assertThat(returned.getSourceId()).isEqualTo("actor-1");
+
+    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
+    assertThat(events).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should throw when person source ID is null")
   void shouldThrowWhenPersonSourceIdIsNull() {
     var person = Person.builder().name("Tom Hanks").sourceId(null).build();
