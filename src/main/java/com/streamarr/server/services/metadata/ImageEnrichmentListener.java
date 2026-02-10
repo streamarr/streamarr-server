@@ -64,13 +64,18 @@ public class ImageEnrichmentListener {
       }
     }
 
-    var allImages =
+    var processedResults =
         futures.stream().map(ImageEnrichmentListener::getQuietly).filter(Objects::nonNull).toList();
 
-    var allWrittenFiles = allImages.stream().flatMap(r -> r.writtenFiles().stream()).toList();
+    if (processedResults.isEmpty()) {
+      return;
+    }
+
+    var allWrittenFiles =
+        processedResults.stream().flatMap(r -> r.writtenFiles().stream()).toList();
 
     try {
-      imageService.saveImages(allImages.stream().flatMap(r -> r.images().stream()).toList());
+      imageService.saveImages(processedResults.stream().flatMap(r -> r.images().stream()).toList());
     } catch (Exception e) {
       imageService.deleteFiles(allWrittenFiles);
       log.error(
