@@ -28,7 +28,7 @@ public class GenreService {
       throw new IllegalArgumentException("Genre sourceId must not be null");
     }
 
-    genreRepository.insertOnConflictDoNothing(genre.getSourceId(), genre.getName());
+    genreRepository.insertIfAbsent(genre.getSourceId(), genre.getName());
     var saved =
         genreRepository
             .findBySourceId(genre.getSourceId())

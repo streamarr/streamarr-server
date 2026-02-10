@@ -22,7 +22,7 @@ public class PersonRepositoryCustomImplIT extends AbstractIntegrationTest {
   @DisplayName("Should populate audit fields from AuditorAware when inserting via jOOQ")
   void shouldPopulateAuditFieldsFromAuditorAwareWhenInsertingViaJooq() {
     var sourceId = "audit-test-" + UUID.randomUUID();
-    var inserted = personRepository.insertOnConflictDoNothing(sourceId, "Audit Test Person");
+    var inserted = personRepository.insertIfAbsent(sourceId, "Audit Test Person");
 
     assertThat(inserted).isTrue();
 
@@ -39,11 +39,11 @@ public class PersonRepositoryCustomImplIT extends AbstractIntegrationTest {
   @DisplayName("Should return false without inserting when source ID already exists")
   void shouldReturnFalseWithoutInsertingWhenSourceIdAlreadyExists() {
     var sourceId = "conflict-test-" + UUID.randomUUID();
-    var firstInsert = personRepository.insertOnConflictDoNothing(sourceId, "Original Name");
+    var firstInsert = personRepository.insertIfAbsent(sourceId, "Original Name");
 
     assertThat(firstInsert).isTrue();
 
-    var secondInsert = personRepository.insertOnConflictDoNothing(sourceId, "Different Name");
+    var secondInsert = personRepository.insertIfAbsent(sourceId, "Different Name");
 
     assertThat(secondInsert).isFalse();
     var person = personRepository.findPersonBySourceId(sourceId).orElseThrow();

@@ -14,7 +14,7 @@ public class FakeCompanyRepository extends FakeJpaRepository<Company> implements
   @Setter private boolean simulateConflict;
 
   @Override
-  public boolean insertOnConflictDoNothing(String sourceId, String name) {
+  public boolean insertIfAbsent(String sourceId, String name) {
     if (simulateConflict) {
       save(Company.builder().sourceId(sourceId).name(name).build());
       return false;

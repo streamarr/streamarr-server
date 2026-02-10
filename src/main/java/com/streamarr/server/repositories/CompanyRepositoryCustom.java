@@ -2,5 +2,5 @@ package com.streamarr.server.repositories;
 
 public interface CompanyRepositoryCustom {
 
-  boolean insertOnConflictDoNothing(String sourceId, String name);
+  boolean insertIfAbsent(String sourceId, String name);
 }

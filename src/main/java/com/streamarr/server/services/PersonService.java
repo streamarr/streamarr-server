@@ -41,7 +41,7 @@ public class PersonService {
     var imageSources = imageSourcesBySourceId.getOrDefault(person.getSourceId(), List.of());
 
     boolean inserted =
-        personRepository.insertOnConflictDoNothing(person.getSourceId(), person.getName());
+        personRepository.insertIfAbsent(person.getSourceId(), person.getName());
     var saved =
         personRepository
             .findPersonBySourceId(person.getSourceId())

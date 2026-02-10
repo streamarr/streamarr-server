@@ -14,7 +14,7 @@ public class PersonRepositoryCustomImpl implements PersonRepositoryCustom {
   private final AuditorAware<UUID> auditorAware;
 
   @Override
-  public boolean insertOnConflictDoNothing(String sourceId, String name) {
+  public boolean insertIfAbsent(String sourceId, String name) {
     var auditUser = auditorAware.getCurrentAuditor().orElse(null);
     var rowsAffected =
         dsl.insertInto(PERSON)

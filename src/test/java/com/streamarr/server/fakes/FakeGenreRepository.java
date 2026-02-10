@@ -13,7 +13,7 @@ public class FakeGenreRepository extends FakeJpaRepository<Genre> implements Gen
   @Setter private boolean simulateConflict;
 
   @Override
-  public boolean insertOnConflictDoNothing(String sourceId, String name) {
+  public boolean insertIfAbsent(String sourceId, String name) {
     if (simulateConflict) {
       save(Genre.builder().sourceId(sourceId).name(name).build());
       return false;
