@@ -21,6 +21,7 @@ import com.streamarr.server.services.metadata.series.SeriesMetadataProviderResol
 import com.streamarr.server.services.parsers.show.EpisodePathMetadataParser;
 import com.streamarr.server.services.parsers.show.EpisodePathResult;
 import com.streamarr.server.services.parsers.show.SeasonPathMetadataParser;
+import com.streamarr.server.services.parsers.show.SeriesFolderNameParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.nio.file.Path;
 import java.util.Collection;
@@ -37,6 +38,7 @@ public class SeriesFileProcessor {
 
   private final EpisodePathMetadataParser episodePathMetadataParser;
   private final SeasonPathMetadataParser seasonPathMetadataParser;
+  private final SeriesFolderNameParser seriesFolderNameParser;
   private final SeriesMetadataProviderResolver seriesMetadataProviderResolver;
   private final SeriesService seriesService;
   private final MediaFileRepository mediaFileRepository;
@@ -48,6 +50,7 @@ public class SeriesFileProcessor {
   public SeriesFileProcessor(
       EpisodePathMetadataParser episodePathMetadataParser,
       SeasonPathMetadataParser seasonPathMetadataParser,
+      SeriesFolderNameParser seriesFolderNameParser,
       SeriesMetadataProviderResolver seriesMetadataProviderResolver,
       SeriesService seriesService,
       MediaFileRepository mediaFileRepository,
@@ -57,6 +60,7 @@ public class SeriesFileProcessor {
       ApplicationEventPublisher eventPublisher) {
     this.episodePathMetadataParser = episodePathMetadataParser;
     this.seasonPathMetadataParser = seasonPathMetadataParser;
+    this.seriesFolderNameParser = seriesFolderNameParser;
     this.seriesMetadataProviderResolver = seriesMetadataProviderResolver;
     this.seriesService = seriesService;
     this.mediaFileRepository = mediaFileRepository;
@@ -90,9 +94,9 @@ public class SeriesFileProcessor {
             : Optional.<SeasonPathMetadataParser.Result>empty();
 
     var seasonNumber = resolveSeasonNumber(parentDir, seasonParseResult, parseResult.get());
-    var seriesName = resolveSeriesName(parentDir, seasonParseResult, parseResult.get());
+    var parserResult = resolveSeriesInfo(parentDir, seasonParseResult, parseResult.get());
 
-    if (seriesName == null || seriesName.isBlank()) {
+    if (parserResult.title() == null || parserResult.title().isBlank()) {
       markAs(mediaFile, MediaFileStatus.METADATA_PARSING_FAILED);
       log.error(
           "Could not determine series name from MediaFile id: {} at path: '{}'",
@@ -103,19 +107,18 @@ public class SeriesFileProcessor {
 
     log.info(
         "Parsed series file: series='{}', season={}, episode={} for MediaFile id: {}",
-        seriesName,
+        parserResult.title(),
         seasonNumber,
         episodeNumber,
         mediaFile.getId());
 
-    var parserResult = VideoFileParserResult.builder().title(seriesName).build();
     var searchResult = seriesMetadataProviderResolver.search(library, parserResult);
 
     if (searchResult.isEmpty()) {
       markAs(mediaFile, MediaFileStatus.METADATA_SEARCH_FAILED);
       log.error(
           "Failed to find TMDB match for series '{}' from MediaFile id: {} at path: '{}'",
-          seriesName,
+          parserResult.title(),
           mediaFile.getId(),
           mediaFile.getFilepathUri());
       return;
@@ -139,13 +142,13 @@ public class SeriesFileProcessor {
     return episodeResult.getSeasonNumber().orElse(1);
   }
 
-  private String resolveSeriesName(
+  private VideoFileParserResult resolveSeriesInfo(
       Path parentDir,
       Optional<SeasonPathMetadataParser.Result> seasonParseResult,
       EpisodePathResult episodeResult) {
 
     if (parentDir == null) {
-      return episodeResult.getSeriesName();
+      return VideoFileParserResult.builder().title(episodeResult.getSeriesName()).build();
     }
 
     var isSeasonFolder = seasonParseResult.isPresent() && seasonParseResult.get().isSeasonFolder();
@@ -157,13 +160,13 @@ public class SeriesFileProcessor {
       dirName = parentDir.getFileName().toString();
     }
 
-    var cleanName = dirName.replaceAll("\\s*\\(\\d{4}\\)$", "").trim();
+    var result = seriesFolderNameParser.parse(dirName);
 
-    if (cleanName.isBlank()) {
-      return episodeResult.getSeriesName();
+    if (result.title() == null || result.title().isBlank()) {
+      return VideoFileParserResult.builder().title(episodeResult.getSeriesName()).build();
     }
 
-    return cleanName;
+    return result;
   }
 
   private void enrichSeriesMetadata(
