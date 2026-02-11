@@ -9,7 +9,7 @@ import org.springframework.stereotype.Service;
 public class SeriesFolderNameParser {
 
   private static final Pattern EXTERNAL_ID_TAG =
-      Pattern.compile("[\\[\\{](?i)(?<source>imdb|tmdb)[ \\-](?<id>.+?)[\\]\\}]");
+      Pattern.compile("[\\[\\{(](?i)(?<source>imdb|tmdb|tvdb)(?:id)?[ \\-=](?<id>.+?)[\\]\\})]");
 
   private static final Pattern YEAR_SUFFIX = Pattern.compile("\\s*\\((?<year>\\d{4})\\)");
 

@@ -13,7 +13,8 @@ import org.springframework.stereotype.Service;
 public class ExternalIdVideoFileMetadataParser implements MetadataParser<VideoFileParserResult> {
 
   private static final Pattern SOURCE_ID_REGEX =
-      Pattern.compile(".*(?<=[\\[\\{](?i)(?<source>imdb|tmdb)[ \\-])(?<id>.+?)(?=[\\]\\}]).*");
+      Pattern.compile(
+          ".*(?<=[\\[\\{(](?i)(?<source>imdb|tmdb|tvdb)(?:id)?[ \\-=])(?<id>.+?)(?=[\\]\\})]).*");
 
   @Override
   public Optional<VideoFileParserResult> parse(String filename) {
