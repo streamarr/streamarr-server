@@ -3,6 +3,7 @@ package com.streamarr.server.services.metadata;
 import com.streamarr.server.services.metadata.tmdb.TmdbApiException;
 import com.streamarr.server.services.metadata.tmdb.TmdbCredits;
 import com.streamarr.server.services.metadata.tmdb.TmdbFailure;
+import com.streamarr.server.services.metadata.tmdb.TmdbFindResults;
 import com.streamarr.server.services.metadata.tmdb.TmdbMovie;
 import com.streamarr.server.services.metadata.tmdb.TmdbSearchResults;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSearchResults;
@@ -110,6 +111,20 @@ public class TheMovieDatabaseHttpService {
     var request = authenticatedRequest(uri).GET().build();
 
     return sendWithRetry(request, TmdbTvSearchResults.class);
+  }
+
+  public TmdbFindResults findByExternalId(String externalId, String externalSource)
+      throws IOException, InterruptedException {
+    var uri =
+        baseUrl()
+            .path("/find/")
+            .path(externalId)
+            .queryParam("external_source", externalSource)
+            .build();
+
+    var request = authenticatedRequest(uri).GET().build();
+
+    return sendWithRetry(request, TmdbFindResults.class);
   }
 
   public TmdbTvSeries getTvSeriesMetadata(String seriesId)
