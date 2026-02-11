@@ -29,6 +29,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.AbstractPlatformTransactionManager;
+import org.springframework.transaction.support.DefaultTransactionStatus;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("UnitTest")
 @DisplayName("Orphaned Media File Cleanup Service Tests")
@@ -44,7 +48,8 @@ public class OrphanedMediaFileCleanupServiceTest {
 
   private final OrphanedMediaFileCleanupService orphanedMediaFileCleanupService =
       new OrphanedMediaFileCleanupService(
-          fakeLibraryRepository, fakeMediaFileRepository, movieService, fileSystem);
+          fakeLibraryRepository, fakeMediaFileRepository, movieService, fileSystem,
+          noOpTransactionTemplate());
 
   private Library library;
 
@@ -233,6 +238,29 @@ public class OrphanedMediaFileCleanupServiceTest {
     assertThat(fakeMediaFileRepository.findById(validOrphan.getId())).isEmpty();
   }
 
+  @Test
+  @DisplayName("Should not propagate unexpected exception from cleanup")
+  void shouldNotPropagateUnexpectedExceptionFromCleanup() {
+    var throwingMediaFileRepository =
+        new FakeMediaFileRepository() {
+          @Override
+          public java.util.List<MediaFile> findByLibraryId(UUID libraryId) {
+            throw new RuntimeException("Simulated unexpected failure");
+          }
+        };
+
+    var serviceWithThrowingRepo =
+        new OrphanedMediaFileCleanupService(
+            fakeLibraryRepository,
+            throwingMediaFileRepository,
+            movieService,
+            fileSystem,
+            noOpTransactionTemplate());
+
+    var event = new ScanCompletedEvent(library.getId());
+    serviceWithThrowingRepo.onScanCompleted(event);
+  }
+
   private Path createMovieFile(String folder, String filename) throws IOException {
     var rootPath = fileSystem.getPath(library.getFilepath());
     var movieFolder = rootPath.resolve(folder);
@@ -240,5 +268,24 @@ public class OrphanedMediaFileCleanupServiceTest {
     var movieFile = movieFolder.resolve(filename);
     Files.createFile(movieFile);
     return movieFile;
+  }
+
+  private static TransactionTemplate noOpTransactionTemplate() {
+    return new TransactionTemplate(
+        new AbstractPlatformTransactionManager() {
+          @Override
+          protected Object doGetTransaction() {
+            return new Object();
+          }
+
+          @Override
+          protected void doBegin(Object transaction, TransactionDefinition definition) {}
+
+          @Override
+          protected void doCommit(DefaultTransactionStatus status) {}
+
+          @Override
+          protected void doRollback(DefaultTransactionStatus status) {}
+        });
   }
 }

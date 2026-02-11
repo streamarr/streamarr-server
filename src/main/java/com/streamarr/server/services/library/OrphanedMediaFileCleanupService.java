@@ -18,7 +18,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Slf4j
 @Service
@@ -29,8 +29,8 @@ public class OrphanedMediaFileCleanupService {
   private final MediaFileRepository mediaFileRepository;
   private final MovieService movieService;
   private final FileSystem fileSystem;
+  private final TransactionTemplate transactionTemplate;
 
-  @Transactional
   @EventListener
   public void onScanCompleted(ScanCompletedEvent event) {
     try {
@@ -38,9 +38,11 @@ public class OrphanedMediaFileCleanupService {
           libraryRepository
               .findById(event.libraryId())
               .orElseThrow(() -> new LibraryNotFoundException(event.libraryId()));
-      cleanupOrphanedFiles(library);
+      transactionTemplate.executeWithoutResult(status -> cleanupOrphanedFiles(library));
     } catch (LibraryNotFoundException e) {
       log.warn("Library {} was deleted before orphaned file cleanup could run.", event.libraryId());
+    } catch (Exception e) {
+      log.error("Orphaned file cleanup failed for library: {}", event.libraryId(), e);
     }
   }
 
