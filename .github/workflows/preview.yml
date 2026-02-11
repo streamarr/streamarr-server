@@ -1,9 +1,9 @@
 name: Preview Image
 
 on:
-  pull_request:
+  issue_comment:
     types:
-      - labeled
+      - created
 
 permissions:
   contents: read
@@ -11,19 +11,33 @@ permissions:
 
 jobs:
   build_preview:
-    if: github.event.label.name == 'deploy-preview'
+    if: >
+      github.event.issue.pull_request
+      && github.event.comment.body == '/deploy-preview'
+      && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
     runs-on: ubuntu-latest
 
     steps:
+      - name: React to command
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'rocket'
+            });
+
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: refs/pull/${{ github.event.issue.number }}/head
           persist-credentials: false
 
       - name: Build and publish preview image
         uses: ./.github/actions/pack-build
         with:
-          tags: streamarr/streamarr-server:pr-${{ github.event.pull_request.number }}
+          tags: streamarr/streamarr-server:pr-${{ github.event.issue.number }}
           publish: "true"
           dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -32,21 +46,10 @@ jobs:
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
         with:
           script: |
-            const tag = `streamarr/streamarr-server:pr-${{ github.event.pull_request.number }}`;
+            const tag = `streamarr/streamarr-server:pr-${{ github.event.issue.number }}`;
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
               body: `Preview image published:\n\n\`\`\`\ndocker pull ${tag}\n\`\`\``
-            });
-
-      - name: Remove deploy-preview label
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
-        with:
-          script: |
-            await github.rest.issues.removeLabel({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              name: 'deploy-preview'
             });
