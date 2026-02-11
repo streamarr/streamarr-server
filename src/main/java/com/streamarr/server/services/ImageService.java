@@ -72,7 +72,7 @@ public class ImageService {
 
   @Transactional(propagation = Propagation.REQUIRES_NEW)
   public void saveImages(List<Image> images) {
-    imageRepository.saveAll(images);
+    imageRepository.insertAllIfAbsent(images);
   }
 
   public Optional<Image> findById(UUID imageId) {

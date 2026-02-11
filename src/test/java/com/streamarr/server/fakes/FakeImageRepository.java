@@ -4,41 +4,29 @@ import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.repositories.media.ImageRepository;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
-import org.springframework.dao.DataIntegrityViolationException;
 
 public class FakeImageRepository extends FakeJpaRepository<Image> implements ImageRepository {
 
-  private boolean failOnSaveAll;
+  private boolean failOnInsertAllIfAbsent;
 
-  public void setFailOnSaveAll(boolean failOnSaveAll) {
-    this.failOnSaveAll = failOnSaveAll;
+  public void setFailOnInsertAllIfAbsent(boolean failOnInsertAllIfAbsent) {
+    this.failOnInsertAllIfAbsent = failOnInsertAllIfAbsent;
   }
 
   @Override
-  public <S extends Image> List<S> saveAll(Iterable<S> entities) {
-    if (failOnSaveAll) {
-      throw new RuntimeException("Simulated saveAll failure");
+  public void insertAllIfAbsent(List<Image> images) {
+    if (failOnInsertAllIfAbsent) {
+      throw new RuntimeException("Simulated insertAllIfAbsent failure");
     }
 
-    List<S> entityList = new ArrayList<>();
-    entities.forEach(
-        entity -> {
-          if (isDuplicate(entity)) {
-            throw new DataIntegrityViolationException(
-                "Duplicate image: entityId="
-                    + entity.getEntityId()
-                    + ", imageType="
-                    + entity.getImageType()
-                    + ", variant="
-                    + entity.getVariant());
-          }
-          entityList.add(save(entity));
-        });
-    return entityList;
+    for (var image : images) {
+      if (!isDuplicate(image)) {
+        save(image);
+      }
+    }
   }
 
   private boolean isDuplicate(Image image) {

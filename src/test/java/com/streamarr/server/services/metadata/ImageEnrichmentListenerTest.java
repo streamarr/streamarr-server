@@ -145,7 +145,7 @@ class ImageEnrichmentListenerTest {
   void shouldCleanUpWrittenFilesWhenBatchSaveFails() throws IOException {
     var entityId = UUID.randomUUID();
     tmdbHttpService.setImageData(createTestImage(600, 900));
-    imageRepository.setFailOnSaveAll(true);
+    imageRepository.setFailOnInsertAllIfAbsent(true);
 
     var event =
         new MetadataEnrichedEvent(
