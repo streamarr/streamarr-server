@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.dao.DataIntegrityViolationException;
 
 public class FakeImageRepository extends FakeJpaRepository<Image> implements ImageRepository {
 
@@ -24,8 +25,29 @@ public class FakeImageRepository extends FakeJpaRepository<Image> implements Ima
     }
 
     List<S> entityList = new ArrayList<>();
-    entities.forEach(entity -> entityList.add(save(entity)));
+    entities.forEach(
+        entity -> {
+          if (isDuplicate(entity)) {
+            throw new DataIntegrityViolationException(
+                "Duplicate image: entityId="
+                    + entity.getEntityId()
+                    + ", imageType="
+                    + entity.getImageType()
+                    + ", variant="
+                    + entity.getVariant());
+          }
+          entityList.add(save(entity));
+        });
     return entityList;
+  }
+
+  private boolean isDuplicate(Image image) {
+    return database.values().stream()
+        .anyMatch(
+            existing ->
+                existing.getEntityId().equals(image.getEntityId())
+                    && existing.getImageType() == image.getImageType()
+                    && existing.getVariant() == image.getVariant());
   }
 
   @Override
