@@ -145,6 +145,47 @@ public class LibraryManagementServiceTest {
   }
 
   @Test
+  @DisplayName("Should throw IllegalArgumentException when maxConcurrentFiles is not positive")
+  void shouldThrowWhenMaxConcurrentFilesIsNotPositive() {
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new LibraryManagementService(
+                new IgnoredFileValidator(new LibraryScanProperties(null, null, null, null)),
+                new VideoExtensionValidator(),
+                movieFileProcessor,
+                seriesFileProcessor,
+                fakeLibraryRepository,
+                fakeMediaFileRepository,
+                movieService,
+                seriesService,
+                capturingEventPublisher,
+                new MutexFactoryProvider(),
+                fileSystem,
+                new LibraryScanProperties(null, null, null, 0)));
+  }
+
+  @Test
+  @DisplayName(
+      "Should restore interrupt flag when file processing is interrupted during scan")
+  void shouldRestoreInterruptFlagWhenFileProcessingIsInterruptedDuringScan() throws Exception {
+    var rootPath = createRootLibraryDirectory();
+    createMovieFile(rootPath, "Interrupted Movie", "Interrupted Movie (2024).mkv");
+
+    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
+        .thenAnswer(
+            invocation -> {
+              throw new InterruptedException("simulated interrupt during search");
+            });
+
+    libraryManagementService.scanLibrary(savedLibraryId);
+
+    var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+    assertThat(library.getStatus()).isEqualTo(LibraryStatus.HEALTHY);
+  }
+
+  @Test
   @DisplayName("Should not allow for scanning of a library that doesn't exist.")
   void shouldFailWhenNoLibraryFound() {
     assertThrows(
