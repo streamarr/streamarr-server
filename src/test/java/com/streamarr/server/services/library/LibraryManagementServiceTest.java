@@ -51,6 +51,7 @@ import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.metadata.movie.TMDBMovieProvider;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
+import com.streamarr.server.services.parsers.video.ExternalIdVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
@@ -106,6 +107,7 @@ public class LibraryManagementServiceTest {
   private final MovieFileProcessor movieFileProcessor =
       new MovieFileProcessor(
           new DefaultVideoFileMetadataParser(),
+          new ExternalIdVideoFileMetadataParser(),
           fakeMovieMetadataProviderResolver,
           movieService,
           fakeMediaFileRepository,
@@ -166,8 +168,7 @@ public class LibraryManagementServiceTest {
   }
 
   @Test
-  @DisplayName(
-      "Should restore interrupt flag when file processing is interrupted during scan")
+  @DisplayName("Should restore interrupt flag when file processing is interrupted during scan")
   void shouldRestoreInterruptFlagWhenFileProcessingIsInterruptedDuringScan() throws Exception {
     var rootPath = createRootLibraryDirectory();
     createMovieFile(rootPath, "Interrupted Movie", "Interrupted Movie (2024).mkv");
@@ -384,8 +385,7 @@ public class LibraryManagementServiceTest {
 
     libraryManagementService.scanLibrary(savedLibraryId);
 
-    var mediaFile =
-        fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
+    var mediaFile = fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
 
     assertTrue(mediaFile.isEmpty());
   }
@@ -447,8 +447,7 @@ public class LibraryManagementServiceTest {
 
     libraryManagementService.scanLibrary(savedLibraryId);
 
-    var mediaFile =
-        fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
+    var mediaFile = fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
 
     assertTrue(mediaFile.isPresent());
 
@@ -521,8 +520,7 @@ public class LibraryManagementServiceTest {
 
     libraryManagementService.processDiscoveredFile(savedLibraryId, moviePath);
 
-    var mediaFile =
-        fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
+    var mediaFile = fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
 
     assertTrue(mediaFile.isPresent());
     assertEquals(MediaFileStatus.MATCHED, mediaFile.get().getStatus());

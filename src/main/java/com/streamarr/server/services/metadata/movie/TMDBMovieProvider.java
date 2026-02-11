@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.time.LocalDate;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import lombok.Getter;
@@ -26,6 +27,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
+import tools.jackson.core.JacksonException;
 
 @Slf4j
 @Service
@@ -36,7 +38,88 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
 
   @Getter private final ExternalAgentStrategy agentStrategy = ExternalAgentStrategy.TMDB;
 
+  private static final Map<ExternalSourceType, String> TMDB_EXTERNAL_SOURCES =
+      Map.of(ExternalSourceType.IMDB, "imdb_id", ExternalSourceType.TVDB, "tvdb_id");
+
   public Optional<RemoteSearchResult> search(VideoFileParserResult videoInformation) {
+    var findResult = searchByExternalId(videoInformation);
+    if (findResult.isPresent()) {
+      return findResult;
+    }
+
+    return searchByText(videoInformation);
+  }
+
+  private Optional<RemoteSearchResult> searchByExternalId(VideoFileParserResult videoInformation) {
+    if (StringUtils.isBlank(videoInformation.externalId())
+        || videoInformation.externalSource() == null) {
+      return Optional.empty();
+    }
+
+    if (videoInformation.externalSource() == ExternalSourceType.TMDB) {
+      return searchByDirectTmdbId(videoInformation);
+    }
+
+    var tmdbSource = TMDB_EXTERNAL_SOURCES.get(videoInformation.externalSource());
+    if (tmdbSource == null) {
+      return Optional.empty();
+    }
+
+    try {
+      var findResults =
+          theMovieDatabaseHttpService.findByExternalId(videoInformation.externalId(), tmdbSource);
+
+      var movieResults = findResults.getMovieResults();
+      if (movieResults != null && !movieResults.isEmpty()) {
+        var tmdbResult = movieResults.getFirst();
+        return Optional.of(
+            RemoteSearchResult.builder()
+                .externalSourceType(ExternalSourceType.TMDB)
+                .externalId(String.valueOf(tmdbResult.getId()))
+                .title(tmdbResult.getTitle())
+                .build());
+      }
+    } catch (IOException | JacksonException ex) {
+      log.warn(
+          "TMDB /find failed for external ID '{}', falling back to text search",
+          videoInformation.externalId(),
+          ex);
+    } catch (InterruptedException ex) {
+      Thread.currentThread().interrupt();
+      log.error("TMDB /find interrupted for external ID '{}'", videoInformation.externalId(), ex);
+      return Optional.empty();
+    }
+
+    return Optional.empty();
+  }
+
+  private Optional<RemoteSearchResult> searchByDirectTmdbId(
+      VideoFileParserResult videoInformation) {
+    try {
+      var tmdbMovie =
+          theMovieDatabaseHttpService.getMovieMetadata(videoInformation.externalId());
+
+      return Optional.of(
+          RemoteSearchResult.builder()
+              .externalSourceType(ExternalSourceType.TMDB)
+              .externalId(String.valueOf(tmdbMovie.getId()))
+              .title(tmdbMovie.getTitle())
+              .build());
+    } catch (IOException | JacksonException ex) {
+      log.warn(
+          "TMDB direct lookup failed for ID '{}', falling back to text search",
+          videoInformation.externalId(),
+          ex);
+    } catch (InterruptedException ex) {
+      Thread.currentThread().interrupt();
+      log.error("TMDB direct lookup interrupted for ID '{}'", videoInformation.externalId(), ex);
+      return Optional.empty();
+    }
+
+    return Optional.empty();
+  }
+
+  private Optional<RemoteSearchResult> searchByText(VideoFileParserResult videoInformation) {
     try {
       var searchResult = theMovieDatabaseHttpService.searchForMovie(videoInformation);
 
@@ -44,7 +127,7 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
         return Optional.empty();
       }
 
-      var tmdbResult = searchResult.getResults().get(0);
+      var tmdbResult = searchResult.getResults().getFirst();
 
       return Optional.of(
           RemoteSearchResult.builder()

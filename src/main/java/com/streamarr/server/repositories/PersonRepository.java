@@ -11,8 +11,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public interface PersonRepository
-    extends JpaRepository<Person, UUID>, PersonRepositoryCustom {
+public interface PersonRepository extends JpaRepository<Person, UUID>, PersonRepositoryCustom {
 
   Set<Person> findPersonsBySourceIdIn(List<String> sourceIds);
 

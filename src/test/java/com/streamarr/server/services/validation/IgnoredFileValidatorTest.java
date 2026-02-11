@@ -99,7 +99,8 @@ class IgnoredFileValidatorTest {
   @DisplayName("Should ignore when given additional configured filename")
   void shouldIgnoreWhenGivenAdditionalConfiguredFilename() {
     var customValidator =
-        new IgnoredFileValidator(new LibraryScanProperties(List.of(".hidden_file"), null, null, null));
+        new IgnoredFileValidator(
+            new LibraryScanProperties(List.of(".hidden_file"), null, null, null));
 
     assertTrue(customValidator.shouldIgnore(Path.of(".hidden_file")));
   }

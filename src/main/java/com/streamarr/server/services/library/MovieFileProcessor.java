@@ -10,6 +10,7 @@ import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
+import com.streamarr.server.services.parsers.video.ExternalIdVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
@@ -21,6 +22,7 @@ import org.springframework.stereotype.Service;
 public class MovieFileProcessor {
 
   private final DefaultVideoFileMetadataParser defaultVideoFileMetadataParser;
+  private final ExternalIdVideoFileMetadataParser externalIdVideoFileMetadataParser;
   private final MovieMetadataProviderResolver movieMetadataProviderResolver;
   private final MovieService movieService;
   private final MediaFileRepository mediaFileRepository;
@@ -28,11 +30,13 @@ public class MovieFileProcessor {
 
   public MovieFileProcessor(
       DefaultVideoFileMetadataParser defaultVideoFileMetadataParser,
+      ExternalIdVideoFileMetadataParser externalIdVideoFileMetadataParser,
       MovieMetadataProviderResolver movieMetadataProviderResolver,
       MovieService movieService,
       MediaFileRepository mediaFileRepository,
       MutexFactoryProvider mutexFactoryProvider) {
     this.defaultVideoFileMetadataParser = defaultVideoFileMetadataParser;
+    this.externalIdVideoFileMetadataParser = externalIdVideoFileMetadataParser;
     this.movieMetadataProviderResolver = movieMetadataProviderResolver;
     this.movieService = movieService;
     this.mediaFileRepository = mediaFileRepository;
@@ -91,7 +95,18 @@ public class MovieFileProcessor {
       return Optional.empty();
     }
 
-    return result;
+    var externalIdResult = externalIdVideoFileMetadataParser.parse(mediaFile.getFilename());
+    if (externalIdResult.isEmpty()) {
+      return result;
+    }
+
+    return Optional.of(
+        VideoFileParserResult.builder()
+            .title(result.get().title())
+            .year(result.get().year())
+            .externalId(externalIdResult.get().externalId())
+            .externalSource(externalIdResult.get().externalSource())
+            .build());
   }
 
   private void enrichMovieMetadata(

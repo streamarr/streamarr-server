@@ -13,6 +13,9 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class TmdbFindResults {
 
+  @JsonProperty("movie_results")
+  private List<TmdbSearchResult> movieResults;
+
   @JsonProperty("tv_results")
   private List<TmdbTvSearchResult> tvResults;
 }

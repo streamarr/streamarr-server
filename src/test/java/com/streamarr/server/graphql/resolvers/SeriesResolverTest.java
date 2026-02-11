@@ -93,7 +93,6 @@ class SeriesResolverTest {
             String.format("{ series(id: \"%s\") { files { filepathUri } } }", seriesId),
             "data.series.files[0].filepathUri");
 
-    assertThat(filepathUri)
-        .isEqualTo("/media/shows/Breaking Bad/Season 1/breaking.bad.s01e01.mkv");
+    assertThat(filepathUri).isEqualTo("/media/shows/Breaking Bad/Season 1/breaking.bad.s01e01.mkv");
   }
 }

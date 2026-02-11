@@ -40,8 +40,7 @@ public class PersonService {
 
     var imageSources = imageSourcesBySourceId.getOrDefault(person.getSourceId(), List.of());
 
-    boolean inserted =
-        personRepository.insertIfAbsent(person.getSourceId(), person.getName());
+    boolean inserted = personRepository.insertIfAbsent(person.getSourceId(), person.getName());
     var saved =
         personRepository
             .findPersonBySourceId(person.getSourceId())

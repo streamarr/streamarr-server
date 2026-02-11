@@ -48,7 +48,10 @@ public class OrphanedMediaFileCleanupServiceTest {
 
   private final OrphanedMediaFileCleanupService orphanedMediaFileCleanupService =
       new OrphanedMediaFileCleanupService(
-          fakeLibraryRepository, fakeMediaFileRepository, movieService, fileSystem,
+          fakeLibraryRepository,
+          fakeMediaFileRepository,
+          movieService,
+          fileSystem,
           noOpTransactionTemplate());
 
   private Library library;
@@ -196,7 +199,8 @@ public class OrphanedMediaFileCleanupServiceTest {
   }
 
   @Test
-  @DisplayName("Should treat media file as orphaned when filepathUri contains unmappable characters")
+  @DisplayName(
+      "Should treat media file as orphaned when filepathUri contains unmappable characters")
   void shouldTreatMediaFileAsOrphanedWhenFilepathContainsUnmappableCharacters() {
     var corruptedFile =
         fakeMediaFileRepository.save(
@@ -213,8 +217,7 @@ public class OrphanedMediaFileCleanupServiceTest {
   }
 
   @Test
-  @DisplayName(
-      "Should still clean up valid orphaned files when one file has unmappable path")
+  @DisplayName("Should still clean up valid orphaned files when one file has unmappable path")
   void shouldStillCleanUpValidOrphanedFilesWhenOneFileHasUnmappablePath() {
     fakeMediaFileRepository.save(
         MediaFile.builder()

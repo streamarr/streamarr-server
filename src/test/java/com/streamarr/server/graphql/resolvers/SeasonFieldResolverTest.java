@@ -106,7 +106,6 @@ class SeasonFieldResolverTest {
                 seriesId),
             "data.series.seasons[0].episodes[0].files[0].filepathUri");
 
-    assertThat(filepathUri)
-        .isEqualTo("/media/shows/Breaking Bad/Season 1/breaking.bad.s01e01.mkv");
+    assertThat(filepathUri).isEqualTo("/media/shows/Breaking Bad/Season 1/breaking.bad.s01e01.mkv");
   }
 }

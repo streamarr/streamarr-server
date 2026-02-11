@@ -1,9 +1,9 @@
 package com.streamarr.server.services.task;
 
 import com.streamarr.server.domain.task.FileProcessingTask;
-import com.streamarr.server.services.library.FilepathCodec;
 import com.streamarr.server.domain.task.FileProcessingTaskStatus;
 import com.streamarr.server.repositories.task.FileProcessingTaskRepository;
+import com.streamarr.server.services.library.FilepathCodec;
 import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
 import java.nio.file.Path;

@@ -23,6 +23,7 @@ import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.metadata.movie.TMDBMovieProvider;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
+import com.streamarr.server.services.parsers.video.ExternalIdVideoFileMetadataParser;
 import com.streamarr.server.services.task.FileProcessingTaskCoordinator;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
@@ -116,6 +117,7 @@ class FileEventProcessorTest {
     var movieFileProcessor =
         new MovieFileProcessor(
             new DefaultVideoFileMetadataParser(),
+            new ExternalIdVideoFileMetadataParser(),
             new MovieMetadataProviderResolver(List.of(tmdbProvider)),
             movieService,
             mediaFileRepository,
