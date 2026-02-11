@@ -46,10 +46,7 @@ public class OrphanedMediaFileCleanupService {
   public void cleanupOrphanedFiles(Library library) {
     var mediaFiles = mediaFileRepository.findByLibraryId(library.getId());
 
-    var orphanedFiles =
-        mediaFiles.stream()
-            .filter(file -> !Files.exists(fileSystem.getPath(file.getFilepath())))
-            .toList();
+    var orphanedFiles = mediaFiles.stream().filter(file -> !isFileStillOnDisk(file)).toList();
 
     if (orphanedFiles.isEmpty()) {
       return;
@@ -69,6 +66,10 @@ public class OrphanedMediaFileCleanupService {
         "Removed {} orphaned media file(s) from {} library.",
         orphanedFiles.size(),
         library.getName());
+  }
+
+  private boolean isFileStillOnDisk(MediaFile file) {
+    return Files.exists(fileSystem.getPath(file.getFilepath()));
   }
 
   private void deleteMoviesWithNoRemainingFiles(Set<UUID> movieIds) {
