@@ -17,6 +17,7 @@ import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.domain.metadata.Rating;
 import com.streamarr.server.domain.metadata.Review;
 import com.streamarr.server.repositories.CompanyRepository;
+import com.streamarr.server.services.library.FilepathCodec;
 import com.streamarr.server.repositories.GenreRepository;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.PersonRepository;
@@ -157,13 +158,13 @@ public class DevDataInitializer {
             Review.builder().movie(darkKnight).author("Dev Reviewer").build()));
 
     var testVideoPath =
-        Path.of(
+        FilepathCodec.encode(
+            Path.of(
                 System.getProperty("user.dir"),
                 "src",
                 "test",
                 "resources",
-                "BigBuckBunny_320x180_10s.mp4")
-            .toString();
+                "BigBuckBunny_320x180_10s.mp4"));
 
     mediaFileRepository.saveAll(
         List.of(
@@ -181,7 +182,7 @@ public class DevDataInitializer {
                 .status(MediaFileStatus.MATCHED)
                 .filename("The Dark Knight (2008).mkv")
                 .filepathUri(
-                    "/mpool/media/clean/movies/The Dark Knight (2008)/The Dark Knight (2008).mkv")
+                    "file:///mpool/media/clean/movies/The%20Dark%20Knight%20(2008)/The%20Dark%20Knight%20(2008).mkv")
                 .size(5_200_000_000L)
                 .build()));
 

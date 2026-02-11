@@ -119,7 +119,7 @@ public class SeriesScanningIT extends AbstractIntegrationTest {
     assertThat(episodes).hasSize(7);
     assertThat(episodes).extracting("episodeNumber").containsExactlyInAnyOrder(1, 2, 3, 4, 5, 6, 7);
 
-    var mediaFile = mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toString());
+    var mediaFile = mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
     assertThat(mediaFile).isPresent();
     assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.MATCHED);
 
@@ -194,7 +194,7 @@ public class SeriesScanningIT extends AbstractIntegrationTest {
 
     libraryManagementService.processDiscoveredFile(library.getId(), file);
 
-    var mediaFile = mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toString());
+    var mediaFile = mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
     assertThat(mediaFile).isPresent();
     assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.METADATA_PARSING_FAILED);
   }
@@ -209,7 +209,7 @@ public class SeriesScanningIT extends AbstractIntegrationTest {
 
     libraryManagementService.processDiscoveredFile(library.getId(), file);
 
-    var mediaFile = mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toString());
+    var mediaFile = mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
     assertThat(mediaFile).isPresent();
     assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.METADATA_SEARCH_FAILED);
   }
@@ -288,7 +288,7 @@ public class SeriesScanningIT extends AbstractIntegrationTest {
     assertThat(ep99.get().getTitle()).isEqualTo("Episode 99");
     assertThat(ep99.get().getOverview()).isNull();
 
-    var mediaFile = mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toString());
+    var mediaFile = mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
     assertThat(mediaFile).isPresent();
     assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.MATCHED);
     assertThat(mediaFile.get().getMediaId()).isEqualTo(ep99.get().getId());

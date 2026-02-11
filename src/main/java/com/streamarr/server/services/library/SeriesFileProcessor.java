@@ -67,7 +67,9 @@ public class SeriesFileProcessor {
   }
 
   public void process(Library library, MediaFile mediaFile) {
-    var parseResult = episodePathMetadataParser.parse(mediaFile.getFilepathUri());
+    var parseResult =
+        episodePathMetadataParser.parse(
+            FilepathCodec.decode(mediaFile.getFilepathUri()).toString());
 
     if (parseResult.isEmpty() || parseResult.get().getEpisodeNumber().isEmpty()) {
       markAs(mediaFile, MediaFileStatus.METADATA_PARSING_FAILED);
@@ -80,7 +82,7 @@ public class SeriesFileProcessor {
 
     var episodeNumber = parseResult.get().getEpisodeNumber().getAsInt();
 
-    var filePath = Path.of(mediaFile.getFilepathUri());
+    var filePath = FilepathCodec.decode(mediaFile.getFilepathUri());
     var parentDir = filePath.getParent();
     var seasonParseResult =
         (parentDir != null)

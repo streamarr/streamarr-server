@@ -13,6 +13,7 @@ import com.streamarr.server.exceptions.MaxConcurrentTranscodesException;
 import com.streamarr.server.exceptions.MediaFileNotFoundException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
+import com.streamarr.server.services.library.FilepathCodec;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -48,7 +49,7 @@ public class HlsStreamingService implements StreamingService {
             .findById(mediaFileId)
             .orElseThrow(() -> new MediaFileNotFoundException(mediaFileId));
 
-    var probe = ffprobeService.probe(Path.of(mediaFile.getFilepathUri()));
+    var probe = ffprobeService.probe(FilepathCodec.decode(mediaFile.getFilepathUri()));
     var decision = transcodeDecisionService.decide(probe, options);
     var variants = resolveVariants(probe, options, decision);
     variants = enforceCapacityLimits(decision.transcodeMode(), variants);
@@ -60,7 +61,7 @@ public class HlsStreamingService implements StreamingService {
         StreamSession.builder()
             .sessionId(sessionId)
             .mediaFileId(mediaFileId)
-            .sourcePath(Path.of(mediaFile.getFilepathUri()))
+            .sourcePath(FilepathCodec.decode(mediaFile.getFilepathUri()))
             .mediaProbe(probe)
             .transcodeDecision(decision)
             .options(options)

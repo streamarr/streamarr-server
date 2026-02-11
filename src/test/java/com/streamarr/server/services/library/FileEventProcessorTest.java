@@ -225,7 +225,7 @@ class FileEventProcessorTest {
         .untilAsserted(
             () -> {
               var mediaFile =
-                  mediaFileRepository.findFirstByFilepathUri(path.toAbsolutePath().toString());
+                  mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path));
               assertThat(mediaFile).isPresent();
             });
   }
@@ -246,7 +246,7 @@ class FileEventProcessorTest {
 
     assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
 
-    var mediaFile = mediaFileRepository.findFirstByFilepathUri(path.toAbsolutePath().toString());
+    var mediaFile = mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path));
     assertThat(mediaFile).isEmpty();
   }
 
@@ -304,7 +304,7 @@ class FileEventProcessorTest {
         .atMost(Duration.ofSeconds(5))
         .untilAsserted(() -> assertThat(stabilityCheckerCalled.get()).isFalse());
 
-    var mediaFile = mediaFileRepository.findFirstByFilepathUri(path.toAbsolutePath().toString());
+    var mediaFile = mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path));
     assertThat(mediaFile).isEmpty();
   }
 
@@ -320,7 +320,7 @@ class FileEventProcessorTest {
         .untilAsserted(
             () -> {
               var mediaFile =
-                  mediaFileRepository.findFirstByFilepathUri(path.toAbsolutePath().toString());
+                  mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path));
               assertThat(mediaFile).isPresent();
               assertThat(mediaFile.get().getLibraryId()).isEqualTo(specialLibraryId);
             });
@@ -346,7 +346,7 @@ class FileEventProcessorTest {
         .atMost(Duration.ofSeconds(5))
         .untilAsserted(() -> assertThat(stabilityCheckerCalled.get()).isFalse());
 
-    var mediaFile = mediaFileRepository.findFirstByFilepathUri(path.toAbsolutePath().toString());
+    var mediaFile = mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path));
     assertThat(mediaFile).isEmpty();
   }
 
@@ -538,7 +538,7 @@ class FileEventProcessorTest {
         .atMost(Duration.ofSeconds(5))
         .untilAsserted(() -> assertThat(stabilityCheckerCalled.get()).isFalse());
 
-    var mediaFile = mediaFileRepository.findFirstByFilepathUri(path.toAbsolutePath().toString());
+    var mediaFile = mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path));
     assertThat(mediaFile).isEmpty();
   }
 

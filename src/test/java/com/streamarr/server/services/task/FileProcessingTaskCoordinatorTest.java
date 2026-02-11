@@ -42,7 +42,7 @@ class FileProcessingTaskCoordinatorTest {
 
     var task = coordinator.createTask(path, libraryId);
 
-    assertThat(task.getFilepathUri()).isEqualTo(path.toAbsolutePath().toString());
+    assertThat(task.getFilepathUri()).isEqualTo(path.toAbsolutePath().toUri().toString());
     assertThat(task.getLibraryId()).isEqualTo(libraryId);
     assertThat(task.getStatus()).isEqualTo(FileProcessingTaskStatus.PENDING);
     assertThat(task.getCreatedOn()).isEqualTo(NOW);

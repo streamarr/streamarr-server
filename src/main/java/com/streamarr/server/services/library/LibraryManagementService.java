@@ -332,7 +332,7 @@ public class LibraryManagementService implements ActiveScanChecker {
   }
 
   private MediaFile probeFile(Library library, Path path) {
-    var absoluteFilepath = path.toAbsolutePath().toString();
+    var absoluteFilepath = FilepathCodec.encode(path);
     var filepathMutex = mutexFactory.getMutex(absoluteFilepath);
 
     filepathMutex.lock();

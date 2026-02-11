@@ -1,6 +1,7 @@
 package com.streamarr.server.services.task;
 
 import com.streamarr.server.domain.task.FileProcessingTask;
+import com.streamarr.server.services.library.FilepathCodec;
 import com.streamarr.server.domain.task.FileProcessingTaskStatus;
 import com.streamarr.server.repositories.task.FileProcessingTaskRepository;
 import java.lang.management.ManagementFactory;
@@ -49,7 +50,7 @@ public class FileProcessingTaskCoordinator {
   }
 
   public FileProcessingTask createTask(Path path, UUID libraryId) {
-    var filepath = path.toAbsolutePath().toString();
+    var filepath = FilepathCodec.encode(path);
 
     var existing = repository.findByFilepathUriAndStatusIn(filepath, ACTIVE_STATUSES);
     if (existing.isPresent()) {
@@ -142,7 +143,7 @@ public class FileProcessingTaskCoordinator {
 
   @Transactional
   public void cancelTask(Path path) {
-    var filepath = path.toAbsolutePath().toString();
+    var filepath = FilepathCodec.encode(path);
     repository.deleteByFilepathUriAndStatusIn(filepath, List.of(FileProcessingTaskStatus.PENDING));
     log.info("Cancelled pending task for: {}", filepath);
   }

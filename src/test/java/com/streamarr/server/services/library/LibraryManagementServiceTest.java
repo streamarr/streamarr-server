@@ -385,7 +385,7 @@ public class LibraryManagementServiceTest {
     libraryManagementService.scanLibrary(savedLibraryId);
 
     var mediaFile =
-        fakeMediaFileRepository.findFirstByFilepathUri(moviePath.toAbsolutePath().toString());
+        fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
 
     assertTrue(mediaFile.isEmpty());
   }
@@ -404,7 +404,7 @@ public class LibraryManagementServiceTest {
         fakeMediaFileRepository.save(
             MediaFile.builder()
                 .libraryId(savedLibraryId)
-                .filepathUri(moviePath.toString())
+                .filepathUri(FilepathCodec.encode(moviePath))
                 .filename(movieFilename)
                 .status(MediaFileStatus.MATCHED)
                 .build());
@@ -412,7 +412,7 @@ public class LibraryManagementServiceTest {
     libraryManagementService.scanLibrary(savedLibraryId);
 
     var mediaFileAfterRefresh =
-        fakeMediaFileRepository.findFirstByFilepathUri(moviePath.toAbsolutePath().toString());
+        fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
 
     assertTrue(mediaFileAfterRefresh.isPresent());
     assertEquals(mediaFileBeforeRefresh, mediaFileAfterRefresh.get());
@@ -448,7 +448,7 @@ public class LibraryManagementServiceTest {
     libraryManagementService.scanLibrary(savedLibraryId);
 
     var mediaFile =
-        fakeMediaFileRepository.findFirstByFilepathUri(moviePath.toAbsolutePath().toString());
+        fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
 
     assertTrue(mediaFile.isPresent());
 
@@ -470,7 +470,7 @@ public class LibraryManagementServiceTest {
         fakeMediaFileRepository.save(
             MediaFile.builder()
                 .libraryId(savedLibraryId)
-                .filepathUri(moviePath.toString())
+                .filepathUri(FilepathCodec.encode(moviePath))
                 .filename(movieFilename)
                 .status(MediaFileStatus.UNMATCHED)
                 .build());
@@ -487,7 +487,7 @@ public class LibraryManagementServiceTest {
     libraryManagementService.scanLibrary(savedLibraryId);
 
     var mediaFileAfterRefresh =
-        fakeMediaFileRepository.findFirstByFilepathUri(moviePath.toAbsolutePath().toString());
+        fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
 
     assertTrue(mediaFileAfterRefresh.isPresent());
     assertEquals(mediaFileBeforeRefresh, mediaFileAfterRefresh.get());
@@ -522,7 +522,7 @@ public class LibraryManagementServiceTest {
     libraryManagementService.processDiscoveredFile(savedLibraryId, moviePath);
 
     var mediaFile =
-        fakeMediaFileRepository.findFirstByFilepathUri(moviePath.toAbsolutePath().toString());
+        fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
 
     assertTrue(mediaFile.isPresent());
     assertEquals(MediaFileStatus.MATCHED, mediaFile.get().getStatus());
@@ -566,7 +566,7 @@ public class LibraryManagementServiceTest {
     libraryManagementService.scanLibrary(savedLibraryId);
 
     var mediaFile =
-        fakeMediaFileRepository.findFirstByFilepathUri(systemFilePath.toAbsolutePath().toString());
+        fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(systemFilePath));
 
     assertTrue(mediaFile.isEmpty());
   }
