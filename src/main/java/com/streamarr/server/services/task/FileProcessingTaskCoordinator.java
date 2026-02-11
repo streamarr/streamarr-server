@@ -51,7 +51,7 @@ public class FileProcessingTaskCoordinator {
   public FileProcessingTask createTask(Path path, UUID libraryId) {
     var filepath = path.toAbsolutePath().toString();
 
-    var existing = repository.findByFilepathAndStatusIn(filepath, ACTIVE_STATUSES);
+    var existing = repository.findByFilepathUriAndStatusIn(filepath, ACTIVE_STATUSES);
     if (existing.isPresent()) {
       log.debug("Task already exists for filepath: {}", filepath);
       return existing.get();
@@ -59,7 +59,7 @@ public class FileProcessingTaskCoordinator {
 
     var task =
         FileProcessingTask.builder()
-            .filepath(filepath)
+            .filepathUri(filepath)
             .libraryId(libraryId)
             .status(FileProcessingTaskStatus.PENDING)
             .createdOn(clock.instant())
@@ -70,7 +70,7 @@ public class FileProcessingTaskCoordinator {
     } catch (DataIntegrityViolationException e) {
       log.debug("Concurrent task creation detected for filepath: {}", filepath);
       return repository
-          .findByFilepathAndStatusIn(filepath, ACTIVE_STATUSES)
+          .findByFilepathUriAndStatusIn(filepath, ACTIVE_STATUSES)
           .orElseThrow(
               () ->
                   new IllegalStateException(
@@ -113,7 +113,7 @@ public class FileProcessingTaskCoordinator {
 
     repository.save(task);
 
-    log.info("Completed task for: {}", task.getFilepath());
+    log.info("Completed task for: {}", task.getFilepathUri());
 
     return Optional.of(task);
   }
@@ -135,7 +135,7 @@ public class FileProcessingTaskCoordinator {
 
     repository.save(task);
 
-    log.warn("Failed task for: {} with error: {}", task.getFilepath(), errorMessage);
+    log.warn("Failed task for: {} with error: {}", task.getFilepathUri(), errorMessage);
 
     return Optional.of(task);
   }
@@ -143,7 +143,7 @@ public class FileProcessingTaskCoordinator {
   @Transactional
   public void cancelTask(Path path) {
     var filepath = path.toAbsolutePath().toString();
-    repository.deleteByFilepathAndStatusIn(filepath, List.of(FileProcessingTaskStatus.PENDING));
+    repository.deleteByFilepathUriAndStatusIn(filepath, List.of(FileProcessingTaskStatus.PENDING));
     log.info("Cancelled pending task for: {}", filepath);
   }
 

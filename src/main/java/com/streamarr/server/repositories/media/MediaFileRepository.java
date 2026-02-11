@@ -14,7 +14,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface MediaFileRepository extends JpaRepository<MediaFile, UUID> {
 
-  Optional<MediaFile> findFirstByFilepath(String filepath);
+  Optional<MediaFile> findFirstByFilepathUri(String filepathUri);
 
   List<MediaFile> findByMediaId(UUID mediaId);
 

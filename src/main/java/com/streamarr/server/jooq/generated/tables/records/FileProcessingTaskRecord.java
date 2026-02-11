@@ -37,16 +37,16 @@ public class FileProcessingTaskRecord extends UpdatableRecordImpl<FileProcessing
     }
 
     /**
-     * Setter for <code>public.file_processing_task.filepath</code>.
+     * Setter for <code>public.file_processing_task.filepath_uri</code>.
      */
-    public void setFilepath(String value) {
+    public void setFilepathUri(String value) {
         set(1, value);
     }
 
     /**
-     * Getter for <code>public.file_processing_task.filepath</code>.
+     * Getter for <code>public.file_processing_task.filepath_uri</code>.
      */
-    public String getFilepath() {
+    public String getFilepathUri() {
         return (String) get(1);
     }
 
@@ -171,11 +171,11 @@ public class FileProcessingTaskRecord extends UpdatableRecordImpl<FileProcessing
     /**
      * Create a detached, initialised FileProcessingTaskRecord
      */
-    public FileProcessingTaskRecord(UUID id, String filepath, UUID libraryId, FileProcessingTaskStatus status, String ownerInstanceId, OffsetDateTime leaseExpiresAt, String errorMessage, OffsetDateTime createdOn, OffsetDateTime completedOn) {
+    public FileProcessingTaskRecord(UUID id, String filepathUri, UUID libraryId, FileProcessingTaskStatus status, String ownerInstanceId, OffsetDateTime leaseExpiresAt, String errorMessage, OffsetDateTime createdOn, OffsetDateTime completedOn) {
         super(FileProcessingTask.FILE_PROCESSING_TASK);
 
         setId(id);
-        setFilepath(filepath);
+        setFilepathUri(filepathUri);
         setLibraryId(libraryId);
         setStatus(status);
         setOwnerInstanceId(ownerInstanceId);

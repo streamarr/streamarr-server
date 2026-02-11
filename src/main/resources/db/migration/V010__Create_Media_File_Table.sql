@@ -8,7 +8,7 @@ CREATE TABLE media_file
     last_modified_on TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     last_modified_by UUID,
     filename         TEXT                     NOT NULL,
-    filepath         TEXT                     NOT NULL,
+    filepath_uri     TEXT                     NOT NULL,
     size             BIGINT                   NOT NULL,
     media_id         UUID,
     library_id       UUID                     NOT NULL,
@@ -18,5 +18,5 @@ CREATE TABLE media_file
     CONSTRAINT fk_library FOREIGN KEY (library_id) REFERENCES library (id)
 );
 
-CREATE UNIQUE INDEX media_file_filepath_idx
-    ON media_file (filepath);
+CREATE UNIQUE INDEX media_file_filepath_uri_idx
+    ON media_file (filepath_uri);

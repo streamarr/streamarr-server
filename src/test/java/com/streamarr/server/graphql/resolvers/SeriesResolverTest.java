@@ -80,7 +80,7 @@ class SeriesResolverTest {
     var mediaFile =
         MediaFile.builder()
             .filename("breaking.bad.s01e01.mkv")
-            .filepath("/media/shows/Breaking Bad/Season 1/breaking.bad.s01e01.mkv")
+            .filepathUri("/media/shows/Breaking Bad/Season 1/breaking.bad.s01e01.mkv")
             .size(1500000000L)
             .build();
     mediaFile.setId(UUID.randomUUID());
@@ -88,11 +88,12 @@ class SeriesResolverTest {
     when(seriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
     when(mediaFileRepository.findByMediaId(seriesId)).thenReturn(List.of(mediaFile));
 
-    String filepath =
+    String filepathUri =
         dgsQueryExecutor.executeAndExtractJsonPath(
-            String.format("{ series(id: \"%s\") { files { filepath } } }", seriesId),
-            "data.series.files[0].filepath");
+            String.format("{ series(id: \"%s\") { files { filepathUri } } }", seriesId),
+            "data.series.files[0].filepathUri");
 
-    assertThat(filepath).isEqualTo("/media/shows/Breaking Bad/Season 1/breaking.bad.s01e01.mkv");
+    assertThat(filepathUri)
+        .isEqualTo("/media/shows/Breaking Bad/Season 1/breaking.bad.s01e01.mkv");
   }
 }

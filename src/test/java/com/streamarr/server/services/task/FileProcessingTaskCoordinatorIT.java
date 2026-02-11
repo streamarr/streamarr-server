@@ -71,7 +71,7 @@ class FileProcessingTaskCoordinatorIT extends AbstractIntegrationTest {
     var task = coordinator.createTask(path, testLibrary.getId());
 
     assertThat(task.getId()).isNotNull();
-    assertThat(task.getFilepath()).isEqualTo(path.toAbsolutePath().toString());
+    assertThat(task.getFilepathUri()).isEqualTo(path.toAbsolutePath().toString());
     assertThat(task.getLibraryId()).isEqualTo(testLibrary.getId());
     assertThat(task.getStatus()).isEqualTo(FileProcessingTaskStatus.PENDING);
   }

@@ -44,7 +44,7 @@ class BaseCollectableResolverTest {
             List.of(
                 MediaFile.builder()
                     .filename("inception.mkv")
-                    .filepath("/movies/inception.mkv")
+                    .filepathUri("/movies/inception.mkv")
                     .size(1_500_000_000L)
                     .build()));
 

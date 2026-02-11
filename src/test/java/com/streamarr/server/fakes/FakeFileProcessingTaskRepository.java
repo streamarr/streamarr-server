@@ -26,10 +26,10 @@ public class FakeFileProcessingTaskRepository implements FileProcessingTaskRepos
   private final Map<UUID, FileProcessingTask> database = new HashMap<>();
 
   @Override
-  public Optional<FileProcessingTask> findByFilepathAndStatusIn(
-      String filepath, List<FileProcessingTaskStatus> statuses) {
+  public Optional<FileProcessingTask> findByFilepathUriAndStatusIn(
+      String filepathUri, List<FileProcessingTaskStatus> statuses) {
     return database.values().stream()
-        .filter(task -> filepath.equals(task.getFilepath()))
+        .filter(task -> filepathUri.equals(task.getFilepathUri()))
         .filter(task -> statuses.contains(task.getStatus()))
         .findFirst();
   }
@@ -42,13 +42,13 @@ public class FakeFileProcessingTaskRepository implements FileProcessingTaskRepos
   }
 
   @Override
-  public void deleteByFilepathAndStatusIn(
-      String filepath, List<FileProcessingTaskStatus> statuses) {
+  public void deleteByFilepathUriAndStatusIn(
+      String filepathUri, List<FileProcessingTaskStatus> statuses) {
     database
         .entrySet()
         .removeIf(
             entry ->
-                filepath.equals(entry.getValue().getFilepath())
+                filepathUri.equals(entry.getValue().getFilepathUri())
                     && statuses.contains(entry.getValue().getStatus()));
   }
 

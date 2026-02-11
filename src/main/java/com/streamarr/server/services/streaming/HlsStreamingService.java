@@ -48,7 +48,7 @@ public class HlsStreamingService implements StreamingService {
             .findById(mediaFileId)
             .orElseThrow(() -> new MediaFileNotFoundException(mediaFileId));
 
-    var probe = ffprobeService.probe(Path.of(mediaFile.getFilepath()));
+    var probe = ffprobeService.probe(Path.of(mediaFile.getFilepathUri()));
     var decision = transcodeDecisionService.decide(probe, options);
     var variants = resolveVariants(probe, options, decision);
     variants = enforceCapacityLimits(decision.transcodeMode(), variants);
@@ -60,7 +60,7 @@ public class HlsStreamingService implements StreamingService {
         StreamSession.builder()
             .sessionId(sessionId)
             .mediaFileId(mediaFileId)
-            .sourcePath(Path.of(mediaFile.getFilepath()))
+            .sourcePath(Path.of(mediaFile.getFilepathUri()))
             .mediaProbe(probe)
             .transcodeDecision(decision)
             .options(options)

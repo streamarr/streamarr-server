@@ -337,7 +337,7 @@ public class LibraryManagementService implements ActiveScanChecker {
 
     filepathMutex.lock();
     try {
-      var optionalMediaFile = mediaFileRepository.findFirstByFilepath(absoluteFilepath);
+      var optionalMediaFile = mediaFileRepository.findFirstByFilepathUri(absoluteFilepath);
 
       if (optionalMediaFile.isPresent()) {
         log.info(
@@ -365,7 +365,7 @@ public class LibraryManagementService implements ActiveScanChecker {
         MediaFile.builder()
             .status(MediaFileStatus.UNMATCHED)
             .filename(path.getFileName().toString())
-            .filepath(absoluteFilepath)
+            .filepathUri(absoluteFilepath)
             .size(fileSize)
             .libraryId(library.getId())
             .build());

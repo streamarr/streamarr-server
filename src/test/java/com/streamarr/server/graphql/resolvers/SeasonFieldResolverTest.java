@@ -89,7 +89,7 @@ class SeasonFieldResolverTest {
     var mediaFile =
         MediaFile.builder()
             .filename("breaking.bad.s01e01.mkv")
-            .filepath("/media/shows/Breaking Bad/Season 1/breaking.bad.s01e01.mkv")
+            .filepathUri("/media/shows/Breaking Bad/Season 1/breaking.bad.s01e01.mkv")
             .size(1500000000L)
             .build();
     mediaFile.setId(UUID.randomUUID());
@@ -99,12 +99,14 @@ class SeasonFieldResolverTest {
     when(episodeRepository.findBySeasonId(seasonId)).thenReturn(List.of(episode));
     when(mediaFileRepository.findByMediaId(episodeId)).thenReturn(List.of(mediaFile));
 
-    String filepath =
+    String filepathUri =
         dgsQueryExecutor.executeAndExtractJsonPath(
             String.format(
-                "{ series(id: \"%s\") { seasons { episodes { files { filepath } } } } }", seriesId),
-            "data.series.seasons[0].episodes[0].files[0].filepath");
+                "{ series(id: \"%s\") { seasons { episodes { files { filepathUri } } } } }",
+                seriesId),
+            "data.series.seasons[0].episodes[0].files[0].filepathUri");
 
-    assertThat(filepath).isEqualTo("/media/shows/Breaking Bad/Season 1/breaking.bad.s01e01.mkv");
+    assertThat(filepathUri)
+        .isEqualTo("/media/shows/Breaking Bad/Season 1/breaking.bad.s01e01.mkv");
   }
 }

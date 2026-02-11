@@ -49,7 +49,7 @@ public class MovieFileProcessor {
       log.error(
           "Failed to parse MediaFile id: {} at path: '{}'",
           mediaFile.getId(),
-          mediaFile.getFilepath());
+          mediaFile.getFilepathUri());
 
       return;
     }
@@ -70,7 +70,7 @@ public class MovieFileProcessor {
       log.error(
           "Failed to find matching search result for MediaFile id: {} at path: '{}'",
           mediaFile.getId(),
-          mediaFile.getFilepath());
+          mediaFile.getFilepathUri());
 
       return;
     }

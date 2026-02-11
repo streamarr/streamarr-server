@@ -42,7 +42,7 @@ class FileProcessingTaskCoordinatorTest {
 
     var task = coordinator.createTask(path, libraryId);
 
-    assertThat(task.getFilepath()).isEqualTo(path.toAbsolutePath().toString());
+    assertThat(task.getFilepathUri()).isEqualTo(path.toAbsolutePath().toString());
     assertThat(task.getLibraryId()).isEqualTo(libraryId);
     assertThat(task.getStatus()).isEqualTo(FileProcessingTaskStatus.PENDING);
     assertThat(task.getCreatedOn()).isEqualTo(NOW);
@@ -190,7 +190,7 @@ class FileProcessingTaskCoordinatorTest {
   void shouldNotExtendLeaseWhenTaskIsCompleted() {
     var completedTask =
         FileProcessingTask.builder()
-            .filepath("/media/movies/Completed (2024).mkv")
+            .filepathUri("/media/movies/Completed (2024).mkv")
             .libraryId(UUID.randomUUID())
             .status(FileProcessingTaskStatus.COMPLETED)
             .ownerInstanceId(coordinator.getInstanceId())

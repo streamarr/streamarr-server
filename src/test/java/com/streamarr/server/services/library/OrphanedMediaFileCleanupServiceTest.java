@@ -67,7 +67,7 @@ public class OrphanedMediaFileCleanupServiceTest {
         fakeMediaFileRepository.save(
             MediaFile.builder()
                 .libraryId(library.getId())
-                .filepath("/library/nonexistent/movie.mkv")
+                .filepathUri("/library/nonexistent/movie.mkv")
                 .filename("movie.mkv")
                 .status(MediaFileStatus.MATCHED)
                 .build());
@@ -86,7 +86,7 @@ public class OrphanedMediaFileCleanupServiceTest {
         fakeMediaFileRepository.save(
             MediaFile.builder()
                 .libraryId(library.getId())
-                .filepath(moviePath.toAbsolutePath().toString())
+                .filepathUri(moviePath.toAbsolutePath().toString())
                 .filename("Inception (2010).mkv")
                 .status(MediaFileStatus.MATCHED)
                 .build());
@@ -105,7 +105,7 @@ public class OrphanedMediaFileCleanupServiceTest {
         fakeMediaFileRepository.save(
             MediaFile.builder()
                 .libraryId(otherLibraryId)
-                .filepath("/other/library/nonexistent.mkv")
+                .filepathUri("/other/library/nonexistent.mkv")
                 .filename("nonexistent.mkv")
                 .status(MediaFileStatus.MATCHED)
                 .build());
@@ -124,7 +124,7 @@ public class OrphanedMediaFileCleanupServiceTest {
         MediaFile.builder()
             .libraryId(library.getId())
             .mediaId(movie.getId())
-            .filepath("/library/nonexistent/gone-movie.mkv")
+            .filepathUri("/library/nonexistent/gone-movie.mkv")
             .filename("gone-movie.mkv")
             .status(MediaFileStatus.MATCHED)
             .build());
@@ -145,7 +145,7 @@ public class OrphanedMediaFileCleanupServiceTest {
         MediaFile.builder()
             .libraryId(library.getId())
             .mediaId(movie.getId())
-            .filepath(existingPath.toAbsolutePath().toString())
+            .filepathUri(existingPath.toAbsolutePath().toString())
             .filename("Surviving Movie (2020).mkv")
             .status(MediaFileStatus.MATCHED)
             .build());
@@ -154,7 +154,7 @@ public class OrphanedMediaFileCleanupServiceTest {
         MediaFile.builder()
             .libraryId(library.getId())
             .mediaId(movie.getId())
-            .filepath("/library/nonexistent/surviving-movie-copy.mkv")
+            .filepathUri("/library/nonexistent/surviving-movie-copy.mkv")
             .filename("surviving-movie-copy.mkv")
             .status(MediaFileStatus.MATCHED)
             .build());
@@ -170,7 +170,7 @@ public class OrphanedMediaFileCleanupServiceTest {
     fakeMediaFileRepository.save(
         MediaFile.builder()
             .libraryId(library.getId())
-            .filepath("/library/nonexistent/movie.mkv")
+            .filepathUri("/library/nonexistent/movie.mkv")
             .filename("movie.mkv")
             .status(MediaFileStatus.MATCHED)
             .build());

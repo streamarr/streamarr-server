@@ -172,7 +172,7 @@ public class DevDataInitializer {
                 .libraryId(library.getId())
                 .status(MediaFileStatus.MATCHED)
                 .filename("BigBuckBunny_320x180_10s.mp4")
-                .filepath(testVideoPath)
+                .filepathUri(testVideoPath)
                 .size(908_000L)
                 .build(),
             MediaFile.builder()
@@ -180,7 +180,7 @@ public class DevDataInitializer {
                 .libraryId(library.getId())
                 .status(MediaFileStatus.MATCHED)
                 .filename("The Dark Knight (2008).mkv")
-                .filepath(
+                .filepathUri(
                     "/mpool/media/clean/movies/The Dark Knight (2008)/The Dark Knight (2008).mkv")
                 .size(5_200_000_000L)
                 .build()));

@@ -385,7 +385,7 @@ public class LibraryManagementServiceTest {
     libraryManagementService.scanLibrary(savedLibraryId);
 
     var mediaFile =
-        fakeMediaFileRepository.findFirstByFilepath(moviePath.toAbsolutePath().toString());
+        fakeMediaFileRepository.findFirstByFilepathUri(moviePath.toAbsolutePath().toString());
 
     assertTrue(mediaFile.isEmpty());
   }
@@ -404,7 +404,7 @@ public class LibraryManagementServiceTest {
         fakeMediaFileRepository.save(
             MediaFile.builder()
                 .libraryId(savedLibraryId)
-                .filepath(moviePath.toString())
+                .filepathUri(moviePath.toString())
                 .filename(movieFilename)
                 .status(MediaFileStatus.MATCHED)
                 .build());
@@ -412,7 +412,7 @@ public class LibraryManagementServiceTest {
     libraryManagementService.scanLibrary(savedLibraryId);
 
     var mediaFileAfterRefresh =
-        fakeMediaFileRepository.findFirstByFilepath(moviePath.toAbsolutePath().toString());
+        fakeMediaFileRepository.findFirstByFilepathUri(moviePath.toAbsolutePath().toString());
 
     assertTrue(mediaFileAfterRefresh.isPresent());
     assertEquals(mediaFileBeforeRefresh, mediaFileAfterRefresh.get());
@@ -448,7 +448,7 @@ public class LibraryManagementServiceTest {
     libraryManagementService.scanLibrary(savedLibraryId);
 
     var mediaFile =
-        fakeMediaFileRepository.findFirstByFilepath(moviePath.toAbsolutePath().toString());
+        fakeMediaFileRepository.findFirstByFilepathUri(moviePath.toAbsolutePath().toString());
 
     assertTrue(mediaFile.isPresent());
 
@@ -470,7 +470,7 @@ public class LibraryManagementServiceTest {
         fakeMediaFileRepository.save(
             MediaFile.builder()
                 .libraryId(savedLibraryId)
-                .filepath(moviePath.toString())
+                .filepathUri(moviePath.toString())
                 .filename(movieFilename)
                 .status(MediaFileStatus.UNMATCHED)
                 .build());
@@ -487,7 +487,7 @@ public class LibraryManagementServiceTest {
     libraryManagementService.scanLibrary(savedLibraryId);
 
     var mediaFileAfterRefresh =
-        fakeMediaFileRepository.findFirstByFilepath(moviePath.toAbsolutePath().toString());
+        fakeMediaFileRepository.findFirstByFilepathUri(moviePath.toAbsolutePath().toString());
 
     assertTrue(mediaFileAfterRefresh.isPresent());
     assertEquals(mediaFileBeforeRefresh, mediaFileAfterRefresh.get());
@@ -522,7 +522,7 @@ public class LibraryManagementServiceTest {
     libraryManagementService.processDiscoveredFile(savedLibraryId, moviePath);
 
     var mediaFile =
-        fakeMediaFileRepository.findFirstByFilepath(moviePath.toAbsolutePath().toString());
+        fakeMediaFileRepository.findFirstByFilepathUri(moviePath.toAbsolutePath().toString());
 
     assertTrue(mediaFile.isPresent());
     assertEquals(MediaFileStatus.MATCHED, mediaFile.get().getStatus());
@@ -546,7 +546,7 @@ public class LibraryManagementServiceTest {
         fakeMediaFileRepository.save(
             MediaFile.builder()
                 .libraryId(savedLibraryId)
-                .filepath("/library/nonexistent/movie.mkv")
+                .filepathUri("/library/nonexistent/movie.mkv")
                 .filename("movie.mkv")
                 .status(MediaFileStatus.MATCHED)
                 .build());
@@ -566,7 +566,7 @@ public class LibraryManagementServiceTest {
     libraryManagementService.scanLibrary(savedLibraryId);
 
     var mediaFile =
-        fakeMediaFileRepository.findFirstByFilepath(systemFilePath.toAbsolutePath().toString());
+        fakeMediaFileRepository.findFirstByFilepathUri(systemFilePath.toAbsolutePath().toString());
 
     assertTrue(mediaFile.isEmpty());
   }
@@ -872,7 +872,7 @@ public class LibraryManagementServiceTest {
           fakeMediaFileRepository.save(
               MediaFile.builder()
                   .libraryId(savedLibraryId)
-                  .filepath("/library/movie.mkv")
+                  .filepathUri("/library/movie.mkv")
                   .filename("movie.mkv")
                   .status(MediaFileStatus.MATCHED)
                   .build());

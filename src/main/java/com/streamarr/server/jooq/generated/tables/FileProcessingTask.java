@@ -67,9 +67,9 @@ public class FileProcessingTask extends TableImpl<FileProcessingTaskRecord> {
     public final TableField<FileProcessingTaskRecord, UUID> ID = createField(DSL.name("id"), SQLDataType.UUID.nullable(false).defaultValue(DSL.field(DSL.raw("uuid_generate_v4()"), SQLDataType.UUID)), this, "");
 
     /**
-     * The column <code>public.file_processing_task.filepath</code>.
+     * The column <code>public.file_processing_task.filepath_uri</code>.
      */
-    public final TableField<FileProcessingTaskRecord, String> FILEPATH = createField(DSL.name("filepath"), SQLDataType.CLOB.nullable(false), this, "");
+    public final TableField<FileProcessingTaskRecord, String> FILEPATH_URI = createField(DSL.name("filepath_uri"), SQLDataType.CLOB.nullable(false), this, "");
 
     /**
      * The column <code>public.file_processing_task.library_id</code>.
@@ -177,7 +177,7 @@ public class FileProcessingTask extends TableImpl<FileProcessingTaskRecord> {
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.FILE_PROCESSING_TASK_CLAIMABLE_IDX, Indexes.FILE_PROCESSING_TASK_FILEPATH_ACTIVE_IDX);
+        return Arrays.asList(Indexes.FILE_PROCESSING_TASK_CLAIMABLE_IDX, Indexes.FILE_PROCESSING_TASK_FILEPATH_URI_ACTIVE_IDX);
     }
 
     @Override

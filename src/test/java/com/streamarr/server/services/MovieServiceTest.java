@@ -173,7 +173,7 @@ class MovieServiceTest {
     var mediaFile =
         MediaFile.builder()
             .filename("inception.mkv")
-            .filepath("/movies/inception.mkv")
+            .filepathUri("/movies/inception.mkv")
             .size(1000L)
             .build();
 
@@ -192,7 +192,7 @@ class MovieServiceTest {
     var mediaFile =
         MediaFile.builder()
             .filename("inception.mkv")
-            .filepath("/movies/inception.mkv")
+            .filepathUri("/movies/inception.mkv")
             .size(1000L)
             .build();
 

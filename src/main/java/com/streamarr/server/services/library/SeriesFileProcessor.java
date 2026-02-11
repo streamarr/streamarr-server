@@ -67,20 +67,20 @@ public class SeriesFileProcessor {
   }
 
   public void process(Library library, MediaFile mediaFile) {
-    var parseResult = episodePathMetadataParser.parse(mediaFile.getFilepath());
+    var parseResult = episodePathMetadataParser.parse(mediaFile.getFilepathUri());
 
     if (parseResult.isEmpty() || parseResult.get().getEpisodeNumber().isEmpty()) {
       markAs(mediaFile, MediaFileStatus.METADATA_PARSING_FAILED);
       log.error(
           "Failed to parse episode info from MediaFile id: {} at path: '{}'",
           mediaFile.getId(),
-          mediaFile.getFilepath());
+          mediaFile.getFilepathUri());
       return;
     }
 
     var episodeNumber = parseResult.get().getEpisodeNumber().getAsInt();
 
-    var filePath = Path.of(mediaFile.getFilepath());
+    var filePath = Path.of(mediaFile.getFilepathUri());
     var parentDir = filePath.getParent();
     var seasonParseResult =
         (parentDir != null)
@@ -95,7 +95,7 @@ public class SeriesFileProcessor {
       log.error(
           "Could not determine series name from MediaFile id: {} at path: '{}'",
           mediaFile.getId(),
-          mediaFile.getFilepath());
+          mediaFile.getFilepathUri());
       return;
     }
 
@@ -115,7 +115,7 @@ public class SeriesFileProcessor {
           "Failed to find TMDB match for series '{}' from MediaFile id: {} at path: '{}'",
           seriesName,
           mediaFile.getId(),
-          mediaFile.getFilepath());
+          mediaFile.getFilepathUri());
       return;
     }
 

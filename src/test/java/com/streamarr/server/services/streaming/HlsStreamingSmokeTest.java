@@ -145,7 +145,7 @@ class HlsStreamingSmokeTest {
   private MediaFile seedMediaFile() {
     var file =
         MediaFile.builder()
-            .filepath(TEST_VIDEO.toString())
+            .filepathUri(TEST_VIDEO.toString())
             .filename("BigBuckBunny_320x180.mp4")
             .status(MediaFileStatus.MATCHED)
             .size(TEST_VIDEO.toFile().length())

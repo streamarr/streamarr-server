@@ -69,7 +69,7 @@ public class OrphanedMediaFileCleanupService {
   }
 
   private boolean isFileStillOnDisk(MediaFile file) {
-    return Files.exists(fileSystem.getPath(file.getFilepath()));
+    return Files.exists(fileSystem.getPath(file.getFilepathUri()));
   }
 
   private void deleteMoviesWithNoRemainingFiles(Set<UUID> movieIds) {
