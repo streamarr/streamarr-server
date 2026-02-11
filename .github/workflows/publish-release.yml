@@ -6,6 +6,9 @@ on:
     types:
       - released
 
+permissions:
+  contents: read
+
 jobs:
   publish_release:
     runs-on: ubuntu-latest
@@ -14,6 +17,7 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Docker Metadata
         id: meta
@@ -21,23 +25,12 @@ jobs:
         with:
           images: streamarr/streamarr-server
 
-      - name: Login to Docker Hub
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+      - name: Build and publish
+        uses: ./.github/actions/pack-build
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Install pack CLI
-        uses: buildpacks/github-actions/setup-pack@f3ec16c6d708761c6e87bbc8fe7f97375f80e7cd # v5.10.1
-
-      - name: Build with pack CLI & publish to Docker Hub
-        run: |
-          pack build index.docker.io/streamarr/streamarr-server:latest \
-              --tag streamarr/streamarr-server:${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }} \
-              --builder paketobuildpacks/builder-jammy-base \
-              --buildpack paketo-buildpacks/apt \
-              --buildpack paketo-buildpacks/java \
-              --env BP_JVM_VERSION=25 \
-              --path . \
-              --cache-image index.docker.io/streamarr/spring-boot-buildpack-paketo-cache-image:latest \
-              --publish
+          tags: >-
+            streamarr/streamarr-server:latest
+            streamarr/streamarr-server:${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}
+          publish: "true"
+          dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
+          dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}

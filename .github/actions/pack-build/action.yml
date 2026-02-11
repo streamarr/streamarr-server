@@ -1,0 +1,54 @@
+name: Pack Build
+description: Build and publish a container image using Cloud Native Buildpacks
+
+inputs:
+  tags:
+    description: Space-separated list of image tags (e.g. "streamarr/streamarr-server:latest streamarr/streamarr-server:v1.2.3")
+    required: true
+  publish:
+    description: Whether to publish the image to the registry
+    required: true
+  dockerhub-username:
+    description: Docker Hub username
+    required: true
+  dockerhub-token:
+    description: Docker Hub token
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Login to Docker Hub
+      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+      with:
+        username: ${{ inputs.dockerhub-username }}
+        password: ${{ inputs.dockerhub-token }}
+
+    - name: Install pack CLI
+      uses: buildpacks/github-actions/setup-pack@f3ec16c6d708761c6e87bbc8fe7f97375f80e7cd # v5.10.1
+
+    - name: Build with pack CLI
+      shell: bash
+      env:
+        INPUT_TAGS: ${{ inputs.tags }}
+        INPUT_PUBLISH: ${{ inputs.publish }}
+      run: |
+        tag_args=""
+        for tag in ${INPUT_TAGS}; do
+          tag_args="${tag_args} --tag ${tag}"
+        done
+
+        publish_flag=""
+        if [ "${INPUT_PUBLISH}" = "true" ]; then
+          publish_flag="--publish"
+        fi
+
+        pack build index.docker.io/streamarr/streamarr-server \
+            ${tag_args} \
+            --builder paketobuildpacks/builder-jammy-base \
+            --buildpack paketo-buildpacks/apt \
+            --buildpack paketo-buildpacks/java \
+            --env BP_JVM_VERSION=25 \
+            --path . \
+            --cache-image index.docker.io/streamarr/spring-boot-buildpack-paketo-cache-image:latest \
+            ${publish_flag}
