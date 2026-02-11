@@ -60,6 +60,10 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
       return Optional.empty();
     }
 
+    if (videoInformation.externalSource() == ExternalSourceType.TMDB) {
+      return searchByDirectTmdbId(videoInformation);
+    }
+
     var tmdbSource = TMDB_EXTERNAL_SOURCES.get(videoInformation.externalSource());
     if (tmdbSource == null) {
       return Optional.empty();
@@ -87,6 +91,33 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
     } catch (InterruptedException ex) {
       Thread.currentThread().interrupt();
       log.error("TMDB /find interrupted for external ID '{}'", videoInformation.externalId(), ex);
+      return Optional.empty();
+    }
+
+    return Optional.empty();
+  }
+
+  private Optional<RemoteSearchResult> searchByDirectTmdbId(
+      VideoFileParserResult videoInformation) {
+    try {
+      var tmdbSeries =
+          theMovieDatabaseHttpService.getTvSeriesMetadata(videoInformation.externalId());
+
+      return Optional.of(
+          RemoteSearchResult.builder()
+              .externalSourceType(ExternalSourceType.TMDB)
+              .externalId(String.valueOf(tmdbSeries.getId()))
+              .title(tmdbSeries.getName())
+              .build());
+    } catch (IOException | JacksonException ex) {
+      log.warn(
+          "TMDB direct lookup failed for ID '{}', falling back to text search",
+          videoInformation.externalId(),
+          ex);
+    } catch (InterruptedException ex) {
+      Thread.currentThread().interrupt();
+      log.error(
+          "TMDB direct lookup interrupted for ID '{}'", videoInformation.externalId(), ex);
       return Optional.empty();
     }
 
