@@ -87,4 +87,70 @@ class SeriesFolderNameParserTest {
     assertThat(result.externalId()).isEqualTo("tt1234567");
     assertThat(result.externalSource()).isEqualTo(ExternalSourceType.IMDB);
   }
+
+  @Test
+  @DisplayName("Should extract external ID from parenthesis brackets")
+  void shouldExtractExternalIdFromParenthesisBrackets() {
+    var result = parser.parse("Show (2020) (imdb-tt1234567)");
+
+    assertThat(result.title()).isEqualTo("Show");
+    assertThat(result.year()).isEqualTo("2020");
+    assertThat(result.externalId()).isEqualTo("tt1234567");
+    assertThat(result.externalSource()).isEqualTo(ExternalSourceType.IMDB);
+  }
+
+  @Test
+  @DisplayName("Should extract external ID with equals separator")
+  void shouldExtractExternalIdWithEqualsSeparator() {
+    var result = parser.parse("Show [imdb=tt1234567]");
+
+    assertThat(result.title()).isEqualTo("Show");
+    assertThat(result.year()).isNull();
+    assertThat(result.externalId()).isEqualTo("tt1234567");
+    assertThat(result.externalSource()).isEqualTo(ExternalSourceType.IMDB);
+  }
+
+  @Test
+  @DisplayName("Should extract TVDB external ID")
+  void shouldExtractTvdbExternalId() {
+    var result = parser.parse("Show [tvdb-12345]");
+
+    assertThat(result.title()).isEqualTo("Show");
+    assertThat(result.year()).isNull();
+    assertThat(result.externalId()).isEqualTo("12345");
+    assertThat(result.externalSource()).isEqualTo(ExternalSourceType.TVDB);
+  }
+
+  @Test
+  @DisplayName("Should extract external ID with imdbid attribute name")
+  void shouldExtractExternalIdWithImdbidAttributeName() {
+    var result = parser.parse("Show [imdbid-tt1234567]");
+
+    assertThat(result.title()).isEqualTo("Show");
+    assertThat(result.year()).isNull();
+    assertThat(result.externalId()).isEqualTo("tt1234567");
+    assertThat(result.externalSource()).isEqualTo(ExternalSourceType.IMDB);
+  }
+
+  @Test
+  @DisplayName("Should extract external ID with tmdbid attribute name and equals separator")
+  void shouldExtractExternalIdWithTmdbidAttributeNameAndEqualsSeparator() {
+    var result = parser.parse("Show [tmdbid=12345]");
+
+    assertThat(result.title()).isEqualTo("Show");
+    assertThat(result.year()).isNull();
+    assertThat(result.externalId()).isEqualTo("12345");
+    assertThat(result.externalSource()).isEqualTo(ExternalSourceType.TMDB);
+  }
+
+  @Test
+  @DisplayName("Should extract TVDB external ID with tvdbid attribute name in curly braces")
+  void shouldExtractTvdbExternalIdWithTvdbidAttributeNameInCurlyBraces() {
+    var result = parser.parse("Show (2021) {tvdbid=67890}");
+
+    assertThat(result.title()).isEqualTo("Show");
+    assertThat(result.year()).isEqualTo("2021");
+    assertThat(result.externalId()).isEqualTo("67890");
+    assertThat(result.externalSource()).isEqualTo(ExternalSourceType.TVDB);
+  }
 }
