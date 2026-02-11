@@ -113,7 +113,7 @@ public class LibraryManagementService implements ActiveScanChecker {
 
     triggerAsyncScan(savedLibrary.getId());
 
-    return savedLibrary;
+    return savedLibrary.toBuilder().build();
   }
 
   private void validateFilepath(String filepath) {
