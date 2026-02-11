@@ -190,6 +190,49 @@ public class OrphanedMediaFileCleanupServiceTest {
     orphanedMediaFileCleanupService.onScanCompleted(event);
   }
 
+  @Test
+  @DisplayName("Should treat media file as orphaned when filepathUri contains unmappable characters")
+  void shouldTreatMediaFileAsOrphanedWhenFilepathContainsUnmappableCharacters() {
+    var corruptedFile =
+        fakeMediaFileRepository.save(
+            MediaFile.builder()
+                .libraryId(library.getId())
+                .filepathUri("/library/movie\u0000corrupted.mkv")
+                .filename("corrupted.mkv")
+                .status(MediaFileStatus.MATCHED)
+                .build());
+
+    orphanedMediaFileCleanupService.cleanupOrphanedFiles(library);
+
+    assertThat(fakeMediaFileRepository.findById(corruptedFile.getId())).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should still clean up valid orphaned files when one file has unmappable path")
+  void shouldStillCleanUpValidOrphanedFilesWhenOneFileHasUnmappablePath() {
+    fakeMediaFileRepository.save(
+        MediaFile.builder()
+            .libraryId(library.getId())
+            .filepathUri("/library/movie\u0000corrupted.mkv")
+            .filename("corrupted.mkv")
+            .status(MediaFileStatus.MATCHED)
+            .build());
+
+    var validOrphan =
+        fakeMediaFileRepository.save(
+            MediaFile.builder()
+                .libraryId(library.getId())
+                .filepathUri("/library/nonexistent/valid-orphan.mkv")
+                .filename("valid-orphan.mkv")
+                .status(MediaFileStatus.MATCHED)
+                .build());
+
+    orphanedMediaFileCleanupService.cleanupOrphanedFiles(library);
+
+    assertThat(fakeMediaFileRepository.findById(validOrphan.getId())).isEmpty();
+  }
+
   private Path createMovieFile(String folder, String filename) throws IOException {
     var rootPath = fileSystem.getPath(library.getFilepath());
     var movieFolder = rootPath.resolve(folder);
