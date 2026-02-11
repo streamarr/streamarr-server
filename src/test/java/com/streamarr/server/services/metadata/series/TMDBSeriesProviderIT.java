@@ -273,6 +273,65 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
     assertThat(result.get().externalSourceType()).isEqualTo(ExternalSourceType.TMDB);
   }
 
+  @Test
+  @DisplayName("Should fall back to text search when external source is not in TMDB source map")
+  void shouldFallBackToTextSearchWhenExternalSourceIsNotInTmdbSourceMap() {
+    stubTextSearchResult("Test Show", 77777);
+
+    var result =
+        provider.search(
+            VideoFileParserResult.builder()
+                .title("Test Show")
+                .externalId("12345")
+                .externalSource(ExternalSourceType.OMDB)
+                .build());
+
+    assertThat(result).isPresent();
+    assertThat(result.get().title()).isEqualTo("Test Show");
+  }
+
+  @Test
+  @DisplayName("Should fall back to text search when find endpoint returns server error")
+  void shouldFallBackToTextSearchWhenFindEndpointReturnsServerError() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/find/tt1234567"))
+            .willReturn(aResponse().withStatus(500)));
+
+    stubTextSearchResult("Fallback Show", 99999);
+
+    var result =
+        provider.search(
+            VideoFileParserResult.builder()
+                .title("Fallback Show")
+                .externalId("tt1234567")
+                .externalSource(ExternalSourceType.IMDB)
+                .build());
+
+    assertThat(result).isPresent();
+    assertThat(result.get().title()).isEqualTo("Fallback Show");
+  }
+
+  @Test
+  @DisplayName("Should fall back to text search when direct TMDB lookup returns server error")
+  void shouldFallBackToTextSearchWhenDirectTmdbLookupReturnsServerError() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/tv/99999"))
+            .willReturn(aResponse().withStatus(500)));
+
+    stubTextSearchResult("Fallback Show", 88888);
+
+    var result =
+        provider.search(
+            VideoFileParserResult.builder()
+                .title("Fallback Show")
+                .externalId("99999")
+                .externalSource(ExternalSourceType.TMDB)
+                .build());
+
+    assertThat(result).isPresent();
+    assertThat(result.get().title()).isEqualTo("Fallback Show");
+  }
+
   // --- getMetadata() tests ---
 
   @Test
@@ -724,6 +783,36 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
                     .withStatus(200)
                     .withHeader("Content-Type", "application/json")
                     .withBody(body)));
+  }
+
+  private void stubTextSearchResult(String name, int id) {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/search/tv"))
+            .withQueryParam("query", equalTo(name))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {
+                          "page": 1,
+                          "results": [
+                            {
+                              "id": %d,
+                              "name": "%s",
+                              "original_name": "%s",
+                              "first_air_date": "2024-01-01",
+                              "popularity": 50.0,
+                              "vote_count": 100,
+                              "vote_average": 7.0
+                            }
+                          ],
+                          "total_results": 1,
+                          "total_pages": 1
+                        }
+                        """
+                            .formatted(id, name, name))));
   }
 
   private void stubFullSeriesResponse() {
