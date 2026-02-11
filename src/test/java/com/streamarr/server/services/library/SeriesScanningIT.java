@@ -119,7 +119,8 @@ public class SeriesScanningIT extends AbstractIntegrationTest {
     assertThat(episodes).hasSize(7);
     assertThat(episodes).extracting("episodeNumber").containsExactlyInAnyOrder(1, 2, 3, 4, 5, 6, 7);
 
-    var mediaFile = mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
+    var mediaFile =
+        mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
     assertThat(mediaFile).isPresent();
     assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.MATCHED);
 
@@ -194,7 +195,8 @@ public class SeriesScanningIT extends AbstractIntegrationTest {
 
     libraryManagementService.processDiscoveredFile(library.getId(), file);
 
-    var mediaFile = mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
+    var mediaFile =
+        mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
     assertThat(mediaFile).isPresent();
     assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.METADATA_PARSING_FAILED);
   }
@@ -209,7 +211,8 @@ public class SeriesScanningIT extends AbstractIntegrationTest {
 
     libraryManagementService.processDiscoveredFile(library.getId(), file);
 
-    var mediaFile = mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
+    var mediaFile =
+        mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
     assertThat(mediaFile).isPresent();
     assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.METADATA_SEARCH_FAILED);
   }
@@ -268,6 +271,28 @@ public class SeriesScanningIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should match series when folder name contains external ID tag")
+  void shouldMatchSeriesWhenFolderNameContainsExternalIdTag() throws IOException {
+    var library = createSeriesLibrary();
+    var file = createSeriesFile("Hilda (2018) [imdb-tt6385540]", "Season 01", "hilda.s01e06.mkv");
+
+    stubTmdbSearch("Hilda", "68488", "Hilda");
+    stubTmdbSeriesMetadata("68488", "Hilda");
+    stubTmdbSeasonDetails("68488", 1, buildMinimalSeasonResponse(1, 6));
+
+    libraryManagementService.processDiscoveredFile(library.getId(), file);
+
+    assertThat(seriesRepository.findAll()).hasSize(1);
+    var series = seriesRepository.findAll().getFirst();
+    assertThat(series.getTitle()).isEqualTo("Hilda");
+
+    var mediaFile =
+        mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
+    assertThat(mediaFile).isPresent();
+    assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.MATCHED);
+  }
+
+  @Test
   @DisplayName("Should create minimal episode when episode not in TMDB data")
   void shouldCreateMinimalEpisodeWhenEpisodeNotInTmdbData() throws IOException {
     var library = createSeriesLibrary();
@@ -288,7 +313,8 @@ public class SeriesScanningIT extends AbstractIntegrationTest {
     assertThat(ep99.get().getTitle()).isEqualTo("Episode 99");
     assertThat(ep99.get().getOverview()).isNull();
 
-    var mediaFile = mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
+    var mediaFile =
+        mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
     assertThat(mediaFile).isPresent();
     assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.MATCHED);
     assertThat(mediaFile.get().getMediaId()).isEqualTo(ep99.get().getId());
