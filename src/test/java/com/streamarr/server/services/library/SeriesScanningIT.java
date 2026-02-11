@@ -320,6 +320,33 @@ public class SeriesScanningIT extends AbstractIntegrationTest {
     assertThat(mediaFile.get().getMediaId()).isEqualTo(ep99.get().getId());
   }
 
+  @Test
+  @DisplayName("Should match series when folder name contains TVDB external ID tag")
+  void shouldMatchSeriesWhenFolderNameContainsTvdbExternalIdTag() throws IOException {
+    var library = createSeriesLibrary();
+    var file =
+        createSeriesFile("Hilda (2018) [tvdb-349517]", "Season 01", "hilda.s01e01.mkv");
+
+    stubTmdbFindTvResult("349517", "tvdb_id", "68488", "Hilda");
+    stubTmdbSeriesMetadata("68488", "Hilda");
+    stubTmdbSeasonDetails("68488", 1, buildMinimalSeasonResponse(1, 1));
+
+    libraryManagementService.processDiscoveredFile(library.getId(), file);
+
+    assertThat(seriesRepository.findAll()).hasSize(1);
+    var series = seriesRepository.findAll().getFirst();
+    assertThat(series.getTitle()).isEqualTo("Hilda");
+
+    var mediaFile =
+        mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
+    assertThat(mediaFile).isPresent();
+    assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.MATCHED);
+
+    wireMock.verify(
+        getRequestedFor(urlPathEqualTo("/find/349517"))
+            .withQueryParam("external_source", equalTo("tvdb_id")));
+  }
+
   // --- Helpers ---
 
   private Library createSeriesLibrary() {
@@ -370,6 +397,34 @@ public class SeriesScanningIT extends AbstractIntegrationTest {
                           ],
                           "total_results": 1,
                           "total_pages": 1
+                        }
+                        """
+                            .formatted(tmdbId, name, name))));
+  }
+
+  private void stubTmdbFindTvResult(
+      String externalId, String externalSource, String tmdbId, String name) {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/find/" + externalId))
+            .withQueryParam("external_source", equalTo(externalSource))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {
+                          "tv_results": [
+                            {
+                              "id": %s,
+                              "name": "%s",
+                              "original_name": "%s",
+                              "first_air_date": "2018-09-21",
+                              "popularity": 50.0,
+                              "vote_count": 500,
+                              "vote_average": 8.0
+                            }
+                          ]
                         }
                         """
                             .formatted(tmdbId, name, name))));
