@@ -391,6 +391,40 @@ public class LibraryManagementServiceTest {
   }
 
   @Test
+  @DisplayName("Should match media file when filename contains external ID tag")
+  void shouldMatchMediaFileWhenFilenameContainsExternalIdTag() throws IOException {
+    var movieFolder = "Inception (2010) [imdb-tt1375666]";
+    var movieFilename = "Inception (2010) [imdb-tt1375666].mkv";
+
+    var rootPath = createRootLibraryDirectory();
+    var moviePath = createMovieFile(rootPath, movieFolder, movieFilename);
+
+    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+
+    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
+        .thenReturn(
+            Optional.of(
+                RemoteSearchResult.builder()
+                    .title("Inception")
+                    .externalId("27205")
+                    .externalSourceType(ExternalSourceType.TMDB)
+                    .build()));
+
+    when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
+        .thenReturn(
+            Optional.of(
+                new MetadataResult<>(
+                    Movie.builder().title("Inception").build(), List.of(), Map.of(), Map.of())));
+
+    libraryManagementService.scanLibrary(savedLibraryId);
+
+    var mediaFile = fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
+
+    assertThat(mediaFile).isPresent();
+    assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.MATCHED);
+  }
+
+  @Test
   @DisplayName(
       "Should skip updating metadata when provided a media file that has already been matched.")
   void shouldSkipUpdatingMetadataWhenProvidedMediaFileThatHasBeenMatched() throws IOException {
