@@ -158,6 +158,123 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
     assertThat(result).isEmpty();
   }
 
+  @Test
+  @DisplayName("Should find movie by IMDB external ID when external ID provided")
+  void shouldFindMovieByImdbExternalIdWhenExternalIdProvided() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/find/tt1375666"))
+            .withQueryParam("external_source", equalTo("imdb_id"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {
+                          "movie_results": [
+                            {
+                              "id": 27205,
+                              "title": "Inception",
+                              "release_date": "2010-07-16",
+                              "adult": false,
+                              "popularity": 85.0,
+                              "vote_count": 30000,
+                              "vote_average": 8.4
+                            }
+                          ]
+                        }
+                        """)));
+
+    var result =
+        provider.search(
+            VideoFileParserResult.builder()
+                .title("Inception")
+                .externalId("tt1375666")
+                .externalSource(ExternalSourceType.IMDB)
+                .build());
+
+    assertThat(result).isPresent();
+    assertThat(result.get().title()).isEqualTo("Inception");
+    assertThat(result.get().externalId()).isEqualTo("27205");
+    assertThat(result.get().externalSourceType()).isEqualTo(ExternalSourceType.TMDB);
+  }
+
+  @Test
+  @DisplayName("Should return direct result when TMDB movie external ID provided")
+  void shouldReturnDirectResultWhenTmdbMovieExternalIdProvided() {
+    stubMinimalMovieResponse("27205");
+
+    var result =
+        provider.search(
+            VideoFileParserResult.builder()
+                .title("Inception")
+                .externalId("27205")
+                .externalSource(ExternalSourceType.TMDB)
+                .build());
+
+    assertThat(result).isPresent();
+    assertThat(result.get().externalId()).isEqualTo("27205");
+    assertThat(result.get().title()).isEqualTo("Inception");
+    assertThat(result.get().externalSourceType()).isEqualTo(ExternalSourceType.TMDB);
+  }
+
+  @Test
+  @DisplayName("Should fall back to text search when find by external ID returns no movie results")
+  void shouldFallBackToTextSearchWhenFindByExternalIdReturnsNoMovieResults() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/find/tt9999999"))
+            .withQueryParam("external_source", equalTo("imdb_id"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {
+                          "movie_results": []
+                        }
+                        """)));
+
+    wireMock.stubFor(
+        get(urlPathEqualTo("/search/movie"))
+            .withQueryParam("query", equalTo("Some Movie"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {
+                          "page": 1,
+                          "results": [
+                            {
+                              "id": 8888,
+                              "title": "Some Movie",
+                              "release_date": "2022-01-01",
+                              "adult": false,
+                              "popularity": 50.0,
+                              "vote_count": 500,
+                              "vote_average": 7.0
+                            }
+                          ],
+                          "total_results": 1,
+                          "total_pages": 1
+                        }
+                        """)));
+
+    var result =
+        provider.search(
+            VideoFileParserResult.builder()
+                .title("Some Movie")
+                .externalId("tt9999999")
+                .externalSource(ExternalSourceType.IMDB)
+                .build());
+
+    assertThat(result).isPresent();
+    assertThat(result.get().title()).isEqualTo("Some Movie");
+    assertThat(result.get().externalId()).isEqualTo("8888");
+  }
+
   // --- getMetadata() tests ---
 
   @Test
