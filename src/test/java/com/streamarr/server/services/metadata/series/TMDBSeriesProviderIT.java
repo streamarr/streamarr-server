@@ -254,6 +254,25 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
     assertThat(result.get().externalId()).isEqualTo("5555");
   }
 
+  @Test
+  @DisplayName("Should return direct result when TMDB external ID provided")
+  void shouldReturnDirectResultWhenTmdbExternalIdProvided() {
+    stubMinimalSeriesResponse("1396");
+
+    var result =
+        provider.search(
+            VideoFileParserResult.builder()
+                .title("Breaking Bad")
+                .externalId("1396")
+                .externalSource(ExternalSourceType.TMDB)
+                .build());
+
+    assertThat(result).isPresent();
+    assertThat(result.get().externalId()).isEqualTo("1396");
+    assertThat(result.get().title()).isEqualTo("Breaking Bad");
+    assertThat(result.get().externalSourceType()).isEqualTo(ExternalSourceType.TMDB);
+  }
+
   // --- getMetadata() tests ---
 
   @Test
