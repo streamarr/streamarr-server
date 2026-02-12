@@ -49,6 +49,7 @@ runs:
             --buildpack paketo-buildpacks/apt \
             --buildpack paketo-buildpacks/java \
             --env BP_JVM_VERSION=25 \
+            --env BP_INCLUDE_FILES=.profile \
             --path . \
             --cache-image index.docker.io/streamarr/spring-boot-buildpack-paketo-cache-image:latest \
             ${publish_flag}
