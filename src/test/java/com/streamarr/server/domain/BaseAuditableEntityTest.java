@@ -33,7 +33,7 @@ public class BaseAuditableEntityTest {
       var review1 = Review.builder().build();
       var review2 = Review.builder().build();
 
-      assertThat(review1.equals(review2)).isFalse();
+      assertThat(review1).isNotEqualTo(review2);
     }
 
     @Test
@@ -42,7 +42,7 @@ public class BaseAuditableEntityTest {
       var review1 = Review.builder().id(UUID.randomUUID()).build();
       var review2 = Review.builder().id(UUID.randomUUID()).build();
 
-      assertThat(review1.equals(review2)).isFalse();
+      assertThat(review1).isNotEqualTo(review2);
     }
 
     @Test
@@ -52,7 +52,7 @@ public class BaseAuditableEntityTest {
       var review1 = Review.builder().id(id).build();
       var review2 = Review.builder().id(id).build();
 
-      assertThat(review1.equals(review2)).isTrue();
+      assertThat(review1).isEqualTo(review2);
     }
   }
 
@@ -65,7 +65,7 @@ public class BaseAuditableEntityTest {
     void shouldReturnCorrectHashCodeForClassExtension() {
       var review = Review.builder().build();
 
-      assertThat(review.hashCode()).isEqualTo(Review.class.hashCode());
+      assertThat(review).hasSameHashCodeAs(Review.class);
     }
   }
 

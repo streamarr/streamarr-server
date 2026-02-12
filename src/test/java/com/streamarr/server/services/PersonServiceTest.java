@@ -161,8 +161,10 @@ class PersonServiceTest {
     var service = new PersonService(stubRepository, new CapturingEventPublisher());
 
     var person = Person.builder().name("Tom Hanks").sourceId("actor-1").build();
+    var persons = List.of(person);
 
-    assertThatThrownBy(() -> service.getOrCreatePersons(List.of(person), Map.of()))
+    Map<String, List<ImageSource>> emptyImageSources = Map.of();
+    assertThatThrownBy(() -> service.getOrCreatePersons(persons, emptyImageSources))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("not found after upsert");
   }

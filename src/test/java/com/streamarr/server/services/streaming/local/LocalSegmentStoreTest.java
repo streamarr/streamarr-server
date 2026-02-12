@@ -43,8 +43,7 @@ class LocalSegmentStoreTest {
 
     var outputDir = store.getOutputDirectory(sessionId);
 
-    assertThat(outputDir).exists().isDirectory();
-    assertThat(outputDir.getParent()).isEqualTo(tempDir);
+    assertThat(outputDir).exists().isDirectory().hasParentRaw(tempDir);
   }
 
   @Test
@@ -180,7 +179,7 @@ class LocalSegmentStoreTest {
     var variantDir = store.getOutputDirectory(sessionId, "720p");
 
     assertThat(variantDir).exists().isDirectory();
-    assertThat(variantDir.getFileName().toString()).isEqualTo("720p");
-    assertThat(variantDir.getParent()).isEqualTo(store.getOutputDirectory(sessionId));
+    assertThat(variantDir.getFileName()).hasToString("720p");
+    assertThat(variantDir).hasParentRaw(store.getOutputDirectory(sessionId));
   }
 }

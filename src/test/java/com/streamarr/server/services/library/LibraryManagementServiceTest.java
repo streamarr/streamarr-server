@@ -149,12 +149,18 @@ public class LibraryManagementServiceTest {
   @Test
   @DisplayName("Should throw IllegalArgumentException when maxConcurrentFiles is not positive")
   void shouldThrowWhenMaxConcurrentFilesIsNotPositive() {
+    var ignoredFileValidator =
+        new IgnoredFileValidator(new LibraryScanProperties(null, null, null, null));
+    var videoExtensionValidator = new VideoExtensionValidator();
+    var mutexFactoryProvider = new MutexFactoryProvider();
+    var scanProperties = new LibraryScanProperties(null, null, null, 0);
+
     assertThrows(
         IllegalArgumentException.class,
         () ->
             new LibraryManagementService(
-                new IgnoredFileValidator(new LibraryScanProperties(null, null, null, null)),
-                new VideoExtensionValidator(),
+                ignoredFileValidator,
+                videoExtensionValidator,
                 movieFileProcessor,
                 seriesFileProcessor,
                 fakeLibraryRepository,
@@ -162,9 +168,9 @@ public class LibraryManagementServiceTest {
                 movieService,
                 seriesService,
                 capturingEventPublisher,
-                new MutexFactoryProvider(),
+                mutexFactoryProvider,
                 fileSystem,
-                new LibraryScanProperties(null, null, null, 0)));
+                scanProperties));
   }
 
   @Test
@@ -658,7 +664,7 @@ public class LibraryManagementServiceTest {
               var current = currentConcurrent.incrementAndGet();
               maxConcurrent.accumulateAndGet(current, Math::max);
               try {
-                Thread.sleep(200);
+                await().pollDelay(Duration.ofMillis(200)).until(() -> true);
               } finally {
                 currentConcurrent.decrementAndGet();
               }

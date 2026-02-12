@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.mockito.Mockito.mock;
 
 import com.google.common.jimfs.Configuration;
@@ -261,7 +262,8 @@ public class OrphanedMediaFileCleanupServiceTest {
             noOpTransactionTemplate());
 
     var event = new ScanCompletedEvent(library.getId());
-    serviceWithThrowingRepo.onScanCompleted(event);
+
+    assertThatNoException().isThrownBy(() -> serviceWithThrowingRepo.onScanCompleted(event));
   }
 
   private Path createMovieFile(String folder, String filename) throws IOException {
@@ -282,13 +284,19 @@ public class OrphanedMediaFileCleanupServiceTest {
           }
 
           @Override
-          protected void doBegin(Object transaction, TransactionDefinition definition) {}
+          protected void doBegin(Object transaction, TransactionDefinition definition) {
+            // no-op for test
+          }
 
           @Override
-          protected void doCommit(DefaultTransactionStatus status) {}
+          protected void doCommit(DefaultTransactionStatus status) {
+            // no-op for test
+          }
 
           @Override
-          protected void doRollback(DefaultTransactionStatus status) {}
+          protected void doRollback(DefaultTransactionStatus status) {
+            // no-op for test
+          }
         });
   }
 }

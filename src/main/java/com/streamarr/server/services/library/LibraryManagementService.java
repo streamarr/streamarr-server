@@ -248,7 +248,7 @@ public class LibraryManagementService implements ActiveScanChecker {
       } finally {
         fileProcessingLimit.release();
       }
-    } catch (InterruptedException e) {
+    } catch (InterruptedException _) {
       Thread.currentThread().interrupt();
     }
   }
