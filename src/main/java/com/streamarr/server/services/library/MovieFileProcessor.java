@@ -95,11 +95,9 @@ public class MovieFileProcessor {
       return Optional.empty();
     }
 
-    if (result.get().year() == null) {
-      var folderResult = parseFolderName(mediaFile);
-      if (folderResult.isPresent() && folderResult.get().year() != null) {
-        result = folderResult;
-      }
+    var folderResult = parseFolderName(mediaFile).filter(fr -> fr.year() != null);
+    if (result.get().year() == null && folderResult.isPresent()) {
+      result = folderResult;
     }
 
     var externalIdResult = externalIdVideoFileMetadataParser.parse(mediaFile.getFilename());
