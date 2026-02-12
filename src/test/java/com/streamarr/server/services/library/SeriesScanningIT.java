@@ -378,6 +378,97 @@ public class SeriesScanningIT extends AbstractIntegrationTest {
     assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.MATCHED);
   }
 
+  @Test
+  @DisplayName(
+      "Should reuse cached season summaries when processing second file in same year-based season")
+  void shouldReuseCachedSeasonSummariesForSecondFileInSameYearBasedSeason() throws IOException {
+    var library = createSeriesLibrary();
+    var file1 = createSeriesFile("MythBusters", "Season 2012", "mythbusters.s2012e01.mkv");
+    var file2 = createSeriesFile("MythBusters", "Season 2012", "mythbusters.s2012e03.mkv");
+
+    stubTmdbSearch("MythBusters", "1428", "MythBusters");
+    stubTmdbSeriesMetadataWithSeasons(
+        "1428",
+        "MythBusters",
+        """
+        [
+          {"id": 100, "season_number": 1, "name": "Season 1", "air_date": "2003-01-23", "episode_count": 14},
+          {"id": 109, "season_number": 10, "name": "Season 10", "air_date": "2012-03-25", "episode_count": 18},
+          {"id": 110, "season_number": 11, "name": "Season 11", "air_date": "2013-01-16", "episode_count": 18}
+        ]
+        """);
+    stubTmdbSeasonDetails("1428", 10, buildMinimalSeasonResponse(10, 3));
+
+    libraryManagementService.processDiscoveredFile(library.getId(), file1);
+    libraryManagementService.processDiscoveredFile(library.getId(), file2);
+
+    assertThat(seriesRepository.findAll()).hasSize(1);
+    assertThat(seasonRepository.findAll()).hasSize(1);
+    assertThat(seasonRepository.findAll().getFirst().getSeasonNumber()).isEqualTo(10);
+
+    var mediaFiles = mediaFileRepository.findByLibraryId(library.getId());
+    assertThat(mediaFiles).hasSize(2);
+    assertThat(mediaFiles).allMatch(mf -> mf.getStatus() == MediaFileStatus.MATCHED);
+
+    wireMock.verify(1, getRequestedFor(urlPathEqualTo("/tv/1428")));
+  }
+
+  @Test
+  @DisplayName("Should not attempt season fetch when year-based season cannot be resolved")
+  void shouldNotAttemptSeasonFetchWhenYearBasedSeasonCannotBeResolved() throws IOException {
+    var library = createSeriesLibrary();
+    var file = createSeriesFile("SomeShow", "Season 2050", "someshow.s2050e01.mkv");
+
+    stubTmdbSearch("SomeShow", "9999", "SomeShow");
+    stubTmdbSeriesMetadataWithSeasons(
+        "9999",
+        "SomeShow",
+        """
+        [
+          {"id": 200, "season_number": 1, "name": "Season 1", "air_date": "2020-01-15", "episode_count": 10}
+        ]
+        """);
+
+    libraryManagementService.processDiscoveredFile(library.getId(), file);
+
+    var mediaFile =
+        mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
+    assertThat(mediaFile).isPresent();
+    assertThat(mediaFile.get().getStatus()).isNotEqualTo(MediaFileStatus.MATCHED);
+
+    wireMock.verify(0, getRequestedFor(urlPathEqualTo("/tv/9999/season/2050")));
+  }
+
+  @Test
+  @DisplayName("Should not trigger year-based resolution for normal sequential season numbers")
+  void shouldNotTriggerYearBasedResolutionForNormalSequentialSeasonNumbers() throws IOException {
+    var library = createSeriesLibrary();
+    var file = createSeriesFile("Show", "Season 01", "show.s01e01.mkv");
+
+    stubTmdbSearch("Show", "5555", "Show");
+    stubTmdbSeriesMetadataWithSeasons(
+        "5555",
+        "Show",
+        """
+        [
+          {"id": 300, "season_number": 1, "name": "Season 1", "air_date": "2020-01-15", "episode_count": 10}
+        ]
+        """);
+    stubTmdbSeasonDetails("5555", 1, buildMinimalSeasonResponse(1, 1));
+
+    libraryManagementService.processDiscoveredFile(library.getId(), file);
+
+    assertThat(seasonRepository.findAll()).hasSize(1);
+    assertThat(seasonRepository.findAll().getFirst().getSeasonNumber()).isEqualTo(1);
+
+    var mediaFile =
+        mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
+    assertThat(mediaFile).isPresent();
+    assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.MATCHED);
+
+    wireMock.verify(1, getRequestedFor(urlPathEqualTo("/tv/5555")));
+  }
+
   // --- Helpers ---
 
   private Library createSeriesLibrary() {
