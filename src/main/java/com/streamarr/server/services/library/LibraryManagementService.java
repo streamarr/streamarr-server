@@ -243,14 +243,15 @@ public class LibraryManagementService implements ActiveScanChecker {
   private void processFileWithLimit(Library library, Path file) {
     try {
       fileProcessingLimit.acquire();
-      try {
-        processFile(library, file);
-      } finally {
-        fileProcessingLimit.release();
-      }
     } catch (InterruptedException e) {
       log.warn("File processing interrupted, skipping: {}", file, e);
       Thread.currentThread().interrupt();
+      return;
+    }
+    try {
+      processFile(library, file);
+    } finally {
+      fileProcessingLimit.release();
     }
   }
 
