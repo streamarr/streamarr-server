@@ -240,7 +240,8 @@ public class SeriesFileProcessor {
       var effectiveSeasonNumber = seasonNumber;
       var seasonOpt = seasonRepository.findBySeriesIdAndSeasonNumber(series.getId(), seasonNumber);
 
-      if (seasonOpt.isEmpty() && seasonNumber >= 1928) {
+      if (seasonOpt.isEmpty()
+          && seasonNumber >= EpisodePathMetadataParser.EARLIEST_TV_BROADCAST_YEAR) {
         var resolved =
             seriesMetadataProviderResolver.resolveSeasonNumber(
                 library, searchResult.externalId(), seasonNumber);
