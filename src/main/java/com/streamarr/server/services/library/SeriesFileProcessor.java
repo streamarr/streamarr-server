@@ -27,6 +27,7 @@ import java.nio.file.Path;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -243,52 +244,33 @@ public class SeriesFileProcessor {
       }
 
       var series = seriesOpt.get();
-
-      var effectiveSeasonNumber = seasonNumber;
       var seasonOpt = seasonRepository.findBySeriesIdAndSeasonNumber(series.getId(), seasonNumber);
 
-      if (seasonOpt.isEmpty()
-          && seasonNumber >= EpisodePathMetadataParser.EARLIEST_TV_BROADCAST_YEAR) {
-        var resolved =
-            seriesMetadataProviderResolver.resolveSeasonNumber(
-                library, searchResult.externalId(), seasonNumber);
-        if (resolved.isPresent()) {
-          effectiveSeasonNumber = resolved.getAsInt();
-          seasonOpt =
-              seasonRepository.findBySeriesIdAndSeasonNumber(series.getId(), effectiveSeasonNumber);
-        } else {
-          log.warn(
-              "Could not resolve year-based season {} for series TMDB id '{}'",
-              seasonNumber,
-              searchResult.externalId());
-          return;
-        }
+      var effectiveSeasonNumber =
+          resolveEffectiveSeasonNumber(
+              library, searchResult.externalId(), seasonNumber, seasonOpt);
+
+      if (effectiveSeasonNumber.isEmpty()) {
+        return;
+      }
+
+      if (effectiveSeasonNumber.getAsInt() != seasonNumber) {
+        seasonOpt =
+            seasonRepository.findBySeriesIdAndSeasonNumber(
+                series.getId(), effectiveSeasonNumber.getAsInt());
       }
 
       if (seasonOpt.isEmpty()) {
         seasonOpt =
             createSeasonWithEpisodes(
-                library, searchResult.externalId(), effectiveSeasonNumber, series);
+                library, searchResult.externalId(), effectiveSeasonNumber.getAsInt(), series);
       }
 
       if (seasonOpt.isEmpty()) {
         return;
       }
 
-      var season = seasonOpt.get();
-
-      var episode =
-          episodeRepository
-              .findBySeasonIdAndEpisodeNumber(season.getId(), episodeNumber)
-              .orElseGet(
-                  () ->
-                      episodeRepository.saveAndFlush(
-                          Episode.builder()
-                              .title("Episode " + episodeNumber)
-                              .episodeNumber(episodeNumber)
-                              .season(season)
-                              .library(library)
-                              .build()));
+      var episode = findOrCreateEpisode(seasonOpt.get(), library, episodeNumber);
 
       mediaFile.setMediaId(episode.getId());
       markAs(mediaFile, MediaFileStatus.MATCHED);
@@ -300,6 +282,40 @@ public class SeriesFileProcessor {
         externalIdMutex.unlock();
       }
     }
+  }
+
+  private OptionalInt resolveEffectiveSeasonNumber(
+      Library library, String externalId, int seasonNumber, Optional<Season> existingSeason) {
+    if (existingSeason.isPresent()
+        || seasonNumber < EpisodePathMetadataParser.EARLIEST_TV_BROADCAST_YEAR) {
+      return OptionalInt.of(seasonNumber);
+    }
+
+    var resolved =
+        seriesMetadataProviderResolver.resolveSeasonNumber(library, externalId, seasonNumber);
+
+    if (resolved.isEmpty()) {
+      log.warn(
+          "Could not resolve year-based season {} for series TMDB id '{}'",
+          seasonNumber,
+          externalId);
+    }
+
+    return resolved;
+  }
+
+  private Episode findOrCreateEpisode(Season season, Library library, int episodeNumber) {
+    return episodeRepository
+        .findBySeasonIdAndEpisodeNumber(season.getId(), episodeNumber)
+        .orElseGet(
+            () ->
+                episodeRepository.saveAndFlush(
+                    Episode.builder()
+                        .title("Episode " + episodeNumber)
+                        .episodeNumber(episodeNumber)
+                        .season(season)
+                        .library(library)
+                        .build()));
   }
 
   private Optional<Series> createSeries(Library library, RemoteSearchResult searchResult) {
