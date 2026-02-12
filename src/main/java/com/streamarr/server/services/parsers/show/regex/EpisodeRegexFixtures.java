@@ -62,10 +62,10 @@ public class EpisodeRegexFixtures {
               .build(),
           EpisodeRegexContainer.NamedGroupRegex.builder()
               // Warning; Causes false positives for triple-digit episode names
-              // Extracts seriesName, episodeNumber. Ex -> "[tag] Foo - 1"
+              // Extracts seriesName, episodeNumber. Ex -> "[tag].Foo.-.01"
               .expression(
-                  ".*[\\\\\\/]?.*?(\\[.*?\\])+.*?(?<seriesname>[-\\w\\s]+?)[\\s_]*-[\\s_]*(?<epnumber>[0-9]+).*$")
-              .exampleMatch("[tag] Foo - 1")
+                  ".*[\\\\\\/]?.*?(\\[.*?\\])+.*?(?<seriesname>[-\\w\\s.]+?)[\\s_.]*-[\\s_.]*(?<epnumber>[0-9]+).*$")
+              .exampleMatch("[tag].Foo.-.01")
               .build(),
           EpisodeRegexContainer.NamedGroupRegex.builder()
               // /server/anything_102.mp4

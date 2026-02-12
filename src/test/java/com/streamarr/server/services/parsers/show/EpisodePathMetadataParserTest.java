@@ -144,7 +144,13 @@ public class EpisodePathMetadataParserTest {
               new TestCase("The Simpsons/The Simpsons 101.avi", "The Simpsons", 101),
 
               // Version marker (anime fansub releases)
-              new TestCase("/media/[SubsPlease] Show - 01v2 (1080p).mkv", "Show", 1))
+              new TestCase("/media/[SubsPlease] Show - 01v2 (1080p).mkv", "Show", 1),
+
+              // Dot-separated anime bracket naming
+              new TestCase(
+                  "/tv/Fullmetal Alchemist Brotherhood/Season 1/[QaS].Fullmetal.Alchemist.Brotherhood.-.01.[BD.1080p.HEVC.x265.10bit.Opus.5.1][Dual.Audio].mkv",
+                  "Fullmetal.Alchemist.Brotherhood",
+                  1))
           .map(
               testCase ->
                   DynamicTest.dynamicTest(
