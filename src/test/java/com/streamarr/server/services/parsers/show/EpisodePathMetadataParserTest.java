@@ -11,6 +11,7 @@ import org.junit.jupiter.api.DynamicNode;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
 
 @Tag("UnitTest")
@@ -488,6 +489,38 @@ public class EpisodePathMetadataParserTest {
 
                         assertThat(result).isEmpty();
                       }));
+    }
+  }
+
+  @Nested
+  @DisplayName("Should not create phantom seasons from trailing years (Jellyfin #15011)")
+  public class PhantomSeasonRegressionTests {
+
+    @Test
+    @DisplayName("Should not create phantom season from trailing year in episode title")
+    void shouldNotCreatePhantomSeasonFromTrailingYearInEpisodeTitle() {
+      var result =
+          episodePathExtractionService
+              .parse("/tv/Show/Show - S01E01 - Pilot (2002).mkv")
+              .orElseThrow();
+
+      assertThat(result.getSeriesName()).isEqualTo("Show");
+      assertThat(result.getSeasonNumber().orElseThrow()).isEqualTo(1);
+      assertThat(result.getEpisodeNumber().orElseThrow()).isEqualTo(1);
+      assertThat(result.isSuccess()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Should ignore trailing year in bare episode number")
+    void shouldIgnoreTrailingYearInBareEpisodeNumber() {
+      var result =
+          episodePathExtractionService
+              .parse("/tv/Show/Season 1/02 - Episode Title (2002).mkv")
+              .orElseThrow();
+
+      assertThat(result.getSeasonNumber().orElseThrow()).isEqualTo(1);
+      assertThat(result.getEpisodeNumber().orElseThrow()).isEqualTo(2);
+      assertThat(result.isSuccess()).isTrue();
     }
   }
 }
