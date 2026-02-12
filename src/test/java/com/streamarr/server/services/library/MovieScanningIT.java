@@ -36,7 +36,7 @@ import org.springframework.test.context.bean.override.convention.TestBean;
 
 @Tag("IntegrationTest")
 @DisplayName("Movie Scanning Integration Tests")
-public class MovieScanningIT extends AbstractIntegrationTest {
+class MovieScanningIT extends AbstractIntegrationTest {
 
   private static final WireMockServer wireMock = new WireMockServer(wireMockConfig().dynamicPort());
 

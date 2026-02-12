@@ -509,7 +509,7 @@ class EpisodePathMetadataParserTest {
 
   @Nested
   @DisplayName("Should not create phantom seasons from trailing years (Jellyfin #15011)")
-  public class PhantomSeasonRegressionTests {
+  class PhantomSeasonRegressionTests {
 
     @Test
     @DisplayName("Should not create phantom season from trailing year in episode title")

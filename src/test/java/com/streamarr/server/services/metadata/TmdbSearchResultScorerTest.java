@@ -4,10 +4,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.services.metadata.TmdbSearchResultScorer.CandidateResult;
 import java.util.List;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
 @DisplayName("TMDB Search Result Scorer Tests")
@@ -119,16 +123,34 @@ class TmdbSearchResultScorerTest {
       assertThat(result).isEmpty();
     }
 
-    @Test
-    @DisplayName("Should use original name when primary name scores lower")
-    void shouldUseOriginalNameWhenPrimaryNameScoresLower() {
-      var candidates =
-          List.of(new CandidateResult("Localized Title", "Breaking Bad", "2008", 500.0));
-
-      var result = TmdbSearchResultScorer.selectBestMatch("Breaking Bad", "2008", candidates);
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("singleCandidateMatchCases")
+    @DisplayName("Should select best match from single candidate")
+    void shouldSelectBestMatchFromSingleCandidate(
+        String scenario, String query, String queryYear, CandidateResult candidate) {
+      var result = TmdbSearchResultScorer.selectBestMatch(query, queryYear, List.of(candidate));
 
       assertThat(result).isPresent();
       assertThat(result.getAsInt()).isZero();
+    }
+
+    static Stream<Arguments> singleCandidateMatchCases() {
+      return Stream.of(
+          Arguments.of(
+              "original name scores higher than primary",
+              "Breaking Bad",
+              "2008",
+              new CandidateResult("Localized Title", "Breaking Bad", "2008", 500.0)),
+          Arguments.of(
+              "null query year",
+              "Breaking Bad",
+              null,
+              new CandidateResult("Breaking Bad", "Breaking Bad", "2008", 500.0)),
+          Arguments.of(
+              "null candidate year",
+              "Breaking Bad",
+              "2008",
+              new CandidateResult("Breaking Bad", "Breaking Bad", null, 500.0)));
     }
 
     @Test
@@ -154,28 +176,6 @@ class TmdbSearchResultScorerTest {
 
       assertThat(result).isPresent();
       assertThat(result.getAsInt()).isEqualTo(1);
-    }
-
-    @Test
-    @DisplayName("Should handle null year gracefully")
-    void shouldHandleNullYearGracefully() {
-      var candidates = List.of(new CandidateResult("Breaking Bad", "Breaking Bad", "2008", 500.0));
-
-      var result = TmdbSearchResultScorer.selectBestMatch("Breaking Bad", null, candidates);
-
-      assertThat(result).isPresent();
-      assertThat(result.getAsInt()).isZero();
-    }
-
-    @Test
-    @DisplayName("Should handle null candidate year gracefully")
-    void shouldHandleNullCandidateYearGracefully() {
-      var candidates = List.of(new CandidateResult("Breaking Bad", "Breaking Bad", null, 500.0));
-
-      var result = TmdbSearchResultScorer.selectBestMatch("Breaking Bad", "2008", candidates);
-
-      assertThat(result).isPresent();
-      assertThat(result.getAsInt()).isZero();
     }
 
     @Test

@@ -64,7 +64,7 @@ class SeriesFileProcessorTest {
 
   @Test
   @DisplayName("Should restore interrupt flag when enrichment throws InterruptedException")
-  void shouldRestoreInterruptFlagWhenEnrichmentThrowsInterruptedException() throws Exception {
+  void shouldRestoreInterruptFlagWhenEnrichmentThrowsInterruptedException() {
     var library = LibraryFixtureCreator.buildFakeSeriesLibrary();
 
     var mediaFile =
