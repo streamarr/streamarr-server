@@ -1,0 +1,71 @@
+package com.streamarr.server.services.metadata.series;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+import com.streamarr.server.services.library.events.ScanCompletedEvent;
+import com.streamarr.server.services.metadata.TheMovieDatabaseHttpService;
+import com.streamarr.server.services.metadata.tmdb.TmdbTvSeries;
+import com.streamarr.server.services.metadata.tmdb.TmdbTvSeasonSummary;
+import java.io.IOException;
+import java.util.List;
+import java.util.OptionalInt;
+import java.util.UUID;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+@Tag("UnitTest")
+@ExtendWith(MockitoExtension.class)
+@DisplayName("TMDB Series Provider Tests")
+class TMDBSeriesProviderTest {
+
+  private final TheMovieDatabaseHttpService theMovieDatabaseHttpService =
+      mock(TheMovieDatabaseHttpService.class);
+
+  private final TMDBSeriesProvider provider = new TMDBSeriesProvider(theMovieDatabaseHttpService);
+
+  @Test
+  @DisplayName("Should return fresh data after scan completed clears cache")
+  void shouldReturnFreshDataAfterScanCompleted() throws IOException, InterruptedException {
+    var seriesExternalId = "1396";
+
+    var initialSeries =
+        TmdbTvSeries.builder()
+            .seasons(
+                List.of(
+                    TmdbTvSeasonSummary.builder()
+                        .seasonNumber(1)
+                        .airDate("2020-01-15")
+                        .build()))
+            .build();
+
+    when(theMovieDatabaseHttpService.getTvSeriesMetadata(anyString())).thenReturn(initialSeries);
+
+    var firstResult = provider.resolveSeasonNumber(seriesExternalId, 2020);
+    assertThat(firstResult).isEqualTo(OptionalInt.of(1));
+
+    var updatedSeries =
+        TmdbTvSeries.builder()
+            .seasons(
+                List.of(
+                    TmdbTvSeasonSummary.builder()
+                        .seasonNumber(3)
+                        .airDate("2020-03-01")
+                        .build()))
+            .build();
+
+    when(theMovieDatabaseHttpService.getTvSeriesMetadata(anyString())).thenReturn(updatedSeries);
+
+    provider.onScanCompleted(new ScanCompletedEvent(UUID.randomUUID()));
+
+    var secondResult = provider.resolveSeasonNumber(seriesExternalId, 2020);
+    assertThat(secondResult)
+        .as("Should return fresh data after cache is cleared")
+        .isEqualTo(OptionalInt.of(3));
+  }
+}

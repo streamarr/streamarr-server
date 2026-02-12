@@ -1,5 +1,6 @@
 package com.streamarr.server.services.metadata.series;
 
+import com.streamarr.server.services.library.events.ScanCompletedEvent;
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.ExternalIdentifier;
 import com.streamarr.server.domain.ExternalSourceType;
@@ -34,6 +35,7 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import tools.jackson.core.JacksonException;
 
@@ -314,6 +316,11 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
             })
         .mapToInt(TmdbTvSeasonSummary::getSeasonNumber)
         .findFirst();
+  }
+
+  @EventListener
+  public void onScanCompleted(ScanCompletedEvent event) {
+    seasonSummariesCache.clear();
   }
 
   private List<TmdbTvSeasonSummary> getOrFetchSeasonSummaries(String seriesExternalId) {
