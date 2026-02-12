@@ -5,7 +5,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import com.streamarr.server.services.library.events.ScanCompletedEvent;
+import com.streamarr.server.services.library.events.ScanEndedEvent;
 import com.streamarr.server.services.metadata.TheMovieDatabaseHttpService;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSeasonSummary;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSeries;
@@ -30,8 +30,8 @@ class TMDBSeriesProviderTest {
   private final TMDBSeriesProvider provider = new TMDBSeriesProvider(theMovieDatabaseHttpService);
 
   @Test
-  @DisplayName("Should return fresh data after scan completed clears cache")
-  void shouldReturnFreshDataAfterScanCompleted() throws IOException, InterruptedException {
+  @DisplayName("Should return fresh data after scan ended clears cache")
+  void shouldReturnFreshDataAfterScanEnded() throws IOException, InterruptedException {
     var seriesExternalId = "1396";
 
     var initialSeries =
@@ -55,7 +55,7 @@ class TMDBSeriesProviderTest {
 
     when(theMovieDatabaseHttpService.getTvSeriesMetadata(anyString())).thenReturn(updatedSeries);
 
-    provider.onScanCompleted(new ScanCompletedEvent(UUID.randomUUID()));
+    provider.onScanEnded(new ScanEndedEvent(UUID.randomUUID()));
 
     var secondResult = provider.resolveSeasonNumber(seriesExternalId, 2020);
     assertThat(secondResult)

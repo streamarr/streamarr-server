@@ -7,7 +7,7 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.ContentRating;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.Series;
-import com.streamarr.server.services.library.events.ScanCompletedEvent;
+import com.streamarr.server.services.library.events.ScanEndedEvent;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.TheMovieDatabaseHttpService;
@@ -320,7 +320,7 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
   }
 
   @EventListener
-  public void onScanCompleted(ScanCompletedEvent event) {
+  public void onScanEnded(ScanEndedEvent event) {
     seasonSummariesCache.clear();
   }
 

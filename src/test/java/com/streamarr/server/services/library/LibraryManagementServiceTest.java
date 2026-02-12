@@ -45,6 +45,7 @@ import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.library.events.LibraryAddedEvent;
 import com.streamarr.server.services.library.events.LibraryRemovedEvent;
 import com.streamarr.server.services.library.events.ScanCompletedEvent;
+import com.streamarr.server.services.library.events.ScanEndedEvent;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
@@ -382,6 +383,29 @@ class LibraryManagementServiceTest {
 
     var events = capturingEventPublisher.getEventsOfType(ScanCompletedEvent.class);
     assertThat(events).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "Should publish ScanEndedEvent with correct library ID when scan completes successfully")
+  void shouldPublishScanEndedEventWhenScanSucceeds() throws IOException {
+    createRootLibraryDirectory();
+
+    libraryManagementService.scanLibrary(savedLibraryId);
+
+    var events = capturingEventPublisher.getEventsOfType(ScanEndedEvent.class);
+    assertThat(events).hasSize(1);
+    assertThat(events.getFirst().libraryId()).isEqualTo(savedLibraryId);
+  }
+
+  @Test
+  @DisplayName("Should publish ScanEndedEvent when library path is inaccessible")
+  void shouldPublishScanEndedEventWhenLibraryPathInaccessible() {
+    libraryManagementService.scanLibrary(savedLibraryId);
+
+    var events = capturingEventPublisher.getEventsOfType(ScanEndedEvent.class);
+    assertThat(events).hasSize(1);
+    assertThat(events.getFirst().libraryId()).isEqualTo(savedLibraryId);
   }
 
   @Test

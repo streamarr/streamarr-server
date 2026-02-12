@@ -20,6 +20,7 @@ import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.library.events.LibraryAddedEvent;
 import com.streamarr.server.services.library.events.LibraryRemovedEvent;
 import com.streamarr.server.services.library.events.ScanCompletedEvent;
+import com.streamarr.server.services.library.events.ScanEndedEvent;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
 import java.io.IOException;
@@ -222,6 +223,7 @@ public class LibraryManagementService implements ActiveScanChecker {
         completeScanWithFailure(library, e.getCause());
       }
     } finally {
+      eventPublisher.publishEvent(new ScanEndedEvent(libraryId));
       activeScans.remove(libraryId);
     }
   }
