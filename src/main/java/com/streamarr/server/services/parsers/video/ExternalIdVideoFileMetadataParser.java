@@ -1,9 +1,10 @@
 package com.streamarr.server.services.parsers.video;
 
+import static com.streamarr.server.services.parsers.ParserPatterns.EXTERNAL_ID_TAG;
+
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.services.parsers.MetadataParser;
 import java.util.Optional;
-import java.util.regex.Pattern;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Service;
@@ -12,10 +13,6 @@ import org.springframework.stereotype.Service;
 @Order(50)
 public class ExternalIdVideoFileMetadataParser implements MetadataParser<VideoFileParserResult> {
 
-  private static final Pattern SOURCE_ID_REGEX =
-      Pattern.compile(
-          ".*(?<=[\\[\\{(](?i)(?<source>imdb|tmdb|tvdb)(?:id)?[ \\-=])(?<id>.+?)(?=[\\]\\})]).*");
-
   @Override
   public Optional<VideoFileParserResult> parse(String filename) {
 
@@ -23,9 +20,9 @@ public class ExternalIdVideoFileMetadataParser implements MetadataParser<VideoFi
       return Optional.empty();
     }
 
-    var matcher = SOURCE_ID_REGEX.matcher(filename);
+    var matcher = EXTERNAL_ID_TAG.matcher(filename);
 
-    if (!matcher.matches()) {
+    if (!matcher.find()) {
       return Optional.empty();
     }
 
