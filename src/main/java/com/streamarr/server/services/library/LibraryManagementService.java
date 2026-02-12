@@ -203,7 +203,7 @@ public class LibraryManagementService implements ActiveScanChecker {
             .findById(libraryId)
             .orElseThrow(() -> new LibraryNotFoundException(libraryId));
 
-    processFile(library, path);
+    processFileWithLimit(library, path);
   }
 
   public void scanLibrary(UUID libraryId) {
