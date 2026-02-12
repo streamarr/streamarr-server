@@ -45,7 +45,7 @@ runs:
 
         pack build index.docker.io/streamarr/streamarr-server \
             ${tag_args} \
-            --builder paketobuildpacks/builder-jammy-base \
+            --builder paketobuildpacks/builder-jammy-full \
             --buildpack paketo-buildpacks/apt \
             --buildpack paketo-buildpacks/java \
             --env BP_JVM_VERSION=25 \
