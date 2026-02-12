@@ -20,7 +20,6 @@ import java.io.IOException;
 import java.time.LocalDate;
 import java.util.Collections;
 import java.util.HashSet;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import lombok.Getter;
@@ -38,9 +37,6 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
   private final TheMovieDatabaseHttpService theMovieDatabaseHttpService;
 
   @Getter private final ExternalAgentStrategy agentStrategy = ExternalAgentStrategy.TMDB;
-
-  private static final Map<ExternalSourceType, String> TMDB_EXTERNAL_SOURCES =
-      Map.of(ExternalSourceType.IMDB, "imdb_id", ExternalSourceType.TVDB, "tvdb_id");
 
   public Optional<RemoteSearchResult> search(VideoFileParserResult videoInformation) {
     var findResult = searchByExternalId(videoInformation);
@@ -61,7 +57,7 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
       return searchByDirectTmdbId(videoInformation);
     }
 
-    var tmdbSource = TMDB_EXTERNAL_SOURCES.get(videoInformation.externalSource());
+    var tmdbSource = TheMovieDatabaseHttpService.EXTERNAL_SOURCES.get(videoInformation.externalSource());
     if (tmdbSource == null) {
       return Optional.empty();
     }

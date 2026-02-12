@@ -26,7 +26,6 @@ import java.time.format.DateTimeParseException;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
@@ -50,9 +49,6 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
 
   @Getter private final ExternalAgentStrategy agentStrategy = ExternalAgentStrategy.TMDB;
 
-  private static final Map<ExternalSourceType, String> TMDB_EXTERNAL_SOURCES =
-      Map.of(ExternalSourceType.IMDB, "imdb_id", ExternalSourceType.TVDB, "tvdb_id");
-
   public Optional<RemoteSearchResult> search(VideoFileParserResult videoInformation) {
     var findResult = searchByExternalId(videoInformation);
     if (findResult.isPresent()) {
@@ -72,7 +68,7 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
       return searchByDirectTmdbId(videoInformation);
     }
 
-    var tmdbSource = TMDB_EXTERNAL_SOURCES.get(videoInformation.externalSource());
+    var tmdbSource = TheMovieDatabaseHttpService.EXTERNAL_SOURCES.get(videoInformation.externalSource());
     if (tmdbSource == null) {
       return Optional.empty();
     }

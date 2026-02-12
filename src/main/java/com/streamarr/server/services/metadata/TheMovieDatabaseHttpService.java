@@ -10,11 +10,13 @@ import com.streamarr.server.services.metadata.tmdb.TmdbTvSearchResults;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSeason;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSeries;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
+import com.streamarr.server.domain.ExternalSourceType;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadLocalRandom;
@@ -31,6 +33,9 @@ import tools.jackson.databind.ObjectMapper;
 @Slf4j
 @Service
 public class TheMovieDatabaseHttpService {
+
+  public static final Map<ExternalSourceType, String> EXTERNAL_SOURCES =
+      Map.of(ExternalSourceType.IMDB, "imdb_id", ExternalSourceType.TVDB, "tvdb_id");
 
   private static final int MAX_RETRIES = 5;
   private static final long BASE_DELAY_MS = 2000;
