@@ -13,14 +13,14 @@ import org.junit.jupiter.api.TestFactory;
 
 @Tag("UnitTest")
 @DisplayName("Default Video File Metadata Parsing Tests")
-public class DefaultVideoFileMetadataParserTest {
+class DefaultVideoFileMetadataParserTest {
 
   private final DefaultVideoFileMetadataParser defaultVideoFileMetadataParser =
       new DefaultVideoFileMetadataParser();
 
   @Nested
   @DisplayName("Should successfully extract both title and year from filename")
-  public class SuccessfulTitleAndYearExtractionTests {
+  class SuccessfulTitleAndYearExtractionTests {
 
     record TestCase(String title, String year, String filename) {}
 
@@ -78,7 +78,7 @@ public class DefaultVideoFileMetadataParserTest {
 
   @Nested
   @DisplayName("Should successfully extract a title from filename")
-  public class SuccessfulTitleExtractionTests {
+  class SuccessfulTitleExtractionTests {
 
     record TestCase(String title, String filename) {}
 
@@ -119,7 +119,7 @@ public class DefaultVideoFileMetadataParserTest {
 
   @Nested
   @DisplayName("Should return empty optional")
-  public class UnsuccessfulExtractionTests {
+  class UnsuccessfulExtractionTests {
 
     record TestCase(String name, String input) {}
 

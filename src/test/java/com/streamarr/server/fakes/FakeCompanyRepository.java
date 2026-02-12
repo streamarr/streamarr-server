@@ -12,8 +12,7 @@ public class FakeCompanyRepository extends FakeJpaRepository<Company> implements
 
   @Override
   public boolean insertIfAbsent(String sourceId, String name) {
-    boolean exists =
-        database.values().stream().anyMatch(c -> sourceId.equals(c.getSourceId()));
+    boolean exists = database.values().stream().anyMatch(c -> sourceId.equals(c.getSourceId()));
     if (exists) {
       return false;
     }

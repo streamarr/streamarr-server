@@ -1,9 +1,12 @@
 package com.streamarr.server.services.streaming.ffmpeg;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNoException;
+import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.domain.streaming.StreamSession;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -63,7 +66,7 @@ class LocalFfmpegProcessManagerTest {
             sessionId, StreamSession.defaultVariant(), List.of("echo", "done"), tempDir);
     process.waitFor();
 
-    Thread.sleep(100);
+    await().pollDelay(Duration.ofMillis(100)).until(() -> true);
 
     assertThat(manager.isRunning(sessionId)).isFalse();
   }
@@ -73,7 +76,7 @@ class LocalFfmpegProcessManagerTest {
   void shouldNotThrowWhenStoppingAlreadyStoppedSession() {
     var sessionId = UUID.randomUUID();
 
-    manager.stopProcess(sessionId);
+    assertThatNoException().isThrownBy(() -> manager.stopProcess(sessionId));
   }
 
   @Test

@@ -79,7 +79,9 @@ public class FakeFfmpegProcessManager implements FfmpegProcessManager {
     }
 
     @Override
-    public void destroy() {}
+    public void destroy() {
+      // no-op for test fake
+    }
 
     @Override
     public long pid() {

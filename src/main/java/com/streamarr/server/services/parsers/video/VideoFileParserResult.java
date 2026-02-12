@@ -7,5 +7,6 @@ public record VideoFileParserResult(
     String title, String year, String externalId, ExternalSourceType externalSource) {
 
   @Builder
+  // compact constructor for @Builder
   public VideoFileParserResult {}
 }

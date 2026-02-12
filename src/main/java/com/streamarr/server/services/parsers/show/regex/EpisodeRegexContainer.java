@@ -13,6 +13,7 @@ public sealed interface EpisodeRegexContainer {
   record DateRegex(String expression, String exampleMatch, Pattern regex)
       implements EpisodeRegexContainer {
     @Builder
+    // compact constructor for @Builder
     public DateRegex {}
 
     public static DateRegexBuilder builder() {
@@ -30,6 +31,7 @@ public sealed interface EpisodeRegexContainer {
   record NamedGroupRegex(String expression, String exampleMatch, Pattern regex)
       implements EpisodeRegexContainer {
     @Builder
+    // compact constructor for @Builder
     public NamedGroupRegex {}
 
     public static NamedGroupRegexBuilder builder() {
@@ -48,6 +50,7 @@ public sealed interface EpisodeRegexContainer {
   record IndexedGroupRegex(String expression, String exampleMatch, Pattern regex)
       implements EpisodeRegexContainer {
     @Builder
+    // compact constructor for @Builder
     public IndexedGroupRegex {}
 
     public static IndexedGroupRegexBuilder builder() {

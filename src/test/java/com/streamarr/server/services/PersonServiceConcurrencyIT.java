@@ -27,7 +27,7 @@ class PersonServiceConcurrencyIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName("Should create single person when concurrent inserts race on same source ID")
-  void shouldCreateSinglePersonWhenConcurrentInsertsRaceOnSameSourceId() throws Exception {
+  void shouldCreateSinglePersonWhenConcurrentInsertsRaceOnSameSourceId() {
     var sourceId = "concurrent-person-" + System.nanoTime();
     var threadCount = 5;
     var executor = Executors.newFixedThreadPool(threadCount);

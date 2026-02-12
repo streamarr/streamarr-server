@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.mockito.Mockito.mock;
 
 import com.google.common.jimfs.Configuration;
@@ -32,7 +33,7 @@ import org.junit.jupiter.api.Test;
 
 @Tag("UnitTest")
 @DisplayName("Orphaned Media File Cleanup Service Tests")
-public class OrphanedMediaFileCleanupServiceTest {
+class OrphanedMediaFileCleanupServiceTest {
 
   private final LibraryRepository fakeLibraryRepository = new FakeLibraryRepository();
   private final MediaFileRepository fakeMediaFileRepository = new FakeMediaFileRepository();
@@ -187,7 +188,8 @@ public class OrphanedMediaFileCleanupServiceTest {
   void shouldHandleGracefullyWhenLibraryDeletedBeforeCleanup() {
     var event = new ScanCompletedEvent(UUID.randomUUID());
 
-    orphanedMediaFileCleanupService.onScanCompleted(event);
+    assertThatNoException()
+        .isThrownBy(() -> orphanedMediaFileCleanupService.onScanCompleted(event));
   }
 
   private Path createMovieFile(String folder, String filename) throws IOException {

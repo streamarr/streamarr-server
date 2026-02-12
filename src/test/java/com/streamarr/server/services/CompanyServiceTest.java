@@ -139,7 +139,9 @@ class CompanyServiceTest {
     var company = Company.builder().name("Warner Bros.").sourceId(null).build();
     var companies = Set.of(company);
 
-    assertThatThrownBy(() -> companyService.getOrCreateCompanies(companies, Map.of()))
+    var emptyImageSources = Map.<String, List<ImageSource>>of();
+
+    assertThatThrownBy(() -> companyService.getOrCreateCompanies(companies, emptyImageSources))
         .isInstanceOf(IllegalArgumentException.class);
   }
 

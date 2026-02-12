@@ -12,8 +12,7 @@ public class FakePersonRepository extends FakeJpaRepository<Person> implements P
 
   @Override
   public boolean insertIfAbsent(String sourceId, String name) {
-    boolean exists =
-        database.values().stream().anyMatch(p -> sourceId.equals(p.getSourceId()));
+    boolean exists = database.values().stream().anyMatch(p -> sourceId.equals(p.getSourceId()));
     if (exists) {
       return false;
     }

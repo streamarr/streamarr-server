@@ -17,7 +17,7 @@ import org.springframework.boot.test.context.SpringBootTest;
       DefaultVideoFileMetadataParser.class,
       ExternalIdVideoFileMetadataParser.class
     })
-public class VideoFileMetadataParserFactoryIT {
+class VideoFileMetadataParserFactoryIT {
 
   @Autowired private VideoFileMetadataParserFactory videoFileMetadataParserFactory;
 

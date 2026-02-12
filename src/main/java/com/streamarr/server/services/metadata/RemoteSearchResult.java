@@ -7,5 +7,6 @@ public record RemoteSearchResult(
     String title, String externalId, ExternalSourceType externalSourceType) {
 
   @Builder
+  // compact constructor for @Builder
   public RemoteSearchResult {}
 }

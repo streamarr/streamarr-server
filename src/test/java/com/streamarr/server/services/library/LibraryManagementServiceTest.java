@@ -78,7 +78,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @Tag("UnitTest")
 @ExtendWith(MockitoExtension.class)
 @DisplayName("Library Management Service Tests")
-public class LibraryManagementServiceTest {
+class LibraryManagementServiceTest {
 
   private final PersonService personService = mock(PersonService.class);
   private final GenreService genreService = mock(GenreService.class);
@@ -145,9 +145,10 @@ public class LibraryManagementServiceTest {
   @Test
   @DisplayName("Should not allow for scanning of a library that doesn't exist.")
   void shouldFailWhenNoLibraryFound() {
+    var nonExistentId = UUID.randomUUID();
+
     assertThrows(
-        LibraryNotFoundException.class,
-        () -> libraryManagementService.scanLibrary(UUID.randomUUID()));
+        LibraryNotFoundException.class, () -> libraryManagementService.scanLibrary(nonExistentId));
   }
 
   @Test
@@ -258,9 +259,11 @@ public class LibraryManagementServiceTest {
     var movieFile = movieFolder.resolve("Test Movie (2024).mkv");
     Files.createFile(movieFile);
 
+    var libraryId = otherTypeLibrary.getId();
+
     assertThrows(
         IllegalStateException.class,
-        () -> libraryManagementService.processDiscoveredFile(otherTypeLibrary.getId(), movieFile));
+        () -> libraryManagementService.processDiscoveredFile(libraryId, movieFile));
   }
 
   @Test
@@ -488,9 +491,11 @@ public class LibraryManagementServiceTest {
     var rootPath = createRootLibraryDirectory();
     var moviePath = createMovieFile(rootPath, "Test", "Test (2024).mkv");
 
+    var nonExistentId = UUID.randomUUID();
+
     assertThrows(
         LibraryNotFoundException.class,
-        () -> libraryManagementService.processDiscoveredFile(UUID.randomUUID(), moviePath));
+        () -> libraryManagementService.processDiscoveredFile(nonExistentId, moviePath));
   }
 
   @Test
@@ -803,9 +808,11 @@ public class LibraryManagementServiceTest {
     @Test
     @DisplayName("Should not publish LibraryRemovedEvent when library does not exist")
     void shouldNotPublishLibraryRemovedEventWhenLibraryNotFound() {
+      var nonExistentId = UUID.randomUUID();
+
       assertThrows(
           LibraryNotFoundException.class,
-          () -> libraryManagementService.removeLibrary(UUID.randomUUID()));
+          () -> libraryManagementService.removeLibrary(nonExistentId));
 
       var events = capturingEventPublisher.getEventsOfType(LibraryRemovedEvent.class);
       assertThat(events).isEmpty();
