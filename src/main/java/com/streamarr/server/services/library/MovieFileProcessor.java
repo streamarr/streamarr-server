@@ -95,6 +95,13 @@ public class MovieFileProcessor {
       return Optional.empty();
     }
 
+    if (result.get().year() == null) {
+      var folderResult = parseFolderName(mediaFile);
+      if (folderResult.isPresent() && folderResult.get().year() != null) {
+        result = folderResult;
+      }
+    }
+
     var externalIdResult = externalIdVideoFileMetadataParser.parse(mediaFile.getFilename());
     if (externalIdResult.isEmpty()) {
       return result;
@@ -107,6 +114,17 @@ public class MovieFileProcessor {
             .externalId(externalIdResult.get().externalId())
             .externalSource(externalIdResult.get().externalSource())
             .build());
+  }
+
+  private Optional<VideoFileParserResult> parseFolderName(MediaFile mediaFile) {
+    var path = FilepathCodec.decode(mediaFile.getFilepathUri());
+    var parent = path.getParent();
+
+    if (parent == null || parent.getFileName() == null) {
+      return Optional.empty();
+    }
+
+    return defaultVideoFileMetadataParser.parse(parent.getFileName().toString());
   }
 
   private void enrichMovieMetadata(
