@@ -1,6 +1,8 @@
 package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatNoException;
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertTimeout;
 
 import com.streamarr.server.config.LibraryScanProperties;
@@ -152,30 +154,30 @@ class DirectoryWatchingServiceTest {
         LibraryFixtureCreator.buildFakeLibrary().toBuilder().filepath(tempDir.toString()).build());
     var slowService = buildSlowSetupService();
 
-    assertTimeout(Duration.ofMillis(500), () -> slowService.afterPropertiesSet());
+    assertTimeout(Duration.ofMillis(500), slowService::afterPropertiesSet);
   }
 
   @Test
   @DisplayName("Should not propagate exception when watcher setup fails on library added")
-  void shouldNotPropagateExceptionWhenSetupFailsOnLibraryAdded() throws InterruptedException {
+  void shouldNotPropagateExceptionWhenSetupFailsOnLibraryAdded() {
     var failingService = buildFailingSetupService();
     var event = new LibraryAddedEvent(UUID.randomUUID(), tempDir.toString());
 
-    failingService.onLibraryAdded(event);
+    assertThatNoException().isThrownBy(() -> failingService.onLibraryAdded(event));
 
-    Thread.sleep(50);
+    await().pollDelay(Duration.ofMillis(50)).until(() -> true);
   }
 
   @Test
   @DisplayName("Should not propagate exception when watcher setup fails on initialization")
-  void shouldNotPropagateExceptionWhenSetupFailsOnInitialization() throws InterruptedException {
+  void shouldNotPropagateExceptionWhenSetupFailsOnInitialization() {
     fakeLibraryRepository.save(
         LibraryFixtureCreator.buildFakeLibrary().toBuilder().filepath(tempDir.toString()).build());
     var failingService = buildFailingSetupService();
 
-    failingService.afterPropertiesSet();
+    assertThatNoException().isThrownBy(failingService::afterPropertiesSet);
 
-    Thread.sleep(50);
+    await().pollDelay(Duration.ofMillis(50)).until(() -> true);
   }
 
   private DirectoryWatchingService buildFailingSetupService() {
@@ -201,11 +203,7 @@ class DirectoryWatchingServiceTest {
         null) {
       @Override
       public void setup() throws IOException {
-        try {
-          Thread.sleep(5_000);
-        } catch (InterruptedException e) {
-          Thread.currentThread().interrupt();
-        }
+        await().pollDelay(Duration.ofMillis(5_000)).until(() -> true);
       }
     };
   }

@@ -57,7 +57,7 @@ class HlsStreamingSmokeTest {
     try {
       var process = new ProcessBuilder("ffmpeg", "-version").start();
       return process.waitFor() == 0;
-    } catch (Exception e) {
+    } catch (Exception _) {
       return false;
     }
   }
@@ -129,7 +129,7 @@ class HlsStreamingSmokeTest {
       streamingService
           .getAllSessions()
           .forEach(s -> streamingService.destroySession(s.getSessionId()));
-    } catch (Exception e) {
+    } catch (Exception _) {
       // best-effort cleanup
     }
     segmentStore.shutdown();
@@ -223,8 +223,7 @@ class HlsStreamingSmokeTest {
     assertThat(segmentReady).isTrue();
 
     var segmentData = segmentStore.readSegment(session.getSessionId(), "segment0.ts");
-    assertThat(segmentData).isNotNull();
-    assertThat(segmentData.length).isGreaterThan(0);
+    assertThat(segmentData).isNotNull().hasSizeGreaterThan(0);
     assertThat(segmentData[0]).isEqualTo((byte) 0x47);
   }
 
@@ -235,8 +234,7 @@ class HlsStreamingSmokeTest {
     var session = streamingService.createSession(file.getId(), defaultOptions());
     var playlist = playlistService.generateMasterPlaylist(session);
 
-    assertThat(playlist).startsWith("#EXTM3U\n");
-    assertThat(playlist).doesNotContain("\uFEFF");
+    assertThat(playlist).startsWith("#EXTM3U\n").doesNotContain("\uFEFF");
   }
 
   @Test
@@ -246,11 +244,12 @@ class HlsStreamingSmokeTest {
     var session = streamingService.createSession(file.getId(), defaultOptions());
     var playlist = playlistService.generateMasterPlaylist(session);
 
-    assertThat(playlist).contains("#EXT-X-STREAM-INF:");
-    assertThat(playlist).contains("BANDWIDTH=");
-    assertThat(playlist).contains("RESOLUTION=320x180");
-    assertThat(playlist).contains("CODECS=");
-    assertThat(playlist).contains("stream.m3u8");
+    assertThat(playlist)
+        .contains("#EXT-X-STREAM-INF:")
+        .contains("BANDWIDTH=")
+        .contains("RESOLUTION=320x180")
+        .contains("CODECS=")
+        .contains("stream.m3u8");
   }
 
   @Test
@@ -260,14 +259,15 @@ class HlsStreamingSmokeTest {
     var session = streamingService.createSession(file.getId(), defaultOptions());
     var playlist = playlistService.generateMediaPlaylist(session);
 
-    assertThat(playlist).startsWith("#EXTM3U\n");
-    assertThat(playlist).contains("#EXT-X-VERSION:3");
-    assertThat(playlist).contains("#EXT-X-TARGETDURATION:6");
-    assertThat(playlist).contains("#EXT-X-MEDIA-SEQUENCE:0");
-    assertThat(playlist).contains("#EXT-X-PLAYLIST-TYPE:VOD");
-    assertThat(playlist).contains("#EXT-X-ENDLIST");
-    assertThat(playlist).doesNotContain("#EXT-X-STREAM-INF");
-    assertThat(playlist).doesNotContain("#EXT-X-MAP");
+    assertThat(playlist)
+        .startsWith("#EXTM3U\n")
+        .contains("#EXT-X-VERSION:3")
+        .contains("#EXT-X-TARGETDURATION:6")
+        .contains("#EXT-X-MEDIA-SEQUENCE:0")
+        .contains("#EXT-X-PLAYLIST-TYPE:VOD")
+        .contains("#EXT-X-ENDLIST")
+        .doesNotContain("#EXT-X-STREAM-INF")
+        .doesNotContain("#EXT-X-MAP");
   }
 
   @Test

@@ -12,13 +12,13 @@ import org.junit.jupiter.api.TestFactory;
 
 @Tag("UnitTest")
 @DisplayName("Season Path Extraction Tests")
-public class SeasonPathMetadataParserTest {
+class SeasonPathMetadataParserTest {
 
   private final SeasonPathMetadataParser seasonPathMetadataParser = new SeasonPathMetadataParser();
 
   @Nested
   @DisplayName("Should successfully extract season number")
-  public class SuccessfulExtractionTests {
+  class SuccessfulExtractionTests {
 
     record TestCase(String filename, int seasonNumber, boolean isSeasonDirectory) {}
 
@@ -63,7 +63,7 @@ public class SeasonPathMetadataParserTest {
 
   @Nested
   @DisplayName("Should fail to extract season number")
-  public class UnsuccessfulExtractionTests {
+  class UnsuccessfulExtractionTests {
 
     record TestCase(String filename, boolean isSeasonDirectory) {}
 

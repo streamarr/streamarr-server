@@ -111,7 +111,9 @@ class LocalFfprobeServiceTest {
 
     var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
 
-    assertThatThrownBy(() -> service.probe(Path.of("/test/audio-only.mkv")))
+    var filePath = Path.of("/test/audio-only.mkv");
+
+    assertThatThrownBy(() -> service.probe(filePath))
         .isInstanceOf(TranscodeException.class)
         .hasMessageContaining("video stream");
   }
@@ -121,7 +123,9 @@ class LocalFfprobeServiceTest {
   void shouldThrowWhenFfprobeProcessFails() {
     var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess("", 1));
 
-    assertThatThrownBy(() -> service.probe(Path.of("/test/movie.mkv")))
+    var filePath = Path.of("/test/movie.mkv");
+
+    assertThatThrownBy(() -> service.probe(filePath))
         .isInstanceOf(FfmpegNotAvailableException.class);
   }
 

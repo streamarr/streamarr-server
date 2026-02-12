@@ -149,15 +149,15 @@ class SeasonEpisodePersistenceIT extends AbstractIntegrationTest {
             .library(savedLibrary)
             .build());
 
-    assertThatThrownBy(
-            () ->
-                seasonRepository.saveAndFlush(
-                    Season.builder()
-                        .title("Duplicate Season")
-                        .seasonNumber(99)
-                        .series(savedSeries)
-                        .library(savedLibrary)
-                        .build()))
+    var duplicateSeason =
+        Season.builder()
+            .title("Duplicate Season")
+            .seasonNumber(99)
+            .series(savedSeries)
+            .library(savedLibrary)
+            .build();
+
+    assertThatThrownBy(() -> seasonRepository.saveAndFlush(duplicateSeason))
         .isInstanceOf(DataIntegrityViolationException.class);
   }
 
@@ -181,15 +181,15 @@ class SeasonEpisodePersistenceIT extends AbstractIntegrationTest {
             .library(savedLibrary)
             .build());
 
-    assertThatThrownBy(
-            () ->
-                episodeRepository.saveAndFlush(
-                    Episode.builder()
-                        .title("Duplicate Episode")
-                        .episodeNumber(1)
-                        .season(season)
-                        .library(savedLibrary)
-                        .build()))
+    var duplicateEpisode =
+        Episode.builder()
+            .title("Duplicate Episode")
+            .episodeNumber(1)
+            .season(season)
+            .library(savedLibrary)
+            .build();
+
+    assertThatThrownBy(() -> episodeRepository.saveAndFlush(duplicateEpisode))
         .isInstanceOf(DataIntegrityViolationException.class);
   }
 

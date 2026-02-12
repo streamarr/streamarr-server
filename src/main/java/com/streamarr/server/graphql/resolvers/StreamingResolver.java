@@ -84,7 +84,7 @@ public class StreamingResolver {
   private UUID parseUuid(String id) {
     try {
       return UUID.fromString(id);
-    } catch (IllegalArgumentException ex) {
+    } catch (IllegalArgumentException _) {
       throw new InvalidIdException(id);
     }
   }

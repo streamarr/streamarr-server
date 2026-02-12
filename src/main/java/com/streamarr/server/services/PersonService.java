@@ -7,7 +7,6 @@ import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -27,9 +26,7 @@ public class PersonService {
       return List.of();
     }
 
-    return persons.stream()
-        .map(p -> findOrCreatePerson(p, imageSourcesBySourceId))
-        .collect(Collectors.toList());
+    return persons.stream().map(p -> findOrCreatePerson(p, imageSourcesBySourceId)).toList();
   }
 
   private Person findOrCreatePerson(

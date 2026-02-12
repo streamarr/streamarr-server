@@ -221,7 +221,9 @@ class StreamingResolverTest {
     }
 
     @Override
-    public void destroySession(UUID sessionId) {}
+    public void destroySession(UUID sessionId) {
+      // no-op for test fake
+    }
 
     @Override
     public Collection<StreamSession> getAllSessions() {
@@ -234,6 +236,8 @@ class StreamingResolverTest {
     }
 
     @Override
-    public void resumeSessionIfNeeded(UUID sessionId, String segmentName) {}
+    public void resumeSessionIfNeeded(UUID sessionId, String segmentName) {
+      // no-op for test fake
+    }
   }
 }

@@ -82,8 +82,8 @@ class QualityLadderServiceTest {
     var variants = service.generateVariants(probe, options);
 
     assertThat(variants)
+        .isNotEmpty()
         .allSatisfy(v -> assertThat(v.videoBitrate()).isLessThanOrEqualTo(2_000_000));
-    assertThat(variants).isNotEmpty();
   }
 
   @Test

@@ -145,6 +145,8 @@ class StreamControllerIT extends AbstractIntegrationTest {
     }
 
     @Override
-    public void resumeSessionIfNeeded(UUID sessionId, String segmentName) {}
+    public void resumeSessionIfNeeded(UUID sessionId, String segmentName) {
+      // no-op for test fake
+    }
   }
 }

@@ -39,7 +39,7 @@ public class OrphanedMediaFileCleanupService {
               .findById(event.libraryId())
               .orElseThrow(() -> new LibraryNotFoundException(event.libraryId()));
       transactionTemplate.executeWithoutResult(status -> cleanupOrphanedFiles(library));
-    } catch (LibraryNotFoundException e) {
+    } catch (LibraryNotFoundException _) {
       log.warn("Library {} was deleted before orphaned file cleanup could run.", event.libraryId());
     } catch (Exception e) {
       log.error("Orphaned file cleanup failed for library: {}", event.libraryId(), e);

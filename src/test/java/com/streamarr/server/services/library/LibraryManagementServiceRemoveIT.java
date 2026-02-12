@@ -55,7 +55,7 @@ import org.springframework.test.context.bean.override.convention.TestBean;
 
 @Tag("IntegrationTest")
 @DisplayName("Library Removal Integration Tests")
-public class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
+class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
 
   @Autowired private LibraryManagementService libraryManagementService;
 
@@ -300,14 +300,16 @@ public class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
     libraryToSave.setStatus(LibraryStatus.SCANNING);
     var library = libraryRepository.saveAndFlush(libraryToSave);
 
-    assertThatThrownBy(() -> libraryManagementService.removeLibrary(library.getId()))
+    var libraryId = library.getId();
+
+    assertThatThrownBy(() -> libraryManagementService.removeLibrary(libraryId))
         .isInstanceOf(LibraryScanInProgressException.class)
-        .hasMessageContaining(library.getId().toString());
+        .hasMessageContaining(libraryId.toString());
   }
 
   @Test
   @DisplayName("Should allow only one removal when concurrent attempts occur")
-  void shouldAllowOnlyOneRemovalWhenConcurrentAttemptsOccur() throws Exception {
+  void shouldAllowOnlyOneRemovalWhenConcurrentAttemptsOccur() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     movieRepository.saveAndFlush(Movie.builder().title("Movie").library(library).build());
 
@@ -320,7 +322,7 @@ public class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
           try {
             barrier.await();
             libraryManagementService.removeLibrary(library.getId());
-          } catch (LibraryNotFoundException | ObjectOptimisticLockingFailureException e) {
+          } catch (LibraryNotFoundException | ObjectOptimisticLockingFailureException _) {
             concurrentDeleteFailures.incrementAndGet();
           } catch (Exception e) {
             unexpectedExceptions.add(e);

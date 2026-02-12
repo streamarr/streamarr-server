@@ -39,7 +39,7 @@ import org.springframework.test.context.bean.override.convention.TestBean;
 
 @Tag("IntegrationTest")
 @DisplayName("Series Scanning Integration Tests")
-public class SeriesScanningIT extends AbstractIntegrationTest {
+class SeriesScanningIT extends AbstractIntegrationTest {
 
   private static final WireMockServer wireMock = new WireMockServer(wireMockConfig().dynamicPort());
 
@@ -150,8 +150,7 @@ public class SeriesScanningIT extends AbstractIntegrationTest {
     assertThat(episodeRepository.findBySeasonId(season.getId())).hasSize(7);
 
     var mediaFiles = mediaFileRepository.findByLibraryId(library.getId());
-    assertThat(mediaFiles).hasSize(2);
-    assertThat(mediaFiles).allMatch(mf -> mf.getStatus() == MediaFileStatus.MATCHED);
+    assertThat(mediaFiles).hasSize(2).allMatch(mf -> mf.getStatus() == MediaFileStatus.MATCHED);
 
     wireMock.verify(1, getRequestedFor(urlPathEqualTo("/tv/1396")));
     wireMock.verify(1, getRequestedFor(urlPathEqualTo("/tv/1396/season/1")));

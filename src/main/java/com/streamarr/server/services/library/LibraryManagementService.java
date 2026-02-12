@@ -138,7 +138,7 @@ public class LibraryManagementService implements ActiveScanChecker {
       if (!Files.isDirectory(path)) {
         throw new InvalidLibraryPathException(filepath, "path is not a directory");
       }
-    } catch (SecurityException e) {
+    } catch (SecurityException _) {
       throw new LibraryPathPermissionDeniedException(filepath);
     }
   }

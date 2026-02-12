@@ -16,7 +16,7 @@ import org.junit.jupiter.api.TestFactory;
 
 @Tag("UnitTest")
 @DisplayName("Episode Path Metadata Parsing Tests")
-public class EpisodePathMetadataParserTest {
+class EpisodePathMetadataParserTest {
 
   private final EpisodeRegexFixtures episodeRegexFixtures = new EpisodeRegexFixtures();
   private final MetadataParser<EpisodePathResult> episodePathExtractionService =
@@ -24,7 +24,7 @@ public class EpisodePathMetadataParserTest {
 
   @Nested
   @DisplayName("Should successfully extract everything: series name, season, and episode")
-  public class SuccessfulExtractionTests {
+  class SuccessfulExtractionTests {
 
     record TestCase(String filename, String seriesName, int season, int episode) {}
 
@@ -111,7 +111,7 @@ public class EpisodePathMetadataParserTest {
 
   @Nested
   @DisplayName("Should successfully extract series name and episode")
-  public class SuccessfulNameAndEpisodeTests {
+  class SuccessfulNameAndEpisodeTests {
 
     record TestCase(String filename, String seriesName, int episode) {}
 
@@ -173,7 +173,7 @@ public class EpisodePathMetadataParserTest {
 
   @Nested
   @DisplayName("Should successfully extract series name and date")
-  public class SuccessfulDateExtractionTests {
+  class SuccessfulDateExtractionTests {
 
     record TestCase(String filename, String seriesName, LocalDate date) {}
 
@@ -227,7 +227,7 @@ public class EpisodePathMetadataParserTest {
 
   @Nested
   @DisplayName("Should successfully extract season and episode without series name")
-  public class SuccessfulSeasonEpisodeTests {
+  class SuccessfulSeasonEpisodeTests {
 
     record TestCase(String filename, int season, int episode) {}
 
@@ -275,7 +275,7 @@ public class EpisodePathMetadataParserTest {
 
   @Nested
   @DisplayName("Should successfully extract only episode number")
-  public class SuccessfulEpisodeTests {
+  class SuccessfulEpisodeTests {
 
     record TestCase(String filename, int episode) {}
 
@@ -323,7 +323,7 @@ public class EpisodePathMetadataParserTest {
 
   @Nested
   @DisplayName("Should successfully extract ending episode")
-  public class SuccessfulMultiEpisodeExtractionTests {
+  class SuccessfulMultiEpisodeExtractionTests {
 
     record TestCase(String filename, String seriesName, int endingEpisode) {}
 
@@ -389,7 +389,7 @@ public class EpisodePathMetadataParserTest {
 
   @Nested
   @DisplayName("Should not extract ending episode")
-  public class FailedMultiEpisodeExtractionTests {
+  class FailedMultiEpisodeExtractionTests {
 
     record TestCase(String filename, int season, int episode) {}
 
@@ -424,11 +424,11 @@ public class EpisodePathMetadataParserTest {
 
   @Nested
   @DisplayName("Should correctly validate season number boundaries")
-  public class SeasonValidationBoundaryTests {
+  class SeasonValidationBoundaryTests {
 
     @Nested
     @DisplayName("Valid season numbers should succeed")
-    public class ValidSeasonNumbers {
+    class ValidSeasonNumbers {
 
       record TestCase(String filename, int season, int episode) {}
 
@@ -457,7 +457,7 @@ public class EpisodePathMetadataParserTest {
 
     @Nested
     @DisplayName("Invalid season numbers should fail")
-    public class InvalidSeasonNumbers {
+    class InvalidSeasonNumbers {
 
       record TestCase(String filename) {}
 
@@ -483,7 +483,7 @@ public class EpisodePathMetadataParserTest {
 
   @Nested
   @DisplayName("Should fail extraction and return empty optional")
-  public class FailedExtractionTests {
+  class FailedExtractionTests {
 
     record TestCase(String filename) {}
 

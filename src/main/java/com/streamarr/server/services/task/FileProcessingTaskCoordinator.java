@@ -157,7 +157,7 @@ public class FileProcessingTaskCoordinator {
   private static String resolveHostname() {
     try {
       return InetAddress.getLocalHost().getHostName();
-    } catch (Exception e) {
+    } catch (Exception _) {
       return "unknown";
     }
   }

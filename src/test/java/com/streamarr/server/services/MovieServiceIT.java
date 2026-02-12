@@ -24,7 +24,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 @Tag("IntegrationTest")
 @DisplayName("Movie Service Integration Tests")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-public class MovieServiceIT extends AbstractIntegrationTest {
+class MovieServiceIT extends AbstractIntegrationTest {
 
   @Autowired private MovieRepository movieRepository;
 
@@ -67,7 +67,7 @@ public class MovieServiceIT extends AbstractIntegrationTest {
     var filter = filterForLibrary(savedLibraryA);
     var movies = movieService.getMoviesWithFilter(1, null, 0, null, filter);
 
-    assertThat(movies.getEdges().size()).isEqualTo(1);
+    assertThat(movies.getEdges()).hasSize(1);
   }
 
   @Test
@@ -81,12 +81,12 @@ public class MovieServiceIT extends AbstractIntegrationTest {
 
     var endCursor = firstPageMovies.getPageInfo().getEndCursor();
 
-    assertThat(firstPageMovies.getEdges().size()).isEqualTo(1);
+    assertThat(firstPageMovies.getEdges()).hasSize(1);
 
     var secondPageMovies =
         movieService.getMoviesWithFilter(1, endCursor.getValue(), 0, null, filter);
 
-    assertThat(secondPageMovies.getEdges().size()).isEqualTo(1);
+    assertThat(secondPageMovies.getEdges()).hasSize(1);
 
     var movie1 = firstPageMovies.getEdges().get(0);
     var movie2 = secondPageMovies.getEdges().get(0);
@@ -105,12 +105,12 @@ public class MovieServiceIT extends AbstractIntegrationTest {
 
     var endCursor = firstPageMovies.getPageInfo().getEndCursor();
 
-    assertThat(firstPageMovies.getEdges().size()).isEqualTo(2);
+    assertThat(firstPageMovies.getEdges()).hasSize(2);
 
     var secondPageMovies =
         movieService.getMoviesWithFilter(0, null, 1, endCursor.getValue(), filter);
 
-    assertThat(secondPageMovies.getEdges().size()).isEqualTo(1);
+    assertThat(secondPageMovies.getEdges()).hasSize(1);
 
     var movie1 = firstPageMovies.getEdges().get(0);
     var movie2 = secondPageMovies.getEdges().get(0);

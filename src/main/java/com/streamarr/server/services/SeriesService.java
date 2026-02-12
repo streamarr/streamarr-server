@@ -18,7 +18,6 @@ import graphql.relay.Edge;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -152,14 +151,14 @@ public class SeriesService {
   private List<Edge<Series>> mapItemsToEdges(
       List<Series> seriesList, MediaPaginationOptions options) {
     return seriesList.stream()
-        .map(
+        .<Edge<Series>>map(
             result -> {
               var orderByValue = getOrderByValue(options.getMediaFilter(), result);
               var newCursor = cursorUtil.encodeMediaCursor(options, result.getId(), orderByValue);
 
               return new DefaultEdge<>(result, newCursor);
             })
-        .collect(Collectors.toList());
+        .toList();
   }
 
   private Object getOrderByValue(MediaFilter filter, Series series) {

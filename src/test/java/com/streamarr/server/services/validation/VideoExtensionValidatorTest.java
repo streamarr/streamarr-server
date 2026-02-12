@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 
 @Tag("UnitTest")
 @DisplayName("Video Extension Validation Tests")
-public class VideoExtensionValidatorTest {
+class VideoExtensionValidatorTest {
 
   private final VideoExtensionValidator videoExtensionValidator = new VideoExtensionValidator();
 

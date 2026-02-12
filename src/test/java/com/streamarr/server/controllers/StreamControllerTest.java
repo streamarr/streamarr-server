@@ -29,7 +29,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -38,8 +37,6 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 class StreamControllerTest {
 
   private static final UUID SESSION_ID = UUID.randomUUID();
-  private static final MediaType HLS_MEDIA_TYPE =
-      MediaType.parseMediaType("application/vnd.apple.mpegurl");
 
   private MockMvc mockMvc;
   private StubStreamingService streamingService;
@@ -426,7 +423,9 @@ class StreamControllerTest {
     }
 
     @Override
-    public void destroySession(UUID sessionId) {}
+    public void destroySession(UUID sessionId) {
+      // no-op for test fake
+    }
 
     @Override
     public Collection<StreamSession> getAllSessions() {
@@ -439,6 +438,8 @@ class StreamControllerTest {
     }
 
     @Override
-    public void resumeSessionIfNeeded(UUID sessionId, String segmentName) {}
+    public void resumeSessionIfNeeded(UUID sessionId, String segmentName) {
+      // no-op for test fake
+    }
   }
 }

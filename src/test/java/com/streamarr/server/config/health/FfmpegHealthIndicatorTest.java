@@ -124,6 +124,8 @@ class FfmpegHealthIndicatorTest {
     }
 
     @Override
-    public void destroy() {}
+    public void destroy() {
+      // no-op for test fake
+    }
   }
 }

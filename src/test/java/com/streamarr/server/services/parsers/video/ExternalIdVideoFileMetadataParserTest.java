@@ -13,14 +13,14 @@ import org.junit.jupiter.api.TestFactory;
 
 @Tag("UnitTest")
 @DisplayName("External Id Video File Metadata Parsing Tests")
-public class ExternalIdVideoFileMetadataParserTest {
+class ExternalIdVideoFileMetadataParserTest {
 
   private final ExternalIdVideoFileMetadataParser externalIdVideoFileMetadataParser =
       new ExternalIdVideoFileMetadataParser();
 
   @Nested
   @DisplayName("Should successfully extract both id and source from filename")
-  public class SuccessfulExternalIdAndSourceExtractionTests {
+  class SuccessfulExternalIdAndSourceExtractionTests {
 
     record TestCase(ExternalSourceType source, String id, String filename) {}
 
@@ -116,7 +116,7 @@ public class ExternalIdVideoFileMetadataParserTest {
 
   @Nested
   @DisplayName("Should fail to extract both id and source from filename")
-  public class ShouldFailToExtractIdAndSource {
+  class ShouldFailToExtractIdAndSource {
 
     record TestCase(String testName, String filename) {}
 

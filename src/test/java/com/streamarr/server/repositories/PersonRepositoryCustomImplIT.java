@@ -12,7 +12,7 @@ import org.springframework.data.domain.AuditorAware;
 
 @Tag("IntegrationTest")
 @DisplayName("PersonRepositoryCustomImpl Integration Tests")
-public class PersonRepositoryCustomImplIT extends AbstractIntegrationTest {
+class PersonRepositoryCustomImplIT extends AbstractIntegrationTest {
 
   @Autowired private PersonRepository personRepository;
 
