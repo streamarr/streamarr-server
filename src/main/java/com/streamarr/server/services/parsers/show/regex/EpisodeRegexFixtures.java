@@ -31,12 +31,13 @@ public class EpisodeRegexFixtures {
           EpisodeRegexContainer.DateRegex.builder()
               // Extracts date from filename. Ex -> "PBS NewsHour 2020-04-17"
               .expression(
-                  ".*(?<year>[0-9]{4})[\\\\._ -](?<month>[0-9]{2})[\\\\._ -](?<day>[0-9]{2})")
+                  ".*(?<year>[0-9]{4})[\\\\._ -](?<month>[0-9]{2})[\\\\._ -](?<day>[0-9]{2})[^\\\\/]*")
               .exampleMatch("PBS NewsHour 2020-04-17")
               .build(),
           EpisodeRegexContainer.DateRegex.builder()
               // Extracts date from filename. Ex -> "PBS NewsHour 17-04-2020"
-              .expression(".*(?<day>[0-9]{2})[._ -](?<month>[0-9]{2})[._ -](?<year>[0-9]{4})")
+              .expression(
+                  ".*(?<day>[0-9]{2})[._ -](?<month>[0-9]{2})[._ -](?<year>[0-9]{4})[^\\\\/]*")
               .exampleMatch("PBS NewsHour 17-04-2020")
               .build(),
           EpisodeRegexContainer.NamedGroupRegex.builder()

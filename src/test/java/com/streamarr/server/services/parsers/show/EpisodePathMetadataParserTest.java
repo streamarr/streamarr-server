@@ -195,7 +195,18 @@ public class EpisodePathMetadataParserTest {
               new TestCase("/server/1996.11.14", null, LocalDate.of(1996, 11, 14)),
 
               // Multi-word series name
-              new TestCase("/server/ABC News 2018-03-24", "ABC News", LocalDate.of(2018, 3, 24)))
+              new TestCase("/server/ABC News 2018-03-24", "ABC News", LocalDate.of(2018, 3, 24)),
+
+              // Filenames with file extensions (real-world paths from library scanning)
+              new TestCase(
+                  "/tv/Jeopardy!/Jeopardy! - 2025-11-25.mkv",
+                  "Jeopardy!",
+                  LocalDate.of(2025, 11, 25)),
+              new TestCase(
+                  "/tv/Daily Show/Daily Show 2020.04.17.720p.mkv",
+                  "Daily Show",
+                  LocalDate.of(2020, 4, 17)),
+              new TestCase("/tv/anything_14.11.1996.avi", "anything", LocalDate.of(1996, 11, 14)))
           .map(
               testCase ->
                   DynamicTest.dynamicTest(
