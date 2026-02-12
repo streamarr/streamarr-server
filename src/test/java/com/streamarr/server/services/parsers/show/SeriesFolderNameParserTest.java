@@ -3,8 +3,12 @@ package com.streamarr.server.services.parsers.show;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.ExternalSourceType;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 @DisplayName("Series Folder Name Parser Tests")
 class SeriesFolderNameParserTest {
@@ -77,35 +81,22 @@ class SeriesFolderNameParserTest {
     assertThat(result.externalSource()).isEqualTo(ExternalSourceType.IMDB);
   }
 
-  @Test
-  @DisplayName("Should handle space separator in external ID tag")
-  void shouldHandleSpaceSeparatorInExternalIdTag() {
-    var result = parser.parse("Show Name [imdb tt1234567]");
-
-    assertThat(result.title()).isEqualTo("Show Name");
-    assertThat(result.year()).isNull();
-    assertThat(result.externalId()).isEqualTo("tt1234567");
-    assertThat(result.externalSource()).isEqualTo(ExternalSourceType.IMDB);
+  static Stream<Arguments> externalIdSeparatorAndBracketVariants() {
+    return Stream.of(
+        Arguments.of("Show Name [imdb tt1234567]", "Show Name", null, "space separator"),
+        Arguments.of("Show (2020) (imdb-tt1234567)", "Show", "2020", "parenthesis brackets"),
+        Arguments.of("Show [imdb=tt1234567]", "Show", null, "equals separator"));
   }
 
-  @Test
-  @DisplayName("Should extract external ID from parenthesis brackets")
-  void shouldExtractExternalIdFromParenthesisBrackets() {
-    var result = parser.parse("Show (2020) (imdb-tt1234567)");
+  @ParameterizedTest(name = "Should extract external ID with {3}")
+  @MethodSource("externalIdSeparatorAndBracketVariants")
+  @DisplayName("Should extract external ID across separator and bracket variants")
+  void shouldExtractExternalIdAcrossSeparatorAndBracketVariants(
+      String folderName, String expectedTitle, String expectedYear, String scenario) {
+    var result = parser.parse(folderName);
 
-    assertThat(result.title()).isEqualTo("Show");
-    assertThat(result.year()).isEqualTo("2020");
-    assertThat(result.externalId()).isEqualTo("tt1234567");
-    assertThat(result.externalSource()).isEqualTo(ExternalSourceType.IMDB);
-  }
-
-  @Test
-  @DisplayName("Should extract external ID with equals separator")
-  void shouldExtractExternalIdWithEqualsSeparator() {
-    var result = parser.parse("Show [imdb=tt1234567]");
-
-    assertThat(result.title()).isEqualTo("Show");
-    assertThat(result.year()).isNull();
+    assertThat(result.title()).isEqualTo(expectedTitle);
+    assertThat(result.year()).isEqualTo(expectedYear);
     assertThat(result.externalId()).isEqualTo("tt1234567");
     assertThat(result.externalSource()).isEqualTo(ExternalSourceType.IMDB);
   }

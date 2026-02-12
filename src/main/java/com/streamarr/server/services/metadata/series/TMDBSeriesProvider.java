@@ -294,7 +294,7 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
             s -> {
               try {
                 return LocalDate.parse(s.getAirDate()).getYear() == parsedSeasonNumber;
-              } catch (DateTimeParseException e) {
+              } catch (DateTimeParseException _) {
                 return false;
               }
             })

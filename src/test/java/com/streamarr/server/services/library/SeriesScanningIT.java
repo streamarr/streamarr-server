@@ -407,8 +407,7 @@ public class SeriesScanningIT extends AbstractIntegrationTest {
     assertThat(seasonRepository.findAll().getFirst().getSeasonNumber()).isEqualTo(10);
 
     var mediaFiles = mediaFileRepository.findByLibraryId(library.getId());
-    assertThat(mediaFiles).hasSize(2);
-    assertThat(mediaFiles).allMatch(mf -> mf.getStatus() == MediaFileStatus.MATCHED);
+    assertThat(mediaFiles).hasSize(2).allMatch(mf -> mf.getStatus() == MediaFileStatus.MATCHED);
 
     wireMock.verify(1, getRequestedFor(urlPathEqualTo("/tv/1428")));
   }
