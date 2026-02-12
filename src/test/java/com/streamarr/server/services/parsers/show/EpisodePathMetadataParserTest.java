@@ -299,6 +299,10 @@ class EpisodePathMetadataParserTest {
               new TestCase("/season 1/title_part_1.avi", 1),
               new TestCase("/season 1/title.part.2.avi", 2),
               new TestCase("/season 1/title-part-3.mkv", 3),
+              new TestCase("/Season 1/The.Night.Of.Part.7.1080p.BluRay.x264-DEPTH.mkv", 7),
+              new TestCase("/Season 1/Alias.Grace.Part.4.1080p.WEBRip.x264-aAF-xpost.mkv", 4),
+              new TestCase("/Season 1/Title.PART.5.720p.mkv", 5),
+              new TestCase("/Season 1/Title.Pt.3.mkv", 3),
 
               // E-only and Episode X patterns with full file paths
               new TestCase("/media/Show/Season 1/Show.E01.mkv", 1),

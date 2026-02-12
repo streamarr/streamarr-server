@@ -78,7 +78,8 @@ public class EpisodeRegexFixtures {
               .build(),
           EpisodeRegexContainer.IndexedGroupRegex.builder()
               // Extracts episode from part number. Ex -> "/season 1/title_part_1.avi"
-              .expression(".*[\\\\/._ -]p(?:ar)?t[_. -]()([ivx]+|[0-9]+)([._ -][^\\\\/]*)$")
+              .expression(
+                  ".*[\\\\/._ -][Pp](?:[Aa][Rr])?[Tt][_. -]()([ivx]+|[0-9]+)([._ -][^\\\\/]*)$")
               .exampleMatch("/season 1/title_part_1.avi")
               .build(),
           EpisodeRegexContainer.NamedGroupRegex.builder()
