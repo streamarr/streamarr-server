@@ -232,7 +232,7 @@ public class SeriesFileProcessor {
     var externalIdMutex = mutexFactory.getMutex(searchResult.externalId());
 
     try {
-      externalIdMutex.lock();
+      externalIdMutex.lockInterruptibly();
 
       var seriesOpt =
           seriesService
@@ -275,6 +275,9 @@ public class SeriesFileProcessor {
       mediaFile.setMediaId(episode.getId());
       markAs(mediaFile, MediaFileStatus.MATCHED);
 
+    } catch (InterruptedException ex) {
+      Thread.currentThread().interrupt();
+      log.error("Enrichment interrupted for MediaFile id: {}", mediaFile.getId(), ex);
     } catch (Exception ex) {
       log.error("Failure enriching series metadata for MediaFile id: {}", mediaFile.getId(), ex);
     } finally {

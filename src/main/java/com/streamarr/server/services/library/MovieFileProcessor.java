@@ -133,9 +133,12 @@ public class MovieFileProcessor {
     var externalIdMutex = mutexFactory.getMutex(remoteSearchResult.externalId());
 
     try {
-      externalIdMutex.lock();
+      externalIdMutex.lockInterruptibly();
 
       updateOrSaveEnrichedMovie(library, mediaFile, remoteSearchResult);
+    } catch (InterruptedException ex) {
+      Thread.currentThread().interrupt();
+      log.error("Enrichment interrupted for MediaFile id: {}", mediaFile.getId(), ex);
     } catch (Exception ex) {
       log.error("Failure enriching movie metadata:", ex);
     } finally {
