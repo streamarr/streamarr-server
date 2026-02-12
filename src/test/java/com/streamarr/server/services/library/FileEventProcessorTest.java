@@ -78,7 +78,7 @@ class FileEventProcessorTest {
             .type(MediaType.MOVIE)
             .build();
 
-    var saved = libraryRepository.save(library);
+    libraryRepository.save(library);
     var specialLibrary =
         Library.builder()
             .name("Special Movies")

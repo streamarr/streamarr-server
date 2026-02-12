@@ -22,8 +22,9 @@ class BaseAuditableEntityTest {
     @DisplayName("Should return true when comparing the exact same instance")
     void shouldReturnTrueWhenComparingTheExactSameInstance() {
       var review = Review.builder().build();
+      var sameInstance = review;
 
-      assertThat(review).isEqualTo(review);
+      assertThat(review).isEqualTo(sameInstance);
     }
 
     @Test
