@@ -259,4 +259,32 @@ class FileProcessingTaskCoordinatorTest {
     assertThat(result).isPresent();
     assertThat(result.get().getStatus()).isEqualTo(FileProcessingTaskStatus.FAILED);
   }
+
+  @Test
+  @DisplayName("Should return empty when completing already completed task")
+  void shouldReturnEmptyWhenCompletingAlreadyCompletedTask() {
+    var path = Path.of("/media/movies/AlreadyCompleted (2024).mkv");
+    var libraryId = UUID.randomUUID();
+    coordinator.createTask(path, libraryId);
+    var claimed = coordinator.claimNextTask().orElseThrow();
+    coordinator.complete(claimed.getId());
+
+    var result = coordinator.complete(claimed.getId());
+
+    assertThat(result).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should return empty when failing already failed task")
+  void shouldReturnEmptyWhenFailingAlreadyFailedTask() {
+    var path = Path.of("/media/movies/AlreadyFailed (2024).mkv");
+    var libraryId = UUID.randomUUID();
+    coordinator.createTask(path, libraryId);
+    var claimed = coordinator.claimNextTask().orElseThrow();
+    coordinator.fail(claimed.getId(), "First failure");
+
+    var result = coordinator.fail(claimed.getId(), "Second failure");
+
+    assertThat(result).isEmpty();
+  }
 }

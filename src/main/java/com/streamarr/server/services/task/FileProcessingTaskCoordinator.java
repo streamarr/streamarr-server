@@ -100,45 +100,23 @@ public class FileProcessingTaskCoordinator {
   }
 
   public Optional<FileProcessingTask> complete(UUID taskId) {
-    var optionalTask = repository.findById(taskId);
-    if (optionalTask.isEmpty()) {
-      log.debug("Task already deleted, skipping completion: {}", taskId);
-      return Optional.empty();
-    }
+    var result = repository.completeTask(taskId, clock.instant());
 
-    var task = optionalTask.get();
-    task.setStatus(FileProcessingTaskStatus.COMPLETED);
-    task.setCompletedOn(clock.instant());
-    task.setOwnerInstanceId(null);
-    task.setLeaseExpiresAt(null);
+    result.ifPresentOrElse(
+        task -> log.info("Completed task for: {}", task.getFilepathUri()),
+        () -> log.debug("Task already deleted or not active, skipping completion: {}", taskId));
 
-    repository.save(task);
-
-    log.info("Completed task for: {}", task.getFilepathUri());
-
-    return Optional.of(task);
+    return result;
   }
 
   public Optional<FileProcessingTask> fail(UUID taskId, String errorMessage) {
-    var optionalTask = repository.findById(taskId);
+    var result = repository.failTask(taskId, errorMessage, clock.instant());
 
-    if (optionalTask.isEmpty()) {
-      log.debug("Task already deleted, skipping failure: {}", taskId);
-      return Optional.empty();
-    }
+    result.ifPresentOrElse(
+        task -> log.warn("Failed task for: {} with error: {}", task.getFilepathUri(), errorMessage),
+        () -> log.debug("Task already deleted or not active, skipping failure: {}", taskId));
 
-    var task = optionalTask.get();
-    task.setStatus(FileProcessingTaskStatus.FAILED);
-    task.setErrorMessage(errorMessage);
-    task.setCompletedOn(clock.instant());
-    task.setOwnerInstanceId(null);
-    task.setLeaseExpiresAt(null);
-
-    repository.save(task);
-
-    log.warn("Failed task for: {} with error: {}", task.getFilepathUri(), errorMessage);
-
-    return Optional.of(task);
+    return result;
   }
 
   @Transactional

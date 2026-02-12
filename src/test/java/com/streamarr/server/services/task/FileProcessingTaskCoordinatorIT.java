@@ -256,6 +256,32 @@ class FileProcessingTaskCoordinatorIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should return empty when completing already completed task")
+  void shouldReturnEmptyWhenCompletingAlreadyCompletedTask() {
+    var path = Path.of("/media/movies/AlreadyCompleted (2024).mkv");
+    coordinator.createTask(path, testLibrary.getId());
+    var claimed = coordinator.claimNextTask().orElseThrow();
+    coordinator.complete(claimed.getId());
+
+    var result = coordinator.complete(claimed.getId());
+
+    assertThat(result).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should return empty when failing already failed task")
+  void shouldReturnEmptyWhenFailingAlreadyFailedTask() {
+    var path = Path.of("/media/movies/AlreadyFailed (2024).mkv");
+    coordinator.createTask(path, testLibrary.getId());
+    var claimed = coordinator.claimNextTask().orElseThrow();
+    coordinator.fail(claimed.getId(), "First failure");
+
+    var result = coordinator.fail(claimed.getId(), "Second failure");
+
+    assertThat(result).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should reclaim task when lease expired")
   void shouldReclaimTaskWhenLeaseExpired() {
     var path = Path.of("/media/movies/Orphan (2024).mkv");

@@ -86,6 +86,36 @@ public class FakeFileProcessingTaskRepository implements FileProcessingTaskRepos
   }
 
   @Override
+  public Optional<FileProcessingTask> completeTask(UUID taskId, Instant completedOn) {
+    return Optional.ofNullable(database.get(taskId))
+        .filter(task -> ACTIVE_STATUSES.contains(task.getStatus()))
+        .map(
+            task -> {
+              task.setStatus(FileProcessingTaskStatus.COMPLETED);
+              task.setCompletedOn(completedOn);
+              task.setOwnerInstanceId(null);
+              task.setLeaseExpiresAt(null);
+              return task;
+            });
+  }
+
+  @Override
+  public Optional<FileProcessingTask> failTask(
+      UUID taskId, String errorMessage, Instant completedOn) {
+    return Optional.ofNullable(database.get(taskId))
+        .filter(task -> ACTIVE_STATUSES.contains(task.getStatus()))
+        .map(
+            task -> {
+              task.setStatus(FileProcessingTaskStatus.FAILED);
+              task.setErrorMessage(errorMessage);
+              task.setCompletedOn(completedOn);
+              task.setOwnerInstanceId(null);
+              task.setLeaseExpiresAt(null);
+              return task;
+            });
+  }
+
+  @Override
   public int extendLeases(String ownerInstanceId, Instant newLeaseExpiresAt) {
     var tasks =
         database.values().stream()
