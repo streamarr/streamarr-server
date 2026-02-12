@@ -217,7 +217,7 @@ public class EpisodePathMetadataParser implements MetadataParser<EpisodePathResu
   }
 
   private String cleanSeriesName(String input) {
-    return input.trim().replaceAll("(^[_.-]+)|([_.-]+$)", "").trim();
+    return input.trim().replaceAll("(^[_.-]++)|([_.-]++$)", "").trim();
   }
 
   private EpisodePathResult fillAdditionalInfo(String filename, EpisodePathResult result) {
