@@ -43,8 +43,7 @@ class LocalSegmentStoreTest {
 
     var outputDir = store.getOutputDirectory(sessionId);
 
-    assertThat(outputDir).exists().isDirectory();
-    assertThat(outputDir).hasParentRaw(tempDir);
+    assertThat(outputDir).exists().isDirectory().hasParentRaw(tempDir);
   }
 
   @Test

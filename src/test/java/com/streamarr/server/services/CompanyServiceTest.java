@@ -165,7 +165,8 @@ class CompanyServiceTest {
     var company = Company.builder().name("Warner Bros.").sourceId("wb-123").build();
     var companies = Set.of(company);
 
-    assertThatThrownBy(() -> service.getOrCreateCompanies(companies, Map.of()))
+    Map<String, List<ImageSource>> emptyImageSources = Map.of();
+    assertThatThrownBy(() -> service.getOrCreateCompanies(companies, emptyImageSources))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("not found after upsert");
   }
