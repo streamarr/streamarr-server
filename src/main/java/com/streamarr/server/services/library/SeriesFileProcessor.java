@@ -74,9 +74,8 @@ public class SeriesFileProcessor {
   }
 
   public void process(Library library, MediaFile mediaFile) {
-    var parseResult =
-        episodePathMetadataParser.parse(
-            FilepathCodec.decode(mediaFile.getFilepathUri()).toString());
+    var filePath = FilepathCodec.decode(mediaFile.getFilepathUri());
+    var parseResult = episodePathMetadataParser.parse(filePath.toString());
 
     var isDateOnly =
         parseResult.isPresent()
@@ -92,7 +91,6 @@ public class SeriesFileProcessor {
       return;
     }
 
-    var filePath = FilepathCodec.decode(mediaFile.getFilepathUri());
     var parentDir = filePath.getParent();
     var seasonParseResult =
         (parentDir != null)
