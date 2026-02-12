@@ -280,7 +280,11 @@ public class EpisodePathMetadataParserTest {
               // Part number extraction
               new TestCase("/season 1/title_part_1.avi", 1),
               new TestCase("/season 1/title.part.2.avi", 2),
-              new TestCase("/season 1/title-part-3.mkv", 3))
+              new TestCase("/season 1/title-part-3.mkv", 3),
+
+              // E-only and Episode X patterns with full file paths
+              new TestCase("/media/Show/Season 1/Show.E01.mkv", 1),
+              new TestCase("/media/Show/Season 1/Episode 16.mkv", 16))
           .map(
               testCase ->
                   DynamicTest.dynamicTest(
