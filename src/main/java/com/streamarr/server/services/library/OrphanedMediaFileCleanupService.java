@@ -75,7 +75,7 @@ public class OrphanedMediaFileCleanupService {
     try {
       var path = FilepathCodec.decode(fileSystem, file.getFilepathUri());
       return Files.exists(path);
-    } catch (InvalidPathException _) {
+    } catch (InvalidPathException | SecurityException _) {
       log.warn("MediaFile id: {} has unmappable filepath — treating as orphaned.", file.getId());
       return false;
     }
