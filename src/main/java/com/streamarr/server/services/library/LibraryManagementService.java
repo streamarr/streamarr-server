@@ -248,7 +248,8 @@ public class LibraryManagementService implements ActiveScanChecker {
       } finally {
         fileProcessingLimit.release();
       }
-    } catch (InterruptedException _) {
+    } catch (InterruptedException e) {
+      log.warn("File processing interrupted, skipping: {}", file, e);
       Thread.currentThread().interrupt();
     }
   }
