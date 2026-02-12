@@ -469,6 +469,54 @@ public class SeriesScanningIT extends AbstractIntegrationTest {
     wireMock.verify(1, getRequestedFor(urlPathEqualTo("/tv/5555")));
   }
 
+  @Test
+  @DisplayName("Should select correct series when TMDB returns multiple results")
+  void shouldSelectCorrectSeriesWhenTmdbReturnsMultipleResults() throws IOException {
+    var library = createSeriesLibrary();
+    var file = createSeriesFile("Breaking Bad", "Season 01", "breaking.bad.s01e01.mkv");
+
+    stubTmdbSearchMultipleResults(
+        "Breaking Bad",
+        """
+        [
+          {
+            "id": 9999,
+            "name": "Breaking Point",
+            "original_name": "Breaking Point",
+            "first_air_date": "2008-03-15",
+            "popularity": 5.0,
+            "vote_count": 100,
+            "vote_average": 6.0
+          },
+          {
+            "id": 1396,
+            "name": "Breaking Bad",
+            "original_name": "Breaking Bad",
+            "first_air_date": "2008-01-20",
+            "popularity": 500.0,
+            "vote_count": 10000,
+            "vote_average": 8.9
+          }
+        ]
+        """);
+    stubTmdbSeriesMetadata("1396", "Breaking Bad");
+    stubTmdbSeasonDetails("1396", 1, buildMinimalSeasonResponse(1, 1));
+
+    libraryManagementService.processDiscoveredFile(library.getId(), file);
+
+    assertThat(seriesRepository.findAll()).hasSize(1);
+    var series = seriesRepository.findAll().getFirst();
+    assertThat(series.getTitle()).isEqualTo("Breaking Bad");
+
+    var mediaFile =
+        mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
+    assertThat(mediaFile).isPresent();
+    assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.MATCHED);
+
+    wireMock.verify(1, getRequestedFor(urlPathEqualTo("/tv/1396")));
+    wireMock.verify(0, getRequestedFor(urlPathEqualTo("/tv/9999")));
+  }
+
   // --- Helpers ---
 
   private Library createSeriesLibrary() {
@@ -550,6 +598,26 @@ public class SeriesScanningIT extends AbstractIntegrationTest {
                         }
                         """
                             .formatted(tmdbId, name, name))));
+  }
+
+  private void stubTmdbSearchMultipleResults(String query, String resultsJson) {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/search/tv"))
+            .withQueryParam("query", equalTo(query))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {
+                          "page": 1,
+                          "results": %s,
+                          "total_results": 2,
+                          "total_pages": 1
+                        }
+                        """
+                            .formatted(resultsJson))));
   }
 
   private void stubTmdbSearchEmpty(String query) {

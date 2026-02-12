@@ -11,6 +11,7 @@ import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.TheMovieDatabaseHttpService;
 import com.streamarr.server.services.metadata.TmdbMetadataMapper;
+import com.streamarr.server.services.metadata.TmdbSearchResultScorer;
 import com.streamarr.server.services.metadata.tmdb.TmdbCredits;
 import com.streamarr.server.services.metadata.tmdb.TmdbMovie;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
@@ -126,7 +127,27 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
         return Optional.empty();
       }
 
-      var tmdbResult = searchResult.getResults().getFirst();
+      var results = searchResult.getResults();
+      var candidates =
+          results.stream()
+              .map(
+                  r ->
+                      new TmdbSearchResultScorer.CandidateResult(
+                          r.getTitle(),
+                          r.getOriginalTitle(),
+                          r.getReleaseDate(),
+                          r.getPopularity()))
+              .toList();
+
+      var bestIndex =
+          TmdbSearchResultScorer.selectBestMatch(
+              videoInformation.title(), videoInformation.year(), candidates);
+
+      if (bestIndex.isEmpty()) {
+        return Optional.empty();
+      }
+
+      var tmdbResult = results.get(bestIndex.getAsInt());
 
       return Optional.of(
           RemoteSearchResult.builder()
