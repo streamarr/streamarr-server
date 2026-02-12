@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Test;
 class TmdbMetadataMapperTest {
 
   @Nested
-  @DisplayName("buildPosterAndBackdropSources")
+  @DisplayName("Build Poster and Backdrop Sources")
   class BuildPosterAndBackdropSources {
 
     @Test
@@ -59,7 +59,7 @@ class TmdbMetadataMapperTest {
   }
 
   @Nested
-  @DisplayName("buildPersonImageSources")
+  @DisplayName("Build Person Image Sources")
   class BuildPersonImageSources {
 
     @Test
@@ -129,7 +129,7 @@ class TmdbMetadataMapperTest {
   }
 
   @Nested
-  @DisplayName("buildCompanyImageSources")
+  @DisplayName("Build Company Image Sources")
   class BuildCompanyImageSources {
 
     @Test
@@ -158,7 +158,7 @@ class TmdbMetadataMapperTest {
   }
 
   @Nested
-  @DisplayName("mapDirectors")
+  @DisplayName("Map Directors")
   class MapDirectors {
 
     @Test
