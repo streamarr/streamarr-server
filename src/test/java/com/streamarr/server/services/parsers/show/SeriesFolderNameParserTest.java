@@ -153,4 +153,34 @@ class SeriesFolderNameParserTest {
     assertThat(result.externalId()).isEqualTo("67890");
     assertThat(result.externalSource()).isEqualTo(ExternalSourceType.TVDB);
   }
+
+  @Test
+  @DisplayName("Should extract title when country suffix present")
+  void shouldExtractTitleWhenCountrySuffixPresent() {
+    var result = parser.parse("Euphoria (US)");
+
+    assertThat(result.title()).isEqualTo("Euphoria");
+    assertThat(result.year()).isNull();
+    assertThat(result.externalId()).isNull();
+  }
+
+  @Test
+  @DisplayName("Should extract title and year when country and year present")
+  void shouldExtractTitleAndYearWhenCountryAndYearPresent() {
+    var result = parser.parse("The Office (UK) (2001)");
+
+    assertThat(result.title()).isEqualTo("The Office");
+    assertThat(result.year()).isEqualTo("2001");
+    assertThat(result.externalId()).isNull();
+  }
+
+  @Test
+  @DisplayName("Should not strip three-letter codes in parentheses")
+  void shouldNotStripThreeLetterCodes() {
+    var result = parser.parse("Show (ABC)");
+
+    assertThat(result.title()).isEqualTo("Show (ABC)");
+    assertThat(result.year()).isNull();
+    assertThat(result.externalId()).isNull();
+  }
 }

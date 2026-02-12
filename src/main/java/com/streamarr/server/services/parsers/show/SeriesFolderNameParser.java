@@ -13,6 +13,8 @@ public class SeriesFolderNameParser {
 
   private static final Pattern YEAR_SUFFIX = Pattern.compile("\\s*\\((?<year>\\d{4})\\)");
 
+  private static final Pattern COUNTRY_SUFFIX = Pattern.compile("\\s*\\([A-Za-z]{2}\\)");
+
   public VideoFileParserResult parse(String folderName) {
     var builder = VideoFileParserResult.builder();
     var remaining = folderName;
@@ -30,6 +32,11 @@ public class SeriesFolderNameParser {
     if (yearMatcher.find()) {
       builder.year(yearMatcher.group("year"));
       remaining = remaining.substring(0, yearMatcher.start()).trim();
+    }
+
+    var countryMatcher = COUNTRY_SUFFIX.matcher(remaining);
+    if (countryMatcher.find()) {
+      remaining = remaining.substring(0, countryMatcher.start()).trim();
     }
 
     builder.title(remaining.trim());
