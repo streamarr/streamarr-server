@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 
 import com.streamarr.server.services.library.events.ScanEndedEvent;
 import com.streamarr.server.services.metadata.TheMovieDatabaseHttpService;
+import com.streamarr.server.services.metadata.TmdbSearchDelegate;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSeasonSummary;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSeries;
 import java.io.IOException;
@@ -27,7 +28,11 @@ class TMDBSeriesProviderTest {
   private final TheMovieDatabaseHttpService theMovieDatabaseHttpService =
       mock(TheMovieDatabaseHttpService.class);
 
-  private final TMDBSeriesProvider provider = new TMDBSeriesProvider(theMovieDatabaseHttpService);
+  private final TmdbSearchDelegate searchDelegate =
+      new TmdbSearchDelegate(theMovieDatabaseHttpService);
+
+  private final TMDBSeriesProvider provider =
+      new TMDBSeriesProvider(theMovieDatabaseHttpService, searchDelegate);
 
   @Test
   @DisplayName("Should return fresh data after scan ended clears cache")
