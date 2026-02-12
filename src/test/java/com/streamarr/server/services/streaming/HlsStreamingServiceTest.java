@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.config.StreamingProperties;
@@ -137,7 +138,9 @@ class HlsStreamingServiceTest {
   void shouldThrowWhenMediaFileNotFound() {
     var invalidId = UUID.randomUUID();
 
-    assertThatThrownBy(() -> service.createSession(invalidId, defaultOptions()))
+    var options = defaultOptions();
+
+    assertThatThrownBy(() -> service.createSession(invalidId, options))
         .isInstanceOf(MediaFileNotFoundException.class);
   }
 
@@ -212,7 +215,9 @@ class HlsStreamingServiceTest {
     }
 
     var oneMore = seedMediaFile();
-    assertThatThrownBy(() -> service.createSession(oneMore.getId(), options))
+    var oneMoreId = oneMore.getId();
+
+    assertThatThrownBy(() -> service.createSession(oneMoreId, options))
         .isInstanceOf(MaxConcurrentTranscodesException.class);
   }
 
@@ -623,7 +628,8 @@ class HlsStreamingServiceTest {
   @Test
   @DisplayName("Should not throw when resuming nonexistent session")
   void shouldNotThrowWhenResumingNonexistentSession() {
-    service.resumeSessionIfNeeded(UUID.randomUUID(), "segment0.ts");
+    assertThatNoException()
+        .isThrownBy(() -> service.resumeSessionIfNeeded(UUID.randomUUID(), "segment0.ts"));
   }
 
   @Test

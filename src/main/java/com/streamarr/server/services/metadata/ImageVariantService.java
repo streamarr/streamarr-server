@@ -44,12 +44,19 @@ public class ImageVariantService {
     @Override
     public boolean equals(Object o) {
       if (this == o) return true;
-      if (!(o instanceof GeneratedVariant that)) return false;
-      return width == that.width
-          && height == that.height
-          && variant == that.variant
-          && Arrays.equals(data, that.data)
-          && Objects.equals(blurHash, that.blurHash);
+      if (!(o
+          instanceof
+          GeneratedVariant(
+              var otherVariant,
+              var otherData,
+              var otherWidth,
+              var otherHeight,
+              var otherBlurHash))) return false;
+      return width == otherWidth
+          && height == otherHeight
+          && variant == otherVariant
+          && Arrays.equals(data, otherData)
+          && Objects.equals(blurHash, otherBlurHash);
     }
 
     @Override

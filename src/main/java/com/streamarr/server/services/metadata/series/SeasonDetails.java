@@ -14,6 +14,7 @@ public record SeasonDetails(
     List<EpisodeDetails> episodes) {
 
   @Builder
+  // compact constructor for @Builder
   public SeasonDetails {}
 
   public record EpisodeDetails(
@@ -25,6 +26,7 @@ public record SeasonDetails(
       Integer runtime) {
 
     @Builder
+    // compact constructor for @Builder
     public EpisodeDetails {}
   }
 }

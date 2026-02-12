@@ -42,5 +42,7 @@ class FakeProcess extends Process {
   }
 
   @Override
-  public void destroy() {}
+  public void destroy() {
+    // no-op for test fake
+  }
 }

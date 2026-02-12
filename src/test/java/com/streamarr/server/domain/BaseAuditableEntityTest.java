@@ -1,7 +1,6 @@
 package com.streamarr.server.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.streamarr.server.domain.metadata.Review;
 import java.time.Instant;
@@ -13,18 +12,19 @@ import org.junit.jupiter.api.Test;
 
 @Tag("UnitTest")
 @DisplayName("Base Auditable Entity Tests")
-public class BaseAuditableEntityTest {
+class BaseAuditableEntityTest {
 
   @Nested
   @DisplayName("Base Entity Equals Tests")
-  public class EqualsTest {
+  class EqualsTest {
 
     @Test
     @DisplayName("Should return true when comparing the exact same instance")
     void shouldReturnTrueWhenComparingTheExactSameInstance() {
       var review = Review.builder().build();
+      var sameInstance = review;
 
-      assertTrue(review.equals(review));
+      assertThat(review).isEqualTo(sameInstance);
     }
 
     @Test
@@ -33,7 +33,7 @@ public class BaseAuditableEntityTest {
       var review1 = Review.builder().build();
       var review2 = Review.builder().build();
 
-      assertThat(review1.equals(review2)).isFalse();
+      assertThat(review1).isNotEqualTo(review2);
     }
 
     @Test
@@ -42,7 +42,7 @@ public class BaseAuditableEntityTest {
       var review1 = Review.builder().id(UUID.randomUUID()).build();
       var review2 = Review.builder().id(UUID.randomUUID()).build();
 
-      assertThat(review1.equals(review2)).isFalse();
+      assertThat(review1).isNotEqualTo(review2);
     }
 
     @Test
@@ -52,26 +52,26 @@ public class BaseAuditableEntityTest {
       var review1 = Review.builder().id(id).build();
       var review2 = Review.builder().id(id).build();
 
-      assertThat(review1.equals(review2)).isTrue();
+      assertThat(review1).isEqualTo(review2);
     }
   }
 
   @Nested
   @DisplayName("Base Entity Hash Code Tests")
-  public class HashCodeTest {
+  class HashCodeTest {
 
     @Test
     @DisplayName("Should return correct hash code for class extension")
     void shouldReturnCorrectHashCodeForClassExtension() {
       var review = Review.builder().build();
 
-      assertThat(review.hashCode()).isEqualTo(Review.class.hashCode());
+      assertThat(review).hasSameHashCodeAs(Review.class);
     }
   }
 
   @Nested
   @DisplayName("Base Entity Builder Tests")
-  public class BuilderTest {
+  class BuilderTest {
 
     @Test
     @DisplayName("Should ignore createdOn when set via builder")

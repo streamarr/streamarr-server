@@ -122,7 +122,9 @@ public class FakeJpaRepository<L extends BaseAuditableEntity> implements JpaRepo
   }
 
   @Override
-  public void flush() {}
+  public void flush() {
+    // no-op for test fake
+  }
 
   @Override
   public <S extends L> S saveAndFlush(S entity) {

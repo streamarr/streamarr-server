@@ -81,12 +81,8 @@ public class FfmpegCommandBuilder {
     var mode = job.request().transcodeDecision().transcodeMode();
 
     switch (mode) {
-      case REMUX -> {
-        cmd.addAll(List.of("-c:v", "copy", "-c:a", "copy"));
-      }
-      case PARTIAL_TRANSCODE -> {
-        cmd.addAll(List.of("-c:v", "copy", "-c:a", "aac", "-b:a", "128k"));
-      }
+      case REMUX -> cmd.addAll(List.of("-c:v", "copy", "-c:a", "copy"));
+      case PARTIAL_TRANSCODE -> cmd.addAll(List.of("-c:v", "copy", "-c:a", "aac", "-b:a", "128k"));
       case FULL_TRANSCODE -> {
         cmd.addAll(List.of("-c:v", job.videoEncoder(), "-c:a", "aac", "-b:a", "128k"));
         addScaleAndBitrateArgs(cmd, job.request());

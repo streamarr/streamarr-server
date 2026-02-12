@@ -10,6 +10,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @EnableScheduling
 public class StreamarrServerApplication {
 
+  private StreamarrServerApplication() {}
+
   static void main(String[] args) {
     SpringApplication.run(StreamarrServerApplication.class, args);
   }

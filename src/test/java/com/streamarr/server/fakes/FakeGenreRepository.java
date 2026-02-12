@@ -11,8 +11,7 @@ public class FakeGenreRepository extends FakeJpaRepository<Genre> implements Gen
 
   @Override
   public boolean insertIfAbsent(String sourceId, String name) {
-    boolean exists =
-        database.values().stream().anyMatch(g -> sourceId.equals(g.getSourceId()));
+    boolean exists = database.values().stream().anyMatch(g -> sourceId.equals(g.getSourceId()));
     if (exists) {
       return false;
     }

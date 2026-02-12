@@ -24,8 +24,8 @@ import com.streamarr.server.services.validation.VideoExtensionValidator;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.FileSystem;
-import java.nio.file.InvalidPathException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -127,7 +127,7 @@ public class LibraryManagementService implements ActiveScanChecker {
       if (!Files.isDirectory(path)) {
         throw new InvalidLibraryPathException(filepath, "path is not a directory");
       }
-    } catch (SecurityException e) {
+    } catch (SecurityException _) {
       throw new LibraryPathPermissionDeniedException(filepath);
     }
   }

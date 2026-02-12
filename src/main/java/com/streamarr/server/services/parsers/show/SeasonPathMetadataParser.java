@@ -16,6 +16,7 @@ public class SeasonPathMetadataParser implements MetadataParser<SeasonPathMetada
 
   public record Result(OptionalInt seasonNumber, boolean isSeasonFolder) {
     @Builder
+    // compact constructor for @Builder
     public Result {}
   }
 
@@ -81,7 +82,7 @@ public class SeasonPathMetadataParser implements MetadataParser<SeasonPathMetada
   private OptionalInt tryStringToOptionalIntConversion(String input) {
     try {
       return OptionalInt.of(Integer.parseInt(input));
-    } catch (NumberFormatException ignore) {
+    } catch (NumberFormatException _) {
       return OptionalInt.empty();
     }
   }

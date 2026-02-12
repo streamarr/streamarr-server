@@ -134,8 +134,7 @@ public class DirectoryWatchingService implements InitializingBean {
           try {
             addDirectory(Path.of(event.filepath()));
           } catch (IOException e) {
-            log.error(
-                "Failed to start watching directory for library: {}", event.filepath(), e);
+            log.error("Failed to start watching directory for library: {}", event.filepath(), e);
           }
         });
   }

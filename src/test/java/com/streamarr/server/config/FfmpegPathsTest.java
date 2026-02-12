@@ -36,8 +36,8 @@ class FfmpegPathsTest {
   void shouldResolveAbsolutePathsWhenNoOverrideProvided() {
     var paths = FfmpegPaths.resolve(null, null);
 
-    assertThat(Path.of(paths.ffmpeg()).isAbsolute()).isTrue();
-    assertThat(Path.of(paths.ffprobe()).isAbsolute()).isTrue();
+    assertThat(Path.of(paths.ffmpeg())).isAbsolute();
+    assertThat(Path.of(paths.ffprobe())).isAbsolute();
   }
 
   @Test

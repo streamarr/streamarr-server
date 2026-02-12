@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Test;
 
 @Tag("UnitTest")
 @DisplayName("Mutex Factory Tests")
-public class MutexFactoryTest {
+class MutexFactoryTest {
 
   private static final String KEY1 = "key1";
   private static final String KEY2 = "key2";

@@ -165,7 +165,7 @@ public class EpisodePathMetadataParser implements MetadataParser<EpisodePathResu
     try {
       var seriesName = match.group("seriesname");
       return StringUtils.isBlank(seriesName) ? null : cleanSeriesName(seriesName);
-    } catch (IllegalArgumentException ignored) {
+    } catch (IllegalArgumentException _) {
       return null;
     }
   }
@@ -173,7 +173,7 @@ public class EpisodePathMetadataParser implements MetadataParser<EpisodePathResu
   private OptionalInt getIntFromGroup(Matcher match, String groupName) {
     try {
       return stringToOptionalIntConverter(match.group(groupName));
-    } catch (IllegalArgumentException ignored) {
+    } catch (IllegalArgumentException _) {
       return OptionalInt.empty();
     }
   }
@@ -181,7 +181,7 @@ public class EpisodePathMetadataParser implements MetadataParser<EpisodePathResu
   private OptionalInt getIntFromGroup(Matcher match, int groupIndex) {
     try {
       return stringToOptionalIntConverter(match.group(groupIndex));
-    } catch (IndexOutOfBoundsException ignored) {
+    } catch (IndexOutOfBoundsException _) {
       return OptionalInt.empty();
     }
   }
@@ -197,7 +197,7 @@ public class EpisodePathMetadataParser implements MetadataParser<EpisodePathResu
   private OptionalInt tryStringToOptionalIntConversion(String input) {
     try {
       return OptionalInt.of(Integer.parseInt(input));
-    } catch (NumberFormatException ignore) {
+    } catch (NumberFormatException _) {
       return OptionalInt.empty();
     }
   }

@@ -27,7 +27,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 @Tag("IntegrationTest")
 @DisplayName("Movie Relationship Repository Integration Tests")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-public class MovieRelationshipRepositoryIT extends AbstractIntegrationTest {
+class MovieRelationshipRepositoryIT extends AbstractIntegrationTest {
 
   @Autowired private MovieRepository movieRepository;
   @Autowired private LibraryRepository libraryRepository;
