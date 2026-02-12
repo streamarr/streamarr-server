@@ -40,6 +40,7 @@ public class SeriesFileProcessor {
   private final SeasonPathMetadataParser seasonPathMetadataParser;
   private final SeriesFolderNameParser seriesFolderNameParser;
   private final SeriesMetadataProviderResolver seriesMetadataProviderResolver;
+  private final DateBasedEpisodeResolver dateBasedEpisodeResolver;
   private final SeriesService seriesService;
   private final MediaFileRepository mediaFileRepository;
   private final SeasonRepository seasonRepository;
@@ -52,6 +53,7 @@ public class SeriesFileProcessor {
       SeasonPathMetadataParser seasonPathMetadataParser,
       SeriesFolderNameParser seriesFolderNameParser,
       SeriesMetadataProviderResolver seriesMetadataProviderResolver,
+      DateBasedEpisodeResolver dateBasedEpisodeResolver,
       SeriesService seriesService,
       MediaFileRepository mediaFileRepository,
       SeasonRepository seasonRepository,
@@ -62,6 +64,7 @@ public class SeriesFileProcessor {
     this.seasonPathMetadataParser = seasonPathMetadataParser;
     this.seriesFolderNameParser = seriesFolderNameParser;
     this.seriesMetadataProviderResolver = seriesMetadataProviderResolver;
+    this.dateBasedEpisodeResolver = dateBasedEpisodeResolver;
     this.seriesService = seriesService;
     this.mediaFileRepository = mediaFileRepository;
     this.seasonRepository = seasonRepository;
@@ -75,7 +78,12 @@ public class SeriesFileProcessor {
         episodePathMetadataParser.parse(
             FilepathCodec.decode(mediaFile.getFilepathUri()).toString());
 
-    if (parseResult.isEmpty() || parseResult.get().getEpisodeNumber().isEmpty()) {
+    var isDateOnly =
+        parseResult.isPresent()
+            && parseResult.get().isOnlyDate()
+            && parseResult.get().getDate() != null;
+
+    if (parseResult.isEmpty() || (parseResult.get().getEpisodeNumber().isEmpty() && !isDateOnly)) {
       markAs(mediaFile, MediaFileStatus.METADATA_PARSING_FAILED);
       log.error(
           "Failed to parse episode info from MediaFile id: {} at path: '{}'",
@@ -84,8 +92,6 @@ public class SeriesFileProcessor {
       return;
     }
 
-    var episodeNumber = parseResult.get().getEpisodeNumber().getAsInt();
-
     var filePath = FilepathCodec.decode(mediaFile.getFilepathUri());
     var parentDir = filePath.getParent();
     var seasonParseResult =
@@ -93,7 +99,6 @@ public class SeriesFileProcessor {
             ? seasonPathMetadataParser.parse(parentDir.getFileName().toString())
             : Optional.<SeasonPathMetadataParser.Result>empty();
 
-    var seasonNumber = resolveSeasonNumber(parentDir, seasonParseResult, parseResult.get());
     var parserResult = resolveSeriesInfo(parentDir, seasonParseResult, parseResult.get());
 
     if (parserResult.title() == null || parserResult.title().isBlank()) {
@@ -104,13 +109,6 @@ public class SeriesFileProcessor {
           mediaFile.getFilepathUri());
       return;
     }
-
-    log.info(
-        "Parsed series file: series='{}', season={}, episode={} for MediaFile id: {}",
-        parserResult.title(),
-        seasonNumber,
-        episodeNumber,
-        mediaFile.getId());
 
     var searchResult = seriesMetadataProviderResolver.search(library, parserResult);
 
@@ -124,7 +122,56 @@ public class SeriesFileProcessor {
       return;
     }
 
+    if (isDateOnly) {
+      processDateOnlyEpisode(library, mediaFile, searchResult.get(), parseResult.get());
+      return;
+    }
+
+    var episodeNumber = parseResult.get().getEpisodeNumber().getAsInt();
+    var seasonNumber = resolveSeasonNumber(parentDir, seasonParseResult, parseResult.get());
+
+    log.info(
+        "Parsed series file: series='{}', season={}, episode={} for MediaFile id: {}",
+        parserResult.title(),
+        seasonNumber,
+        episodeNumber,
+        mediaFile.getId());
+
     enrichSeriesMetadata(library, mediaFile, searchResult.get(), seasonNumber, episodeNumber);
+  }
+
+  private void processDateOnlyEpisode(
+      Library library,
+      MediaFile mediaFile,
+      RemoteSearchResult searchResult,
+      EpisodePathResult parseResult) {
+    var dateResolution =
+        dateBasedEpisodeResolver.resolve(library, searchResult.externalId(), parseResult.getDate());
+
+    if (dateResolution.isEmpty()) {
+      markAs(mediaFile, MediaFileStatus.METADATA_SEARCH_FAILED);
+      log.error(
+          "Failed to resolve date {} to episode for series TMDB id '{}', MediaFile id: {}",
+          parseResult.getDate(),
+          searchResult.externalId(),
+          mediaFile.getId());
+      return;
+    }
+
+    log.info(
+        "Resolved date {} to season={}, episode={} for series TMDB id '{}', MediaFile id: {}",
+        parseResult.getDate(),
+        dateResolution.get().seasonNumber(),
+        dateResolution.get().episodeNumber(),
+        searchResult.externalId(),
+        mediaFile.getId());
+
+    enrichSeriesMetadata(
+        library,
+        mediaFile,
+        searchResult,
+        dateResolution.get().seasonNumber(),
+        dateResolution.get().episodeNumber());
   }
 
   private int resolveSeasonNumber(

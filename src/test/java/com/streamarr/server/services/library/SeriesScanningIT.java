@@ -470,6 +470,100 @@ public class SeriesScanningIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should match date-only episode via TMDB air date lookup")
+  void shouldMatchDateOnlyEpisodeViaTmdbAirDateLookup() throws IOException {
+    var library = createSeriesLibrary();
+    var showDir = tempDir.resolve("Jeopardy!");
+    Files.createDirectories(showDir);
+    var file = showDir.resolve("Jeopardy! - 2025-11-25.mkv");
+    Files.createFile(file);
+
+    stubTmdbSearch("Jeopardy!", "2141", "Jeopardy!");
+    stubTmdbSeriesMetadataWithSeasons(
+        "2141",
+        "Jeopardy!",
+        """
+        [
+          {"id": 500, "season_number": 42, "name": "Season 42", "air_date": "2025-09-08", "episode_count": 230}
+        ]
+        """);
+    stubTmdbSeasonDetails(
+        "2141",
+        42,
+        """
+        {
+          "id": 500,
+          "name": "Season 42",
+          "season_number": 42,
+          "overview": "Season 42 of Jeopardy!",
+          "episodes": [
+            {"id": 80001, "episode_number": 55, "season_number": 42, "name": "Show #9955", "overview": "Episode 55.", "air_date": "2025-11-24", "runtime": 30},
+            {"id": 80002, "episode_number": 56, "season_number": 42, "name": "Show #9956", "overview": "Episode 56.", "air_date": "2025-11-25", "runtime": 30},
+            {"id": 80003, "episode_number": 57, "season_number": 42, "name": "Show #9957", "overview": "Episode 57.", "air_date": "2025-11-26", "runtime": 30}
+          ]
+        }
+        """);
+
+    libraryManagementService.processDiscoveredFile(library.getId(), file);
+
+    assertThat(seriesRepository.findAll()).hasSize(1);
+    assertThat(seasonRepository.findAll()).hasSize(1);
+
+    var season = seasonRepository.findAll().getFirst();
+    assertThat(season.getSeasonNumber()).isEqualTo(42);
+
+    var ep56 = episodeRepository.findBySeasonIdAndEpisodeNumber(season.getId(), 56);
+    assertThat(ep56).isPresent();
+
+    var mediaFile =
+        mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
+    assertThat(mediaFile).isPresent();
+    assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.MATCHED);
+    assertThat(mediaFile.get().getMediaId()).isEqualTo(ep56.get().getId());
+  }
+
+  @Test
+  @DisplayName("Should mark date-only file as search failed when no air date matches")
+  void shouldMarkDateOnlyFileAsSearchFailedWhenNoAirDateMatches() throws IOException {
+    var library = createSeriesLibrary();
+    var showDir = tempDir.resolve("Daily Show");
+    Files.createDirectories(showDir);
+    var file = showDir.resolve("Daily Show - 2025-12-25.mkv");
+    Files.createFile(file);
+
+    stubTmdbSearch("Daily Show", "3000", "Daily Show");
+    stubTmdbSeriesMetadataWithSeasons(
+        "3000",
+        "Daily Show",
+        """
+        [
+          {"id": 600, "season_number": 1, "name": "Season 1", "air_date": "2025-01-01", "episode_count": 10}
+        ]
+        """);
+    stubTmdbSeasonDetails(
+        "3000",
+        1,
+        """
+        {
+          "id": 600,
+          "name": "Season 1",
+          "season_number": 1,
+          "overview": "Season 1.",
+          "episodes": [
+            {"id": 90001, "episode_number": 1, "season_number": 1, "name": "Ep 1", "overview": ".", "air_date": "2025-01-06", "runtime": 30}
+          ]
+        }
+        """);
+
+    libraryManagementService.processDiscoveredFile(library.getId(), file);
+
+    var mediaFile =
+        mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
+    assertThat(mediaFile).isPresent();
+    assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.METADATA_SEARCH_FAILED);
+  }
+
+  @Test
   @DisplayName("Should select correct series when TMDB returns multiple results")
   void shouldSelectCorrectSeriesWhenTmdbReturnsMultipleResults() throws IOException {
     var library = createSeriesLibrary();
