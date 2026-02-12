@@ -67,7 +67,7 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
       var outputStream = process.getOutputStream();
       outputStream.write('q');
       outputStream.flush();
-    } catch (IOException e) {
+    } catch (IOException _) {
       log.debug("Failed to write quit signal to FFmpeg stdin for session {}", sessionId);
     }
   }
@@ -78,7 +78,7 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
         log.warn("FFmpeg did not stop gracefully for session {}, forcing", sessionId);
         process.destroyForcibly();
       }
-    } catch (InterruptedException e) {
+    } catch (InterruptedException _) {
       Thread.currentThread().interrupt();
       process.destroyForcibly();
     }

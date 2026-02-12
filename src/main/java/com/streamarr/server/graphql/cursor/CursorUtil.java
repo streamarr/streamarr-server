@@ -50,7 +50,7 @@ public class CursorUtil {
           .paginationOptions(options)
           .build();
 
-    } catch (Exception ex) {
+    } catch (Exception _) {
       var msg =
           "Could not decode cursor '"
               + cursor

@@ -43,16 +43,14 @@ public class CompanyService {
 
     var imageSources = imageSourcesBySourceId.getOrDefault(company.getSourceId(), List.of());
 
-    boolean inserted =
-        companyRepository.insertIfAbsent(company.getSourceId(), company.getName());
+    boolean inserted = companyRepository.insertIfAbsent(company.getSourceId(), company.getName());
     var saved =
         companyRepository
             .findBySourceId(company.getSourceId())
             .orElseThrow(
                 () ->
                     new IllegalStateException(
-                        "Company not found after upsert for sourceId: "
-                            + company.getSourceId()));
+                        "Company not found after upsert for sourceId: " + company.getSourceId()));
 
     saved.setName(company.getName());
 

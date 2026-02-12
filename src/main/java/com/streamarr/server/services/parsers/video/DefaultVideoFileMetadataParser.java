@@ -17,7 +17,7 @@ public class DefaultVideoFileMetadataParser implements MetadataParser<VideoFileP
           Pattern.compile(
               "(.*[^_,.\\-])[_.()\\[\\]\\-](19[0-9]{2}|20[0-9]{2})(?![0-9]+|\\W[0-9]{2}\\W[0-9]{2})([ _,.()\\[\\]\\-][^0-9]|).*(19[0-9]{2}|20[0-9]{2})*"),
           Pattern.compile(
-              "(.*[^_,.\\-])[ _.()\\[\\]\\-]+(19[0-9]{2}|20[0-9]{2})(?![0-9]+|\\W[0-9]{2}\\W[0-9]{2})([ _,.()\\[\\]\\-][^0-9]|).*(19[0-9]{2}|20[0-9]{2})*"));
+              "(.*[^_,.\\-])[ _.()\\[\\]\\-]+(19\\d{2}|20\\d{2})(?!\\d+|\\W\\d{2}\\W\\d{2})([ _,.()\\[\\]\\-]\\D|).*(19\\d{2}|20\\d{2})*"));
   private static final Pattern TAG_REGEX =
       Pattern.compile("^\\s*\\[[^]]+](?!\\.\\w+$)\\s*(?<cleaned>.+)");
   private static final Pattern KNOWN_WORD_EXCLUSIONS_REGEX =

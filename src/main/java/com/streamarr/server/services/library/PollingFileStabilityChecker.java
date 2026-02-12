@@ -55,16 +55,16 @@ public class PollingFileStabilityChecker implements FileStabilityChecker {
               pollInterval);
 
       switch (result) {
-        case PollResult.Continue c -> {
-          lastSize = c.lastSize();
-          lastChangeTime = c.lastChangeTime();
+        case PollResult.Continue(var newLastSize, var newLastChangeTime) -> {
+          lastSize = newLastSize;
+          lastChangeTime = newLastChangeTime;
         }
         case PollResult.Stabilized() -> {
           log.info("File stabilized: {}", path);
           return true;
         }
-        case PollResult.Failed f -> {
-          log.warn("{}: {}", f.reason(), path);
+        case PollResult.Failed(var reason) -> {
+          log.warn("{}: {}", reason, path);
           return false;
         }
       }
@@ -81,7 +81,7 @@ public class PollingFileStabilityChecker implements FileStabilityChecker {
       Duration pollInterval) {
     try {
       sleeper.sleep(pollInterval);
-    } catch (InterruptedException e) {
+    } catch (InterruptedException _) {
       Thread.currentThread().interrupt();
       return new PollResult.Failed("Stability check interrupted for");
     }
@@ -89,7 +89,7 @@ public class PollingFileStabilityChecker implements FileStabilityChecker {
     long currentSize;
     try {
       currentSize = Files.size(path);
-    } catch (IOException | SecurityException e) {
+    } catch (IOException | SecurityException _) {
       return new PollResult.Failed("File became inaccessible during stability check");
     }
 

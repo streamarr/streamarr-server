@@ -21,6 +21,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 class FileEventProcessor {
 
+  // identity-based cancellation token
   private record StabilityToken() {}
 
   private record InFlightTask(Future<?> future, StabilityToken token) {}
@@ -93,7 +94,7 @@ class FileEventProcessor {
 
     try {
       scheduleStabilityCheck(path, optionalLibraryId.get());
-    } catch (RejectedExecutionException e) {
+    } catch (RejectedExecutionException _) {
       log.warn(
           "Executor shut down while scheduling stability check for: {}. "
               + "Any created task will be reclaimed by distributed lease recovery.",

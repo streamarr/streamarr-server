@@ -50,7 +50,7 @@ public class LocalSegmentStore implements SegmentStore {
       }
       try {
         Thread.sleep(POLL_INTERVAL.toMillis());
-      } catch (InterruptedException e) {
+      } catch (InterruptedException _) {
         Thread.currentThread().interrupt();
         return false;
       }
@@ -62,7 +62,7 @@ public class LocalSegmentStore implements SegmentStore {
   public boolean segmentExists(UUID sessionId, String segmentName) {
     try {
       return Files.exists(resolveSegmentPath(sessionId, segmentName));
-    } catch (TranscodeException e) {
+    } catch (TranscodeException _) {
       return false;
     }
   }

@@ -77,7 +77,7 @@ public class HlsPlaylistService {
     }
 
     for (int i = 0; i < segmentCount; i++) {
-      var remainingMs = remainingDurationMs - ((long) i * segmentDurationMs);
+      var remainingMs = remainingDurationMs - (i * segmentDurationMs);
       var durationMs = Math.min(segmentDurationMs, remainingMs);
       sb.append("#EXTINF:").append(String.format("%.6f", durationMs / 1000.0)).append(",\n");
       sb.append("segment").append(i).append(extension).append("\n");
