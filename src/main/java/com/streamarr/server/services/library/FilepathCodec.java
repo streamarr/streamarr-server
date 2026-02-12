@@ -24,7 +24,7 @@ public final class FilepathCodec {
       if (uri.getScheme() != null) {
         return decodeUri(fileSystem, uri);
       }
-    } catch (IllegalArgumentException | FileSystemNotFoundException e) {
+    } catch (IllegalArgumentException | FileSystemNotFoundException _) {
       // Not a valid URI or filesystem not found, fall through
     }
     return fileSystem.getPath(filepathUri);
@@ -33,7 +33,7 @@ public final class FilepathCodec {
   private static Path decodeUri(FileSystem fileSystem, URI uri) {
     try {
       return fileSystem.provider().getPath(uri);
-    } catch (UnsupportedOperationException e) {
+    } catch (UnsupportedOperationException _) {
       return Path.of(uri);
     }
   }

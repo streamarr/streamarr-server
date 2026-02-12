@@ -120,8 +120,9 @@ class GenreServiceTest {
     var service = new GenreService(stubRepository);
 
     var genre = Genre.builder().name("Action").sourceId("genre-28").build();
+    var genres = Set.of(genre);
 
-    assertThatThrownBy(() -> service.getOrCreateGenres(Set.of(genre)))
+    assertThatThrownBy(() -> service.getOrCreateGenres(genres))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("not found after upsert");
   }

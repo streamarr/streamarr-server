@@ -165,8 +165,10 @@ class CompanyServiceTest {
     var service = new CompanyService(stubRepository, new CapturingEventPublisher());
 
     var company = Company.builder().name("Warner Bros.").sourceId("wb-123").build();
+    var companies = Set.of(company);
 
-    assertThatThrownBy(() -> service.getOrCreateCompanies(Set.of(company), Map.of()))
+    Map<String, List<ImageSource>> emptyImageSources = Map.of();
+    assertThatThrownBy(() -> service.getOrCreateCompanies(companies, emptyImageSources))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("not found after upsert");
   }

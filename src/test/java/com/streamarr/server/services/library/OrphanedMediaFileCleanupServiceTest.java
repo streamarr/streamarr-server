@@ -263,7 +263,8 @@ class OrphanedMediaFileCleanupServiceTest {
             noOpTransactionTemplate());
 
     var event = new ScanCompletedEvent(library.getId());
-    serviceWithThrowingRepo.onScanCompleted(event);
+
+    assertThatNoException().isThrownBy(() -> serviceWithThrowingRepo.onScanCompleted(event));
   }
 
   private Path createMovieFile(String folder, String filename) throws IOException {
@@ -284,13 +285,19 @@ class OrphanedMediaFileCleanupServiceTest {
           }
 
           @Override
-          protected void doBegin(Object transaction, TransactionDefinition definition) {}
+          protected void doBegin(Object transaction, TransactionDefinition definition) {
+            // no-op for test
+          }
 
           @Override
-          protected void doCommit(DefaultTransactionStatus status) {}
+          protected void doCommit(DefaultTransactionStatus status) {
+            // no-op for test
+          }
 
           @Override
-          protected void doRollback(DefaultTransactionStatus status) {}
+          protected void doRollback(DefaultTransactionStatus status) {
+            // no-op for test
+          }
         });
   }
 }

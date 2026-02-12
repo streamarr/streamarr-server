@@ -11,9 +11,9 @@ public class SeriesFolderNameParser {
   private static final Pattern EXTERNAL_ID_TAG =
       Pattern.compile("[\\[\\{(](?i)(?<source>imdb|tmdb|tvdb)(?:id)?[ \\-=](?<id>.+?)[\\]\\})]");
 
-  private static final Pattern YEAR_SUFFIX = Pattern.compile("\\s*+\\((?<year>\\d{4})\\)");
+  private static final Pattern YEAR_SUFFIX = Pattern.compile("\\s*+\\((?<year>\\d{4}+)\\)");
 
-  private static final Pattern COUNTRY_SUFFIX = Pattern.compile("\\s*+\\([A-Za-z]{2}\\)");
+  private static final Pattern COUNTRY_SUFFIX = Pattern.compile("\\s*+\\([A-Za-z]{2}+\\)");
 
   public VideoFileParserResult parse(String folderName) {
     var builder = VideoFileParserResult.builder();
