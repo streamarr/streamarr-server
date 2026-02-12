@@ -1,6 +1,5 @@
 package com.streamarr.server.services.metadata.series;
 
-import com.streamarr.server.services.library.events.ScanCompletedEvent;
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.ExternalIdentifier;
 import com.streamarr.server.domain.ExternalSourceType;
@@ -8,6 +7,7 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.ContentRating;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.services.library.events.ScanCompletedEvent;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.TheMovieDatabaseHttpService;
@@ -70,7 +70,8 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
       return searchByDirectTmdbId(videoInformation);
     }
 
-    var tmdbSource = TheMovieDatabaseHttpService.EXTERNAL_SOURCES.get(videoInformation.externalSource());
+    var tmdbSource =
+        TheMovieDatabaseHttpService.EXTERNAL_SOURCES.get(videoInformation.externalSource());
     if (tmdbSource == null) {
       return Optional.empty();
     }

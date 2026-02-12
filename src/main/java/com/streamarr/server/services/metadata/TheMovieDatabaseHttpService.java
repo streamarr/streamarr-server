@@ -1,5 +1,6 @@
 package com.streamarr.server.services.metadata;
 
+import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.services.metadata.tmdb.TmdbApiException;
 import com.streamarr.server.services.metadata.tmdb.TmdbCredits;
 import com.streamarr.server.services.metadata.tmdb.TmdbFailure;
@@ -10,7 +11,6 @@ import com.streamarr.server.services.metadata.tmdb.TmdbTvSearchResults;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSeason;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSeries;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
-import com.streamarr.server.domain.ExternalSourceType;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;

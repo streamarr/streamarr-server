@@ -57,7 +57,8 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
       return searchByDirectTmdbId(videoInformation);
     }
 
-    var tmdbSource = TheMovieDatabaseHttpService.EXTERNAL_SOURCES.get(videoInformation.externalSource());
+    var tmdbSource =
+        TheMovieDatabaseHttpService.EXTERNAL_SOURCES.get(videoInformation.externalSource());
     if (tmdbSource == null) {
       return Optional.empty();
     }

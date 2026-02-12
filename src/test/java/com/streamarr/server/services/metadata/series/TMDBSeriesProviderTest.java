@@ -7,8 +7,8 @@ import static org.mockito.Mockito.when;
 
 import com.streamarr.server.services.library.events.ScanCompletedEvent;
 import com.streamarr.server.services.metadata.TheMovieDatabaseHttpService;
-import com.streamarr.server.services.metadata.tmdb.TmdbTvSeries;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSeasonSummary;
+import com.streamarr.server.services.metadata.tmdb.TmdbTvSeries;
 import java.io.IOException;
 import java.util.List;
 import java.util.OptionalInt;
@@ -38,10 +38,7 @@ class TMDBSeriesProviderTest {
         TmdbTvSeries.builder()
             .seasons(
                 List.of(
-                    TmdbTvSeasonSummary.builder()
-                        .seasonNumber(1)
-                        .airDate("2020-01-15")
-                        .build()))
+                    TmdbTvSeasonSummary.builder().seasonNumber(1).airDate("2020-01-15").build()))
             .build();
 
     when(theMovieDatabaseHttpService.getTvSeriesMetadata(anyString())).thenReturn(initialSeries);
@@ -53,10 +50,7 @@ class TMDBSeriesProviderTest {
         TmdbTvSeries.builder()
             .seasons(
                 List.of(
-                    TmdbTvSeasonSummary.builder()
-                        .seasonNumber(3)
-                        .airDate("2020-03-01")
-                        .build()))
+                    TmdbTvSeasonSummary.builder().seasonNumber(3).airDate("2020-03-01").build()))
             .build();
 
     when(theMovieDatabaseHttpService.getTvSeriesMetadata(anyString())).thenReturn(updatedSeries);

@@ -36,9 +36,7 @@ public class ImageRepositoryCustomImpl implements ImageRepositoryCustom {
                         .set(
                             IMAGE.ENTITY_TYPE,
                             ImageEntityType.lookupLiteral(image.getEntityType().name()))
-                        .set(
-                            IMAGE.IMAGE_TYPE,
-                            ImageType.lookupLiteral(image.getImageType().name()))
+                        .set(IMAGE.IMAGE_TYPE, ImageType.lookupLiteral(image.getImageType().name()))
                         .set(IMAGE.VARIANT, ImageSize.lookupLiteral(image.getVariant().name()))
                         .set(IMAGE.WIDTH, image.getWidth())
                         .set(IMAGE.HEIGHT, image.getHeight())

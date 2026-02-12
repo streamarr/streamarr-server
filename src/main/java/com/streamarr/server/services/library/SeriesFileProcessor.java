@@ -247,8 +247,7 @@ public class SeriesFileProcessor {
       var seasonOpt = seasonRepository.findBySeriesIdAndSeasonNumber(series.getId(), seasonNumber);
 
       var effectiveSeasonNumber =
-          resolveEffectiveSeasonNumber(
-              library, searchResult.externalId(), seasonNumber, seasonOpt);
+          resolveEffectiveSeasonNumber(library, searchResult.externalId(), seasonNumber, seasonOpt);
 
       if (effectiveSeasonNumber.isEmpty()) {
         return;

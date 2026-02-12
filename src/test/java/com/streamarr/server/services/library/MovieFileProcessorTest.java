@@ -49,14 +49,7 @@ class MovieFileProcessorTest {
   private final FakeMovieRepository fakeMovieRepository = new FakeMovieRepository();
   private final MovieService movieService =
       new MovieService(
-          fakeMovieRepository,
-          personService,
-          genreService,
-          companyService,
-          null,
-          null,
-          null,
-          null);
+          fakeMovieRepository, personService, genreService, companyService, null, null, null, null);
 
   private final MovieFileProcessor movieFileProcessor =
       new MovieFileProcessor(
