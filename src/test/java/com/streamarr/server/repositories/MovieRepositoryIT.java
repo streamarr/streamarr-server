@@ -23,7 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Tag("IntegrationTest")
 @DisplayName("Movie Repository Integration Tests")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-public class MovieRepositoryIT extends AbstractIntegrationTest {
+class MovieRepositoryIT extends AbstractIntegrationTest {
 
   @Autowired private MovieRepository movieRepository;
 

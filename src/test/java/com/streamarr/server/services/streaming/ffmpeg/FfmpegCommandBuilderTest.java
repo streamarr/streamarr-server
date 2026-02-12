@@ -127,9 +127,10 @@ class FfmpegCommandBuilderTest {
 
     var cmd = builder.buildCommand(j);
 
-    assertThat(cmd).contains("-c:v", "copy", "-c:a", "copy");
-    assertThat(cmd).doesNotContain("-vf");
-    assertThat(cmd).doesNotContain("-b:v", "-maxrate", "-bufsize");
+    assertThat(cmd)
+        .contains("-c:v", "copy", "-c:a", "copy")
+        .doesNotContain("-vf")
+        .doesNotContain("-b:v", "-maxrate", "-bufsize");
   }
 
   @Test
@@ -151,9 +152,10 @@ class FfmpegCommandBuilderTest {
 
     var cmd = builder.buildCommand(j);
 
-    assertThat(cmd).contains("-b:v", "5000000");
-    assertThat(cmd).contains("-maxrate", "5000000");
-    assertThat(cmd).contains("-bufsize", "10000000");
+    assertThat(cmd)
+        .contains("-b:v", "5000000")
+        .contains("-maxrate", "5000000")
+        .contains("-bufsize", "10000000");
   }
 
   @Test
@@ -174,9 +176,10 @@ class FfmpegCommandBuilderTest {
 
     var cmd = builder.buildCommand(j);
 
-    assertThat(cmd).contains("-vf", "scale=-2:720");
-    assertThat(cmd).contains("-b:v", "3000000");
-    assertThat(cmd).contains("-bufsize", "6000000");
+    assertThat(cmd)
+        .contains("-vf", "scale=-2:720")
+        .contains("-b:v", "3000000")
+        .contains("-bufsize", "6000000");
   }
 
   @Test
@@ -198,8 +201,7 @@ class FfmpegCommandBuilderTest {
 
     var cmd = builder.buildCommand(j);
 
-    assertThat(cmd).contains("-c:v", "copy");
-    assertThat(cmd).contains("-c:a", "aac", "-b:a", "128k");
+    assertThat(cmd).contains("-c:v", "copy").contains("-c:a", "aac", "-b:a", "128k");
   }
 
   @Test
@@ -210,9 +212,10 @@ class FfmpegCommandBuilderTest {
 
     var cmd = builder.buildCommand(j);
 
-    assertThat(cmd).contains("-c:v", "libx264");
-    assertThat(cmd).contains("-c:a", "aac", "-b:a", "128k");
-    assertThat(cmd).contains("-hls_segment_type", "mpegts");
+    assertThat(cmd)
+        .contains("-c:v", "libx264")
+        .contains("-c:a", "aac", "-b:a", "128k")
+        .contains("-hls_segment_type", "mpegts");
   }
 
   @Test
@@ -223,9 +226,10 @@ class FfmpegCommandBuilderTest {
 
     var cmd = builder.buildCommand(j);
 
-    assertThat(cmd).contains("-c:v", "libsvtav1");
-    assertThat(cmd).contains("-hls_segment_type", "fmp4");
-    assertThat(cmd).contains("-hls_fmp4_init_filename", "init.mp4");
+    assertThat(cmd)
+        .contains("-c:v", "libsvtav1")
+        .contains("-hls_segment_type", "fmp4")
+        .contains("-hls_fmp4_init_filename", "init.mp4");
   }
 
   @Test
@@ -236,8 +240,10 @@ class FfmpegCommandBuilderTest {
 
     var cmd = builder.buildCommand(j);
 
-    assertThat(cmd).isNotEmpty().anyMatch(s -> s.startsWith("expr:gte(t,n_forced*"));
-    assertThat(cmd).contains("-sc_threshold:v:0", "0");
+    assertThat(cmd)
+        .isNotEmpty()
+        .anyMatch(s -> s.startsWith("expr:gte(t,n_forced*"))
+        .contains("-sc_threshold:v:0", "0");
   }
 
   @Test
@@ -254,8 +260,7 @@ class FfmpegCommandBuilderTest {
 
     var cmd = builder.buildCommand(j);
 
-    assertThat(cmd).contains("-g:v:0");
-    assertThat(cmd).doesNotContain("-force_key_frames:0");
+    assertThat(cmd).contains("-g:v:0").doesNotContain("-force_key_frames:0");
   }
 
   @Test
@@ -339,11 +344,12 @@ class FfmpegCommandBuilderTest {
 
     var cmd = builder.buildCommand(j);
 
-    assertThat(cmd).contains("-map_metadata", "-1");
-    assertThat(cmd).contains("-map_chapters", "-1");
-    assertThat(cmd).contains("-copyts");
-    assertThat(cmd).contains("-avoid_negative_ts", "disabled");
-    assertThat(cmd).contains("-max_muxing_queue_size", "128");
+    assertThat(cmd)
+        .contains("-map_metadata", "-1")
+        .contains("-map_chapters", "-1")
+        .contains("-copyts")
+        .contains("-avoid_negative_ts", "disabled")
+        .contains("-max_muxing_queue_size", "128");
   }
 
   @Test
@@ -398,9 +404,11 @@ class FfmpegCommandBuilderTest {
 
     var cmd = builder.buildCommand(j);
 
-    assertThat(cmd).isNotEmpty().noneMatch(s -> s.contains("force_key_frames"));
-    assertThat(cmd).doesNotContain("-g:v:0");
-    assertThat(cmd).doesNotContain("-forced-idr");
+    assertThat(cmd)
+        .isNotEmpty()
+        .noneMatch(s -> s.contains("force_key_frames"))
+        .doesNotContain("-g:v:0")
+        .doesNotContain("-forced-idr");
   }
 
   @Test
@@ -421,8 +429,10 @@ class FfmpegCommandBuilderTest {
 
     var cmd = builder.buildCommand(j);
 
-    assertThat(cmd).isNotEmpty().anyMatch(s -> s.startsWith("expr:gte(t,n_forced*"));
-    assertThat(cmd).doesNotContain("-sc_threshold:v:0");
+    assertThat(cmd)
+        .isNotEmpty()
+        .anyMatch(s -> s.startsWith("expr:gte(t,n_forced*"))
+        .doesNotContain("-sc_threshold:v:0");
   }
 
   @Test
@@ -449,8 +459,7 @@ class FfmpegCommandBuilderTest {
 
     var cmd = builder.buildCommand(j);
 
-    assertThat(cmd).contains("-y");
-    assertThat(cmd).doesNotContain("-nostdin");
+    assertThat(cmd).contains("-y").doesNotContain("-nostdin");
   }
 
   @Test
@@ -499,8 +508,10 @@ class FfmpegCommandBuilderTest {
 
     var cmd = builder.buildCommand(j);
 
-    assertThat(cmd).contains("-forced-idr", "1");
-    assertThat(cmd).doesNotContain("-g:v:0");
-    assertThat(cmd).isNotEmpty().noneMatch(s -> s.startsWith("-force_key_frames"));
+    assertThat(cmd)
+        .contains("-forced-idr", "1")
+        .doesNotContain("-g:v:0")
+        .isNotEmpty()
+        .noneMatch(s -> s.startsWith("-force_key_frames"));
   }
 }

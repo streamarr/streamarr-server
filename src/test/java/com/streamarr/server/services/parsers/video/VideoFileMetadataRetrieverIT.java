@@ -20,7 +20,7 @@ import org.springframework.test.context.support.AnnotationConfigContextLoader;
 @DisplayName("Video File Metadata Parser Injection Retrieval Integration Tests")
 @ExtendWith(SpringExtension.class)
 @ContextConfiguration(loader = AnnotationConfigContextLoader.class)
-public class VideoFileMetadataRetrieverIT {
+class VideoFileMetadataRetrieverIT {
 
   @Configuration
   @ComponentScan(basePackages = {"com.streamarr.server.services.parsers"})

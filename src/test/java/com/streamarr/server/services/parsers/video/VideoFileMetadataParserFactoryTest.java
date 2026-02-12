@@ -19,7 +19,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @Tag("UnitTest")
 @DisplayName("Video File Metadata Parser Factory Tests")
 @ExtendWith(MockitoExtension.class)
-public class VideoFileMetadataParserFactoryTest {
+class VideoFileMetadataParserFactoryTest {
 
   @Mock private DefaultVideoFileMetadataParser mockDefaultVideoFileMetadataParser;
 

@@ -91,9 +91,10 @@ class HlsPlaylistServiceTest {
 
     var playlist = service.generateMasterPlaylist(session);
 
-    assertThat(playlist).contains("#EXT-X-STREAM-INF:");
-    assertThat(playlist).contains("BANDWIDTH=");
-    assertThat(playlist).contains("RESOLUTION=1920x1080");
+    assertThat(playlist)
+        .contains("#EXT-X-STREAM-INF:")
+        .contains("BANDWIDTH=")
+        .contains("RESOLUTION=1920x1080");
   }
 
   @Test
@@ -153,9 +154,7 @@ class HlsPlaylistServiceTest {
 
     var playlist = service.generateMediaPlaylist(session);
 
-    assertThat(playlist).contains("segment0.ts");
-    assertThat(playlist).contains("segment1.ts");
-    assertThat(playlist).contains("segment2.ts");
+    assertThat(playlist).contains("segment0.ts").contains("segment1.ts").contains("segment2.ts");
   }
 
   @Test
@@ -205,10 +204,11 @@ class HlsPlaylistServiceTest {
 
     var playlist = service.generateMediaPlaylist(session);
 
-    assertThat(playlist).contains("segment0.ts");
-    assertThat(playlist).contains("segment1.ts");
-    assertThat(playlist).contains("segment2.ts");
-    assertThat(playlist).doesNotContain("segment3.ts");
+    assertThat(playlist)
+        .contains("segment0.ts")
+        .contains("segment1.ts")
+        .contains("segment2.ts")
+        .doesNotContain("segment3.ts");
   }
 
   @Test
@@ -407,9 +407,10 @@ class HlsPlaylistServiceTest {
 
     var playlist = service.generateMasterPlaylist(session);
 
-    assertThat(playlist).contains("BANDWIDTH=5128000");
-    assertThat(playlist).contains("BANDWIDTH=3128000");
-    assertThat(playlist).contains("BANDWIDTH=1596000");
+    assertThat(playlist)
+        .contains("BANDWIDTH=5128000")
+        .contains("BANDWIDTH=3128000")
+        .contains("BANDWIDTH=1596000");
   }
 
   @Test
@@ -419,9 +420,10 @@ class HlsPlaylistServiceTest {
 
     var playlist = service.generateMasterPlaylist(session);
 
-    assertThat(playlist).contains("1080p/stream.m3u8");
-    assertThat(playlist).contains("720p/stream.m3u8");
-    assertThat(playlist).contains("480p/stream.m3u8");
+    assertThat(playlist)
+        .contains("1080p/stream.m3u8")
+        .contains("720p/stream.m3u8")
+        .contains("480p/stream.m3u8");
   }
 
   @Test
@@ -433,8 +435,7 @@ class HlsPlaylistServiceTest {
 
     var streamInfLines = playlist.lines().filter(l -> l.startsWith("#EXT-X-STREAM-INF:")).toList();
     assertThat(streamInfLines).hasSize(1);
-    assertThat(playlist).contains("stream.m3u8");
-    assertThat(playlist).doesNotContain("/stream.m3u8");
+    assertThat(playlist).contains("stream.m3u8").doesNotContain("/stream.m3u8");
   }
 
   @Test

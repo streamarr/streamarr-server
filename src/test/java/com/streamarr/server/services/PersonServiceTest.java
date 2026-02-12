@@ -137,7 +137,9 @@ class PersonServiceTest {
     var person = Person.builder().name("Tom Hanks").sourceId(null).build();
     var persons = List.of(person);
 
-    assertThatThrownBy(() -> personService.getOrCreatePersons(persons, Map.of()))
+    var emptyImageSources = Map.<String, List<ImageSource>>of();
+
+    assertThatThrownBy(() -> personService.getOrCreatePersons(persons, emptyImageSources))
         .isInstanceOf(IllegalArgumentException.class);
   }
 

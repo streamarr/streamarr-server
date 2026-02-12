@@ -53,7 +53,7 @@ class LibraryManagementServiceIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName("Should allow only one scan when concurrent calls race")
-  void shouldAllowOnlyOneScanWhenConcurrentCallsRace() throws Exception {
+  void shouldAllowOnlyOneScanWhenConcurrentCallsRace() {
     var threadCount = 10;
     var executor = Executors.newFixedThreadPool(threadCount);
     var startLatch = new CountDownLatch(1);
@@ -69,9 +69,9 @@ class LibraryManagementServiceIT extends AbstractIntegrationTest {
               startLatch.await();
               libraryManagementService.scanLibrary(testLibrary.getId());
               scanStartedCount.incrementAndGet();
-            } catch (LibraryScanInProgressException e) {
+            } catch (LibraryScanInProgressException _) {
               scanRejectedCount.incrementAndGet();
-            } catch (InterruptedException e) {
+            } catch (InterruptedException _) {
               Thread.currentThread().interrupt();
             } catch (Exception e) {
               unexpectedExceptions.add(e);

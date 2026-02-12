@@ -217,7 +217,7 @@ class FileProcessingTaskCoordinatorIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName("Should create single task when concurrent creates race")
-  void shouldCreateSingleTaskWhenConcurrentCreatesRace() throws Exception {
+  void shouldCreateSingleTaskWhenConcurrentCreatesRace() {
     var path = Path.of("/media/movies/RaceCondition (2024).mkv");
     var threadCount = 10;
     var executor = Executors.newFixedThreadPool(threadCount);

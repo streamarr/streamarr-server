@@ -10,7 +10,7 @@ import org.junit.jupiter.api.TestFactory;
 
 @Tag("UnitTest")
 @DisplayName("Episode Regex Fixtures Tests")
-public class EpisodeRegexFixturesTest {
+class EpisodeRegexFixturesTest {
 
   private final EpisodeRegexFixtures episodeRegexFixtures = new EpisodeRegexFixtures();
 

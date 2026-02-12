@@ -171,7 +171,9 @@ public class FakeFileProcessingTaskRepository implements FileProcessingTaskRepos
   }
 
   @Override
-  public void flush() {}
+  public void flush() {
+    // no-op for test fake
+  }
 
   @Override
   public <S extends FileProcessingTask> S saveAndFlush(S entity) {

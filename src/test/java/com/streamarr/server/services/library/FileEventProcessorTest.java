@@ -56,7 +56,6 @@ class FileEventProcessorTest {
   private FakeMediaFileRepository mediaFileRepository;
   private AtomicReference<FileStabilityChecker> stabilityCheckerRef;
   private FileEventProcessor eventProcessor;
-  private UUID libraryId;
   private UUID specialLibraryId;
 
   @BeforeEach
@@ -80,8 +79,6 @@ class FileEventProcessorTest {
             .build();
 
     var saved = libraryRepository.save(library);
-    libraryId = saved.getId();
-
     var specialLibrary =
         Library.builder()
             .name("Special Movies")
@@ -263,7 +260,7 @@ class FileEventProcessorTest {
           enteredLatch.countDown();
           try {
             blockLatch.await(5, TimeUnit.SECONDS);
-          } catch (InterruptedException e) {
+          } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
           }
           return true;
@@ -418,7 +415,7 @@ class FileEventProcessorTest {
           try {
             // Block until interrupted; bounded to prevent test hang if cancel fails
             new CountDownLatch(1).await(10, TimeUnit.SECONDS);
-          } catch (InterruptedException e) {
+          } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
             interruptedLatch.countDown();
             return false;
@@ -449,7 +446,7 @@ class FileEventProcessorTest {
             firstEnteredLatch.countDown();
             try {
               firstBlockLatch.await(5, TimeUnit.SECONDS);
-            } catch (InterruptedException e) {
+            } catch (InterruptedException _) {
               Thread.currentThread().interrupt();
               return false;
             }
@@ -553,7 +550,7 @@ class FileEventProcessorTest {
           enteredLatch.countDown();
           try {
             new CountDownLatch(1).await(5, TimeUnit.SECONDS);
-          } catch (InterruptedException e) {
+          } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
             interruptedLatch.countDown();
             return false;
@@ -585,7 +582,7 @@ class FileEventProcessorTest {
             firstCheckEntered.countDown();
             try {
               firstCheckBlocked.await(5, TimeUnit.SECONDS);
-            } catch (InterruptedException e) {
+            } catch (InterruptedException _) {
               Thread.currentThread().interrupt();
               return false;
             }

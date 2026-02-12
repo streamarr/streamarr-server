@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test;
 
 @Tag("UnitTest")
 @DisplayName("Streaming Session Cleanup Listener Tests")
-public class StreamingSessionCleanupListenerTest {
+class StreamingSessionCleanupListenerTest {
 
   private final FakeStreamingService fakeStreamingService = new FakeStreamingService();
   private final StreamingSessionCleanupListener listener =
