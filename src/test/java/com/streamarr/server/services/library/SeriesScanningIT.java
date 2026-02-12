@@ -324,8 +324,7 @@ public class SeriesScanningIT extends AbstractIntegrationTest {
   @DisplayName("Should match series when folder name contains TVDB external ID tag")
   void shouldMatchSeriesWhenFolderNameContainsTvdbExternalIdTag() throws IOException {
     var library = createSeriesLibrary();
-    var file =
-        createSeriesFile("Hilda (2018) [tvdb-349517]", "Season 01", "hilda.s01e01.mkv");
+    var file = createSeriesFile("Hilda (2018) [tvdb-349517]", "Season 01", "hilda.s01e01.mkv");
 
     stubTmdbFindTvResult("349517", "tvdb_id", "68488", "Hilda");
     stubTmdbSeriesMetadata("68488", "Hilda");
@@ -345,6 +344,38 @@ public class SeriesScanningIT extends AbstractIntegrationTest {
     wireMock.verify(
         getRequestedFor(urlPathEqualTo("/find/349517"))
             .withQueryParam("external_source", equalTo("tvdb_id")));
+  }
+
+  @Test
+  @DisplayName("Should resolve year-based season folder to sequential TMDB season number")
+  void shouldResolveYearBasedSeasonToSequentialTmdbSeasonNumber() throws IOException {
+    var library = createSeriesLibrary();
+    var file = createSeriesFile("MythBusters", "Season 2012", "mythbusters.s2012e01.mkv");
+
+    stubTmdbSearch("MythBusters", "1428", "MythBusters");
+    stubTmdbSeriesMetadataWithSeasons(
+        "1428",
+        "MythBusters",
+        """
+        [
+          {"id": 100, "season_number": 1, "name": "Season 1", "air_date": "2003-01-23", "episode_count": 14},
+          {"id": 109, "season_number": 10, "name": "Season 10", "air_date": "2012-03-25", "episode_count": 18},
+          {"id": 110, "season_number": 11, "name": "Season 11", "air_date": "2013-01-16", "episode_count": 18}
+        ]
+        """);
+    stubTmdbSeasonDetails("1428", 10, buildMinimalSeasonResponse(10, 1));
+
+    libraryManagementService.processDiscoveredFile(library.getId(), file);
+
+    assertThat(seriesRepository.findAll()).hasSize(1);
+    assertThat(seasonRepository.findAll()).hasSize(1);
+    var season = seasonRepository.findAll().getFirst();
+    assertThat(season.getSeasonNumber()).isEqualTo(10);
+
+    var mediaFile =
+        mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
+    assertThat(mediaFile).isPresent();
+    assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.MATCHED);
   }
 
   // --- Helpers ---
@@ -500,6 +531,34 @@ public class SeriesScanningIT extends AbstractIntegrationTest {
                         }
                         """
                             .formatted(tmdbId, name, name, tmdbId))));
+  }
+
+  private void stubTmdbSeriesMetadataWithSeasons(String tmdbId, String name, String seasonsJson) {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/tv/" + tmdbId))
+            .withQueryParam("append_to_response", equalTo("content_ratings,credits,external_ids"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {
+                          "id": %s,
+                          "name": "%s",
+                          "original_name": "%s",
+                          "first_air_date": "2003-01-23",
+                          "overview": "Test overview.",
+                          "episode_run_time": [],
+                          "genres": [],
+                          "production_companies": [],
+                          "seasons": %s,
+                          "credits": {"id": %s, "cast": [], "crew": []},
+                          "content_ratings": {"results": []},
+                          "external_ids": {"imdb_id": "tt0383126", "tvdb_id": 73388}
+                        }
+                        """
+                            .formatted(tmdbId, name, name, seasonsJson, tmdbId))));
   }
 
   private void stubTmdbSeasonDetails(String tmdbId, int seasonNumber, String body) {

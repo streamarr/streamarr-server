@@ -7,6 +7,7 @@ import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalInt;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -60,6 +61,17 @@ public class SeriesMetadataProviderResolver {
     }
 
     return optionalProvider.get().getSeasonDetails(seriesExternalId, seasonNumber);
+  }
+
+  public OptionalInt resolveSeasonNumber(
+      Library library, String seriesExternalId, int parsedSeasonNumber) {
+    var optionalProvider = getProviderForLibrary(library);
+
+    if (optionalProvider.isEmpty()) {
+      return OptionalInt.of(parsedSeasonNumber);
+    }
+
+    return optionalProvider.get().resolveSeasonNumber(seriesExternalId, parsedSeasonNumber);
   }
 
   private Optional<SeriesMetadataProvider> getProviderForLibrary(Library library) {

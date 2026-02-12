@@ -96,8 +96,7 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
   private Optional<RemoteSearchResult> searchByDirectTmdbId(
       VideoFileParserResult videoInformation) {
     try {
-      var tmdbMovie =
-          theMovieDatabaseHttpService.getMovieMetadata(videoInformation.externalId());
+      var tmdbMovie = theMovieDatabaseHttpService.getMovieMetadata(videoInformation.externalId());
 
       return Optional.of(
           RemoteSearchResult.builder()

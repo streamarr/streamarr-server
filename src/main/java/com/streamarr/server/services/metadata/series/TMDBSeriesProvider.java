@@ -15,17 +15,21 @@ import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.tmdb.TmdbContentRatings;
 import com.streamarr.server.services.metadata.tmdb.TmdbCredits;
+import com.streamarr.server.services.metadata.tmdb.TmdbTvSeasonSummary;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSeries;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import com.streamarr.server.utils.TitleSortUtil;
 import java.io.IOException;
 import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,6 +43,9 @@ import tools.jackson.core.JacksonException;
 public class TMDBSeriesProvider implements SeriesMetadataProvider {
 
   private final TheMovieDatabaseHttpService theMovieDatabaseHttpService;
+
+  private final ConcurrentHashMap<String, List<TmdbTvSeasonSummary>> seasonSummariesCache =
+      new ConcurrentHashMap<>();
 
   @Getter private final ExternalAgentStrategy agentStrategy = ExternalAgentStrategy.TMDB;
 
@@ -116,8 +123,7 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
           ex);
     } catch (InterruptedException ex) {
       Thread.currentThread().interrupt();
-      log.error(
-          "TMDB direct lookup interrupted for ID '{}'", videoInformation.externalId(), ex);
+      log.error("TMDB direct lookup interrupted for ID '{}'", videoInformation.externalId(), ex);
       return Optional.empty();
     }
 
@@ -156,6 +162,10 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
     try {
       var tmdbSeries =
           theMovieDatabaseHttpService.getTvSeriesMetadata(remoteSearchResult.externalId());
+
+      seasonSummariesCache.put(
+          remoteSearchResult.externalId(),
+          Optional.ofNullable(tmdbSeries.getSeasons()).orElse(Collections.emptyList()));
 
       var credits = Optional.ofNullable(tmdbSeries.getCredits());
       var castList = credits.map(TmdbCredits::getCast).orElse(Collections.emptyList());
@@ -268,6 +278,46 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
     }
 
     return Optional.empty();
+  }
+
+  @Override
+  public OptionalInt resolveSeasonNumber(String seriesExternalId, int parsedSeasonNumber) {
+    var summaries = getOrFetchSeasonSummaries(seriesExternalId);
+
+    if (summaries.stream().anyMatch(s -> s.getSeasonNumber() == parsedSeasonNumber)) {
+      return OptionalInt.of(parsedSeasonNumber);
+    }
+
+    return summaries.stream()
+        .filter(s -> StringUtils.isNotBlank(s.getAirDate()))
+        .filter(
+            s -> {
+              try {
+                return LocalDate.parse(s.getAirDate()).getYear() == parsedSeasonNumber;
+              } catch (DateTimeParseException e) {
+                return false;
+              }
+            })
+        .mapToInt(TmdbTvSeasonSummary::getSeasonNumber)
+        .findFirst();
+  }
+
+  private List<TmdbTvSeasonSummary> getOrFetchSeasonSummaries(String seriesExternalId) {
+    return seasonSummariesCache.computeIfAbsent(
+        seriesExternalId,
+        id -> {
+          try {
+            var series = theMovieDatabaseHttpService.getTvSeriesMetadata(id);
+            return Optional.ofNullable(series.getSeasons()).orElse(Collections.emptyList());
+          } catch (IOException ex) {
+            log.warn("Failed to fetch season summaries for TMDB id '{}'", id, ex);
+            return Collections.emptyList();
+          } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            log.warn("Season summaries fetch interrupted for TMDB id '{}'", id, ex);
+            return Collections.emptyList();
+          }
+        });
   }
 
   private SeasonDetails.EpisodeDetails mapEpisodeDetails(

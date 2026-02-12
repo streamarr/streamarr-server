@@ -192,13 +192,31 @@ public class SeriesFileProcessor {
 
       var series = seriesOpt.get();
 
-      var seasonOpt =
-          seasonRepository
-              .findBySeriesIdAndSeasonNumber(series.getId(), seasonNumber)
-              .or(
-                  () ->
-                      createSeasonWithEpisodes(
-                          library, searchResult.externalId(), seasonNumber, series));
+      var effectiveSeasonNumber = seasonNumber;
+      var seasonOpt = seasonRepository.findBySeriesIdAndSeasonNumber(series.getId(), seasonNumber);
+
+      if (seasonOpt.isEmpty() && seasonNumber >= 1928) {
+        var resolved =
+            seriesMetadataProviderResolver.resolveSeasonNumber(
+                library, searchResult.externalId(), seasonNumber);
+        if (resolved.isPresent()) {
+          effectiveSeasonNumber = resolved.getAsInt();
+          seasonOpt =
+              seasonRepository.findBySeriesIdAndSeasonNumber(series.getId(), effectiveSeasonNumber);
+        } else {
+          log.warn(
+              "Could not resolve year-based season {} for series TMDB id '{}'",
+              seasonNumber,
+              searchResult.externalId());
+          return;
+        }
+      }
+
+      if (seasonOpt.isEmpty()) {
+        seasonOpt =
+            createSeasonWithEpisodes(
+                library, searchResult.externalId(), effectiveSeasonNumber, series);
+      }
 
       if (seasonOpt.isEmpty()) {
         return;

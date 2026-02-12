@@ -294,8 +294,7 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
   @DisplayName("Should fall back to text search when find endpoint returns server error")
   void shouldFallBackToTextSearchWhenFindEndpointReturnsServerError() {
     wireMock.stubFor(
-        get(urlPathEqualTo("/find/tt1234567"))
-            .willReturn(aResponse().withStatus(500)));
+        get(urlPathEqualTo("/find/tt1234567")).willReturn(aResponse().withStatus(500)));
 
     stubTextSearchResult("Fallback Show", 99999);
 
@@ -314,9 +313,7 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should fall back to text search when direct TMDB lookup returns server error")
   void shouldFallBackToTextSearchWhenDirectTmdbLookupReturnsServerError() {
-    wireMock.stubFor(
-        get(urlPathEqualTo("/tv/99999"))
-            .willReturn(aResponse().withStatus(500)));
+    wireMock.stubFor(get(urlPathEqualTo("/tv/99999")).willReturn(aResponse().withStatus(500)));
 
     stubTextSearchResult("Fallback Show", 88888);
 
