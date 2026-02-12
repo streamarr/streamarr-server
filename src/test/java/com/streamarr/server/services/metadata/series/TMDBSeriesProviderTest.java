@@ -35,8 +35,28 @@ class TMDBSeriesProviderTest {
       new TMDBSeriesProvider(theMovieDatabaseHttpService, searchDelegate);
 
   @Test
-  @DisplayName("Should return fresh data after scan ended clears cache")
-  void shouldReturnFreshDataAfterScanEnded() throws IOException, InterruptedException {
+  @DisplayName("Should resolve season number when series metadata available")
+  void shouldResolveSeasonNumberWhenSeriesMetadataAvailable()
+      throws IOException, InterruptedException {
+    var seriesExternalId = "1396";
+
+    var series =
+        TmdbTvSeries.builder()
+            .seasons(
+                List.of(
+                    TmdbTvSeasonSummary.builder().seasonNumber(1).airDate("2020-01-15").build()))
+            .build();
+
+    when(theMovieDatabaseHttpService.getTvSeriesMetadata(anyString())).thenReturn(series);
+
+    var result = provider.resolveSeasonNumber(seriesExternalId, 2020);
+
+    assertThat(result).isEqualTo(OptionalInt.of(1));
+  }
+
+  @Test
+  @DisplayName("Should return fresh data when cache cleared by scan ended")
+  void shouldReturnFreshDataWhenCacheClearedByScanEnded() throws IOException, InterruptedException {
     var seriesExternalId = "1396";
 
     var initialSeries =
@@ -48,8 +68,7 @@ class TMDBSeriesProviderTest {
 
     when(theMovieDatabaseHttpService.getTvSeriesMetadata(anyString())).thenReturn(initialSeries);
 
-    var firstResult = provider.resolveSeasonNumber(seriesExternalId, 2020);
-    assertThat(firstResult).isEqualTo(OptionalInt.of(1));
+    provider.resolveSeasonNumber(seriesExternalId, 2020);
 
     var updatedSeries =
         TmdbTvSeries.builder()
@@ -62,9 +81,7 @@ class TMDBSeriesProviderTest {
 
     provider.onScanEnded(new ScanEndedEvent(UUID.randomUUID()));
 
-    var secondResult = provider.resolveSeasonNumber(seriesExternalId, 2020);
-    assertThat(secondResult)
-        .as("Should return fresh data after cache is cleared")
-        .isEqualTo(OptionalInt.of(3));
+    var result = provider.resolveSeasonNumber(seriesExternalId, 2020);
+    assertThat(result).isEqualTo(OptionalInt.of(3));
   }
 }

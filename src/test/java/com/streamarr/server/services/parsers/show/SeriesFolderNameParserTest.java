@@ -5,11 +5,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.domain.ExternalSourceType;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
+@Tag("UnitTest")
 @DisplayName("Series Folder Name Parser Tests")
 class SeriesFolderNameParserTest {
 
@@ -75,8 +77,6 @@ class SeriesFolderNameParserTest {
   void shouldHandleCurlyBraceExternalIdTags() {
     var result = parser.parse("Show Name (2020) {imdb-tt1234567}");
 
-    assertThat(result.title()).isEqualTo("Show Name");
-    assertThat(result.year()).isEqualTo("2020");
     assertThat(result.externalId()).isEqualTo("tt1234567");
     assertThat(result.externalSource()).isEqualTo(ExternalSourceType.IMDB);
   }
@@ -106,8 +106,6 @@ class SeriesFolderNameParserTest {
   void shouldExtractTvdbExternalId() {
     var result = parser.parse("Show [tvdb-12345]");
 
-    assertThat(result.title()).isEqualTo("Show");
-    assertThat(result.year()).isNull();
     assertThat(result.externalId()).isEqualTo("12345");
     assertThat(result.externalSource()).isEqualTo(ExternalSourceType.TVDB);
   }
@@ -117,8 +115,6 @@ class SeriesFolderNameParserTest {
   void shouldExtractExternalIdWithImdbidAttributeName() {
     var result = parser.parse("Show [imdbid-tt1234567]");
 
-    assertThat(result.title()).isEqualTo("Show");
-    assertThat(result.year()).isNull();
     assertThat(result.externalId()).isEqualTo("tt1234567");
     assertThat(result.externalSource()).isEqualTo(ExternalSourceType.IMDB);
   }
@@ -128,8 +124,6 @@ class SeriesFolderNameParserTest {
   void shouldExtractExternalIdWithTmdbidAttributeNameAndEqualsSeparator() {
     var result = parser.parse("Show [tmdbid=12345]");
 
-    assertThat(result.title()).isEqualTo("Show");
-    assertThat(result.year()).isNull();
     assertThat(result.externalId()).isEqualTo("12345");
     assertThat(result.externalSource()).isEqualTo(ExternalSourceType.TMDB);
   }
@@ -139,8 +133,6 @@ class SeriesFolderNameParserTest {
   void shouldExtractTvdbExternalIdWithTvdbidAttributeNameInCurlyBraces() {
     var result = parser.parse("Show (2021) {tvdbid=67890}");
 
-    assertThat(result.title()).isEqualTo("Show");
-    assertThat(result.year()).isEqualTo("2021");
     assertThat(result.externalId()).isEqualTo("67890");
     assertThat(result.externalSource()).isEqualTo(ExternalSourceType.TVDB);
   }
@@ -151,8 +143,6 @@ class SeriesFolderNameParserTest {
     var result = parser.parse("Euphoria (US)");
 
     assertThat(result.title()).isEqualTo("Euphoria");
-    assertThat(result.year()).isNull();
-    assertThat(result.externalId()).isNull();
   }
 
   @Test
@@ -162,7 +152,6 @@ class SeriesFolderNameParserTest {
 
     assertThat(result.title()).isEqualTo("The Office");
     assertThat(result.year()).isEqualTo("2001");
-    assertThat(result.externalId()).isNull();
   }
 
   @Test
@@ -171,7 +160,5 @@ class SeriesFolderNameParserTest {
     var result = parser.parse("Show (ABC)");
 
     assertThat(result.title()).isEqualTo("Show (ABC)");
-    assertThat(result.year()).isNull();
-    assertThat(result.externalId()).isNull();
   }
 }

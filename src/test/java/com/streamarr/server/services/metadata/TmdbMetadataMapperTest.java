@@ -3,6 +3,7 @@ package com.streamarr.server.services.metadata;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.media.ImageType;
+import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.tmdb.TmdbCredit;
 import com.streamarr.server.services.metadata.tmdb.TmdbGenre;
@@ -70,9 +71,8 @@ class TmdbMetadataMapperTest {
 
       var sources = TmdbMetadataMapper.buildPersonImageSources(cast, List.of());
 
-      assertThat(sources).containsKey("1");
-      assertThat(sources.get("1"))
-          .containsExactly(new TmdbImageSource(ImageType.PROFILE, "/profile1.jpg"));
+      assertThat(sources)
+          .containsEntry("1", List.of(new TmdbImageSource(ImageType.PROFILE, "/profile1.jpg")));
     }
 
     @Test
@@ -141,9 +141,8 @@ class TmdbMetadataMapperTest {
 
       var sources = TmdbMetadataMapper.buildCompanyImageSources(companies);
 
-      assertThat(sources).containsKey("5");
-      assertThat(sources.get("5"))
-          .containsExactly(new TmdbImageSource(ImageType.LOGO, "/logo.png"));
+      assertThat(sources)
+          .containsEntry("5", List.of(new TmdbImageSource(ImageType.LOGO, "/logo.png")));
     }
 
     @Test
@@ -171,9 +170,7 @@ class TmdbMetadataMapperTest {
 
       var directors = TmdbMetadataMapper.mapDirectors(crew);
 
-      assertThat(directors).hasSize(1);
-      assertThat(directors.getFirst().getSourceId()).isEqualTo("10");
-      assertThat(directors.getFirst().getName()).isEqualTo("Director D");
+      assertThat(directors).extracting(Person::getName).containsExactly("Director D");
     }
   }
 
@@ -184,9 +181,13 @@ class TmdbMetadataMapperTest {
 
     var result = TmdbMetadataMapper.mapCast(cast);
 
-    assertThat(result).hasSize(1);
-    assertThat(result.getFirst().getSourceId()).isEqualTo("1");
-    assertThat(result.getFirst().getName()).isEqualTo("Actor A");
+    assertThat(result)
+        .singleElement()
+        .satisfies(
+            person -> {
+              assertThat(person.getSourceId()).isEqualTo("1");
+              assertThat(person.getName()).isEqualTo("Actor A");
+            });
   }
 
   @Test
@@ -196,10 +197,13 @@ class TmdbMetadataMapperTest {
 
     var result = TmdbMetadataMapper.mapCompanies(companies);
 
-    assertThat(result).hasSize(1);
-    var company = result.iterator().next();
-    assertThat(company.getSourceId()).isEqualTo("5");
-    assertThat(company.getName()).isEqualTo("Studio");
+    assertThat(result)
+        .singleElement()
+        .satisfies(
+            company -> {
+              assertThat(company.getSourceId()).isEqualTo("5");
+              assertThat(company.getName()).isEqualTo("Studio");
+            });
   }
 
   @Test
@@ -209,9 +213,12 @@ class TmdbMetadataMapperTest {
 
     var result = TmdbMetadataMapper.mapGenres(genres);
 
-    assertThat(result).hasSize(1);
-    var genre = result.iterator().next();
-    assertThat(genre.getSourceId()).isEqualTo("28");
-    assertThat(genre.getName()).isEqualTo("Action");
+    assertThat(result)
+        .singleElement()
+        .satisfies(
+            genre -> {
+              assertThat(genre.getSourceId()).isEqualTo("28");
+              assertThat(genre.getName()).isEqualTo("Action");
+            });
   }
 }

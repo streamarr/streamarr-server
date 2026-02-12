@@ -59,8 +59,8 @@ class ImageEnrichmentIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should persist images when event published within a transaction")
-  void shouldPersistImagesWhenEventPublishedWithinTransaction() {
+  @DisplayName("Should persist images with correct type when event published within a transaction")
+  void shouldPersistImagesWithCorrectTypeWhenEventPublishedWithinTransaction() {
     var entityId = UUID.randomUUID();
     stubImageDownload("/poster.jpg");
 
@@ -73,7 +73,6 @@ class ImageEnrichmentIT extends AbstractIntegrationTest {
                     List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")))));
 
     var images = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
-    assertThat(images).isNotEmpty();
     assertThat(images).extracting(Image::getImageType).containsOnly(ImageType.POSTER);
   }
 

@@ -101,6 +101,18 @@ class MovieScanningIT extends AbstractIntegrationTest {
     assertThat(movieRepository.findAll()).hasSize(1);
     var movie = movieRepository.findAll().getFirst();
     assertThat(movie.getTitle()).isEqualTo("Inception");
+  }
+
+  @Test
+  @DisplayName("Should match media file when folder name fallback succeeds")
+  void shouldMatchMediaFileWhenFolderNameFallbackSucceeds() throws IOException {
+    var library = createMovieLibrary();
+    var file = createMovieFile("Inception (2010)", "movie.mkv");
+
+    stubTmdbMovieSearch("Inception", "27205", "Inception", "2010-07-16");
+    stubTmdbMovieMetadata("27205", "Inception");
+
+    libraryManagementService.processDiscoveredFile(library.getId(), file);
 
     var mediaFile =
         mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
