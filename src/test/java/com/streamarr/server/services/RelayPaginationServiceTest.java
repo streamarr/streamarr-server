@@ -116,7 +116,7 @@ public class RelayPaginationServiceTest {
     var options = relayPaginationService.getPaginationOptions(1, cursor, 0, null);
 
     assertThat(options.getCursor()).isPresent();
-    assertThat(options.getCursor().get()).isEqualTo(cursor);
+    assertThat(options.getCursor()).contains(cursor);
   }
 
   @Test
@@ -127,7 +127,7 @@ public class RelayPaginationServiceTest {
     var options = relayPaginationService.getPaginationOptions(0, null, 1, cursor);
 
     assertThat(options.getCursor()).isPresent();
-    assertThat(options.getCursor().get()).isEqualTo(cursor);
+    assertThat(options.getCursor()).contains(cursor);
   }
 
   @Test
@@ -172,7 +172,7 @@ public class RelayPaginationServiceTest {
 
     var connection = relayPaginationService.buildConnection(edges, options, cursorId);
 
-    assertThat(connection.getEdges().size()).isEqualTo(1);
+    assertThat(connection.getEdges()).hasSize(1);
     assertThat(connection.getPageInfo().getEndCursor()).isEqualTo(edges.get(0).getCursor());
     assertThat(connection.getPageInfo().getStartCursor()).isEqualTo(edges.get(0).getCursor());
     assertThat(connection.getPageInfo().isHasNextPage()).isFalse();
@@ -200,7 +200,7 @@ public class RelayPaginationServiceTest {
 
     var connection = relayPaginationService.buildConnection(edges, options, cursorId);
 
-    assertThat(connection.getEdges().size()).isEqualTo(1);
+    assertThat(connection.getEdges()).hasSize(1);
     assertThat(connection.getPageInfo().getEndCursor()).isEqualTo(edges.get(0).getCursor());
     assertThat(connection.getPageInfo().getStartCursor()).isEqualTo(edges.get(0).getCursor());
     assertThat(connection.getPageInfo().isHasNextPage()).isTrue();
@@ -224,7 +224,7 @@ public class RelayPaginationServiceTest {
 
     var connection = relayPaginationService.buildConnection(edges, options, cursorId);
 
-    assertThat(connection.getEdges().isEmpty()).isTrue();
+    assertThat(connection.getEdges()).isEmpty();
     assertThat(connection.getPageInfo().getEndCursor()).isNull();
     assertThat(connection.getPageInfo().getStartCursor()).isNull();
     assertThat(connection.getPageInfo().isHasNextPage()).isFalse();
@@ -248,7 +248,7 @@ public class RelayPaginationServiceTest {
 
     var connection = relayPaginationService.buildConnection(edges, options, cursorId);
 
-    assertThat(connection.getEdges().isEmpty()).isTrue();
+    assertThat(connection.getEdges()).isEmpty();
     assertThat(connection.getPageInfo().getEndCursor()).isNull();
     assertThat(connection.getPageInfo().getStartCursor()).isNull();
     assertThat(connection.getPageInfo().isHasNextPage()).isFalse();
@@ -277,7 +277,7 @@ public class RelayPaginationServiceTest {
 
     var connection = relayPaginationService.buildConnection(edges, options, Optional.of(itemId));
 
-    assertThat(connection.getEdges().isEmpty()).isTrue();
+    assertThat(connection.getEdges()).isEmpty();
     assertThat(connection.getPageInfo().getEndCursor()).isNull();
     assertThat(connection.getPageInfo().getStartCursor()).isNull();
     assertThat(connection.getPageInfo().isHasNextPage()).isFalse();
@@ -306,7 +306,7 @@ public class RelayPaginationServiceTest {
 
     var connection = relayPaginationService.buildConnection(edges, options, Optional.of(itemId));
 
-    assertThat(connection.getEdges().isEmpty()).isTrue();
+    assertThat(connection.getEdges()).isEmpty();
     assertThat(connection.getPageInfo().getEndCursor()).isNull();
     assertThat(connection.getPageInfo().getStartCursor()).isNull();
     assertThat(connection.getPageInfo().isHasNextPage()).isFalse();
@@ -339,7 +339,7 @@ public class RelayPaginationServiceTest {
 
     var connection = relayPaginationService.buildConnection(edges, options, Optional.of(itemId1));
 
-    assertThat(connection.getEdges().size()).isEqualTo(1);
+    assertThat(connection.getEdges()).hasSize(1);
     assertThat(connection.getPageInfo().getEndCursor()).isEqualTo(edges.get(1).getCursor());
     assertThat(connection.getPageInfo().getStartCursor()).isEqualTo(edges.get(1).getCursor());
     assertThat(connection.getPageInfo().isHasNextPage()).isFalse();
@@ -372,7 +372,7 @@ public class RelayPaginationServiceTest {
 
     var connection = relayPaginationService.buildConnection(edges, options, Optional.of(itemId1));
 
-    assertThat(connection.getEdges().size()).isEqualTo(1);
+    assertThat(connection.getEdges()).hasSize(1);
     assertThat(connection.getPageInfo().getEndCursor()).isEqualTo(edges.get(1).getCursor());
     assertThat(connection.getPageInfo().getStartCursor()).isEqualTo(edges.get(1).getCursor());
     assertThat(connection.getPageInfo().isHasNextPage()).isTrue();
@@ -408,7 +408,7 @@ public class RelayPaginationServiceTest {
 
     var connection = relayPaginationService.buildConnection(edges, options, Optional.of(itemId1));
 
-    assertThat(connection.getEdges().size()).isEqualTo(1);
+    assertThat(connection.getEdges()).hasSize(1);
     assertThat(connection.getPageInfo().getEndCursor()).isEqualTo(edges.get(1).getCursor());
     assertThat(connection.getPageInfo().getStartCursor()).isEqualTo(edges.get(1).getCursor());
     assertThat(connection.getPageInfo().isHasNextPage()).isTrue();
@@ -444,7 +444,7 @@ public class RelayPaginationServiceTest {
 
     var connection = relayPaginationService.buildConnection(edges, options, Optional.of(itemId1));
 
-    assertThat(connection.getEdges().size()).isEqualTo(1);
+    assertThat(connection.getEdges()).hasSize(1);
     assertThat(connection.getPageInfo().getEndCursor()).isEqualTo(edges.get(1).getCursor());
     assertThat(connection.getPageInfo().getStartCursor()).isEqualTo(edges.get(1).getCursor());
     assertThat(connection.getPageInfo().isHasNextPage()).isTrue();

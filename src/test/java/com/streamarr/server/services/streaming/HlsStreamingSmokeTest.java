@@ -224,7 +224,7 @@ class HlsStreamingSmokeTest {
 
     var segmentData = segmentStore.readSegment(session.getSessionId(), "segment0.ts");
     assertThat(segmentData).isNotNull();
-    assertThat(segmentData.length).isGreaterThan(0);
+    assertThat(segmentData).hasSizeGreaterThan(0);
     assertThat(segmentData[0]).isEqualTo((byte) 0x47);
   }
 

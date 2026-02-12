@@ -141,7 +141,7 @@ class ImageVariantServiceTest {
             ImageSize.SMALL, new byte[] {1, 2, 3}, 100, 150, "hash");
 
     assertThat(a).isEqualTo(b);
-    assertThat(a.hashCode()).isEqualTo(b.hashCode());
+    assertThat(a).hasSameHashCodeAs(b);
   }
 
   @Test
