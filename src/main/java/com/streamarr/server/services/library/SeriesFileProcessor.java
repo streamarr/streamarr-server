@@ -77,12 +77,19 @@ public class SeriesFileProcessor {
     var filePath = FilepathCodec.decode(mediaFile.getFilepathUri());
     var parseResult = episodePathMetadataParser.parse(filePath.toString());
 
-    var isDateOnly =
-        parseResult.isPresent()
-            && parseResult.get().isOnlyDate()
-            && parseResult.get().getDate() != null;
+    if (parseResult.isEmpty()) {
+      markAs(mediaFile, MediaFileStatus.METADATA_PARSING_FAILED);
+      log.error(
+          "Failed to parse episode info from MediaFile id: {} at path: '{}'",
+          mediaFile.getId(),
+          mediaFile.getFilepathUri());
+      return;
+    }
 
-    if (parseResult.isEmpty() || (parseResult.get().getEpisodeNumber().isEmpty() && !isDateOnly)) {
+    var parsed = parseResult.get();
+    var isDateOnly = isDateOnlyEpisode(parsed);
+
+    if (parsed.getEpisodeNumber().isEmpty() && !isDateOnly) {
       markAs(mediaFile, MediaFileStatus.METADATA_PARSING_FAILED);
       log.error(
           "Failed to parse episode info from MediaFile id: {} at path: '{}'",
@@ -97,7 +104,7 @@ public class SeriesFileProcessor {
             ? seasonPathMetadataParser.parse(parentDir.getFileName().toString())
             : Optional.<SeasonPathMetadataParser.Result>empty();
 
-    var parserResult = resolveSeriesInfo(parentDir, seasonParseResult, parseResult.get());
+    var parserResult = resolveSeriesInfo(parentDir, seasonParseResult, parsed);
 
     if (parserResult.title() == null || parserResult.title().isBlank()) {
       markAs(mediaFile, MediaFileStatus.METADATA_PARSING_FAILED);
@@ -121,12 +128,12 @@ public class SeriesFileProcessor {
     }
 
     if (isDateOnly) {
-      processDateOnlyEpisode(library, mediaFile, searchResult.get(), parseResult.get());
+      processDateOnlyEpisode(library, mediaFile, searchResult.get(), parsed);
       return;
     }
 
-    var episodeNumber = parseResult.get().getEpisodeNumber().getAsInt();
-    var seasonNumber = resolveSeasonNumber(parentDir, seasonParseResult, parseResult.get());
+    var episodeNumber = parsed.getEpisodeNumber().getAsInt();
+    var seasonNumber = resolveSeasonNumber(parentDir, seasonParseResult, parsed);
 
     log.info(
         "Parsed series file: series='{}', season={}, episode={} for MediaFile id: {}",
@@ -373,6 +380,10 @@ public class SeriesFileProcessor {
           .ifPresent(
               ed -> publishImageEvent(episode.getId(), ImageEntityType.EPISODE, ed.imageSources()));
     }
+  }
+
+  private boolean isDateOnlyEpisode(EpisodePathResult result) {
+    return result.isOnlyDate() && result.getDate() != null;
   }
 
   private void markAs(MediaFile mediaFile, MediaFileStatus status) {
