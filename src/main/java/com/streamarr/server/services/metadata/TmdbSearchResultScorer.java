@@ -75,11 +75,11 @@ public final class TmdbSearchResultScorer {
     return (TITLE_WEIGHT * titleSim) + (YEAR_WEIGHT * yearMatch) + (POPULARITY_WEIGHT * popScore);
   }
 
-  static double ensembleScore(String a, String b) {
+  private static double ensembleScore(String a, String b) {
     return 0.4 * JARO_WINKLER.apply(a, b) + 0.35 * bigramDice(a, b) + 0.25 * bigramJaccard(a, b);
   }
 
-  static String normalizeTitle(String input) {
+  private static String normalizeTitle(String input) {
     if (input == null || input.isBlank()) {
       return "";
     }
@@ -93,7 +93,7 @@ public final class TmdbSearchResultScorer {
     return normalized;
   }
 
-  static double bigramDice(String a, String b) {
+  private static double bigramDice(String a, String b) {
     if (a.length() < 2 || b.length() < 2) {
       return a.equals(b) ? 1.0 : 0.0;
     }
@@ -117,7 +117,7 @@ public final class TmdbSearchResultScorer {
     return (2.0 * intersection) / totalSize;
   }
 
-  static double bigramJaccard(String a, String b) {
+  private static double bigramJaccard(String a, String b) {
     if (a.length() < 2 || b.length() < 2) {
       return a.equals(b) ? 1.0 : 0.0;
     }
