@@ -2,6 +2,7 @@ package com.streamarr.server.services.metadata;
 
 import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
@@ -18,6 +19,7 @@ import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -61,10 +63,16 @@ class ImageEnrichmentListenerTest {
 
     listener.onMetadataEnriched(event);
 
-    var images = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
-    assertThat(images)
-        .extracting(Image::getImageType)
-        .containsOnly(ImageType.POSTER, ImageType.BACKDROP);
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () -> {
+              var images =
+                  imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
+              assertThat(images)
+                  .extracting(Image::getImageType)
+                  .containsOnly(ImageType.POSTER, ImageType.BACKDROP);
+            });
   }
 
   @Test
@@ -84,8 +92,14 @@ class ImageEnrichmentListenerTest {
 
     listener.onMetadataEnriched(event);
 
-    var images = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
-    assertThat(images).extracting(Image::getImageType).containsOnly(ImageType.BACKDROP);
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () -> {
+              var images =
+                  imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
+              assertThat(images).extracting(Image::getImageType).containsOnly(ImageType.BACKDROP);
+            });
   }
 
   @Test
@@ -114,9 +128,15 @@ class ImageEnrichmentListenerTest {
 
     listener.onMetadataEnriched(event);
 
-    var images = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
-    assertThat(images).hasSize(1);
-    assertThat(images.getFirst().getId()).isEqualTo(existingImage.getId());
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () -> {
+              var images =
+                  imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
+              assertThat(images).hasSize(1);
+              assertThat(images.getFirst().getId()).isEqualTo(existingImage.getId());
+            });
   }
 
   @Test
@@ -136,8 +156,14 @@ class ImageEnrichmentListenerTest {
 
     listener.onMetadataEnriched(event);
 
-    var images = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
-    assertThat(images).extracting(Image::getImageType).containsOnly(ImageType.BACKDROP);
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () -> {
+              var images =
+                  imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
+              assertThat(images).extracting(Image::getImageType).containsOnly(ImageType.BACKDROP);
+            });
   }
 
   @Test
@@ -155,14 +181,23 @@ class ImageEnrichmentListenerTest {
 
     listener.onMetadataEnriched(event);
 
-    assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
-        .isEmpty();
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () -> {
+              assertThat(
+                      imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
+                  .isEmpty();
 
-    var entityDir =
-        fileSystem.getPath("/data/images/movie").resolve(entityId.toString()).resolve("poster");
-    try (var files = Files.list(entityDir)) {
-      assertThat(files).isEmpty();
-    }
+              var entityDir =
+                  fileSystem
+                      .getPath("/data/images/movie")
+                      .resolve(entityId.toString())
+                      .resolve("poster");
+              try (var files = Files.list(entityDir)) {
+                assertThat(files).isEmpty();
+              }
+            });
   }
 
   @Test
@@ -181,8 +216,14 @@ class ImageEnrichmentListenerTest {
 
     listener.onMetadataEnriched(event);
 
-    assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
-        .isEmpty();
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () ->
+                assertThat(
+                        imageRepository.findByEntityIdAndEntityType(
+                            entityId, ImageEntityType.MOVIE))
+                    .isEmpty());
   }
 
   private static class FakeTmdbHttpService extends TheMovieDatabaseHttpService {
