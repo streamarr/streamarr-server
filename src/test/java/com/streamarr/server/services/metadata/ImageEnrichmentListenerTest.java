@@ -168,7 +168,7 @@ class ImageEnrichmentListenerTest {
 
   @Test
   @DisplayName("Should clean up written files when batch save fails")
-  void shouldCleanUpWrittenFilesWhenBatchSaveFails() throws IOException {
+  void shouldCleanUpWrittenFilesWhenBatchSaveFails() {
     var entityId = UUID.randomUUID();
     tmdbHttpService.setImageData(createTestImage(600, 900));
     imageRepository.setFailOnInsertAllIfAbsent(true);
@@ -290,7 +290,7 @@ class ImageEnrichmentListenerTest {
     @Override
     public byte[] downloadImage(String pathFragment) throws IOException, InterruptedException {
       if (delayMillis > 0) {
-        Thread.sleep(delayMillis);
+        await().pollDelay(Duration.ofMillis(delayMillis)).until(() -> true);
       }
       if (failAll) {
         throw new IOException("Simulated download failure for " + pathFragment);

@@ -403,7 +403,7 @@ class SeriesServiceTest {
     var season = seriesService.createSeasonWithEpisodes(series, details, library);
 
     assertThat(season.getTitle()).isEqualTo("Specials");
-    assertThat(season.getSeasonNumber()).isEqualTo(0);
+    assertThat(season.getSeasonNumber()).isZero();
     assertThat(episodeRepository.findBySeasonId(season.getId())).isEmpty();
 
     var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
