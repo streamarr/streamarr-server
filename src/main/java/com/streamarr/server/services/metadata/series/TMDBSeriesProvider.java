@@ -50,6 +50,7 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
 
   private final ConcurrentHashMap<String, List<TmdbTvSeasonSummary>> seasonSummariesCache =
       new ConcurrentHashMap<>();
+  private final Set<String> failedSeasonDetailsCache = ConcurrentHashMap.newKeySet();
 
   @Getter private final ExternalAgentStrategy agentStrategy = ExternalAgentStrategy.TMDB;
 
@@ -206,6 +207,12 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
   }
 
   public Optional<SeasonDetails> getSeasonDetails(String seriesExternalId, int seasonNumber) {
+    var cacheKey = seriesExternalId + ":" + seasonNumber;
+
+    if (failedSeasonDetailsCache.contains(cacheKey)) {
+      return Optional.empty();
+    }
+
     try {
       var tmdbSeason =
           theMovieDatabaseHttpService.getTvSeasonDetails(seriesExternalId, seasonNumber);
@@ -232,6 +239,7 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
       return Optional.of(seasonBuilder.build());
 
     } catch (IOException ex) {
+      failedSeasonDetailsCache.add(cacheKey);
       log.error(
           "Failure fetching season {} details for series TMDB id '{}'",
           seasonNumber,
@@ -274,6 +282,7 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
   @EventListener
   public void onScanEnded(ScanEndedEvent event) {
     seasonSummariesCache.clear();
+    failedSeasonDetailsCache.clear();
   }
 
   private List<TmdbTvSeasonSummary> getOrFetchSeasonSummaries(String seriesExternalId) {
