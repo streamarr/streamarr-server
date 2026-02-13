@@ -35,6 +35,10 @@ public class ImageEnrichmentListener {
 
   @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
   public void onMetadataEnriched(MetadataEnrichedEvent event) {
+    Thread.startVirtualThread(() -> enrichImages(event));
+  }
+
+  private void enrichImages(MetadataEnrichedEvent event) {
     var mutex = mutexFactory.getMutex(event.entityId().toString());
 
     mutex.lock();

@@ -226,12 +226,42 @@ class ImageEnrichmentListenerTest {
                     .isEmpty());
   }
 
+  @Test
+  @DisplayName("Should not block calling thread during image download")
+  void shouldNotBlockCallingThreadDuringImageDownload() {
+    var entityId = UUID.randomUUID();
+    tmdbHttpService.setImageData(createTestImage(600, 900));
+    tmdbHttpService.setDelayMillis(500);
+
+    var event =
+        new MetadataEnrichedEvent(
+            entityId,
+            ImageEntityType.MOVIE,
+            List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")));
+
+    var startNanos = System.nanoTime();
+    listener.onMetadataEnriched(event);
+    var elapsedMs = (System.nanoTime() - startNanos) / 1_000_000;
+
+    assertThat(elapsedMs).as("Method should return without waiting for download").isLessThan(100);
+
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () -> {
+              var images =
+                  imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
+              assertThat(images).isNotEmpty();
+            });
+  }
+
   private static class FakeTmdbHttpService extends TheMovieDatabaseHttpService {
 
     private byte[] imageData;
     private String failOnPath;
     private String interruptOnPath;
     private boolean failAll;
+    private long delayMillis;
 
     FakeTmdbHttpService() {
       super("", "", "", 10, null, null);
@@ -253,8 +283,15 @@ class ImageEnrichmentListenerTest {
       this.failAll = failAll;
     }
 
+    void setDelayMillis(long delayMillis) {
+      this.delayMillis = delayMillis;
+    }
+
     @Override
     public byte[] downloadImage(String pathFragment) throws IOException, InterruptedException {
+      if (delayMillis > 0) {
+        Thread.sleep(delayMillis);
+      }
       if (failAll) {
         throw new IOException("Simulated download failure for " + pathFragment);
       }
