@@ -15,11 +15,13 @@ import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.services.library.events.ScanEndedEvent;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.time.LocalDate;
+import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -60,6 +62,7 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
   @BeforeEach
   void resetStubs() {
     wireMock.resetAll();
+    provider.onScanEnded(new ScanEndedEvent(UUID.randomUUID()));
   }
 
   @AfterAll
