@@ -22,8 +22,7 @@ public class FakeSeasonRepository extends FakeJpaRepository<Season> implements S
   @Override
   public List<Season> findBySeriesId(UUID seriesId) {
     return database.values().stream()
-        .filter(
-            season -> season.getSeries() != null && seriesId.equals(season.getSeries().getId()))
+        .filter(season -> season.getSeries() != null && seriesId.equals(season.getSeries().getId()))
         .toList();
   }
 }

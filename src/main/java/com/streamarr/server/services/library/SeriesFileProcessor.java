@@ -2,7 +2,6 @@ package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Episode;
-import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Season;

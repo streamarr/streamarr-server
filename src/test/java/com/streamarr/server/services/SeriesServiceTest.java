@@ -8,6 +8,7 @@ import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
 import com.streamarr.server.config.ImageProperties;
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
@@ -228,8 +229,8 @@ class SeriesServiceTest {
   }
 
   @Test
-  @DisplayName("Should publish season image event when creating season with episodes")
-  void shouldPublishSeasonImageEventWhenCreatingSeasonWithEpisodes() {
+  @DisplayName("Should publish season image event targeting saved season when creating season")
+  void shouldPublishSeasonImageEventTargetingSavedSeasonWhenCreatingSeason() {
     var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
     var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
     var details =
@@ -246,19 +247,25 @@ class SeriesServiceTest {
                         .build()))
             .build();
 
-    seriesService.createSeasonWithEpisodes(series, details, library);
+    var season = seriesService.createSeasonWithEpisodes(series, details, library);
 
     var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
     assertThat(events)
         .filteredOn(e -> e.entityType() == ImageEntityType.SEASON)
-        .hasSize(1)
-        .first()
-        .satisfies(e -> assertThat(e.imageSources()).hasSize(1));
+        .singleElement()
+        .satisfies(
+            e -> {
+              assertThat(e.entityId()).isEqualTo(season.getId());
+              assertThat(e.imageSources()).singleElement().isInstanceOf(TmdbImageSource.class);
+              var source = (TmdbImageSource) e.imageSources().getFirst();
+              assertThat(source.imageType()).isEqualTo(ImageType.POSTER);
+              assertThat(source.pathFragment()).isEqualTo("/season1.jpg");
+            });
   }
 
   @Test
-  @DisplayName("Should publish episode image events when creating season with episodes")
-  void shouldPublishEpisodeImageEventsWhenCreatingSeasonWithEpisodes() {
+  @DisplayName("Should publish episode image event per episode targeting saved episodes")
+  void shouldPublishEpisodeImageEventPerEpisodeTargetingSavedEpisodes() {
     var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
     var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
     var details =
@@ -282,15 +289,29 @@ class SeriesServiceTest {
                         .build()))
             .build();
 
-    seriesService.createSeasonWithEpisodes(series, details, library);
+    var season = seriesService.createSeasonWithEpisodes(series, details, library);
 
-    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
-    assertThat(events).filteredOn(e -> e.entityType() == ImageEntityType.EPISODE).hasSize(2);
+    var savedEpisodes = episodeRepository.findBySeasonId(season.getId());
+    var episodeEvents =
+        eventPublisher.getEventsOfType(MetadataEnrichedEvent.class).stream()
+            .filter(e -> e.entityType() == ImageEntityType.EPISODE)
+            .toList();
+
+    assertThat(episodeEvents).hasSize(2);
+    assertThat(episodeEvents)
+        .extracting(MetadataEnrichedEvent::entityId)
+        .containsExactlyInAnyOrderElementsOf(savedEpisodes.stream().map(Episode::getId).toList());
+
+    for (var event : episodeEvents) {
+      assertThat(event.imageSources()).singleElement().isInstanceOf(TmdbImageSource.class);
+      var source = (TmdbImageSource) event.imageSources().getFirst();
+      assertThat(source.imageType()).isEqualTo(ImageType.STILL);
+    }
   }
 
   @Test
-  @DisplayName("Should not publish season event when image sources are empty")
-  void shouldNotPublishSeasonEventWhenImageSourcesAreEmpty() {
+  @DisplayName("Should not publish any image events when all image sources are empty")
+  void shouldNotPublishAnyImageEventsWhenAllImageSourcesAreEmpty() {
     var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
     var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
     var details =
@@ -309,19 +330,20 @@ class SeriesServiceTest {
 
     seriesService.createSeasonWithEpisodes(series, details, library);
 
-    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
-    assertThat(events).filteredOn(e -> e.entityType() == ImageEntityType.SEASON).isEmpty();
+    assertThat(eventPublisher.getEventsOfType(MetadataEnrichedEvent.class)).isEmpty();
   }
 
   @Test
-  @DisplayName("Should save season and all episodes when creating season with episodes")
-  void shouldSaveSeasonAndAllEpisodesWhenCreatingSeasonWithEpisodes() {
+  @DisplayName("Should persist season and episodes with all metadata fields")
+  void shouldPersistSeasonAndEpisodesWithAllMetadataFields() {
     var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
     var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
     var details =
         SeasonDetails.builder()
             .name("Season 1")
             .seasonNumber(1)
+            .overview("The first season of Breaking Bad.")
+            .airDate(java.time.LocalDate.of(2008, 1, 20))
             .imageSources(List.of())
             .episodes(
                 List.of(
@@ -329,11 +351,16 @@ class SeriesServiceTest {
                         .episodeNumber(1)
                         .name("Pilot")
                         .overview("A chemistry teacher turns to crime.")
+                        .airDate(java.time.LocalDate.of(2008, 1, 20))
+                        .runtime(58)
                         .imageSources(List.of())
                         .build(),
                     SeasonDetails.EpisodeDetails.builder()
                         .episodeNumber(2)
                         .name("Cat's in the Bag...")
+                        .overview("Walt and Jesse deal with the aftermath.")
+                        .airDate(java.time.LocalDate.of(2008, 1, 27))
+                        .runtime(48)
                         .imageSources(List.of())
                         .build()))
             .build();
@@ -342,12 +369,103 @@ class SeriesServiceTest {
 
     assertThat(seasonRepository.findBySeriesIdAndSeasonNumber(series.getId(), 1)).isPresent();
     assertThat(season.getTitle()).isEqualTo("Season 1");
+    assertThat(season.getSeasonNumber()).isEqualTo(1);
+    assertThat(season.getOverview()).isEqualTo("The first season of Breaking Bad.");
+    assertThat(season.getAirDate()).isEqualTo(java.time.LocalDate.of(2008, 1, 20));
     assertThat(season.getSeries().getId()).isEqualTo(series.getId());
 
     var episodes = episodeRepository.findBySeasonId(season.getId());
     assertThat(episodes).hasSize(2);
-    assertThat(episodes).extracting("episodeNumber").containsExactlyInAnyOrder(1, 2);
-    assertThat(episodes).extracting("title").containsExactlyInAnyOrder("Pilot", "Cat's in the Bag...");
+    assertThat(episodes).extracting(Episode::getEpisodeNumber).containsExactlyInAnyOrder(1, 2);
+    assertThat(episodes)
+        .extracting(Episode::getTitle)
+        .containsExactlyInAnyOrder("Pilot", "Cat's in the Bag...");
+    assertThat(episodes)
+        .extracting(Episode::getOverview)
+        .containsExactlyInAnyOrder(
+            "A chemistry teacher turns to crime.", "Walt and Jesse deal with the aftermath.");
+    assertThat(episodes).extracting(Episode::getRuntime).containsExactlyInAnyOrder(58, 48);
+  }
+
+  @Test
+  @DisplayName("Should save season with no episodes when episode list is empty")
+  void shouldSaveSeasonWithNoEpisodesWhenEpisodeListIsEmpty() {
+    var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
+    var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
+    var details =
+        SeasonDetails.builder()
+            .name("Specials")
+            .seasonNumber(0)
+            .imageSources(List.of(new TmdbImageSource(ImageType.POSTER, "/specials.jpg")))
+            .episodes(List.of())
+            .build();
+
+    var season = seriesService.createSeasonWithEpisodes(series, details, library);
+
+    assertThat(season.getTitle()).isEqualTo("Specials");
+    assertThat(season.getSeasonNumber()).isEqualTo(0);
+    assertThat(episodeRepository.findBySeasonId(season.getId())).isEmpty();
+
+    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
+    assertThat(events)
+        .singleElement()
+        .satisfies(
+            e -> {
+              assertThat(e.entityType()).isEqualTo(ImageEntityType.SEASON);
+              assertThat(e.entityId()).isEqualTo(season.getId());
+            });
+  }
+
+  @Test
+  @DisplayName("Should only publish episode events for episodes that have image sources")
+  void shouldOnlyPublishEpisodeEventsForEpisodesThatHaveImageSources() {
+    var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
+    var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
+    var details =
+        SeasonDetails.builder()
+            .name("Season 1")
+            .seasonNumber(1)
+            .imageSources(List.of())
+            .episodes(
+                List.of(
+                    SeasonDetails.EpisodeDetails.builder()
+                        .episodeNumber(1)
+                        .name("Pilot")
+                        .imageSources(
+                            List.of(new TmdbImageSource(ImageType.STILL, "/ep1_still.jpg")))
+                        .build(),
+                    SeasonDetails.EpisodeDetails.builder()
+                        .episodeNumber(2)
+                        .name("Cat's in the Bag...")
+                        .imageSources(List.of())
+                        .build(),
+                    SeasonDetails.EpisodeDetails.builder()
+                        .episodeNumber(3)
+                        .name("...And the Bag's in the River")
+                        .imageSources(
+                            List.of(new TmdbImageSource(ImageType.STILL, "/ep3_still.jpg")))
+                        .build()))
+            .build();
+
+    var season = seriesService.createSeasonWithEpisodes(series, details, library);
+
+    var savedEpisodes = episodeRepository.findBySeasonId(season.getId());
+    assertThat(savedEpisodes).hasSize(3);
+
+    var episodeEvents =
+        eventPublisher.getEventsOfType(MetadataEnrichedEvent.class).stream()
+            .filter(e -> e.entityType() == ImageEntityType.EPISODE)
+            .toList();
+
+    assertThat(episodeEvents).hasSize(2);
+
+    var ep1 =
+        savedEpisodes.stream().filter(e -> e.getEpisodeNumber() == 1).findFirst().orElseThrow();
+    var ep3 =
+        savedEpisodes.stream().filter(e -> e.getEpisodeNumber() == 3).findFirst().orElseThrow();
+    assertThat(episodeEvents)
+        .extracting(MetadataEnrichedEvent::entityId)
+        .containsExactlyInAnyOrder(ep1.getId(), ep3.getId());
   }
 
   private void seedImage(UUID entityId) {

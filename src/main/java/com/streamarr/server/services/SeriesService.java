@@ -121,9 +121,7 @@ public class SeriesService {
           .filter(ed -> ed.episodeNumber() == episode.getEpisodeNumber())
           .findFirst()
           .ifPresent(
-              ed ->
-                  publishImageEvent(
-                      episode.getId(), ImageEntityType.EPISODE, ed.imageSources()));
+              ed -> publishImageEvent(episode.getId(), ImageEntityType.EPISODE, ed.imageSources()));
     }
 
     return season;
