@@ -229,8 +229,8 @@ class SeriesServiceTest {
   }
 
   @Test
-  @DisplayName("Should publish season image event targeting saved season when creating season")
-  void shouldPublishSeasonImageEventTargetingSavedSeasonWhenCreatingSeason() {
+  @DisplayName("Should publish season image event targeting saved season when season has image sources")
+  void shouldPublishSeasonImageEventTargetingSavedSeasonWhenSeasonHasImageSources() {
     var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
     var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
     var details =
@@ -264,8 +264,8 @@ class SeriesServiceTest {
   }
 
   @Test
-  @DisplayName("Should publish episode image event per episode targeting saved episodes")
-  void shouldPublishEpisodeImageEventPerEpisodeTargetingSavedEpisodes() {
+  @DisplayName("Should publish episode image event per saved episode when episodes have image sources")
+  void shouldPublishEpisodeImageEventPerSavedEpisodeWhenEpisodesHaveImageSources() {
     var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
     var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
     var details =
@@ -334,8 +334,8 @@ class SeriesServiceTest {
   }
 
   @Test
-  @DisplayName("Should persist season and episodes with all metadata fields")
-  void shouldPersistSeasonAndEpisodesWithAllMetadataFields() {
+  @DisplayName("Should persist season and episodes with all metadata fields when details provided")
+  void shouldPersistSeasonAndEpisodesWithAllMetadataFieldsWhenDetailsProvided() {
     var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
     var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
     var details =
