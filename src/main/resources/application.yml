@@ -45,8 +45,6 @@ otel:
     disabled: true
 
 library:
-  scan:
-    max-concurrent-files: ${LIBRARY_SCAN_MAX_CONCURRENT_FILES:20}
   watcher:
     stabilization-period-seconds: ${LIBRARY_WATCHER_STABILIZATION_PERIOD:30}
     poll-interval-seconds: ${LIBRARY_WATCHER_POLL_INTERVAL:5}

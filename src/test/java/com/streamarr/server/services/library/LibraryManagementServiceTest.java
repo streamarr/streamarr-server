@@ -68,7 +68,6 @@ import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -119,7 +118,7 @@ class LibraryManagementServiceTest {
 
   private final LibraryManagementService libraryManagementService =
       new LibraryManagementService(
-          new IgnoredFileValidator(new LibraryScanProperties(null, null, null, null)),
+          new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
           new VideoExtensionValidator(),
           movieFileProcessor,
           seriesFileProcessor,
@@ -129,8 +128,7 @@ class LibraryManagementServiceTest {
           seriesService,
           capturingEventPublisher,
           new MutexFactoryProvider(),
-          fileSystem,
-          new LibraryScanProperties(null, null, null, null));
+          fileSystem);
 
   private UUID savedLibraryId;
 
@@ -145,33 +143,6 @@ class LibraryManagementServiceTest {
   @AfterEach
   public void tearDown() throws IOException {
     fileSystem.close();
-  }
-
-  @Test
-  @DisplayName("Should throw IllegalArgumentException when maxConcurrentFiles is not positive")
-  void shouldThrowWhenMaxConcurrentFilesIsNotPositive() {
-    var ignoredFileValidator =
-        new IgnoredFileValidator(new LibraryScanProperties(null, null, null, null));
-    var videoExtensionValidator = new VideoExtensionValidator();
-    var mutexFactoryProvider = new MutexFactoryProvider();
-    var scanProperties = new LibraryScanProperties(null, null, null, 0);
-
-    assertThrows(
-        IllegalArgumentException.class,
-        () ->
-            new LibraryManagementService(
-                ignoredFileValidator,
-                videoExtensionValidator,
-                movieFileProcessor,
-                seriesFileProcessor,
-                fakeLibraryRepository,
-                fakeMediaFileRepository,
-                movieService,
-                seriesService,
-                capturingEventPublisher,
-                mutexFactoryProvider,
-                fileSystem,
-                scanProperties));
   }
 
   @Test
@@ -237,7 +208,7 @@ class LibraryManagementServiceTest {
 
     var serviceWithThrowingFs =
         new LibraryManagementService(
-            new IgnoredFileValidator(new LibraryScanProperties(null, null, null, null)),
+            new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
             new VideoExtensionValidator(),
             movieFileProcessor,
             seriesFileProcessor,
@@ -247,8 +218,7 @@ class LibraryManagementServiceTest {
             seriesService,
             capturingEventPublisher,
             new MutexFactoryProvider(),
-            throwingFileSystem,
-            new LibraryScanProperties(null, null, null, null));
+            throwingFileSystem);
 
     serviceWithThrowingFs.scanLibrary(savedLibraryId);
 
@@ -271,7 +241,7 @@ class LibraryManagementServiceTest {
 
     var serviceWithThrowingFs =
         new LibraryManagementService(
-            new IgnoredFileValidator(new LibraryScanProperties(null, null, null, null)),
+            new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
             new VideoExtensionValidator(),
             movieFileProcessor,
             seriesFileProcessor,
@@ -281,8 +251,7 @@ class LibraryManagementServiceTest {
             seriesService,
             capturingEventPublisher,
             new MutexFactoryProvider(),
-            throwingFileSystem,
-            new LibraryScanProperties(null, null, null, null));
+            throwingFileSystem);
 
     serviceWithThrowingFs.scanLibrary(savedLibraryId);
 
@@ -366,7 +335,7 @@ class LibraryManagementServiceTest {
 
     var serviceWithThrowingFs =
         new LibraryManagementService(
-            new IgnoredFileValidator(new LibraryScanProperties(null, null, null, null)),
+            new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
             new VideoExtensionValidator(),
             movieFileProcessor,
             seriesFileProcessor,
@@ -376,8 +345,7 @@ class LibraryManagementServiceTest {
             seriesService,
             capturingEventPublisher,
             new MutexFactoryProvider(),
-            throwingFileSystem,
-            new LibraryScanProperties(null, null, null, null));
+            throwingFileSystem);
 
     serviceWithThrowingFs.scanLibrary(savedLibraryId);
 
@@ -673,55 +641,6 @@ class LibraryManagementServiceTest {
             });
   }
 
-  @Test
-  @DisplayName(
-      "Should limit concurrent file processing to configured maxConcurrentFiles during scan")
-  void shouldLimitConcurrentFileProcessingToConfiguredMax() throws IOException {
-    var rootPath = createRootLibraryDirectory();
-
-    for (int i = 0; i < 10; i++) {
-      createMovieFile(rootPath, "Movie " + i, "Movie " + i + " (2024).mkv");
-    }
-
-    var maxConcurrent = new AtomicInteger(0);
-    var currentConcurrent = new AtomicInteger(0);
-
-    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
-    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
-        .thenAnswer(
-            invocation -> {
-              var current = currentConcurrent.incrementAndGet();
-              maxConcurrent.accumulateAndGet(current, Math::max);
-              try {
-                await().pollDelay(Duration.ofMillis(200)).until(() -> true);
-              } finally {
-                currentConcurrent.decrementAndGet();
-              }
-              return Optional.empty();
-            });
-
-    var concurrencyLimitedService =
-        new LibraryManagementService(
-            new IgnoredFileValidator(new LibraryScanProperties(null, null, null, null)),
-            new VideoExtensionValidator(),
-            movieFileProcessor,
-            seriesFileProcessor,
-            fakeLibraryRepository,
-            fakeMediaFileRepository,
-            movieService,
-            seriesService,
-            capturingEventPublisher,
-            new MutexFactoryProvider(),
-            fileSystem,
-            new LibraryScanProperties(null, null, null, 2));
-
-    concurrencyLimitedService.scanLibrary(savedLibraryId);
-
-    assertThat(maxConcurrent.get())
-        .as("Concurrent file processing should not exceed maxConcurrentFiles")
-        .isLessThanOrEqualTo(2);
-  }
-
   @Nested
   @DisplayName("Add Library Tests")
   class AddLibraryTests {
@@ -859,7 +778,7 @@ class LibraryManagementServiceTest {
 
       var serviceWithSecurityFs =
           new LibraryManagementService(
-              new IgnoredFileValidator(new LibraryScanProperties(null, null, null, null)),
+              new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
               new VideoExtensionValidator(),
               movieFileProcessor,
               seriesFileProcessor,
@@ -869,8 +788,7 @@ class LibraryManagementServiceTest {
               seriesService,
               capturingEventPublisher,
               new MutexFactoryProvider(),
-              securityExceptionFs,
-              new LibraryScanProperties(null, null, null, null));
+              securityExceptionFs);
 
       var library = LibraryFixtureCreator.buildUnsavedLibrary("Test Library", "/secure-path");
 

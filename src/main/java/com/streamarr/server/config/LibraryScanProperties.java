@@ -7,8 +7,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record LibraryScanProperties(
     List<String> additionalIgnoredFilenames,
     List<String> additionalIgnoredExtensions,
-    List<String> additionalIgnoredPrefixes,
-    Integer maxConcurrentFiles) {
+    List<String> additionalIgnoredPrefixes) {
 
   public LibraryScanProperties {
     if (additionalIgnoredFilenames == null) {
@@ -21,10 +20,6 @@ public record LibraryScanProperties(
 
     if (additionalIgnoredPrefixes == null) {
       additionalIgnoredPrefixes = List.of();
-    }
-
-    if (maxConcurrentFiles == null) {
-      maxConcurrentFiles = 20;
     }
   }
 }

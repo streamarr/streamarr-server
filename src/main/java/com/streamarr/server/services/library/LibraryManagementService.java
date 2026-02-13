@@ -1,6 +1,5 @@
 package com.streamarr.server.services.library;
 
-import com.streamarr.server.config.LibraryScanProperties;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaFile;
@@ -36,7 +35,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Semaphore;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
@@ -59,7 +57,6 @@ public class LibraryManagementService implements ActiveScanChecker {
   private final ApplicationEventPublisher eventPublisher;
   private final FileSystem fileSystem;
   private final MutexFactory<String> mutexFactory;
-  private final Semaphore fileProcessingLimit;
   private final Set<UUID> activeScans = ConcurrentHashMap.newKeySet();
 
   public LibraryManagementService(
@@ -73,14 +70,7 @@ public class LibraryManagementService implements ActiveScanChecker {
       SeriesService seriesService,
       ApplicationEventPublisher eventPublisher,
       MutexFactoryProvider mutexFactoryProvider,
-      FileSystem fileSystem,
-      LibraryScanProperties libraryScanProperties) {
-    if (libraryScanProperties.maxConcurrentFiles() <= 0) {
-      throw new IllegalArgumentException(
-          "library.scan.max-concurrent-files must be positive, got: "
-              + libraryScanProperties.maxConcurrentFiles());
-    }
-
+      FileSystem fileSystem) {
     this.ignoredFileValidator = ignoredFileValidator;
     this.videoExtensionValidator = videoExtensionValidator;
     this.movieFileProcessor = movieFileProcessor;
@@ -91,7 +81,6 @@ public class LibraryManagementService implements ActiveScanChecker {
     this.seriesService = seriesService;
     this.eventPublisher = eventPublisher;
     this.fileSystem = fileSystem;
-    this.fileProcessingLimit = new Semaphore(libraryScanProperties.maxConcurrentFiles());
 
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
   }
@@ -204,7 +193,7 @@ public class LibraryManagementService implements ActiveScanChecker {
             .findById(libraryId)
             .orElseThrow(() -> new LibraryNotFoundException(libraryId));
 
-    processFileWithLimit(library, path);
+    processFile(library, path);
   }
 
   public void scanLibrary(UUID libraryId) {
@@ -235,25 +224,10 @@ public class LibraryManagementService implements ActiveScanChecker {
       stream
           .filter(Files::isRegularFile)
           .filter(file -> !ignoredFileValidator.shouldIgnore(file))
-          .forEach(file -> executor.submit(() -> processFileWithLimit(library, file)));
+          .forEach(file -> executor.submit(() -> processFile(library, file)));
 
     } catch (IOException | UncheckedIOException | SecurityException | InvalidPathException e) {
       throw new LibraryScanFailedException(library.getName(), e);
-    }
-  }
-
-  private void processFileWithLimit(Library library, Path file) {
-    try {
-      fileProcessingLimit.acquire();
-    } catch (InterruptedException e) {
-      log.warn("File processing interrupted, skipping: {}", file, e);
-      Thread.currentThread().interrupt();
-      return;
-    }
-    try {
-      processFile(library, file);
-    } finally {
-      fileProcessingLimit.release();
     }
   }
 
