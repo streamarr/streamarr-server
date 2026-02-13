@@ -240,6 +240,7 @@ public class SeriesFileProcessor {
               .or(() -> createSeries(library, searchResult));
 
       if (seriesOpt.isEmpty()) {
+        markAs(mediaFile, MediaFileStatus.ENRICHMENT_FAILED);
         return;
       }
 
@@ -250,6 +251,7 @@ public class SeriesFileProcessor {
           resolveEffectiveSeasonNumber(library, searchResult.externalId(), seasonNumber, seasonOpt);
 
       if (effectiveSeasonNumber.isEmpty()) {
+        markAs(mediaFile, MediaFileStatus.ENRICHMENT_FAILED);
         return;
       }
 
@@ -266,6 +268,7 @@ public class SeriesFileProcessor {
       }
 
       if (seasonOpt.isEmpty()) {
+        markAs(mediaFile, MediaFileStatus.ENRICHMENT_FAILED);
         return;
       }
 

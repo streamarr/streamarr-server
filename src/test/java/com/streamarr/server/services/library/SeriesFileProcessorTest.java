@@ -26,8 +26,12 @@ import com.streamarr.server.services.parsers.show.SeasonPathMetadataParser;
 import com.streamarr.server.services.parsers.show.SeriesFolderNameParser;
 import com.streamarr.server.services.parsers.show.regex.EpisodeRegexFixtures;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
+import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.services.metadata.series.SeasonDetails;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalInt;
+import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -105,5 +109,125 @@ class SeriesFileProcessorTest {
       // Clear the interrupt flag so it doesn't affect other tests
       Thread.interrupted();
     }
+  }
+
+  @Test
+  @DisplayName("Should mark ENRICHMENT_FAILED when series metadata fetch fails")
+  void shouldMarkEnrichmentFailedWhenSeriesMetadataFetchFails() {
+    var library = LibraryFixtureCreator.buildFakeSeriesLibrary();
+
+    var mediaFile =
+        fakeMediaFileRepository.save(
+            MediaFile.builder()
+                .libraryId(library.getId())
+                .filepathUri(
+                    "file:///library/Breaking%20Bad/Season%2001/Breaking.Bad.S01E01.mkv")
+                .filename("Breaking.Bad.S01E01.mkv")
+                .status(MediaFileStatus.UNMATCHED)
+                .build());
+
+    when(seriesMetadataProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+
+    when(seriesMetadataProvider.search(any(VideoFileParserResult.class)))
+        .thenReturn(
+            Optional.of(
+                RemoteSearchResult.builder()
+                    .title("Breaking Bad")
+                    .externalId("1396")
+                    .externalSourceType(ExternalSourceType.TMDB)
+                    .build()));
+
+    when(seriesService.findByTmdbId(anyString())).thenReturn(Optional.empty());
+
+    when(seriesMetadataProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
+        .thenReturn(Optional.empty());
+
+    seriesFileProcessor.process(library, mediaFile);
+
+    assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
+        .isEqualTo(MediaFileStatus.ENRICHMENT_FAILED);
+  }
+
+  @Test
+  @DisplayName("Should mark ENRICHMENT_FAILED when year-based season resolution fails")
+  void shouldMarkEnrichmentFailedWhenYearBasedSeasonResolutionFails() {
+    var library = LibraryFixtureCreator.buildFakeSeriesLibrary();
+
+    var mediaFile =
+        fakeMediaFileRepository.save(
+            MediaFile.builder()
+                .libraryId(library.getId())
+                .filepathUri(
+                    "file:///library/The%20Daily%20Show/Season%202020/The.Daily.Show.S01E01.mkv")
+                .filename("The.Daily.Show.S01E01.mkv")
+                .status(MediaFileStatus.UNMATCHED)
+                .build());
+
+    var series = Series.builder().id(UUID.randomUUID()).title("The Daily Show").build();
+
+    when(seriesMetadataProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+
+    when(seriesMetadataProvider.search(any(VideoFileParserResult.class)))
+        .thenReturn(
+            Optional.of(
+                RemoteSearchResult.builder()
+                    .title("The Daily Show")
+                    .externalId("2224")
+                    .externalSourceType(ExternalSourceType.TMDB)
+                    .build()));
+
+    when(seriesService.findByTmdbId("2224")).thenReturn(Optional.of(series));
+
+    when(seasonRepository.findBySeriesIdAndSeasonNumber(series.getId(), 2020))
+        .thenReturn(Optional.empty());
+
+    when(seriesMetadataProvider.resolveSeasonNumber("2224", 2020))
+        .thenReturn(OptionalInt.empty());
+
+    seriesFileProcessor.process(library, mediaFile);
+
+    assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
+        .isEqualTo(MediaFileStatus.ENRICHMENT_FAILED);
+  }
+
+  @Test
+  @DisplayName("Should mark ENRICHMENT_FAILED when season details fetch fails")
+  void shouldMarkEnrichmentFailedWhenSeasonDetailsFetchFails() {
+    var library = LibraryFixtureCreator.buildFakeSeriesLibrary();
+
+    var mediaFile =
+        fakeMediaFileRepository.save(
+            MediaFile.builder()
+                .libraryId(library.getId())
+                .filepathUri(
+                    "file:///library/Justice%20League/Season%2004/Justice.League.S04E01.mkv")
+                .filename("Justice.League.S04E01.mkv")
+                .status(MediaFileStatus.UNMATCHED)
+                .build());
+
+    var series = Series.builder().id(UUID.randomUUID()).title("Justice League").build();
+
+    when(seriesMetadataProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+
+    when(seriesMetadataProvider.search(any(VideoFileParserResult.class)))
+        .thenReturn(
+            Optional.of(
+                RemoteSearchResult.builder()
+                    .title("Justice League")
+                    .externalId("93544")
+                    .externalSourceType(ExternalSourceType.TMDB)
+                    .build()));
+
+    when(seriesService.findByTmdbId("93544")).thenReturn(Optional.of(series));
+
+    when(seasonRepository.findBySeriesIdAndSeasonNumber(series.getId(), 4))
+        .thenReturn(Optional.empty());
+
+    when(seriesMetadataProvider.getSeasonDetails("93544", 4)).thenReturn(Optional.empty());
+
+    seriesFileProcessor.process(library, mediaFile);
+
+    assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
+        .isEqualTo(MediaFileStatus.ENRICHMENT_FAILED);
   }
 }
