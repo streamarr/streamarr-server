@@ -84,6 +84,7 @@ public class SeriesService {
     return savedSeries;
   }
 
+  @Transactional
   public Season createSeasonWithEpisodes(Series series, SeasonDetails details, Library library) {
     var season =
         seasonRepository.saveAndFlush(
