@@ -2,16 +2,21 @@ package com.streamarr.server.services.metadata.series;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.services.library.events.ScanEndedEvent;
 import com.streamarr.server.services.metadata.TheMovieDatabaseHttpService;
 import com.streamarr.server.services.metadata.TmdbSearchDelegate;
 import com.streamarr.server.services.metadata.tmdb.TmdbApiException;
+import com.streamarr.server.services.metadata.tmdb.TmdbTvSearchResult;
+import com.streamarr.server.services.metadata.tmdb.TmdbTvSearchResults;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSeason;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSeasonSummary;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSeries;
+import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
@@ -113,9 +118,40 @@ class TMDBSeriesProviderTest {
   }
 
   @Test
-  @DisplayName("Should clear negative season details cache on scan ended")
-  void shouldClearNegativeSeasonDetailsCacheOnScanEnded()
+  @DisplayName("Should find series when year-filtered search returns no results")
+  void shouldFindSeriesWhenYearFilteredSearchReturnsNoResults()
       throws IOException, InterruptedException {
+    var videoInfo = VideoFileParserResult.builder().title("Patriot").year("2017").build();
+
+    var emptyResults = TmdbTvSearchResults.builder().results(Collections.emptyList()).build();
+
+    var patriotResult =
+        TmdbTvSearchResult.builder()
+            .id(56484)
+            .name("Patriot")
+            .originalName("Patriot")
+            .firstAirDate("2015-11-05")
+            .popularity(25.0)
+            .build();
+    var resultsWithPatriot = TmdbTvSearchResults.builder().results(List.of(patriotResult)).build();
+
+    when(theMovieDatabaseHttpService.searchForTvSeries(
+            argThat(arg -> arg != null && "2017".equals(arg.year()))))
+        .thenReturn(emptyResults);
+    when(theMovieDatabaseHttpService.searchForTvSeries(
+            argThat(arg -> arg != null && arg.year() == null)))
+        .thenReturn(resultsWithPatriot);
+
+    var result = provider.search(videoInfo);
+
+    assertThat(result).isPresent();
+    assertThat(result.get().externalId()).isEqualTo("56484");
+    assertThat(result.get().externalSourceType()).isEqualTo(ExternalSourceType.TMDB);
+  }
+
+  @Test
+  @DisplayName("Should clear negative season details cache on scan ended")
+  void shouldClearNegativeSeasonDetailsCacheOnScanEnded() throws IOException, InterruptedException {
     var validSeason =
         TmdbTvSeason.builder()
             .name("Season 5")

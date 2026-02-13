@@ -11,6 +11,7 @@ import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
@@ -26,8 +27,6 @@ import com.streamarr.server.services.parsers.show.SeasonPathMetadataParser;
 import com.streamarr.server.services.parsers.show.SeriesFolderNameParser;
 import com.streamarr.server.services.parsers.show.regex.EpisodeRegexFixtures;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
-import com.streamarr.server.domain.media.Series;
-import com.streamarr.server.services.metadata.series.SeasonDetails;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalInt;
@@ -120,8 +119,7 @@ class SeriesFileProcessorTest {
         fakeMediaFileRepository.save(
             MediaFile.builder()
                 .libraryId(library.getId())
-                .filepathUri(
-                    "file:///library/Breaking%20Bad/Season%2001/Breaking.Bad.S01E01.mkv")
+                .filepathUri("file:///library/Breaking%20Bad/Season%2001/Breaking.Bad.S01E01.mkv")
                 .filename("Breaking.Bad.S01E01.mkv")
                 .status(MediaFileStatus.UNMATCHED)
                 .build());
@@ -181,8 +179,7 @@ class SeriesFileProcessorTest {
     when(seasonRepository.findBySeriesIdAndSeasonNumber(series.getId(), 2020))
         .thenReturn(Optional.empty());
 
-    when(seriesMetadataProvider.resolveSeasonNumber("2224", 2020))
-        .thenReturn(OptionalInt.empty());
+    when(seriesMetadataProvider.resolveSeasonNumber("2224", 2020)).thenReturn(OptionalInt.empty());
 
     seriesFileProcessor.process(library, mediaFile);
 

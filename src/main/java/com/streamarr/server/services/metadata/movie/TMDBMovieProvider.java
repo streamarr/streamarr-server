@@ -73,6 +73,16 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
     try {
       var searchResult = theMovieDatabaseHttpService.searchForMovie(videoInformation);
 
+      if (searchResult.getResults().isEmpty() && StringUtils.isNotBlank(videoInformation.year())) {
+        var withoutYear =
+            VideoFileParserResult.builder()
+                .title(videoInformation.title())
+                .externalId(videoInformation.externalId())
+                .externalSource(videoInformation.externalSource())
+                .build();
+        searchResult = theMovieDatabaseHttpService.searchForMovie(withoutYear);
+      }
+
       if (searchResult.getResults().isEmpty()) {
         return Optional.empty();
       }

@@ -87,6 +87,16 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
     try {
       var searchResult = theMovieDatabaseHttpService.searchForTvSeries(videoInformation);
 
+      if (searchResult.getResults().isEmpty() && StringUtils.isNotBlank(videoInformation.year())) {
+        var withoutYear =
+            VideoFileParserResult.builder()
+                .title(videoInformation.title())
+                .externalId(videoInformation.externalId())
+                .externalSource(videoInformation.externalSource())
+                .build();
+        searchResult = theMovieDatabaseHttpService.searchForTvSeries(withoutYear);
+      }
+
       if (searchResult.getResults().isEmpty()) {
         return Optional.empty();
       }
