@@ -14,9 +14,6 @@ import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
-import com.streamarr.server.services.metadata.events.ImageSource;
-import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
-import com.streamarr.server.services.metadata.series.SeasonDetails;
 import com.streamarr.server.services.metadata.series.SeriesMetadataProviderResolver;
 import com.streamarr.server.services.parsers.show.EpisodePathMetadataParser;
 import com.streamarr.server.services.parsers.show.EpisodePathResult;
@@ -24,13 +21,9 @@ import com.streamarr.server.services.parsers.show.SeasonPathMetadataParser;
 import com.streamarr.server.services.parsers.show.SeriesFolderNameParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.nio.file.Path;
-import java.util.Collection;
-import java.util.List;
 import java.util.Optional;
 import java.util.OptionalInt;
-import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 @Slf4j
@@ -47,7 +40,6 @@ public class SeriesFileProcessor {
   private final SeasonRepository seasonRepository;
   private final EpisodeRepository episodeRepository;
   private final MutexFactory<String> mutexFactory;
-  private final ApplicationEventPublisher eventPublisher;
 
   public SeriesFileProcessor(
       EpisodePathMetadataParser episodePathMetadataParser,
@@ -59,8 +51,7 @@ public class SeriesFileProcessor {
       MediaFileRepository mediaFileRepository,
       SeasonRepository seasonRepository,
       EpisodeRepository episodeRepository,
-      MutexFactoryProvider mutexFactoryProvider,
-      ApplicationEventPublisher eventPublisher) {
+      MutexFactoryProvider mutexFactoryProvider) {
     this.episodePathMetadataParser = episodePathMetadataParser;
     this.seasonPathMetadataParser = seasonPathMetadataParser;
     this.seriesFolderNameParser = seriesFolderNameParser;
@@ -71,7 +62,6 @@ public class SeriesFileProcessor {
     this.seasonRepository = seasonRepository;
     this.episodeRepository = episodeRepository;
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
-    this.eventPublisher = eventPublisher;
   }
 
   public void process(Library library, MediaFile mediaFile) {
@@ -347,60 +337,8 @@ public class SeriesFileProcessor {
       return Optional.empty();
     }
 
-    var details = seasonDetailsOpt.get();
-
-    var season =
-        seasonRepository.saveAndFlush(
-            Season.builder()
-                .title(details.name())
-                .seasonNumber(details.seasonNumber())
-                .overview(details.overview())
-                .airDate(details.airDate())
-                .series(series)
-                .library(library)
-                .build());
-
-    publishImageEvent(season.getId(), ImageEntityType.SEASON, details.imageSources());
-
-    var episodes =
-        details.episodes().stream()
-            .map(
-                ep ->
-                    Episode.builder()
-                        .title(ep.name())
-                        .episodeNumber(ep.episodeNumber())
-                        .overview(ep.overview())
-                        .airDate(ep.airDate())
-                        .runtime(ep.runtime())
-                        .season(season)
-                        .library(library)
-                        .build())
-            .toList();
-
-    var savedEpisodes = episodeRepository.saveAll(episodes);
-
-    publishEpisodeImageEvents(savedEpisodes, details.episodes());
-
-    return Optional.of(season);
-  }
-
-  private void publishImageEvent(
-      UUID entityId, ImageEntityType entityType, List<ImageSource> sources) {
-    if (!sources.isEmpty()) {
-      eventPublisher.publishEvent(new MetadataEnrichedEvent(entityId, entityType, sources));
-    }
-  }
-
-  private void publishEpisodeImageEvents(
-      Collection<? extends Episode> savedEpisodes,
-      List<SeasonDetails.EpisodeDetails> episodeDetails) {
-    for (var episode : savedEpisodes) {
-      episodeDetails.stream()
-          .filter(ed -> ed.episodeNumber() == episode.getEpisodeNumber())
-          .findFirst()
-          .ifPresent(
-              ed -> publishImageEvent(episode.getId(), ImageEntityType.EPISODE, ed.imageSources()));
-    }
+    return Optional.of(
+        seriesService.createSeasonWithEpisodes(series, seasonDetailsOpt.get(), library));
   }
 
   private boolean isDateOnlyEpisode(EpisodePathResult result) {

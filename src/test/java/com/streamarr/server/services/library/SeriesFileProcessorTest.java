@@ -12,7 +12,6 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Series;
-import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.media.EpisodeRepository;
@@ -49,8 +48,6 @@ class SeriesFileProcessorTest {
   private final FakeMediaFileRepository fakeMediaFileRepository = new FakeMediaFileRepository();
   private final SeasonRepository seasonRepository = mock(SeasonRepository.class);
   private final EpisodeRepository episodeRepository = mock(EpisodeRepository.class);
-  private final CapturingEventPublisher capturingEventPublisher = new CapturingEventPublisher();
-
   private final SeriesFileProcessor seriesFileProcessor =
       new SeriesFileProcessor(
           new EpisodePathMetadataParser(new EpisodeRegexFixtures()),
@@ -62,8 +59,7 @@ class SeriesFileProcessorTest {
           fakeMediaFileRepository,
           seasonRepository,
           episodeRepository,
-          new MutexFactoryProvider(),
-          capturingEventPublisher);
+          new MutexFactoryProvider());
 
   @Test
   @DisplayName("Should restore interrupt flag when enrichment throws InterruptedException")

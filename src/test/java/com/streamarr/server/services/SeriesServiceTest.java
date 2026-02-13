@@ -14,7 +14,9 @@ import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.fakes.CapturingEventPublisher;
+import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeImageRepository;
+import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSeriesRepository;
 import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.InvalidCursorException;
@@ -25,6 +27,7 @@ import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
+import com.streamarr.server.services.metadata.series.SeasonDetails;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -40,6 +43,8 @@ import tools.jackson.databind.ObjectMapper;
 class SeriesServiceTest {
 
   private FakeSeriesRepository seriesRepository;
+  private FakeSeasonRepository seasonRepository;
+  private FakeEpisodeRepository episodeRepository;
   private FakeImageRepository imageRepository;
   private CapturingEventPublisher eventPublisher;
   private SeriesService seriesService;
@@ -47,6 +52,8 @@ class SeriesServiceTest {
   @BeforeEach
   void setUp() {
     seriesRepository = new FakeSeriesRepository();
+    seasonRepository = new FakeSeasonRepository();
+    episodeRepository = new FakeEpisodeRepository();
     imageRepository = new FakeImageRepository();
     eventPublisher = new CapturingEventPublisher();
     var cursorUtil = new CursorUtil(new ObjectMapper());
@@ -67,7 +74,9 @@ class SeriesServiceTest {
             cursorUtil,
             relayPaginationService,
             eventPublisher,
-            imageService);
+            imageService,
+            seasonRepository,
+            episodeRepository);
   }
 
   @Test
@@ -216,6 +225,129 @@ class SeriesServiceTest {
 
     assertThatThrownBy(() -> seriesService.getSeriesWithFilter(1, cursor, 0, null, descFilter))
         .isInstanceOf(InvalidCursorException.class);
+  }
+
+  @Test
+  @DisplayName("Should publish season image event when creating season with episodes")
+  void shouldPublishSeasonImageEventWhenCreatingSeasonWithEpisodes() {
+    var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
+    var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
+    var details =
+        SeasonDetails.builder()
+            .name("Season 1")
+            .seasonNumber(1)
+            .imageSources(List.of(new TmdbImageSource(ImageType.POSTER, "/season1.jpg")))
+            .episodes(
+                List.of(
+                    SeasonDetails.EpisodeDetails.builder()
+                        .episodeNumber(1)
+                        .name("Pilot")
+                        .imageSources(List.of())
+                        .build()))
+            .build();
+
+    seriesService.createSeasonWithEpisodes(series, details, library);
+
+    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
+    assertThat(events)
+        .filteredOn(e -> e.entityType() == ImageEntityType.SEASON)
+        .hasSize(1)
+        .first()
+        .satisfies(e -> assertThat(e.imageSources()).hasSize(1));
+  }
+
+  @Test
+  @DisplayName("Should publish episode image events when creating season with episodes")
+  void shouldPublishEpisodeImageEventsWhenCreatingSeasonWithEpisodes() {
+    var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
+    var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
+    var details =
+        SeasonDetails.builder()
+            .name("Season 1")
+            .seasonNumber(1)
+            .imageSources(List.of())
+            .episodes(
+                List.of(
+                    SeasonDetails.EpisodeDetails.builder()
+                        .episodeNumber(1)
+                        .name("Pilot")
+                        .imageSources(
+                            List.of(new TmdbImageSource(ImageType.STILL, "/ep1_still.jpg")))
+                        .build(),
+                    SeasonDetails.EpisodeDetails.builder()
+                        .episodeNumber(2)
+                        .name("Cat's in the Bag...")
+                        .imageSources(
+                            List.of(new TmdbImageSource(ImageType.STILL, "/ep2_still.jpg")))
+                        .build()))
+            .build();
+
+    seriesService.createSeasonWithEpisodes(series, details, library);
+
+    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
+    assertThat(events).filteredOn(e -> e.entityType() == ImageEntityType.EPISODE).hasSize(2);
+  }
+
+  @Test
+  @DisplayName("Should not publish season event when image sources are empty")
+  void shouldNotPublishSeasonEventWhenImageSourcesAreEmpty() {
+    var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
+    var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
+    var details =
+        SeasonDetails.builder()
+            .name("Season 1")
+            .seasonNumber(1)
+            .imageSources(List.of())
+            .episodes(
+                List.of(
+                    SeasonDetails.EpisodeDetails.builder()
+                        .episodeNumber(1)
+                        .name("Pilot")
+                        .imageSources(List.of())
+                        .build()))
+            .build();
+
+    seriesService.createSeasonWithEpisodes(series, details, library);
+
+    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
+    assertThat(events).filteredOn(e -> e.entityType() == ImageEntityType.SEASON).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should save season and all episodes when creating season with episodes")
+  void shouldSaveSeasonAndAllEpisodesWhenCreatingSeasonWithEpisodes() {
+    var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
+    var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
+    var details =
+        SeasonDetails.builder()
+            .name("Season 1")
+            .seasonNumber(1)
+            .imageSources(List.of())
+            .episodes(
+                List.of(
+                    SeasonDetails.EpisodeDetails.builder()
+                        .episodeNumber(1)
+                        .name("Pilot")
+                        .overview("A chemistry teacher turns to crime.")
+                        .imageSources(List.of())
+                        .build(),
+                    SeasonDetails.EpisodeDetails.builder()
+                        .episodeNumber(2)
+                        .name("Cat's in the Bag...")
+                        .imageSources(List.of())
+                        .build()))
+            .build();
+
+    var season = seriesService.createSeasonWithEpisodes(series, details, library);
+
+    assertThat(seasonRepository.findBySeriesIdAndSeasonNumber(series.getId(), 1)).isPresent();
+    assertThat(season.getTitle()).isEqualTo("Season 1");
+    assertThat(season.getSeries().getId()).isEqualTo(series.getId());
+
+    var episodes = episodeRepository.findBySeasonId(season.getId());
+    assertThat(episodes).hasSize(2);
+    assertThat(episodes).extracting("episodeNumber").containsExactlyInAnyOrder(1, 2);
+    assertThat(episodes).extracting("title").containsExactlyInAnyOrder("Pilot", "Cat's in the Bag...");
   }
 
   private void seedImage(UUID entityId) {
