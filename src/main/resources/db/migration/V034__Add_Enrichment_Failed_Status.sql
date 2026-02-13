@@ -1,0 +1,1 @@
+ALTER TYPE media_file_status ADD VALUE 'ENRICHMENT_FAILED';
