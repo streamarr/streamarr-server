@@ -12,7 +12,6 @@ import com.streamarr.server.services.metadata.tmdb.TmdbTvSeason;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSeasonSummary;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSeries;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
-import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
 import java.util.OptionalInt;
@@ -38,7 +37,7 @@ class TMDBSeriesProviderTest {
 
   @Test
   @DisplayName("Should resolve season number when series metadata available")
-  void shouldResolveSeasonNumberWhenSeriesMetadataAvailable() throws IOException {
+  void shouldResolveSeasonNumberWhenSeriesMetadataAvailable() {
     var series =
         TmdbTvSeries.builder()
             .seasons(
@@ -55,7 +54,7 @@ class TMDBSeriesProviderTest {
 
   @Test
   @DisplayName("Should return fresh data when cache cleared by scan ended")
-  void shouldReturnFreshDataWhenCacheClearedByScanEnded() throws IOException {
+  void shouldReturnFreshDataWhenCacheClearedByScanEnded() {
     var initialSeries =
         TmdbTvSeries.builder()
             .seasons(
@@ -82,7 +81,7 @@ class TMDBSeriesProviderTest {
 
   @Test
   @DisplayName("Should return empty from cache when season details previously failed")
-  void shouldReturnEmptyFromCacheWhenSeasonDetailsPreviouslyFailed() throws IOException {
+  void shouldReturnEmptyFromCacheWhenSeasonDetailsPreviouslyFailed() {
     var validSeason =
         TmdbTvSeason.builder()
             .name("Season 5")
@@ -130,7 +129,7 @@ class TMDBSeriesProviderTest {
 
   @Test
   @DisplayName("Should clear negative season details cache when scan ends")
-  void shouldClearNegativeSeasonDetailsCacheWhenScanEnds() throws IOException {
+  void shouldClearNegativeSeasonDetailsCacheWhenScanEnds() {
     var validSeason =
         TmdbTvSeason.builder()
             .name("Season 5")

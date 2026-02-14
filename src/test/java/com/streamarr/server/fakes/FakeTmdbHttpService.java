@@ -13,6 +13,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.locks.LockSupport;
 
 public class FakeTmdbHttpService extends TheMovieDatabaseHttpService
     implements TmdbImageDownloader {
@@ -95,7 +96,7 @@ public class FakeTmdbHttpService extends TheMovieDatabaseHttpService
   @Override
   public byte[] downloadImage(String pathFragment) throws IOException, InterruptedException {
     if (delayMillis > 0) {
-      Thread.sleep(delayMillis);
+      LockSupport.parkNanos(delayMillis * 1_000_000);
     }
     if (failAll) {
       throw new IOException("Simulated download failure for " + pathFragment);
