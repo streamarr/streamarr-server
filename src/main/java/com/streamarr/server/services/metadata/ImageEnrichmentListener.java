@@ -20,15 +20,15 @@ import org.springframework.transaction.event.TransactionalEventListener;
 @Component
 public class ImageEnrichmentListener {
 
-  private final TheMovieDatabaseHttpService tmdbHttpService;
+  private final TmdbImageDownloader tmdbImageDownloader;
   private final ImageService imageService;
   private final MutexFactory<String> mutexFactory;
 
   public ImageEnrichmentListener(
-      TheMovieDatabaseHttpService tmdbHttpService,
+      TmdbImageDownloader tmdbImageDownloader,
       ImageService imageService,
       MutexFactoryProvider mutexFactoryProvider) {
-    this.tmdbHttpService = tmdbHttpService;
+    this.tmdbImageDownloader = tmdbImageDownloader;
     this.imageService = imageService;
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
   }
@@ -91,7 +91,7 @@ public class ImageEnrichmentListener {
     try {
       var imageData =
           switch (source) {
-            case TmdbImageSource tmdb -> tmdbHttpService.downloadImage(tmdb.pathFragment());
+            case TmdbImageSource tmdb -> tmdbImageDownloader.downloadImage(tmdb.pathFragment());
           };
 
       return imageService.processImage(

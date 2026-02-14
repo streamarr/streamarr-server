@@ -32,7 +32,7 @@ import tools.jackson.databind.ObjectMapper;
 
 @Slf4j
 @Service
-public class TheMovieDatabaseHttpService {
+public class TheMovieDatabaseHttpService implements TmdbImageDownloader {
 
   public static final Map<ExternalSourceType, String> EXTERNAL_SOURCES =
       Map.of(ExternalSourceType.IMDB, "imdb_id", ExternalSourceType.TVDB, "tvdb_id");

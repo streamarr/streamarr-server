@@ -255,17 +255,13 @@ class ImageEnrichmentListenerTest {
             });
   }
 
-  private static class FakeTmdbHttpService extends TheMovieDatabaseHttpService {
+  private static class FakeTmdbHttpService implements TmdbImageDownloader {
 
     private byte[] imageData;
     private String failOnPath;
     private String interruptOnPath;
     private boolean failAll;
     private long delayMillis;
-
-    FakeTmdbHttpService() {
-      super("", "", "", 10, null, null);
-    }
 
     void setImageData(byte[] imageData) {
       this.imageData = imageData;
@@ -290,7 +286,7 @@ class ImageEnrichmentListenerTest {
     @Override
     public byte[] downloadImage(String pathFragment) throws IOException, InterruptedException {
       if (delayMillis > 0) {
-        await().pollDelay(Duration.ofMillis(delayMillis)).until(() -> true);
+        Thread.sleep(delayMillis);
       }
       if (failAll) {
         throw new IOException("Simulated download failure for " + pathFragment);
