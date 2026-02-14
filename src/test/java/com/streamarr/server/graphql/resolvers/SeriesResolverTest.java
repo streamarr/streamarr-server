@@ -8,8 +8,7 @@ import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Series;
-import com.streamarr.server.repositories.media.MediaFileRepository;
-import com.streamarr.server.repositories.media.SeriesRepository;
+import com.streamarr.server.services.SeriesService;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -28,9 +27,7 @@ class SeriesResolverTest {
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
 
-  @MockitoBean private SeriesRepository seriesRepository;
-
-  @MockitoBean private MediaFileRepository mediaFileRepository;
+  @MockitoBean private SeriesService seriesService;
 
   @Test
   @DisplayName("Should return series when valid ID provided")
@@ -39,7 +36,7 @@ class SeriesResolverTest {
     var series = Series.builder().title("Breaking Bad").tagline("All Hail the King").build();
     series.setId(seriesId);
 
-    when(seriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+    when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
 
     String title =
         dgsQueryExecutor.executeAndExtractJsonPath(
@@ -52,7 +49,7 @@ class SeriesResolverTest {
   @Test
   @DisplayName("Should return null when series not found")
   void shouldReturnNullWhenSeriesNotFound() {
-    when(seriesRepository.findById(any(UUID.class))).thenReturn(Optional.empty());
+    when(seriesService.findById(any(UUID.class))).thenReturn(Optional.empty());
 
     Object result =
         dgsQueryExecutor.executeAndExtractJsonPath(
@@ -85,8 +82,8 @@ class SeriesResolverTest {
             .build();
     mediaFile.setId(UUID.randomUUID());
 
-    when(seriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
-    when(mediaFileRepository.findByMediaId(seriesId)).thenReturn(List.of(mediaFile));
+    when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
+    when(seriesService.findMediaFiles(seriesId)).thenReturn(List.of(mediaFile));
 
     String filepathUri =
         dgsQueryExecutor.executeAndExtractJsonPath(
