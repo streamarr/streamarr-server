@@ -152,22 +152,30 @@ class LibraryManagementServiceTest {
   }
 
   @Test
-  @DisplayName("Should restore interrupt flag when file processing is interrupted during scan")
-  void shouldRestoreInterruptFlagWhenFileProcessingIsInterruptedDuringScan() throws Exception {
+  @DisplayName("Should remain healthy when file processing task fails during scan")
+  void shouldRemainHealthyWhenFileProcessingTaskFailsDuringScan() throws Exception {
     var rootPath = createRootLibraryDirectory();
-    createMovieFile(rootPath, "Interrupted Movie", "Interrupted Movie (2024).mkv");
+    var moviePath = createMovieFile(rootPath, "Failing Movie", "Failing Movie (2024).mkv");
 
     when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
     when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
-        .thenAnswer(
-            invocation -> {
-              throw new InterruptedException("simulated interrupt during search");
-            });
+        .thenThrow(new RuntimeException("simulated search failure"));
 
     libraryManagementService.scanLibrary(savedLibraryId);
 
     var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
     assertThat(library.getStatus()).isEqualTo(LibraryStatus.HEALTHY);
+
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () -> {
+              var mediaFile =
+                  fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
+              assertThat(mediaFile)
+                  .as("Media file should have been created during scan")
+                  .isPresent();
+            });
   }
 
   @Test
