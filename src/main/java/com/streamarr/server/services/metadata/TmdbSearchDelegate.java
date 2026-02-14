@@ -4,6 +4,7 @@ import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.services.metadata.tmdb.TmdbFindResults;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.io.IOException;
+import java.util.List;
 import java.util.Optional;
 import java.util.function.Function;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +25,11 @@ public class TmdbSearchDelegate {
     RemoteSearchResult lookup(String externalId) throws IOException, InterruptedException;
   }
 
+  @FunctionalInterface
+  public interface TextSearch<R> {
+    List<R> search(VideoFileParserResult videoInfo) throws IOException, InterruptedException;
+  }
+
   public Optional<RemoteSearchResult> search(
       VideoFileParserResult videoInformation,
       Function<TmdbFindResults, Optional<RemoteSearchResult>> findResultExtractor,
@@ -35,6 +41,49 @@ public class TmdbSearchDelegate {
     }
 
     return textSearch.apply(videoInformation);
+  }
+
+  public <R> Optional<RemoteSearchResult> searchByText(
+      VideoFileParserResult videoInformation,
+      TextSearch<R> textSearch,
+      Function<R, TmdbSearchResultScorer.CandidateResult> candidateMapper,
+      Function<R, RemoteSearchResult> resultMapper) {
+    try {
+      var results = textSearch.search(videoInformation);
+
+      if (results.isEmpty() && StringUtils.isNotBlank(videoInformation.year())) {
+        var withoutYear =
+            VideoFileParserResult.builder()
+                .title(videoInformation.title())
+                .externalId(videoInformation.externalId())
+                .externalSource(videoInformation.externalSource())
+                .build();
+        results = textSearch.search(withoutYear);
+      }
+
+      if (results.isEmpty()) {
+        return Optional.empty();
+      }
+
+      var candidates = results.stream().map(candidateMapper).toList();
+      var bestIndex =
+          TmdbSearchResultScorer.selectBestMatch(
+              videoInformation.title(), videoInformation.year(), candidates);
+
+      if (bestIndex.isEmpty()) {
+        return Optional.empty();
+      }
+
+      return Optional.of(resultMapper.apply(results.get(bestIndex.getAsInt())));
+
+    } catch (IOException ex) {
+      log.error("Failure requesting search results:", ex);
+    } catch (InterruptedException ex) {
+      Thread.currentThread().interrupt();
+      log.error("Search interrupted:", ex);
+    }
+
+    return Optional.empty();
   }
 
   private Optional<RemoteSearchResult> searchByExternalId(

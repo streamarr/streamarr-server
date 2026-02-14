@@ -84,57 +84,18 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
   }
 
   private Optional<RemoteSearchResult> searchByText(VideoFileParserResult videoInformation) {
-    try {
-      var searchResult = theMovieDatabaseHttpService.searchForTvSeries(videoInformation);
-
-      if (searchResult.getResults().isEmpty() && StringUtils.isNotBlank(videoInformation.year())) {
-        var withoutYear =
-            VideoFileParserResult.builder()
-                .title(videoInformation.title())
-                .externalId(videoInformation.externalId())
-                .externalSource(videoInformation.externalSource())
-                .build();
-        searchResult = theMovieDatabaseHttpService.searchForTvSeries(withoutYear);
-      }
-
-      if (searchResult.getResults().isEmpty()) {
-        return Optional.empty();
-      }
-
-      var results = searchResult.getResults();
-      var candidates =
-          results.stream()
-              .map(
-                  r ->
-                      new TmdbSearchResultScorer.CandidateResult(
-                          r.getName(), r.getOriginalName(), r.getFirstAirDate(), r.getPopularity()))
-              .toList();
-
-      var bestIndex =
-          TmdbSearchResultScorer.selectBestMatch(
-              videoInformation.title(), videoInformation.year(), candidates);
-
-      if (bestIndex.isEmpty()) {
-        return Optional.empty();
-      }
-
-      var tmdbResult = results.get(bestIndex.getAsInt());
-
-      return Optional.of(
-          RemoteSearchResult.builder()
-              .externalSourceType(ExternalSourceType.TMDB)
-              .externalId(String.valueOf(tmdbResult.getId()))
-              .title(tmdbResult.getName())
-              .build());
-
-    } catch (IOException ex) {
-      log.error("Failure requesting TV search results:", ex);
-    } catch (InterruptedException ex) {
-      Thread.currentThread().interrupt();
-      log.error("TV search interrupted:", ex);
-    }
-
-    return Optional.empty();
+    return searchDelegate.searchByText(
+        videoInformation,
+        info -> theMovieDatabaseHttpService.searchForTvSeries(info).getResults(),
+        r ->
+            new TmdbSearchResultScorer.CandidateResult(
+                r.getName(), r.getOriginalName(), r.getFirstAirDate(), r.getPopularity()),
+        r ->
+            RemoteSearchResult.builder()
+                .externalSourceType(ExternalSourceType.TMDB)
+                .externalId(String.valueOf(r.getId()))
+                .title(r.getName())
+                .build());
   }
 
   public Optional<MetadataResult<Series>> getMetadata(

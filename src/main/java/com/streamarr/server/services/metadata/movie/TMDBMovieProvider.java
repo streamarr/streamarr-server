@@ -70,60 +70,18 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
   }
 
   private Optional<RemoteSearchResult> searchByText(VideoFileParserResult videoInformation) {
-    try {
-      var searchResult = theMovieDatabaseHttpService.searchForMovie(videoInformation);
-
-      if (searchResult.getResults().isEmpty() && StringUtils.isNotBlank(videoInformation.year())) {
-        var withoutYear =
-            VideoFileParserResult.builder()
-                .title(videoInformation.title())
-                .externalId(videoInformation.externalId())
-                .externalSource(videoInformation.externalSource())
-                .build();
-        searchResult = theMovieDatabaseHttpService.searchForMovie(withoutYear);
-      }
-
-      if (searchResult.getResults().isEmpty()) {
-        return Optional.empty();
-      }
-
-      var results = searchResult.getResults();
-      var candidates =
-          results.stream()
-              .map(
-                  r ->
-                      new TmdbSearchResultScorer.CandidateResult(
-                          r.getTitle(),
-                          r.getOriginalTitle(),
-                          r.getReleaseDate(),
-                          r.getPopularity()))
-              .toList();
-
-      var bestIndex =
-          TmdbSearchResultScorer.selectBestMatch(
-              videoInformation.title(), videoInformation.year(), candidates);
-
-      if (bestIndex.isEmpty()) {
-        return Optional.empty();
-      }
-
-      var tmdbResult = results.get(bestIndex.getAsInt());
-
-      return Optional.of(
-          RemoteSearchResult.builder()
-              .externalSourceType(ExternalSourceType.TMDB)
-              .externalId(String.valueOf(tmdbResult.getId()))
-              .title(tmdbResult.getTitle())
-              .build());
-
-    } catch (IOException ex) {
-      log.error("Failure requesting search results:", ex);
-    } catch (InterruptedException ex) {
-      Thread.currentThread().interrupt();
-      log.error("Search interrupted:", ex);
-    }
-
-    return Optional.empty();
+    return searchDelegate.searchByText(
+        videoInformation,
+        info -> theMovieDatabaseHttpService.searchForMovie(info).getResults(),
+        r ->
+            new TmdbSearchResultScorer.CandidateResult(
+                r.getTitle(), r.getOriginalTitle(), r.getReleaseDate(), r.getPopularity()),
+        r ->
+            RemoteSearchResult.builder()
+                .externalSourceType(ExternalSourceType.TMDB)
+                .externalId(String.valueOf(r.getId()))
+                .title(r.getTitle())
+                .build());
   }
 
   public Optional<MetadataResult<Movie>> getMetadata(
