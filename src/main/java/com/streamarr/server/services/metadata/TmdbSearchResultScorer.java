@@ -23,6 +23,10 @@ public final class TmdbSearchResultScorer {
 
   private static final double POPULARITY_CEILING = 1000.0;
 
+  private static final double JARO_WINKLER_WEIGHT = 0.4;
+  private static final double BIGRAM_DICE_WEIGHT = 0.35;
+  private static final double BIGRAM_JACCARD_WEIGHT = 0.25;
+
   public record CandidateResult(
       String title, String originalTitle, String year, double popularity) {}
 
@@ -76,7 +80,9 @@ public final class TmdbSearchResultScorer {
   }
 
   private static double ensembleScore(String a, String b) {
-    return 0.4 * JARO_WINKLER.apply(a, b) + 0.35 * bigramDice(a, b) + 0.25 * bigramJaccard(a, b);
+    return JARO_WINKLER_WEIGHT * JARO_WINKLER.apply(a, b)
+        + BIGRAM_DICE_WEIGHT * bigramDice(a, b)
+        + BIGRAM_JACCARD_WEIGHT * bigramJaccard(a, b);
   }
 
   private static String normalizeTitle(String input) {
