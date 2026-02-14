@@ -419,8 +419,8 @@ class SeriesServiceTest {
   }
 
   @Test
-  @DisplayName("Should only publish episode events for episodes that have image sources")
-  void shouldOnlyPublishEpisodeEventsForEpisodesThatHaveImageSources() {
+  @DisplayName("Should only publish episode events when episodes have image sources")
+  void shouldOnlyPublishEpisodeEventsWhenEpisodesHaveImageSources() {
     var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
     var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
     var details =

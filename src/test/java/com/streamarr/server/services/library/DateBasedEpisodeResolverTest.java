@@ -68,8 +68,8 @@ class DateBasedEpisodeResolverTest {
   }
 
   @Test
-  @DisplayName("Should fall back to year minus one for broadcast-year crossover")
-  void shouldFallbackToYearMinusOneForBroadcastYearCrossover() {
+  @DisplayName("Should fall back to year minus one when broadcast-year crossover detected")
+  void shouldFallBackToYearMinusOneWhenBroadcastYearCrossoverDetected() {
     fakeProvider.addSeasonMapping("12345", 2024, 5);
     fakeProvider.addSeasonDetails(
         "12345",
@@ -130,8 +130,8 @@ class DateBasedEpisodeResolverTest {
   }
 
   @Test
-  @DisplayName("Should skip episodes with null air date")
-  void shouldSkipEpisodesWithNullAirDate() {
+  @DisplayName("Should skip episodes when air date is null")
+  void shouldSkipEpisodesWhenAirDateIsNull() {
     fakeProvider.addSeasonMapping("12345", 2025, 1);
     fakeProvider.addSeasonDetails(
         "12345",

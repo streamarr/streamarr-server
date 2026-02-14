@@ -64,8 +64,8 @@ class TmdbMetadataMapperTest {
   class BuildPersonImageSources {
 
     @Test
-    @DisplayName("Should include cast with profile paths")
-    void shouldIncludeCastWithProfilePaths() {
+    @DisplayName("Should include cast when profile paths are present")
+    void shouldIncludeCastWhenProfilePathsArePresent() {
       var cast =
           List.of(TmdbCredit.builder().id(1).name("Actor A").profilePath("/profile1.jpg").build());
 
@@ -76,8 +76,8 @@ class TmdbMetadataMapperTest {
     }
 
     @Test
-    @DisplayName("Should skip cast with blank profile path")
-    void shouldSkipCastWithBlankProfilePath() {
+    @DisplayName("Should skip cast when profile path is blank")
+    void shouldSkipCastWhenProfilePathIsBlank() {
       var cast = List.of(TmdbCredit.builder().id(2).name("Actor B").profilePath("").build());
 
       var sources = TmdbMetadataMapper.buildPersonImageSources(cast, List.of());
@@ -86,8 +86,8 @@ class TmdbMetadataMapperTest {
     }
 
     @Test
-    @DisplayName("Should include crew with Director job only")
-    void shouldIncludeCrewWithDirectorJobOnly() {
+    @DisplayName("Should include only crew members when job is Director")
+    void shouldIncludeOnlyCrewMembersWhenJobIsDirector() {
       var crew =
           List.of(
               TmdbCredit.builder()
@@ -109,8 +109,8 @@ class TmdbMetadataMapperTest {
     }
 
     @Test
-    @DisplayName("Should combine cast and director sources")
-    void shouldCombineCastAndDirectorSources() {
+    @DisplayName("Should combine cast and director sources when both are present")
+    void shouldCombineCastAndDirectorSourcesWhenBothArePresent() {
       var cast =
           List.of(TmdbCredit.builder().id(1).name("Actor").profilePath("/actor.jpg").build());
       var crew =
@@ -133,8 +133,8 @@ class TmdbMetadataMapperTest {
   class BuildCompanyImageSources {
 
     @Test
-    @DisplayName("Should include company with logo path")
-    void shouldIncludeCompanyWithLogoPath() {
+    @DisplayName("Should include company when logo path is present")
+    void shouldIncludeCompanyWhenLogoPathIsPresent() {
       var companies =
           List.of(
               TmdbProductionCompany.builder().id(5).name("Studio").logoPath("/logo.png").build());
@@ -146,8 +146,8 @@ class TmdbMetadataMapperTest {
     }
 
     @Test
-    @DisplayName("Should skip company without logo path")
-    void shouldSkipCompanyWithoutLogoPath() {
+    @DisplayName("Should skip company when logo path is absent")
+    void shouldSkipCompanyWhenLogoPathIsAbsent() {
       var companies = List.of(TmdbProductionCompany.builder().id(6).name("No Logo Inc").build());
 
       var sources = TmdbMetadataMapper.buildCompanyImageSources(companies);
@@ -161,8 +161,8 @@ class TmdbMetadataMapperTest {
   class MapDirectors {
 
     @Test
-    @DisplayName("Should return only directors from crew list")
-    void shouldReturnOnlyDirectorsFromCrewList() {
+    @DisplayName("Should return only directors when mapping crew list")
+    void shouldReturnOnlyDirectorsWhenMappingCrewList() {
       var crew =
           List.of(
               TmdbCredit.builder().id(10).name("Director D").job("Director").build(),
@@ -175,8 +175,8 @@ class TmdbMetadataMapperTest {
   }
 
   @Test
-  @DisplayName("Should map cast fields from external to domain type")
-  void shouldMapCastFieldsFromExternalToDomainType() {
+  @DisplayName("Should map cast fields when converting from external type")
+  void shouldMapCastFieldsWhenConvertingFromExternalType() {
     var cast = List.of(TmdbCredit.builder().id(1).name("Actor A").build());
 
     var result = TmdbMetadataMapper.mapCast(cast);
@@ -191,8 +191,8 @@ class TmdbMetadataMapperTest {
   }
 
   @Test
-  @DisplayName("Should map company fields from external to domain type")
-  void shouldMapCompanyFieldsFromExternalToDomainType() {
+  @DisplayName("Should map company fields when converting from external type")
+  void shouldMapCompanyFieldsWhenConvertingFromExternalType() {
     var companies = List.of(TmdbProductionCompany.builder().id(5).name("Studio").build());
 
     var result = TmdbMetadataMapper.mapCompanies(companies);
@@ -207,8 +207,8 @@ class TmdbMetadataMapperTest {
   }
 
   @Test
-  @DisplayName("Should map genre fields from external to domain type")
-  void shouldMapGenreFieldsFromExternalToDomainType() {
+  @DisplayName("Should map genre fields when converting from external type")
+  void shouldMapGenreFieldsWhenConvertingFromExternalType() {
     var genres = List.of(new TmdbGenre(28, "Action"));
 
     var result = TmdbMetadataMapper.mapGenres(genres);

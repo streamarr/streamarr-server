@@ -150,8 +150,9 @@ class TMDBSeriesProviderTest {
   }
 
   @Test
-  @DisplayName("Should clear negative season details cache on scan ended")
-  void shouldClearNegativeSeasonDetailsCacheOnScanEnded() throws IOException, InterruptedException {
+  @DisplayName("Should clear negative season details cache when scan ends")
+  void shouldClearNegativeSeasonDetailsCacheWhenScanEnds()
+      throws IOException, InterruptedException {
     var validSeason =
         TmdbTvSeason.builder()
             .name("Season 5")

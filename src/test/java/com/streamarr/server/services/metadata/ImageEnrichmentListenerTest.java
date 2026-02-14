@@ -227,8 +227,8 @@ class ImageEnrichmentListenerTest {
   }
 
   @Test
-  @DisplayName("Should not block calling thread during image download")
-  void shouldNotBlockCallingThreadDuringImageDownload() {
+  @DisplayName("Should not block calling thread when downloading images")
+  void shouldNotBlockCallingThreadWhenDownloadingImages() {
     var entityId = UUID.randomUUID();
     tmdbHttpService.setImageData(createTestImage(600, 900));
     tmdbHttpService.setDelayMillis(500);

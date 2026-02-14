@@ -346,8 +346,8 @@ class SeriesScanningIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should resolve year-based season folder to sequential TMDB season number")
-  void shouldResolveYearBasedSeasonToSequentialTmdbSeasonNumber() throws IOException {
+  @DisplayName("Should resolve to sequential TMDB season number when folder uses year-based naming")
+  void shouldResolveToSequentialTmdbSeasonNumberWhenFolderUsesYearBasedNaming() throws IOException {
     var library = createSeriesLibrary();
     var file = createSeriesFile("MythBusters", "Season 2012", "mythbusters.s2012e01.mkv");
 
@@ -438,8 +438,8 @@ class SeriesScanningIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should not trigger year-based resolution for normal sequential season numbers")
-  void shouldNotTriggerYearBasedResolutionForNormalSequentialSeasonNumbers() throws IOException {
+  @DisplayName("Should not trigger year-based resolution when season number is sequential")
+  void shouldNotTriggerYearBasedResolutionWhenSeasonNumberIsSequential() throws IOException {
     var library = createSeriesLibrary();
     var file = createSeriesFile("Show", "Season 01", "show.s01e01.mkv");
 
@@ -468,8 +468,8 @@ class SeriesScanningIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should match date-only episode via TMDB air date lookup")
-  void shouldMatchDateOnlyEpisodeViaTmdbAirDateLookup() throws IOException {
+  @DisplayName("Should match date-only episode when TMDB air date lookup succeeds")
+  void shouldMatchDateOnlyEpisodeWhenTmdbAirDateLookupSucceeds() throws IOException {
     var library = createSeriesLibrary();
     var showDir = tempDir.resolve("Jeopardy!");
     Files.createDirectories(showDir);

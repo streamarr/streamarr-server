@@ -244,8 +244,8 @@ class OrphanedMediaFileCleanupServiceTest {
   }
 
   @Test
-  @DisplayName("Should not propagate unexpected exception from cleanup")
-  void shouldNotPropagateUnexpectedExceptionFromCleanup() {
+  @DisplayName("Should not propagate unexpected exception when cleanup fails")
+  void shouldNotPropagateUnexpectedExceptionWhenCleanupFails() {
     var throwingMediaFileRepository =
         new FakeMediaFileRepository() {
           @Override

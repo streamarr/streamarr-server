@@ -512,8 +512,8 @@ class EpisodePathMetadataParserTest {
   class PhantomSeasonRegressionTests {
 
     @Test
-    @DisplayName("Should not create phantom season from trailing year in episode title")
-    void shouldNotCreatePhantomSeasonFromTrailingYearInEpisodeTitle() {
+    @DisplayName("Should not create phantom season when episode title contains trailing year")
+    void shouldNotCreatePhantomSeasonWhenEpisodeTitleContainsTrailingYear() {
       var result =
           episodePathExtractionService
               .parse("/tv/Show/Show - S01E01 - Pilot (2002).mkv")
@@ -526,8 +526,8 @@ class EpisodePathMetadataParserTest {
     }
 
     @Test
-    @DisplayName("Should ignore trailing year in bare episode number")
-    void shouldIgnoreTrailingYearInBareEpisodeNumber() {
+    @DisplayName("Should ignore trailing year when episode number has no season prefix")
+    void shouldIgnoreTrailingYearWhenEpisodeNumberHasNoSeasonPrefix() {
       var result =
           episodePathExtractionService
               .parse("/tv/Show/Season 1/02 - Episode Title (2002).mkv")

@@ -17,24 +17,24 @@ import org.junit.jupiter.api.Test;
 class FilepathCodecTest {
 
   @Test
-  @DisplayName("Should encode absolute path to file URI")
-  void shouldEncodeAbsolutePathToFileUri() {
+  @DisplayName("Should encode to file URI when given absolute path")
+  void shouldEncodeToFileUriWhenGivenAbsolutePath() {
     var encoded = FilepathCodec.encode(Path.of("/media/movie.mkv"));
 
     assertThat(encoded).isEqualTo("file:///media/movie.mkv");
   }
 
   @Test
-  @DisplayName("Should decode file URI back to original path")
-  void shouldDecodeFileUriBackToOriginalPath() {
+  @DisplayName("Should decode back to original path when given file URI")
+  void shouldDecodeBackToOriginalPathWhenGivenFileUri() {
     var path = FilepathCodec.decode("file:///media/movie.mkv");
 
     assertThat(path).isEqualTo(Path.of("/media/movie.mkv"));
   }
 
   @Test
-  @DisplayName("Should roundtrip preserve non-ASCII characters")
-  void shouldRoundtripPreserveNonAsciiCharacters() throws IOException {
+  @DisplayName("Should preserve non-ASCII characters when roundtripping through codec")
+  void shouldPreserveNonAsciiCharactersWhenRoundtrippingThroughCodec() throws IOException {
     try (FileSystem jimfs = Jimfs.newFileSystem(Configuration.unix())) {
       var dir = jimfs.getPath("/media");
       Files.createDirectories(dir);
