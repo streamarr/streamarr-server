@@ -24,19 +24,20 @@ public class EpisodeRegexFixtures {
               .exampleMatch("foo.ep01")
               .build(),
           EpisodeRegexContainer.IndexedGroupRegex.builder()
-              // Extracts just an episode number. Ex -> "foo.E01.", "foo.e01."
-              .expression("[^\\\\/]*?()\\.?[Ee]([0-9]+)([^\\\\/]*)$")
-              .exampleMatch("foo.e01")
+              // Extracts just an episode number. Ex -> "/foo/foo.e01"
+              .expression(".*[^\\\\/]*?()(?<=[\\s._])[Ee]([0-9]+)([^\\\\/]*)$")
+              .exampleMatch("/foo/foo.e01")
               .build(),
           EpisodeRegexContainer.DateRegex.builder()
               // Extracts date from filename. Ex -> "PBS NewsHour 2020-04-17"
               .expression(
-                  ".*(?<year>[0-9]{4})[\\\\._ -](?<month>[0-9]{2})[\\\\._ -](?<day>[0-9]{2})")
+                  ".*(?<year>[0-9]{4})[\\\\._ -](?<month>[0-9]{2})[\\\\._ -](?<day>[0-9]{2})[^\\\\/]*")
               .exampleMatch("PBS NewsHour 2020-04-17")
               .build(),
           EpisodeRegexContainer.DateRegex.builder()
               // Extracts date from filename. Ex -> "PBS NewsHour 17-04-2020"
-              .expression(".*(?<day>[0-9]{2})[._ -](?<month>[0-9]{2})[._ -](?<year>[0-9]{4})")
+              .expression(
+                  ".*(?<day>[0-9]{2})[._ -](?<month>[0-9]{2})[._ -](?<year>[0-9]{4})[^\\\\/]*")
               .exampleMatch("PBS NewsHour 17-04-2020")
               .build(),
           EpisodeRegexContainer.NamedGroupRegex.builder()
@@ -62,10 +63,10 @@ public class EpisodeRegexFixtures {
               .build(),
           EpisodeRegexContainer.NamedGroupRegex.builder()
               // Warning; Causes false positives for triple-digit episode names
-              // Extracts seriesName, episodeNumber. Ex -> "[tag] Foo - 1"
+              // Extracts seriesName, episodeNumber. Ex -> "[tag].Foo.-.01"
               .expression(
-                  ".*[\\\\\\/]?.*?(\\[.*?\\])+.*?(?<seriesname>[-\\w\\s]+?)[\\s_]*-[\\s_]*(?<epnumber>[0-9]+).*$")
-              .exampleMatch("[tag] Foo - 1")
+                  ".*[\\\\\\/]?.*?(\\[.*?\\])+.*?(?<seriesname>[-\\w\\s.]+?)[\\s_.]*-[\\s_.]*(?<epnumber>[0-9]+).*$")
+              .exampleMatch("[tag].Foo.-.01")
               .build(),
           EpisodeRegexContainer.NamedGroupRegex.builder()
               // /server/anything_102.mp4
@@ -77,14 +78,15 @@ public class EpisodeRegexFixtures {
               .build(),
           EpisodeRegexContainer.IndexedGroupRegex.builder()
               // Extracts episode from part number. Ex -> "/season 1/title_part_1.avi"
-              .expression(".*[\\\\/._ -]p(?:ar)?t[_. -]()([ivx]+|[0-9]+)([._ -][^\\\\/]*)$")
+              .expression(
+                  ".*[\\\\/._ -][Pp](?:[Aa][Rr])?[Tt][_. -]()([ivx]+|[0-9]+)([._ -][^\\\\/]*)$")
               .exampleMatch("/season 1/title_part_1.avi")
               .build(),
           EpisodeRegexContainer.NamedGroupRegex.builder()
-              // Extracts episodeNumber and optionally endingEpisodeNumber. Ex -> "Episode 16",
-              // "Episode 16 - Title"
-              .expression("[Ee]pisode (?<epnumber>[0-9]+)(-(?<endingepnumber>[0-9]+))?[^\\\\\\/]*$")
-              .exampleMatch("Episode 16")
+              // Extracts episodeNumber and optionally endingEpisodeNumber. Ex -> "/foo/Episode 16"
+              .expression(
+                  ".*[Ee]pisode (?<epnumber>[0-9]+)(-(?<endingepnumber>[0-9]+))?[^\\\\\\/]*$")
+              .exampleMatch("/foo/Episode 16")
               .build(),
           EpisodeRegexContainer.NamedGroupRegex.builder()
               // Extracts seasonNumber and episodeNumber. Ex -> "/season 1/2x1 foo"

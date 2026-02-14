@@ -42,7 +42,7 @@ class FileProcessingTaskCoordinatorTest {
 
     var task = coordinator.createTask(path, libraryId);
 
-    assertThat(task.getFilepath()).isEqualTo(path.toAbsolutePath().toString());
+    assertThat(task.getFilepathUri()).isEqualTo(path.toAbsolutePath().toUri().toString());
     assertThat(task.getLibraryId()).isEqualTo(libraryId);
     assertThat(task.getStatus()).isEqualTo(FileProcessingTaskStatus.PENDING);
     assertThat(task.getCreatedOn()).isEqualTo(NOW);
@@ -190,7 +190,7 @@ class FileProcessingTaskCoordinatorTest {
   void shouldNotExtendLeaseWhenTaskIsCompleted() {
     var completedTask =
         FileProcessingTask.builder()
-            .filepath("/media/movies/Completed (2024).mkv")
+            .filepathUri("/media/movies/Completed (2024).mkv")
             .libraryId(UUID.randomUUID())
             .status(FileProcessingTaskStatus.COMPLETED)
             .ownerInstanceId(coordinator.getInstanceId())
@@ -258,5 +258,33 @@ class FileProcessingTaskCoordinatorTest {
 
     assertThat(result).isPresent();
     assertThat(result.get().getStatus()).isEqualTo(FileProcessingTaskStatus.FAILED);
+  }
+
+  @Test
+  @DisplayName("Should return empty when completing already completed task")
+  void shouldReturnEmptyWhenCompletingAlreadyCompletedTask() {
+    var path = Path.of("/media/movies/AlreadyCompleted (2024).mkv");
+    var libraryId = UUID.randomUUID();
+    coordinator.createTask(path, libraryId);
+    var claimed = coordinator.claimNextTask().orElseThrow();
+    coordinator.complete(claimed.getId());
+
+    var result = coordinator.complete(claimed.getId());
+
+    assertThat(result).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should return empty when failing already failed task")
+  void shouldReturnEmptyWhenFailingAlreadyFailedTask() {
+    var path = Path.of("/media/movies/AlreadyFailed (2024).mkv");
+    var libraryId = UUID.randomUUID();
+    coordinator.createTask(path, libraryId);
+    var claimed = coordinator.claimNextTask().orElseThrow();
+    coordinator.fail(claimed.getId(), "First failure");
+
+    var result = coordinator.fail(claimed.getId(), "Second failure");
+
+    assertThat(result).isEmpty();
   }
 }

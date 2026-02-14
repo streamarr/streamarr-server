@@ -119,7 +119,8 @@ class SeriesScanningIT extends AbstractIntegrationTest {
     assertThat(episodes).hasSize(7);
     assertThat(episodes).extracting("episodeNumber").containsExactlyInAnyOrder(1, 2, 3, 4, 5, 6, 7);
 
-    var mediaFile = mediaFileRepository.findFirstByFilepath(file.toAbsolutePath().toString());
+    var mediaFile =
+        mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
     assertThat(mediaFile).isPresent();
     assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.MATCHED);
 
@@ -193,7 +194,8 @@ class SeriesScanningIT extends AbstractIntegrationTest {
 
     libraryManagementService.processDiscoveredFile(library.getId(), file);
 
-    var mediaFile = mediaFileRepository.findFirstByFilepath(file.toAbsolutePath().toString());
+    var mediaFile =
+        mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
     assertThat(mediaFile).isPresent();
     assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.METADATA_PARSING_FAILED);
   }
@@ -208,7 +210,8 @@ class SeriesScanningIT extends AbstractIntegrationTest {
 
     libraryManagementService.processDiscoveredFile(library.getId(), file);
 
-    var mediaFile = mediaFileRepository.findFirstByFilepath(file.toAbsolutePath().toString());
+    var mediaFile =
+        mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
     assertThat(mediaFile).isPresent();
     assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.METADATA_SEARCH_FAILED);
   }
@@ -267,6 +270,28 @@ class SeriesScanningIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should match series when folder name contains external ID tag")
+  void shouldMatchSeriesWhenFolderNameContainsExternalIdTag() throws IOException {
+    var library = createSeriesLibrary();
+    var file = createSeriesFile("Hilda (2018) [imdb-tt6385540]", "Season 01", "hilda.s01e06.mkv");
+
+    stubTmdbSearch("Hilda", "68488", "Hilda");
+    stubTmdbSeriesMetadata("68488", "Hilda");
+    stubTmdbSeasonDetails("68488", 1, buildMinimalSeasonResponse(1, 6));
+
+    libraryManagementService.processDiscoveredFile(library.getId(), file);
+
+    assertThat(seriesRepository.findAll()).hasSize(1);
+    var series = seriesRepository.findAll().getFirst();
+    assertThat(series.getTitle()).isEqualTo("Hilda");
+
+    var mediaFile =
+        mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
+    assertThat(mediaFile).isPresent();
+    assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.MATCHED);
+  }
+
+  @Test
   @DisplayName("Should create minimal episode when episode not in TMDB data")
   void shouldCreateMinimalEpisodeWhenEpisodeNotInTmdbData() throws IOException {
     var library = createSeriesLibrary();
@@ -287,10 +312,301 @@ class SeriesScanningIT extends AbstractIntegrationTest {
     assertThat(ep99.get().getTitle()).isEqualTo("Episode 99");
     assertThat(ep99.get().getOverview()).isNull();
 
-    var mediaFile = mediaFileRepository.findFirstByFilepath(file.toAbsolutePath().toString());
+    var mediaFile =
+        mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
     assertThat(mediaFile).isPresent();
     assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.MATCHED);
     assertThat(mediaFile.get().getMediaId()).isEqualTo(ep99.get().getId());
+  }
+
+  @Test
+  @DisplayName("Should match series when folder name contains TVDB external ID tag")
+  void shouldMatchSeriesWhenFolderNameContainsTvdbExternalIdTag() throws IOException {
+    var library = createSeriesLibrary();
+    var file = createSeriesFile("Hilda (2018) [tvdb-349517]", "Season 01", "hilda.s01e01.mkv");
+
+    stubTmdbFindTvResult("349517", "tvdb_id", "68488", "Hilda");
+    stubTmdbSeriesMetadata("68488", "Hilda");
+    stubTmdbSeasonDetails("68488", 1, buildMinimalSeasonResponse(1, 1));
+
+    libraryManagementService.processDiscoveredFile(library.getId(), file);
+
+    assertThat(seriesRepository.findAll()).hasSize(1);
+    var series = seriesRepository.findAll().getFirst();
+    assertThat(series.getTitle()).isEqualTo("Hilda");
+
+    var mediaFile =
+        mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
+    assertThat(mediaFile).isPresent();
+    assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.MATCHED);
+
+    wireMock.verify(
+        getRequestedFor(urlPathEqualTo("/find/349517"))
+            .withQueryParam("external_source", equalTo("tvdb_id")));
+  }
+
+  @Test
+  @DisplayName("Should resolve to sequential TMDB season number when folder uses year-based naming")
+  void shouldResolveToSequentialTmdbSeasonNumberWhenFolderUsesYearBasedNaming() throws IOException {
+    var library = createSeriesLibrary();
+    var file = createSeriesFile("MythBusters", "Season 2012", "mythbusters.s2012e01.mkv");
+
+    stubTmdbSearch("MythBusters", "1428", "MythBusters");
+    stubTmdbSeriesMetadataWithSeasons(
+        "1428",
+        "MythBusters",
+        """
+        [
+          {"id": 100, "season_number": 1, "name": "Season 1", "air_date": "2003-01-23", "episode_count": 14},
+          {"id": 109, "season_number": 10, "name": "Season 10", "air_date": "2012-03-25", "episode_count": 18},
+          {"id": 110, "season_number": 11, "name": "Season 11", "air_date": "2013-01-16", "episode_count": 18}
+        ]
+        """);
+    stubTmdbSeasonDetails("1428", 10, buildMinimalSeasonResponse(10, 1));
+
+    libraryManagementService.processDiscoveredFile(library.getId(), file);
+
+    assertThat(seriesRepository.findAll()).hasSize(1);
+    assertThat(seasonRepository.findAll()).hasSize(1);
+    var season = seasonRepository.findAll().getFirst();
+    assertThat(season.getSeasonNumber()).isEqualTo(10);
+
+    var mediaFile =
+        mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
+    assertThat(mediaFile).isPresent();
+    assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.MATCHED);
+  }
+
+  @Test
+  @DisplayName(
+      "Should reuse cached season summaries when processing second file in same year-based season")
+  void shouldReuseCachedSeasonSummariesForSecondFileInSameYearBasedSeason() throws IOException {
+    var library = createSeriesLibrary();
+    var file1 = createSeriesFile("MythBusters", "Season 2012", "mythbusters.s2012e01.mkv");
+    var file2 = createSeriesFile("MythBusters", "Season 2012", "mythbusters.s2012e03.mkv");
+
+    stubTmdbSearch("MythBusters", "1428", "MythBusters");
+    stubTmdbSeriesMetadataWithSeasons(
+        "1428",
+        "MythBusters",
+        """
+        [
+          {"id": 100, "season_number": 1, "name": "Season 1", "air_date": "2003-01-23", "episode_count": 14},
+          {"id": 109, "season_number": 10, "name": "Season 10", "air_date": "2012-03-25", "episode_count": 18},
+          {"id": 110, "season_number": 11, "name": "Season 11", "air_date": "2013-01-16", "episode_count": 18}
+        ]
+        """);
+    stubTmdbSeasonDetails("1428", 10, buildMinimalSeasonResponse(10, 3));
+
+    libraryManagementService.processDiscoveredFile(library.getId(), file1);
+    libraryManagementService.processDiscoveredFile(library.getId(), file2);
+
+    assertThat(seriesRepository.findAll()).hasSize(1);
+    assertThat(seasonRepository.findAll()).hasSize(1);
+    assertThat(seasonRepository.findAll().getFirst().getSeasonNumber()).isEqualTo(10);
+
+    var mediaFiles = mediaFileRepository.findByLibraryId(library.getId());
+    assertThat(mediaFiles).hasSize(2).allMatch(mf -> mf.getStatus() == MediaFileStatus.MATCHED);
+
+    wireMock.verify(1, getRequestedFor(urlPathEqualTo("/tv/1428")));
+  }
+
+  @Test
+  @DisplayName("Should not attempt season fetch when year-based season cannot be resolved")
+  void shouldNotAttemptSeasonFetchWhenYearBasedSeasonCannotBeResolved() throws IOException {
+    var library = createSeriesLibrary();
+    var file = createSeriesFile("SomeShow", "Season 2050", "someshow.s2050e01.mkv");
+
+    stubTmdbSearch("SomeShow", "9999", "SomeShow");
+    stubTmdbSeriesMetadataWithSeasons(
+        "9999",
+        "SomeShow",
+        """
+        [
+          {"id": 200, "season_number": 1, "name": "Season 1", "air_date": "2020-01-15", "episode_count": 10}
+        ]
+        """);
+
+    libraryManagementService.processDiscoveredFile(library.getId(), file);
+
+    var mediaFile =
+        mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
+    assertThat(mediaFile).isPresent();
+    assertThat(mediaFile.get().getStatus()).isNotEqualTo(MediaFileStatus.MATCHED);
+
+    wireMock.verify(0, getRequestedFor(urlPathEqualTo("/tv/9999/season/2050")));
+  }
+
+  @Test
+  @DisplayName("Should not trigger year-based resolution when season number is sequential")
+  void shouldNotTriggerYearBasedResolutionWhenSeasonNumberIsSequential() throws IOException {
+    var library = createSeriesLibrary();
+    var file = createSeriesFile("Show", "Season 01", "show.s01e01.mkv");
+
+    stubTmdbSearch("Show", "5555", "Show");
+    stubTmdbSeriesMetadataWithSeasons(
+        "5555",
+        "Show",
+        """
+        [
+          {"id": 300, "season_number": 1, "name": "Season 1", "air_date": "2020-01-15", "episode_count": 10}
+        ]
+        """);
+    stubTmdbSeasonDetails("5555", 1, buildMinimalSeasonResponse(1, 1));
+
+    libraryManagementService.processDiscoveredFile(library.getId(), file);
+
+    assertThat(seasonRepository.findAll()).hasSize(1);
+    assertThat(seasonRepository.findAll().getFirst().getSeasonNumber()).isEqualTo(1);
+
+    var mediaFile =
+        mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
+    assertThat(mediaFile).isPresent();
+    assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.MATCHED);
+
+    wireMock.verify(1, getRequestedFor(urlPathEqualTo("/tv/5555")));
+  }
+
+  @Test
+  @DisplayName("Should match date-only episode when TMDB air date lookup succeeds")
+  void shouldMatchDateOnlyEpisodeWhenTmdbAirDateLookupSucceeds() throws IOException {
+    var library = createSeriesLibrary();
+    var showDir = tempDir.resolve("Jeopardy!");
+    Files.createDirectories(showDir);
+    var file = showDir.resolve("Jeopardy! - 2025-11-25.mkv");
+    Files.createFile(file);
+
+    stubTmdbSearch("Jeopardy!", "2141", "Jeopardy!");
+    stubTmdbSeriesMetadataWithSeasons(
+        "2141",
+        "Jeopardy!",
+        """
+        [
+          {"id": 500, "season_number": 42, "name": "Season 42", "air_date": "2025-09-08", "episode_count": 230}
+        ]
+        """);
+    stubTmdbSeasonDetails(
+        "2141",
+        42,
+        """
+        {
+          "id": 500,
+          "name": "Season 42",
+          "season_number": 42,
+          "overview": "Season 42 of Jeopardy!",
+          "episodes": [
+            {"id": 80001, "episode_number": 55, "season_number": 42, "name": "Show #9955", "overview": "Episode 55.", "air_date": "2025-11-24", "runtime": 30},
+            {"id": 80002, "episode_number": 56, "season_number": 42, "name": "Show #9956", "overview": "Episode 56.", "air_date": "2025-11-25", "runtime": 30},
+            {"id": 80003, "episode_number": 57, "season_number": 42, "name": "Show #9957", "overview": "Episode 57.", "air_date": "2025-11-26", "runtime": 30}
+          ]
+        }
+        """);
+
+    libraryManagementService.processDiscoveredFile(library.getId(), file);
+
+    assertThat(seriesRepository.findAll()).hasSize(1);
+    assertThat(seasonRepository.findAll()).hasSize(1);
+
+    var season = seasonRepository.findAll().getFirst();
+    assertThat(season.getSeasonNumber()).isEqualTo(42);
+
+    var ep56 = episodeRepository.findBySeasonIdAndEpisodeNumber(season.getId(), 56);
+    assertThat(ep56).isPresent();
+
+    var mediaFile =
+        mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
+    assertThat(mediaFile).isPresent();
+    assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.MATCHED);
+    assertThat(mediaFile.get().getMediaId()).isEqualTo(ep56.get().getId());
+  }
+
+  @Test
+  @DisplayName("Should mark date-only file as search failed when no air date matches")
+  void shouldMarkDateOnlyFileAsSearchFailedWhenNoAirDateMatches() throws IOException {
+    var library = createSeriesLibrary();
+    var showDir = tempDir.resolve("Daily Show");
+    Files.createDirectories(showDir);
+    var file = showDir.resolve("Daily Show - 2025-12-25.mkv");
+    Files.createFile(file);
+
+    stubTmdbSearch("Daily Show", "3000", "Daily Show");
+    stubTmdbSeriesMetadataWithSeasons(
+        "3000",
+        "Daily Show",
+        """
+        [
+          {"id": 600, "season_number": 1, "name": "Season 1", "air_date": "2025-01-01", "episode_count": 10}
+        ]
+        """);
+    stubTmdbSeasonDetails(
+        "3000",
+        1,
+        """
+        {
+          "id": 600,
+          "name": "Season 1",
+          "season_number": 1,
+          "overview": "Season 1.",
+          "episodes": [
+            {"id": 90001, "episode_number": 1, "season_number": 1, "name": "Ep 1", "overview": ".", "air_date": "2025-01-06", "runtime": 30}
+          ]
+        }
+        """);
+
+    libraryManagementService.processDiscoveredFile(library.getId(), file);
+
+    var mediaFile =
+        mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
+    assertThat(mediaFile).isPresent();
+    assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.METADATA_SEARCH_FAILED);
+  }
+
+  @Test
+  @DisplayName("Should select correct series when TMDB returns multiple results")
+  void shouldSelectCorrectSeriesWhenTmdbReturnsMultipleResults() throws IOException {
+    var library = createSeriesLibrary();
+    var file = createSeriesFile("Breaking Bad", "Season 01", "breaking.bad.s01e01.mkv");
+
+    stubTmdbSearchMultipleResults(
+        "Breaking Bad",
+        """
+        [
+          {
+            "id": 9999,
+            "name": "Breaking Point",
+            "original_name": "Breaking Point",
+            "first_air_date": "2008-03-15",
+            "popularity": 5.0,
+            "vote_count": 100,
+            "vote_average": 6.0
+          },
+          {
+            "id": 1396,
+            "name": "Breaking Bad",
+            "original_name": "Breaking Bad",
+            "first_air_date": "2008-01-20",
+            "popularity": 500.0,
+            "vote_count": 10000,
+            "vote_average": 8.9
+          }
+        ]
+        """);
+    stubTmdbSeriesMetadata("1396", "Breaking Bad");
+    stubTmdbSeasonDetails("1396", 1, buildMinimalSeasonResponse(1, 1));
+
+    libraryManagementService.processDiscoveredFile(library.getId(), file);
+
+    assertThat(seriesRepository.findAll()).hasSize(1);
+    var series = seriesRepository.findAll().getFirst();
+    assertThat(series.getTitle()).isEqualTo("Breaking Bad");
+
+    var mediaFile =
+        mediaFileRepository.findFirstByFilepathUri(file.toAbsolutePath().toUri().toString());
+    assertThat(mediaFile).isPresent();
+    assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.MATCHED);
+
+    wireMock.verify(1, getRequestedFor(urlPathEqualTo("/tv/1396")));
+    wireMock.verify(0, getRequestedFor(urlPathEqualTo("/tv/9999")));
   }
 
   // --- Helpers ---
@@ -346,6 +662,54 @@ class SeriesScanningIT extends AbstractIntegrationTest {
                         }
                         """
                             .formatted(tmdbId, name, name))));
+  }
+
+  private void stubTmdbFindTvResult(
+      String externalId, String externalSource, String tmdbId, String name) {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/find/" + externalId))
+            .withQueryParam("external_source", equalTo(externalSource))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {
+                          "tv_results": [
+                            {
+                              "id": %s,
+                              "name": "%s",
+                              "original_name": "%s",
+                              "first_air_date": "2018-09-21",
+                              "popularity": 50.0,
+                              "vote_count": 500,
+                              "vote_average": 8.0
+                            }
+                          ]
+                        }
+                        """
+                            .formatted(tmdbId, name, name))));
+  }
+
+  private void stubTmdbSearchMultipleResults(String query, String resultsJson) {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/search/tv"))
+            .withQueryParam("query", equalTo(query))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {
+                          "page": 1,
+                          "results": %s,
+                          "total_results": 2,
+                          "total_pages": 1
+                        }
+                        """
+                            .formatted(resultsJson))));
   }
 
   private void stubTmdbSearchEmpty(String query) {
@@ -418,6 +782,34 @@ class SeriesScanningIT extends AbstractIntegrationTest {
                         }
                         """
                             .formatted(tmdbId, name, name, tmdbId))));
+  }
+
+  private void stubTmdbSeriesMetadataWithSeasons(String tmdbId, String name, String seasonsJson) {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/tv/" + tmdbId))
+            .withQueryParam("append_to_response", equalTo("content_ratings,credits,external_ids"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {
+                          "id": %s,
+                          "name": "%s",
+                          "original_name": "%s",
+                          "first_air_date": "2003-01-23",
+                          "overview": "Test overview.",
+                          "episode_run_time": [],
+                          "genres": [],
+                          "production_companies": [],
+                          "seasons": %s,
+                          "credits": {"id": %s, "cast": [], "crew": []},
+                          "content_ratings": {"results": []},
+                          "external_ids": {"imdb_id": "tt0383126", "tvdb_id": 73388}
+                        }
+                        """
+                            .formatted(tmdbId, name, name, seasonsJson, tmdbId))));
   }
 
   private void stubTmdbSeasonDetails(String tmdbId, int seasonNumber, String body) {

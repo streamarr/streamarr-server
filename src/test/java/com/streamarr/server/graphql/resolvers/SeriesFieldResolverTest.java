@@ -10,12 +10,7 @@ import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
-import com.streamarr.server.repositories.CompanyRepository;
-import com.streamarr.server.repositories.GenreRepository;
-import com.streamarr.server.repositories.PersonRepository;
-import com.streamarr.server.repositories.media.MediaFileRepository;
-import com.streamarr.server.repositories.media.SeasonRepository;
-import com.streamarr.server.repositories.media.SeriesRepository;
+import com.streamarr.server.services.SeriesService;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -34,18 +29,13 @@ class SeriesFieldResolverTest {
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
 
-  @MockitoBean private SeriesRepository seriesRepository;
-  @MockitoBean private MediaFileRepository mediaFileRepository;
-  @MockitoBean private CompanyRepository companyRepository;
-  @MockitoBean private PersonRepository personRepository;
-  @MockitoBean private GenreRepository genreRepository;
-  @MockitoBean private SeasonRepository seasonRepository;
+  @MockitoBean private SeriesService seriesService;
 
   private Series setupSeries() {
     var seriesId = UUID.randomUUID();
     var series = Series.builder().title("Breaking Bad").build();
     series.setId(seriesId);
-    when(seriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
+    when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
     return series;
   }
 
@@ -53,7 +43,7 @@ class SeriesFieldResolverTest {
   @DisplayName("Should return studios when series queried with studios field")
   void shouldReturnStudiosWhenSeriesQueriedWithStudiosField() {
     var series = setupSeries();
-    when(companyRepository.findBySeriesId(series.getId()))
+    when(seriesService.findStudios(series.getId()))
         .thenReturn(List.of(Company.builder().name("AMC Studios").sourceId("amc").build()));
 
     String name =
@@ -68,7 +58,7 @@ class SeriesFieldResolverTest {
   @DisplayName("Should return cast when series queried with cast field")
   void shouldReturnCastWhenSeriesQueriedWithCastField() {
     var series = setupSeries();
-    when(personRepository.findCastBySeriesId(series.getId()))
+    when(seriesService.findCast(series.getId()))
         .thenReturn(List.of(Person.builder().name("Bryan Cranston").sourceId("bc").build()));
 
     String name =
@@ -83,7 +73,7 @@ class SeriesFieldResolverTest {
   @DisplayName("Should return directors when series queried with directors field")
   void shouldReturnDirectorsWhenSeriesQueriedWithDirectorsField() {
     var series = setupSeries();
-    when(personRepository.findDirectorsBySeriesId(series.getId()))
+    when(seriesService.findDirectors(series.getId()))
         .thenReturn(List.of(Person.builder().name("Vince Gilligan").sourceId("vg").build()));
 
     String name =
@@ -98,7 +88,7 @@ class SeriesFieldResolverTest {
   @DisplayName("Should return genres when series queried with genres field")
   void shouldReturnGenresWhenSeriesQueriedWithGenresField() {
     var series = setupSeries();
-    when(genreRepository.findBySeriesId(series.getId()))
+    when(seriesService.findGenres(series.getId()))
         .thenReturn(List.of(Genre.builder().name("Drama").sourceId("drama").build()));
 
     String name =
@@ -116,7 +106,7 @@ class SeriesFieldResolverTest {
     var season = Season.builder().title("Season 1").seasonNumber(1).build();
     season.setId(UUID.randomUUID());
 
-    when(seasonRepository.findBySeriesId(series.getId())).thenReturn(List.of(season));
+    when(seriesService.findSeasons(series.getId())).thenReturn(List.of(season));
 
     Integer seasonNumber =
         dgsQueryExecutor.executeAndExtractJsonPath(

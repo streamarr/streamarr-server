@@ -7,8 +7,7 @@ import static org.mockito.Mockito.when;
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.domain.media.Movie;
-import com.streamarr.server.repositories.media.MediaFileRepository;
-import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.services.MovieService;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -26,9 +25,7 @@ class MovieResolverTest {
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
 
-  @MockitoBean private MovieRepository movieRepository;
-
-  @MockitoBean private MediaFileRepository mediaFileRepository;
+  @MockitoBean private MovieService movieService;
 
   @Test
   @DisplayName("Should return movie when valid ID provided")
@@ -38,7 +35,7 @@ class MovieResolverTest {
         Movie.builder().title("Inception").tagline("Your mind is the scene of the crime.").build();
     movie.setId(movieId);
 
-    when(movieRepository.findById(movieId)).thenReturn(Optional.of(movie));
+    when(movieService.findById(movieId)).thenReturn(Optional.of(movie));
 
     String title =
         dgsQueryExecutor.executeAndExtractJsonPath(
@@ -50,7 +47,7 @@ class MovieResolverTest {
   @Test
   @DisplayName("Should return null when movie not found")
   void shouldReturnNullWhenMovieNotFound() {
-    when(movieRepository.findById(any(UUID.class))).thenReturn(Optional.empty());
+    when(movieService.findById(any(UUID.class))).thenReturn(Optional.empty());
 
     Object result =
         dgsQueryExecutor.executeAndExtractJsonPath(

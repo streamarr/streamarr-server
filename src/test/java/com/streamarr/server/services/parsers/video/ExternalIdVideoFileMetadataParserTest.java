@@ -90,7 +90,16 @@ class ExternalIdVideoFileMetadataParserTest {
               new TestCase(
                   ExternalSourceType.TMDB,
                   "762504",
-                  "Nope (2022) {tmdb 762504}[WEBDL-1080p][EAC3 5.1][h264]-EVO.mkv"))
+                  "Nope (2022) {tmdb 762504}[WEBDL-1080p][EAC3 5.1][h264]-EVO.mkv"),
+              new TestCase(
+                  ExternalSourceType.IMDB, "tt1234567", "Movie (2022) (imdb-tt1234567).mkv"),
+              new TestCase(
+                  ExternalSourceType.IMDB, "tt1234567", "Movie (2022) [imdb=tt1234567].mkv"),
+              new TestCase(ExternalSourceType.TVDB, "12345", "Movie (2022) [tvdb-12345].mkv"),
+              new TestCase(
+                  ExternalSourceType.IMDB, "tt1234567", "Movie (2022) [imdbid-tt1234567].mkv"),
+              new TestCase(ExternalSourceType.TMDB, "12345", "Movie (2022) [tmdbid=12345].mkv"),
+              new TestCase(ExternalSourceType.TVDB, "67890", "Movie (2022) {tvdbid=67890}.mkv"))
           .map(
               testCase ->
                   DynamicTest.dynamicTest(

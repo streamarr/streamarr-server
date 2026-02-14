@@ -15,11 +15,13 @@ import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.services.library.events.ScanEndedEvent;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.time.LocalDate;
+import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -60,6 +62,7 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
   @BeforeEach
   void resetStubs() {
     wireMock.resetAll();
+    provider.onScanEnded(new ScanEndedEvent(UUID.randomUUID()));
   }
 
   @AfterAll
@@ -153,6 +156,180 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
     var result = provider.search(VideoFileParserResult.builder().title("Test").build());
 
     assertThat(result).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should find series by IMDB external ID when external ID provided")
+  void shouldFindSeriesByImdbExternalIdWhenExternalIdProvided() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/find/tt0903747"))
+            .withQueryParam("external_source", equalTo("imdb_id"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {
+                          "tv_results": [
+                            {
+                              "id": 1396,
+                              "name": "Breaking Bad",
+                              "original_name": "Breaking Bad",
+                              "first_air_date": "2008-01-20",
+                              "overview": "A chemistry teacher diagnosed with cancer.",
+                              "popularity": 150.0,
+                              "vote_count": 12000,
+                              "vote_average": 8.9
+                            }
+                          ]
+                        }
+                        """)));
+
+    var result =
+        provider.search(
+            VideoFileParserResult.builder()
+                .title("Breaking Bad")
+                .externalId("tt0903747")
+                .externalSource(ExternalSourceType.IMDB)
+                .build());
+
+    assertThat(result).isPresent();
+    assertThat(result.get().title()).isEqualTo("Breaking Bad");
+    assertThat(result.get().externalId()).isEqualTo("1396");
+    assertThat(result.get().externalSourceType()).isEqualTo(ExternalSourceType.TMDB);
+  }
+
+  @Test
+  @DisplayName("Should fall back to text search when find by external ID returns no TV results")
+  void shouldFallBackToTextSearchWhenFindByExternalIdReturnsNoTvResults() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/find/tt9999999"))
+            .withQueryParam("external_source", equalTo("imdb_id"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {
+                          "tv_results": []
+                        }
+                        """)));
+
+    wireMock.stubFor(
+        get(urlPathEqualTo("/search/tv"))
+            .withQueryParam("query", equalTo("Some Show"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {
+                          "page": 1,
+                          "results": [
+                            {
+                              "id": 5555,
+                              "name": "Some Show",
+                              "original_name": "Some Show",
+                              "first_air_date": "2020-01-01",
+                              "popularity": 50.0,
+                              "vote_count": 500,
+                              "vote_average": 7.0
+                            }
+                          ],
+                          "total_results": 1,
+                          "total_pages": 1
+                        }
+                        """)));
+
+    var result =
+        provider.search(
+            VideoFileParserResult.builder()
+                .title("Some Show")
+                .externalId("tt9999999")
+                .externalSource(ExternalSourceType.IMDB)
+                .build());
+
+    assertThat(result).isPresent();
+    assertThat(result.get().title()).isEqualTo("Some Show");
+    assertThat(result.get().externalId()).isEqualTo("5555");
+  }
+
+  @Test
+  @DisplayName("Should return direct result when TMDB external ID provided")
+  void shouldReturnDirectResultWhenTmdbExternalIdProvided() {
+    stubMinimalSeriesResponse("1396");
+
+    var result =
+        provider.search(
+            VideoFileParserResult.builder()
+                .title("Breaking Bad")
+                .externalId("1396")
+                .externalSource(ExternalSourceType.TMDB)
+                .build());
+
+    assertThat(result).isPresent();
+    assertThat(result.get().externalId()).isEqualTo("1396");
+    assertThat(result.get().title()).isEqualTo("Breaking Bad");
+    assertThat(result.get().externalSourceType()).isEqualTo(ExternalSourceType.TMDB);
+  }
+
+  @Test
+  @DisplayName("Should fall back to text search when external source is not in TMDB source map")
+  void shouldFallBackToTextSearchWhenExternalSourceIsNotInTmdbSourceMap() {
+    stubTextSearchResult("Test Show", 77777);
+
+    var result =
+        provider.search(
+            VideoFileParserResult.builder()
+                .title("Test Show")
+                .externalId("12345")
+                .externalSource(ExternalSourceType.OMDB)
+                .build());
+
+    assertThat(result).isPresent();
+    assertThat(result.get().title()).isEqualTo("Test Show");
+  }
+
+  @Test
+  @DisplayName("Should fall back to text search when find endpoint returns server error")
+  void shouldFallBackToTextSearchWhenFindEndpointReturnsServerError() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/find/tt1234567")).willReturn(aResponse().withStatus(500)));
+
+    stubTextSearchResult("Fallback Show", 99999);
+
+    var result =
+        provider.search(
+            VideoFileParserResult.builder()
+                .title("Fallback Show")
+                .externalId("tt1234567")
+                .externalSource(ExternalSourceType.IMDB)
+                .build());
+
+    assertThat(result).isPresent();
+    assertThat(result.get().title()).isEqualTo("Fallback Show");
+  }
+
+  @Test
+  @DisplayName("Should fall back to text search when direct TMDB lookup returns server error")
+  void shouldFallBackToTextSearchWhenDirectTmdbLookupReturnsServerError() {
+    wireMock.stubFor(get(urlPathEqualTo("/tv/99999")).willReturn(aResponse().withStatus(500)));
+
+    stubTextSearchResult("Fallback Show", 88888);
+
+    var result =
+        provider.search(
+            VideoFileParserResult.builder()
+                .title("Fallback Show")
+                .externalId("99999")
+                .externalSource(ExternalSourceType.TMDB)
+                .build());
+
+    assertThat(result).isPresent();
+    assertThat(result.get().title()).isEqualTo("Fallback Show");
   }
 
   // --- getMetadata() tests ---
@@ -606,6 +783,36 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
                     .withStatus(200)
                     .withHeader("Content-Type", "application/json")
                     .withBody(body)));
+  }
+
+  private void stubTextSearchResult(String name, int id) {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/search/tv"))
+            .withQueryParam("query", equalTo(name))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {
+                          "page": 1,
+                          "results": [
+                            {
+                              "id": %d,
+                              "name": "%s",
+                              "original_name": "%s",
+                              "first_air_date": "2024-01-01",
+                              "popularity": 50.0,
+                              "vote_count": 100,
+                              "vote_average": 7.0
+                            }
+                          ],
+                          "total_results": 1,
+                          "total_pages": 1
+                        }
+                        """
+                            .formatted(id, name, name))));
   }
 
   private void stubFullSeriesResponse() {

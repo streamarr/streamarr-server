@@ -2,9 +2,13 @@ package com.streamarr.server.services;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.fakes.FakeGenreRepository;
+import com.streamarr.server.repositories.GenreRepository;
+import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -106,5 +110,20 @@ class GenreServiceTest {
     var result = genreService.getOrCreateGenres(null);
 
     assertThat(result).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should throw when genre not found after upsert")
+  void shouldThrowWhenGenreNotFoundAfterUpsert() {
+    var stubRepository = mock(GenreRepository.class);
+    when(stubRepository.findBySourceId("genre-28")).thenReturn(Optional.empty());
+    var service = new GenreService(stubRepository);
+
+    var genre = Genre.builder().name("Action").sourceId("genre-28").build();
+    var genres = Set.of(genre);
+
+    assertThatThrownBy(() -> service.getOrCreateGenres(genres))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("not found after upsert");
   }
 }

@@ -42,7 +42,7 @@ public class Indexes {
 
     public static final Index EXTERNAL_IDENTIFIER_ID_IDX = Internal.createIndex(DSL.name("external_identifier_id_idx"), ExternalIdentifier.EXTERNAL_IDENTIFIER, new OrderField[] { ExternalIdentifier.EXTERNAL_IDENTIFIER.ID }, true);
     public static final Index FILE_PROCESSING_TASK_CLAIMABLE_IDX = Internal.createIndex(DSL.name("file_processing_task_claimable_idx"), FileProcessingTask.FILE_PROCESSING_TASK, new OrderField[] { FileProcessingTask.FILE_PROCESSING_TASK.STATUS }, false);
-    public static final Index FILE_PROCESSING_TASK_FILEPATH_ACTIVE_IDX = Internal.createIndex(DSL.name("file_processing_task_filepath_active_idx"), FileProcessingTask.FILE_PROCESSING_TASK, new OrderField[] { FileProcessingTask.FILE_PROCESSING_TASK.FILEPATH }, true);
+    public static final Index FILE_PROCESSING_TASK_FILEPATH_URI_ACTIVE_IDX = Internal.createIndex(DSL.name("file_processing_task_filepath_uri_active_idx"), FileProcessingTask.FILE_PROCESSING_TASK, new OrderField[] { FileProcessingTask.FILE_PROCESSING_TASK.FILEPATH_URI }, true);
     public static final Index IDX_BASE_COLLECTABLE_LIBRARY_CREATED_ID = Internal.createIndex(DSL.name("idx_base_collectable_library_created_id"), BaseCollectable.BASE_COLLECTABLE, new OrderField[] { BaseCollectable.BASE_COLLECTABLE.LIBRARY_ID, BaseCollectable.BASE_COLLECTABLE.CREATED_ON, BaseCollectable.BASE_COLLECTABLE.ID }, false);
     public static final Index IDX_BASE_COLLECTABLE_LIBRARY_ID = Internal.createIndex(DSL.name("idx_base_collectable_library_id"), BaseCollectable.BASE_COLLECTABLE, new OrderField[] { BaseCollectable.BASE_COLLECTABLE.LIBRARY_ID }, false);
     public static final Index IDX_BASE_COLLECTABLE_LIBRARY_TITLE_ID = Internal.createIndex(DSL.name("idx_base_collectable_library_title_id"), BaseCollectable.BASE_COLLECTABLE, new OrderField[] { BaseCollectable.BASE_COLLECTABLE.LIBRARY_ID, BaseCollectable.BASE_COLLECTABLE.TITLE, BaseCollectable.BASE_COLLECTABLE.ID }, false);
@@ -73,6 +73,6 @@ public class Indexes {
     public static final Index IMAGE_ENTITY_ID_IMAGE_TYPE_VARIANT_IDX = Internal.createIndex(DSL.name("image_entity_id_image_type_variant_idx"), Image.IMAGE, new OrderField[] { Image.IMAGE.ENTITY_ID, Image.IMAGE.IMAGE_TYPE, Image.IMAGE.VARIANT }, true);
     public static final Index IMAGE_ENTITY_TYPE_ENTITY_ID_IDX = Internal.createIndex(DSL.name("image_entity_type_entity_id_idx"), Image.IMAGE, new OrderField[] { Image.IMAGE.ENTITY_TYPE, Image.IMAGE.ENTITY_ID }, false);
     public static final Index LIBRARY_FILE_PATH_IDX = Internal.createIndex(DSL.name("library_file_path_idx"), Library.LIBRARY, new OrderField[] { Library.LIBRARY.FILEPATH }, true);
-    public static final Index MEDIA_FILE_FILEPATH_IDX = Internal.createIndex(DSL.name("media_file_filepath_idx"), MediaFile.MEDIA_FILE, new OrderField[] { MediaFile.MEDIA_FILE.FILEPATH }, true);
+    public static final Index MEDIA_FILE_FILEPATH_URI_IDX = Internal.createIndex(DSL.name("media_file_filepath_uri_idx"), MediaFile.MEDIA_FILE, new OrderField[] { MediaFile.MEDIA_FILE.FILEPATH_URI }, true);
     public static final Index SCHEMA_HISTORY_S_IDX = Internal.createIndex(DSL.name("schema_history_s_idx"), SchemaHistory.SCHEMA_HISTORY, new OrderField[] { SchemaHistory.SCHEMA_HISTORY.SUCCESS }, false);
 }

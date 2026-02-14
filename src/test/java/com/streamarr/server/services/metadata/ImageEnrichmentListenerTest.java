@@ -2,6 +2,7 @@ package com.streamarr.server.services.metadata;
 
 import static com.streamarr.server.fakes.TestImages.createTestImage;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
@@ -11,13 +12,14 @@ import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.fakes.FakeImageRepository;
+import com.streamarr.server.fakes.FakeTmdbHttpService;
 import com.streamarr.server.services.ImageService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
-import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -61,10 +63,16 @@ class ImageEnrichmentListenerTest {
 
     listener.onMetadataEnriched(event);
 
-    var images = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
-    assertThat(images)
-        .extracting(Image::getImageType)
-        .containsOnly(ImageType.POSTER, ImageType.BACKDROP);
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () -> {
+              var images =
+                  imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
+              assertThat(images)
+                  .extracting(Image::getImageType)
+                  .containsOnly(ImageType.POSTER, ImageType.BACKDROP);
+            });
   }
 
   @Test
@@ -84,8 +92,14 @@ class ImageEnrichmentListenerTest {
 
     listener.onMetadataEnriched(event);
 
-    var images = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
-    assertThat(images).extracting(Image::getImageType).containsOnly(ImageType.BACKDROP);
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () -> {
+              var images =
+                  imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
+              assertThat(images).extracting(Image::getImageType).containsOnly(ImageType.BACKDROP);
+            });
   }
 
   @Test
@@ -114,9 +128,15 @@ class ImageEnrichmentListenerTest {
 
     listener.onMetadataEnriched(event);
 
-    var images = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
-    assertThat(images).hasSize(1);
-    assertThat(images.getFirst().getId()).isEqualTo(existingImage.getId());
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () -> {
+              var images =
+                  imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
+              assertThat(images).hasSize(1);
+              assertThat(images.getFirst().getId()).isEqualTo(existingImage.getId());
+            });
   }
 
   @Test
@@ -136,16 +156,22 @@ class ImageEnrichmentListenerTest {
 
     listener.onMetadataEnriched(event);
 
-    var images = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
-    assertThat(images).extracting(Image::getImageType).containsOnly(ImageType.BACKDROP);
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () -> {
+              var images =
+                  imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
+              assertThat(images).extracting(Image::getImageType).containsOnly(ImageType.BACKDROP);
+            });
   }
 
   @Test
   @DisplayName("Should clean up written files when batch save fails")
-  void shouldCleanUpWrittenFilesWhenBatchSaveFails() throws IOException {
+  void shouldCleanUpWrittenFilesWhenBatchSaveFails() {
     var entityId = UUID.randomUUID();
     tmdbHttpService.setImageData(createTestImage(600, 900));
-    imageRepository.setFailOnSaveAll(true);
+    imageRepository.setFailOnInsertAllIfAbsent(true);
 
     var event =
         new MetadataEnrichedEvent(
@@ -155,14 +181,23 @@ class ImageEnrichmentListenerTest {
 
     listener.onMetadataEnriched(event);
 
-    assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
-        .isEmpty();
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () -> {
+              assertThat(
+                      imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
+                  .isEmpty();
 
-    var entityDir =
-        fileSystem.getPath("/data/images/movie").resolve(entityId.toString()).resolve("poster");
-    try (var files = Files.list(entityDir)) {
-      assertThat(files).isEmpty();
-    }
+              var entityDir =
+                  fileSystem
+                      .getPath("/data/images/movie")
+                      .resolve(entityId.toString())
+                      .resolve("poster");
+              try (var files = Files.list(entityDir)) {
+                assertThat(files).isEmpty();
+              }
+            });
   }
 
   @Test
@@ -181,49 +216,42 @@ class ImageEnrichmentListenerTest {
 
     listener.onMetadataEnriched(event);
 
-    assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
-        .isEmpty();
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () ->
+                assertThat(
+                        imageRepository.findByEntityIdAndEntityType(
+                            entityId, ImageEntityType.MOVIE))
+                    .isEmpty());
   }
 
-  private static class FakeTmdbHttpService extends TheMovieDatabaseHttpService {
+  @Test
+  @DisplayName("Should not block calling thread when downloading images")
+  void shouldNotBlockCallingThreadWhenDownloadingImages() {
+    var entityId = UUID.randomUUID();
+    tmdbHttpService.setImageData(createTestImage(600, 900));
+    tmdbHttpService.setDelayMillis(500);
 
-    private byte[] imageData;
-    private String failOnPath;
-    private String interruptOnPath;
-    private boolean failAll;
+    var event =
+        new MetadataEnrichedEvent(
+            entityId,
+            ImageEntityType.MOVIE,
+            List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")));
 
-    FakeTmdbHttpService() {
-      super("", "", "", 10, null, null);
-    }
+    listener.onMetadataEnriched(event);
 
-    void setImageData(byte[] imageData) {
-      this.imageData = imageData;
-    }
+    assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
+        .as("Method should return before async download completes")
+        .isEmpty();
 
-    void setFailOnPath(String path) {
-      this.failOnPath = path;
-    }
-
-    void setInterruptOnPath(String path) {
-      this.interruptOnPath = path;
-    }
-
-    void setFailAll(boolean failAll) {
-      this.failAll = failAll;
-    }
-
-    @Override
-    public byte[] downloadImage(String pathFragment) throws IOException, InterruptedException {
-      if (failAll) {
-        throw new IOException("Simulated download failure for " + pathFragment);
-      }
-      if (pathFragment.equals(failOnPath)) {
-        throw new IOException("Simulated download failure for " + pathFragment);
-      }
-      if (pathFragment.equals(interruptOnPath)) {
-        throw new InterruptedException("Simulated interrupt for " + pathFragment);
-      }
-      return imageData;
-    }
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () -> {
+              var images =
+                  imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
+              assertThat(images).isNotEmpty();
+            });
   }
 }

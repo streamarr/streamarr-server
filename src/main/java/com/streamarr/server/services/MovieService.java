@@ -4,10 +4,21 @@ import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.domain.metadata.Company;
+import com.streamarr.server.domain.metadata.Genre;
+import com.streamarr.server.domain.metadata.Person;
+import com.streamarr.server.domain.metadata.Rating;
+import com.streamarr.server.domain.metadata.Review;
 import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.graphql.cursor.MediaPaginationOptions;
 import com.streamarr.server.graphql.cursor.PaginationOptions;
+import com.streamarr.server.repositories.CompanyRepository;
+import com.streamarr.server.repositories.GenreRepository;
+import com.streamarr.server.repositories.PersonRepository;
+import com.streamarr.server.repositories.RatingRepository;
+import com.streamarr.server.repositories.ReviewRepository;
+import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.events.ImageSource;
@@ -38,6 +49,12 @@ public class MovieService {
   private final RelayPaginationService relayPaginationService;
   private final ApplicationEventPublisher eventPublisher;
   private final ImageService imageService;
+  private final MediaFileRepository mediaFileRepository;
+  private final PersonRepository personRepository;
+  private final GenreRepository genreRepository;
+  private final CompanyRepository companyRepository;
+  private final RatingRepository ratingRepository;
+  private final ReviewRepository reviewRepository;
 
   @Transactional
   public Optional<Movie> addMediaFileToMovieByTmdbId(String id, MediaFile mediaFile) {
@@ -129,6 +146,46 @@ public class MovieService {
     validateDecodedCursorAgainstFilter(mediaOptionsFromCursor, filter);
 
     return usingCursorGetMoviesAsConnection(mediaOptionsFromCursor);
+  }
+
+  @Transactional(readOnly = true)
+  public Optional<Movie> findById(UUID id) {
+    return movieRepository.findById(id);
+  }
+
+  @Transactional(readOnly = true)
+  public List<MediaFile> findMediaFiles(UUID movieId) {
+    return mediaFileRepository.findByMediaId(movieId);
+  }
+
+  @Transactional(readOnly = true)
+  public List<Company> findStudios(UUID movieId) {
+    return companyRepository.findByMovieId(movieId);
+  }
+
+  @Transactional(readOnly = true)
+  public List<Person> findCast(UUID movieId) {
+    return personRepository.findCastByMovieId(movieId);
+  }
+
+  @Transactional(readOnly = true)
+  public List<Person> findDirectors(UUID movieId) {
+    return personRepository.findDirectorsByMovieId(movieId);
+  }
+
+  @Transactional(readOnly = true)
+  public List<Genre> findGenres(UUID movieId) {
+    return genreRepository.findByMovieId(movieId);
+  }
+
+  @Transactional(readOnly = true)
+  public List<Rating> findRatings(UUID movieId) {
+    return ratingRepository.findByMovie_Id(movieId);
+  }
+
+  @Transactional(readOnly = true)
+  public List<Review> findReviews(UUID movieId) {
+    return reviewRepository.findByMovie_Id(movieId);
   }
 
   private MediaFilter buildDefaultMovieFilter() {

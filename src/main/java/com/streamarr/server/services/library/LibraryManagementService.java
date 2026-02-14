@@ -19,6 +19,7 @@ import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.library.events.LibraryAddedEvent;
 import com.streamarr.server.services.library.events.LibraryRemovedEvent;
 import com.streamarr.server.services.library.events.ScanCompletedEvent;
+import com.streamarr.server.services.library.events.ScanEndedEvent;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
 import java.io.IOException;
@@ -102,7 +103,7 @@ public class LibraryManagementService implements ActiveScanChecker {
 
     triggerAsyncScan(savedLibrary.getId());
 
-    return savedLibrary;
+    return savedLibrary.toBuilder().build();
   }
 
   private void validateFilepath(String filepath) {
@@ -211,6 +212,7 @@ public class LibraryManagementService implements ActiveScanChecker {
         completeScanWithFailure(library, e.getCause());
       }
     } finally {
+      eventPublisher.publishEvent(new ScanEndedEvent(libraryId));
       activeScans.remove(libraryId);
     }
   }
@@ -308,12 +310,12 @@ public class LibraryManagementService implements ActiveScanChecker {
   }
 
   private MediaFile probeFile(Library library, Path path) {
-    var absoluteFilepath = path.toAbsolutePath().toString();
+    var absoluteFilepath = FilepathCodec.encode(path);
     var filepathMutex = mutexFactory.getMutex(absoluteFilepath);
 
     filepathMutex.lock();
     try {
-      var optionalMediaFile = mediaFileRepository.findFirstByFilepath(absoluteFilepath);
+      var optionalMediaFile = mediaFileRepository.findFirstByFilepathUri(absoluteFilepath);
 
       if (optionalMediaFile.isPresent()) {
         log.info(
@@ -341,7 +343,7 @@ public class LibraryManagementService implements ActiveScanChecker {
         MediaFile.builder()
             .status(MediaFileStatus.UNMATCHED)
             .filename(path.getFileName().toString())
-            .filepath(absoluteFilepath)
+            .filepathUri(absoluteFilepath)
             .size(fileSize)
             .libraryId(library.getId())
             .build());

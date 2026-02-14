@@ -11,13 +11,7 @@ import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.domain.metadata.Rating;
 import com.streamarr.server.domain.metadata.Review;
-import com.streamarr.server.repositories.CompanyRepository;
-import com.streamarr.server.repositories.GenreRepository;
-import com.streamarr.server.repositories.PersonRepository;
-import com.streamarr.server.repositories.RatingRepository;
-import com.streamarr.server.repositories.ReviewRepository;
-import com.streamarr.server.repositories.media.MediaFileRepository;
-import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.services.MovieService;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -36,19 +30,13 @@ class MovieFieldResolverTest {
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
 
-  @MockitoBean private MovieRepository movieRepository;
-  @MockitoBean private MediaFileRepository mediaFileRepository;
-  @MockitoBean private CompanyRepository companyRepository;
-  @MockitoBean private PersonRepository personRepository;
-  @MockitoBean private GenreRepository genreRepository;
-  @MockitoBean private RatingRepository ratingRepository;
-  @MockitoBean private ReviewRepository reviewRepository;
+  @MockitoBean private MovieService movieService;
 
   private Movie setupMovie() {
     var movieId = UUID.randomUUID();
     var movie = Movie.builder().title("Inception").build();
     movie.setId(movieId);
-    when(movieRepository.findById(movieId)).thenReturn(Optional.of(movie));
+    when(movieService.findById(movieId)).thenReturn(Optional.of(movie));
     return movie;
   }
 
@@ -56,7 +44,7 @@ class MovieFieldResolverTest {
   @DisplayName("Should return studios when movie queried with studios field")
   void shouldReturnStudiosWhenMovieQueriedWithStudiosField() {
     var movie = setupMovie();
-    when(companyRepository.findByMovieId(movie.getId()))
+    when(movieService.findStudios(movie.getId()))
         .thenReturn(List.of(Company.builder().name("Warner Bros").sourceId("wb").build()));
 
     String name =
@@ -71,7 +59,7 @@ class MovieFieldResolverTest {
   @DisplayName("Should return cast when movie queried with cast field")
   void shouldReturnCastWhenMovieQueriedWithCastField() {
     var movie = setupMovie();
-    when(personRepository.findCastByMovieId(movie.getId()))
+    when(movieService.findCast(movie.getId()))
         .thenReturn(List.of(Person.builder().name("Leonardo DiCaprio").sourceId("leo").build()));
 
     String name =
@@ -86,7 +74,7 @@ class MovieFieldResolverTest {
   @DisplayName("Should return directors when movie queried with directors field")
   void shouldReturnDirectorsWhenMovieQueriedWithDirectorsField() {
     var movie = setupMovie();
-    when(personRepository.findDirectorsByMovieId(movie.getId()))
+    when(movieService.findDirectors(movie.getId()))
         .thenReturn(List.of(Person.builder().name("Christopher Nolan").sourceId("nolan").build()));
 
     String name =
@@ -101,7 +89,7 @@ class MovieFieldResolverTest {
   @DisplayName("Should return genres when movie queried with genres field")
   void shouldReturnGenresWhenMovieQueriedWithGenresField() {
     var movie = setupMovie();
-    when(genreRepository.findByMovieId(movie.getId()))
+    when(movieService.findGenres(movie.getId()))
         .thenReturn(List.of(Genre.builder().name("Sci-Fi").sourceId("scifi").build()));
 
     String name =
@@ -116,7 +104,7 @@ class MovieFieldResolverTest {
   @DisplayName("Should return ratings when movie queried with ratings field")
   void shouldReturnRatingsWhenMovieQueriedWithRatingsField() {
     var movie = setupMovie();
-    when(ratingRepository.findByMovie_Id(movie.getId()))
+    when(movieService.findRatings(movie.getId()))
         .thenReturn(List.of(Rating.builder().source("IMDb").value("8.8").build()));
 
     String source =
@@ -131,7 +119,7 @@ class MovieFieldResolverTest {
   @DisplayName("Should return reviews when movie queried with reviews field")
   void shouldReturnReviewsWhenMovieQueriedWithReviewsField() {
     var movie = setupMovie();
-    when(reviewRepository.findByMovie_Id(movie.getId()))
+    when(movieService.findReviews(movie.getId()))
         .thenReturn(List.of(Review.builder().author("Roger Ebert").build()));
 
     String author =

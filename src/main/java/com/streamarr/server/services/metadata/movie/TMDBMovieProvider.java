@@ -11,7 +11,10 @@ import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.TheMovieDatabaseHttpService;
 import com.streamarr.server.services.metadata.TmdbMetadataMapper;
+import com.streamarr.server.services.metadata.TmdbSearchDelegate;
+import com.streamarr.server.services.metadata.TmdbSearchResultScorer;
 import com.streamarr.server.services.metadata.tmdb.TmdbCredits;
+import com.streamarr.server.services.metadata.tmdb.TmdbFindResults;
 import com.streamarr.server.services.metadata.tmdb.TmdbMovie;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import com.streamarr.server.utils.TitleSortUtil;
@@ -33,34 +36,52 @@ import org.springframework.stereotype.Service;
 public class TMDBMovieProvider implements MetadataProvider<Movie> {
 
   private final TheMovieDatabaseHttpService theMovieDatabaseHttpService;
+  private final TmdbSearchDelegate searchDelegate;
 
   @Getter private final ExternalAgentStrategy agentStrategy = ExternalAgentStrategy.TMDB;
 
   public Optional<RemoteSearchResult> search(VideoFileParserResult videoInformation) {
-    try {
-      var searchResult = theMovieDatabaseHttpService.searchForMovie(videoInformation);
+    return searchDelegate.search(
+        videoInformation, this::extractFindResult, this::lookupByDirectTmdbId, this::searchByText);
+  }
 
-      if (searchResult.getResults().isEmpty()) {
-        return Optional.empty();
-      }
-
-      var tmdbResult = searchResult.getResults().get(0);
-
-      return Optional.of(
-          RemoteSearchResult.builder()
-              .externalSourceType(ExternalSourceType.TMDB)
-              .externalId(String.valueOf(tmdbResult.getId()))
-              .title(tmdbResult.getTitle())
-              .build());
-
-    } catch (IOException ex) {
-      log.error("Failure requesting search results:", ex);
-    } catch (InterruptedException ex) {
-      Thread.currentThread().interrupt();
-      log.error("Search interrupted:", ex);
+  private Optional<RemoteSearchResult> extractFindResult(TmdbFindResults findResults) {
+    var movieResults = findResults.getMovieResults();
+    if (movieResults == null || movieResults.isEmpty()) {
+      return Optional.empty();
     }
+    var tmdbResult = movieResults.getFirst();
+    return Optional.of(
+        RemoteSearchResult.builder()
+            .externalSourceType(ExternalSourceType.TMDB)
+            .externalId(String.valueOf(tmdbResult.getId()))
+            .title(tmdbResult.getTitle())
+            .build());
+  }
 
-    return Optional.empty();
+  private RemoteSearchResult lookupByDirectTmdbId(String externalId)
+      throws IOException, InterruptedException {
+    var tmdbMovie = theMovieDatabaseHttpService.getMovieMetadata(externalId);
+    return RemoteSearchResult.builder()
+        .externalSourceType(ExternalSourceType.TMDB)
+        .externalId(String.valueOf(tmdbMovie.getId()))
+        .title(tmdbMovie.getTitle())
+        .build();
+  }
+
+  private Optional<RemoteSearchResult> searchByText(VideoFileParserResult videoInformation) {
+    return searchDelegate.searchByText(
+        videoInformation,
+        info -> theMovieDatabaseHttpService.searchForMovie(info).getResults(),
+        r ->
+            new TmdbSearchResultScorer.CandidateResult(
+                r.getTitle(), r.getOriginalTitle(), r.getReleaseDate(), r.getPopularity()),
+        r ->
+            RemoteSearchResult.builder()
+                .externalSourceType(ExternalSourceType.TMDB)
+                .externalId(String.valueOf(r.getId()))
+                .title(r.getTitle())
+                .build());
   }
 
   public Optional<MetadataResult<Movie>> getMetadata(

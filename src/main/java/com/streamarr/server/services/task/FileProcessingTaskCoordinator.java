@@ -3,6 +3,7 @@ package com.streamarr.server.services.task;
 import com.streamarr.server.domain.task.FileProcessingTask;
 import com.streamarr.server.domain.task.FileProcessingTaskStatus;
 import com.streamarr.server.repositories.task.FileProcessingTaskRepository;
+import com.streamarr.server.services.library.FilepathCodec;
 import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
 import java.nio.file.Path;
@@ -49,9 +50,9 @@ public class FileProcessingTaskCoordinator {
   }
 
   public FileProcessingTask createTask(Path path, UUID libraryId) {
-    var filepath = path.toAbsolutePath().toString();
+    var filepath = FilepathCodec.encode(path);
 
-    var existing = repository.findByFilepathAndStatusIn(filepath, ACTIVE_STATUSES);
+    var existing = repository.findByFilepathUriAndStatusIn(filepath, ACTIVE_STATUSES);
     if (existing.isPresent()) {
       log.debug("Task already exists for filepath: {}", filepath);
       return existing.get();
@@ -59,7 +60,7 @@ public class FileProcessingTaskCoordinator {
 
     var task =
         FileProcessingTask.builder()
-            .filepath(filepath)
+            .filepathUri(filepath)
             .libraryId(libraryId)
             .status(FileProcessingTaskStatus.PENDING)
             .createdOn(clock.instant())
@@ -70,7 +71,7 @@ public class FileProcessingTaskCoordinator {
     } catch (DataIntegrityViolationException e) {
       log.debug("Concurrent task creation detected for filepath: {}", filepath);
       return repository
-          .findByFilepathAndStatusIn(filepath, ACTIVE_STATUSES)
+          .findByFilepathUriAndStatusIn(filepath, ACTIVE_STATUSES)
           .orElseThrow(
               () ->
                   new IllegalStateException(
@@ -99,51 +100,29 @@ public class FileProcessingTaskCoordinator {
   }
 
   public Optional<FileProcessingTask> complete(UUID taskId) {
-    var optionalTask = repository.findById(taskId);
-    if (optionalTask.isEmpty()) {
-      log.debug("Task already deleted, skipping completion: {}", taskId);
-      return Optional.empty();
-    }
+    var result = repository.completeTask(taskId, clock.instant());
 
-    var task = optionalTask.get();
-    task.setStatus(FileProcessingTaskStatus.COMPLETED);
-    task.setCompletedOn(clock.instant());
-    task.setOwnerInstanceId(null);
-    task.setLeaseExpiresAt(null);
+    result.ifPresentOrElse(
+        task -> log.info("Completed task for: {}", task.getFilepathUri()),
+        () -> log.debug("Task already deleted or not active, skipping completion: {}", taskId));
 
-    repository.save(task);
-
-    log.info("Completed task for: {}", task.getFilepath());
-
-    return Optional.of(task);
+    return result;
   }
 
   public Optional<FileProcessingTask> fail(UUID taskId, String errorMessage) {
-    var optionalTask = repository.findById(taskId);
+    var result = repository.failTask(taskId, errorMessage, clock.instant());
 
-    if (optionalTask.isEmpty()) {
-      log.debug("Task already deleted, skipping failure: {}", taskId);
-      return Optional.empty();
-    }
+    result.ifPresentOrElse(
+        task -> log.warn("Failed task for: {} with error: {}", task.getFilepathUri(), errorMessage),
+        () -> log.debug("Task already deleted or not active, skipping failure: {}", taskId));
 
-    var task = optionalTask.get();
-    task.setStatus(FileProcessingTaskStatus.FAILED);
-    task.setErrorMessage(errorMessage);
-    task.setCompletedOn(clock.instant());
-    task.setOwnerInstanceId(null);
-    task.setLeaseExpiresAt(null);
-
-    repository.save(task);
-
-    log.warn("Failed task for: {} with error: {}", task.getFilepath(), errorMessage);
-
-    return Optional.of(task);
+    return result;
   }
 
   @Transactional
   public void cancelTask(Path path) {
-    var filepath = path.toAbsolutePath().toString();
-    repository.deleteByFilepathAndStatusIn(filepath, List.of(FileProcessingTaskStatus.PENDING));
+    var filepath = FilepathCodec.encode(path);
+    repository.deleteByFilepathUriAndStatusIn(filepath, List.of(FileProcessingTaskStatus.PENDING));
     log.info("Cancelled pending task for: {}", filepath);
   }
 

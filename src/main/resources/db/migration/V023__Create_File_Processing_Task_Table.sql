@@ -3,7 +3,7 @@ CREATE TYPE file_processing_task_status AS ENUM ('PENDING', 'PROCESSING', 'COMPL
 CREATE TABLE file_processing_task
 (
     id                UUID                        NOT NULL DEFAULT public.uuid_generate_v4(),
-    filepath          TEXT                        NOT NULL,
+    filepath_uri      TEXT                        NOT NULL,
     library_id        UUID                        NOT NULL,
     status            file_processing_task_status NOT NULL DEFAULT 'PENDING',
     owner_instance_id TEXT,
@@ -15,8 +15,8 @@ CREATE TABLE file_processing_task
     CONSTRAINT fk_library FOREIGN KEY (library_id) REFERENCES library (id) ON DELETE CASCADE
 );
 
-CREATE UNIQUE INDEX file_processing_task_filepath_active_idx
-    ON file_processing_task (filepath)
+CREATE UNIQUE INDEX file_processing_task_filepath_uri_active_idx
+    ON file_processing_task (filepath_uri)
     WHERE status IN ('PENDING', 'PROCESSING');
 
 CREATE INDEX file_processing_task_claimable_idx

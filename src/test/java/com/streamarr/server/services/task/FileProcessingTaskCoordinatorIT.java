@@ -71,7 +71,7 @@ class FileProcessingTaskCoordinatorIT extends AbstractIntegrationTest {
     var task = coordinator.createTask(path, testLibrary.getId());
 
     assertThat(task.getId()).isNotNull();
-    assertThat(task.getFilepath()).isEqualTo(path.toAbsolutePath().toString());
+    assertThat(task.getFilepathUri()).isEqualTo(path.toAbsolutePath().toUri().toString());
     assertThat(task.getLibraryId()).isEqualTo(testLibrary.getId());
     assertThat(task.getStatus()).isEqualTo(FileProcessingTaskStatus.PENDING);
   }
@@ -253,6 +253,32 @@ class FileProcessingTaskCoordinatorIT extends AbstractIntegrationTest {
     assertThat(createdTasks).hasSize(threadCount);
     assertThat(createdTasks.stream().map(FileProcessingTask::getId).distinct()).hasSize(1);
     assertThat(taskRepository.count()).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("Should return empty when completing already completed task")
+  void shouldReturnEmptyWhenCompletingAlreadyCompletedTask() {
+    var path = Path.of("/media/movies/AlreadyCompleted (2024).mkv");
+    coordinator.createTask(path, testLibrary.getId());
+    var claimed = coordinator.claimNextTask().orElseThrow();
+    coordinator.complete(claimed.getId());
+
+    var result = coordinator.complete(claimed.getId());
+
+    assertThat(result).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should return empty when failing already failed task")
+  void shouldReturnEmptyWhenFailingAlreadyFailedTask() {
+    var path = Path.of("/media/movies/AlreadyFailed (2024).mkv");
+    coordinator.createTask(path, testLibrary.getId());
+    var claimed = coordinator.claimNextTask().orElseThrow();
+    coordinator.fail(claimed.getId(), "First failure");
+
+    var result = coordinator.fail(claimed.getId(), "Second failure");
+
+    assertThat(result).isEmpty();
   }
 
   @Test

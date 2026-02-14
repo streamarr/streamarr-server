@@ -11,6 +11,7 @@ import org.junit.jupiter.api.DynamicNode;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
 
 @Tag("UnitTest")
@@ -144,7 +145,13 @@ class EpisodePathMetadataParserTest {
               new TestCase("The Simpsons/The Simpsons 101.avi", "The Simpsons", 101),
 
               // Version marker (anime fansub releases)
-              new TestCase("/media/[SubsPlease] Show - 01v2 (1080p).mkv", "Show", 1))
+              new TestCase("/media/[SubsPlease] Show - 01v2 (1080p).mkv", "Show", 1),
+
+              // Dot-separated anime bracket naming
+              new TestCase(
+                  "/tv/Fullmetal Alchemist Brotherhood/Season 1/[QaS].Fullmetal.Alchemist.Brotherhood.-.01.[BD.1080p.HEVC.x265.10bit.Opus.5.1][Dual.Audio].mkv",
+                  "Fullmetal.Alchemist.Brotherhood",
+                  1))
           .map(
               testCase ->
                   DynamicTest.dynamicTest(
@@ -188,7 +195,18 @@ class EpisodePathMetadataParserTest {
               new TestCase("/server/1996.11.14", null, LocalDate.of(1996, 11, 14)),
 
               // Multi-word series name
-              new TestCase("/server/ABC News 2018-03-24", "ABC News", LocalDate.of(2018, 3, 24)))
+              new TestCase("/server/ABC News 2018-03-24", "ABC News", LocalDate.of(2018, 3, 24)),
+
+              // Filenames with file extensions (real-world paths from library scanning)
+              new TestCase(
+                  "/tv/Jeopardy!/Jeopardy! - 2025-11-25.mkv",
+                  "Jeopardy!",
+                  LocalDate.of(2025, 11, 25)),
+              new TestCase(
+                  "/tv/Daily Show/Daily Show 2020.04.17.720p.mkv",
+                  "Daily Show",
+                  LocalDate.of(2020, 4, 17)),
+              new TestCase("/tv/anything_14.11.1996.avi", "anything", LocalDate.of(1996, 11, 14)))
           .map(
               testCase ->
                   DynamicTest.dynamicTest(
@@ -280,7 +298,15 @@ class EpisodePathMetadataParserTest {
               // Part number extraction
               new TestCase("/season 1/title_part_1.avi", 1),
               new TestCase("/season 1/title.part.2.avi", 2),
-              new TestCase("/season 1/title-part-3.mkv", 3))
+              new TestCase("/season 1/title-part-3.mkv", 3),
+              new TestCase("/Season 1/The.Night.Of.Part.7.1080p.BluRay.x264-DEPTH.mkv", 7),
+              new TestCase("/Season 1/Alias.Grace.Part.4.1080p.WEBRip.x264-aAF-xpost.mkv", 4),
+              new TestCase("/Season 1/Title.PART.5.720p.mkv", 5),
+              new TestCase("/Season 1/Title.Pt.3.mkv", 3),
+
+              // E-only and Episode X patterns with full file paths
+              new TestCase("/media/Show/Season 1/Show.E01.mkv", 1),
+              new TestCase("/media/Show/Season 1/Episode 16.mkv", 16))
           .map(
               testCase ->
                   DynamicTest.dynamicTest(
@@ -478,6 +504,38 @@ class EpisodePathMetadataParserTest {
 
                         assertThat(result).isEmpty();
                       }));
+    }
+  }
+
+  @Nested
+  @DisplayName("Should not create phantom seasons from trailing years (Jellyfin #15011)")
+  class PhantomSeasonRegressionTests {
+
+    @Test
+    @DisplayName("Should not create phantom season when episode title contains trailing year")
+    void shouldNotCreatePhantomSeasonWhenEpisodeTitleContainsTrailingYear() {
+      var result =
+          episodePathExtractionService
+              .parse("/tv/Show/Show - S01E01 - Pilot (2002).mkv")
+              .orElseThrow();
+
+      assertThat(result.getSeriesName()).isEqualTo("Show");
+      assertThat(result.getSeasonNumber().orElseThrow()).isEqualTo(1);
+      assertThat(result.getEpisodeNumber().orElseThrow()).isEqualTo(1);
+      assertThat(result.isSuccess()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Should ignore trailing year when episode number has no season prefix")
+    void shouldIgnoreTrailingYearWhenEpisodeNumberHasNoSeasonPrefix() {
+      var result =
+          episodePathExtractionService
+              .parse("/tv/Show/Season 1/02 - Episode Title (2002).mkv")
+              .orElseThrow();
+
+      assertThat(result.getSeasonNumber().orElseThrow()).isEqualTo(1);
+      assertThat(result.getEpisodeNumber().orElseThrow()).isEqualTo(2);
+      assertThat(result.isSuccess()).isTrue();
     }
   }
 }

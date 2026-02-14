@@ -20,6 +20,10 @@ import org.springframework.stereotype.Service;
 @Order(0)
 public class EpisodePathMetadataParser implements MetadataParser<EpisodePathResult> {
 
+  // Values 200-1927 are ambiguous video resolutions (e.g. 1920x1080). The first regular
+  // TV broadcast was in 1928, so anything below that in the ambiguous range is rejected.
+  public static final int EARLIEST_TV_BROADCAST_YEAR = 1928;
+
   private final EpisodeRegexFixtures episodeRegexFixtures;
 
   public Optional<EpisodePathResult> parse(String filename) {
@@ -207,15 +211,13 @@ public class EpisodePathMetadataParser implements MetadataParser<EpisodePathResu
         && (seasonNumber.isEmpty() || isValidSeasonNumber(seasonNumber.getAsInt()));
   }
 
-  // Invalidate the match when the season is 200 through 1927 or above 2500
-  // It avoids erroneous parsing of something like "Series Special (1920x1080).mkv" as being season
-  // 1920, episode 1080.
   private boolean isValidSeasonNumber(int seasonNumber) {
-    return (seasonNumber < 200 || seasonNumber >= 1928) && seasonNumber <= 2500;
+    return (seasonNumber < 200 || seasonNumber >= EARLIEST_TV_BROADCAST_YEAR)
+        && seasonNumber <= 2500;
   }
 
   private String cleanSeriesName(String input) {
-    return input.trim().replaceAll("[_.-]*$", "").trim();
+    return input.trim().replaceAll("(^[_.-]++)|([_.-]++$)", "").trim();
   }
 
   private EpisodePathResult fillAdditionalInfo(String filename, EpisodePathResult result) {

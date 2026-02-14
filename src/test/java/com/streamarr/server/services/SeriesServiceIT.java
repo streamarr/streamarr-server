@@ -85,7 +85,7 @@ class SeriesServiceIT extends AbstractIntegrationTest {
     var mediaFile =
         MediaFile.builder()
             .filename("breaking.bad.s01e01.mkv")
-            .filepath("/tv/Breaking Bad/Season 01/breaking.bad.s01e01.mkv")
+            .filepathUri("/tv/Breaking Bad/Season 01/breaking.bad.s01e01.mkv")
             .libraryId(savedLibrary.getId())
             .status(MediaFileStatus.MATCHED)
             .size(1024L)
@@ -116,7 +116,7 @@ class SeriesServiceIT extends AbstractIntegrationTest {
     var firstFile =
         MediaFile.builder()
             .filename("got.s01e01.mkv")
-            .filepath("/tv/Game of Thrones/Season 01/got.s01e01.mkv")
+            .filepathUri("/tv/Game of Thrones/Season 01/got.s01e01.mkv")
             .libraryId(savedLibrary.getId())
             .status(MediaFileStatus.MATCHED)
             .size(2048L)
@@ -127,7 +127,7 @@ class SeriesServiceIT extends AbstractIntegrationTest {
     var secondFile =
         MediaFile.builder()
             .filename("got.s01e02.mkv")
-            .filepath("/tv/Game of Thrones/Season 01/got.s01e02.mkv")
+            .filepathUri("/tv/Game of Thrones/Season 01/got.s01e02.mkv")
             .libraryId(savedLibrary.getId())
             .status(MediaFileStatus.MATCHED)
             .size(2048L)

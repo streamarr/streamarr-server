@@ -2,17 +2,21 @@ package com.streamarr.server.services;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakePersonRepository;
+import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -149,5 +153,21 @@ class PersonServiceTest {
     var result = personService.getOrCreatePersons(null, Map.of());
 
     assertThat(result).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should throw when person not found after upsert")
+  void shouldThrowWhenPersonNotFoundAfterUpsert() {
+    var stubRepository = mock(PersonRepository.class);
+    when(stubRepository.findPersonBySourceId("actor-1")).thenReturn(Optional.empty());
+    var service = new PersonService(stubRepository, new CapturingEventPublisher());
+
+    var person = Person.builder().name("Tom Hanks").sourceId("actor-1").build();
+    var persons = List.of(person);
+
+    Map<String, List<ImageSource>> emptyImageSources = Map.of();
+    assertThatThrownBy(() -> service.getOrCreatePersons(persons, emptyImageSources))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("not found after upsert");
   }
 }

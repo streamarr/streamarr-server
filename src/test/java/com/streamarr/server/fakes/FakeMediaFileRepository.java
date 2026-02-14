@@ -13,9 +13,9 @@ import java.util.stream.Collectors;
 public class FakeMediaFileRepository extends FakeJpaRepository<MediaFile>
     implements MediaFileRepository {
   @Override
-  public Optional<MediaFile> findFirstByFilepath(String filepath) {
+  public Optional<MediaFile> findFirstByFilepathUri(String filepathUri) {
     return database.values().stream()
-        .filter(file -> filepath.equals(file.getFilepath()))
+        .filter(file -> filepathUri.equals(file.getFilepathUri()))
         .findFirst();
   }
 

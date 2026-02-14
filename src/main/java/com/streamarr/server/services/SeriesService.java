@@ -1,17 +1,30 @@
 package com.streamarr.server.services;
 
 import com.streamarr.server.domain.BaseCollectable;
+import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.MediaFile;
+import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.domain.metadata.Company;
+import com.streamarr.server.domain.metadata.Genre;
+import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.graphql.cursor.MediaPaginationOptions;
 import com.streamarr.server.graphql.cursor.PaginationOptions;
+import com.streamarr.server.repositories.CompanyRepository;
+import com.streamarr.server.repositories.GenreRepository;
+import com.streamarr.server.repositories.PersonRepository;
+import com.streamarr.server.repositories.media.EpisodeRepository;
+import com.streamarr.server.repositories.media.MediaFileRepository;
+import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
+import com.streamarr.server.services.metadata.series.SeasonDetails;
 import graphql.relay.Connection;
 import graphql.relay.DefaultEdge;
 import graphql.relay.Edge;
@@ -35,6 +48,12 @@ public class SeriesService {
   private final RelayPaginationService relayPaginationService;
   private final ApplicationEventPublisher eventPublisher;
   private final ImageService imageService;
+  private final SeasonRepository seasonRepository;
+  private final EpisodeRepository episodeRepository;
+  private final MediaFileRepository mediaFileRepository;
+  private final PersonRepository personRepository;
+  private final GenreRepository genreRepository;
+  private final CompanyRepository companyRepository;
 
   @Transactional
   public Series saveSeriesWithMediaFile(Series series, MediaFile mediaFile) {
@@ -71,15 +90,58 @@ public class SeriesService {
 
     var savedSeries = seriesRepository.saveAndFlush(series);
 
-    publishImageEvent(savedSeries, metadataResult.imageSources());
+    publishImageEvent(savedSeries.getId(), ImageEntityType.SERIES, metadataResult.imageSources());
 
     return savedSeries;
   }
 
-  private void publishImageEvent(Series series, List<ImageSource> sources) {
+  @Transactional
+  public Season createSeasonWithEpisodes(Series series, SeasonDetails details, Library library) {
+    var season =
+        seasonRepository.saveAndFlush(
+            Season.builder()
+                .title(details.name())
+                .seasonNumber(details.seasonNumber())
+                .overview(details.overview())
+                .airDate(details.airDate())
+                .series(series)
+                .library(library)
+                .build());
+
+    publishImageEvent(season.getId(), ImageEntityType.SEASON, details.imageSources());
+
+    var episodes =
+        details.episodes().stream()
+            .map(
+                ep ->
+                    Episode.builder()
+                        .title(ep.name())
+                        .episodeNumber(ep.episodeNumber())
+                        .overview(ep.overview())
+                        .airDate(ep.airDate())
+                        .runtime(ep.runtime())
+                        .season(season)
+                        .library(library)
+                        .build())
+            .toList();
+
+    var savedEpisodes = episodeRepository.saveAll(episodes);
+
+    for (var episode : savedEpisodes) {
+      details.episodes().stream()
+          .filter(ed -> ed.episodeNumber() == episode.getEpisodeNumber())
+          .findFirst()
+          .ifPresent(
+              ed -> publishImageEvent(episode.getId(), ImageEntityType.EPISODE, ed.imageSources()));
+    }
+
+    return season;
+  }
+
+  private void publishImageEvent(
+      UUID entityId, ImageEntityType entityType, List<ImageSource> sources) {
     if (!sources.isEmpty()) {
-      eventPublisher.publishEvent(
-          new MetadataEnrichedEvent(series.getId(), ImageEntityType.SERIES, sources));
+      eventPublisher.publishEvent(new MetadataEnrichedEvent(entityId, entityType, sources));
     }
   }
 
@@ -110,6 +172,46 @@ public class SeriesService {
   public void deleteSeriesById(UUID seriesId) {
     imageService.deleteImagesForEntity(seriesId, ImageEntityType.SERIES);
     seriesRepository.deleteById(seriesId);
+  }
+
+  @Transactional(readOnly = true)
+  public Optional<Series> findById(UUID id) {
+    return seriesRepository.findById(id);
+  }
+
+  @Transactional(readOnly = true)
+  public List<MediaFile> findMediaFiles(UUID entityId) {
+    return mediaFileRepository.findByMediaId(entityId);
+  }
+
+  @Transactional(readOnly = true)
+  public List<Season> findSeasons(UUID seriesId) {
+    return seasonRepository.findBySeriesId(seriesId);
+  }
+
+  @Transactional(readOnly = true)
+  public List<Episode> findEpisodes(UUID seasonId) {
+    return episodeRepository.findBySeasonId(seasonId);
+  }
+
+  @Transactional(readOnly = true)
+  public List<Company> findStudios(UUID seriesId) {
+    return companyRepository.findBySeriesId(seriesId);
+  }
+
+  @Transactional(readOnly = true)
+  public List<Person> findCast(UUID seriesId) {
+    return personRepository.findCastBySeriesId(seriesId);
+  }
+
+  @Transactional(readOnly = true)
+  public List<Person> findDirectors(UUID seriesId) {
+    return personRepository.findDirectorsBySeriesId(seriesId);
+  }
+
+  @Transactional(readOnly = true)
+  public List<Genre> findGenres(UUID seriesId) {
+    return genreRepository.findBySeriesId(seriesId);
   }
 
   public Connection<? extends BaseCollectable<?>> getSeriesWithFilter(

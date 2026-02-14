@@ -9,6 +9,7 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import jakarta.persistence.Query;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
@@ -108,6 +109,50 @@ public class FileProcessingTaskRepositoryCustomImpl implements FileProcessingTas
         .where(FILE_PROCESSING_TASK.OWNER_INSTANCE_ID.eq(ownerInstanceId))
         .and(FILE_PROCESSING_TASK.STATUS.in(ACTIVE_STATUSES))
         .execute();
+  }
+
+  @Override
+  @Transactional
+  public Optional<FileProcessingTask> completeTask(UUID taskId, Instant completedOn) {
+    var updated =
+        context
+            .update(FILE_PROCESSING_TASK)
+            .set(FILE_PROCESSING_TASK.STATUS, inline(FileProcessingTaskStatus.COMPLETED))
+            .set(FILE_PROCESSING_TASK.COMPLETED_ON, completedOn.atOffset(ZoneOffset.UTC))
+            .set(FILE_PROCESSING_TASK.OWNER_INSTANCE_ID, (String) null)
+            .set(FILE_PROCESSING_TASK.LEASE_EXPIRES_AT, (OffsetDateTime) null)
+            .where(FILE_PROCESSING_TASK.ID.eq(taskId))
+            .and(FILE_PROCESSING_TASK.STATUS.in(ACTIVE_STATUSES))
+            .execute();
+
+    if (updated == 0) {
+      return Optional.empty();
+    }
+
+    return Optional.of(entityManager.find(FileProcessingTask.class, taskId));
+  }
+
+  @Override
+  @Transactional
+  public Optional<FileProcessingTask> failTask(
+      UUID taskId, String errorMessage, Instant completedOn) {
+    var updated =
+        context
+            .update(FILE_PROCESSING_TASK)
+            .set(FILE_PROCESSING_TASK.STATUS, inline(FileProcessingTaskStatus.FAILED))
+            .set(FILE_PROCESSING_TASK.ERROR_MESSAGE, errorMessage)
+            .set(FILE_PROCESSING_TASK.COMPLETED_ON, completedOn.atOffset(ZoneOffset.UTC))
+            .set(FILE_PROCESSING_TASK.OWNER_INSTANCE_ID, (String) null)
+            .set(FILE_PROCESSING_TASK.LEASE_EXPIRES_AT, (OffsetDateTime) null)
+            .where(FILE_PROCESSING_TASK.ID.eq(taskId))
+            .and(FILE_PROCESSING_TASK.STATUS.in(ACTIVE_STATUSES))
+            .execute();
+
+    if (updated == 0) {
+      return Optional.empty();
+    }
+
+    return Optional.of(entityManager.find(FileProcessingTask.class, taskId));
   }
 
   @SuppressWarnings("unchecked")

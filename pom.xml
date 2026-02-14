@@ -26,6 +26,7 @@
         <sonar.exclusions>**/jooq/generated/**</sonar.exclusions>
 
         <apache-commons-lang.version>3.20.0</apache-commons-lang.version>
+        <apache-commons-text.version>1.13.1</apache-commons-text.version>
         <apache-commons-io.version>2.21.0</apache-commons-io.version>
         <dgs-graphql.version>11.1.0</dgs-graphql.version>
         <lombok.version>1.18.42</lombok.version>
@@ -120,6 +121,12 @@
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-lang3</artifactId>
             <version>${apache-commons-lang.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-text</artifactId>
+            <version>${apache-commons-text.version}</version>
         </dependency>
 
         <dependency>

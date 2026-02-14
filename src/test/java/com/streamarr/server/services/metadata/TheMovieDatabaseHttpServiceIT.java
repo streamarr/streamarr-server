@@ -8,12 +8,14 @@ import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMoc
 import static com.github.tomakehurst.wiremock.stubbing.Scenario.STARTED;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.awaitility.Awaitility.await;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.services.metadata.tmdb.TmdbApiException;
 import com.streamarr.server.services.metadata.tmdb.TmdbSearchResults;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -750,17 +752,15 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should complete concurrent requests when intermittently rate limited")
   void shouldCompleteConcurrentRequestsWhenIntermittentlyRateLimited() throws Exception {
-    wireMock.stubFor(
-        get(urlPathEqualTo("/search/movie"))
-            .inScenario("Concurrent Rate Limit")
-            .whenScenarioStateIs(STARTED)
-            .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "0"))
-            .willSetStateTo("Recovered"));
+    var rateLimitStub =
+        wireMock.stubFor(
+            get(urlPathEqualTo("/search/movie"))
+                .atPriority(1)
+                .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "0")));
 
     wireMock.stubFor(
         get(urlPathEqualTo("/search/movie"))
-            .inScenario("Concurrent Rate Limit")
-            .whenScenarioStateIs("Recovered")
+            .atPriority(10)
             .willReturn(
                 aResponse()
                     .withStatus(200)
@@ -797,6 +797,12 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
                   return service.searchForMovie(parserResult);
                 }));
       }
+
+      await()
+          .atMost(Duration.ofSeconds(5))
+          .untilAsserted(() -> assertThat(wireMock.getServeEvents().getRequests()).isNotEmpty());
+
+      wireMock.removeStubMapping(rateLimitStub);
     }
 
     for (var future : futures) {

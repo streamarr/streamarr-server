@@ -7,28 +7,37 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.ContentRating;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.services.library.events.ScanEndedEvent;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.TheMovieDatabaseHttpService;
 import com.streamarr.server.services.metadata.TmdbMetadataMapper;
+import com.streamarr.server.services.metadata.TmdbSearchDelegate;
+import com.streamarr.server.services.metadata.TmdbSearchResultScorer;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.tmdb.TmdbContentRatings;
 import com.streamarr.server.services.metadata.tmdb.TmdbCredits;
+import com.streamarr.server.services.metadata.tmdb.TmdbFindResults;
+import com.streamarr.server.services.metadata.tmdb.TmdbTvSeasonSummary;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSeries;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import com.streamarr.server.utils.TitleSortUtil;
 import java.io.IOException;
 import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 @Slf4j
@@ -37,34 +46,56 @@ import org.springframework.stereotype.Service;
 public class TMDBSeriesProvider implements SeriesMetadataProvider {
 
   private final TheMovieDatabaseHttpService theMovieDatabaseHttpService;
+  private final TmdbSearchDelegate searchDelegate;
+
+  private final ConcurrentHashMap<String, List<TmdbTvSeasonSummary>> seasonSummariesCache =
+      new ConcurrentHashMap<>();
+  private final Set<String> failedSeasonDetailsCache = ConcurrentHashMap.newKeySet();
 
   @Getter private final ExternalAgentStrategy agentStrategy = ExternalAgentStrategy.TMDB;
 
   public Optional<RemoteSearchResult> search(VideoFileParserResult videoInformation) {
-    try {
-      var searchResult = theMovieDatabaseHttpService.searchForTvSeries(videoInformation);
+    return searchDelegate.search(
+        videoInformation, this::extractFindResult, this::lookupByDirectTmdbId, this::searchByText);
+  }
 
-      if (searchResult.getResults().isEmpty()) {
-        return Optional.empty();
-      }
-
-      var tmdbResult = searchResult.getResults().get(0);
-
-      return Optional.of(
-          RemoteSearchResult.builder()
-              .externalSourceType(ExternalSourceType.TMDB)
-              .externalId(String.valueOf(tmdbResult.getId()))
-              .title(tmdbResult.getName())
-              .build());
-
-    } catch (IOException ex) {
-      log.error("Failure requesting TV search results:", ex);
-    } catch (InterruptedException ex) {
-      Thread.currentThread().interrupt();
-      log.error("TV search interrupted:", ex);
+  private Optional<RemoteSearchResult> extractFindResult(TmdbFindResults findResults) {
+    var tvResults = findResults.getTvResults();
+    if (tvResults == null || tvResults.isEmpty()) {
+      return Optional.empty();
     }
+    var tmdbResult = tvResults.getFirst();
+    return Optional.of(
+        RemoteSearchResult.builder()
+            .externalSourceType(ExternalSourceType.TMDB)
+            .externalId(String.valueOf(tmdbResult.getId()))
+            .title(tmdbResult.getName())
+            .build());
+  }
 
-    return Optional.empty();
+  private RemoteSearchResult lookupByDirectTmdbId(String externalId)
+      throws IOException, InterruptedException {
+    var tmdbSeries = theMovieDatabaseHttpService.getTvSeriesMetadata(externalId);
+    return RemoteSearchResult.builder()
+        .externalSourceType(ExternalSourceType.TMDB)
+        .externalId(String.valueOf(tmdbSeries.getId()))
+        .title(tmdbSeries.getName())
+        .build();
+  }
+
+  private Optional<RemoteSearchResult> searchByText(VideoFileParserResult videoInformation) {
+    return searchDelegate.searchByText(
+        videoInformation,
+        info -> theMovieDatabaseHttpService.searchForTvSeries(info).getResults(),
+        r ->
+            new TmdbSearchResultScorer.CandidateResult(
+                r.getName(), r.getOriginalName(), r.getFirstAirDate(), r.getPopularity()),
+        r ->
+            RemoteSearchResult.builder()
+                .externalSourceType(ExternalSourceType.TMDB)
+                .externalId(String.valueOf(r.getId()))
+                .title(r.getName())
+                .build());
   }
 
   public Optional<MetadataResult<Series>> getMetadata(
@@ -72,6 +103,10 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
     try {
       var tmdbSeries =
           theMovieDatabaseHttpService.getTvSeriesMetadata(remoteSearchResult.externalId());
+
+      seasonSummariesCache.put(
+          remoteSearchResult.externalId(),
+          Optional.ofNullable(tmdbSeries.getSeasons()).orElse(Collections.emptyList()));
 
       var credits = Optional.ofNullable(tmdbSeries.getCredits());
       var castList = credits.map(TmdbCredits::getCast).orElse(Collections.emptyList());
@@ -143,6 +178,12 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
   }
 
   public Optional<SeasonDetails> getSeasonDetails(String seriesExternalId, int seasonNumber) {
+    var cacheKey = seriesExternalId + ":" + seasonNumber;
+
+    if (failedSeasonDetailsCache.contains(cacheKey)) {
+      return Optional.empty();
+    }
+
     try {
       var tmdbSeason =
           theMovieDatabaseHttpService.getTvSeasonDetails(seriesExternalId, seasonNumber);
@@ -169,6 +210,7 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
       return Optional.of(seasonBuilder.build());
 
     } catch (IOException ex) {
+      failedSeasonDetailsCache.add(cacheKey);
       log.error(
           "Failure fetching season {} details for series TMDB id '{}'",
           seasonNumber,
@@ -184,6 +226,59 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
     }
 
     return Optional.empty();
+  }
+
+  @Override
+  public OptionalInt resolveSeasonNumber(String seriesExternalId, int parsedSeasonNumber) {
+    var summaries = getOrFetchSeasonSummaries(seriesExternalId);
+
+    if (summaries.stream().anyMatch(s -> s.getSeasonNumber() == parsedSeasonNumber)) {
+      return OptionalInt.of(parsedSeasonNumber);
+    }
+
+    return summaries.stream()
+        .filter(s -> StringUtils.isNotBlank(s.getAirDate()))
+        .filter(
+            s -> {
+              try {
+                return LocalDate.parse(s.getAirDate()).getYear() == parsedSeasonNumber;
+              } catch (DateTimeParseException _) {
+                return false;
+              }
+            })
+        .mapToInt(TmdbTvSeasonSummary::getSeasonNumber)
+        .findFirst();
+  }
+
+  @EventListener
+  public void onScanEnded(ScanEndedEvent event) {
+    seasonSummariesCache.clear();
+    failedSeasonDetailsCache.clear();
+  }
+
+  private List<TmdbTvSeasonSummary> getOrFetchSeasonSummaries(String seriesExternalId) {
+    var cached = seasonSummariesCache.get(seriesExternalId);
+    if (cached != null) {
+      return cached;
+    }
+
+    var fetched = fetchSeasonSummaries(seriesExternalId);
+    var existing = seasonSummariesCache.putIfAbsent(seriesExternalId, fetched);
+    return existing != null ? existing : fetched;
+  }
+
+  private List<TmdbTvSeasonSummary> fetchSeasonSummaries(String seriesExternalId) {
+    try {
+      var series = theMovieDatabaseHttpService.getTvSeriesMetadata(seriesExternalId);
+      return Optional.ofNullable(series.getSeasons()).orElse(Collections.emptyList());
+    } catch (IOException ex) {
+      log.warn("Failed to fetch season summaries for TMDB id '{}'", seriesExternalId, ex);
+      return Collections.emptyList();
+    } catch (InterruptedException ex) {
+      Thread.currentThread().interrupt();
+      log.warn("Season summaries fetch interrupted for TMDB id '{}'", seriesExternalId, ex);
+      return Collections.emptyList();
+    }
   }
 
   private SeasonDetails.EpisodeDetails mapEpisodeDetails(

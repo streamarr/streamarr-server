@@ -26,10 +26,10 @@ public class FakeFileProcessingTaskRepository implements FileProcessingTaskRepos
   private final Map<UUID, FileProcessingTask> database = new HashMap<>();
 
   @Override
-  public Optional<FileProcessingTask> findByFilepathAndStatusIn(
-      String filepath, List<FileProcessingTaskStatus> statuses) {
+  public Optional<FileProcessingTask> findByFilepathUriAndStatusIn(
+      String filepathUri, List<FileProcessingTaskStatus> statuses) {
     return database.values().stream()
-        .filter(task -> filepath.equals(task.getFilepath()))
+        .filter(task -> filepathUri.equals(task.getFilepathUri()))
         .filter(task -> statuses.contains(task.getStatus()))
         .findFirst();
   }
@@ -42,13 +42,13 @@ public class FakeFileProcessingTaskRepository implements FileProcessingTaskRepos
   }
 
   @Override
-  public void deleteByFilepathAndStatusIn(
-      String filepath, List<FileProcessingTaskStatus> statuses) {
+  public void deleteByFilepathUriAndStatusIn(
+      String filepathUri, List<FileProcessingTaskStatus> statuses) {
     database
         .entrySet()
         .removeIf(
             entry ->
-                filepath.equals(entry.getValue().getFilepath())
+                filepathUri.equals(entry.getValue().getFilepathUri())
                     && statuses.contains(entry.getValue().getStatus()));
   }
 
@@ -83,6 +83,36 @@ public class FakeFileProcessingTaskRepository implements FileProcessingTaskRepos
               return task;
             })
         .toList();
+  }
+
+  @Override
+  public Optional<FileProcessingTask> completeTask(UUID taskId, Instant completedOn) {
+    return Optional.ofNullable(database.get(taskId))
+        .filter(task -> ACTIVE_STATUSES.contains(task.getStatus()))
+        .map(
+            task -> {
+              task.setStatus(FileProcessingTaskStatus.COMPLETED);
+              task.setCompletedOn(completedOn);
+              task.setOwnerInstanceId(null);
+              task.setLeaseExpiresAt(null);
+              return task;
+            });
+  }
+
+  @Override
+  public Optional<FileProcessingTask> failTask(
+      UUID taskId, String errorMessage, Instant completedOn) {
+    return Optional.ofNullable(database.get(taskId))
+        .filter(task -> ACTIVE_STATUSES.contains(task.getStatus()))
+        .map(
+            task -> {
+              task.setStatus(FileProcessingTaskStatus.FAILED);
+              task.setErrorMessage(errorMessage);
+              task.setCompletedOn(completedOn);
+              task.setOwnerInstanceId(null);
+              task.setLeaseExpiresAt(null);
+              return task;
+            });
   }
 
   @Override

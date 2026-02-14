@@ -30,6 +30,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.AbstractPlatformTransactionManager;
+import org.springframework.transaction.support.DefaultTransactionStatus;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("UnitTest")
 @DisplayName("Orphaned Media File Cleanup Service Tests")
@@ -40,12 +44,29 @@ class OrphanedMediaFileCleanupServiceTest {
   private final MovieRepository fakeMovieRepository = new FakeMovieRepository();
   private final MovieService movieService =
       new MovieService(
-          fakeMovieRepository, null, null, null, null, null, event -> {}, mock(ImageService.class));
+          fakeMovieRepository,
+          null,
+          null,
+          null,
+          null,
+          null,
+          event -> {},
+          mock(ImageService.class),
+          null,
+          null,
+          null,
+          null,
+          null,
+          null);
   private final FileSystem fileSystem = Jimfs.newFileSystem(Configuration.unix());
 
   private final OrphanedMediaFileCleanupService orphanedMediaFileCleanupService =
       new OrphanedMediaFileCleanupService(
-          fakeLibraryRepository, fakeMediaFileRepository, movieService, fileSystem);
+          fakeLibraryRepository,
+          fakeMediaFileRepository,
+          movieService,
+          fileSystem,
+          noOpTransactionTemplate());
 
   private Library library;
 
@@ -68,7 +89,7 @@ class OrphanedMediaFileCleanupServiceTest {
         fakeMediaFileRepository.save(
             MediaFile.builder()
                 .libraryId(library.getId())
-                .filepath("/library/nonexistent/movie.mkv")
+                .filepathUri("/library/nonexistent/movie.mkv")
                 .filename("movie.mkv")
                 .status(MediaFileStatus.MATCHED)
                 .build());
@@ -87,7 +108,7 @@ class OrphanedMediaFileCleanupServiceTest {
         fakeMediaFileRepository.save(
             MediaFile.builder()
                 .libraryId(library.getId())
-                .filepath(moviePath.toAbsolutePath().toString())
+                .filepathUri(FilepathCodec.encode(moviePath))
                 .filename("Inception (2010).mkv")
                 .status(MediaFileStatus.MATCHED)
                 .build());
@@ -106,7 +127,7 @@ class OrphanedMediaFileCleanupServiceTest {
         fakeMediaFileRepository.save(
             MediaFile.builder()
                 .libraryId(otherLibraryId)
-                .filepath("/other/library/nonexistent.mkv")
+                .filepathUri("/other/library/nonexistent.mkv")
                 .filename("nonexistent.mkv")
                 .status(MediaFileStatus.MATCHED)
                 .build());
@@ -125,7 +146,7 @@ class OrphanedMediaFileCleanupServiceTest {
         MediaFile.builder()
             .libraryId(library.getId())
             .mediaId(movie.getId())
-            .filepath("/library/nonexistent/gone-movie.mkv")
+            .filepathUri("/library/nonexistent/gone-movie.mkv")
             .filename("gone-movie.mkv")
             .status(MediaFileStatus.MATCHED)
             .build());
@@ -146,7 +167,7 @@ class OrphanedMediaFileCleanupServiceTest {
         MediaFile.builder()
             .libraryId(library.getId())
             .mediaId(movie.getId())
-            .filepath(existingPath.toAbsolutePath().toString())
+            .filepathUri(FilepathCodec.encode(existingPath))
             .filename("Surviving Movie (2020).mkv")
             .status(MediaFileStatus.MATCHED)
             .build());
@@ -155,7 +176,7 @@ class OrphanedMediaFileCleanupServiceTest {
         MediaFile.builder()
             .libraryId(library.getId())
             .mediaId(movie.getId())
-            .filepath("/library/nonexistent/surviving-movie-copy.mkv")
+            .filepathUri("/library/nonexistent/surviving-movie-copy.mkv")
             .filename("surviving-movie-copy.mkv")
             .status(MediaFileStatus.MATCHED)
             .build());
@@ -171,7 +192,7 @@ class OrphanedMediaFileCleanupServiceTest {
     fakeMediaFileRepository.save(
         MediaFile.builder()
             .libraryId(library.getId())
-            .filepath("/library/nonexistent/movie.mkv")
+            .filepathUri("/library/nonexistent/movie.mkv")
             .filename("movie.mkv")
             .status(MediaFileStatus.MATCHED)
             .build());
@@ -192,6 +213,73 @@ class OrphanedMediaFileCleanupServiceTest {
         .isThrownBy(() -> orphanedMediaFileCleanupService.onScanCompleted(event));
   }
 
+  @Test
+  @DisplayName(
+      "Should treat media file as orphaned when filepathUri contains unmappable characters")
+  void shouldTreatMediaFileAsOrphanedWhenFilepathContainsUnmappableCharacters() {
+    var corruptedFile =
+        fakeMediaFileRepository.save(
+            MediaFile.builder()
+                .libraryId(library.getId())
+                .filepathUri("/library/movie\u0000corrupted.mkv")
+                .filename("corrupted.mkv")
+                .status(MediaFileStatus.MATCHED)
+                .build());
+
+    orphanedMediaFileCleanupService.cleanupOrphanedFiles(library);
+
+    assertThat(fakeMediaFileRepository.findById(corruptedFile.getId())).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should still clean up valid orphaned files when one file has unmappable path")
+  void shouldStillCleanUpValidOrphanedFilesWhenOneFileHasUnmappablePath() {
+    fakeMediaFileRepository.save(
+        MediaFile.builder()
+            .libraryId(library.getId())
+            .filepathUri("/library/movie\u0000corrupted.mkv")
+            .filename("corrupted.mkv")
+            .status(MediaFileStatus.MATCHED)
+            .build());
+
+    var validOrphan =
+        fakeMediaFileRepository.save(
+            MediaFile.builder()
+                .libraryId(library.getId())
+                .filepathUri("/library/nonexistent/valid-orphan.mkv")
+                .filename("valid-orphan.mkv")
+                .status(MediaFileStatus.MATCHED)
+                .build());
+
+    orphanedMediaFileCleanupService.cleanupOrphanedFiles(library);
+
+    assertThat(fakeMediaFileRepository.findById(validOrphan.getId())).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should not propagate unexpected exception when cleanup fails")
+  void shouldNotPropagateUnexpectedExceptionWhenCleanupFails() {
+    var throwingMediaFileRepository =
+        new FakeMediaFileRepository() {
+          @Override
+          public java.util.List<MediaFile> findByLibraryId(UUID libraryId) {
+            throw new RuntimeException("Simulated unexpected failure");
+          }
+        };
+
+    var serviceWithThrowingRepo =
+        new OrphanedMediaFileCleanupService(
+            fakeLibraryRepository,
+            throwingMediaFileRepository,
+            movieService,
+            fileSystem,
+            noOpTransactionTemplate());
+
+    var event = new ScanCompletedEvent(library.getId());
+
+    assertThatNoException().isThrownBy(() -> serviceWithThrowingRepo.onScanCompleted(event));
+  }
+
   private Path createMovieFile(String folder, String filename) throws IOException {
     var rootPath = fileSystem.getPath(library.getFilepath());
     var movieFolder = rootPath.resolve(folder);
@@ -199,5 +287,30 @@ class OrphanedMediaFileCleanupServiceTest {
     var movieFile = movieFolder.resolve(filename);
     Files.createFile(movieFile);
     return movieFile;
+  }
+
+  private static TransactionTemplate noOpTransactionTemplate() {
+    return new TransactionTemplate(
+        new AbstractPlatformTransactionManager() {
+          @Override
+          protected Object doGetTransaction() {
+            return new Object();
+          }
+
+          @Override
+          protected void doBegin(Object transaction, TransactionDefinition definition) {
+            // no-op for test
+          }
+
+          @Override
+          protected void doCommit(DefaultTransactionStatus status) {
+            // no-op for test
+          }
+
+          @Override
+          protected void doRollback(DefaultTransactionStatus status) {
+            // no-op for test
+          }
+        });
   }
 }

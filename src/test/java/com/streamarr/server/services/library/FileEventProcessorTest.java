@@ -23,6 +23,7 @@ import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.metadata.movie.TMDBMovieProvider;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
+import com.streamarr.server.services.parsers.video.ExternalIdVideoFileMetadataParser;
 import com.streamarr.server.services.task.FileProcessingTaskCoordinator;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
@@ -113,6 +114,7 @@ class FileEventProcessorTest {
     var movieFileProcessor =
         new MovieFileProcessor(
             new DefaultVideoFileMetadataParser(),
+            new ExternalIdVideoFileMetadataParser(),
             new MovieMetadataProviderResolver(List.of(tmdbProvider)),
             movieService,
             mediaFileRepository,
@@ -221,7 +223,7 @@ class FileEventProcessorTest {
         .untilAsserted(
             () -> {
               var mediaFile =
-                  mediaFileRepository.findFirstByFilepath(path.toAbsolutePath().toString());
+                  mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path));
               assertThat(mediaFile).isPresent();
             });
   }
@@ -242,7 +244,7 @@ class FileEventProcessorTest {
 
     assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
 
-    var mediaFile = mediaFileRepository.findFirstByFilepath(path.toAbsolutePath().toString());
+    var mediaFile = mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path));
     assertThat(mediaFile).isEmpty();
   }
 
@@ -300,7 +302,7 @@ class FileEventProcessorTest {
         .atMost(Duration.ofSeconds(5))
         .untilAsserted(() -> assertThat(stabilityCheckerCalled.get()).isFalse());
 
-    var mediaFile = mediaFileRepository.findFirstByFilepath(path.toAbsolutePath().toString());
+    var mediaFile = mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path));
     assertThat(mediaFile).isEmpty();
   }
 
@@ -316,7 +318,7 @@ class FileEventProcessorTest {
         .untilAsserted(
             () -> {
               var mediaFile =
-                  mediaFileRepository.findFirstByFilepath(path.toAbsolutePath().toString());
+                  mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path));
               assertThat(mediaFile).isPresent();
               assertThat(mediaFile.get().getLibraryId()).isEqualTo(specialLibraryId);
             });
@@ -342,7 +344,7 @@ class FileEventProcessorTest {
         .atMost(Duration.ofSeconds(5))
         .untilAsserted(() -> assertThat(stabilityCheckerCalled.get()).isFalse());
 
-    var mediaFile = mediaFileRepository.findFirstByFilepath(path.toAbsolutePath().toString());
+    var mediaFile = mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path));
     assertThat(mediaFile).isEmpty();
   }
 
@@ -534,7 +536,7 @@ class FileEventProcessorTest {
         .atMost(Duration.ofSeconds(5))
         .untilAsserted(() -> assertThat(stabilityCheckerCalled.get()).isFalse());
 
-    var mediaFile = mediaFileRepository.findFirstByFilepath(path.toAbsolutePath().toString());
+    var mediaFile = mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path));
     assertThat(mediaFile).isEmpty();
   }
 

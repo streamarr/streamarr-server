@@ -1,8 +1,10 @@
 package com.streamarr.server.services.metadata;
 
+import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.services.metadata.tmdb.TmdbApiException;
 import com.streamarr.server.services.metadata.tmdb.TmdbCredits;
 import com.streamarr.server.services.metadata.tmdb.TmdbFailure;
+import com.streamarr.server.services.metadata.tmdb.TmdbFindResults;
 import com.streamarr.server.services.metadata.tmdb.TmdbMovie;
 import com.streamarr.server.services.metadata.tmdb.TmdbSearchResults;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSearchResults;
@@ -14,6 +16,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadLocalRandom;
@@ -29,7 +32,10 @@ import tools.jackson.databind.ObjectMapper;
 
 @Slf4j
 @Service
-public class TheMovieDatabaseHttpService {
+public class TheMovieDatabaseHttpService implements TmdbImageDownloader {
+
+  public static final Map<ExternalSourceType, String> EXTERNAL_SOURCES =
+      Map.of(ExternalSourceType.IMDB, "imdb_id", ExternalSourceType.TVDB, "tvdb_id");
 
   private static final int MAX_RETRIES = 5;
   private static final long BASE_DELAY_MS = 2000;
@@ -110,6 +116,20 @@ public class TheMovieDatabaseHttpService {
     var request = authenticatedRequest(uri).GET().build();
 
     return sendWithRetry(request, TmdbTvSearchResults.class);
+  }
+
+  public TmdbFindResults findByExternalId(String externalId, String externalSource)
+      throws IOException, InterruptedException {
+    var uri =
+        baseUrl()
+            .path("/find/")
+            .path(externalId)
+            .queryParam("external_source", externalSource)
+            .build();
+
+    var request = authenticatedRequest(uri).GET().build();
+
+    return sendWithRetry(request, TmdbFindResults.class);
   }
 
   public TmdbTvSeries getTvSeriesMetadata(String seriesId)
