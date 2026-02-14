@@ -59,15 +59,7 @@ public final class TmdbSearchResultScorer {
 
   private static double scoreCandidate(
       String normalizedParsed, String parsedYear, CandidateResult candidate) {
-    var normalizedTitle = normalizeTitle(candidate.title());
-    var normalizedOriginal = normalizeTitle(candidate.originalTitle());
-
-    var titleSim =
-        Math.max(
-            normalizedTitle.isEmpty() ? 0.0 : ensembleScore(normalizedParsed, normalizedTitle),
-            normalizedOriginal.isEmpty()
-                ? 0.0
-                : ensembleScore(normalizedParsed, normalizedOriginal));
+    var titleSim = computeTitleSimilarity(normalizedParsed, candidate);
 
     if (titleSim < MINIMUM_TITLE_SIMILARITY) {
       return 0.0;
@@ -77,6 +69,18 @@ public final class TmdbSearchResultScorer {
     var popScore = computePopularityScore(candidate.popularity());
 
     return (TITLE_WEIGHT * titleSim) + (YEAR_WEIGHT * yearMatch) + (POPULARITY_WEIGHT * popScore);
+  }
+
+  private static double computeTitleSimilarity(String normalizedParsed, CandidateResult candidate) {
+    var normalizedTitle = normalizeTitle(candidate.title());
+    var normalizedOriginal = normalizeTitle(candidate.originalTitle());
+
+    var titleScore =
+        normalizedTitle.isEmpty() ? 0.0 : ensembleScore(normalizedParsed, normalizedTitle);
+    var originalScore =
+        normalizedOriginal.isEmpty() ? 0.0 : ensembleScore(normalizedParsed, normalizedOriginal);
+
+    return Math.max(titleScore, originalScore);
   }
 
   private static double ensembleScore(String a, String b) {
