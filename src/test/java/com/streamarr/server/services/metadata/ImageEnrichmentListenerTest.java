@@ -239,11 +239,11 @@ class ImageEnrichmentListenerTest {
             ImageEntityType.MOVIE,
             List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")));
 
-    var startNanos = System.nanoTime();
     listener.onMetadataEnriched(event);
-    var elapsedMs = (System.nanoTime() - startNanos) / 1_000_000;
 
-    assertThat(elapsedMs).as("Method should return without waiting for download").isLessThan(100);
+    assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
+        .as("Method should return before async download completes")
+        .isEmpty();
 
     await()
         .atMost(Duration.ofSeconds(5))
