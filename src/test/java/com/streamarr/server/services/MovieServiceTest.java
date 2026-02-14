@@ -68,7 +68,11 @@ class MovieServiceTest {
             cursorUtil,
             relayPaginationService,
             eventPublisher,
-            imageService);
+            imageService,
+            null,
+            null,
+            null,
+            null);
   }
 
   @Test

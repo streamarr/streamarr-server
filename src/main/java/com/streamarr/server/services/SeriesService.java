@@ -7,11 +7,18 @@ import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.domain.metadata.Company;
+import com.streamarr.server.domain.metadata.Genre;
+import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.graphql.cursor.MediaPaginationOptions;
 import com.streamarr.server.graphql.cursor.PaginationOptions;
+import com.streamarr.server.repositories.CompanyRepository;
+import com.streamarr.server.repositories.GenreRepository;
+import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.repositories.media.EpisodeRepository;
+import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.services.metadata.MetadataResult;
@@ -43,6 +50,10 @@ public class SeriesService {
   private final ImageService imageService;
   private final SeasonRepository seasonRepository;
   private final EpisodeRepository episodeRepository;
+  private final MediaFileRepository mediaFileRepository;
+  private final PersonRepository personRepository;
+  private final GenreRepository genreRepository;
+  private final CompanyRepository companyRepository;
 
   @Transactional
   public Series saveSeriesWithMediaFile(Series series, MediaFile mediaFile) {
@@ -161,6 +172,46 @@ public class SeriesService {
   public void deleteSeriesById(UUID seriesId) {
     imageService.deleteImagesForEntity(seriesId, ImageEntityType.SERIES);
     seriesRepository.deleteById(seriesId);
+  }
+
+  @Transactional(readOnly = true)
+  public Optional<Series> findById(UUID id) {
+    return seriesRepository.findById(id);
+  }
+
+  @Transactional(readOnly = true)
+  public List<MediaFile> findMediaFiles(UUID entityId) {
+    return mediaFileRepository.findByMediaId(entityId);
+  }
+
+  @Transactional(readOnly = true)
+  public List<Season> findSeasons(UUID seriesId) {
+    return seasonRepository.findBySeriesId(seriesId);
+  }
+
+  @Transactional(readOnly = true)
+  public List<Episode> findEpisodes(UUID seasonId) {
+    return episodeRepository.findBySeasonId(seasonId);
+  }
+
+  @Transactional(readOnly = true)
+  public List<Company> findStudios(UUID seriesId) {
+    return companyRepository.findBySeriesId(seriesId);
+  }
+
+  @Transactional(readOnly = true)
+  public List<Person> findCast(UUID seriesId) {
+    return personRepository.findCastBySeriesId(seriesId);
+  }
+
+  @Transactional(readOnly = true)
+  public List<Person> findDirectors(UUID seriesId) {
+    return personRepository.findDirectorsBySeriesId(seriesId);
+  }
+
+  @Transactional(readOnly = true)
+  public List<Genre> findGenres(UUID seriesId) {
+    return genreRepository.findBySeriesId(seriesId);
   }
 
   public Connection<? extends BaseCollectable<?>> getSeriesWithFilter(

@@ -77,7 +77,11 @@ class SeriesServiceTest {
             eventPublisher,
             imageService,
             seasonRepository,
-            episodeRepository);
+            episodeRepository,
+            null,
+            null,
+            null,
+            null);
   }
 
   @Test

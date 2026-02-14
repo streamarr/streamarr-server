@@ -44,7 +44,18 @@ class OrphanedMediaFileCleanupServiceTest {
   private final MovieRepository fakeMovieRepository = new FakeMovieRepository();
   private final MovieService movieService =
       new MovieService(
-          fakeMovieRepository, null, null, null, null, null, event -> {}, mock(ImageService.class));
+          fakeMovieRepository,
+          null,
+          null,
+          null,
+          null,
+          null,
+          event -> {},
+          mock(ImageService.class),
+          null,
+          null,
+          null,
+          null);
   private final FileSystem fileSystem = Jimfs.newFileSystem(Configuration.unix());
 
   private final OrphanedMediaFileCleanupService orphanedMediaFileCleanupService =
