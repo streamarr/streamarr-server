@@ -84,7 +84,6 @@ class FfmpegPathsTest {
     var paths = FfmpegPaths.resolve(null, null, tempDir.toString());
 
     assertThat(paths.ffmpeg()).isEqualTo(ffmpeg.toString());
-    assertThat(paths.ffmpeg()).startsWith(tempDir.toString());
   }
 
   private static Path createExecutable(Path dir, String name) throws IOException {
