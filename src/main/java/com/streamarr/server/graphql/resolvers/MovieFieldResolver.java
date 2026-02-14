@@ -8,8 +8,6 @@ import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.domain.metadata.Rating;
 import com.streamarr.server.domain.metadata.Review;
-import com.streamarr.server.repositories.RatingRepository;
-import com.streamarr.server.repositories.ReviewRepository;
 import com.streamarr.server.services.MovieService;
 import graphql.schema.DataFetchingEnvironment;
 import java.util.List;
@@ -20,8 +18,6 @@ import lombok.RequiredArgsConstructor;
 public class MovieFieldResolver {
 
   private final MovieService movieService;
-  private final RatingRepository ratingRepository;
-  private final ReviewRepository reviewRepository;
 
   @DgsData(parentType = "Movie", field = "studios")
   public List<Company> studios(DataFetchingEnvironment dfe) {
@@ -50,12 +46,12 @@ public class MovieFieldResolver {
   @DgsData(parentType = "Movie", field = "ratings")
   public List<Rating> ratings(DataFetchingEnvironment dfe) {
     Movie movie = dfe.getSource();
-    return ratingRepository.findByMovie_Id(movie.getId());
+    return movieService.findRatings(movie.getId());
   }
 
   @DgsData(parentType = "Movie", field = "reviews")
   public List<Review> reviews(DataFetchingEnvironment dfe) {
     Movie movie = dfe.getSource();
-    return reviewRepository.findByMovie_Id(movie.getId());
+    return movieService.findReviews(movie.getId());
   }
 }

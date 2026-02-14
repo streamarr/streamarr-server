@@ -60,6 +60,8 @@ class MovieFileProcessorTest {
           null,
           null,
           null,
+          null,
+          null,
           null);
 
   private final MovieFileProcessor movieFileProcessor =

@@ -7,6 +7,8 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
+import com.streamarr.server.domain.metadata.Rating;
+import com.streamarr.server.domain.metadata.Review;
 import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.graphql.cursor.MediaPaginationOptions;
@@ -14,6 +16,8 @@ import com.streamarr.server.graphql.cursor.PaginationOptions;
 import com.streamarr.server.repositories.CompanyRepository;
 import com.streamarr.server.repositories.GenreRepository;
 import com.streamarr.server.repositories.PersonRepository;
+import com.streamarr.server.repositories.RatingRepository;
+import com.streamarr.server.repositories.ReviewRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.metadata.MetadataResult;
@@ -49,6 +53,8 @@ public class MovieService {
   private final PersonRepository personRepository;
   private final GenreRepository genreRepository;
   private final CompanyRepository companyRepository;
+  private final RatingRepository ratingRepository;
+  private final ReviewRepository reviewRepository;
 
   @Transactional
   public Optional<Movie> addMediaFileToMovieByTmdbId(String id, MediaFile mediaFile) {
@@ -170,6 +176,16 @@ public class MovieService {
   @Transactional(readOnly = true)
   public List<Genre> findGenres(UUID movieId) {
     return genreRepository.findByMovieId(movieId);
+  }
+
+  @Transactional(readOnly = true)
+  public List<Rating> findRatings(UUID movieId) {
+    return ratingRepository.findByMovie_Id(movieId);
+  }
+
+  @Transactional(readOnly = true)
+  public List<Review> findReviews(UUID movieId) {
+    return reviewRepository.findByMovie_Id(movieId);
   }
 
   private MediaFilter buildDefaultMovieFilter() {

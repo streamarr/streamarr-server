@@ -72,6 +72,8 @@ class MovieServiceTest {
             null,
             null,
             null,
+            null,
+            null,
             null);
   }
 

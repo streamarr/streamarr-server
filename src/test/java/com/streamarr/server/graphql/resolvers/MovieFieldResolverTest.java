@@ -11,8 +11,6 @@ import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.domain.metadata.Rating;
 import com.streamarr.server.domain.metadata.Review;
-import com.streamarr.server.repositories.RatingRepository;
-import com.streamarr.server.repositories.ReviewRepository;
 import com.streamarr.server.services.MovieService;
 import java.util.List;
 import java.util.Optional;
@@ -33,8 +31,6 @@ class MovieFieldResolverTest {
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
 
   @MockitoBean private MovieService movieService;
-  @MockitoBean private RatingRepository ratingRepository;
-  @MockitoBean private ReviewRepository reviewRepository;
 
   private Movie setupMovie() {
     var movieId = UUID.randomUUID();
@@ -108,7 +104,7 @@ class MovieFieldResolverTest {
   @DisplayName("Should return ratings when movie queried with ratings field")
   void shouldReturnRatingsWhenMovieQueriedWithRatingsField() {
     var movie = setupMovie();
-    when(ratingRepository.findByMovie_Id(movie.getId()))
+    when(movieService.findRatings(movie.getId()))
         .thenReturn(List.of(Rating.builder().source("IMDb").value("8.8").build()));
 
     String source =
@@ -123,7 +119,7 @@ class MovieFieldResolverTest {
   @DisplayName("Should return reviews when movie queried with reviews field")
   void shouldReturnReviewsWhenMovieQueriedWithReviewsField() {
     var movie = setupMovie();
-    when(reviewRepository.findByMovie_Id(movie.getId()))
+    when(movieService.findReviews(movie.getId()))
         .thenReturn(List.of(Review.builder().author("Roger Ebert").build()));
 
     String author =
