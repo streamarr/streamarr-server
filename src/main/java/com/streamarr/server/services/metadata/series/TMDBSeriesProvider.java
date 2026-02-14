@@ -257,21 +257,28 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
   }
 
   private List<TmdbTvSeasonSummary> getOrFetchSeasonSummaries(String seriesExternalId) {
-    return seasonSummariesCache.computeIfAbsent(
-        seriesExternalId,
-        id -> {
-          try {
-            var series = theMovieDatabaseHttpService.getTvSeriesMetadata(id);
-            return Optional.ofNullable(series.getSeasons()).orElse(Collections.emptyList());
-          } catch (IOException ex) {
-            log.warn("Failed to fetch season summaries for TMDB id '{}'", id, ex);
-            return Collections.emptyList();
-          } catch (InterruptedException ex) {
-            Thread.currentThread().interrupt();
-            log.warn("Season summaries fetch interrupted for TMDB id '{}'", id, ex);
-            return Collections.emptyList();
-          }
-        });
+    var cached = seasonSummariesCache.get(seriesExternalId);
+    if (cached != null) {
+      return cached;
+    }
+
+    var fetched = fetchSeasonSummaries(seriesExternalId);
+    var existing = seasonSummariesCache.putIfAbsent(seriesExternalId, fetched);
+    return existing != null ? existing : fetched;
+  }
+
+  private List<TmdbTvSeasonSummary> fetchSeasonSummaries(String seriesExternalId) {
+    try {
+      var series = theMovieDatabaseHttpService.getTvSeriesMetadata(seriesExternalId);
+      return Optional.ofNullable(series.getSeasons()).orElse(Collections.emptyList());
+    } catch (IOException ex) {
+      log.warn("Failed to fetch season summaries for TMDB id '{}'", seriesExternalId, ex);
+      return Collections.emptyList();
+    } catch (InterruptedException ex) {
+      Thread.currentThread().interrupt();
+      log.warn("Season summaries fetch interrupted for TMDB id '{}'", seriesExternalId, ex);
+      return Collections.emptyList();
+    }
   }
 
   private SeasonDetails.EpisodeDetails mapEpisodeDetails(
