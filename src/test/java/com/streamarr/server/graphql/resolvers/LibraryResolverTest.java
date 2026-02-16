@@ -56,7 +56,7 @@ class LibraryResolverTest {
     var library =
         Library.builder()
             .name("Movies")
-            .filepathUri("/mpool/media/movies")
+            .filepathUri("file:///mpool/media/movies")
             .status(LibraryStatus.HEALTHY)
             .backend(LibraryBackend.LOCAL)
             .type(MediaType.MOVIE)
@@ -101,7 +101,7 @@ class LibraryResolverTest {
     var library =
         Library.builder()
             .name("Movies")
-            .filepathUri("/mpool/media/movies")
+            .filepathUri("file:///mpool/media/movies")
             .status(LibraryStatus.HEALTHY)
             .backend(LibraryBackend.LOCAL)
             .type(MediaType.MOVIE)
@@ -141,7 +141,7 @@ class LibraryResolverTest {
     var moviesLibrary =
         Library.builder()
             .name("Movies")
-            .filepathUri("/mpool/media/movies")
+            .filepathUri("file:///mpool/media/movies")
             .status(LibraryStatus.HEALTHY)
             .backend(LibraryBackend.LOCAL)
             .type(MediaType.MOVIE)
@@ -151,7 +151,7 @@ class LibraryResolverTest {
     var showsLibrary =
         Library.builder()
             .name("TV Shows")
-            .filepathUri("/mpool/media/shows")
+            .filepathUri("file:///mpool/media/shows")
             .status(LibraryStatus.HEALTHY)
             .backend(LibraryBackend.LOCAL)
             .type(MediaType.SERIES)
@@ -174,7 +174,7 @@ class LibraryResolverTest {
     var library =
         Library.builder()
             .name("TV Shows")
-            .filepathUri("/mpool/media/shows")
+            .filepathUri("file:///mpool/media/shows")
             .status(LibraryStatus.HEALTHY)
             .backend(LibraryBackend.LOCAL)
             .type(MediaType.SERIES)
@@ -215,7 +215,7 @@ class LibraryResolverTest {
     var library =
         Library.builder()
             .name("Other Media")
-            .filepathUri("/mpool/media/other")
+            .filepathUri("file:///mpool/media/other")
             .status(LibraryStatus.HEALTHY)
             .backend(LibraryBackend.LOCAL)
             .type(MediaType.OTHER)
@@ -243,7 +243,7 @@ class LibraryResolverTest {
     var library =
         Library.builder()
             .name("Movies")
-            .filepathUri("/mpool/media/movies")
+            .filepathUri("file:///mpool/media/movies")
             .status(LibraryStatus.HEALTHY)
             .backend(LibraryBackend.LOCAL)
             .type(MediaType.MOVIE)

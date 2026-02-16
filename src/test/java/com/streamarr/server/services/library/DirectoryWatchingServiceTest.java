@@ -133,7 +133,7 @@ class DirectoryWatchingServiceTest {
   void shouldStopWatchingDirectoryOnLibraryRemovedEvent() throws IOException {
     service.addDirectory(tempDir);
 
-    var event = new LibraryRemovedEvent(tempDir.toString(), Set.of());
+    var event = new LibraryRemovedEvent(FilepathCodec.encode(tempDir), Set.of());
 
     assertThatCode(() -> service.onLibraryRemoved(event)).doesNotThrowAnyException();
   }
@@ -142,7 +142,7 @@ class DirectoryWatchingServiceTest {
   @DisplayName("Should not block calling thread when library is added")
   void shouldNotBlockCallingThreadWhenLibraryAdded() {
     var slowService = buildSlowSetupService();
-    var event = new LibraryAddedEvent(UUID.randomUUID(), tempDir.toString());
+    var event = new LibraryAddedEvent(UUID.randomUUID(), FilepathCodec.encode(tempDir));
 
     assertTimeout(Duration.ofMillis(500), () -> slowService.onLibraryAdded(event));
   }
@@ -152,7 +152,7 @@ class DirectoryWatchingServiceTest {
   void shouldNotBlockCallingThreadWhenInitializingWithExistingLibraries() {
     fakeLibraryRepository.save(
         LibraryFixtureCreator.buildFakeLibrary().toBuilder()
-            .filepathUri(tempDir.toString())
+            .filepathUri(FilepathCodec.encode(tempDir))
             .build());
     var slowService = buildSlowSetupService();
 
@@ -163,7 +163,7 @@ class DirectoryWatchingServiceTest {
   @DisplayName("Should not propagate exception when watcher setup fails on library added")
   void shouldNotPropagateExceptionWhenSetupFailsOnLibraryAdded() {
     var failingService = buildFailingSetupService();
-    var event = new LibraryAddedEvent(UUID.randomUUID(), tempDir.toString());
+    var event = new LibraryAddedEvent(UUID.randomUUID(), FilepathCodec.encode(tempDir));
 
     assertThatNoException().isThrownBy(() -> failingService.onLibraryAdded(event));
 
@@ -175,7 +175,7 @@ class DirectoryWatchingServiceTest {
   void shouldNotPropagateExceptionWhenSetupFailsOnInitialization() {
     fakeLibraryRepository.save(
         LibraryFixtureCreator.buildFakeLibrary().toBuilder()
-            .filepathUri(tempDir.toString())
+            .filepathUri(FilepathCodec.encode(tempDir))
             .build());
     var failingService = buildFailingSetupService();
 

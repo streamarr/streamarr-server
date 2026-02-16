@@ -56,7 +56,7 @@ class LibraryCrashRecoveryServiceIT extends AbstractIntegrationTest {
   private static Library buildScanningLibrary() {
     return Library.builder()
         .name("Crashed Library")
-        .filepathUri("/test/crashed/" + UUID.randomUUID())
+        .filepathUri("file:///test/crashed/" + UUID.randomUUID())
         .backend(LibraryBackend.LOCAL)
         .status(LibraryStatus.SCANNING)
         .type(MediaType.MOVIE)

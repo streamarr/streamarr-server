@@ -140,6 +140,7 @@ class LibraryManagementServiceTest {
 
   @BeforeEach
   public void setup() {
+    // Fixture uses plain paths because file:// URIs can't round-trip through Jimfs.
     var fakeLibrary = LibraryFixtureCreator.buildFakeLibrary();
     var savedLibrary = fakeLibraryRepository.save(fakeLibrary);
 
@@ -680,14 +681,15 @@ class LibraryManagementServiceTest {
     @Test
     @DisplayName("Should throw LibraryAlreadyExistsException when filepath already exists")
     void shouldThrowLibraryAlreadyExistsExceptionWhenFilepathExists() throws IOException {
-      var existingLibrary = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
-      var existingFilepath = existingLibrary.getFilepathUri();
-
-      var libraryPath = fileSystem.getPath(existingFilepath);
+      var libraryPath = fileSystem.getPath("/duplicate-library");
       Files.createDirectories(libraryPath);
 
+      var firstLibrary =
+          LibraryFixtureCreator.buildUnsavedLibrary("First Library", libraryPath.toString());
+      libraryManagementService.addLibrary(firstLibrary);
+
       var duplicateLibrary =
-          LibraryFixtureCreator.buildUnsavedLibrary("Duplicate Library", existingFilepath);
+          LibraryFixtureCreator.buildUnsavedLibrary("Duplicate Library", libraryPath.toString());
 
       assertThrows(
           LibraryAlreadyExistsException.class,
@@ -732,6 +734,21 @@ class LibraryManagementServiceTest {
     }
 
     @Test
+    @DisplayName("Should store filepathUri as encoded URI when adding library")
+    void shouldStoreFilepathUriAsEncodedUriWhenAddingLibrary() throws IOException {
+      var newLibraryPath = fileSystem.getPath("/encoded-library");
+      Files.createDirectories(newLibraryPath);
+
+      var library =
+          LibraryFixtureCreator.buildUnsavedLibrary("Encoded Library", newLibraryPath.toString());
+
+      var savedLibrary = libraryManagementService.addLibrary(library);
+
+      var persisted = fakeLibraryRepository.findById(savedLibrary.getId()).orElseThrow();
+      assertThat(persisted.getFilepathUri()).startsWith("jimfs://");
+    }
+
+    @Test
     @DisplayName("Should set status to HEALTHY when adding library")
     void shouldSetStatusToHealthyWhenAdding() throws IOException {
       var newLibraryPath = fileSystem.getPath("/healthy-library");
@@ -760,7 +777,7 @@ class LibraryManagementServiceTest {
       var events = capturingEventPublisher.getEventsOfType(LibraryAddedEvent.class);
       assertThat(events).hasSize(1);
       assertThat(events.getFirst().libraryId()).isEqualTo(savedLibrary.getId());
-      assertThat(events.getFirst().filepathUri()).isEqualTo(newLibraryPath.toString());
+      assertThat(events.getFirst().filepathUri()).isEqualTo(FilepathCodec.encode(newLibraryPath));
     }
 
     @Test

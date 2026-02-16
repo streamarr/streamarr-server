@@ -11,6 +11,7 @@ public final class LibraryFixtureCreator {
 
   private LibraryFixtureCreator() {}
 
+  // Plain paths instead of file:// URIs because file:// URIs can't round-trip through Jimfs.
   public static Library buildFakeLibrary() {
     return Library.builder()
         .name("Test Library")

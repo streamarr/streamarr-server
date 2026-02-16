@@ -68,7 +68,7 @@ public class DevDataInitializer {
                 .name("Movies")
                 .backend(LibraryBackend.LOCAL)
                 .status(LibraryStatus.HEALTHY)
-                .filepathUri("/mpool/media/clean/movies")
+                .filepathUri(FilepathCodec.encode(Path.of("/mpool/media/clean/movies")))
                 .externalAgentStrategy(ExternalAgentStrategy.TMDB)
                 .type(MediaType.MOVIE)
                 .build());

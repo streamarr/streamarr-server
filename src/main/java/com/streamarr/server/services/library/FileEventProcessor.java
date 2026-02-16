@@ -183,8 +183,13 @@ class FileEventProcessor {
       var fs = absolutePath.getFileSystem();
 
       return cachedLibraries.stream()
-          .filter(library -> absolutePath.startsWith(fs.getPath(library.getFilepathUri())))
-          .max(Comparator.comparingInt(library -> library.getFilepathUri().length()))
+          .filter(
+              library ->
+                  absolutePath.startsWith(FilepathCodec.decode(fs, library.getFilepathUri())))
+          .max(
+              Comparator.comparingInt(
+                  library ->
+                      FilepathCodec.decode(fs, library.getFilepathUri()).toString().length()))
           .map(Library::getId);
     } finally {
       stateLock.readLock().unlock();

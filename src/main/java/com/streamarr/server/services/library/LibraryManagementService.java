@@ -91,11 +91,15 @@ public class LibraryManagementService implements ActiveScanChecker {
   }
 
   public Library addLibrary(Library library) {
-    validateFilepath(library.getFilepathUri());
-    validateFilepathNotAlreadyUsed(library.getFilepathUri());
-    validatePathExistsAndIsDirectory(library.getFilepathUri());
+    var rawFilepath = library.getFilepathUri();
+    validateFilepath(rawFilepath);
+    validatePathExistsAndIsDirectory(rawFilepath);
 
-    var libraryToSave = library.toBuilder().status(LibraryStatus.HEALTHY).build();
+    var encodedUri = FilepathCodec.encode(fileSystem.getPath(rawFilepath));
+    validateFilepathNotAlreadyUsed(encodedUri);
+
+    var libraryToSave =
+        library.toBuilder().filepathUri(encodedUri).status(LibraryStatus.HEALTHY).build();
     var savedLibrary = libraryRepository.save(libraryToSave);
 
     eventPublisher.publishEvent(
@@ -219,7 +223,7 @@ public class LibraryManagementService implements ActiveScanChecker {
 
   private void walkAndProcessFiles(Library library) {
     try (var executor = Executors.newVirtualThreadPerTaskExecutor();
-        var stream = Files.walk(fileSystem.getPath(library.getFilepathUri()))) {
+        var stream = Files.walk(FilepathCodec.decode(fileSystem, library.getFilepathUri()))) {
 
       stream
           .filter(Files::isRegularFile)

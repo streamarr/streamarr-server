@@ -113,7 +113,7 @@ public class DirectoryWatchingService implements InitializingBean {
   public void afterPropertiesSet() {
     var repositories = libraryRepository.findAll();
 
-    repositories.forEach(rep -> directoriesToWatch.add(Path.of(rep.getFilepathUri())));
+    repositories.forEach(rep -> directoriesToWatch.add(FilepathCodec.decode(rep.getFilepathUri())));
 
     Thread.startVirtualThread(
         () -> {
@@ -132,7 +132,7 @@ public class DirectoryWatchingService implements InitializingBean {
     Thread.startVirtualThread(
         () -> {
           try {
-            addDirectory(Path.of(event.filepathUri()));
+            addDirectory(FilepathCodec.decode(event.filepathUri()));
           } catch (IOException e) {
             log.error("Failed to start watching directory for library: {}", event.filepathUri(), e);
           }
@@ -142,7 +142,7 @@ public class DirectoryWatchingService implements InitializingBean {
   @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
   public void onLibraryRemoved(LibraryRemovedEvent event) {
     try {
-      removeDirectory(Path.of(event.filepathUri()));
+      removeDirectory(FilepathCodec.decode(event.filepathUri()));
     } catch (IOException e) {
       log.warn("Failed to stop watching directory: {}", event.filepathUri(), e);
     }

@@ -130,7 +130,7 @@ class LibraryCrashRecoveryServiceTest {
         .name("Test Library")
         .backend(LibraryBackend.LOCAL)
         .status(status)
-        .filepathUri("/library/" + UUID.randomUUID())
+        .filepathUri("file:///library/" + UUID.randomUUID())
         .externalAgentStrategy(ExternalAgentStrategy.TMDB)
         .type(MediaType.MOVIE)
         .build();
