@@ -92,9 +92,9 @@ public class Library extends TableImpl<LibraryRecord> {
     public final TableField<LibraryRecord, UUID> LAST_MODIFIED_BY = createField(DSL.name("last_modified_by"), SQLDataType.UUID, this, "");
 
     /**
-     * The column <code>public.library.filepath</code>.
+     * The column <code>public.library.filepath_uri</code>.
      */
-    public final TableField<LibraryRecord, String> FILEPATH = createField(DSL.name("filepath"), SQLDataType.CLOB.nullable(false), this, "");
+    public final TableField<LibraryRecord, String> FILEPATH_URI = createField(DSL.name("filepath_uri"), SQLDataType.CLOB.nullable(false), this, "");
 
     /**
      * The column <code>public.library.name</code>.
@@ -200,7 +200,7 @@ public class Library extends TableImpl<LibraryRecord> {
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.LIBRARY_FILE_PATH_IDX);
+        return Arrays.asList(Indexes.LIBRARY_FILEPATH_URI_IDX);
     }
 
     @Override

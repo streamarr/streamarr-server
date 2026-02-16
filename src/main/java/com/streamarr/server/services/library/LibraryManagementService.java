@@ -91,15 +91,15 @@ public class LibraryManagementService implements ActiveScanChecker {
   }
 
   public Library addLibrary(Library library) {
-    validateFilepath(library.getFilepath());
-    validateFilepathNotAlreadyUsed(library.getFilepath());
-    validatePathExistsAndIsDirectory(library.getFilepath());
+    validateFilepath(library.getFilepathUri());
+    validateFilepathNotAlreadyUsed(library.getFilepathUri());
+    validatePathExistsAndIsDirectory(library.getFilepathUri());
 
     var libraryToSave = library.toBuilder().status(LibraryStatus.HEALTHY).build();
     var savedLibrary = libraryRepository.save(libraryToSave);
 
     eventPublisher.publishEvent(
-        new LibraryAddedEvent(savedLibrary.getId(), savedLibrary.getFilepath()));
+        new LibraryAddedEvent(savedLibrary.getId(), savedLibrary.getFilepathUri()));
 
     triggerAsyncScan(savedLibrary.getId());
 
@@ -113,7 +113,7 @@ public class LibraryManagementService implements ActiveScanChecker {
   }
 
   private void validateFilepathNotAlreadyUsed(String filepath) {
-    if (libraryRepository.existsByFilepath(filepath)) {
+    if (libraryRepository.existsByFilepathUri(filepath)) {
       throw new LibraryAlreadyExistsException(filepath);
     }
   }
@@ -159,7 +159,7 @@ public class LibraryManagementService implements ActiveScanChecker {
       deleteLibraryContent(libraryId, mediaFiles);
       libraryRepository.delete(library);
 
-      eventPublisher.publishEvent(new LibraryRemovedEvent(library.getFilepath(), mediaFileIds));
+      eventPublisher.publishEvent(new LibraryRemovedEvent(library.getFilepathUri(), mediaFileIds));
     } finally {
       libraryMutex.unlock();
     }
@@ -219,7 +219,7 @@ public class LibraryManagementService implements ActiveScanChecker {
 
   private void walkAndProcessFiles(Library library) {
     try (var executor = Executors.newVirtualThreadPerTaskExecutor();
-        var stream = Files.walk(fileSystem.getPath(library.getFilepath()))) {
+        var stream = Files.walk(fileSystem.getPath(library.getFilepathUri()))) {
 
       stream
           .filter(Files::isRegularFile)

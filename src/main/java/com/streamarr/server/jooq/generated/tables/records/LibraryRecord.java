@@ -96,16 +96,16 @@ public class LibraryRecord extends UpdatableRecordImpl<LibraryRecord> {
     }
 
     /**
-     * Setter for <code>public.library.filepath</code>.
+     * Setter for <code>public.library.filepath_uri</code>.
      */
-    public void setFilepath(String value) {
+    public void setFilepathUri(String value) {
         set(5, value);
     }
 
     /**
-     * Getter for <code>public.library.filepath</code>.
+     * Getter for <code>public.library.filepath_uri</code>.
      */
-    public String getFilepath() {
+    public String getFilepathUri() {
         return (String) get(5);
     }
 
@@ -230,7 +230,7 @@ public class LibraryRecord extends UpdatableRecordImpl<LibraryRecord> {
     /**
      * Create a detached, initialised LibraryRecord
      */
-    public LibraryRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, String filepath, String name, OffsetDateTime scanStartedOn, OffsetDateTime scanCompletedOn, LibraryStatus status, LibraryBackend backend, MediaType type, ExternalAgentStrategy externalAgentStrategy) {
+    public LibraryRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, String filepathUri, String name, OffsetDateTime scanStartedOn, OffsetDateTime scanCompletedOn, LibraryStatus status, LibraryBackend backend, MediaType type, ExternalAgentStrategy externalAgentStrategy) {
         super(Library.LIBRARY);
 
         setId(id);
@@ -238,7 +238,7 @@ public class LibraryRecord extends UpdatableRecordImpl<LibraryRecord> {
         setCreatedBy(createdBy);
         setLastModifiedOn(lastModifiedOn);
         setLastModifiedBy(lastModifiedBy);
-        setFilepath(filepath);
+        setFilepathUri(filepathUri);
         setName(name);
         setScanStartedOn(scanStartedOn);
         setScanCompletedOn(scanCompletedOn);

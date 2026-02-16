@@ -25,7 +25,7 @@ import org.hibernate.type.SqlTypes;
 @AllArgsConstructor
 public class Library extends BaseAuditableEntity<Library> {
 
-  private String filepath;
+  private String filepathUri;
 
   private String name;
 

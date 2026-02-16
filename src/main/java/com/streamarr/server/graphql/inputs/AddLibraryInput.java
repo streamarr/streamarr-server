@@ -6,7 +6,7 @@ import com.streamarr.server.domain.media.MediaType;
 
 public record AddLibraryInput(
     String name,
-    String filepath,
+    String filepathUri,
     MediaType type,
     LibraryBackend backend,
     ExternalAgentStrategy externalAgentStrategy) {}

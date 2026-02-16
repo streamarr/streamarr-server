@@ -16,7 +16,7 @@ public final class LibraryFixtureCreator {
         .name("Test Library")
         .backend(LibraryBackend.LOCAL)
         .status(LibraryStatus.HEALTHY)
-        .filepath("/library/" + UUID.randomUUID())
+        .filepathUri("/library/" + UUID.randomUUID())
         .externalAgentStrategy(ExternalAgentStrategy.TMDB)
         .type(MediaType.MOVIE)
         .build();
@@ -27,7 +27,7 @@ public final class LibraryFixtureCreator {
         .name("Test Series Library")
         .backend(LibraryBackend.LOCAL)
         .status(LibraryStatus.HEALTHY)
-        .filepath("/library/" + UUID.randomUUID())
+        .filepathUri("/library/" + UUID.randomUUID())
         .externalAgentStrategy(ExternalAgentStrategy.TMDB)
         .type(MediaType.SERIES)
         .build();
@@ -37,7 +37,7 @@ public final class LibraryFixtureCreator {
     return Library.builder()
         .name(name)
         .backend(LibraryBackend.LOCAL)
-        .filepath(filepath)
+        .filepathUri(filepath)
         .externalAgentStrategy(ExternalAgentStrategy.TMDB)
         .type(MediaType.MOVIE)
         .build();

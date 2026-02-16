@@ -40,7 +40,7 @@ public class LibraryResolver {
     var library =
         Library.builder()
             .name(input.name())
-            .filepath(input.filepath())
+            .filepathUri(input.filepathUri())
             .type(input.type())
             .backend(input.backend())
             .externalAgentStrategy(

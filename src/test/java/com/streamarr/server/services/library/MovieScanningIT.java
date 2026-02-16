@@ -143,7 +143,7 @@ class MovieScanningIT extends AbstractIntegrationTest {
             .name("Movies")
             .backend(com.streamarr.server.domain.LibraryBackend.LOCAL)
             .status(com.streamarr.server.domain.LibraryStatus.HEALTHY)
-            .filepath(tempDir.toAbsolutePath().toString())
+            .filepathUri(tempDir.toAbsolutePath().toString())
             .externalAgentStrategy(com.streamarr.server.domain.ExternalAgentStrategy.TMDB)
             .type(com.streamarr.server.domain.media.MediaType.MOVIE)
             .build());

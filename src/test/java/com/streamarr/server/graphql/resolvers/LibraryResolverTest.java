@@ -56,7 +56,7 @@ class LibraryResolverTest {
     var library =
         Library.builder()
             .name("Movies")
-            .filepath("/mpool/media/movies")
+            .filepathUri("/mpool/media/movies")
             .status(LibraryStatus.HEALTHY)
             .backend(LibraryBackend.LOCAL)
             .type(MediaType.MOVIE)
@@ -68,7 +68,7 @@ class LibraryResolverTest {
 
     String name =
         dgsQueryExecutor.executeAndExtractJsonPath(
-            String.format("{ library(id: \"%s\") { name filepath } }", libraryId),
+            String.format("{ library(id: \"%s\") { name filepathUri } }", libraryId),
             "data.library.name");
 
     assertThat(name).isEqualTo("Movies");
@@ -101,7 +101,7 @@ class LibraryResolverTest {
     var library =
         Library.builder()
             .name("Movies")
-            .filepath("/mpool/media/movies")
+            .filepathUri("/mpool/media/movies")
             .status(LibraryStatus.HEALTHY)
             .backend(LibraryBackend.LOCAL)
             .type(MediaType.MOVIE)
@@ -141,7 +141,7 @@ class LibraryResolverTest {
     var moviesLibrary =
         Library.builder()
             .name("Movies")
-            .filepath("/mpool/media/movies")
+            .filepathUri("/mpool/media/movies")
             .status(LibraryStatus.HEALTHY)
             .backend(LibraryBackend.LOCAL)
             .type(MediaType.MOVIE)
@@ -151,7 +151,7 @@ class LibraryResolverTest {
     var showsLibrary =
         Library.builder()
             .name("TV Shows")
-            .filepath("/mpool/media/shows")
+            .filepathUri("/mpool/media/shows")
             .status(LibraryStatus.HEALTHY)
             .backend(LibraryBackend.LOCAL)
             .type(MediaType.SERIES)
@@ -174,7 +174,7 @@ class LibraryResolverTest {
     var library =
         Library.builder()
             .name("TV Shows")
-            .filepath("/mpool/media/shows")
+            .filepathUri("/mpool/media/shows")
             .status(LibraryStatus.HEALTHY)
             .backend(LibraryBackend.LOCAL)
             .type(MediaType.SERIES)
@@ -215,7 +215,7 @@ class LibraryResolverTest {
     var library =
         Library.builder()
             .name("Other Media")
-            .filepath("/mpool/media/other")
+            .filepathUri("/mpool/media/other")
             .status(LibraryStatus.HEALTHY)
             .backend(LibraryBackend.LOCAL)
             .type(MediaType.OTHER)
@@ -243,7 +243,7 @@ class LibraryResolverTest {
     var library =
         Library.builder()
             .name("Movies")
-            .filepath("/mpool/media/movies")
+            .filepathUri("/mpool/media/movies")
             .status(LibraryStatus.HEALTHY)
             .backend(LibraryBackend.LOCAL)
             .type(MediaType.MOVIE)
@@ -259,11 +259,11 @@ class LibraryResolverTest {
             mutation {
               addLibrary(input: {
                 name: "Movies"
-                filepath: "/mpool/media/movies"
+                filepathUri: "/mpool/media/movies"
                 type: MOVIE
                 backend: LOCAL
                 externalAgentStrategy: TMDB
-              }) { name filepath }
+              }) { name filepathUri }
             }
             """,
             "data.addLibrary.name");

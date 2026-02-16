@@ -8,8 +8,8 @@ import java.util.List;
 public class FakeLibraryRepository extends FakeJpaRepository<Library> implements LibraryRepository {
 
   @Override
-  public boolean existsByFilepath(String filepath) {
-    return database.values().stream().anyMatch(lib -> lib.getFilepath().equals(filepath));
+  public boolean existsByFilepathUri(String filepathUri) {
+    return database.values().stream().anyMatch(lib -> lib.getFilepathUri().equals(filepathUri));
   }
 
   @Override

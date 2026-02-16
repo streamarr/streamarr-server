@@ -283,12 +283,12 @@ class LibraryManagementServiceTest {
                 .name("Other Type Library")
                 .backend(LibraryBackend.LOCAL)
                 .status(LibraryStatus.HEALTHY)
-                .filepath("/library/" + UUID.randomUUID())
+                .filepathUri("/library/" + UUID.randomUUID())
                 .externalAgentStrategy(ExternalAgentStrategy.TMDB)
                 .type(MediaType.OTHER)
                 .build());
 
-    var libraryPath = fileSystem.getPath(otherTypeLibrary.getFilepath());
+    var libraryPath = fileSystem.getPath(otherTypeLibrary.getFilepathUri());
     Files.createDirectories(libraryPath);
     var movieFolder = libraryPath.resolve("Test Movie");
     Files.createDirectory(movieFolder);
@@ -681,7 +681,7 @@ class LibraryManagementServiceTest {
     @DisplayName("Should throw LibraryAlreadyExistsException when filepath already exists")
     void shouldThrowLibraryAlreadyExistsExceptionWhenFilepathExists() throws IOException {
       var existingLibrary = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
-      var existingFilepath = existingLibrary.getFilepath();
+      var existingFilepath = existingLibrary.getFilepathUri();
 
       var libraryPath = fileSystem.getPath(existingFilepath);
       Files.createDirectories(libraryPath);
@@ -760,7 +760,7 @@ class LibraryManagementServiceTest {
       var events = capturingEventPublisher.getEventsOfType(LibraryAddedEvent.class);
       assertThat(events).hasSize(1);
       assertThat(events.getFirst().libraryId()).isEqualTo(savedLibrary.getId());
-      assertThat(events.getFirst().filepath()).isEqualTo(newLibraryPath.toString());
+      assertThat(events.getFirst().filepathUri()).isEqualTo(newLibraryPath.toString());
     }
 
     @Test
@@ -865,7 +865,7 @@ class LibraryManagementServiceTest {
         "Should publish LibraryRemovedEvent with correct filepath and media file IDs when library is removed")
     void shouldPublishLibraryRemovedEventWhenLibraryIsRemoved() {
       var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
-      var expectedFilepath = library.getFilepath();
+      var expectedFilepath = library.getFilepathUri();
 
       var mediaFile =
           fakeMediaFileRepository.save(
@@ -880,7 +880,7 @@ class LibraryManagementServiceTest {
 
       var events = capturingEventPublisher.getEventsOfType(LibraryRemovedEvent.class);
       assertThat(events).hasSize(1);
-      assertThat(events.getFirst().filepath()).isEqualTo(expectedFilepath);
+      assertThat(events.getFirst().filepathUri()).isEqualTo(expectedFilepath);
       assertThat(events.getFirst().mediaFileIds()).containsExactly(mediaFile.getId());
     }
 
@@ -927,7 +927,7 @@ class LibraryManagementServiceTest {
   private Path createRootLibraryDirectory() throws IOException {
     var library = fakeLibraryRepository.findById(savedLibraryId);
 
-    var path = fileSystem.getPath(library.orElseThrow().getFilepath());
+    var path = fileSystem.getPath(library.orElseThrow().getFilepathUri());
     Files.createDirectories(path);
 
     return path;

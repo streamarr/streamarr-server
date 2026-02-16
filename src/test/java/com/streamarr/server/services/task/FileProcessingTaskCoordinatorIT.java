@@ -50,7 +50,7 @@ class FileProcessingTaskCoordinatorIT extends AbstractIntegrationTest {
         libraryRepository.saveAndFlush(
             Library.builder()
                 .name("Test Library")
-                .filepath("/media/movies")
+                .filepathUri("/media/movies")
                 .backend(LibraryBackend.LOCAL)
                 .status(LibraryStatus.HEALTHY)
                 .type(MediaType.MOVIE)

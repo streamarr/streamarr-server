@@ -43,7 +43,7 @@ class LibraryManagementServiceIT extends AbstractIntegrationTest {
         libraryRepository.saveAndFlush(
             Library.builder()
                 .name("Race Condition Test Library")
-                .filepath(tempDir.toString())
+                .filepathUri(tempDir.toString())
                 .backend(LibraryBackend.LOCAL)
                 .status(LibraryStatus.HEALTHY)
                 .type(MediaType.MOVIE)

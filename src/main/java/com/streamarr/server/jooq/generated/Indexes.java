@@ -72,7 +72,7 @@ public class Indexes {
     public static final Index IDX_SERIES_PERSON_SERIES_ID = Internal.createIndex(DSL.name("idx_series_person_series_id"), SeriesPerson.SERIES_PERSON, new OrderField[] { SeriesPerson.SERIES_PERSON.SERIES_ID }, false);
     public static final Index IMAGE_ENTITY_ID_IMAGE_TYPE_VARIANT_IDX = Internal.createIndex(DSL.name("image_entity_id_image_type_variant_idx"), Image.IMAGE, new OrderField[] { Image.IMAGE.ENTITY_ID, Image.IMAGE.IMAGE_TYPE, Image.IMAGE.VARIANT }, true);
     public static final Index IMAGE_ENTITY_TYPE_ENTITY_ID_IDX = Internal.createIndex(DSL.name("image_entity_type_entity_id_idx"), Image.IMAGE, new OrderField[] { Image.IMAGE.ENTITY_TYPE, Image.IMAGE.ENTITY_ID }, false);
-    public static final Index LIBRARY_FILE_PATH_IDX = Internal.createIndex(DSL.name("library_file_path_idx"), Library.LIBRARY, new OrderField[] { Library.LIBRARY.FILEPATH }, true);
+    public static final Index LIBRARY_FILEPATH_URI_IDX = Internal.createIndex(DSL.name("library_filepath_uri_idx"), Library.LIBRARY, new OrderField[] { Library.LIBRARY.FILEPATH_URI }, true);
     public static final Index MEDIA_FILE_FILEPATH_URI_IDX = Internal.createIndex(DSL.name("media_file_filepath_uri_idx"), MediaFile.MEDIA_FILE, new OrderField[] { MediaFile.MEDIA_FILE.FILEPATH_URI }, true);
     public static final Index SCHEMA_HISTORY_S_IDX = Internal.createIndex(DSL.name("schema_history_s_idx"), SchemaHistory.SCHEMA_HISTORY, new OrderField[] { SchemaHistory.SCHEMA_HISTORY.SUCCESS }, false);
 }

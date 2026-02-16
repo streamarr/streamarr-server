@@ -151,7 +151,9 @@ class DirectoryWatchingServiceTest {
   @DisplayName("Should not block calling thread when initializing with existing libraries")
   void shouldNotBlockCallingThreadWhenInitializingWithExistingLibraries() {
     fakeLibraryRepository.save(
-        LibraryFixtureCreator.buildFakeLibrary().toBuilder().filepath(tempDir.toString()).build());
+        LibraryFixtureCreator.buildFakeLibrary().toBuilder()
+            .filepathUri(tempDir.toString())
+            .build());
     var slowService = buildSlowSetupService();
 
     assertTimeout(Duration.ofMillis(500), slowService::afterPropertiesSet);
@@ -172,7 +174,9 @@ class DirectoryWatchingServiceTest {
   @DisplayName("Should not propagate exception when watcher setup fails on initialization")
   void shouldNotPropagateExceptionWhenSetupFailsOnInitialization() {
     fakeLibraryRepository.save(
-        LibraryFixtureCreator.buildFakeLibrary().toBuilder().filepath(tempDir.toString()).build());
+        LibraryFixtureCreator.buildFakeLibrary().toBuilder()
+            .filepathUri(tempDir.toString())
+            .build());
     var failingService = buildFailingSetupService();
 
     assertThatNoException().isThrownBy(failingService::afterPropertiesSet);
