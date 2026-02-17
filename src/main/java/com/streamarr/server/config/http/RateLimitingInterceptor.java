@@ -11,8 +11,8 @@ public class RateLimitingInterceptor implements Methanol.Interceptor {
 
   private final RateLimiter rateLimiter;
 
-  public RateLimitingInterceptor(double permitsPerSecond) {
-    this.rateLimiter = RateLimiter.create(permitsPerSecond);
+  public RateLimitingInterceptor(double requestsPerSecond) {
+    this.rateLimiter = RateLimiter.create(requestsPerSecond);
   }
 
   @Override

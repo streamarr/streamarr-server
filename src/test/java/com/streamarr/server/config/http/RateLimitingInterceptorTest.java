@@ -26,8 +26,8 @@ class RateLimitingInterceptorTest {
     var response = Mockito.mock(HttpResponse.class);
     Mockito.when(chain.forward(Mockito.any())).thenReturn(response);
 
-    // Exhaust burst capacity (up to rate * maxBurstSeconds stored permits) so that
-    // subsequent calls are fully governed by the token-bucket rate
+    // Exhaust burst capacity so that subsequent calls are fully governed by the
+    // token-bucket rate
     for (int i = 0; i < (int) rate + 2; i++) {
       interceptor.intercept(request, chain);
     }
