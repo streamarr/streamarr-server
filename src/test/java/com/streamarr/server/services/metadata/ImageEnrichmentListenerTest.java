@@ -254,4 +254,44 @@ class ImageEnrichmentListenerTest {
               assertThat(images).isNotEmpty();
             });
   }
+
+  @Test
+  @DisplayName("Should still process images when lock is briefly held by another thread")
+  void shouldStillProcessImagesWhenLockIsBrieflyHeldByAnotherThread() throws InterruptedException {
+    var entityId = UUID.randomUUID();
+    tmdbHttpService.setImageData(createTestImage(600, 900));
+
+    var mutexFactoryProvider = new MutexFactoryProvider();
+    var mutex = mutexFactoryProvider.<String>getMutexFactory().getMutex(entityId.toString());
+
+    var imageProperties = new ImageProperties("/data/images");
+    var localImageService =
+        new ImageService(imageRepository, new ImageVariantService(), imageProperties, fileSystem);
+    var testListener =
+        new ImageEnrichmentListener(tmdbHttpService, localImageService, mutexFactoryProvider);
+
+    // Hold the lock briefly to verify lockInterruptibly() works in the contested path
+    mutex.lock();
+
+    var event =
+        new MetadataEnrichedEvent(
+            entityId,
+            ImageEntityType.MOVIE,
+            List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")));
+
+    testListener.onMetadataEnriched(event);
+
+    // Release after a short delay so the enrichment thread can proceed
+    Thread.sleep(100);
+    mutex.unlock();
+
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () -> {
+              var images =
+                  imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
+              assertThat(images).isNotEmpty();
+            });
+  }
 }

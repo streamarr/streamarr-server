@@ -41,21 +41,29 @@ public class ImageEnrichmentListener {
   private void enrichImages(MetadataEnrichedEvent event) {
     var mutex = mutexFactory.getMutex(event.entityId().toString());
 
-    mutex.lock();
     try {
-      var existingImages = imageService.findByEntity(event.entityId(), event.entityType());
+      mutex.lockInterruptibly();
 
-      if (!existingImages.isEmpty()) {
-        log.debug(
-            "Images already exist for entity {} ({}), skipping",
-            event.entityId(),
-            event.entityType());
-        return;
+      try {
+        var existingImages = imageService.findByEntity(event.entityId(), event.entityType());
+
+        if (!existingImages.isEmpty()) {
+          log.debug(
+              "Images already exist for entity {} ({}), skipping",
+              event.entityId(),
+              event.entityType());
+          return;
+        }
+
+        downloadAllImages(event);
+      } finally {
+        if (mutex.isHeldByCurrentThread()) {
+          mutex.unlock();
+        }
       }
-
-      downloadAllImages(event);
-    } finally {
-      mutex.unlock();
+    } catch (InterruptedException _) {
+      Thread.currentThread().interrupt();
+      log.warn("Image enrichment interrupted for entity {}", event.entityId());
     }
   }
 
