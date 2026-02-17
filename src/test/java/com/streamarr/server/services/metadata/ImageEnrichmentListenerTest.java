@@ -270,7 +270,6 @@ class ImageEnrichmentListenerTest {
     var testListener =
         new ImageEnrichmentListener(tmdbHttpService, localImageService, mutexFactoryProvider);
 
-    // Hold the lock briefly to verify lockInterruptibly() works in the contested path
     mutex.lock();
 
     var event =
@@ -281,7 +280,6 @@ class ImageEnrichmentListenerTest {
 
     testListener.onMetadataEnriched(event);
 
-    // Release after a short delay so the enrichment thread can proceed
     Thread.sleep(100);
     mutex.unlock();
 

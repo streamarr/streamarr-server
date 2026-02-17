@@ -136,11 +136,9 @@ class MovieFileProcessorTest {
 
     when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
 
-    // Default: search returns empty for any non-matching args
     when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
         .thenReturn(Optional.empty());
 
-    // Only match when folder-derived title and year are used
     when(tmdbMovieProvider.search(
             argThat(r -> "Inception".equals(r.title()) && "2010".equals(r.year()))))
         .thenReturn(
@@ -157,9 +155,6 @@ class MovieFileProcessorTest {
     movieFileProcessor.process(library, mediaFile);
 
     assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
-        .as(
-            "Search should succeed with folder-derived args; status stays UNMATCHED because"
-                + " getMetadata returns empty (not METADATA_SEARCH_FAILED)")
         .isNotEqualTo(MediaFileStatus.METADATA_SEARCH_FAILED);
   }
 }
