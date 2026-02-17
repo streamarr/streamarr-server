@@ -5,6 +5,7 @@ import static org.jooq.impl.DSL.inline;
 
 import com.streamarr.server.domain.task.FileProcessingTask;
 import com.streamarr.server.jooq.generated.enums.FileProcessingTaskStatus;
+import com.streamarr.server.jooq.generated.tables.records.FileProcessingTaskRecord;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import jakarta.persistence.Query;
@@ -50,15 +51,15 @@ public class FileProcessingTaskRepositoryCustomImpl implements FileProcessingTas
 
     var taskId = ids.getFirst();
 
-    context
+    return context
         .update(FILE_PROCESSING_TASK)
         .set(FILE_PROCESSING_TASK.STATUS, inline(FileProcessingTaskStatus.PROCESSING))
         .set(FILE_PROCESSING_TASK.OWNER_INSTANCE_ID, ownerInstanceId)
         .set(FILE_PROCESSING_TASK.LEASE_EXPIRES_AT, leaseExpiresAt.atOffset(ZoneOffset.UTC))
         .where(FILE_PROCESSING_TASK.ID.eq(taskId))
-        .execute();
-
-    return Optional.of(entityManager.find(FileProcessingTask.class, taskId));
+        .returning()
+        .fetchOptional()
+        .map(FileProcessingTaskRepositoryCustomImpl::toEntity);
   }
 
   @Override
@@ -89,15 +90,15 @@ public class FileProcessingTaskRepositoryCustomImpl implements FileProcessingTas
       return List.of();
     }
 
-    context
+    return context
         .update(FILE_PROCESSING_TASK)
         .set(FILE_PROCESSING_TASK.STATUS, inline(FileProcessingTaskStatus.PENDING))
         .set(FILE_PROCESSING_TASK.OWNER_INSTANCE_ID, ownerInstanceId)
         .set(FILE_PROCESSING_TASK.LEASE_EXPIRES_AT, leaseExpiresAt.atOffset(ZoneOffset.UTC))
         .where(FILE_PROCESSING_TASK.ID.in(ids))
-        .execute();
-
-    return ids.stream().map(id -> entityManager.find(FileProcessingTask.class, id)).toList();
+        .returning()
+        .fetch()
+        .map(FileProcessingTaskRepositoryCustomImpl::toEntity);
   }
 
   @Override
@@ -114,45 +115,55 @@ public class FileProcessingTaskRepositoryCustomImpl implements FileProcessingTas
   @Override
   @Transactional
   public Optional<FileProcessingTask> completeTask(UUID taskId, Instant completedOn) {
-    var updated =
-        context
-            .update(FILE_PROCESSING_TASK)
-            .set(FILE_PROCESSING_TASK.STATUS, inline(FileProcessingTaskStatus.COMPLETED))
-            .set(FILE_PROCESSING_TASK.COMPLETED_ON, completedOn.atOffset(ZoneOffset.UTC))
-            .set(FILE_PROCESSING_TASK.OWNER_INSTANCE_ID, (String) null)
-            .set(FILE_PROCESSING_TASK.LEASE_EXPIRES_AT, (OffsetDateTime) null)
-            .where(FILE_PROCESSING_TASK.ID.eq(taskId))
-            .and(FILE_PROCESSING_TASK.STATUS.in(ACTIVE_STATUSES))
-            .execute();
-
-    if (updated == 0) {
-      return Optional.empty();
-    }
-
-    return Optional.of(entityManager.find(FileProcessingTask.class, taskId));
+    return context
+        .update(FILE_PROCESSING_TASK)
+        .set(FILE_PROCESSING_TASK.STATUS, inline(FileProcessingTaskStatus.COMPLETED))
+        .set(FILE_PROCESSING_TASK.COMPLETED_ON, completedOn.atOffset(ZoneOffset.UTC))
+        .set(FILE_PROCESSING_TASK.OWNER_INSTANCE_ID, (String) null)
+        .set(FILE_PROCESSING_TASK.LEASE_EXPIRES_AT, (OffsetDateTime) null)
+        .where(FILE_PROCESSING_TASK.ID.eq(taskId))
+        .and(FILE_PROCESSING_TASK.STATUS.in(ACTIVE_STATUSES))
+        .returning()
+        .fetchOptional()
+        .map(FileProcessingTaskRepositoryCustomImpl::toEntity);
   }
 
   @Override
   @Transactional
   public Optional<FileProcessingTask> failTask(
       UUID taskId, String errorMessage, Instant completedOn) {
-    var updated =
-        context
-            .update(FILE_PROCESSING_TASK)
-            .set(FILE_PROCESSING_TASK.STATUS, inline(FileProcessingTaskStatus.FAILED))
-            .set(FILE_PROCESSING_TASK.ERROR_MESSAGE, errorMessage)
-            .set(FILE_PROCESSING_TASK.COMPLETED_ON, completedOn.atOffset(ZoneOffset.UTC))
-            .set(FILE_PROCESSING_TASK.OWNER_INSTANCE_ID, (String) null)
-            .set(FILE_PROCESSING_TASK.LEASE_EXPIRES_AT, (OffsetDateTime) null)
-            .where(FILE_PROCESSING_TASK.ID.eq(taskId))
-            .and(FILE_PROCESSING_TASK.STATUS.in(ACTIVE_STATUSES))
-            .execute();
+    return context
+        .update(FILE_PROCESSING_TASK)
+        .set(FILE_PROCESSING_TASK.STATUS, inline(FileProcessingTaskStatus.FAILED))
+        .set(FILE_PROCESSING_TASK.ERROR_MESSAGE, errorMessage)
+        .set(FILE_PROCESSING_TASK.COMPLETED_ON, completedOn.atOffset(ZoneOffset.UTC))
+        .set(FILE_PROCESSING_TASK.OWNER_INSTANCE_ID, (String) null)
+        .set(FILE_PROCESSING_TASK.LEASE_EXPIRES_AT, (OffsetDateTime) null)
+        .where(FILE_PROCESSING_TASK.ID.eq(taskId))
+        .and(FILE_PROCESSING_TASK.STATUS.in(ACTIVE_STATUSES))
+        .returning()
+        .fetchOptional()
+        .map(FileProcessingTaskRepositoryCustomImpl::toEntity);
+  }
 
-    if (updated == 0) {
-      return Optional.empty();
-    }
+  private static FileProcessingTask toEntity(FileProcessingTaskRecord record) {
+    return FileProcessingTask.builder()
+        .id(record.getId())
+        .filepathUri(record.getFilepathUri())
+        .libraryId(record.getLibraryId())
+        .status(
+            com.streamarr.server.domain.task.FileProcessingTaskStatus.valueOf(
+                record.getStatus().getLiteral()))
+        .ownerInstanceId(record.getOwnerInstanceId())
+        .leaseExpiresAt(toInstant(record.getLeaseExpiresAt()))
+        .errorMessage(record.getErrorMessage())
+        .createdOn(toInstant(record.getCreatedOn()))
+        .completedOn(toInstant(record.getCompletedOn()))
+        .build();
+  }
 
-    return Optional.of(entityManager.find(FileProcessingTask.class, taskId));
+  private static Instant toInstant(OffsetDateTime odt) {
+    return odt != null ? odt.toInstant() : null;
   }
 
   @SuppressWarnings("unchecked")
