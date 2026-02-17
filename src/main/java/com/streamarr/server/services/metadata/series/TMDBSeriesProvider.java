@@ -60,7 +60,7 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
 
   public Optional<RemoteSearchResult> search(VideoFileParserResult videoInformation) {
     return searchDelegate.search(
-        videoInformation, this::extractFindResult, this::lookupByDirectTmdbId, this::searchByText);
+        videoInformation, this::extractFindResult, this::lookupAndCacheByDirectTmdbId, this::searchByText);
   }
 
   private Optional<RemoteSearchResult> extractFindResult(TmdbFindResults findResults) {
@@ -77,7 +77,7 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
             .build());
   }
 
-  private RemoteSearchResult lookupByDirectTmdbId(String externalId)
+  private RemoteSearchResult lookupAndCacheByDirectTmdbId(String externalId)
       throws IOException, InterruptedException {
     var tmdbSeries = theMovieDatabaseHttpService.getTvSeriesMetadata(externalId);
     var resolvedId = String.valueOf(tmdbSeries.getId());

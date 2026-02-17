@@ -2,8 +2,9 @@ package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -175,7 +176,7 @@ class SeriesFileProcessorTest {
 
     when(seriesService.findByTmdbId("2224")).thenReturn(Optional.of(series));
 
-    when(seriesMetadataProvider.resolveSeasonNumber(any(UUID.class), anyString(), anyInt()))
+    when(seriesMetadataProvider.resolveSeasonNumber(isNull(), eq("2224"), eq(2020)))
         .thenReturn(OptionalInt.empty());
 
     seriesFileProcessor.process(library, mediaFile);
@@ -214,7 +215,7 @@ class SeriesFileProcessorTest {
 
     when(seriesService.findByTmdbId("93544")).thenReturn(Optional.of(series));
 
-    when(seriesMetadataProvider.getSeasonDetails(any(UUID.class), anyString(), anyInt()))
+    when(seriesMetadataProvider.getSeasonDetails(isNull(), eq("93544"), eq(4)))
         .thenReturn(Optional.empty());
 
     seriesFileProcessor.process(library, mediaFile);
