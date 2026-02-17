@@ -41,14 +41,16 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
   private final TheMovieDatabaseHttpService theMovieDatabaseHttpService;
   private final TmdbSearchDelegate searchDelegate;
 
-  private final ConcurrentHashMap<String, TmdbMovie> directLookupCache =
-      new ConcurrentHashMap<>();
+  private final ConcurrentHashMap<String, TmdbMovie> directLookupCache = new ConcurrentHashMap<>();
 
   @Getter private final ExternalAgentStrategy agentStrategy = ExternalAgentStrategy.TMDB;
 
   public Optional<RemoteSearchResult> search(VideoFileParserResult videoInformation) {
     return searchDelegate.search(
-        videoInformation, this::extractFindResult, this::lookupAndCacheByDirectTmdbId, this::searchByText);
+        videoInformation,
+        this::extractFindResult,
+        this::lookupAndCacheByDirectTmdbId,
+        this::searchByText);
   }
 
   private Optional<RemoteSearchResult> extractFindResult(TmdbFindResults findResults) {

@@ -19,6 +19,7 @@ import java.net.http.HttpResponse;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
@@ -45,7 +46,7 @@ public class TheMovieDatabaseHttpService implements TmdbImageDownloader {
       @Value("${tmdb.api.token:}") String tmdbApiToken,
       @Value("${tmdb.api.base-url:https://api.themoviedb.org/3}") String tmdbApiBaseUrl,
       @Value("${tmdb.image.base-url:https://image.tmdb.org/t/p/original}") String tmdbImageBaseUrl,
-      HttpClient client,
+      @Qualifier("tmdb") HttpClient client,
       ObjectMapper objectMapper) {
     this.tmdbApiToken = tmdbApiToken;
     this.tmdbApiBaseUrl = tmdbApiBaseUrl;

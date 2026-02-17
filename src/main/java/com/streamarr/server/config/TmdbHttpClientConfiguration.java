@@ -6,16 +6,17 @@ import com.github.mizosoft.methanol.RetryInterceptor.BackoffStrategy;
 import com.streamarr.server.config.http.RateLimitingInterceptor;
 import java.net.http.HttpClient;
 import java.time.Duration;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
-public class HttpClientConfiguration {
+public class TmdbHttpClientConfiguration {
 
   @Bean
-  HttpClient httpClient(
-      @Value("${tmdb.api.requests-per-second:35}") double requestsPerSecond) {
+  @Qualifier("tmdb")
+  HttpClient tmdbHttpClient(@Value("${tmdb.api.requests-per-second:35}") double requestsPerSecond) {
     var retryInterceptor =
         RetryInterceptor.newBuilder()
             .maxRetries(5)

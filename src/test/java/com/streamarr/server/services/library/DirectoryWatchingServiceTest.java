@@ -195,8 +195,7 @@ class DirectoryWatchingServiceTest {
         new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
         null) {
       @Override
-      public void setup(List<Library> libraries)
-          throws IOException {
+      public void setup(List<Library> libraries) throws IOException {
         throw new IOException("simulated failure");
       }
     };
@@ -210,8 +209,7 @@ class DirectoryWatchingServiceTest {
         new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
         null) {
       @Override
-      public void setup(List<Library> libraries)
-          throws IOException {
+      public void setup(List<Library> libraries) throws IOException {
         await().pollDelay(Duration.ofMillis(5_000)).until(() -> true);
       }
     };

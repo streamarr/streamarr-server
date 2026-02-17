@@ -136,8 +136,7 @@ class MovieFileProcessorTest {
 
     when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
 
-    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
-        .thenReturn(Optional.empty());
+    when(tmdbMovieProvider.search(any(VideoFileParserResult.class))).thenReturn(Optional.empty());
 
     when(tmdbMovieProvider.search(
             argThat(r -> "Inception".equals(r.title()) && "2010".equals(r.year()))))

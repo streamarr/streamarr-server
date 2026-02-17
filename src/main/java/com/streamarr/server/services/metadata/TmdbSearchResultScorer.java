@@ -78,7 +78,9 @@ public final class TmdbSearchResultScorer {
     var titleScore =
         normalizedTitle.isEmpty() ? 0.0 : computeEnsembleScore(normalizedParsed, normalizedTitle);
     var originalScore =
-        normalizedOriginal.isEmpty() ? 0.0 : computeEnsembleScore(normalizedParsed, normalizedOriginal);
+        normalizedOriginal.isEmpty()
+            ? 0.0
+            : computeEnsembleScore(normalizedParsed, normalizedOriginal);
 
     return Math.max(titleScore, originalScore);
   }

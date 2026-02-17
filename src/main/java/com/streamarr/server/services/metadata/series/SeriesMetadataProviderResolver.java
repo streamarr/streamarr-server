@@ -71,7 +71,8 @@ public class SeriesMetadataProviderResolver {
       return OptionalInt.of(parsedSeasonNumber);
     }
 
-    return optionalProvider.get()
+    return optionalProvider
+        .get()
         .resolveSeasonNumber(library.getId(), seriesExternalId, parsedSeasonNumber);
   }
 

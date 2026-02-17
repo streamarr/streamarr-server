@@ -60,7 +60,10 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
 
   public Optional<RemoteSearchResult> search(VideoFileParserResult videoInformation) {
     return searchDelegate.search(
-        videoInformation, this::extractFindResult, this::lookupAndCacheByDirectTmdbId, this::searchByText);
+        videoInformation,
+        this::extractFindResult,
+        this::lookupAndCacheByDirectTmdbId,
+        this::searchByText);
   }
 
   private Optional<RemoteSearchResult> extractFindResult(TmdbFindResults findResults) {
