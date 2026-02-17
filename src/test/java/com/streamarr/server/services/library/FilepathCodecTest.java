@@ -49,6 +49,14 @@ class FilepathCodecTest {
   }
 
   @Test
+  @DisplayName("Should produce percent-encoded URI when encoding path with spaces")
+  void shouldProducePercentEncodedUriWhenEncodingPathWithSpaces() {
+    var encoded = FilepathCodec.encode(Path.of("/media/My Movies"));
+
+    assertThat(encoded).isEqualTo("file:///media/My%20Movies");
+  }
+
+  @Test
   @DisplayName("Should fall back to plain path when no URI scheme present")
   void shouldFallBackToPlainPathWhenNoUriScheme() throws IOException {
     try (FileSystem jimfs = Jimfs.newFileSystem(Configuration.unix())) {
