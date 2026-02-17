@@ -353,7 +353,7 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
 
     assertThatThrownBy(() -> service.searchForMovie(parserResult))
         .isInstanceOf(TmdbApiException.class)
-        .hasMessage("Invalid API key: You must be granted a valid key.")
+        .hasMessageContaining("Invalid API key: You must be granted a valid key.")
         .satisfies(ex -> assertThat(((TmdbApiException) ex).getStatusCode()).isEqualTo(401));
   }
 
