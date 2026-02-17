@@ -6,6 +6,7 @@ import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.ContentRating;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.services.library.events.ScanEndedEvent;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
@@ -29,6 +30,7 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 @Slf4j
@@ -160,6 +162,11 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
     }
 
     return Optional.empty();
+  }
+
+  @EventListener
+  public void onScanEnded(ScanEndedEvent event) {
+    directLookupCache.clear();
   }
 
   private Set<ExternalIdentifier> mapExternalIds(TmdbMovie tmdbMovie) {
