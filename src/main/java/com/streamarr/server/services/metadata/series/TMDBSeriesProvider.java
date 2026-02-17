@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
@@ -50,9 +51,10 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
 
   private final ConcurrentHashMap<String, TmdbTvSeries> directLookupCache =
       new ConcurrentHashMap<>();
-  private final ConcurrentHashMap<String, List<TmdbTvSeasonSummary>> seasonSummariesCache =
+  private final ConcurrentHashMap<UUID, ConcurrentHashMap<String, List<TmdbTvSeasonSummary>>>
+      seasonSummariesByLibrary = new ConcurrentHashMap<>();
+  private final ConcurrentHashMap<UUID, Set<String>> failedSeasonDetailsByLibrary =
       new ConcurrentHashMap<>();
-  private final Set<String> failedSeasonDetailsCache = ConcurrentHashMap.newKeySet();
 
   @Getter private final ExternalAgentStrategy agentStrategy = ExternalAgentStrategy.TMDB;
 
@@ -111,9 +113,11 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
               ? cached
               : theMovieDatabaseHttpService.getTvSeriesMetadata(remoteSearchResult.externalId());
 
-      seasonSummariesCache.put(
-          remoteSearchResult.externalId(),
-          Optional.ofNullable(tmdbSeries.getSeasons()).orElse(Collections.emptyList()));
+      seasonSummariesByLibrary
+          .computeIfAbsent(library.getId(), _ -> new ConcurrentHashMap<>())
+          .put(
+              remoteSearchResult.externalId(),
+              Optional.ofNullable(tmdbSeries.getSeasons()).orElse(Collections.emptyList()));
 
       var credits = Optional.ofNullable(tmdbSeries.getCredits());
       var castList = credits.map(TmdbCredits::getCast).orElse(Collections.emptyList());
@@ -184,10 +188,13 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
     return Optional.empty();
   }
 
-  public Optional<SeasonDetails> getSeasonDetails(String seriesExternalId, int seasonNumber) {
+  public Optional<SeasonDetails> getSeasonDetails(
+      UUID libraryId, String seriesExternalId, int seasonNumber) {
     var cacheKey = seriesExternalId + ":" + seasonNumber;
+    var failedCache =
+        failedSeasonDetailsByLibrary.computeIfAbsent(libraryId, _ -> ConcurrentHashMap.newKeySet());
 
-    if (failedSeasonDetailsCache.contains(cacheKey)) {
+    if (failedCache.contains(cacheKey)) {
       return Optional.empty();
     }
 
@@ -217,7 +224,7 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
       return Optional.of(seasonBuilder.build());
 
     } catch (IOException ex) {
-      failedSeasonDetailsCache.add(cacheKey);
+      failedCache.add(cacheKey);
       log.error(
           "Failure fetching season {} details for series TMDB id '{}'",
           seasonNumber,
@@ -236,8 +243,9 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
   }
 
   @Override
-  public OptionalInt resolveSeasonNumber(String seriesExternalId, int parsedSeasonNumber) {
-    var summaries = getOrFetchSeasonSummaries(seriesExternalId);
+  public OptionalInt resolveSeasonNumber(
+      UUID libraryId, String seriesExternalId, int parsedSeasonNumber) {
+    var summaries = getOrFetchSeasonSummaries(libraryId, seriesExternalId);
 
     if (summaries.stream().anyMatch(s -> s.getSeasonNumber() == parsedSeasonNumber)) {
       return OptionalInt.of(parsedSeasonNumber);
@@ -260,18 +268,21 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
   @EventListener
   public void onScanEnded(ScanEndedEvent event) {
     directLookupCache.clear();
-    seasonSummariesCache.clear();
-    failedSeasonDetailsCache.clear();
+    seasonSummariesByLibrary.remove(event.libraryId());
+    failedSeasonDetailsByLibrary.remove(event.libraryId());
   }
 
-  private List<TmdbTvSeasonSummary> getOrFetchSeasonSummaries(String seriesExternalId) {
-    var cached = seasonSummariesCache.get(seriesExternalId);
+  private List<TmdbTvSeasonSummary> getOrFetchSeasonSummaries(
+      UUID libraryId, String seriesExternalId) {
+    var libraryCache =
+        seasonSummariesByLibrary.computeIfAbsent(libraryId, _ -> new ConcurrentHashMap<>());
+    var cached = libraryCache.get(seriesExternalId);
     if (cached != null) {
       return cached;
     }
 
     var fetched = fetchSeasonSummaries(seriesExternalId);
-    var existing = seasonSummariesCache.putIfAbsent(seriesExternalId, fetched);
+    var existing = libraryCache.putIfAbsent(seriesExternalId, fetched);
     return existing != null ? existing : fetched;
   }
 

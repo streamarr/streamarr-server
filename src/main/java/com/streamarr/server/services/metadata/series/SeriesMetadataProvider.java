@@ -4,12 +4,15 @@ import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import java.util.Optional;
 import java.util.OptionalInt;
+import java.util.UUID;
 
 public interface SeriesMetadataProvider extends MetadataProvider<Series> {
 
-  Optional<SeasonDetails> getSeasonDetails(String seriesExternalId, int seasonNumber);
+  Optional<SeasonDetails> getSeasonDetails(
+      UUID libraryId, String seriesExternalId, int seasonNumber);
 
-  default OptionalInt resolveSeasonNumber(String seriesExternalId, int parsedSeasonNumber) {
+  default OptionalInt resolveSeasonNumber(
+      UUID libraryId, String seriesExternalId, int parsedSeasonNumber) {
     return OptionalInt.of(parsedSeasonNumber);
   }
 }

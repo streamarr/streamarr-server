@@ -47,7 +47,7 @@ class TMDBSeriesProviderTest {
 
     fakeTmdbHttpService.setTvSeriesMetadata("1396", series);
 
-    var result = provider.resolveSeasonNumber("1396", 2020);
+    var result = provider.resolveSeasonNumber(UUID.randomUUID(), "1396", 2020);
 
     assertThat(result).isEqualTo(OptionalInt.of(1));
   }
@@ -62,8 +62,10 @@ class TMDBSeriesProviderTest {
                     TmdbTvSeasonSummary.builder().seasonNumber(1).airDate("2020-01-15").build()))
             .build();
 
+    var libraryId = UUID.randomUUID();
+
     fakeTmdbHttpService.setTvSeriesMetadata("1396", initialSeries);
-    provider.resolveSeasonNumber("1396", 2020);
+    provider.resolveSeasonNumber(libraryId, "1396", 2020);
 
     var updatedSeries =
         TmdbTvSeries.builder()
@@ -73,9 +75,9 @@ class TMDBSeriesProviderTest {
             .build();
 
     fakeTmdbHttpService.setTvSeriesMetadata("1396", updatedSeries);
-    provider.onScanEnded(new ScanEndedEvent(UUID.randomUUID()));
+    provider.onScanEnded(new ScanEndedEvent(libraryId));
 
-    var result = provider.resolveSeasonNumber("1396", 2020);
+    var result = provider.resolveSeasonNumber(libraryId, "1396", 2020);
     assertThat(result).isEqualTo(OptionalInt.of(3));
   }
 
@@ -92,10 +94,12 @@ class TMDBSeriesProviderTest {
     fakeTmdbHttpService.setSeasonDetailsFailOnFirstCall("1396", 5);
     fakeTmdbHttpService.setTvSeasonDetails("1396", 5, validSeason);
 
-    var firstResult = provider.getSeasonDetails("1396", 5);
+    var libraryId = UUID.randomUUID();
+
+    var firstResult = provider.getSeasonDetails(libraryId, "1396", 5);
     assertThat(firstResult).isEmpty();
 
-    var secondResult = provider.getSeasonDetails("1396", 5);
+    var secondResult = provider.getSeasonDetails(libraryId, "1396", 5);
     assertThat(secondResult)
         .as("Second call should return empty from negative cache despite TMDB now having data")
         .isEmpty();
@@ -137,15 +141,17 @@ class TMDBSeriesProviderTest {
             .episodes(Collections.emptyList())
             .build();
 
+    var libraryId = UUID.randomUUID();
+
     fakeTmdbHttpService.setSeasonDetailsFailOnFirstCall("1396", 5);
     fakeTmdbHttpService.setTvSeasonDetails("1396", 5, validSeason);
 
-    var firstResult = provider.getSeasonDetails("1396", 5);
+    var firstResult = provider.getSeasonDetails(libraryId, "1396", 5);
     assertThat(firstResult).isEmpty();
 
-    provider.onScanEnded(new ScanEndedEvent(UUID.randomUUID()));
+    provider.onScanEnded(new ScanEndedEvent(libraryId));
 
-    var afterClearResult = provider.getSeasonDetails("1396", 5);
+    var afterClearResult = provider.getSeasonDetails(libraryId, "1396", 5);
     assertThat(afterClearResult)
         .as("After cache clear, should fetch fresh data from TMDB")
         .isPresent();

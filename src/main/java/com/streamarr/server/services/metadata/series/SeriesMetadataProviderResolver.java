@@ -60,7 +60,7 @@ public class SeriesMetadataProviderResolver {
       return Optional.empty();
     }
 
-    return optionalProvider.get().getSeasonDetails(seriesExternalId, seasonNumber);
+    return optionalProvider.get().getSeasonDetails(library.getId(), seriesExternalId, seasonNumber);
   }
 
   public OptionalInt resolveSeasonNumber(
@@ -71,7 +71,8 @@ public class SeriesMetadataProviderResolver {
       return OptionalInt.of(parsedSeasonNumber);
     }
 
-    return optionalProvider.get().resolveSeasonNumber(seriesExternalId, parsedSeasonNumber);
+    return optionalProvider.get()
+        .resolveSeasonNumber(library.getId(), seriesExternalId, parsedSeasonNumber);
   }
 
   private Optional<SeriesMetadataProvider> getProviderForLibrary(Library library) {

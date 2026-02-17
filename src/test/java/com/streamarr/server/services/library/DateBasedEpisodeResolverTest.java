@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
+import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -176,13 +177,15 @@ class DateBasedEpisodeResolverTest {
     }
 
     @Override
-    public Optional<SeasonDetails> getSeasonDetails(String seriesExternalId, int seasonNumber) {
+    public Optional<SeasonDetails> getSeasonDetails(
+        UUID libraryId, String seriesExternalId, int seasonNumber) {
       return Optional.ofNullable(
           seasonDetailsMap.getOrDefault(seriesExternalId, Map.of()).get(seasonNumber));
     }
 
     @Override
-    public OptionalInt resolveSeasonNumber(String seriesExternalId, int parsedSeasonNumber) {
+    public OptionalInt resolveSeasonNumber(
+        UUID libraryId, String seriesExternalId, int parsedSeasonNumber) {
       var mapping = seasonMappings.getOrDefault(seriesExternalId, Map.of()).get(parsedSeasonNumber);
       return mapping != null ? OptionalInt.of(mapping) : OptionalInt.empty();
     }

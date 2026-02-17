@@ -12,6 +12,7 @@ import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -125,7 +126,8 @@ class SeriesMetadataProviderResolverTest {
     }
 
     @Override
-    public Optional<SeasonDetails> getSeasonDetails(String seriesExternalId, int seasonNumber) {
+    public Optional<SeasonDetails> getSeasonDetails(
+        UUID libraryId, String seriesExternalId, int seasonNumber) {
       return Optional.empty();
     }
 

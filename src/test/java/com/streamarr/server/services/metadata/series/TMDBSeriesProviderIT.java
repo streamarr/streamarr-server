@@ -21,7 +21,6 @@ import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.time.LocalDate;
-import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -62,7 +61,7 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
   @BeforeEach
   void resetStubs() {
     wireMock.resetAll();
-    provider.onScanEnded(new ScanEndedEvent(UUID.randomUUID()));
+    provider.onScanEnded(new ScanEndedEvent(savedLibrary.getId()));
   }
 
   @AfterAll
@@ -560,7 +559,7 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
                         }
                         """)));
 
-    var result = provider.getSeasonDetails("1396", 1);
+    var result = provider.getSeasonDetails(savedLibrary.getId(), "1396", 1);
 
     assertThat(result).isPresent();
     var season = result.get();
@@ -607,7 +606,7 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
                         }
                         """)));
 
-    var result = provider.getSeasonDetails("1396", 1);
+    var result = provider.getSeasonDetails(savedLibrary.getId(), "1396", 1);
 
     assertThat(result).isEmpty();
   }
@@ -632,7 +631,7 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
                         }
                         """)));
 
-    var result = provider.getSeasonDetails("1396", 1);
+    var result = provider.getSeasonDetails(savedLibrary.getId(), "1396", 1);
 
     assertThat(result).isPresent();
     assertThat(result.get().imageSources()).hasSize(1);
@@ -667,7 +666,7 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
                         }
                         """)));
 
-    var result = provider.getSeasonDetails("1396", 1);
+    var result = provider.getSeasonDetails(savedLibrary.getId(), "1396", 1);
 
     assertThat(result).isPresent();
     var ep1 = result.get().episodes().getFirst();
@@ -695,7 +694,7 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
                         }
                         """)));
 
-    var result = provider.getSeasonDetails("1396", 1);
+    var result = provider.getSeasonDetails(savedLibrary.getId(), "1396", 1);
 
     assertThat(result).isPresent();
     assertThat(result.get().imageSources()).isEmpty();
@@ -727,7 +726,7 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
                         }
                         """)));
 
-    var result = provider.getSeasonDetails("1396", 1);
+    var result = provider.getSeasonDetails(savedLibrary.getId(), "1396", 1);
 
     assertThat(result).isPresent();
     var ep1 = result.get().episodes().getFirst();
