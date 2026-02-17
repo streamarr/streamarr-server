@@ -14,6 +14,7 @@ import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
 import com.streamarr.server.services.ImageService;
+import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
@@ -256,19 +257,28 @@ class ImageEnrichmentListenerTest {
   }
 
   @Test
-  @DisplayName("Should still process images when lock is briefly held by another thread")
-  void shouldStillProcessImagesWhenLockIsBrieflyHeldByAnotherThread() throws InterruptedException {
+  @DisplayName("Should still process images when lock is briefly contested by another thread")
+  void shouldStillProcessImagesWhenLockIsBrieflyContestedByAnotherThread() {
     var entityId = UUID.randomUUID();
     tmdbHttpService.setImageData(createTestImage(600, 900));
 
-    var mutexFactoryProvider = new MutexFactoryProvider();
-    var mutex = mutexFactoryProvider.<String>getMutexFactory().getMutex(entityId.toString());
+    var sharedFactory = new MutexFactory<String>();
+    var mutex = sharedFactory.getMutex(entityId.toString());
+
+    var singleFactoryProvider =
+        new MutexFactoryProvider() {
+          @Override
+          @SuppressWarnings("unchecked")
+          public <K> MutexFactory<K> getMutexFactory() {
+            return (MutexFactory<K>) sharedFactory;
+          }
+        };
 
     var imageProperties = new ImageProperties("/data/images");
     var localImageService =
         new ImageService(imageRepository, new ImageVariantService(), imageProperties, fileSystem);
     var testListener =
-        new ImageEnrichmentListener(tmdbHttpService, localImageService, mutexFactoryProvider);
+        new ImageEnrichmentListener(tmdbHttpService, localImageService, singleFactoryProvider);
 
     mutex.lock();
 
@@ -280,7 +290,7 @@ class ImageEnrichmentListenerTest {
 
     testListener.onMetadataEnriched(event);
 
-    Thread.sleep(100);
+    await().atMost(Duration.ofSeconds(5)).until(mutex::hasQueuedThreads);
     mutex.unlock();
 
     await()
