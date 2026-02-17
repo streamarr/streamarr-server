@@ -6,6 +6,7 @@ import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertTimeout;
 
 import com.streamarr.server.config.LibraryScanProperties;
+import com.streamarr.server.domain.Library;
 import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
@@ -13,8 +14,10 @@ import com.streamarr.server.services.library.events.LibraryAddedEvent;
 import com.streamarr.server.services.library.events.LibraryRemovedEvent;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -52,7 +55,7 @@ class DirectoryWatchingServiceTest {
   @Test
   @DisplayName("Should skip setup when no directories are configured")
   void shouldSkipSetupWhenNoDirectoriesConfigured() {
-    assertThatCode(() -> service.setup(java.util.List.of())).doesNotThrowAnyException();
+    assertThatCode(() -> service.setup(List.of())).doesNotThrowAnyException();
   }
 
   @Test
@@ -65,7 +68,7 @@ class DirectoryWatchingServiceTest {
   @DisplayName("Should restart watcher when additional directory is added")
   void shouldRestartWatcherWhenAdditionalDirectoryAdded() throws IOException {
     var subDir = tempDir.resolve("sub");
-    java.nio.file.Files.createDirectory(subDir);
+    Files.createDirectory(subDir);
 
     service.addDirectory(tempDir);
 
@@ -84,7 +87,7 @@ class DirectoryWatchingServiceTest {
     service.addDirectory(tempDir);
 
     var otherDir = tempDir.resolve("other");
-    java.nio.file.Files.createDirectory(otherDir);
+    Files.createDirectory(otherDir);
 
     assertThatCode(() -> service.removeDirectory(otherDir)).doesNotThrowAnyException();
   }
@@ -102,7 +105,7 @@ class DirectoryWatchingServiceTest {
   @DisplayName("Should restart watcher with remaining directories after removal")
   void shouldRestartWatcherWithRemainingDirectories() throws IOException {
     var subDir = tempDir.resolve("remaining");
-    java.nio.file.Files.createDirectory(subDir);
+    Files.createDirectory(subDir);
 
     service.addDirectory(tempDir);
     service.addDirectory(subDir);
@@ -192,7 +195,7 @@ class DirectoryWatchingServiceTest {
         new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
         null) {
       @Override
-      public void setup(java.util.List<com.streamarr.server.domain.Library> libraries)
+      public void setup(List<Library> libraries)
           throws IOException {
         throw new IOException("simulated failure");
       }
@@ -207,7 +210,7 @@ class DirectoryWatchingServiceTest {
         new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
         null) {
       @Override
-      public void setup(java.util.List<com.streamarr.server.domain.Library> libraries)
+      public void setup(List<Library> libraries)
           throws IOException {
         await().pollDelay(Duration.ofMillis(5_000)).until(() -> true);
       }
