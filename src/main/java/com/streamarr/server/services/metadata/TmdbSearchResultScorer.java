@@ -76,14 +76,14 @@ public final class TmdbSearchResultScorer {
     var normalizedOriginal = normalizeTitle(candidate.originalTitle());
 
     var titleScore =
-        normalizedTitle.isEmpty() ? 0.0 : ensembleScore(normalizedParsed, normalizedTitle);
+        normalizedTitle.isEmpty() ? 0.0 : computeEnsembleScore(normalizedParsed, normalizedTitle);
     var originalScore =
-        normalizedOriginal.isEmpty() ? 0.0 : ensembleScore(normalizedParsed, normalizedOriginal);
+        normalizedOriginal.isEmpty() ? 0.0 : computeEnsembleScore(normalizedParsed, normalizedOriginal);
 
     return Math.max(titleScore, originalScore);
   }
 
-  private static double ensembleScore(String a, String b) {
+  private static double computeEnsembleScore(String a, String b) {
     return JARO_WINKLER_WEIGHT * JARO_WINKLER.apply(a, b)
         + BIGRAM_DICE_WEIGHT * bigramDice(a, b)
         + BIGRAM_JACCARD_WEIGHT * bigramJaccard(a, b);
@@ -112,10 +112,9 @@ public final class TmdbSearchResultScorer {
     var bigramsB = extractBigrams(b);
 
     var intersection = 0;
-    var bigramsBCopy = new HashMap<>(bigramsB);
 
     for (var entry : bigramsA.entrySet()) {
-      var countInB = bigramsBCopy.getOrDefault(entry.getKey(), 0);
+      var countInB = bigramsB.getOrDefault(entry.getKey(), 0);
       var overlap = Math.min(entry.getValue(), countInB);
       intersection += overlap;
     }
