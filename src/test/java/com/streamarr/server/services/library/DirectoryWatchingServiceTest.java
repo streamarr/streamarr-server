@@ -52,7 +52,7 @@ class DirectoryWatchingServiceTest {
   @Test
   @DisplayName("Should skip setup when no directories are configured")
   void shouldSkipSetupWhenNoDirectoriesConfigured() {
-    assertThatCode(() -> service.setup()).doesNotThrowAnyException();
+    assertThatCode(() -> service.setup(java.util.List.of())).doesNotThrowAnyException();
   }
 
   @Test
@@ -192,7 +192,8 @@ class DirectoryWatchingServiceTest {
         new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
         null) {
       @Override
-      public void setup() throws IOException {
+      public void setup(java.util.List<com.streamarr.server.domain.Library> libraries)
+          throws IOException {
         throw new IOException("simulated failure");
       }
     };
@@ -206,7 +207,8 @@ class DirectoryWatchingServiceTest {
         new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
         null) {
       @Override
-      public void setup() throws IOException {
+      public void setup(java.util.List<com.streamarr.server.domain.Library> libraries)
+          throws IOException {
         await().pollDelay(Duration.ofMillis(5_000)).until(() -> true);
       }
     };
