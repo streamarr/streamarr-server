@@ -259,7 +259,7 @@ class LibraryResolverTest {
             mutation {
               addLibrary(input: {
                 name: "Movies"
-                filepathUri: "/mpool/media/movies"
+                filepath: "/mpool/media/movies"
                 type: MOVIE
                 backend: LOCAL
                 externalAgentStrategy: TMDB

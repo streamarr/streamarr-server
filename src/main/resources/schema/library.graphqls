@@ -75,7 +75,7 @@ enum ExternalAgentStrategy {
 
 input AddLibraryInput {
     name: String!
-    filepathUri: String!
+    filepath: String!
     type: MediaType!
     backend: LibraryBackend!
     externalAgentStrategy: ExternalAgentStrategy
