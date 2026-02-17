@@ -175,6 +175,8 @@ class FileEventProcessor {
     log.info("Watcher event type: DELETE -- filepath: {}", path);
   }
 
+  private record LibraryWithPath(Library library, Path path) {}
+
   private Optional<UUID> resolveLibrary(Path path) {
     stateLock.readLock().lock();
 
@@ -183,14 +185,10 @@ class FileEventProcessor {
       var fs = absolutePath.getFileSystem();
 
       return cachedLibraries.stream()
-          .filter(
-              library ->
-                  absolutePath.startsWith(FilepathCodec.decode(fs, library.getFilepathUri())))
-          .max(
-              Comparator.comparingInt(
-                  library ->
-                      FilepathCodec.decode(fs, library.getFilepathUri()).toString().length()))
-          .map(Library::getId);
+          .map(lib -> new LibraryWithPath(lib, FilepathCodec.decode(fs, lib.getFilepathUri())))
+          .filter(lp -> absolutePath.startsWith(lp.path()))
+          .max(Comparator.comparingInt(lp -> lp.path().toString().length()))
+          .map(lp -> lp.library().getId());
     } finally {
       stateLock.readLock().unlock();
     }
