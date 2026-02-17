@@ -146,19 +146,19 @@ public class FileProcessingTaskRepositoryCustomImpl implements FileProcessingTas
         .map(FileProcessingTaskRepositoryCustomImpl::toEntity);
   }
 
-  private static FileProcessingTask toEntity(FileProcessingTaskRecord record) {
+  private static FileProcessingTask toEntity(FileProcessingTaskRecord taskRecord) {
     return FileProcessingTask.builder()
-        .id(record.getId())
-        .filepathUri(record.getFilepathUri())
-        .libraryId(record.getLibraryId())
+        .id(taskRecord.getId())
+        .filepathUri(taskRecord.getFilepathUri())
+        .libraryId(taskRecord.getLibraryId())
         .status(
             com.streamarr.server.domain.task.FileProcessingTaskStatus.valueOf(
-                record.getStatus().getLiteral()))
-        .ownerInstanceId(record.getOwnerInstanceId())
-        .leaseExpiresAt(toInstant(record.getLeaseExpiresAt()))
-        .errorMessage(record.getErrorMessage())
-        .createdOn(toInstant(record.getCreatedOn()))
-        .completedOn(toInstant(record.getCompletedOn()))
+                taskRecord.getStatus().getLiteral()))
+        .ownerInstanceId(taskRecord.getOwnerInstanceId())
+        .leaseExpiresAt(toInstant(taskRecord.getLeaseExpiresAt()))
+        .errorMessage(taskRecord.getErrorMessage())
+        .createdOn(toInstant(taskRecord.getCreatedOn()))
+        .completedOn(toInstant(taskRecord.getCompletedOn()))
         .build();
   }
 

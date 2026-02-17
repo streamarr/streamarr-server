@@ -463,8 +463,7 @@ class LibraryManagementServiceTest {
     var mediaFileAfterRefresh =
         fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
 
-    assertThat(mediaFileAfterRefresh).isPresent();
-    assertThat(mediaFileAfterRefresh.get()).isEqualTo(mediaFileBeforeRefresh);
+    assertThat(mediaFileAfterRefresh).contains(mediaFileBeforeRefresh);
   }
 
   @Test
@@ -536,8 +535,7 @@ class LibraryManagementServiceTest {
     var mediaFileAfterRefresh =
         fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
 
-    assertThat(mediaFileAfterRefresh).isPresent();
-    assertThat(mediaFileAfterRefresh.get()).isEqualTo(mediaFileBeforeRefresh);
+    assertThat(mediaFileAfterRefresh).contains(mediaFileBeforeRefresh);
   }
 
   @Test

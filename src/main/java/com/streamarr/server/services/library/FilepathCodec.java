@@ -25,6 +25,7 @@ public final class FilepathCodec {
         return decodeUri(fileSystem, uri);
       }
     } catch (IllegalArgumentException | FileSystemNotFoundException _) {
+      // fall through to raw path interpretation
     }
     return fileSystem.getPath(filepathUri);
   }

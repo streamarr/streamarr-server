@@ -166,6 +166,7 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
 
   @EventListener
   public void onScanEnded(ScanEndedEvent event) {
+    log.debug("Clearing movie metadata cache for library {}", event.libraryId());
     directLookupCache.clear();
   }
 

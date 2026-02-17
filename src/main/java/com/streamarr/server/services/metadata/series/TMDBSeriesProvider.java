@@ -267,6 +267,7 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
 
   @EventListener
   public void onScanEnded(ScanEndedEvent event) {
+    log.debug("Clearing series metadata cache for library {}", event.libraryId());
     directLookupCache.clear();
     seasonSummariesByLibrary.remove(event.libraryId());
     failedSeasonDetailsByLibrary.remove(event.libraryId());
