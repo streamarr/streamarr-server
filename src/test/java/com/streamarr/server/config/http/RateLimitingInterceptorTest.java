@@ -1,12 +1,13 @@
 package com.streamarr.server.config.http;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import com.github.mizosoft.methanol.Methanol;
 import java.net.URI;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -32,12 +33,22 @@ class RateLimitingInterceptorTest {
       interceptor.intercept(request, chain);
     }
 
-    var start = System.nanoTime();
-    for (int i = 0; i < 10; i++) {
-      interceptor.intercept(request, chain);
-    }
-    var elapsed = Duration.ofNanos(System.nanoTime() - start);
+    var completed = new AtomicInteger();
+    Thread.startVirtualThread(
+        () -> {
+          for (int i = 0; i < 10; i++) {
+            try {
+              interceptor.intercept(request, chain);
+            } catch (Exception e) {
+              throw new RuntimeException(e);
+            }
+            completed.incrementAndGet();
+          }
+        });
 
-    assertThat(elapsed).isGreaterThan(Duration.ofMillis(900));
+    await()
+        .atLeast(Duration.ofMillis(900))
+        .atMost(Duration.ofSeconds(5))
+        .until(() -> completed.get() == 10);
   }
 }
