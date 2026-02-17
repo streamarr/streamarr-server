@@ -12,6 +12,7 @@ import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolve
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.ExternalIdVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
+import java.nio.file.FileSystem;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -26,6 +27,7 @@ public class MovieFileProcessor {
   private final MovieMetadataProviderResolver movieMetadataProviderResolver;
   private final MovieService movieService;
   private final MediaFileRepository mediaFileRepository;
+  private final FileSystem fileSystem;
   private final MutexFactory<String> mutexFactory;
 
   public MovieFileProcessor(
@@ -34,12 +36,14 @@ public class MovieFileProcessor {
       MovieMetadataProviderResolver movieMetadataProviderResolver,
       MovieService movieService,
       MediaFileRepository mediaFileRepository,
+      FileSystem fileSystem,
       MutexFactoryProvider mutexFactoryProvider) {
     this.defaultVideoFileMetadataParser = defaultVideoFileMetadataParser;
     this.externalIdVideoFileMetadataParser = externalIdVideoFileMetadataParser;
     this.movieMetadataProviderResolver = movieMetadataProviderResolver;
     this.movieService = movieService;
     this.mediaFileRepository = mediaFileRepository;
+    this.fileSystem = fileSystem;
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
   }
 
@@ -115,7 +119,7 @@ public class MovieFileProcessor {
   }
 
   private Optional<VideoFileParserResult> parseFolderName(MediaFile mediaFile) {
-    var path = FilepathCodec.decode(mediaFile.getFilepathUri());
+    var path = FilepathCodec.decode(fileSystem, mediaFile.getFilepathUri());
     var parent = path.getParent();
 
     if (parent == null || parent.getFileName() == null) {

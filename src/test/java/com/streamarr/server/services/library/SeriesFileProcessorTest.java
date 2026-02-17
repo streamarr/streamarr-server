@@ -26,6 +26,7 @@ import com.streamarr.server.services.parsers.show.SeasonPathMetadataParser;
 import com.streamarr.server.services.parsers.show.SeriesFolderNameParser;
 import com.streamarr.server.services.parsers.show.regex.EpisodeRegexFixtures;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
+import java.nio.file.FileSystems;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalInt;
@@ -59,6 +60,7 @@ class SeriesFileProcessorTest {
           fakeMediaFileRepository,
           seasonRepository,
           episodeRepository,
+          FileSystems.getDefault(),
           new MutexFactoryProvider());
 
   @Test

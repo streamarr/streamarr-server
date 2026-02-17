@@ -117,6 +117,7 @@ class LibraryManagementServiceTest {
           fakeMovieMetadataProviderResolver,
           movieService,
           fakeMediaFileRepository,
+          fileSystem,
           new MutexFactoryProvider());
 
   private final SeriesFileProcessor seriesFileProcessor = mock(SeriesFileProcessor.class);
