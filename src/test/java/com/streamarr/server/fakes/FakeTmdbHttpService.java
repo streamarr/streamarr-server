@@ -42,7 +42,7 @@ public class FakeTmdbHttpService extends TheMovieDatabaseHttpService
   private final Set<String> seasonDetailsFirstCallFailures = new HashSet<>();
 
   public FakeTmdbHttpService() {
-    super("", "", "", 10, null, null);
+    super("", "", "", null, null);
   }
 
   // --- Image setters ---

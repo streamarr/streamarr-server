@@ -41,6 +41,7 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
     registry.add("tmdb.api.base-url", wireMock::baseUrl);
     registry.add("tmdb.image.base-url", wireMock::baseUrl);
     registry.add("tmdb.api.token", () -> "test-api-token");
+    registry.add("tmdb.api.requests-per-second", () -> "1000");
   }
 
   @Autowired private TheMovieDatabaseHttpService service;
@@ -364,7 +365,15 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
         get(urlPathEqualTo("/search/movie"))
             .inScenario("Rate Limit Recovery")
             .whenScenarioStateIs(STARTED)
-            .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "0"))
+            .willReturn(
+                aResponse()
+                    .withStatus(429)
+                    .withHeader("Retry-After", "0")
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                    {"status_message":"Your request count is over the allowed limit.","status_code":25}
+                    """))
             .willSetStateTo("Recovered"));
 
     wireMock.stubFor(
@@ -408,13 +417,21 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
   void shouldThrowTmdbApiExceptionWhenRateLimitPersistsAfterMaxRetries() {
     wireMock.stubFor(
         get(urlPathEqualTo("/search/movie"))
-            .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "0")));
+            .willReturn(
+                aResponse()
+                    .withStatus(429)
+                    .withHeader("Retry-After", "0")
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                    {"status_message":"Your request count is over the allowed limit.","status_code":25}
+                    """)));
 
     var parserResult = VideoFileParserResult.builder().title("Test").build();
 
     assertThatThrownBy(() -> service.searchForMovie(parserResult))
         .isInstanceOf(TmdbApiException.class)
-        .hasMessageContaining("retryable status persisted")
+        .hasMessageContaining("Your request count is over the allowed limit.")
         .satisfies(ex -> assertThat(((TmdbApiException) ex).getStatusCode()).isEqualTo(429));
   }
 
@@ -654,7 +671,15 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
         get(urlPathEqualTo("/rate-limited.jpg"))
             .inScenario("Image Rate Limit")
             .whenScenarioStateIs(STARTED)
-            .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "0"))
+            .willReturn(
+                aResponse()
+                    .withStatus(429)
+                    .withHeader("Retry-After", "0")
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                    {"status_message":"Your request count is over the allowed limit.","status_code":25}
+                    """))
             .willSetStateTo("Recovered"));
 
     wireMock.stubFor(
@@ -685,32 +710,57 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should succeed when rate limited for four consecutive attempts")
   void shouldSucceedWhenRateLimitedForFourConsecutiveAttempts() throws Exception {
+    var rateLimitBody =
+        """
+        {"status_message":"Your request count is over the allowed limit.","status_code":25}
+        """;
+
     wireMock.stubFor(
         get(urlPathEqualTo("/search/movie"))
             .inScenario("Four Retries")
             .whenScenarioStateIs(STARTED)
-            .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "0"))
+            .willReturn(
+                aResponse()
+                    .withStatus(429)
+                    .withHeader("Retry-After", "0")
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(rateLimitBody))
             .willSetStateTo("Retry2"));
 
     wireMock.stubFor(
         get(urlPathEqualTo("/search/movie"))
             .inScenario("Four Retries")
             .whenScenarioStateIs("Retry2")
-            .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "0"))
+            .willReturn(
+                aResponse()
+                    .withStatus(429)
+                    .withHeader("Retry-After", "0")
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(rateLimitBody))
             .willSetStateTo("Retry3"));
 
     wireMock.stubFor(
         get(urlPathEqualTo("/search/movie"))
             .inScenario("Four Retries")
             .whenScenarioStateIs("Retry3")
-            .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "0"))
+            .willReturn(
+                aResponse()
+                    .withStatus(429)
+                    .withHeader("Retry-After", "0")
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(rateLimitBody))
             .willSetStateTo("Retry4"));
 
     wireMock.stubFor(
         get(urlPathEqualTo("/search/movie"))
             .inScenario("Four Retries")
             .whenScenarioStateIs("Retry4")
-            .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "0"))
+            .willReturn(
+                aResponse()
+                    .withStatus(429)
+                    .withHeader("Retry-After", "0")
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(rateLimitBody))
             .willSetStateTo("Recovered"));
 
     wireMock.stubFor(
@@ -756,7 +806,15 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
         wireMock.stubFor(
             get(urlPathEqualTo("/search/movie"))
                 .atPriority(1)
-                .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "0")));
+                .willReturn(
+                    aResponse()
+                        .withStatus(429)
+                        .withHeader("Retry-After", "1")
+                        .withHeader("Content-Type", "application/json")
+                        .withBody(
+                            """
+                        {"status_message":"Your request count is over the allowed limit.","status_code":25}
+                        """)));
 
     wireMock.stubFor(
         get(urlPathEqualTo("/search/movie"))
