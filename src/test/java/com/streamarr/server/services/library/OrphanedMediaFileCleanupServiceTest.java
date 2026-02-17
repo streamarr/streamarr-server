@@ -74,7 +74,7 @@ class OrphanedMediaFileCleanupServiceTest {
   void setup() throws IOException {
     library = fakeLibraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
 
-    Files.createDirectories(fileSystem.getPath(library.getFilepathUri()));
+    Files.createDirectories(FilepathCodec.decode(fileSystem, library.getFilepathUri()));
   }
 
   @AfterEach
@@ -281,7 +281,7 @@ class OrphanedMediaFileCleanupServiceTest {
   }
 
   private Path createMovieFile(String folder, String filename) throws IOException {
-    var rootPath = fileSystem.getPath(library.getFilepathUri());
+    var rootPath = FilepathCodec.decode(fileSystem, library.getFilepathUri());
     var movieFolder = rootPath.resolve(folder);
     Files.createDirectory(movieFolder);
     var movieFile = movieFolder.resolve(filename);

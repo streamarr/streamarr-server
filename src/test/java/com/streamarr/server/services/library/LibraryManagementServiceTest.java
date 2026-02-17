@@ -289,7 +289,7 @@ class LibraryManagementServiceTest {
                 .type(MediaType.OTHER)
                 .build());
 
-    var libraryPath = fileSystem.getPath(otherTypeLibrary.getFilepathUri());
+    var libraryPath = FilepathCodec.decode(fileSystem, otherTypeLibrary.getFilepathUri());
     Files.createDirectories(libraryPath);
     var movieFolder = libraryPath.resolve("Test Movie");
     Files.createDirectory(movieFolder);
@@ -944,7 +944,7 @@ class LibraryManagementServiceTest {
   private Path createRootLibraryDirectory() throws IOException {
     var library = fakeLibraryRepository.findById(savedLibraryId);
 
-    var path = fileSystem.getPath(library.orElseThrow().getFilepathUri());
+    var path = FilepathCodec.decode(fileSystem, library.orElseThrow().getFilepathUri());
     Files.createDirectories(path);
 
     return path;

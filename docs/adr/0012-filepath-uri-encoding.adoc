@@ -21,4 +21,4 @@ All filesystem paths persisted in the database use `file:///` URI encoding via `
 
 * Frontend consumers parse every filepath field the same way (standard URI decoding)
 * Non-ASCII filenames round-trip safely through the database and GraphQL schema
-* `FilepathCodec.decode` includes a plain-string fallback, so pre-migration data and Jimfs-based tests continue to work without special handling
+* `FilepathCodec.decode` includes a plain-string fallback for pre-migration data. `file://` URIs resolve correctly against Jimfs via the `decodeUri` path-extraction fallback, so tests use production-like URIs

@@ -11,13 +11,12 @@ public final class LibraryFixtureCreator {
 
   private LibraryFixtureCreator() {}
 
-  // Plain paths instead of file:// URIs because file:// URIs can't round-trip through Jimfs.
   public static Library buildFakeLibrary() {
     return Library.builder()
         .name("Test Library")
         .backend(LibraryBackend.LOCAL)
         .status(LibraryStatus.HEALTHY)
-        .filepathUri("/library/" + UUID.randomUUID())
+        .filepathUri("file:///library/" + UUID.randomUUID())
         .externalAgentStrategy(ExternalAgentStrategy.TMDB)
         .type(MediaType.MOVIE)
         .build();
@@ -28,7 +27,7 @@ public final class LibraryFixtureCreator {
         .name("Test Series Library")
         .backend(LibraryBackend.LOCAL)
         .status(LibraryStatus.HEALTHY)
-        .filepathUri("/library/" + UUID.randomUUID())
+        .filepathUri("file:///library/" + UUID.randomUUID())
         .externalAgentStrategy(ExternalAgentStrategy.TMDB)
         .type(MediaType.SERIES)
         .build();
