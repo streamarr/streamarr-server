@@ -49,10 +49,12 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Isolated;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.test.context.bean.override.convention.TestBean;
 
+@Isolated
 @Tag("IntegrationTest")
 @DisplayName("Library Removal Integration Tests")
 class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
