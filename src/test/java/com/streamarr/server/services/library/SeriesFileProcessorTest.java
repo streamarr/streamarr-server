@@ -12,10 +12,10 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
+import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
-import com.streamarr.server.repositories.media.EpisodeRepository;
-import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
@@ -47,8 +47,8 @@ class SeriesFileProcessorTest {
       new SeriesMetadataProviderResolver(List.of(seriesMetadataProvider));
   private final SeriesService seriesService = mock(SeriesService.class);
   private final FakeMediaFileRepository fakeMediaFileRepository = new FakeMediaFileRepository();
-  private final SeasonRepository seasonRepository = mock(SeasonRepository.class);
-  private final EpisodeRepository episodeRepository = mock(EpisodeRepository.class);
+  private final FakeSeasonRepository fakeSeasonRepository = new FakeSeasonRepository();
+  private final FakeEpisodeRepository fakeEpisodeRepository = new FakeEpisodeRepository();
   private final SeriesFileProcessor seriesFileProcessor =
       new SeriesFileProcessor(
           new EpisodePathMetadataParser(new EpisodeRegexFixtures()),
@@ -58,8 +58,8 @@ class SeriesFileProcessorTest {
           new DateBasedEpisodeResolver(seriesMetadataProviderResolver),
           seriesService,
           fakeMediaFileRepository,
-          seasonRepository,
-          episodeRepository,
+          fakeSeasonRepository,
+          fakeEpisodeRepository,
           FileSystems.getDefault(),
           new MutexFactoryProvider());
 
@@ -174,9 +174,6 @@ class SeriesFileProcessorTest {
 
     when(seriesService.findByTmdbId("2224")).thenReturn(Optional.of(series));
 
-    when(seasonRepository.findBySeriesIdAndSeasonNumber(series.getId(), 2020))
-        .thenReturn(Optional.empty());
-
     when(seriesMetadataProvider.resolveSeasonNumber("2224", 2020)).thenReturn(OptionalInt.empty());
 
     seriesFileProcessor.process(library, mediaFile);
@@ -214,9 +211,6 @@ class SeriesFileProcessorTest {
                     .build()));
 
     when(seriesService.findByTmdbId("93544")).thenReturn(Optional.of(series));
-
-    when(seasonRepository.findBySeriesIdAndSeasonNumber(series.getId(), 4))
-        .thenReturn(Optional.empty());
 
     when(seriesMetadataProvider.getSeasonDetails("93544", 4)).thenReturn(Optional.empty());
 
