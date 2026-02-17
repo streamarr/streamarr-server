@@ -34,6 +34,9 @@ public final class FilepathCodec {
     try {
       return fileSystem.provider().getPath(uri);
     } catch (UnsupportedOperationException _) {
+      if ("file".equals(uri.getScheme())) {
+        return fileSystem.getPath(uri.getPath());
+      }
       return Path.of(uri);
     }
   }

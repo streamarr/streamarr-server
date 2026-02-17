@@ -57,6 +57,17 @@ class FilepathCodecTest {
   }
 
   @Test
+  @DisplayName("Should decode file:// URI against Jimfs filesystem")
+  void shouldDecodeFileUriAgainstJimfsFilesystem() throws IOException {
+    try (FileSystem jimfs = Jimfs.newFileSystem(Configuration.unix())) {
+      var decoded = FilepathCodec.decode(jimfs, "file:///some/path");
+
+      assertThat(decoded.getFileSystem()).isSameAs(jimfs);
+      assertThat(decoded).isEqualTo(jimfs.getPath("/some/path"));
+    }
+  }
+
+  @Test
   @DisplayName("Should fall back to plain path when no URI scheme present")
   void shouldFallBackToPlainPathWhenNoUriScheme() throws IOException {
     try (FileSystem jimfs = Jimfs.newFileSystem(Configuration.unix())) {
