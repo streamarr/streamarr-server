@@ -24,8 +24,10 @@ public class V036__Encode_Library_Filepath_Uri extends BaseJavaMigration {
 
         update.setString(1, encoded);
         update.setString(2, rows.getString("id"));
-        update.executeUpdate();
+        update.addBatch();
       }
+
+      update.executeBatch();
     }
   }
 }
