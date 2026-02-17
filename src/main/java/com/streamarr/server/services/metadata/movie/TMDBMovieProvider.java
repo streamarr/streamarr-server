@@ -24,6 +24,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -37,6 +38,9 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
 
   private final TheMovieDatabaseHttpService theMovieDatabaseHttpService;
   private final TmdbSearchDelegate searchDelegate;
+
+  private final ConcurrentHashMap<String, TmdbMovie> directLookupCache =
+      new ConcurrentHashMap<>();
 
   @Getter private final ExternalAgentStrategy agentStrategy = ExternalAgentStrategy.TMDB;
 
@@ -62,9 +66,11 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
   private RemoteSearchResult lookupByDirectTmdbId(String externalId)
       throws IOException, InterruptedException {
     var tmdbMovie = theMovieDatabaseHttpService.getMovieMetadata(externalId);
+    var resolvedId = String.valueOf(tmdbMovie.getId());
+    directLookupCache.put(resolvedId, tmdbMovie);
     return RemoteSearchResult.builder()
         .externalSourceType(ExternalSourceType.TMDB)
-        .externalId(String.valueOf(tmdbMovie.getId()))
+        .externalId(resolvedId)
         .title(tmdbMovie.getTitle())
         .build();
   }
@@ -87,7 +93,11 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
   public Optional<MetadataResult<Movie>> getMetadata(
       RemoteSearchResult remoteSearchResult, Library library) {
     try {
-      var tmdbMovie = theMovieDatabaseHttpService.getMovieMetadata(remoteSearchResult.externalId());
+      var cached = directLookupCache.remove(remoteSearchResult.externalId());
+      var tmdbMovie =
+          cached != null
+              ? cached
+              : theMovieDatabaseHttpService.getMovieMetadata(remoteSearchResult.externalId());
 
       var credits = Optional.ofNullable(tmdbMovie.getCredits());
       var castList = credits.map(TmdbCredits::getCast).orElse(Collections.emptyList());

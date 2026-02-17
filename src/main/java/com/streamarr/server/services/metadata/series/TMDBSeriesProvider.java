@@ -48,6 +48,8 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
   private final TheMovieDatabaseHttpService theMovieDatabaseHttpService;
   private final TmdbSearchDelegate searchDelegate;
 
+  private final ConcurrentHashMap<String, TmdbTvSeries> directLookupCache =
+      new ConcurrentHashMap<>();
   private final ConcurrentHashMap<String, List<TmdbTvSeasonSummary>> seasonSummariesCache =
       new ConcurrentHashMap<>();
   private final Set<String> failedSeasonDetailsCache = ConcurrentHashMap.newKeySet();
@@ -76,9 +78,11 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
   private RemoteSearchResult lookupByDirectTmdbId(String externalId)
       throws IOException, InterruptedException {
     var tmdbSeries = theMovieDatabaseHttpService.getTvSeriesMetadata(externalId);
+    var resolvedId = String.valueOf(tmdbSeries.getId());
+    directLookupCache.put(resolvedId, tmdbSeries);
     return RemoteSearchResult.builder()
         .externalSourceType(ExternalSourceType.TMDB)
-        .externalId(String.valueOf(tmdbSeries.getId()))
+        .externalId(resolvedId)
         .title(tmdbSeries.getName())
         .build();
   }
@@ -101,8 +105,11 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
   public Optional<MetadataResult<Series>> getMetadata(
       RemoteSearchResult remoteSearchResult, Library library) {
     try {
+      var cached = directLookupCache.remove(remoteSearchResult.externalId());
       var tmdbSeries =
-          theMovieDatabaseHttpService.getTvSeriesMetadata(remoteSearchResult.externalId());
+          cached != null
+              ? cached
+              : theMovieDatabaseHttpService.getTvSeriesMetadata(remoteSearchResult.externalId());
 
       seasonSummariesCache.put(
           remoteSearchResult.externalId(),
@@ -252,6 +259,7 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
 
   @EventListener
   public void onScanEnded(ScanEndedEvent event) {
+    directLookupCache.clear();
     seasonSummariesCache.clear();
     failedSeasonDetailsCache.clear();
   }
