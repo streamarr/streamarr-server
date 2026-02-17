@@ -2,9 +2,7 @@ package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -207,7 +205,7 @@ class LibraryManagementServiceTest {
   void shouldSetLibraryStatusToUnhealthyWhenLibraryFilepathInaccessible() {
     libraryManagementService.scanLibrary(savedLibraryId);
 
-    assertTrue(fakeLibraryRepository.findById(savedLibraryId).isPresent());
+    assertThat(fakeLibraryRepository.findById(savedLibraryId)).isPresent();
     assertThat(fakeLibraryRepository.findById(savedLibraryId).get().getStatus())
         .isEqualTo(LibraryStatus.UNHEALTHY);
   }
@@ -238,7 +236,7 @@ class LibraryManagementServiceTest {
 
     serviceWithThrowingFs.scanLibrary(savedLibraryId);
 
-    assertTrue(fakeLibraryRepository.findById(savedLibraryId).isPresent());
+    assertThat(fakeLibraryRepository.findById(savedLibraryId)).isPresent();
     assertThat(fakeLibraryRepository.findById(savedLibraryId).get().getStatus())
         .isEqualTo(LibraryStatus.UNHEALTHY);
   }
@@ -271,7 +269,7 @@ class LibraryManagementServiceTest {
 
     serviceWithThrowingFs.scanLibrary(savedLibraryId);
 
-    assertTrue(fakeLibraryRepository.findById(savedLibraryId).isPresent());
+    assertThat(fakeLibraryRepository.findById(savedLibraryId)).isPresent();
     assertThat(fakeLibraryRepository.findById(savedLibraryId).get().getStatus())
         .isEqualTo(LibraryStatus.UNHEALTHY);
   }
@@ -311,7 +309,7 @@ class LibraryManagementServiceTest {
 
     libraryManagementService.scanLibrary(savedLibraryId);
 
-    assertTrue(fakeLibraryRepository.findById(savedLibraryId).isPresent());
+    assertThat(fakeLibraryRepository.findById(savedLibraryId)).isPresent();
     assertThat(fakeLibraryRepository.findById(savedLibraryId).get().getStatus())
         .isEqualTo(LibraryStatus.HEALTHY);
   }
@@ -404,7 +402,7 @@ class LibraryManagementServiceTest {
 
     var mediaFile = fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
 
-    assertTrue(mediaFile.isEmpty());
+    assertThat(mediaFile).isEmpty();
   }
 
   @Test
@@ -465,8 +463,8 @@ class LibraryManagementServiceTest {
     var mediaFileAfterRefresh =
         fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
 
-    assertTrue(mediaFileAfterRefresh.isPresent());
-    assertEquals(mediaFileBeforeRefresh, mediaFileAfterRefresh.get());
+    assertThat(mediaFileAfterRefresh).isPresent();
+    assertThat(mediaFileAfterRefresh.get()).isEqualTo(mediaFileBeforeRefresh);
   }
 
   @Test
@@ -500,9 +498,8 @@ class LibraryManagementServiceTest {
 
     var mediaFile = fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
 
-    assertTrue(mediaFile.isPresent());
-
-    assertEquals(MediaFileStatus.MATCHED, mediaFile.get().getStatus());
+    assertThat(mediaFile).isPresent();
+    assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.MATCHED);
   }
 
   @Test
@@ -539,8 +536,8 @@ class LibraryManagementServiceTest {
     var mediaFileAfterRefresh =
         fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
 
-    assertTrue(mediaFileAfterRefresh.isPresent());
-    assertEquals(mediaFileBeforeRefresh, mediaFileAfterRefresh.get());
+    assertThat(mediaFileAfterRefresh).isPresent();
+    assertThat(mediaFileAfterRefresh.get()).isEqualTo(mediaFileBeforeRefresh);
   }
 
   @Test
@@ -573,8 +570,8 @@ class LibraryManagementServiceTest {
 
     var mediaFile = fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
 
-    assertTrue(mediaFile.isPresent());
-    assertEquals(MediaFileStatus.MATCHED, mediaFile.get().getStatus());
+    assertThat(mediaFile).isPresent();
+    assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.MATCHED);
   }
 
   @Test
@@ -619,7 +616,7 @@ class LibraryManagementServiceTest {
     var mediaFile =
         fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(systemFilePath));
 
-    assertTrue(mediaFile.isEmpty());
+    assertThat(mediaFile).isEmpty();
   }
 
   @Test
