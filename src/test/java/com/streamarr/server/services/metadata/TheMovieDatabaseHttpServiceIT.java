@@ -10,11 +10,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
+import com.github.mizosoft.methanol.HttpCache;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.services.metadata.tmdb.TmdbApiException;
 import com.streamarr.server.services.metadata.tmdb.TmdbSearchResults;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
+import java.io.IOException;
+import java.net.URI;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.concurrent.Executors;
@@ -46,9 +49,12 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
 
   @Autowired private TheMovieDatabaseHttpService service;
 
+  @Autowired private HttpCache tmdbHttpCache;
+
   @BeforeEach
-  void resetStubs() {
+  void resetStubs() throws IOException {
     wireMock.resetAll();
+    tmdbHttpCache.clear();
   }
 
   @AfterAll
@@ -705,6 +711,61 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
 
     assertThatThrownBy(() -> service.downloadImage("/nonexistent.jpg"))
         .isInstanceOf(TmdbApiException.class);
+  }
+
+  @Test
+  @DisplayName("Should exclude image from cache when downloading")
+  void shouldExcludeImageFromCacheWhenDownloading() throws Exception {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/search/movie"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withHeader("Cache-Control", "public, max-age=300")
+                    .withBody(
+                        """
+                    {
+                      "page": 1,
+                      "results": [
+                        {
+                          "id": 1,
+                          "title": "Cache Test",
+                          "adult": false,
+                          "popularity": 1.0,
+                          "vote_count": 0,
+                          "vote_average": 0,
+                          "video": false
+                        }
+                      ],
+                      "total_results": 1,
+                      "total_pages": 1
+                    }
+                    """)));
+
+    service.searchForMovie(VideoFileParserResult.builder().title("Cache Test").build());
+
+    var cachedUris = new ArrayList<URI>();
+    tmdbHttpCache.uris().forEachRemaining(cachedUris::add);
+    assertThat(cachedUris).as("Metadata API response should be cached").isNotEmpty();
+
+    var imageBytes = new byte[] {(byte) 0xFF, (byte) 0xD8};
+    wireMock.stubFor(
+        get(urlPathEqualTo("/cached-poster.jpg"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "image/jpeg")
+                    .withHeader("Cache-Control", "public, max-age=300")
+                    .withBody(imageBytes)));
+
+    service.downloadImage("/cached-poster.jpg");
+
+    cachedUris.clear();
+    tmdbHttpCache.uris().forEachRemaining(cachedUris::add);
+    assertThat(cachedUris)
+        .as("Image download should not enter cache due to NO_STORE on request")
+        .noneMatch(uri -> uri.getPath().contains("/cached-poster.jpg"));
   }
 
   @Test
