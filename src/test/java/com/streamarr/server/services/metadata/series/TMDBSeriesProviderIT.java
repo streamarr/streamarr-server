@@ -524,6 +524,8 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should return season details with episodes when TMDB returns season response")
   void shouldReturnSeasonDetailsWhenTmdbReturnsSeasonResponse() {
+    stubMinimalSeriesResponse("1396");
+
     wireMock.stubFor(
         get(urlPathEqualTo("/tv/1396/season/1"))
             .willReturn(
@@ -596,6 +598,8 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should return empty when TMDB season details API returns error")
   void shouldReturnEmptyWhenTmdbSeasonDetailsApiReturnsError() {
+    stubMinimalSeriesResponse("1396");
+
     wireMock.stubFor(
         get(urlPathEqualTo("/tv/1396/season/1"))
             .willReturn(
@@ -619,6 +623,8 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should build season poster image source when TMDB returns poster path")
   void shouldBuildSeasonPosterImageSourceWhenTmdbReturnsPosterPath() {
+    stubMinimalSeriesResponse("1396");
+
     wireMock.stubFor(
         get(urlPathEqualTo("/tv/1396/season/1"))
             .willReturn(
@@ -647,6 +653,8 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should build episode still image source when TMDB returns still path")
   void shouldBuildEpisodeStillImageSourceWhenTmdbReturnsStillPath() {
+    stubMinimalSeriesResponse("1396");
+
     wireMock.stubFor(
         get(urlPathEqualTo("/tv/1396/season/1"))
             .willReturn(
@@ -683,6 +691,8 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should return empty season image sources when poster path is null")
   void shouldReturnEmptySeasonImageSourcesWhenPosterPathIsNull() {
+    stubMinimalSeriesResponse("1396");
+
     wireMock.stubFor(
         get(urlPathEqualTo("/tv/1396/season/1"))
             .willReturn(
@@ -708,6 +718,8 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should return empty episode image sources when still path is null")
   void shouldReturnEmptyEpisodeImageSourcesWhenStillPathIsNull() {
+    stubMinimalSeriesResponse("1396");
+
     wireMock.stubFor(
         get(urlPathEqualTo("/tv/1396/season/1"))
             .willReturn(
@@ -736,6 +748,34 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
     assertThat(result).isPresent();
     var ep1 = result.get().episodes().getFirst();
     assertThat(ep1.imageSources()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should skip season API call when season not in summaries")
+  void shouldSkipSeasonApiCallWhenSeasonNotInSummaries() {
+    stubSeriesResponseWithSeasons("1396");
+
+    wireMock.stubFor(
+        get(urlPathEqualTo("/tv/1396/season/99"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {
+                          "id": 99999,
+                          "name": "Season 99",
+                          "season_number": 99,
+                          "episodes": []
+                        }
+                        """)));
+
+    provider.getMetadata(buildSearchResult("1396"), savedLibrary);
+
+    var result = provider.getSeasonDetails(savedLibrary.getId(), "1396", 99);
+
+    assertThat(result).isEmpty();
   }
 
   // --- Helpers ---
@@ -787,6 +827,36 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
                     .withStatus(200)
                     .withHeader("Content-Type", "application/json")
                     .withBody(body)));
+  }
+
+  private void stubSeriesResponseWithSeasons(String seriesId) {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/tv/" + seriesId))
+            .withQueryParam("append_to_response", equalTo("content_ratings,credits,external_ids"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {
+                          "id": %s,
+                          "name": "Breaking Bad",
+                          "original_name": "Breaking Bad",
+                          "first_air_date": "2008-01-20",
+                          "overview": "A chemistry teacher.",
+                          "seasons": [
+                            {
+                              "id": 3577,
+                              "name": "Season 1",
+                              "season_number": 1,
+                              "air_date": "2008-01-20",
+                              "episode_count": 7
+                            }
+                          ]
+                        }
+                        """
+                            .formatted(seriesId))));
   }
 
   private void stubTextSearchResult(String name, int id) {

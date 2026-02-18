@@ -194,6 +194,16 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
       return Optional.empty();
     }
 
+    var summaries = getOrFetchSeasonSummaries(libraryId, seriesExternalId);
+    if (!summaries.isEmpty()
+        && summaries.stream().noneMatch(s -> s.getSeasonNumber() == seasonNumber)) {
+      log.debug(
+          "Season {} not found in summaries for series TMDB id '{}', skipping API call",
+          seasonNumber,
+          seriesExternalId);
+      return Optional.empty();
+    }
+
     try {
       var tmdbSeason =
           theMovieDatabaseHttpService.getTvSeasonDetails(seriesExternalId, seasonNumber);

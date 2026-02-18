@@ -91,6 +91,7 @@ class TMDBSeriesProviderTest {
             .episodes(Collections.emptyList())
             .build();
 
+    fakeTmdbHttpService.setTvSeriesMetadata("1396", TmdbTvSeries.builder().build());
     fakeTmdbHttpService.setSeasonDetailsFailOnFirstCall("1396", 5);
     fakeTmdbHttpService.setTvSeasonDetails("1396", 5, validSeason);
 
@@ -103,6 +104,47 @@ class TMDBSeriesProviderTest {
     assertThat(secondResult)
         .as("Second call should return empty from negative cache despite TMDB now having data")
         .isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should return empty without API call when season not in summaries")
+  void shouldReturnEmptyWithoutApiCallWhenSeasonNotInSummaries() {
+    var series =
+        TmdbTvSeries.builder()
+            .seasons(
+                List.of(
+                    TmdbTvSeasonSummary.builder().seasonNumber(1).build(),
+                    TmdbTvSeasonSummary.builder().seasonNumber(2).build(),
+                    TmdbTvSeasonSummary.builder().seasonNumber(3).build()))
+            .build();
+
+    fakeTmdbHttpService.setTvSeriesMetadata("1396", series);
+
+    var result = provider.getSeasonDetails(UUID.randomUUID(), "1396", 99);
+
+    assertThat(result).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should still call API when summaries are empty")
+  void shouldStillCallApiWhenSummariesAreEmpty() {
+    var series = TmdbTvSeries.builder().build();
+
+    fakeTmdbHttpService.setTvSeriesMetadata("1396", series);
+
+    var validSeason =
+        TmdbTvSeason.builder()
+            .name("Season 5")
+            .seasonNumber(5)
+            .episodes(Collections.emptyList())
+            .build();
+
+    fakeTmdbHttpService.setTvSeasonDetails("1396", 5, validSeason);
+
+    var result = provider.getSeasonDetails(UUID.randomUUID(), "1396", 5);
+
+    assertThat(result).isPresent();
+    assertThat(result.get().name()).isEqualTo("Season 5");
   }
 
   @Test
@@ -143,6 +185,7 @@ class TMDBSeriesProviderTest {
 
     var libraryId = UUID.randomUUID();
 
+    fakeTmdbHttpService.setTvSeriesMetadata("1396", TmdbTvSeries.builder().build());
     fakeTmdbHttpService.setSeasonDetailsFailOnFirstCall("1396", 5);
     fakeTmdbHttpService.setTvSeasonDetails("1396", 5, validSeason);
 
