@@ -18,6 +18,7 @@ import com.streamarr.server.services.metadata.tmdb.TmdbSearchResults;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.io.IOException;
 import java.net.URI;
+import java.net.http.HttpTimeoutException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.concurrent.Executors;
@@ -45,6 +46,7 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
     registry.add("tmdb.image.base-url", wireMock::baseUrl);
     registry.add("tmdb.api.token", () -> "test-api-token");
     registry.add("tmdb.api.requests-per-second", () -> "1000");
+    registry.add("tmdb.api.request-timeout-seconds", () -> "2");
   }
 
   @Autowired private TheMovieDatabaseHttpService service;
@@ -978,5 +980,32 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
     for (var future : futures) {
       assertThat(future.get().getResults()).hasSize(1);
     }
+  }
+
+  @Test
+  @DisplayName("Should throw when request exceeds timeout")
+  void shouldThrowWhenRequestExceedsTimeout() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/search/movie"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withFixedDelay(3000)
+                    .withBody(
+                        """
+                    {
+                      "page": 1,
+                      "results": [],
+                      "total_results": 0,
+                      "total_pages": 0
+                    }
+                    """)));
+
+    assertThatThrownBy(
+            () ->
+                service.searchForMovie(
+                    VideoFileParserResult.builder().title("Slow").build()))
+        .isInstanceOf(HttpTimeoutException.class);
   }
 }
