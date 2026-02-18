@@ -5,6 +5,7 @@ import com.streamarr.server.domain.task.FileProcessingTask;
 import com.streamarr.server.services.task.FileProcessingTaskCoordinator;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import io.methvin.watcher.DirectoryChangeEvent;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
@@ -81,6 +82,11 @@ class FileEventProcessor {
   }
 
   private void handleCreateOrModify(Path path) {
+    if (Files.isDirectory(path)) {
+      log.debug("Ignoring directory: {}", path);
+      return;
+    }
+
     if (ignoredFileValidator.shouldIgnore(path)) {
       log.debug("Ignoring file: {}", path);
       return;

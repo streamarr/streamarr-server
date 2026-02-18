@@ -610,6 +610,27 @@ class FileEventProcessorTest {
         .isTrue();
   }
 
+  @Test
+  @DisplayName("Should skip stability check when path is a directory")
+  void shouldSkipStabilityCheckWhenPathIsDirectory() throws Exception {
+    var dir = fileSystem.getPath("/media/movies/Season 04");
+    Files.createDirectories(dir);
+    var stabilityCheckerCalled = new AtomicBoolean(false);
+
+    stabilityCheckerRef.set(
+        p -> {
+          stabilityCheckerCalled.set(true);
+          return true;
+        });
+
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, dir);
+
+    await()
+        .during(Duration.ofMillis(100))
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(() -> assertThat(stabilityCheckerCalled.get()).isFalse());
+  }
+
   private Path createFile(String pathStr) throws IOException {
     var path = fileSystem.getPath(pathStr);
     Files.createDirectories(path.getParent());
