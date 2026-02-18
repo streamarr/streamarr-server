@@ -40,6 +40,7 @@ public class TmdbHttpClientConfiguration {
     return Methanol.newBuilder()
         .version(HttpClient.Version.HTTP_1_1)
         .connectTimeout(Duration.ofSeconds(15))
+        .requestTimeout(Duration.ofSeconds(30))
         .cache(tmdbHttpCache)
         .interceptor(retryInterceptor)
         .interceptor(rateLimitingInterceptor)
