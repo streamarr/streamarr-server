@@ -107,8 +107,8 @@ class TMDBSeriesProviderTest {
   }
 
   @Test
-  @DisplayName("Should return empty without API call when season not in summaries")
-  void shouldReturnEmptyWithoutApiCallWhenSeasonNotInSummaries() {
+  @DisplayName("Should return empty when season not in summaries")
+  void shouldReturnEmptyWhenSeasonNotInSummaries() {
     var series =
         TmdbTvSeries.builder()
             .seasons(

@@ -24,6 +24,7 @@ public class TmdbHttpClientConfiguration {
   @Qualifier("tmdb")
   HttpClient tmdbHttpClient(
       @Value("${tmdb.api.requests-per-second:35}") double requestsPerSecond,
+      @Value("${tmdb.api.request-timeout-seconds:30}") long requestTimeoutSeconds,
       HttpCache tmdbHttpCache) {
     var retryInterceptor =
         RetryInterceptor.newBuilder()
@@ -40,7 +41,7 @@ public class TmdbHttpClientConfiguration {
     return Methanol.newBuilder()
         .version(HttpClient.Version.HTTP_1_1)
         .connectTimeout(Duration.ofSeconds(15))
-        .requestTimeout(Duration.ofSeconds(30))
+        .requestTimeout(Duration.ofSeconds(requestTimeoutSeconds))
         .cache(tmdbHttpCache)
         .interceptor(retryInterceptor)
         .interceptor(rateLimitingInterceptor)
