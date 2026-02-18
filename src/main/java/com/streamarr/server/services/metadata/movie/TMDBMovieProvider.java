@@ -6,7 +6,6 @@ import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.ContentRating;
 import com.streamarr.server.domain.media.Movie;
-import com.streamarr.server.services.library.events.ScanEndedEvent;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
@@ -25,12 +24,10 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
-import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 @Slf4j
@@ -40,8 +37,6 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
 
   private final TheMovieDatabaseHttpService theMovieDatabaseHttpService;
   private final TmdbSearchDelegate searchDelegate;
-
-  private final ConcurrentHashMap<String, TmdbMovie> directLookupCache = new ConcurrentHashMap<>();
 
   @Getter private final ExternalAgentStrategy agentStrategy = ExternalAgentStrategy.TMDB;
 
@@ -70,11 +65,9 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
   private RemoteSearchResult lookupAndCacheByDirectTmdbId(String externalId)
       throws IOException, InterruptedException {
     var tmdbMovie = theMovieDatabaseHttpService.getMovieMetadata(externalId);
-    var resolvedId = String.valueOf(tmdbMovie.getId());
-    directLookupCache.put(resolvedId, tmdbMovie);
     return RemoteSearchResult.builder()
         .externalSourceType(ExternalSourceType.TMDB)
-        .externalId(resolvedId)
+        .externalId(String.valueOf(tmdbMovie.getId()))
         .title(tmdbMovie.getTitle())
         .build();
   }
@@ -97,11 +90,8 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
   public Optional<MetadataResult<Movie>> getMetadata(
       RemoteSearchResult remoteSearchResult, Library library) {
     try {
-      var cached = directLookupCache.remove(remoteSearchResult.externalId());
       var tmdbMovie =
-          cached != null
-              ? cached
-              : theMovieDatabaseHttpService.getMovieMetadata(remoteSearchResult.externalId());
+          theMovieDatabaseHttpService.getMovieMetadata(remoteSearchResult.externalId());
 
       var credits = Optional.ofNullable(tmdbMovie.getCredits());
       var castList = credits.map(TmdbCredits::getCast).orElse(Collections.emptyList());
@@ -164,12 +154,6 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
     }
 
     return Optional.empty();
-  }
-
-  @EventListener
-  public void onScanEnded(ScanEndedEvent event) {
-    log.debug("Clearing movie metadata cache for library {}", event.libraryId());
-    directLookupCache.clear();
   }
 
   private Set<ExternalIdentifier> mapExternalIds(TmdbMovie tmdbMovie) {

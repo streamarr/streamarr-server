@@ -49,8 +49,6 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
   private final TheMovieDatabaseHttpService theMovieDatabaseHttpService;
   private final TmdbSearchDelegate searchDelegate;
 
-  private final ConcurrentHashMap<String, TmdbTvSeries> directLookupCache =
-      new ConcurrentHashMap<>();
   private final ConcurrentHashMap<UUID, ConcurrentHashMap<String, List<TmdbTvSeasonSummary>>>
       seasonSummariesByLibrary = new ConcurrentHashMap<>();
   private final ConcurrentHashMap<UUID, Set<String>> failedSeasonDetailsByLibrary =
@@ -83,11 +81,9 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
   private RemoteSearchResult lookupAndCacheByDirectTmdbId(String externalId)
       throws IOException, InterruptedException {
     var tmdbSeries = theMovieDatabaseHttpService.getTvSeriesMetadata(externalId);
-    var resolvedId = String.valueOf(tmdbSeries.getId());
-    directLookupCache.put(resolvedId, tmdbSeries);
     return RemoteSearchResult.builder()
         .externalSourceType(ExternalSourceType.TMDB)
-        .externalId(resolvedId)
+        .externalId(String.valueOf(tmdbSeries.getId()))
         .title(tmdbSeries.getName())
         .build();
   }
@@ -110,11 +106,8 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
   public Optional<MetadataResult<Series>> getMetadata(
       RemoteSearchResult remoteSearchResult, Library library) {
     try {
-      var cached = directLookupCache.remove(remoteSearchResult.externalId());
       var tmdbSeries =
-          cached != null
-              ? cached
-              : theMovieDatabaseHttpService.getTvSeriesMetadata(remoteSearchResult.externalId());
+          theMovieDatabaseHttpService.getTvSeriesMetadata(remoteSearchResult.externalId());
 
       seasonSummariesByLibrary
           .computeIfAbsent(library.getId(), _ -> new ConcurrentHashMap<>())
@@ -271,7 +264,6 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
   @EventListener
   public void onScanEnded(ScanEndedEvent event) {
     log.debug("Clearing series metadata cache for library {}", event.libraryId());
-    directLookupCache.clear();
     seasonSummariesByLibrary.remove(event.libraryId());
     failedSeasonDetailsByLibrary.remove(event.libraryId());
   }
