@@ -7,7 +7,6 @@ import com.github.mizosoft.methanol.RetryInterceptor.BackoffStrategy;
 import com.streamarr.server.config.http.RateLimitingInterceptor;
 import java.net.http.HttpClient;
 import java.time.Duration;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -20,8 +19,7 @@ public class TmdbHttpClientConfiguration {
     return HttpCache.newBuilder().cacheOnMemory(cacheSizeMb * 1024 * 1024).build();
   }
 
-  @Bean
-  @Qualifier("tmdb")
+  @Bean("tmdb")
   HttpClient tmdbHttpClient(
       @Value("${tmdb.api.requests-per-second:35}") double requestsPerSecond,
       @Value("${tmdb.api.request-timeout-seconds:30}") long requestTimeoutSeconds,
