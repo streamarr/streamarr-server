@@ -8,6 +8,7 @@ import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMoc
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
+import com.github.mizosoft.methanol.HttpCache;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
@@ -20,6 +21,7 @@ import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
+import java.io.IOException;
 import java.time.LocalDate;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -49,6 +51,8 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
 
   @Autowired private TMDBSeriesProvider provider;
 
+  @Autowired private HttpCache tmdbHttpCache;
+
   @Autowired private LibraryRepository libraryRepository;
 
   private Library savedLibrary;
@@ -59,8 +63,9 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
   }
 
   @BeforeEach
-  void resetStubs() {
+  void resetStubs() throws IOException {
     wireMock.resetAll();
+    tmdbHttpCache.clear();
     provider.onScanEnded(new ScanEndedEvent(savedLibrary.getId()));
   }
 

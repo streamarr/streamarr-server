@@ -1,5 +1,6 @@
 package com.streamarr.server.config;
 
+import com.github.mizosoft.methanol.HttpCache;
 import com.github.mizosoft.methanol.Methanol;
 import com.github.mizosoft.methanol.RetryInterceptor;
 import com.github.mizosoft.methanol.RetryInterceptor.BackoffStrategy;
@@ -15,8 +16,15 @@ import org.springframework.context.annotation.Configuration;
 public class TmdbHttpClientConfiguration {
 
   @Bean
+  HttpCache tmdbHttpCache(@Value("${tmdb.api.cache-size-mb:200}") long cacheSizeMb) {
+    return HttpCache.newBuilder().cacheOnMemory(cacheSizeMb * 1024 * 1024).build();
+  }
+
+  @Bean
   @Qualifier("tmdb")
-  HttpClient tmdbHttpClient(@Value("${tmdb.api.requests-per-second:35}") double requestsPerSecond) {
+  HttpClient tmdbHttpClient(
+      @Value("${tmdb.api.requests-per-second:35}") double requestsPerSecond,
+      HttpCache tmdbHttpCache) {
     var retryInterceptor =
         RetryInterceptor.newBuilder()
             .maxRetries(5)
@@ -32,6 +40,7 @@ public class TmdbHttpClientConfiguration {
     return Methanol.newBuilder()
         .version(HttpClient.Version.HTTP_1_1)
         .connectTimeout(Duration.ofSeconds(15))
+        .cache(tmdbHttpCache)
         .interceptor(retryInterceptor)
         .interceptor(rateLimitingInterceptor)
         .build();

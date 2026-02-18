@@ -11,6 +11,8 @@ import com.streamarr.server.services.metadata.tmdb.TmdbTvSearchResults;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSeason;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSeries;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
+import com.github.mizosoft.methanol.CacheControl;
+import com.github.mizosoft.methanol.MutableRequest;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -31,6 +33,8 @@ import tools.jackson.databind.ObjectMapper;
 @Slf4j
 @Service
 public class TheMovieDatabaseHttpService implements TmdbImageDownloader {
+
+  private static final CacheControl NO_STORE = CacheControl.newBuilder().noStore().build();
 
   public static final Map<ExternalSourceType, String> EXTERNAL_SOURCES =
       Map.of(ExternalSourceType.IMDB, "imdb_id", ExternalSourceType.TVDB, "tvdb_id");
@@ -136,7 +140,7 @@ public class TheMovieDatabaseHttpService implements TmdbImageDownloader {
 
   public byte[] downloadImage(String pathFragment) throws IOException, InterruptedException {
     var uri = URI.create(tmdbImageBaseUrl + pathFragment);
-    var request = HttpRequest.newBuilder().uri(uri).GET().build();
+    var request = MutableRequest.GET(uri).cacheControl(NO_STORE);
     var response = client.send(request, HttpResponse.BodyHandlers.ofByteArray());
 
     if (response.statusCode() != 200) {
