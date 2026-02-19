@@ -63,7 +63,7 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
 
     var file =
         MediaFile.builder()
-            .filepath("/media/movies/test-" + UUID.randomUUID() + ".mkv")
+            .filepathUri("/media/movies/test-" + UUID.randomUUID() + ".mkv")
             .filename("test.mkv")
             .status(MediaFileStatus.MATCHED)
             .size(1_000_000L)

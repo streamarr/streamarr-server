@@ -107,16 +107,16 @@ public class MediaFileRecord extends UpdatableRecordImpl<MediaFileRecord> {
     }
 
     /**
-     * Setter for <code>public.media_file.filepath</code>.
+     * Setter for <code>public.media_file.filepath_uri</code>.
      */
-    public void setFilepath(String value) {
+    public void setFilepathUri(String value) {
         set(6, value);
     }
 
     /**
-     * Getter for <code>public.media_file.filepath</code>.
+     * Getter for <code>public.media_file.filepath_uri</code>.
      */
-    public String getFilepath() {
+    public String getFilepathUri() {
         return (String) get(6);
     }
 
@@ -199,7 +199,7 @@ public class MediaFileRecord extends UpdatableRecordImpl<MediaFileRecord> {
     /**
      * Create a detached, initialised MediaFileRecord
      */
-    public MediaFileRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, String filename, String filepath, Long size, UUID mediaId, UUID libraryId, MediaFileStatus status) {
+    public MediaFileRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, String filename, String filepathUri, Long size, UUID mediaId, UUID libraryId, MediaFileStatus status) {
         super(MediaFile.MEDIA_FILE);
 
         setId(id);
@@ -208,7 +208,7 @@ public class MediaFileRecord extends UpdatableRecordImpl<MediaFileRecord> {
         setLastModifiedOn(lastModifiedOn);
         setLastModifiedBy(lastModifiedBy);
         setFilename(filename);
-        setFilepath(filepath);
+        setFilepathUri(filepathUri);
         setSize(size);
         setMediaId(mediaId);
         setLibraryId(libraryId);

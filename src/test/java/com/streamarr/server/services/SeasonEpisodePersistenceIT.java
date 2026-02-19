@@ -120,7 +120,7 @@ class SeasonEpisodePersistenceIT extends AbstractIntegrationTest {
     var mediaFile =
         MediaFile.builder()
             .filename("show.s10e01.mkv")
-            .filepath("/tv/Show/Season 10/show.s10e01.mkv")
+            .filepathUri("/tv/Show/Season 10/show.s10e01.mkv")
             .libraryId(savedLibrary.getId())
             .status(MediaFileStatus.MATCHED)
             .size(1024L)

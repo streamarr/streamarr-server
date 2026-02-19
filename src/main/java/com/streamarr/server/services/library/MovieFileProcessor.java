@@ -10,7 +10,9 @@ import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
+import com.streamarr.server.services.parsers.video.ExternalIdVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
+import java.nio.file.FileSystem;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -21,21 +23,27 @@ import org.springframework.stereotype.Service;
 public class MovieFileProcessor {
 
   private final DefaultVideoFileMetadataParser defaultVideoFileMetadataParser;
+  private final ExternalIdVideoFileMetadataParser externalIdVideoFileMetadataParser;
   private final MovieMetadataProviderResolver movieMetadataProviderResolver;
   private final MovieService movieService;
   private final MediaFileRepository mediaFileRepository;
+  private final FileSystem fileSystem;
   private final MutexFactory<String> mutexFactory;
 
   public MovieFileProcessor(
       DefaultVideoFileMetadataParser defaultVideoFileMetadataParser,
+      ExternalIdVideoFileMetadataParser externalIdVideoFileMetadataParser,
       MovieMetadataProviderResolver movieMetadataProviderResolver,
       MovieService movieService,
       MediaFileRepository mediaFileRepository,
+      FileSystem fileSystem,
       MutexFactoryProvider mutexFactoryProvider) {
     this.defaultVideoFileMetadataParser = defaultVideoFileMetadataParser;
+    this.externalIdVideoFileMetadataParser = externalIdVideoFileMetadataParser;
     this.movieMetadataProviderResolver = movieMetadataProviderResolver;
     this.movieService = movieService;
     this.mediaFileRepository = mediaFileRepository;
+    this.fileSystem = fileSystem;
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
   }
 
@@ -49,7 +57,7 @@ public class MovieFileProcessor {
       log.error(
           "Failed to parse MediaFile id: {} at path: '{}'",
           mediaFile.getId(),
-          mediaFile.getFilepath());
+          mediaFile.getFilepathUri());
 
       return;
     }
@@ -70,7 +78,7 @@ public class MovieFileProcessor {
       log.error(
           "Failed to find matching search result for MediaFile id: {} at path: '{}'",
           mediaFile.getId(),
-          mediaFile.getFilepath());
+          mediaFile.getFilepathUri());
 
       return;
     }
@@ -91,7 +99,34 @@ public class MovieFileProcessor {
       return Optional.empty();
     }
 
-    return result;
+    var folderResult = parseFolderName(mediaFile).filter(fr -> fr.year() != null);
+    if (result.get().year() == null && folderResult.isPresent()) {
+      result = folderResult;
+    }
+
+    var externalIdResult = externalIdVideoFileMetadataParser.parse(mediaFile.getFilename());
+    if (externalIdResult.isEmpty()) {
+      return result;
+    }
+
+    return Optional.of(
+        VideoFileParserResult.builder()
+            .title(result.get().title())
+            .year(result.get().year())
+            .externalId(externalIdResult.get().externalId())
+            .externalSource(externalIdResult.get().externalSource())
+            .build());
+  }
+
+  private Optional<VideoFileParserResult> parseFolderName(MediaFile mediaFile) {
+    var path = FilepathCodec.decode(fileSystem, mediaFile.getFilepathUri());
+    var parent = path.getParent();
+
+    if (parent == null || parent.getFileName() == null) {
+      return Optional.empty();
+    }
+
+    return defaultVideoFileMetadataParser.parse(parent.getFileName().toString());
   }
 
   private void enrichMovieMetadata(
@@ -100,9 +135,12 @@ public class MovieFileProcessor {
     var externalIdMutex = mutexFactory.getMutex(remoteSearchResult.externalId());
 
     try {
-      externalIdMutex.lock();
+      externalIdMutex.lockInterruptibly();
 
       updateOrSaveEnrichedMovie(library, mediaFile, remoteSearchResult);
+    } catch (InterruptedException ex) {
+      Thread.currentThread().interrupt();
+      log.error("Enrichment interrupted for MediaFile id: {}", mediaFile.getId(), ex);
     } catch (Exception ex) {
       log.error("Failure enriching movie metadata:", ex);
     } finally {

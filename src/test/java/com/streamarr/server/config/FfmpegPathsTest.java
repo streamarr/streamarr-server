@@ -75,15 +75,16 @@ class FfmpegPathsTest {
   }
 
   @Test
-  @DisplayName("Should prefer PATH over well-known locations")
-  void shouldPreferPathOverWellKnownLocations(@TempDir Path tempDir) throws IOException {
+  @DisplayName("Should prefer PATH over well-known locations when both are available")
+  void shouldPreferPathOverWellKnownLocationsWhenBothAreAvailable(@TempDir Path tempDir)
+      throws IOException {
     var ffmpeg = createExecutable(tempDir, "ffmpeg");
-    createExecutable(tempDir, "ffprobe");
+    var ffprobe = createExecutable(tempDir, "ffprobe");
 
     var paths = FfmpegPaths.resolve(null, null, tempDir.toString());
 
     assertThat(paths.ffmpeg()).isEqualTo(ffmpeg.toString());
-    assertThat(paths.ffmpeg()).startsWith(tempDir.toString());
+    assertThat(paths.ffprobe()).isEqualTo(ffprobe.toString());
   }
 
   private static Path createExecutable(Path dir, String name) throws IOException {

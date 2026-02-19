@@ -5,6 +5,7 @@ import com.streamarr.server.domain.task.FileProcessingTask;
 import com.streamarr.server.services.task.FileProcessingTaskCoordinator;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import io.methvin.watcher.DirectoryChangeEvent;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
@@ -81,6 +82,11 @@ class FileEventProcessor {
   }
 
   private void handleCreateOrModify(Path path) {
+    if (Files.isDirectory(path)) {
+      log.debug("Ignoring directory: {}", path);
+      return;
+    }
+
     if (ignoredFileValidator.shouldIgnore(path)) {
       log.debug("Ignoring file: {}", path);
       return;
@@ -175,6 +181,8 @@ class FileEventProcessor {
     log.info("Watcher event type: DELETE -- filepath: {}", path);
   }
 
+  private record LibraryWithPath(Library library, Path path) {}
+
   private Optional<UUID> resolveLibrary(Path path) {
     stateLock.readLock().lock();
 
@@ -183,9 +191,10 @@ class FileEventProcessor {
       var fs = absolutePath.getFileSystem();
 
       return cachedLibraries.stream()
-          .filter(library -> absolutePath.startsWith(fs.getPath(library.getFilepath())))
-          .max(Comparator.comparingInt(library -> library.getFilepath().length()))
-          .map(Library::getId);
+          .map(lib -> new LibraryWithPath(lib, FilepathCodec.decode(fs, lib.getFilepathUri())))
+          .filter(lp -> absolutePath.startsWith(lp.path()))
+          .max(Comparator.comparingInt(lp -> lp.path().toString().length()))
+          .map(lp -> lp.library().getId());
     } finally {
       stateLock.readLock().unlock();
     }

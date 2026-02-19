@@ -19,6 +19,7 @@ import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.library.events.LibraryAddedEvent;
 import com.streamarr.server.services.library.events.LibraryRemovedEvent;
 import com.streamarr.server.services.library.events.ScanCompletedEvent;
+import com.streamarr.server.services.library.events.ScanEndedEvent;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
 import java.io.IOException;
@@ -90,19 +91,23 @@ public class LibraryManagementService implements ActiveScanChecker {
   }
 
   public Library addLibrary(Library library) {
-    validateFilepath(library.getFilepath());
-    validateFilepathNotAlreadyUsed(library.getFilepath());
-    validatePathExistsAndIsDirectory(library.getFilepath());
+    var rawFilepath = library.getFilepathUri();
+    validateFilepath(rawFilepath);
+    validatePathExistsAndIsDirectory(rawFilepath);
 
-    var libraryToSave = library.toBuilder().status(LibraryStatus.HEALTHY).build();
+    var encodedUri = FilepathCodec.encode(fileSystem.getPath(rawFilepath));
+    validateFilepathNotAlreadyUsed(encodedUri);
+
+    var libraryToSave =
+        library.toBuilder().filepathUri(encodedUri).status(LibraryStatus.HEALTHY).build();
     var savedLibrary = libraryRepository.save(libraryToSave);
 
     eventPublisher.publishEvent(
-        new LibraryAddedEvent(savedLibrary.getId(), savedLibrary.getFilepath()));
+        new LibraryAddedEvent(savedLibrary.getId(), savedLibrary.getFilepathUri()));
 
     triggerAsyncScan(savedLibrary.getId());
 
-    return savedLibrary;
+    return savedLibrary.toBuilder().build();
   }
 
   private void validateFilepath(String filepath) {
@@ -112,7 +117,7 @@ public class LibraryManagementService implements ActiveScanChecker {
   }
 
   private void validateFilepathNotAlreadyUsed(String filepath) {
-    if (libraryRepository.existsByFilepath(filepath)) {
+    if (libraryRepository.existsByFilepathUri(filepath)) {
       throw new LibraryAlreadyExistsException(filepath);
     }
   }
@@ -158,7 +163,7 @@ public class LibraryManagementService implements ActiveScanChecker {
       deleteLibraryContent(libraryId, mediaFiles);
       libraryRepository.delete(library);
 
-      eventPublisher.publishEvent(new LibraryRemovedEvent(library.getFilepath(), mediaFileIds));
+      eventPublisher.publishEvent(new LibraryRemovedEvent(library.getFilepathUri(), mediaFileIds));
     } finally {
       libraryMutex.unlock();
     }
@@ -211,13 +216,14 @@ public class LibraryManagementService implements ActiveScanChecker {
         completeScanWithFailure(library, e.getCause());
       }
     } finally {
+      eventPublisher.publishEvent(new ScanEndedEvent(libraryId));
       activeScans.remove(libraryId);
     }
   }
 
   private void walkAndProcessFiles(Library library) {
     try (var executor = Executors.newVirtualThreadPerTaskExecutor();
-        var stream = Files.walk(fileSystem.getPath(library.getFilepath()))) {
+        var stream = Files.walk(FilepathCodec.decode(fileSystem, library.getFilepathUri()))) {
 
       stream
           .filter(Files::isRegularFile)
@@ -308,12 +314,12 @@ public class LibraryManagementService implements ActiveScanChecker {
   }
 
   private MediaFile probeFile(Library library, Path path) {
-    var absoluteFilepath = path.toAbsolutePath().toString();
+    var absoluteFilepath = FilepathCodec.encode(path);
     var filepathMutex = mutexFactory.getMutex(absoluteFilepath);
 
     filepathMutex.lock();
     try {
-      var optionalMediaFile = mediaFileRepository.findFirstByFilepath(absoluteFilepath);
+      var optionalMediaFile = mediaFileRepository.findFirstByFilepathUri(absoluteFilepath);
 
       if (optionalMediaFile.isPresent()) {
         log.info(
@@ -341,7 +347,7 @@ public class LibraryManagementService implements ActiveScanChecker {
         MediaFile.builder()
             .status(MediaFileStatus.UNMATCHED)
             .filename(path.getFileName().toString())
-            .filepath(absoluteFilepath)
+            .filepathUri(absoluteFilepath)
             .size(fileSize)
             .libraryId(library.getId())
             .build());

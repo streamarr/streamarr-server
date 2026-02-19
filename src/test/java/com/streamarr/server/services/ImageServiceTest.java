@@ -157,6 +157,26 @@ class ImageServiceTest {
   }
 
   @Test
+  @DisplayName("Should skip duplicate images when saving same images twice")
+  void shouldSkipDuplicateImagesWhenSaving() {
+    var entityId = UUID.randomUUID();
+    var imageData = createTestImage(600, 900);
+
+    var result =
+        imageService.processImage(imageData, ImageType.POSTER, entityId, ImageEntityType.MOVIE);
+
+    imageService.saveImages(result.images());
+    imageService.saveImages(result.images());
+
+    var images = imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
+    assertThat(images)
+        .hasSize(4)
+        .extracting(Image::getVariant)
+        .containsExactlyInAnyOrder(
+            ImageSize.SMALL, ImageSize.MEDIUM, ImageSize.LARGE, ImageSize.ORIGINAL);
+  }
+
+  @Test
   @DisplayName("Should throw ImageProcessingException when file write fails")
   void shouldThrowImageProcessingExceptionWhenFileWriteFails() throws IOException {
     var entityId = UUID.randomUUID();

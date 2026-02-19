@@ -23,6 +23,7 @@ import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.metadata.movie.TMDBMovieProvider;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
+import com.streamarr.server.services.parsers.video.ExternalIdVideoFileMetadataParser;
 import com.streamarr.server.services.task.FileProcessingTaskCoordinator;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
@@ -68,12 +69,13 @@ class FileEventProcessorTest {
     var videoExtensionValidator = new VideoExtensionValidator();
     stabilityCheckerRef = new AtomicReference<>(path -> true);
 
+    // Plain paths instead of file:// URIs because file:// URIs can't round-trip through Jimfs.
     var library =
         Library.builder()
             .name("Movies")
             .backend(LibraryBackend.LOCAL)
             .status(LibraryStatus.HEALTHY)
-            .filepath("/media/movies")
+            .filepathUri("/media/movies")
             .externalAgentStrategy(ExternalAgentStrategy.TMDB)
             .type(MediaType.MOVIE)
             .build();
@@ -84,7 +86,7 @@ class FileEventProcessorTest {
             .name("Special Movies")
             .backend(LibraryBackend.LOCAL)
             .status(LibraryStatus.HEALTHY)
-            .filepath("/media/movies/special")
+            .filepathUri("/media/movies/special")
             .externalAgentStrategy(ExternalAgentStrategy.TMDB)
             .type(MediaType.MOVIE)
             .build();
@@ -95,7 +97,7 @@ class FileEventProcessorTest {
             .name("TV Shows")
             .backend(LibraryBackend.LOCAL)
             .status(LibraryStatus.HEALTHY)
-            .filepath("/media/shows")
+            .filepathUri("/media/shows")
             .externalAgentStrategy(ExternalAgentStrategy.TMDB)
             .type(MediaType.SERIES)
             .build();
@@ -113,9 +115,11 @@ class FileEventProcessorTest {
     var movieFileProcessor =
         new MovieFileProcessor(
             new DefaultVideoFileMetadataParser(),
+            new ExternalIdVideoFileMetadataParser(),
             new MovieMetadataProviderResolver(List.of(tmdbProvider)),
             movieService,
             mediaFileRepository,
+            fileSystem,
             new MutexFactoryProvider());
 
     var seriesFileProcessor = mock(SeriesFileProcessor.class);
@@ -221,7 +225,7 @@ class FileEventProcessorTest {
         .untilAsserted(
             () -> {
               var mediaFile =
-                  mediaFileRepository.findFirstByFilepath(path.toAbsolutePath().toString());
+                  mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path));
               assertThat(mediaFile).isPresent();
             });
   }
@@ -242,7 +246,7 @@ class FileEventProcessorTest {
 
     assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
 
-    var mediaFile = mediaFileRepository.findFirstByFilepath(path.toAbsolutePath().toString());
+    var mediaFile = mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path));
     assertThat(mediaFile).isEmpty();
   }
 
@@ -300,7 +304,7 @@ class FileEventProcessorTest {
         .atMost(Duration.ofSeconds(5))
         .untilAsserted(() -> assertThat(stabilityCheckerCalled.get()).isFalse());
 
-    var mediaFile = mediaFileRepository.findFirstByFilepath(path.toAbsolutePath().toString());
+    var mediaFile = mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path));
     assertThat(mediaFile).isEmpty();
   }
 
@@ -316,7 +320,7 @@ class FileEventProcessorTest {
         .untilAsserted(
             () -> {
               var mediaFile =
-                  mediaFileRepository.findFirstByFilepath(path.toAbsolutePath().toString());
+                  mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path));
               assertThat(mediaFile).isPresent();
               assertThat(mediaFile.get().getLibraryId()).isEqualTo(specialLibraryId);
             });
@@ -342,7 +346,7 @@ class FileEventProcessorTest {
         .atMost(Duration.ofSeconds(5))
         .untilAsserted(() -> assertThat(stabilityCheckerCalled.get()).isFalse());
 
-    var mediaFile = mediaFileRepository.findFirstByFilepath(path.toAbsolutePath().toString());
+    var mediaFile = mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path));
     assertThat(mediaFile).isEmpty();
   }
 
@@ -511,7 +515,7 @@ class FileEventProcessorTest {
             .name("Anime")
             .backend(LibraryBackend.LOCAL)
             .status(LibraryStatus.HEALTHY)
-            .filepath("/media/anime")
+            .filepathUri("/media/anime")
             .externalAgentStrategy(ExternalAgentStrategy.TMDB)
             .type(MediaType.MOVIE)
             .build();
@@ -534,7 +538,7 @@ class FileEventProcessorTest {
         .atMost(Duration.ofSeconds(5))
         .untilAsserted(() -> assertThat(stabilityCheckerCalled.get()).isFalse());
 
-    var mediaFile = mediaFileRepository.findFirstByFilepath(path.toAbsolutePath().toString());
+    var mediaFile = mediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(path));
     assertThat(mediaFile).isEmpty();
   }
 
@@ -604,6 +608,27 @@ class FileEventProcessorTest {
         .as(
             "Second stability check should complete, proving system recovered from cancelled first check")
         .isTrue();
+  }
+
+  @Test
+  @DisplayName("Should skip stability check when path is a directory")
+  void shouldSkipStabilityCheckWhenPathIsDirectory() throws Exception {
+    var dir = fileSystem.getPath("/media/movies/Season 04");
+    Files.createDirectories(dir);
+    var stabilityCheckerCalled = new AtomicBoolean(false);
+
+    stabilityCheckerRef.set(
+        p -> {
+          stabilityCheckerCalled.set(true);
+          return true;
+        });
+
+    eventProcessor.handleFileEvent(DirectoryChangeEvent.EventType.CREATE, dir);
+
+    await()
+        .during(Duration.ofMillis(100))
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(() -> assertThat(stabilityCheckerCalled.get()).isFalse());
   }
 
   private Path createFile(String pathStr) throws IOException {

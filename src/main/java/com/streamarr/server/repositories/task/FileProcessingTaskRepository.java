@@ -12,10 +12,10 @@ import org.springframework.stereotype.Repository;
 public interface FileProcessingTaskRepository
     extends JpaRepository<FileProcessingTask, UUID>, FileProcessingTaskRepositoryCustom {
 
-  Optional<FileProcessingTask> findByFilepathAndStatusIn(
-      String filepath, List<FileProcessingTaskStatus> statuses);
+  Optional<FileProcessingTask> findByFilepathUriAndStatusIn(
+      String filepathUri, List<FileProcessingTaskStatus> statuses);
 
   List<FileProcessingTask> findByOwnerInstanceId(String ownerInstanceId);
 
-  void deleteByFilepathAndStatusIn(String filepath, List<FileProcessingTaskStatus> statuses);
+  void deleteByFilepathUriAndStatusIn(String filepathUri, List<FileProcessingTaskStatus> statuses);
 }

@@ -23,6 +23,8 @@ public enum MediaFileStatus implements EnumType {
 
     METADATA_SEARCH_FAILED("METADATA_SEARCH_FAILED"),
 
+    ENRICHMENT_FAILED("ENRICHMENT_FAILED"),
+
     MATCHED("MATCHED");
 
     private final String literal;

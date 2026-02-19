@@ -1,6 +1,6 @@
 type MediaFile {
     id: ID!
     filename: String!
-    filepath: String!
+    filepathUri: String!
     size: String!
 }

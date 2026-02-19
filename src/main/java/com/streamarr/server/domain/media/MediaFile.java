@@ -30,7 +30,7 @@ public class MediaFile extends BaseAuditableEntity<MediaFile> {
   private UUID libraryId;
 
   private String filename;
-  private String filepath;
+  private String filepathUri;
 
   private long size;
 
@@ -45,7 +45,7 @@ public class MediaFile extends BaseAuditableEntity<MediaFile> {
 
     MediaFile that = (MediaFile) o;
 
-    return filepath != null && filepath.equals(that.getFilepath());
+    return filepathUri != null && filepathUri.equals(that.getFilepathUri());
   }
 
   @Override

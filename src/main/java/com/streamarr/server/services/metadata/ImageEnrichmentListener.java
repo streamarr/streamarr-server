@@ -20,38 +20,50 @@ import org.springframework.transaction.event.TransactionalEventListener;
 @Component
 public class ImageEnrichmentListener {
 
-  private final TheMovieDatabaseHttpService tmdbHttpService;
+  private final TmdbImageDownloader tmdbImageDownloader;
   private final ImageService imageService;
   private final MutexFactory<String> mutexFactory;
 
   public ImageEnrichmentListener(
-      TheMovieDatabaseHttpService tmdbHttpService,
+      TmdbImageDownloader tmdbImageDownloader,
       ImageService imageService,
       MutexFactoryProvider mutexFactoryProvider) {
-    this.tmdbHttpService = tmdbHttpService;
+    this.tmdbImageDownloader = tmdbImageDownloader;
     this.imageService = imageService;
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
   }
 
   @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
   public void onMetadataEnriched(MetadataEnrichedEvent event) {
+    Thread.startVirtualThread(() -> enrichImages(event));
+  }
+
+  private void enrichImages(MetadataEnrichedEvent event) {
     var mutex = mutexFactory.getMutex(event.entityId().toString());
 
-    mutex.lock();
     try {
-      var existingImages = imageService.findByEntity(event.entityId(), event.entityType());
+      mutex.lockInterruptibly();
 
-      if (!existingImages.isEmpty()) {
-        log.debug(
-            "Images already exist for entity {} ({}), skipping",
-            event.entityId(),
-            event.entityType());
-        return;
+      try {
+        var existingImages = imageService.findByEntity(event.entityId(), event.entityType());
+
+        if (!existingImages.isEmpty()) {
+          log.debug(
+              "Images already exist for entity {} ({}), skipping",
+              event.entityId(),
+              event.entityType());
+          return;
+        }
+
+        downloadAllImages(event);
+      } finally {
+        if (mutex.isHeldByCurrentThread()) {
+          mutex.unlock();
+        }
       }
-
-      downloadAllImages(event);
-    } finally {
-      mutex.unlock();
+    } catch (InterruptedException _) {
+      Thread.currentThread().interrupt();
+      log.warn("Image enrichment interrupted for entity {}", event.entityId());
     }
   }
 
@@ -87,7 +99,7 @@ public class ImageEnrichmentListener {
     try {
       var imageData =
           switch (source) {
-            case TmdbImageSource tmdb -> tmdbHttpService.downloadImage(tmdb.pathFragment());
+            case TmdbImageSource tmdb -> tmdbImageDownloader.downloadImage(tmdb.pathFragment());
           };
 
       return imageService.processImage(

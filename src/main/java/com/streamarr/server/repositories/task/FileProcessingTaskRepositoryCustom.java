@@ -4,6 +4,7 @@ import com.streamarr.server.domain.task.FileProcessingTask;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 public interface FileProcessingTaskRepositoryCustom {
 
@@ -13,4 +14,8 @@ public interface FileProcessingTaskRepositoryCustom {
       String ownerInstanceId, Instant leaseExpiresAt, Instant now, int limit);
 
   int extendLeases(String ownerInstanceId, Instant newLeaseExpiresAt);
+
+  Optional<FileProcessingTask> completeTask(UUID taskId, Instant completedOn);
+
+  Optional<FileProcessingTask> failTask(UUID taskId, String errorMessage, Instant completedOn);
 }

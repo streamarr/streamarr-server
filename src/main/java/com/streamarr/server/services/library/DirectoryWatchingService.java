@@ -1,5 +1,6 @@
 package com.streamarr.server.services.library;
 
+import com.streamarr.server.domain.Library;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.library.events.LibraryAddedEvent;
 import com.streamarr.server.services.library.events.LibraryRemovedEvent;
@@ -11,6 +12,7 @@ import jakarta.annotation.PreDestroy;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
@@ -44,13 +46,13 @@ public class DirectoryWatchingService implements InitializingBean {
             fileStabilityChecker, libraryManagementService, ignoredFileValidator, taskCoordinator);
   }
 
-  public void setup() throws IOException {
+  public void setup(List<Library> libraries) throws IOException {
     if (directoriesToWatch.isEmpty()) {
       log.debug("No directories configured for watching, skipping setup.");
       return;
     }
 
-    fileEventProcessor.reset(libraryRepository.findAll());
+    fileEventProcessor.reset(libraries);
 
     this.watcher =
         DirectoryWatcher.builder()
@@ -66,7 +68,7 @@ public class DirectoryWatchingService implements InitializingBean {
     if (watcher == null || watcher.isClosed()) {
       directoriesToWatch.add(path);
 
-      setup();
+      setup(libraryRepository.findAll());
 
       return;
     }
@@ -75,7 +77,7 @@ public class DirectoryWatchingService implements InitializingBean {
 
     directoriesToWatch.add(path);
 
-    setup();
+    setup(libraryRepository.findAll());
   }
 
   public void removeDirectory(Path path) throws IOException {
@@ -92,7 +94,7 @@ public class DirectoryWatchingService implements InitializingBean {
     directoriesToWatch.remove(path);
 
     if (!directoriesToWatch.isEmpty()) {
-      setup();
+      setup(libraryRepository.findAll());
     }
   }
 
@@ -111,14 +113,14 @@ public class DirectoryWatchingService implements InitializingBean {
 
   @Override
   public void afterPropertiesSet() {
-    var repositories = libraryRepository.findAll();
+    var libraries = libraryRepository.findAll();
 
-    repositories.forEach(rep -> directoriesToWatch.add(Path.of(rep.getFilepath())));
+    libraries.forEach(lib -> directoriesToWatch.add(FilepathCodec.decode(lib.getFilepathUri())));
 
     Thread.startVirtualThread(
         () -> {
           try {
-            setup();
+            setup(libraries);
           } catch (IOException ex) {
             log.error("Failed to start library watcher", ex);
           }
@@ -132,9 +134,9 @@ public class DirectoryWatchingService implements InitializingBean {
     Thread.startVirtualThread(
         () -> {
           try {
-            addDirectory(Path.of(event.filepath()));
+            addDirectory(FilepathCodec.decode(event.filepathUri()));
           } catch (IOException e) {
-            log.error("Failed to start watching directory for library: {}", event.filepath(), e);
+            log.error("Failed to start watching directory for library: {}", event.filepathUri(), e);
           }
         });
   }
@@ -142,9 +144,9 @@ public class DirectoryWatchingService implements InitializingBean {
   @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
   public void onLibraryRemoved(LibraryRemovedEvent event) {
     try {
-      removeDirectory(Path.of(event.filepath()));
+      removeDirectory(FilepathCodec.decode(event.filepathUri()));
     } catch (IOException e) {
-      log.warn("Failed to stop watching directory: {}", event.filepath(), e);
+      log.warn("Failed to stop watching directory: {}", event.filepathUri(), e);
     }
   }
 }

@@ -93,9 +93,9 @@ public class MediaFile extends TableImpl<MediaFileRecord> {
     public final TableField<MediaFileRecord, String> FILENAME = createField(DSL.name("filename"), SQLDataType.CLOB.nullable(false), this, "");
 
     /**
-     * The column <code>public.media_file.filepath</code>.
+     * The column <code>public.media_file.filepath_uri</code>.
      */
-    public final TableField<MediaFileRecord, String> FILEPATH = createField(DSL.name("filepath"), SQLDataType.CLOB.nullable(false), this, "");
+    public final TableField<MediaFileRecord, String> FILEPATH_URI = createField(DSL.name("filepath_uri"), SQLDataType.CLOB.nullable(false), this, "");
 
     /**
      * The column <code>public.media_file.size</code>.
@@ -186,7 +186,7 @@ public class MediaFile extends TableImpl<MediaFileRecord> {
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_MEDIA_FILE_LIBRARY_ID, Indexes.IDX_MEDIA_FILE_MEDIA_ID, Indexes.MEDIA_FILE_FILEPATH_IDX);
+        return Arrays.asList(Indexes.IDX_MEDIA_FILE_LIBRARY_ID, Indexes.IDX_MEDIA_FILE_MEDIA_ID, Indexes.MEDIA_FILE_FILEPATH_URI_IDX);
     }
 
     @Override

@@ -7,8 +7,7 @@ import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Movie;
-import com.streamarr.server.repositories.media.MediaFileRepository;
-import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.services.MovieService;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -27,9 +26,7 @@ class BaseCollectableResolverTest {
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
 
-  @MockitoBean private MovieRepository movieRepository;
-
-  @MockitoBean private MediaFileRepository mediaFileRepository;
+  @MockitoBean private MovieService movieService;
 
   @Test
   @DisplayName("Should return files when movie queried with files field")
@@ -38,13 +35,13 @@ class BaseCollectableResolverTest {
     var movie = Movie.builder().title("Inception").build();
     movie.setId(movieId);
 
-    when(movieRepository.findById(movieId)).thenReturn(Optional.of(movie));
-    when(mediaFileRepository.findByMediaId(movieId))
+    when(movieService.findById(movieId)).thenReturn(Optional.of(movie));
+    when(movieService.findMediaFiles(movieId))
         .thenReturn(
             List.of(
                 MediaFile.builder()
                     .filename("inception.mkv")
-                    .filepath("/movies/inception.mkv")
+                    .filepathUri("/movies/inception.mkv")
                     .size(1_500_000_000L)
                     .build()));
 

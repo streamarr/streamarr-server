@@ -6,8 +6,7 @@ import com.netflix.graphql.dgs.DgsQuery;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.exceptions.InvalidIdException;
-import com.streamarr.server.repositories.media.MediaFileRepository;
-import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.services.MovieService;
 import graphql.schema.DataFetchingEnvironment;
 import java.util.List;
 import java.util.Optional;
@@ -18,18 +17,17 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class MovieResolver {
 
-  private final MovieRepository movieRepository;
-  private final MediaFileRepository mediaFileRepository;
+  private final MovieService movieService;
 
   @DgsQuery
   public Optional<Movie> movie(String id) {
-    return movieRepository.findById(parseUuid(id));
+    return movieService.findById(parseUuid(id));
   }
 
   @DgsData(parentType = "Movie", field = "files")
   public List<MediaFile> files(DataFetchingEnvironment dfe) {
     Movie movie = dfe.getSource();
-    return mediaFileRepository.findByMediaId(movie.getId());
+    return movieService.findMediaFiles(movie.getId());
   }
 
   private UUID parseUuid(String id) {

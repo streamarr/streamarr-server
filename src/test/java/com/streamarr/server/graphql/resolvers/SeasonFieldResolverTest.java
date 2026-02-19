@@ -9,13 +9,7 @@ import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
-import com.streamarr.server.repositories.CompanyRepository;
-import com.streamarr.server.repositories.GenreRepository;
-import com.streamarr.server.repositories.PersonRepository;
-import com.streamarr.server.repositories.media.EpisodeRepository;
-import com.streamarr.server.repositories.media.MediaFileRepository;
-import com.streamarr.server.repositories.media.SeasonRepository;
-import com.streamarr.server.repositories.media.SeriesRepository;
+import com.streamarr.server.services.SeriesService;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -35,13 +29,7 @@ class SeasonFieldResolverTest {
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
 
-  @MockitoBean private SeriesRepository seriesRepository;
-  @MockitoBean private MediaFileRepository mediaFileRepository;
-  @MockitoBean private CompanyRepository companyRepository;
-  @MockitoBean private PersonRepository personRepository;
-  @MockitoBean private GenreRepository genreRepository;
-  @MockitoBean private SeasonRepository seasonRepository;
-  @MockitoBean private EpisodeRepository episodeRepository;
+  @MockitoBean private SeriesService seriesService;
 
   @Test
   @DisplayName("Should return episodes when season queried with episodes field")
@@ -57,9 +45,9 @@ class SeasonFieldResolverTest {
     var episode = Episode.builder().title("Pilot").episodeNumber(1).build();
     episode.setId(UUID.randomUUID());
 
-    when(seriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
-    when(seasonRepository.findBySeriesId(seriesId)).thenReturn(List.of(season));
-    when(episodeRepository.findBySeasonId(seasonId)).thenReturn(List.of(episode));
+    when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
+    when(seriesService.findSeasons(seriesId)).thenReturn(List.of(season));
+    when(seriesService.findEpisodes(seasonId)).thenReturn(List.of(episode));
 
     String title =
         dgsQueryExecutor.executeAndExtractJsonPath(
@@ -89,22 +77,23 @@ class SeasonFieldResolverTest {
     var mediaFile =
         MediaFile.builder()
             .filename("breaking.bad.s01e01.mkv")
-            .filepath("/media/shows/Breaking Bad/Season 1/breaking.bad.s01e01.mkv")
+            .filepathUri("/media/shows/Breaking Bad/Season 1/breaking.bad.s01e01.mkv")
             .size(1500000000L)
             .build();
     mediaFile.setId(UUID.randomUUID());
 
-    when(seriesRepository.findById(seriesId)).thenReturn(Optional.of(series));
-    when(seasonRepository.findBySeriesId(seriesId)).thenReturn(List.of(season));
-    when(episodeRepository.findBySeasonId(seasonId)).thenReturn(List.of(episode));
-    when(mediaFileRepository.findByMediaId(episodeId)).thenReturn(List.of(mediaFile));
+    when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
+    when(seriesService.findSeasons(seriesId)).thenReturn(List.of(season));
+    when(seriesService.findEpisodes(seasonId)).thenReturn(List.of(episode));
+    when(seriesService.findMediaFiles(episodeId)).thenReturn(List.of(mediaFile));
 
-    String filepath =
+    String filepathUri =
         dgsQueryExecutor.executeAndExtractJsonPath(
             String.format(
-                "{ series(id: \"%s\") { seasons { episodes { files { filepath } } } } }", seriesId),
-            "data.series.seasons[0].episodes[0].files[0].filepath");
+                "{ series(id: \"%s\") { seasons { episodes { files { filepathUri } } } } }",
+                seriesId),
+            "data.series.seasons[0].episodes[0].files[0].filepathUri");
 
-    assertThat(filepath).isEqualTo("/media/shows/Breaking Bad/Season 1/breaking.bad.s01e01.mkv");
+    assertThat(filepathUri).isEqualTo("/media/shows/Breaking Bad/Season 1/breaking.bad.s01e01.mkv");
   }
 }

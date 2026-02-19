@@ -32,8 +32,8 @@ public class FileProcessingTask {
   @Column(updatable = false)
   private UUID id;
 
-  @Column(nullable = false)
-  private String filepath;
+  @Column(name = "filepath_uri", nullable = false)
+  private String filepathUri;
 
   @Column(name = "library_id", nullable = false)
   private UUID libraryId;

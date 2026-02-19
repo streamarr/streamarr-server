@@ -9,6 +9,7 @@ import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.library.events.ScanCompletedEvent;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -17,7 +18,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Slf4j
 @Service
@@ -28,8 +29,8 @@ public class OrphanedMediaFileCleanupService {
   private final MediaFileRepository mediaFileRepository;
   private final MovieService movieService;
   private final FileSystem fileSystem;
+  private final TransactionTemplate transactionTemplate;
 
-  @Transactional
   @EventListener
   public void onScanCompleted(ScanCompletedEvent event) {
     try {
@@ -37,19 +38,18 @@ public class OrphanedMediaFileCleanupService {
           libraryRepository
               .findById(event.libraryId())
               .orElseThrow(() -> new LibraryNotFoundException(event.libraryId()));
-      cleanupOrphanedFiles(library);
+      transactionTemplate.executeWithoutResult(status -> cleanupOrphanedFiles(library));
     } catch (LibraryNotFoundException _) {
       log.warn("Library {} was deleted before orphaned file cleanup could run.", event.libraryId());
+    } catch (Exception e) {
+      log.error("Orphaned file cleanup failed for library: {}", event.libraryId(), e);
     }
   }
 
   public void cleanupOrphanedFiles(Library library) {
     var mediaFiles = mediaFileRepository.findByLibraryId(library.getId());
 
-    var orphanedFiles =
-        mediaFiles.stream()
-            .filter(file -> !Files.exists(fileSystem.getPath(file.getFilepath())))
-            .toList();
+    var orphanedFiles = mediaFiles.stream().filter(file -> !isFileStillOnDisk(file)).toList();
 
     if (orphanedFiles.isEmpty()) {
       return;
@@ -69,6 +69,16 @@ public class OrphanedMediaFileCleanupService {
         "Removed {} orphaned media file(s) from {} library.",
         orphanedFiles.size(),
         library.getName());
+  }
+
+  private boolean isFileStillOnDisk(MediaFile file) {
+    try {
+      var path = FilepathCodec.decode(fileSystem, file.getFilepathUri());
+      return Files.exists(path);
+    } catch (InvalidPathException | SecurityException _) {
+      log.warn("MediaFile id: {} has unmappable filepath — treating as orphaned.", file.getId());
+      return false;
+    }
   }
 
   private void deleteMoviesWithNoRemainingFiles(Set<UUID> movieIds) {

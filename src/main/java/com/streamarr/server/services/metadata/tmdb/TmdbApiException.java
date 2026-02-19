@@ -9,7 +9,7 @@ public class TmdbApiException extends IOException {
   private final int statusCode;
 
   public TmdbApiException(int statusCode, String message) {
-    super(message);
+    super("TMDB API error %d: %s".formatted(statusCode, message));
     this.statusCode = statusCode;
   }
 }

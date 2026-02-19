@@ -14,8 +14,7 @@ import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.graphql.dataloaders.ImageDataLoader;
 import com.streamarr.server.repositories.media.ImageRepository;
-import com.streamarr.server.repositories.media.MediaFileRepository;
-import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.services.MovieService;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -35,8 +34,7 @@ class ImageFieldResolverTest {
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
 
   @MockitoBean private ImageRepository imageRepository;
-  @MockitoBean private MovieRepository movieRepository;
-  @MockitoBean private MediaFileRepository mediaFileRepository;
+  @MockitoBean private MovieService movieService;
 
   @Test
   @DisplayName("Should load images via DataLoader when resolving movie images")
@@ -93,7 +91,7 @@ class ImageFieldResolverTest {
     var movieId = UUID.randomUUID();
     var movie = Movie.builder().title("Inception").build();
     movie.setId(movieId);
-    when(movieRepository.findById(movieId)).thenReturn(Optional.of(movie));
+    when(movieService.findById(movieId)).thenReturn(Optional.of(movie));
     return movie;
   }
 

@@ -2,17 +2,21 @@ package com.streamarr.server.services;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeCompanyRepository;
+import com.streamarr.server.repositories.CompanyRepository;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -151,5 +155,21 @@ class CompanyServiceTest {
     var result = companyService.getOrCreateCompanies(null, Map.of());
 
     assertThat(result).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should throw when company not found after upsert")
+  void shouldThrowWhenCompanyNotFoundAfterUpsert() {
+    var stubRepository = mock(CompanyRepository.class);
+    when(stubRepository.findBySourceId("wb-123")).thenReturn(Optional.empty());
+    var service = new CompanyService(stubRepository, new CapturingEventPublisher());
+
+    var company = Company.builder().name("Warner Bros.").sourceId("wb-123").build();
+    var companies = Set.of(company);
+
+    Map<String, List<ImageSource>> emptyImageSources = Map.of();
+    assertThatThrownBy(() -> service.getOrCreateCompanies(companies, emptyImageSources))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("not found after upsert");
   }
 }

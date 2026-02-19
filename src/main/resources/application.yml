@@ -26,7 +26,9 @@ dgs:
 tmdb:
   api:
     token: ${TMDB_API_TOKEN:}
-    max-concurrent-requests: ${TMDB_API_MAX_CONCURRENT_REQUESTS:10}
+    cache-size-mb: ${TMDB_API_CACHE_SIZE_MB:200}
+    requests-per-second: ${TMDB_API_REQUESTS_PER_SECOND:35}
+    request-timeout-seconds: ${TMDB_API_REQUEST_TIMEOUT_SECONDS:30}
   image:
     base-url: ${TMDB_IMAGE_BASE_URL:https://image.tmdb.org/t/p/original}
 

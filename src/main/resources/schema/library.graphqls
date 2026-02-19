@@ -5,7 +5,7 @@ type Library {
     lastModifiedBy: String
     lastModifiedOn: String!
     name: String
-    filepath: String!
+    filepathUri: String!
     scanStartedOn: String
     scanCompletedOn: String
     status: LibraryStatus!

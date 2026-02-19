@@ -24,8 +24,16 @@
         <sonar.coverage.exclusions>**/pom.xml, **/StreamarrServerApplication.java</sonar.coverage.exclusions>
         <sonar.test.inclusions>**/src/test/**</sonar.test.inclusions>
         <sonar.exclusions>**/jooq/generated/**</sonar.exclusions>
+        <sonar.issue.ignore.multicriteria>e1,e2</sonar.issue.ignore.multicriteria>
+        <!-- Google Java Format puts static imports first; S8445 wants them last -->
+        <sonar.issue.ignore.multicriteria.e1.ruleKey>java:S8445</sonar.issue.ignore.multicriteria.e1.ruleKey>
+        <sonar.issue.ignore.multicriteria.e1.resourceKey>**/*.java</sonar.issue.ignore.multicriteria.e1.resourceKey>
+        <!-- Flyway requires V{version}__{description} class naming -->
+        <sonar.issue.ignore.multicriteria.e2.ruleKey>java:S101</sonar.issue.ignore.multicriteria.e2.ruleKey>
+        <sonar.issue.ignore.multicriteria.e2.resourceKey>src/main/java/db/migration/**</sonar.issue.ignore.multicriteria.e2.resourceKey>
 
         <apache-commons-lang.version>3.20.0</apache-commons-lang.version>
+        <apache-commons-text.version>1.13.1</apache-commons-text.version>
         <apache-commons-io.version>2.21.0</apache-commons-io.version>
         <dgs-graphql.version>11.1.0</dgs-graphql.version>
         <lombok.version>1.18.42</lombok.version>
@@ -38,7 +46,8 @@
         <thumbnailator.version>0.4.21</thumbnailator.version>
         <blurhash.version>1.0.0</blurhash.version>
 
-        <methanol-client.version>1.8.4</methanol-client.version>
+        <methanol-client.version>1.9.0</methanol-client.version>
+        <guava.version>33.4.8-jre</guava.version>
         <jimfs.version>1.3.1</jimfs.version>
         <testcontainers.version>2.0.3</testcontainers.version>
         <awaitility.version>4.3.0</awaitility.version>
@@ -104,6 +113,12 @@
         </dependency>
 
         <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+            <version>${guava.version}</version>
+        </dependency>
+
+        <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
             <version>${lombok.version}</version>
@@ -120,6 +135,12 @@
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-lang3</artifactId>
             <version>${apache-commons-lang.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-text</artifactId>
+            <version>${apache-commons-text.version}</version>
         </dependency>
 
         <dependency>

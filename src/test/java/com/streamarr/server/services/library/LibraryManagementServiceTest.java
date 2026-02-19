@@ -2,9 +2,7 @@ package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -45,12 +43,14 @@ import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.library.events.LibraryAddedEvent;
 import com.streamarr.server.services.library.events.LibraryRemovedEvent;
 import com.streamarr.server.services.library.events.ScanCompletedEvent;
+import com.streamarr.server.services.library.events.ScanEndedEvent;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.metadata.movie.TMDBMovieProvider;
 import com.streamarr.server.services.parsers.video.DefaultVideoFileMetadataParser;
+import com.streamarr.server.services.parsers.video.ExternalIdVideoFileMetadataParser;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
 import com.streamarr.server.services.validation.VideoExtensionValidator;
@@ -99,15 +99,23 @@ class LibraryManagementServiceTest {
           null,
           null,
           capturingEventPublisher,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
           null);
   private final FileSystem fileSystem = Jimfs.newFileSystem(Configuration.unix());
 
   private final MovieFileProcessor movieFileProcessor =
       new MovieFileProcessor(
           new DefaultVideoFileMetadataParser(),
+          new ExternalIdVideoFileMetadataParser(),
           fakeMovieMetadataProviderResolver,
           movieService,
           fakeMediaFileRepository,
+          fileSystem,
           new MutexFactoryProvider());
 
   private final SeriesFileProcessor seriesFileProcessor = mock(SeriesFileProcessor.class);
@@ -131,6 +139,7 @@ class LibraryManagementServiceTest {
 
   @BeforeEach
   public void setup() {
+    // Fixture uses plain paths because file:// URIs can't round-trip through Jimfs.
     var fakeLibrary = LibraryFixtureCreator.buildFakeLibrary();
     var savedLibrary = fakeLibraryRepository.save(fakeLibrary);
 
@@ -140,6 +149,33 @@ class LibraryManagementServiceTest {
   @AfterEach
   public void tearDown() throws IOException {
     fileSystem.close();
+  }
+
+  @Test
+  @DisplayName("Should remain healthy when file processing task fails during scan")
+  void shouldRemainHealthyWhenFileProcessingTaskFailsDuringScan() throws Exception {
+    var rootPath = createRootLibraryDirectory();
+    var moviePath = createMovieFile(rootPath, "Failing Movie", "Failing Movie (2024).mkv");
+
+    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
+        .thenThrow(new RuntimeException("simulated search failure"));
+
+    libraryManagementService.scanLibrary(savedLibraryId);
+
+    var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+    assertThat(library.getStatus()).isEqualTo(LibraryStatus.HEALTHY);
+
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () -> {
+              var mediaFile =
+                  fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
+              assertThat(mediaFile)
+                  .as("Media file should have been created during scan")
+                  .isPresent();
+            });
   }
 
   @Test
@@ -169,7 +205,7 @@ class LibraryManagementServiceTest {
   void shouldSetLibraryStatusToUnhealthyWhenLibraryFilepathInaccessible() {
     libraryManagementService.scanLibrary(savedLibraryId);
 
-    assertTrue(fakeLibraryRepository.findById(savedLibraryId).isPresent());
+    assertThat(fakeLibraryRepository.findById(savedLibraryId)).isPresent();
     assertThat(fakeLibraryRepository.findById(savedLibraryId).get().getStatus())
         .isEqualTo(LibraryStatus.UNHEALTHY);
   }
@@ -200,7 +236,7 @@ class LibraryManagementServiceTest {
 
     serviceWithThrowingFs.scanLibrary(savedLibraryId);
 
-    assertTrue(fakeLibraryRepository.findById(savedLibraryId).isPresent());
+    assertThat(fakeLibraryRepository.findById(savedLibraryId)).isPresent();
     assertThat(fakeLibraryRepository.findById(savedLibraryId).get().getStatus())
         .isEqualTo(LibraryStatus.UNHEALTHY);
   }
@@ -233,7 +269,7 @@ class LibraryManagementServiceTest {
 
     serviceWithThrowingFs.scanLibrary(savedLibraryId);
 
-    assertTrue(fakeLibraryRepository.findById(savedLibraryId).isPresent());
+    assertThat(fakeLibraryRepository.findById(savedLibraryId)).isPresent();
     assertThat(fakeLibraryRepository.findById(savedLibraryId).get().getStatus())
         .isEqualTo(LibraryStatus.UNHEALTHY);
   }
@@ -247,12 +283,12 @@ class LibraryManagementServiceTest {
                 .name("Other Type Library")
                 .backend(LibraryBackend.LOCAL)
                 .status(LibraryStatus.HEALTHY)
-                .filepath("/library/" + UUID.randomUUID())
+                .filepathUri("/library/" + UUID.randomUUID())
                 .externalAgentStrategy(ExternalAgentStrategy.TMDB)
                 .type(MediaType.OTHER)
                 .build());
 
-    var libraryPath = fileSystem.getPath(otherTypeLibrary.getFilepath());
+    var libraryPath = FilepathCodec.decode(fileSystem, otherTypeLibrary.getFilepathUri());
     Files.createDirectories(libraryPath);
     var movieFolder = libraryPath.resolve("Test Movie");
     Files.createDirectory(movieFolder);
@@ -273,7 +309,7 @@ class LibraryManagementServiceTest {
 
     libraryManagementService.scanLibrary(savedLibraryId);
 
-    assertTrue(fakeLibraryRepository.findById(savedLibraryId).isPresent());
+    assertThat(fakeLibraryRepository.findById(savedLibraryId)).isPresent();
     assertThat(fakeLibraryRepository.findById(savedLibraryId).get().getStatus())
         .isEqualTo(LibraryStatus.HEALTHY);
   }
@@ -333,6 +369,29 @@ class LibraryManagementServiceTest {
 
   @Test
   @DisplayName(
+      "Should publish ScanEndedEvent with correct library ID when scan completes successfully")
+  void shouldPublishScanEndedEventWhenScanSucceeds() throws IOException {
+    createRootLibraryDirectory();
+
+    libraryManagementService.scanLibrary(savedLibraryId);
+
+    var events = capturingEventPublisher.getEventsOfType(ScanEndedEvent.class);
+    assertThat(events).hasSize(1);
+    assertThat(events.getFirst().libraryId()).isEqualTo(savedLibraryId);
+  }
+
+  @Test
+  @DisplayName("Should publish ScanEndedEvent when library path is inaccessible")
+  void shouldPublishScanEndedEventWhenLibraryPathInaccessible() {
+    libraryManagementService.scanLibrary(savedLibraryId);
+
+    var events = capturingEventPublisher.getEventsOfType(ScanEndedEvent.class);
+    assertThat(events).hasSize(1);
+    assertThat(events.getFirst().libraryId()).isEqualTo(savedLibraryId);
+  }
+
+  @Test
+  @DisplayName(
       "Should skip creating a media file when provided a library containing an unsupported file extension")
   void shouldSkipCreatingMediaFileWhenProvidedLibraryContainingUnsupportedMovie()
       throws IOException {
@@ -341,10 +400,43 @@ class LibraryManagementServiceTest {
 
     libraryManagementService.scanLibrary(savedLibraryId);
 
-    var mediaFile =
-        fakeMediaFileRepository.findFirstByFilepath(moviePath.toAbsolutePath().toString());
+    var mediaFile = fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
 
-    assertTrue(mediaFile.isEmpty());
+    assertThat(mediaFile).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should match media file when filename contains external ID tag")
+  void shouldMatchMediaFileWhenFilenameContainsExternalIdTag() throws IOException {
+    var movieFolder = "Inception (2010) [imdb-tt1375666]";
+    var movieFilename = "Inception (2010) [imdb-tt1375666].mkv";
+
+    var rootPath = createRootLibraryDirectory();
+    var moviePath = createMovieFile(rootPath, movieFolder, movieFilename);
+
+    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+
+    when(tmdbMovieProvider.search(any(VideoFileParserResult.class)))
+        .thenReturn(
+            Optional.of(
+                RemoteSearchResult.builder()
+                    .title("Inception")
+                    .externalId("27205")
+                    .externalSourceType(ExternalSourceType.TMDB)
+                    .build()));
+
+    when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
+        .thenReturn(
+            Optional.of(
+                new MetadataResult<>(
+                    Movie.builder().title("Inception").build(), List.of(), Map.of(), Map.of())));
+
+    libraryManagementService.scanLibrary(savedLibraryId);
+
+    var mediaFile = fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
+
+    assertThat(mediaFile).isPresent();
+    assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.MATCHED);
   }
 
   @Test
@@ -361,7 +453,7 @@ class LibraryManagementServiceTest {
         fakeMediaFileRepository.save(
             MediaFile.builder()
                 .libraryId(savedLibraryId)
-                .filepath(moviePath.toString())
+                .filepathUri(FilepathCodec.encode(moviePath))
                 .filename(movieFilename)
                 .status(MediaFileStatus.MATCHED)
                 .build());
@@ -369,10 +461,9 @@ class LibraryManagementServiceTest {
     libraryManagementService.scanLibrary(savedLibraryId);
 
     var mediaFileAfterRefresh =
-        fakeMediaFileRepository.findFirstByFilepath(moviePath.toAbsolutePath().toString());
+        fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
 
-    assertTrue(mediaFileAfterRefresh.isPresent());
-    assertEquals(mediaFileBeforeRefresh, mediaFileAfterRefresh.get());
+    assertThat(mediaFileAfterRefresh).contains(mediaFileBeforeRefresh);
   }
 
   @Test
@@ -404,12 +495,10 @@ class LibraryManagementServiceTest {
 
     libraryManagementService.scanLibrary(savedLibraryId);
 
-    var mediaFile =
-        fakeMediaFileRepository.findFirstByFilepath(moviePath.toAbsolutePath().toString());
+    var mediaFile = fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
 
-    assertTrue(mediaFile.isPresent());
-
-    assertEquals(MediaFileStatus.MATCHED, mediaFile.get().getStatus());
+    assertThat(mediaFile).isPresent();
+    assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.MATCHED);
   }
 
   @Test
@@ -427,7 +516,7 @@ class LibraryManagementServiceTest {
         fakeMediaFileRepository.save(
             MediaFile.builder()
                 .libraryId(savedLibraryId)
-                .filepath(moviePath.toString())
+                .filepathUri(FilepathCodec.encode(moviePath))
                 .filename(movieFilename)
                 .status(MediaFileStatus.UNMATCHED)
                 .build());
@@ -444,10 +533,9 @@ class LibraryManagementServiceTest {
     libraryManagementService.scanLibrary(savedLibraryId);
 
     var mediaFileAfterRefresh =
-        fakeMediaFileRepository.findFirstByFilepath(moviePath.toAbsolutePath().toString());
+        fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
 
-    assertTrue(mediaFileAfterRefresh.isPresent());
-    assertEquals(mediaFileBeforeRefresh, mediaFileAfterRefresh.get());
+    assertThat(mediaFileAfterRefresh).contains(mediaFileBeforeRefresh);
   }
 
   @Test
@@ -478,11 +566,10 @@ class LibraryManagementServiceTest {
 
     libraryManagementService.processDiscoveredFile(savedLibraryId, moviePath);
 
-    var mediaFile =
-        fakeMediaFileRepository.findFirstByFilepath(moviePath.toAbsolutePath().toString());
+    var mediaFile = fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
 
-    assertTrue(mediaFile.isPresent());
-    assertEquals(MediaFileStatus.MATCHED, mediaFile.get().getStatus());
+    assertThat(mediaFile).isPresent();
+    assertThat(mediaFile.get().getStatus()).isEqualTo(MediaFileStatus.MATCHED);
   }
 
   @Test
@@ -505,7 +592,7 @@ class LibraryManagementServiceTest {
         fakeMediaFileRepository.save(
             MediaFile.builder()
                 .libraryId(savedLibraryId)
-                .filepath("/library/nonexistent/movie.mkv")
+                .filepathUri("/library/nonexistent/movie.mkv")
                 .filename("movie.mkv")
                 .status(MediaFileStatus.MATCHED)
                 .build());
@@ -525,9 +612,9 @@ class LibraryManagementServiceTest {
     libraryManagementService.scanLibrary(savedLibraryId);
 
     var mediaFile =
-        fakeMediaFileRepository.findFirstByFilepath(systemFilePath.toAbsolutePath().toString());
+        fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(systemFilePath));
 
-    assertTrue(mediaFile.isEmpty());
+    assertThat(mediaFile).isEmpty();
   }
 
   @Test
@@ -590,14 +677,15 @@ class LibraryManagementServiceTest {
     @Test
     @DisplayName("Should throw LibraryAlreadyExistsException when filepath already exists")
     void shouldThrowLibraryAlreadyExistsExceptionWhenFilepathExists() throws IOException {
-      var existingLibrary = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
-      var existingFilepath = existingLibrary.getFilepath();
-
-      var libraryPath = fileSystem.getPath(existingFilepath);
+      var libraryPath = fileSystem.getPath("/duplicate-library");
       Files.createDirectories(libraryPath);
 
+      var firstLibrary =
+          LibraryFixtureCreator.buildUnsavedLibrary("First Library", libraryPath.toString());
+      libraryManagementService.addLibrary(firstLibrary);
+
       var duplicateLibrary =
-          LibraryFixtureCreator.buildUnsavedLibrary("Duplicate Library", existingFilepath);
+          LibraryFixtureCreator.buildUnsavedLibrary("Duplicate Library", libraryPath.toString());
 
       assertThrows(
           LibraryAlreadyExistsException.class,
@@ -642,6 +730,21 @@ class LibraryManagementServiceTest {
     }
 
     @Test
+    @DisplayName("Should store filepathUri as encoded URI when adding library")
+    void shouldStoreFilepathUriAsEncodedUriWhenAddingLibrary() throws IOException {
+      var newLibraryPath = fileSystem.getPath("/encoded-library");
+      Files.createDirectories(newLibraryPath);
+
+      var library =
+          LibraryFixtureCreator.buildUnsavedLibrary("Encoded Library", newLibraryPath.toString());
+
+      var savedLibrary = libraryManagementService.addLibrary(library);
+
+      var persisted = fakeLibraryRepository.findById(savedLibrary.getId()).orElseThrow();
+      assertThat(persisted.getFilepathUri()).startsWith("jimfs://");
+    }
+
+    @Test
     @DisplayName("Should set status to HEALTHY when adding library")
     void shouldSetStatusToHealthyWhenAdding() throws IOException {
       var newLibraryPath = fileSystem.getPath("/healthy-library");
@@ -670,7 +773,7 @@ class LibraryManagementServiceTest {
       var events = capturingEventPublisher.getEventsOfType(LibraryAddedEvent.class);
       assertThat(events).hasSize(1);
       assertThat(events.getFirst().libraryId()).isEqualTo(savedLibrary.getId());
-      assertThat(events.getFirst().filepath()).isEqualTo(newLibraryPath.toString());
+      assertThat(events.getFirst().filepathUri()).isEqualTo(FilepathCodec.encode(newLibraryPath));
     }
 
     @Test
@@ -775,13 +878,13 @@ class LibraryManagementServiceTest {
         "Should publish LibraryRemovedEvent with correct filepath and media file IDs when library is removed")
     void shouldPublishLibraryRemovedEventWhenLibraryIsRemoved() {
       var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
-      var expectedFilepath = library.getFilepath();
+      var expectedFilepath = library.getFilepathUri();
 
       var mediaFile =
           fakeMediaFileRepository.save(
               MediaFile.builder()
                   .libraryId(savedLibraryId)
-                  .filepath("/library/movie.mkv")
+                  .filepathUri("/library/movie.mkv")
                   .filename("movie.mkv")
                   .status(MediaFileStatus.MATCHED)
                   .build());
@@ -790,7 +893,7 @@ class LibraryManagementServiceTest {
 
       var events = capturingEventPublisher.getEventsOfType(LibraryRemovedEvent.class);
       assertThat(events).hasSize(1);
-      assertThat(events.getFirst().filepath()).isEqualTo(expectedFilepath);
+      assertThat(events.getFirst().filepathUri()).isEqualTo(expectedFilepath);
       assertThat(events.getFirst().mediaFileIds()).containsExactly(mediaFile.getId());
     }
 
@@ -837,7 +940,7 @@ class LibraryManagementServiceTest {
   private Path createRootLibraryDirectory() throws IOException {
     var library = fakeLibraryRepository.findById(savedLibraryId);
 
-    var path = fileSystem.getPath(library.orElseThrow().getFilepath());
+    var path = FilepathCodec.decode(fileSystem, library.orElseThrow().getFilepathUri());
     Files.createDirectories(path);
 
     return path;

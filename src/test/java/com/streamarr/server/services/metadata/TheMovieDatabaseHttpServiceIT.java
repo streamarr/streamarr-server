@@ -8,12 +8,18 @@ import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMoc
 import static com.github.tomakehurst.wiremock.stubbing.Scenario.STARTED;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.awaitility.Awaitility.await;
 
+import com.github.mizosoft.methanol.HttpCache;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.services.metadata.tmdb.TmdbApiException;
 import com.streamarr.server.services.metadata.tmdb.TmdbSearchResults;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
+import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpTimeoutException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -39,13 +45,18 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
     registry.add("tmdb.api.base-url", wireMock::baseUrl);
     registry.add("tmdb.image.base-url", wireMock::baseUrl);
     registry.add("tmdb.api.token", () -> "test-api-token");
+    registry.add("tmdb.api.requests-per-second", () -> "1000");
+    registry.add("tmdb.api.request-timeout-seconds", () -> "2");
   }
 
   @Autowired private TheMovieDatabaseHttpService service;
 
+  @Autowired private HttpCache tmdbHttpCache;
+
   @BeforeEach
-  void resetStubs() {
+  void resetStubs() throws IOException {
     wireMock.resetAll();
+    tmdbHttpCache.clear();
   }
 
   @AfterAll
@@ -351,7 +362,7 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
 
     assertThatThrownBy(() -> service.searchForMovie(parserResult))
         .isInstanceOf(TmdbApiException.class)
-        .hasMessage("Invalid API key: You must be granted a valid key.")
+        .hasMessageContaining("Invalid API key: You must be granted a valid key.")
         .satisfies(ex -> assertThat(((TmdbApiException) ex).getStatusCode()).isEqualTo(401));
   }
 
@@ -362,7 +373,15 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
         get(urlPathEqualTo("/search/movie"))
             .inScenario("Rate Limit Recovery")
             .whenScenarioStateIs(STARTED)
-            .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "0"))
+            .willReturn(
+                aResponse()
+                    .withStatus(429)
+                    .withHeader("Retry-After", "0")
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                    {"status_message":"Your request count is over the allowed limit.","status_code":25}
+                    """))
             .willSetStateTo("Recovered"));
 
     wireMock.stubFor(
@@ -406,13 +425,21 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
   void shouldThrowTmdbApiExceptionWhenRateLimitPersistsAfterMaxRetries() {
     wireMock.stubFor(
         get(urlPathEqualTo("/search/movie"))
-            .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "0")));
+            .willReturn(
+                aResponse()
+                    .withStatus(429)
+                    .withHeader("Retry-After", "0")
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                    {"status_message":"Your request count is over the allowed limit.","status_code":25}
+                    """)));
 
     var parserResult = VideoFileParserResult.builder().title("Test").build();
 
     assertThatThrownBy(() -> service.searchForMovie(parserResult))
         .isInstanceOf(TmdbApiException.class)
-        .hasMessageContaining("retryable status persisted")
+        .hasMessageContaining("Your request count is over the allowed limit.")
         .satisfies(ex -> assertThat(((TmdbApiException) ex).getStatusCode()).isEqualTo(429));
   }
 
@@ -652,7 +679,15 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
         get(urlPathEqualTo("/rate-limited.jpg"))
             .inScenario("Image Rate Limit")
             .whenScenarioStateIs(STARTED)
-            .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "0"))
+            .willReturn(
+                aResponse()
+                    .withStatus(429)
+                    .withHeader("Retry-After", "0")
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                    {"status_message":"Your request count is over the allowed limit.","status_code":25}
+                    """))
             .willSetStateTo("Recovered"));
 
     wireMock.stubFor(
@@ -681,34 +716,114 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should exclude image from cache when downloading")
+  void shouldExcludeImageFromCacheWhenDownloading() throws Exception {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/search/movie"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withHeader("Cache-Control", "public, max-age=300")
+                    .withBody(
+                        """
+                    {
+                      "page": 1,
+                      "results": [
+                        {
+                          "id": 1,
+                          "title": "Cache Test",
+                          "adult": false,
+                          "popularity": 1.0,
+                          "vote_count": 0,
+                          "vote_average": 0,
+                          "video": false
+                        }
+                      ],
+                      "total_results": 1,
+                      "total_pages": 1
+                    }
+                    """)));
+
+    service.searchForMovie(VideoFileParserResult.builder().title("Cache Test").build());
+
+    var cachedUris = new ArrayList<URI>();
+    tmdbHttpCache.uris().forEachRemaining(cachedUris::add);
+    assertThat(cachedUris).as("Metadata API response should be cached").isNotEmpty();
+
+    var imageBytes = new byte[] {(byte) 0xFF, (byte) 0xD8};
+    wireMock.stubFor(
+        get(urlPathEqualTo("/cached-poster.jpg"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "image/jpeg")
+                    .withHeader("Cache-Control", "public, max-age=300")
+                    .withBody(imageBytes)));
+
+    service.downloadImage("/cached-poster.jpg");
+
+    cachedUris.clear();
+    tmdbHttpCache.uris().forEachRemaining(cachedUris::add);
+    assertThat(cachedUris)
+        .as("Image download should not enter cache due to NO_STORE on request")
+        .noneMatch(uri -> uri.getPath().contains("/cached-poster.jpg"));
+  }
+
+  @Test
   @DisplayName("Should succeed when rate limited for four consecutive attempts")
   void shouldSucceedWhenRateLimitedForFourConsecutiveAttempts() throws Exception {
+    var rateLimitBody =
+        """
+        {"status_message":"Your request count is over the allowed limit.","status_code":25}
+        """;
+
     wireMock.stubFor(
         get(urlPathEqualTo("/search/movie"))
             .inScenario("Four Retries")
             .whenScenarioStateIs(STARTED)
-            .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "0"))
+            .willReturn(
+                aResponse()
+                    .withStatus(429)
+                    .withHeader("Retry-After", "0")
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(rateLimitBody))
             .willSetStateTo("Retry2"));
 
     wireMock.stubFor(
         get(urlPathEqualTo("/search/movie"))
             .inScenario("Four Retries")
             .whenScenarioStateIs("Retry2")
-            .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "0"))
+            .willReturn(
+                aResponse()
+                    .withStatus(429)
+                    .withHeader("Retry-After", "0")
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(rateLimitBody))
             .willSetStateTo("Retry3"));
 
     wireMock.stubFor(
         get(urlPathEqualTo("/search/movie"))
             .inScenario("Four Retries")
             .whenScenarioStateIs("Retry3")
-            .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "0"))
+            .willReturn(
+                aResponse()
+                    .withStatus(429)
+                    .withHeader("Retry-After", "0")
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(rateLimitBody))
             .willSetStateTo("Retry4"));
 
     wireMock.stubFor(
         get(urlPathEqualTo("/search/movie"))
             .inScenario("Four Retries")
             .whenScenarioStateIs("Retry4")
-            .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "0"))
+            .willReturn(
+                aResponse()
+                    .withStatus(429)
+                    .withHeader("Retry-After", "0")
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(rateLimitBody))
             .willSetStateTo("Recovered"));
 
     wireMock.stubFor(
@@ -750,17 +865,23 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should complete concurrent requests when intermittently rate limited")
   void shouldCompleteConcurrentRequestsWhenIntermittentlyRateLimited() throws Exception {
-    wireMock.stubFor(
-        get(urlPathEqualTo("/search/movie"))
-            .inScenario("Concurrent Rate Limit")
-            .whenScenarioStateIs(STARTED)
-            .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "0"))
-            .willSetStateTo("Recovered"));
+    var rateLimitStub =
+        wireMock.stubFor(
+            get(urlPathEqualTo("/search/movie"))
+                .atPriority(1)
+                .willReturn(
+                    aResponse()
+                        .withStatus(429)
+                        .withHeader("Retry-After", "1")
+                        .withHeader("Content-Type", "application/json")
+                        .withBody(
+                            """
+                        {"status_message":"Your request count is over the allowed limit.","status_code":25}
+                        """)));
 
     wireMock.stubFor(
         get(urlPathEqualTo("/search/movie"))
-            .inScenario("Concurrent Rate Limit")
-            .whenScenarioStateIs("Recovered")
+            .atPriority(10)
             .willReturn(
                 aResponse()
                     .withStatus(200)
@@ -797,6 +918,12 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
                   return service.searchForMovie(parserResult);
                 }));
       }
+
+      await()
+          .atMost(Duration.ofSeconds(5))
+          .untilAsserted(() -> assertThat(wireMock.getServeEvents().getRequests()).isNotEmpty());
+
+      wireMock.removeStubMapping(rateLimitStub);
     }
 
     for (var future : futures) {
@@ -853,5 +980,32 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
     for (var future : futures) {
       assertThat(future.get().getResults()).hasSize(1);
     }
+  }
+
+  @Test
+  @DisplayName("Should throw when request exceeds timeout")
+  void shouldThrowWhenRequestExceedsTimeout() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/search/movie"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withFixedDelay(3000)
+                    .withBody(
+                        """
+                    {
+                      "page": 1,
+                      "results": [],
+                      "total_results": 0,
+                      "total_pages": 0
+                    }
+                    """)));
+
+    assertThatThrownBy(
+            () ->
+                service.searchForMovie(
+                    VideoFileParserResult.builder().title("Slow").build()))
+        .isInstanceOf(HttpTimeoutException.class);
   }
 }

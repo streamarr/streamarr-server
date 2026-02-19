@@ -1,0 +1,24 @@
+= ADR 0012: Filepath URI Encoding
+
+== Status
+
+Accepted
+
+== Context
+
+The codebase had two representations for filesystem paths: `MediaFile.filepathUri` stored URI-encoded strings (`file:///media/Alien%C2%B3.mkv`) while `Library.filepath` stored plain strings (`/media/movies`). Frontend consumers would have to handle each field differently, and plain strings silently broke on non-ASCII characters (e.g. accented titles, CJK).
+
+`Image.path` is a separate concern. Images are served via `/api/images/{id}`, so the path is an internal implementation detail.
+
+== Decision
+
+All filesystem paths persisted in the database use `file:///` URI encoding via `FilepathCodec`. Fields that reference the local filesystem are named `filepathUri` to signal the encoding. Fields that hold server-relative resource identifiers served by our API (e.g. `Image.path`) remain plain strings.
+
+* *`filepathUri`* -- URI-encoded absolute path to a file on disk. Encode on write (`FilepathCodec.encode`), decode on read (`FilepathCodec.decode`).
+* *`path` / `url`* -- opaque identifier for a resource served by the application. No encoding required.
+
+== Consequences
+
+* Frontend consumers parse every filepath field the same way (standard URI decoding)
+* Non-ASCII filenames round-trip safely through the database and GraphQL schema
+* `FilepathCodec.decode` includes a plain-string fallback for pre-migration data. `file://` URIs resolve correctly against Jimfs via the `decodeUri` path-extraction fallback, so tests use production-like URIs
