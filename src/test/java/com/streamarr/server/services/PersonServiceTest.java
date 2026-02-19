@@ -156,8 +156,8 @@ class PersonServiceTest {
   }
 
   @Test
-  @DisplayName("Should return persons sorted by source ID regardless of input order")
-  void shouldReturnPersonsSortedBySourceIdRegardlessOfInputOrder() {
+  @DisplayName("Should return persons sorted by source ID when input is unordered")
+  void shouldReturnPersonsSortedBySourceIdWhenInputIsUnordered() {
     var persons =
         List.of(
             Person.builder().name("Actor C").sourceId("300").build(),

@@ -67,10 +67,8 @@ class PersonServiceConcurrencyIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName(
-      "Should not deadlock when concurrent transactions insert overlapping persons in opposite"
-          + " order")
-  void shouldNotDeadlockWhenConcurrentTransactionsInsertOverlappingPersonsInOppositeOrder() {
+  @DisplayName("Should create all persons when concurrent inserts overlap in opposite order")
+  void shouldCreateAllPersonsWhenConcurrentInsertsOverlapInOppositeOrder() {
     var suffix = String.valueOf(System.nanoTime());
     var forward =
         List.of(
@@ -83,6 +81,7 @@ class PersonServiceConcurrencyIT extends AbstractIntegrationTest {
     var executor = Executors.newFixedThreadPool(threadCount);
     var startLatch = new CountDownLatch(1);
     var doneLatch = new CountDownLatch(threadCount);
+    var results = new CopyOnWriteArrayList<List<Person>>();
     var exceptions = new CopyOnWriteArrayList<Exception>();
 
     for (int i = 0; i < threadCount; i++) {
@@ -91,7 +90,8 @@ class PersonServiceConcurrencyIT extends AbstractIntegrationTest {
           () -> {
             try {
               startLatch.await();
-              personService.getOrCreatePersons(persons, Map.of());
+              var result = personService.getOrCreatePersons(persons, Map.of());
+              results.add(result);
             } catch (Exception e) {
               exceptions.add(e);
             } finally {
@@ -109,6 +109,7 @@ class PersonServiceConcurrencyIT extends AbstractIntegrationTest {
     executor.shutdown();
 
     assertThat(exceptions).isEmpty();
+    assertThat(results).hasSize(threadCount);
     assertThat(personRepository.findPersonBySourceId("100-" + suffix)).isPresent();
     assertThat(personRepository.findPersonBySourceId("200-" + suffix)).isPresent();
     assertThat(personRepository.findPersonBySourceId("300-" + suffix)).isPresent();
