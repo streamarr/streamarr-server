@@ -156,6 +156,20 @@ class PersonServiceTest {
   }
 
   @Test
+  @DisplayName("Should return persons sorted by source ID regardless of input order")
+  void shouldReturnPersonsSortedBySourceIdRegardlessOfInputOrder() {
+    var persons =
+        List.of(
+            Person.builder().name("Actor C").sourceId("300").build(),
+            Person.builder().name("Actor A").sourceId("100").build(),
+            Person.builder().name("Actor B").sourceId("200").build());
+
+    var result = personService.getOrCreatePersons(persons, Map.of());
+
+    assertThat(result).extracting(Person::getSourceId).containsExactly("100", "200", "300");
+  }
+
+  @Test
   @DisplayName("Should throw when person not found after upsert")
   void shouldThrowWhenPersonNotFoundAfterUpsert() {
     var stubRepository = mock(PersonRepository.class);

@@ -65,4 +65,52 @@ class PersonServiceConcurrencyIT extends AbstractIntegrationTest {
     assertThat(results.stream().flatMap(List::stream).map(Person::getId).distinct()).hasSize(1);
     assertThat(personRepository.findPersonBySourceId(sourceId)).isPresent();
   }
+
+  @Test
+  @DisplayName(
+      "Should not deadlock when concurrent transactions insert overlapping persons in opposite"
+          + " order")
+  void shouldNotDeadlockWhenConcurrentTransactionsInsertOverlappingPersonsInOppositeOrder() {
+    var suffix = String.valueOf(System.nanoTime());
+    var forward =
+        List.of(
+            Person.builder().name("Actor A").sourceId("100-" + suffix).build(),
+            Person.builder().name("Actor B").sourceId("200-" + suffix).build(),
+            Person.builder().name("Actor C").sourceId("300-" + suffix).build());
+    var reversed = forward.reversed();
+
+    var threadCount = 10;
+    var executor = Executors.newFixedThreadPool(threadCount);
+    var startLatch = new CountDownLatch(1);
+    var doneLatch = new CountDownLatch(threadCount);
+    var exceptions = new CopyOnWriteArrayList<Exception>();
+
+    for (int i = 0; i < threadCount; i++) {
+      var persons = (i % 2 == 0) ? forward : reversed;
+      executor.submit(
+          () -> {
+            try {
+              startLatch.await();
+              personService.getOrCreatePersons(persons, Map.of());
+            } catch (Exception e) {
+              exceptions.add(e);
+            } finally {
+              doneLatch.countDown();
+            }
+          });
+    }
+
+    startLatch.countDown();
+
+    await()
+        .atMost(Duration.ofSeconds(10))
+        .untilAsserted(() -> assertThat(doneLatch.getCount()).isZero());
+
+    executor.shutdown();
+
+    assertThat(exceptions).isEmpty();
+    assertThat(personRepository.findPersonBySourceId("100-" + suffix)).isPresent();
+    assertThat(personRepository.findPersonBySourceId("200-" + suffix)).isPresent();
+    assertThat(personRepository.findPersonBySourceId("300-" + suffix)).isPresent();
+  }
 }

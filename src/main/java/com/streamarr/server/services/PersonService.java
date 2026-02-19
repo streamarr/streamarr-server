@@ -5,6 +5,7 @@ import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -26,7 +27,10 @@ public class PersonService {
       return List.of();
     }
 
-    return persons.stream().map(p -> findOrCreatePerson(p, imageSourcesBySourceId)).toList();
+    return persons.stream()
+        .sorted(Comparator.comparing(Person::getSourceId))
+        .map(p -> findOrCreatePerson(p, imageSourcesBySourceId))
+        .toList();
   }
 
   private Person findOrCreatePerson(
