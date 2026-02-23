@@ -340,7 +340,7 @@ public class LibraryManagementService implements ActiveScanChecker {
               .findById(libraryId)
               .orElseThrow(() -> new LibraryNotFoundException(libraryId));
 
-      if (library.getStatus().equals(LibraryStatus.SCANNING)) {
+      if (library.getStatus() == LibraryStatus.SCANNING) {
         throw new LibraryScanInProgressException(libraryId);
       }
       if (library.getStatus() == LibraryStatus.REFRESHING) {
