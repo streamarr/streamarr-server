@@ -7,8 +7,8 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.mizosoft.methanol.HttpCache;
+import com.github.tomakehurst.wiremock.WireMockServer;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;

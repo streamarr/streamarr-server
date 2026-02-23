@@ -178,8 +178,7 @@ public class SeriesService {
     var season =
         seasonRepository
             .findBySeriesIdAndSeasonNumber(series.getId(), details.seasonNumber())
-            .orElseGet(
-                () -> Season.builder().series(series).library(library).build());
+            .orElseGet(() -> Season.builder().series(series).library(library).build());
 
     season.setTitle(details.name());
     season.setSeasonNumber(details.seasonNumber());
@@ -193,8 +192,7 @@ public class SeriesService {
       var episode =
           episodeRepository
               .findBySeasonIdAndEpisodeNumber(savedSeason.getId(), epDetails.episodeNumber())
-              .orElseGet(
-                  () -> Episode.builder().season(savedSeason).library(library).build());
+              .orElseGet(() -> Episode.builder().season(savedSeason).library(library).build());
 
       episode.setTitle(epDetails.name());
       episode.setEpisodeNumber(epDetails.episodeNumber());

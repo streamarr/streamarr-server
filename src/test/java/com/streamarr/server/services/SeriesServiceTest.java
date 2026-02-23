@@ -10,11 +10,11 @@ import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
 import com.streamarr.server.config.ImageProperties;
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.media.ContentRating;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
-import com.streamarr.server.domain.media.ContentRating;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.metadata.Company;
@@ -552,9 +552,7 @@ class SeriesServiceTest {
     var result = seriesService.refreshSeriesMetadata(existing, metadataResult);
 
     assertThat(result.getCast()).extracting(Person::getName).containsExactly("Bryan Cranston");
-    assertThat(result.getDirectors())
-        .extracting(Person::getName)
-        .containsExactly("Vince Gilligan");
+    assertThat(result.getDirectors()).extracting(Person::getName).containsExactly("Vince Gilligan");
     assertThat(result.getGenres()).extracting(Genre::getName).containsExactly("Drama");
     assertThat(result.getStudios()).extracting(Company::getName).containsExactly("Sony Pictures");
   }
@@ -708,12 +706,7 @@ class SeriesServiceTest {
                 .library(library)
                 .build());
     episodeRepository.save(
-        Episode.builder()
-            .title("Pilot")
-            .episodeNumber(1)
-            .season(season)
-            .library(library)
-            .build());
+        Episode.builder().title("Pilot").episodeNumber(1).season(season).library(library).build());
 
     var details =
         SeasonDetails.builder()
@@ -738,7 +731,9 @@ class SeriesServiceTest {
 
     var episodes = episodeRepository.findBySeasonId(season.getId());
     assertThat(episodes).hasSize(2);
-    assertThat(episodes).extracting(Episode::getTitle).containsExactlyInAnyOrder("Pilot", "Cat's in the Bag...");
+    assertThat(episodes)
+        .extracting(Episode::getTitle)
+        .containsExactlyInAnyOrder("Pilot", "Cat's in the Bag...");
   }
 
   @Test
@@ -766,12 +761,8 @@ class SeriesServiceTest {
 
     var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
     assertThat(events).hasSize(2);
-    assertThat(events)
-        .filteredOn(e -> e.entityType() == ImageEntityType.SEASON)
-        .hasSize(1);
-    assertThat(events)
-        .filteredOn(e -> e.entityType() == ImageEntityType.EPISODE)
-        .hasSize(1);
+    assertThat(events).filteredOn(e -> e.entityType() == ImageEntityType.SEASON).hasSize(1);
+    assertThat(events).filteredOn(e -> e.entityType() == ImageEntityType.EPISODE).hasSize(1);
   }
 
   private void seedImage(UUID entityId) {
