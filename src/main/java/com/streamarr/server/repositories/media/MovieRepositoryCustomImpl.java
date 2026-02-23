@@ -4,7 +4,6 @@ import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.noCondition;
 import static org.jooq.impl.DSL.row;
 
-import com.streamarr.server.domain.AlphabetLetter;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.graphql.cursor.MediaPaginationOptions;
@@ -122,7 +121,7 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
             .innerJoin(Tables.BASE_COLLECTABLE)
             .on(Tables.MOVIE.ID.eq(Tables.BASE_COLLECTABLE.ID))
             .where(libraryCondition(options.getMediaFilter()))
-            .and(startLetterCondition(options.getMediaFilter()))
+            .and(JooqQueryHelper.startLetterCondition(options.getMediaFilter().getStartLetter()))
             .orderBy(orderByColumns)
             .limit(options.getPaginationOptions().getLimit() + 1);
 
@@ -143,20 +142,5 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
       case TITLE -> Tables.BASE_COLLECTABLE.TITLE_SORT.sort(direction);
       case ADDED -> Tables.BASE_COLLECTABLE.CREATED_ON.sort(direction);
     };
-  }
-
-  private Condition startLetterCondition(MediaFilter filter) {
-    var startLetter = filter.getStartLetter();
-
-    if (startLetter == null) {
-      return noCondition();
-    }
-
-    if (startLetter == AlphabetLetter.HASH) {
-      return Tables.BASE_COLLECTABLE.TITLE_SORT.lessThan("a");
-    }
-
-    return Tables.BASE_COLLECTABLE.TITLE_SORT.greaterOrEqual(
-        startLetter.name().toLowerCase());
   }
 }
