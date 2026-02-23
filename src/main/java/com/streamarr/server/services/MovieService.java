@@ -115,15 +115,15 @@ public class MovieService {
 
     var savedMovie = saveMovieWithMediaFile(movie, mediaFile);
 
-    publishImageEvent(savedMovie, metadataResult.imageSources());
+    publishImageEvent(savedMovie.getId(), ImageEntityType.MOVIE, metadataResult.imageSources());
 
     return savedMovie;
   }
 
-  private void publishImageEvent(Movie movie, List<ImageSource> sources) {
+  private void publishImageEvent(
+      UUID entityId, ImageEntityType entityType, List<ImageSource> sources) {
     if (!sources.isEmpty()) {
-      eventPublisher.publishEvent(
-          new MetadataEnrichedEvent(movie.getId(), ImageEntityType.MOVIE, sources));
+      eventPublisher.publishEvent(new MetadataEnrichedEvent(entityId, entityType, sources));
     }
   }
 
