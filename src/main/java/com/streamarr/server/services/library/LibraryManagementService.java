@@ -9,6 +9,7 @@ import com.streamarr.server.exceptions.LibraryAlreadyExistsException;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.exceptions.LibraryPathPermissionDeniedException;
 import com.streamarr.server.exceptions.LibraryScanFailedException;
+import com.streamarr.server.exceptions.LibraryRefreshInProgressException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
@@ -197,7 +198,7 @@ public class LibraryManagementService implements ActiveScanChecker {
 
   public void refreshLibrary(UUID libraryId) {
     if (!activeRefreshes.add(libraryId)) {
-      throw new IllegalStateException("Library refresh already in progress: " + libraryId);
+      throw new LibraryRefreshInProgressException(libraryId);
     }
 
     try {
@@ -232,7 +233,7 @@ public class LibraryManagementService implements ActiveScanChecker {
         throw new LibraryScanInProgressException(libraryId);
       }
       if (library.getStatus() == LibraryStatus.REFRESHING) {
-        throw new IllegalStateException("Library refresh already in progress: " + libraryId);
+        throw new LibraryRefreshInProgressException(libraryId);
       }
 
       log.info("Starting {} library refresh.", library.getName());

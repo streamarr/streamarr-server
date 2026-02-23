@@ -25,6 +25,7 @@ import com.streamarr.server.exceptions.InvalidLibraryPathException;
 import com.streamarr.server.exceptions.LibraryAlreadyExistsException;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.exceptions.LibraryPathPermissionDeniedException;
+import com.streamarr.server.exceptions.LibraryRefreshInProgressException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeLibraryRepository;
@@ -1007,14 +1008,15 @@ class LibraryManagementServiceTest {
     }
 
     @Test
-    @DisplayName("Should throw IllegalStateException when library is currently refreshing")
+    @DisplayName(
+        "Should throw LibraryRefreshInProgressException when library is currently refreshing")
     void shouldThrowWhenLibraryIsCurrentlyRefreshing() {
       var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
       library.setStatus(LibraryStatus.REFRESHING);
       fakeLibraryRepository.save(library);
 
       assertThrows(
-          IllegalStateException.class,
+          LibraryRefreshInProgressException.class,
           () -> libraryManagementService.refreshLibrary(savedLibraryId));
     }
 
@@ -1037,7 +1039,7 @@ class LibraryManagementServiceTest {
       assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
 
       assertThrows(
-          IllegalStateException.class,
+          LibraryRefreshInProgressException.class,
           () -> libraryManagementService.refreshLibrary(savedLibraryId));
 
       release.countDown();
