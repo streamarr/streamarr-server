@@ -263,7 +263,8 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
-  @DisplayName("Should fall back to stereo AAC when source codec is unsupported by default capabilities")
+  @DisplayName(
+      "Should fall back to stereo AAC when source codec is unsupported by default capabilities")
   void shouldFallbackToStereoAacWhenSourceCodecIsUnsupportedByDefaultCapabilities() {
     var source = probe("h264", "flac", 2, 0);
     var clientOptions = options(List.of("h264"));
