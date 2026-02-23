@@ -52,6 +52,18 @@ class AudioDecisionTest {
     assertThat(decision.bitrate()).isEqualTo(128_000L);
   }
 
+  @ParameterizedTest(name = "codec={0} → hls={1}")
+  @DisplayName("Should return correct HLS codec string")
+  @CsvSource({
+    "aac, mp4a.40.2",
+    "ac3, ac-3",
+    "eac3, ec-3"
+  })
+  void shouldReturnCorrectHlsCodecString(String codec, String expected) {
+    var decision = new AudioDecision(AudioMode.COPY, codec, 2, 128_000L);
+    assertThat(decision.hlsCodecString()).isEqualTo(expected);
+  }
+
   @Test
   @DisplayName("Should create copy decision preserving source values")
   void shouldCreateCopyDecisionPreservingSourceValues() {

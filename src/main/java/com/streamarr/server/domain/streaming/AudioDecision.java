@@ -13,6 +13,14 @@ public record AudioDecision(AudioMode mode, String codec, int channels, long bit
     return new AudioDecision(AudioMode.COPY, codec, channels, bitrate);
   }
 
+  public String hlsCodecString() {
+    return switch (codec) {
+      case "ac3" -> "ac-3";
+      case "eac3" -> "ec-3";
+      default -> "mp4a.40.2";
+    };
+  }
+
   public static int normalizeChannels(int sourceChannels) {
     if (sourceChannels <= 0 || sourceChannels == 2) {
       return 2;
