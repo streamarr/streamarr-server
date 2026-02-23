@@ -36,7 +36,7 @@ public class HlsPlaylistService {
     }
 
     for (var variant : session.getVariants()) {
-      var bandwidth = variant.videoBitrate() + variant.audioBitrate();
+      var bandwidth = variant.videoBitrate() + audio.bitrate();
       appendStreamInf(sb, bandwidth, variant.width(), variant.height(), codecs, audio.channels());
       sb.append(variant.label()).append("/stream.m3u8\n");
     }

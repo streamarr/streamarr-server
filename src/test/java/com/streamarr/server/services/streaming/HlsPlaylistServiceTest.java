@@ -411,7 +411,7 @@ class HlsPlaylistServiceTest {
     assertThat(playlist)
         .contains("BANDWIDTH=5128000")
         .contains("BANDWIDTH=3128000")
-        .contains("BANDWIDTH=1596000");
+        .contains("BANDWIDTH=1628000");
   }
 
   @Test
@@ -541,6 +541,55 @@ class HlsPlaylistServiceTest {
     var playlist = service.generateMasterPlaylist(session);
 
     assertThat(playlist).contains("CODECS=\"avc1.640028,mp4a.40.2\"");
+  }
+
+  @Test
+  @DisplayName("Should use audio decision bitrate for bandwidth when audio is copied")
+  void shouldUseAudioDecisionBitrateForBandwidthWhenAudioIsCopied() {
+    var audio = AudioDecision.copy("ac3", 6, 384_000L);
+    var variant =
+        QualityVariant.builder()
+            .width(1920)
+            .height(1080)
+            .videoBitrate(5_000_000L)
+            .audioBitrate(128_000L)
+            .label("1080p")
+            .build();
+
+    var session =
+        StreamSession.builder()
+            .sessionId(UUID.randomUUID())
+            .mediaFileId(UUID.randomUUID())
+            .sourcePath(Path.of("/media/test.mkv"))
+            .mediaProbe(
+                MediaProbe.builder()
+                    .duration(Duration.ofSeconds(120))
+                    .framerate(23.976)
+                    .width(1920)
+                    .height(1080)
+                    .videoCodec("hevc")
+                    .audioCodec("ac3")
+                    .bitrate(8_000_000L)
+                    .build())
+            .transcodeDecision(
+                TranscodeDecision.builder()
+                    .transcodeMode(TranscodeMode.VIDEO_TRANSCODE)
+                    .videoCodecFamily("h264")
+                    .audioDecision(audio)
+                    .containerFormat(ContainerFormat.MPEGTS)
+                    .needsKeyframeAlignment(false)
+                    .build())
+            .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
+            .variants(List.of(variant))
+            .seekPosition(0)
+            .createdAt(Instant.now())
+            .lastAccessedAt(Instant.now())
+            .build();
+    session.setVariantHandle("1080p", new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
+
+    var playlist = service.generateMasterPlaylist(session);
+
+    assertThat(playlist).contains("BANDWIDTH=5384000");
   }
 
   @Test
