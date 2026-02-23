@@ -29,19 +29,11 @@ public record AudioDecision(AudioMode mode, String codec, int channels, long bit
   }
 
   public static int normalizeChannels(int sourceChannels) {
-    if (sourceChannels <= 0 || sourceChannels == 2) {
-      return 2;
-    }
-    if (sourceChannels == 1) {
-      return 1;
-    }
-    if (sourceChannels >= 5 && sourceChannels <= 6) {
-      return 6;
-    }
-    if (sourceChannels >= 7) {
-      return 8;
-    }
-    return 2;
+    return switch (sourceChannels) {
+      case 1 -> 1;
+      case 5, 6 -> 6;
+      default -> sourceChannels >= 7 ? 8 : 2;
+    };
   }
 
   public static long bitrateForChannels(int channels) {
