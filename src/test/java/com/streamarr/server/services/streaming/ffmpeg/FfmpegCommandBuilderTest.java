@@ -515,6 +515,38 @@ class FfmpegCommandBuilderTest {
   }
 
   @Test
+  @DisplayName("Should downmix audio to stereo when mode is partial transcode")
+  void shouldDownmixAudioToStereoWhenModeIsPartialTranscode() {
+    var j =
+        job(TranscodeMode.PARTIAL_TRANSCODE, "h264", "aac", ContainerFormat.MPEGTS, "copy", true);
+
+    var cmd = builder.buildCommand(j);
+
+    assertThat(cmd).contains("-ac", "2");
+  }
+
+  @Test
+  @DisplayName("Should downmix audio to stereo when mode is full transcode")
+  void shouldDownmixAudioToStereoWhenModeIsFullTranscode() {
+    var j =
+        job(TranscodeMode.FULL_TRANSCODE, "h264", "aac", ContainerFormat.MPEGTS, "libx264", false);
+
+    var cmd = builder.buildCommand(j);
+
+    assertThat(cmd).contains("-ac", "2");
+  }
+
+  @Test
+  @DisplayName("Should not downmix audio when mode is remux")
+  void shouldNotDownmixAudioWhenModeIsRemux() {
+    var j = job(TranscodeMode.REMUX, "h264", "aac", ContainerFormat.MPEGTS, "copy", true);
+
+    var cmd = builder.buildCommand(j);
+
+    assertThat(cmd).doesNotContain("-ac");
+  }
+
+  @Test
   @DisplayName("Should only add forced IDR when encoder is in neither keyframe set")
   void shouldOnlyAddForcedIdrWhenEncoderIsInNeitherKeyframeSet() {
     var j =
