@@ -36,7 +36,7 @@ public class LibraryRefreshService {
     switch (library.getType()) {
       case SERIES -> refreshSeriesLibrary(library);
       case MOVIE -> refreshMovieLibrary(library);
-      default -> throw new UnsupportedMediaTypeException(library.getType().name());
+      case OTHER -> throw new UnsupportedMediaTypeException(library.getType().name());
     }
   }
 
