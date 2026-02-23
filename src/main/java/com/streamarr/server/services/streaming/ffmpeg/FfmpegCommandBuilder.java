@@ -49,7 +49,7 @@ public class FfmpegCommandBuilder {
 
     cmd.addAll(List.of("-i", request.sourcePath().toString()));
 
-    addStreamSelection(cmd);
+    addStreamSelection(cmd, decision.audioDecision());
     addCommonFlags(cmd);
     addCodecArgs(cmd, job);
 
@@ -64,8 +64,12 @@ public class FfmpegCommandBuilder {
     return List.copyOf(cmd);
   }
 
-  private void addStreamSelection(List<String> cmd) {
-    cmd.addAll(List.of("-map", "0:v:0", "-map", "0:a:0", "-map", "-0:s"));
+  private void addStreamSelection(List<String> cmd, AudioDecision audio) {
+    cmd.addAll(List.of("-map", "0:v:0"));
+    if (audio.mode() != AudioMode.NONE) {
+      cmd.addAll(List.of("-map", "0:a:0"));
+    }
+    cmd.addAll(List.of("-map", "-0:s"));
   }
 
   private void addCommonFlags(List<String> cmd) {
@@ -99,6 +103,9 @@ public class FfmpegCommandBuilder {
   }
 
   private void addAudioArgs(List<String> cmd, AudioDecision audio) {
+    if (audio.mode() == AudioMode.NONE) {
+      return;
+    }
     if (audio.mode() == AudioMode.COPY) {
       cmd.addAll(List.of("-c:a", "copy"));
       return;

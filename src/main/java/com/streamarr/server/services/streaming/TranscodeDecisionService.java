@@ -41,15 +41,15 @@ public class TranscodeDecisionService {
   }
 
   private TranscodeMode resolveTranscodeMode(boolean videoCompatible, AudioDecision audio) {
-    boolean audioCopy = audio.mode() == AudioMode.COPY;
+    boolean audioPassthrough = audio.mode() == AudioMode.COPY || audio.mode() == AudioMode.NONE;
 
-    if (videoCompatible && audioCopy) {
+    if (videoCompatible && audioPassthrough) {
       return TranscodeMode.REMUX;
     }
     if (videoCompatible) {
       return TranscodeMode.AUDIO_TRANSCODE;
     }
-    if (audioCopy) {
+    if (audioPassthrough) {
       return TranscodeMode.VIDEO_TRANSCODE;
     }
     return TranscodeMode.FULL_TRANSCODE;
@@ -57,6 +57,10 @@ public class TranscodeDecisionService {
 
   private AudioDecision decideAudio(
       MediaProbe source, StreamingOptions clientOptions, ContainerFormat containerFormat) {
+
+    if (source.audioCodec() == null) {
+      return AudioDecision.none();
+    }
 
     var clientAudioCodecs =
         Optional.ofNullable(clientOptions.supportedAudioCodecs())

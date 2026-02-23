@@ -633,6 +633,26 @@ class FfmpegCommandBuilderTest {
         .noneMatch(s -> s.startsWith("-force_key_frames"));
   }
 
+  // --- Video-only (no audio) ---
+
+  @Test
+  @DisplayName("Should omit audio map and codec args when audio mode is none")
+  void shouldOmitAudioMapAndCodecArgsWhenAudioModeIsNone() {
+    var audio = AudioDecision.none();
+    var j =
+        jobWithAudio(
+            TranscodeMode.FULL_TRANSCODE, "h264", audio, ContainerFormat.MPEGTS, "libx264");
+
+    var cmd = builder.buildCommand(j);
+
+    assertThat(cmd)
+        .isNotEmpty()
+        .doesNotContain("0:a:0")
+        .doesNotContain("-c:a")
+        .doesNotContain("-ac")
+        .doesNotContain("-b:a");
+  }
+
   // --- Surround sound audio args ---
 
   @Test

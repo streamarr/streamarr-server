@@ -205,6 +205,33 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
   }
 
+  // --- Video-only (no audio stream) ---
+
+  @Test
+  @DisplayName("Should decide audio mode none when source has no audio stream")
+  void shouldDecideAudioModeNoneWhenSourceHasNoAudioStream() {
+    var source =
+        MediaProbe.builder()
+            .duration(Duration.ofMinutes(120))
+            .framerate(23.976)
+            .width(1920)
+            .height(1080)
+            .videoCodec("h264")
+            .audioCodec(null)
+            .bitrate(5_000_000L)
+            .audioChannels(0)
+            .audioBitrate(0)
+            .build();
+    var clientOptions = options(List.of("h264"));
+
+    var decision = service.decide(source, clientOptions);
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.NONE);
+    assertThat(decision.audioDecision().codec()).isNull();
+    assertThat(decision.audioDecision().channels()).isZero();
+  }
+
   // --- Surround sound test scenarios ---
 
   @Test

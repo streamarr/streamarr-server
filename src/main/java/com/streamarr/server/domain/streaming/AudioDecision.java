@@ -13,7 +13,14 @@ public record AudioDecision(AudioMode mode, String codec, int channels, long bit
     return new AudioDecision(AudioMode.COPY, codec, channels, bitrate);
   }
 
+  public static AudioDecision none() {
+    return new AudioDecision(AudioMode.NONE, null, 0, 0L);
+  }
+
   public String hlsCodecString() {
+    if (codec == null) {
+      return "";
+    }
     return switch (codec) {
       case "ac3" -> "ac-3";
       case "eac3" -> "ec-3";
