@@ -121,6 +121,8 @@ class LibraryManagementServiceTest {
   private final SeriesFileProcessor seriesFileProcessor = mock(SeriesFileProcessor.class);
   private final SeriesService seriesService = mock(SeriesService.class);
 
+  private final LibraryRefreshService libraryRefreshService = mock(LibraryRefreshService.class);
+
   private final LibraryManagementService libraryManagementService =
       new LibraryManagementService(
           new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
@@ -133,6 +135,7 @@ class LibraryManagementServiceTest {
           seriesService,
           capturingEventPublisher,
           new MutexFactoryProvider(),
+          libraryRefreshService,
           fileSystem);
 
   private UUID savedLibraryId;
@@ -232,6 +235,7 @@ class LibraryManagementServiceTest {
             seriesService,
             capturingEventPublisher,
             new MutexFactoryProvider(),
+            libraryRefreshService,
             throwingFileSystem);
 
     serviceWithThrowingFs.scanLibrary(savedLibraryId);
@@ -265,6 +269,7 @@ class LibraryManagementServiceTest {
             seriesService,
             capturingEventPublisher,
             new MutexFactoryProvider(),
+            libraryRefreshService,
             throwingFileSystem);
 
     serviceWithThrowingFs.scanLibrary(savedLibraryId);
@@ -359,6 +364,7 @@ class LibraryManagementServiceTest {
             seriesService,
             capturingEventPublisher,
             new MutexFactoryProvider(),
+            libraryRefreshService,
             throwingFileSystem);
 
     serviceWithThrowingFs.scanLibrary(savedLibraryId);
@@ -815,6 +821,7 @@ class LibraryManagementServiceTest {
               seriesService,
               capturingEventPublisher,
               new MutexFactoryProvider(),
+              libraryRefreshService,
               securityExceptionFs);
 
       var library = LibraryFixtureCreator.buildUnsavedLibrary("Test Library", "/secure-path");

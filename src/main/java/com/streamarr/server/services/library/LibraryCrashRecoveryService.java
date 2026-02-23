@@ -22,16 +22,20 @@ public class LibraryCrashRecoveryService {
 
   @EventListener(ApplicationReadyEvent.class)
   public void onStartup() {
-    var orphaned =
+    var orphanedScanning =
         libraryRepository.findAllByStatus(LibraryStatus.SCANNING).stream()
             .filter(lib -> !activeScanChecker.isActivelyScanning(lib.getId()))
             .toList();
-    resetLibraries(orphaned);
+    var orphanedRefreshing = libraryRepository.findAllByStatus(LibraryStatus.REFRESHING);
+
+    resetLibraries(orphanedScanning);
+    resetLibraries(orphanedRefreshing);
   }
 
   @PreDestroy
   public void onShutdown() {
     resetLibraries(libraryRepository.findAllByStatus(LibraryStatus.SCANNING));
+    resetLibraries(libraryRepository.findAllByStatus(LibraryStatus.REFRESHING));
   }
 
   private void resetLibraries(List<Library> libraries) {
@@ -40,20 +44,21 @@ public class LibraryCrashRecoveryService {
     }
 
     log.warn(
-        "Found {} library(ies) stuck in SCANNING status. Resetting to UNHEALTHY.",
-        libraries.size());
+        "Found {} library(ies) stuck in a busy state. Resetting to UNHEALTHY.", libraries.size());
 
     libraries.forEach(this::resetToUnhealthy);
   }
 
   private void resetToUnhealthy(Library library) {
+    var previousStatus = library.getStatus();
     library.setStatus(LibraryStatus.UNHEALTHY);
     library.setScanCompletedOn(Instant.now());
     libraryRepository.save(library);
 
     log.warn(
-        "Reset library '{}' (ID: {}) from SCANNING to UNHEALTHY due to incomplete scan.",
+        "Reset library '{}' (ID: {}) from {} to UNHEALTHY due to incomplete operation.",
         library.getName(),
-        library.getId());
+        library.getId(),
+        previousStatus);
   }
 }

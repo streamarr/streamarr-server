@@ -64,6 +64,12 @@ public class LibraryResolver {
     return true;
   }
 
+  @DgsMutation
+  public boolean refreshLibrary(String id) {
+    libraryManagementService.refreshLibrary(parseUuid(id));
+    return true;
+  }
+
   @DgsQuery
   public List<Library> libraries() {
     return libraryRepository.findAll();

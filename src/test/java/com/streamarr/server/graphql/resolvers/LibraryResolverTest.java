@@ -86,6 +86,17 @@ class LibraryResolverTest {
   }
 
   @Test
+  @DisplayName("Should return true when refreshLibrary called with valid ID")
+  void shouldReturnTrueWhenRefreshLibraryCalledWithValidId() {
+    Boolean result =
+        dgsQueryExecutor.executeAndExtractJsonPath(
+            String.format("mutation { refreshLibrary(id: \"%s\") }", UUID.randomUUID()),
+            "data.refreshLibrary");
+
+    assertThat(result).isTrue();
+  }
+
+  @Test
   @DisplayName("Should return error when invalid ID provided")
   void shouldReturnErrorWhenInvalidIdProvided() {
     var result = dgsQueryExecutor.execute("{ library(id: \"not-a-uuid\") { name } }");

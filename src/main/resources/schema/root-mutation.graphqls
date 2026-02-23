@@ -3,6 +3,7 @@ type Mutation {
     addLibrary(input: AddLibraryInput!): Library!
     removeLibrary(id: ID!): Boolean!
     scanLibrary(id: ID!): Boolean!
+    refreshLibrary(id: ID!): Boolean!
     createStreamSession(mediaFileId: ID!, options: StreamingOptionsInput): StreamSession!
     destroyStreamSession(sessionId: ID!): Boolean!
     seekStreamSession(sessionId: ID!, positionSeconds: Int!): StreamSession!

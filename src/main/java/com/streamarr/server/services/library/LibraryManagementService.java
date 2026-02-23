@@ -55,9 +55,11 @@ public class LibraryManagementService implements ActiveScanChecker {
   private final MovieService movieService;
   private final SeriesService seriesService;
   private final ApplicationEventPublisher eventPublisher;
+  private final LibraryRefreshService libraryRefreshService;
   private final FileSystem fileSystem;
   private final MutexFactory<String> mutexFactory;
   private final Set<UUID> activeScans = ConcurrentHashMap.newKeySet();
+  private final Set<UUID> activeRefreshes = ConcurrentHashMap.newKeySet();
 
   public LibraryManagementService(
       IgnoredFileValidator ignoredFileValidator,
@@ -70,6 +72,7 @@ public class LibraryManagementService implements ActiveScanChecker {
       SeriesService seriesService,
       ApplicationEventPublisher eventPublisher,
       MutexFactoryProvider mutexFactoryProvider,
+      LibraryRefreshService libraryRefreshService,
       FileSystem fileSystem) {
     this.ignoredFileValidator = ignoredFileValidator;
     this.videoExtensionValidator = videoExtensionValidator;
@@ -80,6 +83,7 @@ public class LibraryManagementService implements ActiveScanChecker {
     this.movieService = movieService;
     this.seriesService = seriesService;
     this.eventPublisher = eventPublisher;
+    this.libraryRefreshService = libraryRefreshService;
     this.fileSystem = fileSystem;
 
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
@@ -189,6 +193,68 @@ public class LibraryManagementService implements ActiveScanChecker {
     movieService.deleteByLibraryId(libraryId);
     seriesService.deleteByLibraryId(libraryId);
     mediaFileRepository.deleteAll(mediaFiles);
+  }
+
+  public void refreshLibrary(UUID libraryId) {
+    if (!activeRefreshes.add(libraryId)) {
+      throw new IllegalStateException("Library refresh already in progress: " + libraryId);
+    }
+
+    try {
+      var library = transitionToRefreshing(libraryId);
+
+      Thread.startVirtualThread(
+          () -> {
+            try {
+              libraryRefreshService.refreshLibrary(library);
+              completeRefreshSuccessfully(library);
+            } catch (Exception ex) {
+              log.error("Refresh failed for library '{}'", library.getName(), ex);
+              completeRefreshWithFailure(library);
+            } finally {
+              activeRefreshes.remove(libraryId);
+            }
+          });
+    } catch (Exception ex) {
+      activeRefreshes.remove(libraryId);
+      throw ex;
+    }
+  }
+
+  private Library transitionToRefreshing(UUID libraryId) {
+    var libraryMutex = mutexFactory.getMutex(libraryId.toString());
+    libraryMutex.lock();
+
+    try {
+      var library = findLibraryOrThrow(libraryId);
+
+      if (library.getStatus() == LibraryStatus.SCANNING) {
+        throw new LibraryScanInProgressException(libraryId);
+      }
+      if (library.getStatus() == LibraryStatus.REFRESHING) {
+        throw new IllegalStateException("Library refresh already in progress: " + libraryId);
+      }
+
+      log.info("Starting {} library refresh.", library.getName());
+
+      library.setStatus(LibraryStatus.REFRESHING);
+      libraryRepository.save(library);
+
+      return library;
+    } finally {
+      libraryMutex.unlock();
+    }
+  }
+
+  private void completeRefreshSuccessfully(Library library) {
+    library.setStatus(LibraryStatus.HEALTHY);
+    libraryRepository.save(library);
+    log.info("Finished {} library refresh.", library.getName());
+  }
+
+  private void completeRefreshWithFailure(Library library) {
+    library.setStatus(LibraryStatus.UNHEALTHY);
+    libraryRepository.save(library);
   }
 
   public void processDiscoveredFile(UUID libraryId, Path path) {
