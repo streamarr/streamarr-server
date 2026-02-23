@@ -46,6 +46,7 @@ import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.library.events.LibraryAddedEvent;
 import com.streamarr.server.services.library.events.LibraryRemovedEvent;
 import com.streamarr.server.services.library.events.ScanCompletedEvent;
+import com.streamarr.server.services.library.events.RefreshEndedEvent;
 import com.streamarr.server.services.library.events.ScanEndedEvent;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.MetadataResult;
@@ -1045,6 +1046,40 @@ class LibraryManagementServiceTest {
       assertThrows(
           LibraryRefreshInProgressException.class,
           () -> libraryManagementService.refreshLibrary(savedLibraryId));
+    }
+
+    @Test
+    @DisplayName("Should publish RefreshEndedEvent when refresh succeeds")
+    void shouldPublishRefreshEndedEventWhenRefreshSucceeds() {
+      libraryManagementService.refreshLibrary(savedLibraryId);
+
+      await()
+          .atMost(Duration.ofSeconds(5))
+          .untilAsserted(
+              () -> {
+                var events = capturingEventPublisher.getEventsOfType(RefreshEndedEvent.class);
+                assertThat(events).hasSize(1);
+                assertThat(events.getFirst().libraryId()).isEqualTo(savedLibraryId);
+              });
+    }
+
+    @Test
+    @DisplayName("Should publish RefreshEndedEvent when refresh fails")
+    void shouldPublishRefreshEndedEventWhenRefreshFails() {
+      doThrow(new RuntimeException("simulated refresh failure"))
+          .when(libraryRefreshService)
+          .refreshLibrary(any(Library.class));
+
+      libraryManagementService.refreshLibrary(savedLibraryId);
+
+      await()
+          .atMost(Duration.ofSeconds(5))
+          .untilAsserted(
+              () -> {
+                var events = capturingEventPublisher.getEventsOfType(RefreshEndedEvent.class);
+                assertThat(events).hasSize(1);
+                assertThat(events.getFirst().libraryId()).isEqualTo(savedLibraryId);
+              });
     }
 
     @Test

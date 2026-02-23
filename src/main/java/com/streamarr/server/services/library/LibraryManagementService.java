@@ -19,6 +19,7 @@ import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.library.events.LibraryAddedEvent;
 import com.streamarr.server.services.library.events.LibraryRemovedEvent;
+import com.streamarr.server.services.library.events.RefreshEndedEvent;
 import com.streamarr.server.services.library.events.ScanCompletedEvent;
 import com.streamarr.server.services.library.events.ScanEndedEvent;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
@@ -220,6 +221,7 @@ public class LibraryManagementService implements ActiveScanChecker {
               log.error("Refresh failed for library '{}'", library.getName(), ex);
               completeRefreshWithFailure(library);
             } finally {
+              eventPublisher.publishEvent(new RefreshEndedEvent(libraryId));
               activeRefreshes.remove(libraryId);
             }
           });

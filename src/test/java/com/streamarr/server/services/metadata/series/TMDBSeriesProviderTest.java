@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
+import com.streamarr.server.services.library.events.RefreshEndedEvent;
 import com.streamarr.server.services.library.events.ScanEndedEvent;
 import com.streamarr.server.services.metadata.TmdbSearchDelegate;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSearchResult;
@@ -76,6 +77,35 @@ class TMDBSeriesProviderTest {
 
     fakeTmdbHttpService.setTvSeriesMetadata("1396", updatedSeries);
     provider.onScanEnded(new ScanEndedEvent(libraryId));
+
+    var result = provider.resolveSeasonNumber(libraryId, "1396", 2020);
+    assertThat(result).isEqualTo(OptionalInt.of(3));
+  }
+
+  @Test
+  @DisplayName("Should return fresh data when cache cleared by refresh ended")
+  void shouldReturnFreshDataWhenCacheClearedByRefreshEnded() {
+    var initialSeries =
+        TmdbTvSeries.builder()
+            .seasons(
+                List.of(
+                    TmdbTvSeasonSummary.builder().seasonNumber(1).airDate("2020-01-15").build()))
+            .build();
+
+    var libraryId = UUID.randomUUID();
+
+    fakeTmdbHttpService.setTvSeriesMetadata("1396", initialSeries);
+    provider.resolveSeasonNumber(libraryId, "1396", 2020);
+
+    var updatedSeries =
+        TmdbTvSeries.builder()
+            .seasons(
+                List.of(
+                    TmdbTvSeasonSummary.builder().seasonNumber(3).airDate("2020-03-01").build()))
+            .build();
+
+    fakeTmdbHttpService.setTvSeriesMetadata("1396", updatedSeries);
+    provider.onRefreshEnded(new RefreshEndedEvent(libraryId));
 
     var result = provider.resolveSeasonNumber(libraryId, "1396", 2020);
     assertThat(result).isEqualTo(OptionalInt.of(3));
