@@ -17,6 +17,8 @@ input StreamingOptionsInput {
     maxHeight: Int
     maxBitrate: Int
     supportedCodecs: [String!]
+    supportedAudioCodecs: [String!]
+    maxAudioChannels: Int
     audioLanguage: String
     subtitleLanguage: String
 }

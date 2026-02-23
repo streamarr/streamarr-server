@@ -52,6 +52,8 @@ public class StreamingResolver {
     return StreamingOptions.builder()
         .quality(VideoQuality.AUTO)
         .supportedCodecs(StreamingOptions.DEFAULT_SUPPORTED_CODECS)
+        .supportedAudioCodecs(StreamingOptions.DEFAULT_SUPPORTED_AUDIO_CODECS)
+        .maxAudioChannels(StreamingOptions.DEFAULT_MAX_AUDIO_CHANNELS)
         .build();
   }
 
@@ -61,6 +63,12 @@ public class StreamingResolver {
     var codecs =
         Optional.ofNullable(input.supportedCodecs())
             .orElse(StreamingOptions.DEFAULT_SUPPORTED_CODECS);
+    var audioCodecs =
+        Optional.ofNullable(input.supportedAudioCodecs())
+            .orElse(StreamingOptions.DEFAULT_SUPPORTED_AUDIO_CODECS);
+    var maxAudioChannels =
+        Optional.ofNullable(input.maxAudioChannels())
+            .orElse(StreamingOptions.DEFAULT_MAX_AUDIO_CHANNELS);
 
     return StreamingOptions.builder()
         .quality(quality)
@@ -68,6 +76,8 @@ public class StreamingResolver {
         .maxHeight(input.maxHeight())
         .maxBitrate(input.maxBitrate())
         .supportedCodecs(codecs)
+        .supportedAudioCodecs(audioCodecs)
+        .maxAudioChannels(maxAudioChannels)
         .audioLanguage(input.audioLanguage())
         .subtitleLanguage(input.subtitleLanguage())
         .build();
