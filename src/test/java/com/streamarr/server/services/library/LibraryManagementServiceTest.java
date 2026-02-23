@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -64,8 +66,10 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -941,6 +945,102 @@ class LibraryManagementServiceTest {
 
       var events = capturingEventPublisher.getEventsOfType(LibraryRemovedEvent.class);
       assertThat(events).isEmpty();
+    }
+  }
+
+  @Nested
+  @DisplayName("Refresh Library Tests")
+  class RefreshLibraryTests {
+
+    @Test
+    @DisplayName("Should transition library to HEALTHY when refresh succeeds")
+    void shouldTransitionToHealthyWhenRefreshSucceeds() {
+      libraryManagementService.refreshLibrary(savedLibraryId);
+
+      await()
+          .atMost(Duration.ofSeconds(5))
+          .untilAsserted(
+              () -> {
+                var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+                assertThat(library.getStatus()).isEqualTo(LibraryStatus.HEALTHY);
+              });
+    }
+
+    @Test
+    @DisplayName("Should transition library to UNHEALTHY when refresh fails")
+    void shouldTransitionToUnhealthyWhenRefreshFails() {
+      doThrow(new RuntimeException("simulated refresh failure"))
+          .when(libraryRefreshService)
+          .refreshLibrary(any(Library.class));
+
+      libraryManagementService.refreshLibrary(savedLibraryId);
+
+      await()
+          .atMost(Duration.ofSeconds(5))
+          .untilAsserted(
+              () -> {
+                var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+                assertThat(library.getStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
+              });
+    }
+
+    @Test
+    @DisplayName("Should throw LibraryNotFoundException when library does not exist")
+    void shouldThrowWhenLibraryNotFoundForRefresh() {
+      var nonExistentId = UUID.randomUUID();
+
+      assertThrows(
+          LibraryNotFoundException.class,
+          () -> libraryManagementService.refreshLibrary(nonExistentId));
+    }
+
+    @Test
+    @DisplayName("Should throw LibraryScanInProgressException when library is currently scanning")
+    void shouldThrowWhenLibraryIsCurrentlyScanning() {
+      var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+      library.setStatus(LibraryStatus.SCANNING);
+      fakeLibraryRepository.save(library);
+
+      assertThrows(
+          LibraryScanInProgressException.class,
+          () -> libraryManagementService.refreshLibrary(savedLibraryId));
+    }
+
+    @Test
+    @DisplayName("Should throw IllegalStateException when library is currently refreshing")
+    void shouldThrowWhenLibraryIsCurrentlyRefreshing() {
+      var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+      library.setStatus(LibraryStatus.REFRESHING);
+      fakeLibraryRepository.save(library);
+
+      assertThrows(
+          IllegalStateException.class,
+          () -> libraryManagementService.refreshLibrary(savedLibraryId));
+    }
+
+    @Test
+    @DisplayName("Should reject concurrent refresh of the same library")
+    void shouldRejectConcurrentRefreshOfSameLibrary() throws Exception {
+      var started = new CountDownLatch(1);
+      var release = new CountDownLatch(1);
+
+      doAnswer(
+              invocation -> {
+                started.countDown();
+                release.await(5, TimeUnit.SECONDS);
+                return null;
+              })
+          .when(libraryRefreshService)
+          .refreshLibrary(any(Library.class));
+
+      libraryManagementService.refreshLibrary(savedLibraryId);
+      assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
+
+      assertThrows(
+          IllegalStateException.class,
+          () -> libraryManagementService.refreshLibrary(savedLibraryId));
+
+      release.countDown();
     }
   }
 

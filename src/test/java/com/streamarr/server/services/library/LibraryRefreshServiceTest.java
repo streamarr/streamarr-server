@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -13,9 +14,12 @@ import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.ExternalIdentifier;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.LibraryBackend;
+import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeImageRepository;
@@ -155,8 +159,8 @@ class LibraryRefreshServiceTest {
   }
 
   @Test
-  @DisplayName("Should continue refreshing when one series fails")
-  void shouldContinueRefreshingWhenOneSeriesFails() {
+  @DisplayName("Should continue refreshing when one series metadata fetch returns empty")
+  void shouldContinueRefreshingWhenOneSeriesMetadataFetchReturnsEmpty() {
     var library = buildSeriesLibrary();
     saveSeriesWithTmdbId("Failing Series", "99999", library);
     var series2 = saveSeriesWithTmdbId("Working Series", "1396", library);
@@ -170,6 +174,47 @@ class LibraryRefreshServiceTest {
 
     assertThat(seriesRepository.findById(series2.getId()).orElseThrow().getTitle())
         .isEqualTo("Working Series (Updated)");
+  }
+
+  @Test
+  @DisplayName("Should continue refreshing when one series throws exception")
+  void shouldContinueRefreshingWhenOneSeriesThrowsException() {
+    var library = buildSeriesLibrary();
+    saveSeriesWithTmdbId("Exploding Series", "99999", library);
+    var series2 = saveSeriesWithTmdbId("Working Series", "1396", library);
+
+    when(seriesProviderResolver.getMetadata(argThatHasExternalId("99999"), eq(library)))
+        .thenThrow(new RuntimeException("TMDB API timeout"));
+    stubSeriesMetadata("1396", "Working Series (Updated)", library);
+    when(seriesProviderResolver.getAvailableSeasonNumbers(any(), any())).thenReturn(List.of());
+
+    refreshService.refreshLibrary(library);
+
+    assertThat(seriesRepository.findById(series2.getId()).orElseThrow().getTitle())
+        .isEqualTo("Working Series (Updated)");
+  }
+
+  @Test
+  @DisplayName("Should skip series with only non-TMDB external IDs")
+  void shouldSkipSeriesWithOnlyNonTmdbExternalIds() {
+    var library = buildSeriesLibrary();
+    var series =
+        seriesRepository.save(
+            Series.builder()
+                .title("IMDB-only Series")
+                .library(library)
+                .externalIds(
+                    Set.of(
+                        ExternalIdentifier.builder()
+                            .externalSourceType(ExternalSourceType.IMDB)
+                            .externalId("tt1234567")
+                            .build()))
+                .build());
+
+    refreshService.refreshLibrary(library);
+
+    assertThat(seriesRepository.findById(series.getId()).orElseThrow().getTitle())
+        .isEqualTo("IMDB-only Series");
   }
 
   @Test
@@ -238,6 +283,87 @@ class LibraryRefreshServiceTest {
 
     assertThat(movieRepository.findById(movie.getId()).orElseThrow().getTitle())
         .isEqualTo("No TMDB ID");
+  }
+
+  @Test
+  @DisplayName("Should throw UnsupportedMediaTypeException when library has OTHER type")
+  void shouldThrowUnsupportedMediaTypeExceptionForOtherType() {
+    var library =
+        Library.builder()
+            .id(UUID.randomUUID())
+            .name("Other Media")
+            .type(MediaType.OTHER)
+            .status(LibraryStatus.HEALTHY)
+            .backend(LibraryBackend.LOCAL)
+            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+            .build();
+
+    assertThatThrownBy(() -> refreshService.refreshLibrary(library))
+        .isInstanceOf(UnsupportedMediaTypeException.class);
+  }
+
+  @Test
+  @DisplayName("Should skip season when season details fetch returns empty")
+  void shouldSkipSeasonWhenSeasonDetailsFetchReturnsEmpty() {
+    var library = buildSeriesLibrary();
+    var series = saveSeriesWithTmdbId("Breaking Bad", "1396", library);
+
+    stubSeriesMetadata("1396", "Breaking Bad", library);
+    when(seriesProviderResolver.getAvailableSeasonNumbers(library, "1396"))
+        .thenReturn(List.of(1, 2));
+    when(seriesProviderResolver.getSeasonDetails(library, "1396", 1)).thenReturn(Optional.empty());
+
+    var seasonDetails =
+        SeasonDetails.builder()
+            .name("Season 2")
+            .seasonNumber(2)
+            .overview("The second season")
+            .imageSources(List.of())
+            .episodes(List.of())
+            .build();
+    when(seriesProviderResolver.getSeasonDetails(library, "1396", 2))
+        .thenReturn(Optional.of(seasonDetails));
+
+    refreshService.refreshLibrary(library);
+
+    var seasons = seasonRepository.findBySeriesId(series.getId());
+    assertThat(seasons).hasSize(1);
+    assertThat(seasons.getFirst().getTitle()).isEqualTo("Season 2");
+  }
+
+  @Test
+  @DisplayName("Should skip movie when metadata fetch returns empty")
+  void shouldSkipMovieWhenMetadataFetchReturnsEmpty() {
+    var library = buildMovieLibrary();
+    var movie = saveMovieWithTmdbId("Inception", "27205", library);
+
+    when(movieProviderResolver.getMetadata(argThatHasExternalId("27205"), eq(library)))
+        .thenReturn(Optional.empty());
+
+    refreshService.refreshLibrary(library);
+
+    assertThat(movieRepository.findById(movie.getId()).orElseThrow().getTitle())
+        .isEqualTo("Inception");
+  }
+
+  @Test
+  @DisplayName("Should continue refreshing movies when one movie fails with exception")
+  void shouldContinueRefreshingMoviesWhenOneMovieFails() {
+    var library = buildMovieLibrary();
+    saveMovieWithTmdbId("Failing Movie", "99999", library);
+    var movie2 = saveMovieWithTmdbId("Working Movie", "27205", library);
+
+    when(movieProviderResolver.getMetadata(argThatHasExternalId("99999"), eq(library)))
+        .thenThrow(new RuntimeException("simulated failure"));
+
+    var freshMovie = Movie.builder().title("Working Movie (Updated)").build();
+    when(movieProviderResolver.getMetadata(argThatHasExternalId("27205"), eq(library)))
+        .thenReturn(Optional.of(new MetadataResult<>(freshMovie, List.of(), Map.of(), Map.of())));
+
+    refreshService.refreshLibrary(library);
+
+    assertThat(movieRepository.findById(movie2.getId()).orElseThrow().getTitle())
+        .isEqualTo("Working Movie (Updated)");
   }
 
   private Library buildSeriesLibrary() {

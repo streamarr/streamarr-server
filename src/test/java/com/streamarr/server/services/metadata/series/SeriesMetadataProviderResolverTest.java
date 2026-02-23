@@ -31,7 +31,7 @@ class SeriesMetadataProviderResolverTest {
 
     var resolver =
         new SeriesMetadataProviderResolver(
-            List.of(new FakeSeriesMetadataProvider(expectedResult, null)));
+            List.of(new FakeSeriesMetadataProvider(expectedResult, null, List.of())));
 
     var library =
         Library.builder().name("TV").externalAgentStrategy(ExternalAgentStrategy.TMDB).build();
@@ -65,7 +65,7 @@ class SeriesMetadataProviderResolverTest {
 
     var resolver =
         new SeriesMetadataProviderResolver(
-            List.of(new FakeSeriesMetadataProvider(null, expectedSeries)));
+            List.of(new FakeSeriesMetadataProvider(null, expectedSeries, List.of())));
 
     var library =
         Library.builder().name("TV").externalAgentStrategy(ExternalAgentStrategy.TMDB).build();
@@ -80,6 +80,39 @@ class SeriesMetadataProviderResolverTest {
 
     assertThat(result).isPresent();
     assertThat(result.get().entity().getTitle()).isEqualTo("Breaking Bad");
+  }
+
+  @Test
+  @DisplayName("Should return season numbers when provider matches library strategy")
+  void shouldReturnSeasonNumbersWhenProviderMatchesLibraryStrategy() {
+    var resolver =
+        new SeriesMetadataProviderResolver(
+            List.of(new FakeSeriesMetadataProvider(null, null, List.of(1, 2, 3))));
+
+    var library =
+        Library.builder()
+            .id(UUID.randomUUID())
+            .name("TV")
+            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+            .build();
+
+    var result = resolver.getAvailableSeasonNumbers(library, "1396");
+
+    assertThat(result).containsExactly(1, 2, 3);
+  }
+
+  @Test
+  @DisplayName(
+      "Should return empty list when no provider matches library strategy for season numbers")
+  void shouldReturnEmptyListWhenNoProviderMatchesForSeasonNumbers() {
+    var resolver = new SeriesMetadataProviderResolver(List.of());
+
+    var library =
+        Library.builder().name("TV").externalAgentStrategy(ExternalAgentStrategy.TMDB).build();
+
+    var result = resolver.getAvailableSeasonNumbers(library, "1396");
+
+    assertThat(result).isEmpty();
   }
 
   @Test
@@ -105,10 +138,13 @@ class SeriesMetadataProviderResolverTest {
 
     private final RemoteSearchResult searchResult;
     private final Series series;
+    private final List<Integer> seasonNumbers;
 
-    FakeSeriesMetadataProvider(RemoteSearchResult searchResult, Series series) {
+    FakeSeriesMetadataProvider(
+        RemoteSearchResult searchResult, Series series, List<Integer> seasonNumbers) {
       this.searchResult = searchResult;
       this.series = series;
+      this.seasonNumbers = seasonNumbers;
     }
 
     @Override
@@ -129,6 +165,11 @@ class SeriesMetadataProviderResolverTest {
     public Optional<SeasonDetails> getSeasonDetails(
         UUID libraryId, String seriesExternalId, int seasonNumber) {
       return Optional.empty();
+    }
+
+    @Override
+    public List<Integer> getAvailableSeasonNumbers(UUID libraryId, String seriesExternalId) {
+      return seasonNumbers;
     }
 
     @Override
