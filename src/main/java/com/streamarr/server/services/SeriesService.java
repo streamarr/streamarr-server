@@ -188,20 +188,35 @@ public class SeriesService {
     var savedSeason = seasonRepository.saveAndFlush(season);
     publishImageEvent(savedSeason.getId(), ImageEntityType.SEASON, details.imageSources());
 
-    for (var epDetails : details.episodes()) {
-      var episode =
-          episodeRepository
-              .findBySeasonIdAndEpisodeNumber(savedSeason.getId(), epDetails.episodeNumber())
-              .orElseGet(() -> Episode.builder().season(savedSeason).library(library).build());
+    var episodes =
+        details.episodes().stream()
+            .map(
+                epDetails -> {
+                  var episode =
+                      episodeRepository
+                          .findBySeasonIdAndEpisodeNumber(
+                              savedSeason.getId(), epDetails.episodeNumber())
+                          .orElseGet(
+                              () -> Episode.builder().season(savedSeason).library(library).build());
 
-      episode.setTitle(epDetails.name());
-      episode.setEpisodeNumber(epDetails.episodeNumber());
-      episode.setOverview(epDetails.overview());
-      episode.setAirDate(epDetails.airDate());
-      episode.setRuntime(epDetails.runtime());
+                  episode.setTitle(epDetails.name());
+                  episode.setEpisodeNumber(epDetails.episodeNumber());
+                  episode.setOverview(epDetails.overview());
+                  episode.setAirDate(epDetails.airDate());
+                  episode.setRuntime(epDetails.runtime());
 
-      var savedEpisode = episodeRepository.saveAndFlush(episode);
-      publishImageEvent(savedEpisode.getId(), ImageEntityType.EPISODE, epDetails.imageSources());
+                  return episode;
+                })
+            .toList();
+
+    var savedEpisodes = episodeRepository.saveAllAndFlush(episodes);
+
+    for (var episode : savedEpisodes) {
+      details.episodes().stream()
+          .filter(ed -> ed.episodeNumber() == episode.getEpisodeNumber())
+          .findFirst()
+          .ifPresent(
+              ed -> publishImageEvent(episode.getId(), ImageEntityType.EPISODE, ed.imageSources()));
     }
 
     return savedSeason;
