@@ -9,6 +9,8 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -57,13 +59,11 @@ public class TranscodeDecisionService {
       MediaProbe source, StreamingOptions clientOptions, ContainerFormat containerFormat) {
 
     var clientAudioCodecs =
-        clientOptions.supportedAudioCodecs() != null
-            ? clientOptions.supportedAudioCodecs()
-            : StreamingOptions.DEFAULT_SUPPORTED_AUDIO_CODECS;
+        Optional.ofNullable(clientOptions.supportedAudioCodecs())
+            .orElse(StreamingOptions.DEFAULT_SUPPORTED_AUDIO_CODECS);
     int maxChannels =
-        clientOptions.maxAudioChannels() != null
-            ? clientOptions.maxAudioChannels()
-            : StreamingOptions.DEFAULT_MAX_AUDIO_CHANNELS;
+        Optional.ofNullable(clientOptions.maxAudioChannels())
+            .orElse(StreamingOptions.DEFAULT_MAX_AUDIO_CHANNELS);
     var containerCodecs = containerFormat.supportedAudioCodecs();
 
     var candidates = new HashSet<>(clientAudioCodecs);
@@ -81,7 +81,7 @@ public class TranscodeDecisionService {
 
   private boolean canCopyAudio(
       MediaProbe source,
-      HashSet<String> candidates,
+      Set<String> candidates,
       int normalizedChannels,
       int maxChannels,
       ContainerFormat containerFormat) {
@@ -99,20 +99,20 @@ public class TranscodeDecisionService {
   }
 
   private AudioDecision selectTranscodeAudio(
-      HashSet<String> candidates, int effectiveChannels, ContainerFormat containerFormat) {
+      Set<String> candidates, int effectiveChannels, ContainerFormat containerFormat) {
 
-    if (effectiveChannels > 2) {
-      if (candidates.contains("eac3")) {
-        return transcode("eac3", effectiveChannels);
-      }
-      if (candidates.contains("ac3")) {
-        return transcode("ac3", Math.min(effectiveChannels, 6));
-      }
-      if (candidates.contains("aac") && containerFormat == ContainerFormat.FMP4) {
-        return transcode("aac", effectiveChannels);
-      }
+    if (effectiveChannels <= 2) {
+      return AudioDecision.stereoAac();
     }
-
+    if (candidates.contains("eac3")) {
+      return transcode("eac3", effectiveChannels);
+    }
+    if (candidates.contains("ac3")) {
+      return transcode("ac3", Math.min(effectiveChannels, 6));
+    }
+    if (candidates.contains("aac") && containerFormat == ContainerFormat.FMP4) {
+      return transcode("aac", effectiveChannels);
+    }
     return AudioDecision.stereoAac();
   }
 
