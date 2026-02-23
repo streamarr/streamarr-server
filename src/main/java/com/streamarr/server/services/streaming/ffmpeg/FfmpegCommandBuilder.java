@@ -51,7 +51,7 @@ public class FfmpegCommandBuilder {
     addCommonFlags(cmd);
     addCodecArgs(cmd, job);
 
-    if (mode == TranscodeMode.FULL_TRANSCODE) {
+    if (mode == TranscodeMode.VIDEO_TRANSCODE || mode == TranscodeMode.FULL_TRANSCODE) {
       addKeyframeArgs(cmd, job);
     }
 
@@ -89,6 +89,10 @@ public class FfmpegCommandBuilder {
       case REMUX -> cmd.addAll(List.of("-c:v", "copy", "-c:a", "copy"));
       case AUDIO_TRANSCODE ->
           cmd.addAll(List.of("-c:v", "copy", "-c:a", "aac", "-ac", "2", "-b:a", "128k"));
+      case VIDEO_TRANSCODE -> {
+        cmd.addAll(List.of("-c:v", job.videoEncoder(), "-c:a", "copy"));
+        addScaleAndBitrateArgs(cmd, job.request());
+      }
       case FULL_TRANSCODE -> {
         cmd.addAll(List.of("-c:v", job.videoEncoder(), "-c:a", "aac", "-ac", "2", "-b:a", "128k"));
         addScaleAndBitrateArgs(cmd, job.request());

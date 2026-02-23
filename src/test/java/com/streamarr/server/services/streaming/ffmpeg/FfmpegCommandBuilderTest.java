@@ -547,6 +547,45 @@ class FfmpegCommandBuilderTest {
   }
 
   @Test
+  @DisplayName("Should use video encoder with audio copy when mode is video transcode")
+  void shouldUseVideoEncoderWithAudioCopyWhenModeIsVideoTranscode() {
+    var j =
+        job(
+            TranscodeMode.VIDEO_TRANSCODE,
+            "h264",
+            "ac3",
+            ContainerFormat.MPEGTS,
+            "libx264",
+            false);
+
+    var cmd = builder.buildCommand(j);
+
+    assertThat(cmd)
+        .contains("-c:v", "libx264")
+        .contains("-c:a", "copy")
+        .contains("-vf", "scale=-2:1080")
+        .doesNotContain("-ac")
+        .doesNotContain("-b:a");
+  }
+
+  @Test
+  @DisplayName("Should include keyframe args when mode is video transcode")
+  void shouldIncludeKeyframeArgsWhenModeIsVideoTranscode() {
+    var j =
+        job(
+            TranscodeMode.VIDEO_TRANSCODE,
+            "h264",
+            "ac3",
+            ContainerFormat.MPEGTS,
+            "libx264",
+            false);
+
+    var cmd = builder.buildCommand(j);
+
+    assertThat(cmd).contains("-forced-idr", "1");
+  }
+
+  @Test
   @DisplayName("Should only add forced IDR when encoder is in neither keyframe set")
   void shouldOnlyAddForcedIdrWhenEncoderIsInNeitherKeyframeSet() {
     var j =

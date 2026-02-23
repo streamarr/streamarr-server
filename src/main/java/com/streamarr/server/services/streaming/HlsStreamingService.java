@@ -231,7 +231,7 @@ public class HlsStreamingService implements StreamingService {
   }
 
   private boolean requiresTranscode(TranscodeMode mode) {
-    return mode == TranscodeMode.AUDIO_TRANSCODE || mode == TranscodeMode.FULL_TRANSCODE;
+    return mode != TranscodeMode.REMUX;
   }
 
   private void enforceTranscodeLimit() {

@@ -7,6 +7,7 @@ type StreamSession {
 enum TranscodeMode {
     REMUX
     AUDIO_TRANSCODE
+    VIDEO_TRANSCODE
     FULL_TRANSCODE
 }
 
