@@ -27,6 +27,8 @@ public class LocalTranscodeExecutor implements TranscodeExecutor {
     var job = resolveJob(request);
     var command = commandBuilder.buildCommand(job);
 
+    log.info("FFmpeg command for session {}: {}", request.sessionId(), String.join(" ", command));
+
     var process =
         processManager.startProcess(
             request.sessionId(), request.variantLabel(), command, job.outputDir());

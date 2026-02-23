@@ -104,10 +104,28 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
 
   private boolean isAliveOrCleanup(ProcessKey key, Process process) {
     if (!process.isAlive()) {
+      logExitDetails(key, process);
       processes.remove(key);
       return false;
     }
 
     return true;
+  }
+
+  private void logExitDetails(ProcessKey key, Process process) {
+    try {
+      var exitCode = process.exitValue();
+      var stderr = new String(process.getErrorStream().readAllBytes());
+      if (!stderr.isBlank()) {
+        log.warn(
+            "FFmpeg exited with code {} for session {} variant {}: {}",
+            exitCode,
+            key.sessionId(),
+            key.variantLabel(),
+            stderr.substring(0, Math.min(stderr.length(), 2000)));
+      }
+    } catch (Exception e) {
+      log.debug("Could not read FFmpeg exit details for session {}", key.sessionId());
+    }
   }
 }
