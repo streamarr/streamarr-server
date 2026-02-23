@@ -120,6 +120,34 @@ public class MovieService {
     return savedMovie;
   }
 
+  @Transactional
+  public Movie refreshMovieMetadata(Movie existing, MetadataResult<Movie> metadataResult) {
+    var fresh = metadataResult.entity();
+
+    existing.setTitle(fresh.getTitle());
+    existing.setOriginalTitle(fresh.getOriginalTitle());
+    existing.setTitleSort(fresh.getTitleSort());
+    existing.setTagline(fresh.getTagline());
+    existing.setSummary(fresh.getSummary());
+    existing.setRuntime(fresh.getRuntime());
+    existing.setContentRating(fresh.getContentRating());
+    existing.setReleaseDate(fresh.getReleaseDate());
+
+    existing.setCast(
+        personService.getOrCreatePersons(fresh.getCast(), metadataResult.personImageSources()));
+    existing.setDirectors(
+        personService.getOrCreatePersons(
+            fresh.getDirectors(), metadataResult.personImageSources()));
+    existing.setGenres(genreService.getOrCreateGenres(fresh.getGenres()));
+    existing.setStudios(
+        companyService.getOrCreateCompanies(
+            fresh.getStudios(), metadataResult.companyImageSources()));
+
+    var saved = movieRepository.saveAndFlush(existing);
+    publishImageEvent(saved.getId(), ImageEntityType.MOVIE, metadataResult.imageSources());
+    return saved;
+  }
+
   private void publishImageEvent(
       UUID entityId, ImageEntityType entityType, List<ImageSource> sources) {
     if (!sources.isEmpty()) {
