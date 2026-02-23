@@ -11,4 +11,6 @@ public record MediaProbe(
     int height,
     String videoCodec,
     String audioCodec,
-    long bitrate) {}
+    long bitrate,
+    int audioChannels,
+    long audioBitrate) {}

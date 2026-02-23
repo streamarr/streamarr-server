@@ -53,6 +53,8 @@ public class LocalFfprobeService implements FfprobeService {
     return MediaProbe.builder()
         .videoCodec(videoStream.get("codec_name").asString())
         .audioCodec(audioStream.map(s -> s.get("codec_name").asString()).orElse(null))
+        .audioChannels(audioStream.map(s -> optionalInt(s, "channels")).orElse(0))
+        .audioBitrate(audioStream.map(s -> optionalLong(s, "bit_rate")).orElse(0L))
         .width(videoStream.get("width").asInt())
         .height(videoStream.get("height").asInt())
         .framerate(parseFrameRate(videoStream.get("r_frame_rate").asString()))
@@ -73,6 +75,24 @@ public class LocalFfprobeService implements FfprobeService {
       }
     }
     return Optional.empty();
+  }
+
+  private int optionalInt(JsonNode node, String field) {
+    var value = node.get(field);
+    return value != null && !value.isNull() ? value.asInt() : 0;
+  }
+
+  private long optionalLong(JsonNode node, String field) {
+    var value = node.get(field);
+    if (value == null || value.isNull()) {
+      return 0L;
+    }
+    var text = value.asString();
+    try {
+      return Long.parseLong(text);
+    } catch (NumberFormatException _) {
+      return 0L;
+    }
   }
 
   private double parseFrameRate(String rFrameRate) {

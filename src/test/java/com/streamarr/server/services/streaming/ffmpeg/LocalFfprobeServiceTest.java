@@ -159,6 +159,77 @@ class LocalFfprobeServiceTest {
     assertThat(probe.audioCodec()).isNull();
   }
 
+  @Test
+  @DisplayName("Should parse audio channels when present")
+  void shouldParseAudioChannelsWhenPresent() {
+    var json =
+        """
+        {
+          "streams": [
+            {
+              "codec_type": "video",
+              "codec_name": "h264",
+              "width": 1920,
+              "height": 1080,
+              "r_frame_rate": "24/1"
+            },
+            {
+              "codec_type": "audio",
+              "codec_name": "ac3",
+              "channels": 6,
+              "bit_rate": "384000",
+              "sample_rate": "48000"
+            }
+          ],
+          "format": {
+            "duration": "7200.0",
+            "bit_rate": "5000000"
+          }
+        }
+        """;
+
+    var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
+
+    var probe = service.probe(Path.of("/test/movie.mkv"));
+
+    assertThat(probe.audioChannels()).isEqualTo(6);
+    assertThat(probe.audioBitrate()).isEqualTo(384_000L);
+  }
+
+  @Test
+  @DisplayName("Should default audio channels to zero when missing")
+  void shouldDefaultAudioChannelsToZeroWhenMissing() {
+    var json =
+        """
+        {
+          "streams": [
+            {
+              "codec_type": "video",
+              "codec_name": "h264",
+              "width": 1920,
+              "height": 1080,
+              "r_frame_rate": "24/1"
+            },
+            {
+              "codec_type": "audio",
+              "codec_name": "aac"
+            }
+          ],
+          "format": {
+            "duration": "60.0",
+            "bit_rate": "5000000"
+          }
+        }
+        """;
+
+    var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
+
+    var probe = service.probe(Path.of("/test/movie.mkv"));
+
+    assertThat(probe.audioChannels()).isZero();
+    assertThat(probe.audioBitrate()).isZero();
+  }
+
   private Process createFakeProcess(String stdout, int exitCode) {
     return new FakeProcess(stdout, exitCode);
   }
