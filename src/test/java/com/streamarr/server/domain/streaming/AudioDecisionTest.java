@@ -1,0 +1,65 @@
+package com.streamarr.server.domain.streaming;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+
+@Tag("UnitTest")
+@DisplayName("Audio Decision Tests")
+class AudioDecisionTest {
+
+  @ParameterizedTest(name = "sourceChannels={0} → normalized={1}")
+  @DisplayName("Should normalize channel count to HLS-valid values")
+  @CsvSource({
+    "0, 2",
+    "1, 1",
+    "2, 2",
+    "3, 2",
+    "4, 2",
+    "5, 6",
+    "6, 6",
+    "7, 8",
+    "8, 8"
+  })
+  void shouldNormalizeChannelCountToHlsValidValues(int sourceChannels, int expected) {
+    assertThat(AudioDecision.normalizeChannels(sourceChannels)).isEqualTo(expected);
+  }
+
+  @ParameterizedTest(name = "channels={0} → bitrate={1}")
+  @DisplayName("Should calculate bitrate for channel count")
+  @CsvSource({
+    "1, 64000",
+    "2, 128000",
+    "6, 384000",
+    "8, 512000"
+  })
+  void shouldCalculateBitrateForChannelCount(int channels, long expectedBitrate) {
+    assertThat(AudioDecision.bitrateForChannels(channels)).isEqualTo(expectedBitrate);
+  }
+
+  @Test
+  @DisplayName("Should create stereo AAC decision with correct defaults")
+  void shouldCreateStereoAacDecisionWithCorrectDefaults() {
+    var decision = AudioDecision.stereoAac();
+
+    assertThat(decision.mode()).isEqualTo(AudioMode.TRANSCODE);
+    assertThat(decision.codec()).isEqualTo("aac");
+    assertThat(decision.channels()).isEqualTo(2);
+    assertThat(decision.bitrate()).isEqualTo(128_000L);
+  }
+
+  @Test
+  @DisplayName("Should create copy decision preserving source values")
+  void shouldCreateCopyDecisionPreservingSourceValues() {
+    var decision = AudioDecision.copy("ac3", 6, 384_000L);
+
+    assertThat(decision.mode()).isEqualTo(AudioMode.COPY);
+    assertThat(decision.codec()).isEqualTo("ac3");
+    assertThat(decision.channels()).isEqualTo(6);
+    assertThat(decision.bitrate()).isEqualTo(384_000L);
+  }
+}
