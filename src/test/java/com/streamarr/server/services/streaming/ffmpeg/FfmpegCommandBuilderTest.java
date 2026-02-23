@@ -495,6 +495,26 @@ class FfmpegCommandBuilderTest {
   }
 
   @Test
+  @DisplayName("Should map first video and audio streams when building command")
+  void shouldMapFirstVideoAndAudioStreamsWhenBuildingCommand() {
+    var j = job(TranscodeMode.REMUX, "h264", "aac", ContainerFormat.MPEGTS, "copy", true);
+
+    var cmd = builder.buildCommand(j);
+
+    assertThat(cmd).containsSequence("-map", "0:v:0", "-map", "0:a:0");
+  }
+
+  @Test
+  @DisplayName("Should exclude subtitle streams when building command")
+  void shouldExcludeSubtitleStreamsWhenBuildingCommand() {
+    var j = job(TranscodeMode.REMUX, "h264", "aac", ContainerFormat.MPEGTS, "copy", true);
+
+    var cmd = builder.buildCommand(j);
+
+    assertThat(cmd).containsSequence("-map", "-0:s");
+  }
+
+  @Test
   @DisplayName("Should only add forced IDR when encoder is in neither keyframe set")
   void shouldOnlyAddForcedIdrWhenEncoderIsInNeitherKeyframeSet() {
     var j =

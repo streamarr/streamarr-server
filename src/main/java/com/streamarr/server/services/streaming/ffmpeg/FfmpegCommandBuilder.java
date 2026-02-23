@@ -47,6 +47,7 @@ public class FfmpegCommandBuilder {
 
     cmd.addAll(List.of("-i", request.sourcePath().toString()));
 
+    addStreamSelection(cmd);
     addCommonFlags(cmd);
     addCodecArgs(cmd, job);
 
@@ -59,6 +60,10 @@ public class FfmpegCommandBuilder {
     cmd.add(job.outputDir().resolve("stream.m3u8").toString());
 
     return List.copyOf(cmd);
+  }
+
+  private void addStreamSelection(List<String> cmd) {
+    cmd.addAll(List.of("-map", "0:v:0", "-map", "0:a:0", "-map", "-0:s"));
   }
 
   private void addCommonFlags(List<String> cmd) {
