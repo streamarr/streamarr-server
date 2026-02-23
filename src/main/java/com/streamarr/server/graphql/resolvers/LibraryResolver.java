@@ -16,7 +16,6 @@ import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
 import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.graphql.dto.AlphabetIndexDto;
 import com.streamarr.server.graphql.inputs.AddLibraryInput;
-import com.streamarr.server.repositories.LibraryMetadataRepository;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
@@ -33,7 +32,6 @@ import lombok.RequiredArgsConstructor;
 public class LibraryResolver {
 
   private final LibraryRepository libraryRepository;
-  private final LibraryMetadataRepository libraryMetadataRepository;
   private final LibraryManagementService libraryManagementService;
   private final MovieService movieService;
   private final SeriesService seriesService;
@@ -101,7 +99,7 @@ public class LibraryResolver {
   @DgsData(parentType = "Library")
   public List<AlphabetIndexDto> alphabetIndex(DataFetchingEnvironment dfe) {
     Library library = dfe.getSource();
-    return libraryMetadataRepository.findByLibraryIdOrderByLetterAsc(library.getId()).stream()
+    return libraryManagementService.getAlphabetIndex(library.getId()).stream()
         .map(m -> new AlphabetIndexDto(m.getLetter(), m.getItemCount()))
         .toList();
   }

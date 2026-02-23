@@ -25,6 +25,7 @@ import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.exceptions.LibraryPathPermissionDeniedException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
+import com.streamarr.server.fakes.FakeLibraryMetadataRepository;
 import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
@@ -128,6 +129,7 @@ class LibraryManagementServiceTest {
           movieFileProcessor,
           seriesFileProcessor,
           fakeLibraryRepository,
+          new FakeLibraryMetadataRepository(),
           fakeMediaFileRepository,
           movieService,
           seriesService,
@@ -227,6 +229,7 @@ class LibraryManagementServiceTest {
             movieFileProcessor,
             seriesFileProcessor,
             fakeLibraryRepository,
+            new FakeLibraryMetadataRepository(),
             fakeMediaFileRepository,
             movieService,
             seriesService,
@@ -260,6 +263,7 @@ class LibraryManagementServiceTest {
             movieFileProcessor,
             seriesFileProcessor,
             fakeLibraryRepository,
+            new FakeLibraryMetadataRepository(),
             fakeMediaFileRepository,
             movieService,
             seriesService,
@@ -354,6 +358,7 @@ class LibraryManagementServiceTest {
             movieFileProcessor,
             seriesFileProcessor,
             fakeLibraryRepository,
+            new FakeLibraryMetadataRepository(),
             fakeMediaFileRepository,
             movieService,
             seriesService,
@@ -810,6 +815,7 @@ class LibraryManagementServiceTest {
               movieFileProcessor,
               seriesFileProcessor,
               fakeLibraryRepository,
+              new FakeLibraryMetadataRepository(),
               fakeMediaFileRepository,
               movieService,
               seriesService,

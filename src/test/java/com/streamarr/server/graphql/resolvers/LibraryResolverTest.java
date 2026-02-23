@@ -8,16 +8,15 @@ import static org.mockito.Mockito.when;
 
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
+import com.streamarr.server.domain.AlphabetLetter;
 import com.streamarr.server.domain.ExternalAgentStrategy;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
+import com.streamarr.server.domain.LibraryMetadata;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Series;
-import com.streamarr.server.domain.AlphabetLetter;
-import com.streamarr.server.domain.LibraryMetadata;
-import com.streamarr.server.repositories.LibraryMetadataRepository;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
@@ -27,6 +26,7 @@ import graphql.relay.DefaultConnectionCursor;
 import graphql.relay.DefaultEdge;
 import graphql.relay.DefaultPageInfo;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -45,8 +45,6 @@ class LibraryResolverTest {
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
 
   @MockitoBean private LibraryRepository libraryRepository;
-
-  @MockitoBean private LibraryMetadataRepository libraryMetadataRepository;
 
   @MockitoBean private LibraryManagementService libraryManagementService;
 
@@ -328,24 +326,23 @@ class LibraryResolverTest {
     metadataM.setId(UUID.randomUUID());
 
     when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
-    when(libraryMetadataRepository.findByLibraryIdOrderByLetterAsc(libraryId))
+    when(libraryManagementService.getAlphabetIndex(libraryId))
         .thenReturn(List.of(metadataA, metadataM));
 
-    List<String> letters =
-        dgsQueryExecutor.executeAndExtractJsonPath(
-            String.format(
-                "{ library(id: \"%s\") { alphabetIndex { letter count } } }", libraryId),
-            "data.library.alphabetIndex[*].letter");
+    var result =
+        dgsQueryExecutor.execute(
+            String.format("{ library(id: \"%s\") { alphabetIndex { letter count } } }", libraryId));
 
-    assertThat(letters).containsExactly("A", "M");
+    assertThat(result.getErrors()).isEmpty();
 
-    List<Integer> counts =
-        dgsQueryExecutor.executeAndExtractJsonPath(
-            String.format(
-                "{ library(id: \"%s\") { alphabetIndex { letter count } } }", libraryId),
-            "data.library.alphabetIndex[*].count");
+    Map<String, Object> data = result.getData();
+    @SuppressWarnings("unchecked")
+    var libraryData = (Map<String, Object>) data.get("library");
+    @SuppressWarnings("unchecked")
+    var alphabetIndex = (List<Map<String, Object>>) libraryData.get("alphabetIndex");
 
-    assertThat(counts).containsExactly(5, 12);
+    assertThat(alphabetIndex).extracting(m -> m.get("letter")).containsExactly("A", "M");
+    assertThat(alphabetIndex).extracting(m -> m.get("count")).containsExactly(5, 12);
   }
 
   @Test
@@ -364,14 +361,19 @@ class LibraryResolverTest {
     library.setId(libraryId);
 
     when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
-    when(libraryMetadataRepository.findByLibraryIdOrderByLetterAsc(libraryId))
-        .thenReturn(List.of());
+    when(libraryManagementService.getAlphabetIndex(libraryId)).thenReturn(List.of());
 
-    List<Object> alphabetIndex =
-        dgsQueryExecutor.executeAndExtractJsonPath(
-            String.format(
-                "{ library(id: \"%s\") { alphabetIndex { letter count } } }", libraryId),
-            "data.library.alphabetIndex");
+    var result =
+        dgsQueryExecutor.execute(
+            String.format("{ library(id: \"%s\") { alphabetIndex { letter count } } }", libraryId));
+
+    assertThat(result.getErrors()).isEmpty();
+
+    Map<String, Object> data = result.getData();
+    @SuppressWarnings("unchecked")
+    var libraryData = (Map<String, Object>) data.get("library");
+    @SuppressWarnings("unchecked")
+    var alphabetIndex = (List<Object>) libraryData.get("alphabetIndex");
 
     assertThat(alphabetIndex).isEmpty();
   }

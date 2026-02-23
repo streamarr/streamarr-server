@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.LibraryMetadata;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
@@ -10,6 +11,7 @@ import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.exceptions.LibraryPathPermissionDeniedException;
 import com.streamarr.server.exceptions.LibraryScanFailedException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
+import com.streamarr.server.repositories.LibraryMetadataRepository;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.MovieService;
@@ -52,6 +54,7 @@ public class LibraryManagementService implements ActiveScanChecker {
   private final MovieFileProcessor movieFileProcessor;
   private final SeriesFileProcessor seriesFileProcessor;
   private final LibraryRepository libraryRepository;
+  private final LibraryMetadataRepository libraryMetadataRepository;
   private final MediaFileRepository mediaFileRepository;
   private final MovieService movieService;
   private final SeriesService seriesService;
@@ -66,6 +69,7 @@ public class LibraryManagementService implements ActiveScanChecker {
       MovieFileProcessor movieFileProcessor,
       SeriesFileProcessor seriesFileProcessor,
       LibraryRepository libraryRepository,
+      LibraryMetadataRepository libraryMetadataRepository,
       MediaFileRepository mediaFileRepository,
       MovieService movieService,
       SeriesService seriesService,
@@ -77,6 +81,7 @@ public class LibraryManagementService implements ActiveScanChecker {
     this.movieFileProcessor = movieFileProcessor;
     this.seriesFileProcessor = seriesFileProcessor;
     this.libraryRepository = libraryRepository;
+    this.libraryMetadataRepository = libraryMetadataRepository;
     this.mediaFileRepository = mediaFileRepository;
     this.movieService = movieService;
     this.seriesService = seriesService;
@@ -89,6 +94,10 @@ public class LibraryManagementService implements ActiveScanChecker {
   @Override
   public boolean isActivelyScanning(UUID libraryId) {
     return activeScans.contains(libraryId);
+  }
+
+  public List<LibraryMetadata> getAlphabetIndex(UUID libraryId) {
+    return libraryMetadataRepository.findByLibraryIdOrderByLetterAsc(libraryId);
   }
 
   public Library addLibrary(Library library) {
