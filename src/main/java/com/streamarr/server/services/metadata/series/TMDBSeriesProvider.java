@@ -271,6 +271,13 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
         .findFirst();
   }
 
+  @Override
+  public List<Integer> getAvailableSeasonNumbers(UUID libraryId, String seriesExternalId) {
+    return getOrFetchSeasonSummaries(libraryId, seriesExternalId).stream()
+        .map(TmdbTvSeasonSummary::getSeasonNumber)
+        .toList();
+  }
+
   @EventListener
   public void onScanEnded(ScanEndedEvent event) {
     log.debug("Clearing series metadata cache for library {}", event.libraryId());
