@@ -343,6 +343,9 @@ public class LibraryManagementService implements ActiveScanChecker {
       if (library.getStatus().equals(LibraryStatus.SCANNING)) {
         throw new LibraryScanInProgressException(libraryId);
       }
+      if (library.getStatus() == LibraryStatus.REFRESHING) {
+        throw new LibraryRefreshInProgressException(libraryId);
+      }
 
       log.info("Starting {} library scan.", library.getName());
 

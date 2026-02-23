@@ -208,6 +208,18 @@ class LibraryManagementServiceTest {
   }
 
   @Test
+  @DisplayName("Should not allow scanning a library that is currently being refreshed")
+  void shouldFailWhenLibraryCurrentlyBeingRefreshed() {
+    var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+    library.setStatus(LibraryStatus.REFRESHING);
+    fakeLibraryRepository.save(library);
+
+    assertThrows(
+        LibraryRefreshInProgressException.class,
+        () -> libraryManagementService.scanLibrary(savedLibraryId));
+  }
+
+  @Test
   @DisplayName(
       "Should set library status to unhealthy when the library filepath cannot be accessed")
   void shouldSetLibraryStatusToUnhealthyWhenLibraryFilepathInaccessible() {
