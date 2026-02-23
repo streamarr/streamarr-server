@@ -162,7 +162,7 @@ class LibraryRefreshServiceTest {
   @DisplayName("Should continue refreshing when one series metadata fetch returns empty")
   void shouldContinueRefreshingWhenOneSeriesMetadataFetchReturnsEmpty() {
     var library = buildSeriesLibrary();
-    saveSeriesWithTmdbId("Failing Series", "99999", library);
+    var failingSeries = saveSeriesWithTmdbId("Failing Series", "99999", library);
     var series2 = saveSeriesWithTmdbId("Working Series", "1396", library);
 
     when(seriesProviderResolver.getMetadata(argThatHasExternalId("99999"), eq(library)))
@@ -172,6 +172,8 @@ class LibraryRefreshServiceTest {
 
     refreshService.refreshLibrary(library);
 
+    assertThat(seriesRepository.findById(failingSeries.getId()).orElseThrow().getTitle())
+        .isEqualTo("Failing Series");
     assertThat(seriesRepository.findById(series2.getId()).orElseThrow().getTitle())
         .isEqualTo("Working Series (Updated)");
   }
@@ -180,7 +182,7 @@ class LibraryRefreshServiceTest {
   @DisplayName("Should continue refreshing when one series throws exception")
   void shouldContinueRefreshingWhenOneSeriesThrowsException() {
     var library = buildSeriesLibrary();
-    saveSeriesWithTmdbId("Exploding Series", "99999", library);
+    var explodingSeries = saveSeriesWithTmdbId("Exploding Series", "99999", library);
     var series2 = saveSeriesWithTmdbId("Working Series", "1396", library);
 
     when(seriesProviderResolver.getMetadata(argThatHasExternalId("99999"), eq(library)))
@@ -190,6 +192,8 @@ class LibraryRefreshServiceTest {
 
     refreshService.refreshLibrary(library);
 
+    assertThat(seriesRepository.findById(explodingSeries.getId()).orElseThrow().getTitle())
+        .isEqualTo("Exploding Series");
     assertThat(seriesRepository.findById(series2.getId()).orElseThrow().getTitle())
         .isEqualTo("Working Series (Updated)");
   }
@@ -350,7 +354,7 @@ class LibraryRefreshServiceTest {
   @DisplayName("Should continue refreshing movies when one movie fails with exception")
   void shouldContinueRefreshingMoviesWhenOneMovieFails() {
     var library = buildMovieLibrary();
-    saveMovieWithTmdbId("Failing Movie", "99999", library);
+    var failingMovie = saveMovieWithTmdbId("Failing Movie", "99999", library);
     var movie2 = saveMovieWithTmdbId("Working Movie", "27205", library);
 
     when(movieProviderResolver.getMetadata(argThatHasExternalId("99999"), eq(library)))
@@ -362,6 +366,8 @@ class LibraryRefreshServiceTest {
 
     refreshService.refreshLibrary(library);
 
+    assertThat(movieRepository.findById(failingMovie.getId()).orElseThrow().getTitle())
+        .isEqualTo("Failing Movie");
     assertThat(movieRepository.findById(movie2.getId()).orElseThrow().getTitle())
         .isEqualTo("Working Movie (Updated)");
   }

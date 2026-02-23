@@ -97,6 +97,15 @@ class LibraryResolverTest {
   }
 
   @Test
+  @DisplayName("Should return error when refreshLibrary called with invalid ID")
+  void shouldReturnErrorWhenRefreshLibraryCalledWithInvalidId() {
+    var result = dgsQueryExecutor.execute("mutation { refreshLibrary(id: \"not-a-uuid\") }");
+
+    assertThat(result.getErrors()).isNotEmpty();
+    assertThat(result.getErrors().get(0).getMessage()).contains("Invalid ID format");
+  }
+
+  @Test
   @DisplayName("Should return error when invalid ID provided")
   void shouldReturnErrorWhenInvalidIdProvided() {
     var result = dgsQueryExecutor.execute("{ library(id: \"not-a-uuid\") { name } }");
