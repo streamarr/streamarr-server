@@ -2,7 +2,9 @@ package com.streamarr.server.services;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
@@ -12,8 +14,12 @@ import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
+import com.streamarr.server.domain.media.ContentRating;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.domain.metadata.Company;
+import com.streamarr.server.domain.metadata.Genre;
+import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeImageRepository;
@@ -29,8 +35,10 @@ import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import com.streamarr.server.services.metadata.series.SeasonDetails;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.jooq.SortOrder;
 import org.junit.jupiter.api.BeforeEach;
@@ -48,6 +56,9 @@ class SeriesServiceTest {
   private FakeEpisodeRepository episodeRepository;
   private FakeImageRepository imageRepository;
   private CapturingEventPublisher eventPublisher;
+  private PersonService personService;
+  private GenreService genreService;
+  private CompanyService companyService;
   private SeriesService seriesService;
 
   @BeforeEach
@@ -57,6 +68,9 @@ class SeriesServiceTest {
     episodeRepository = new FakeEpisodeRepository();
     imageRepository = new FakeImageRepository();
     eventPublisher = new CapturingEventPublisher();
+    personService = mock(PersonService.class);
+    genreService = mock(GenreService.class);
+    companyService = mock(CompanyService.class);
     var cursorUtil = new CursorUtil(new ObjectMapper());
     var relayPaginationService = new RelayPaginationService();
     var fileSystem = Jimfs.newFileSystem(Configuration.unix());
@@ -69,9 +83,9 @@ class SeriesServiceTest {
     seriesService =
         new SeriesService(
             seriesRepository,
-            mock(PersonService.class),
-            mock(GenreService.class),
-            mock(CompanyService.class),
+            personService,
+            genreService,
+            companyService,
             cursorUtil,
             relayPaginationService,
             eventPublisher,
@@ -472,6 +486,105 @@ class SeriesServiceTest {
     assertThat(episodeEvents)
         .extracting(MetadataEnrichedEvent::entityId)
         .containsExactlyInAnyOrder(ep1.getId(), ep3.getId());
+  }
+
+  @Test
+  @DisplayName("Should overwrite scalar fields when refreshing series metadata")
+  void shouldOverwriteScalarFieldsWhenRefreshingSeriesMetadata() {
+    var existing =
+        seriesRepository.save(
+            Series.builder()
+                .title("Old Title")
+                .originalTitle("Old Original")
+                .titleSort("old title")
+                .tagline("Old tagline")
+                .summary("Old summary")
+                .runtime(30)
+                .contentRating(new ContentRating("MPAA", "PG", "US"))
+                .firstAirDate(LocalDate.of(2000, 1, 1))
+                .build());
+
+    var fresh =
+        Series.builder()
+            .title("New Title")
+            .originalTitle("New Original")
+            .titleSort("new title")
+            .tagline("New tagline")
+            .summary("New summary")
+            .runtime(60)
+            .contentRating(new ContentRating("TV Parental Guidelines", "TV-MA", "US"))
+            .firstAirDate(LocalDate.of(2020, 6, 15))
+            .build();
+    var metadataResult = new MetadataResult<>(fresh, List.of(), Map.of(), Map.of());
+
+    var result = seriesService.refreshSeriesMetadata(existing, metadataResult);
+
+    assertThat(result.getTitle()).isEqualTo("New Title");
+    assertThat(result.getOriginalTitle()).isEqualTo("New Original");
+    assertThat(result.getTitleSort()).isEqualTo("new title");
+    assertThat(result.getTagline()).isEqualTo("New tagline");
+    assertThat(result.getSummary()).isEqualTo("New summary");
+    assertThat(result.getRuntime()).isEqualTo(60);
+    assertThat(result.getContentRating().value()).isEqualTo("TV-MA");
+    assertThat(result.getFirstAirDate()).isEqualTo(LocalDate.of(2020, 6, 15));
+    assertThat(result.getId()).isEqualTo(existing.getId());
+  }
+
+  @Test
+  @DisplayName("Should update associations when refreshing series metadata")
+  void shouldUpdateAssociationsWhenRefreshingSeriesMetadata() {
+    var existing = seriesRepository.save(Series.builder().title("Breaking Bad").build());
+
+    var freshCast = List.of(Person.builder().name("Bryan Cranston").build());
+    var freshDirectors = List.of(Person.builder().name("Vince Gilligan").build());
+    var freshGenres = Set.of(Genre.builder().name("Drama").build());
+    var freshStudios = Set.of(Company.builder().name("Sony Pictures").build());
+
+    when(personService.getOrCreatePersons(any(), any()))
+        .thenReturn(freshCast)
+        .thenReturn(freshDirectors);
+    when(genreService.getOrCreateGenres(any())).thenReturn(freshGenres);
+    when(companyService.getOrCreateCompanies(any(), any())).thenReturn(freshStudios);
+
+    var fresh = Series.builder().title("Breaking Bad").build();
+    var metadataResult = new MetadataResult<>(fresh, List.of(), Map.of(), Map.of());
+
+    var result = seriesService.refreshSeriesMetadata(existing, metadataResult);
+
+    assertThat(result.getCast()).extracting(Person::getName).containsExactly("Bryan Cranston");
+    assertThat(result.getDirectors())
+        .extracting(Person::getName)
+        .containsExactly("Vince Gilligan");
+    assertThat(result.getGenres()).extracting(Genre::getName).containsExactly("Drama");
+    assertThat(result.getStudios()).extracting(Company::getName).containsExactly("Sony Pictures");
+  }
+
+  @Test
+  @DisplayName("Should publish image event when refreshing series metadata with image sources")
+  void shouldPublishImageEventWhenRefreshingSeriesMetadataWithImageSources() {
+    var existing = seriesRepository.save(Series.builder().title("Breaking Bad").build());
+    var imageSources = List.<ImageSource>of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg"));
+    var fresh = Series.builder().title("Breaking Bad").build();
+    var metadataResult = new MetadataResult<>(fresh, imageSources, Map.of(), Map.of());
+
+    seriesService.refreshSeriesMetadata(existing, metadataResult);
+
+    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
+    assertThat(events).hasSize(1);
+    assertThat(events.getFirst().entityId()).isEqualTo(existing.getId());
+    assertThat(events.getFirst().entityType()).isEqualTo(ImageEntityType.SERIES);
+  }
+
+  @Test
+  @DisplayName("Should not publish image event when refreshing series metadata with empty sources")
+  void shouldNotPublishImageEventWhenRefreshingSeriesMetadataWithEmptySources() {
+    var existing = seriesRepository.save(Series.builder().title("Breaking Bad").build());
+    var fresh = Series.builder().title("Breaking Bad").build();
+    var metadataResult = new MetadataResult<>(fresh, List.of(), Map.of(), Map.of());
+
+    seriesService.refreshSeriesMetadata(existing, metadataResult);
+
+    assertThat(eventPublisher.getEventsOfType(MetadataEnrichedEvent.class)).isEmpty();
   }
 
   private void seedImage(UUID entityId) {

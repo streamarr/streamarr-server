@@ -146,6 +146,34 @@ public class SeriesService {
   }
 
   @Transactional
+  public Series refreshSeriesMetadata(Series existing, MetadataResult<Series> metadataResult) {
+    var fresh = metadataResult.entity();
+
+    existing.setTitle(fresh.getTitle());
+    existing.setOriginalTitle(fresh.getOriginalTitle());
+    existing.setTitleSort(fresh.getTitleSort());
+    existing.setTagline(fresh.getTagline());
+    existing.setSummary(fresh.getSummary());
+    existing.setRuntime(fresh.getRuntime());
+    existing.setContentRating(fresh.getContentRating());
+    existing.setFirstAirDate(fresh.getFirstAirDate());
+
+    existing.setCast(
+        personService.getOrCreatePersons(fresh.getCast(), metadataResult.personImageSources()));
+    existing.setDirectors(
+        personService.getOrCreatePersons(
+            fresh.getDirectors(), metadataResult.personImageSources()));
+    existing.setGenres(genreService.getOrCreateGenres(fresh.getGenres()));
+    existing.setStudios(
+        companyService.getOrCreateCompanies(
+            fresh.getStudios(), metadataResult.companyImageSources()));
+
+    var saved = seriesRepository.saveAndFlush(existing);
+    publishImageEvent(saved.getId(), ImageEntityType.SERIES, metadataResult.imageSources());
+    return saved;
+  }
+
+  @Transactional
   public Series addMediaFile(UUID seriesId, MediaFile mediaFile) {
     var series = seriesRepository.findById(seriesId).orElseThrow();
     series.addFile(mediaFile);
