@@ -301,8 +301,8 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("Should set full transcode decision when video codec is incompatible")
-  void shouldSetFullTranscodeDecisionWhenVideoCodecIsIncompatible() {
+  @DisplayName("Should transcode video when video codec is incompatible")
+  void shouldTranscodeVideoWhenVideoCodecIsIncompatible() {
     ffprobeService.setDefaultProbe(
         MediaProbe.builder()
             .duration(Duration.ofMinutes(90))
@@ -320,7 +320,7 @@ class HlsStreamingServiceTest {
     var session = service.createSession(file.getId(), options);
 
     assertThat(session.getTranscodeDecision().transcodeMode())
-        .isEqualTo(TranscodeMode.FULL_TRANSCODE);
+        .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
     assertThat(session.getTranscodeDecision().videoCodecFamily()).isEqualTo("h264");
   }
 

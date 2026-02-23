@@ -56,8 +56,14 @@ public class TranscodeDecisionService {
   private AudioDecision decideAudio(
       MediaProbe source, StreamingOptions clientOptions, ContainerFormat containerFormat) {
 
-    var clientAudioCodecs = clientOptions.supportedAudioCodecs();
-    int maxChannels = clientOptions.maxAudioChannels();
+    var clientAudioCodecs =
+        clientOptions.supportedAudioCodecs() != null
+            ? clientOptions.supportedAudioCodecs()
+            : StreamingOptions.DEFAULT_SUPPORTED_AUDIO_CODECS;
+    int maxChannels =
+        clientOptions.maxAudioChannels() != null
+            ? clientOptions.maxAudioChannels()
+            : StreamingOptions.DEFAULT_MAX_AUDIO_CHANNELS;
     var containerCodecs = containerFormat.supportedAudioCodecs();
 
     var candidates = new HashSet<>(clientAudioCodecs);

@@ -183,11 +183,15 @@ public class HlsStreamingService implements StreamingService {
 
   private List<QualityVariant> resolveVariants(
       MediaProbe probe, StreamingOptions options, TranscodeDecision decision) {
-    if (!isAutoQuality(options) || decision.transcodeMode() != TranscodeMode.FULL_TRANSCODE) {
+    if (!isAutoQuality(options) || !requiresVideoTranscode(decision.transcodeMode())) {
       return Collections.emptyList();
     }
 
     return qualityLadderService.generateVariants(probe, options);
+  }
+
+  private boolean requiresVideoTranscode(TranscodeMode mode) {
+    return mode == TranscodeMode.VIDEO_TRANSCODE || mode == TranscodeMode.FULL_TRANSCODE;
   }
 
   private boolean isAutoQuality(StreamingOptions options) {
