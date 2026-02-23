@@ -161,6 +161,7 @@ public class LibraryManagementService implements ActiveScanChecker {
     try {
       var library = findLibraryOrThrow(libraryId);
       rejectIfScanning(library);
+      rejectIfRefreshing(library);
 
       var mediaFiles = mediaFileRepository.findByLibraryId(libraryId);
       var mediaFileIds = extractMediaFileIds(mediaFiles);
@@ -183,6 +184,12 @@ public class LibraryManagementService implements ActiveScanChecker {
   private void rejectIfScanning(Library library) {
     if (library.getStatus() == LibraryStatus.SCANNING) {
       throw new LibraryScanInProgressException(library.getId());
+    }
+  }
+
+  private void rejectIfRefreshing(Library library) {
+    if (library.getStatus() == LibraryStatus.REFRESHING) {
+      throw new LibraryRefreshInProgressException(library.getId());
     }
   }
 

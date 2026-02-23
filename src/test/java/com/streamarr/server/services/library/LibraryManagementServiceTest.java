@@ -947,6 +947,21 @@ class LibraryManagementServiceTest {
       var events = capturingEventPublisher.getEventsOfType(LibraryRemovedEvent.class);
       assertThat(events).isEmpty();
     }
+
+    @Test
+    @DisplayName("Should not publish LibraryRemovedEvent when library is refreshing")
+    void shouldNotPublishLibraryRemovedEventWhenLibraryIsRefreshing() {
+      var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+      library.setStatus(LibraryStatus.REFRESHING);
+      fakeLibraryRepository.save(library);
+
+      assertThrows(
+          LibraryRefreshInProgressException.class,
+          () -> libraryManagementService.removeLibrary(savedLibraryId));
+
+      var events = capturingEventPublisher.getEventsOfType(LibraryRemovedEvent.class);
+      assertThat(events).isEmpty();
+    }
   }
 
   @Nested
