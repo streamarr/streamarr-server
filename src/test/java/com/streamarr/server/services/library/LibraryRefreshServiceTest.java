@@ -391,19 +391,17 @@ class LibraryRefreshServiceTest {
   }
 
   private Series saveSeriesWithTmdbId(String title, String tmdbId, Library library) {
-    var series =
-        seriesRepository.save(
-            Series.builder()
-                .title(title)
-                .library(library)
-                .externalIds(
-                    Set.of(
-                        ExternalIdentifier.builder()
-                            .externalSourceType(ExternalSourceType.TMDB)
-                            .externalId(tmdbId)
-                            .build()))
-                .build());
-    return series;
+    return seriesRepository.save(
+        Series.builder()
+            .title(title)
+            .library(library)
+            .externalIds(
+                Set.of(
+                    ExternalIdentifier.builder()
+                        .externalSourceType(ExternalSourceType.TMDB)
+                        .externalId(tmdbId)
+                        .build()))
+            .build());
   }
 
   private Movie saveMovieWithTmdbId(String title, String tmdbId, Library library) {

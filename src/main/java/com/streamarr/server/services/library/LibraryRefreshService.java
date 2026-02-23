@@ -123,7 +123,7 @@ public class LibraryRefreshService {
         return;
       }
 
-      var refreshedMovie = movieService.refreshMovieMetadata(movie, metadataOpt.get());
+      movieService.refreshMovieMetadata(movie, metadataOpt.get());
     } catch (Exception ex) {
       log.error("Failed to refresh movie '{}' TMDB id '{}'", movie.getTitle(), tmdbId, ex);
     }

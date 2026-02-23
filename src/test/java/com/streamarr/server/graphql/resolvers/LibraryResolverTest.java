@@ -26,9 +26,13 @@ import graphql.relay.DefaultPageInfo;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -96,22 +100,21 @@ class LibraryResolverTest {
     assertThat(result).isTrue();
   }
 
-  @Test
-  @DisplayName("Should return error when refreshLibrary called with invalid ID")
-  void shouldReturnErrorWhenRefreshLibraryCalledWithInvalidId() {
-    var result = dgsQueryExecutor.execute("mutation { refreshLibrary(id: \"not-a-uuid\") }");
+  @ParameterizedTest(name = "Should return error when {0} called with invalid ID")
+  @MethodSource("invalidIdOperations")
+  @DisplayName("Should return error when operation called with invalid ID")
+  void shouldReturnErrorWhenCalledWithInvalidId(String operationName, String query) {
+    var result = dgsQueryExecutor.execute(query);
 
     assertThat(result.getErrors()).isNotEmpty();
     assertThat(result.getErrors().get(0).getMessage()).contains("Invalid ID format");
   }
 
-  @Test
-  @DisplayName("Should return error when invalid ID provided")
-  void shouldReturnErrorWhenInvalidIdProvided() {
-    var result = dgsQueryExecutor.execute("{ library(id: \"not-a-uuid\") { name } }");
-
-    assertThat(result.getErrors()).isNotEmpty();
-    assertThat(result.getErrors().get(0).getMessage()).contains("Invalid ID format");
+  static Stream<Arguments> invalidIdOperations() {
+    return Stream.of(
+        Arguments.of("library", "{ library(id: \"not-a-uuid\") { name } }"),
+        Arguments.of("refreshLibrary", "mutation { refreshLibrary(id: \"not-a-uuid\") }"),
+        Arguments.of("removeLibrary", "mutation { removeLibrary(id: \"not-a-uuid\") }"));
   }
 
   @Test
@@ -302,12 +305,4 @@ class LibraryResolverTest {
     assertThat(result).isTrue();
   }
 
-  @Test
-  @DisplayName("Should return error when removeLibrary called with invalid ID")
-  void shouldReturnErrorWhenRemoveLibraryCalledWithInvalidId() {
-    var result = dgsQueryExecutor.execute("mutation { removeLibrary(id: \"not-a-uuid\") }");
-
-    assertThat(result.getErrors()).isNotEmpty();
-    assertThat(result.getErrors().get(0).getMessage()).contains("Invalid ID format");
-  }
 }
