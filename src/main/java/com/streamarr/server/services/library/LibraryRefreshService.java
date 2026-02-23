@@ -1,5 +1,7 @@
 package com.streamarr.server.services.library;
 
+import com.streamarr.server.domain.BaseCollectable;
+import com.streamarr.server.domain.ExternalIdentifier;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Movie;
@@ -127,10 +129,10 @@ public class LibraryRefreshService {
     }
   }
 
-  private Optional<String> findTmdbId(com.streamarr.server.domain.BaseCollectable<?> entity) {
+  private Optional<String> findTmdbId(BaseCollectable<?> entity) {
     return entity.getExternalIds().stream()
         .filter(eid -> eid.getExternalSourceType() == ExternalSourceType.TMDB)
-        .map(com.streamarr.server.domain.ExternalIdentifier::getExternalId)
+        .map(ExternalIdentifier::getExternalId)
         .findFirst();
   }
 }
