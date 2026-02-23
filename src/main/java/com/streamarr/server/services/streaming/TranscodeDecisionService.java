@@ -27,7 +27,7 @@ public class TranscodeDecisionService {
   }
 
   private TranscodeDecision buildCopyVideoDecision(String videoCodec, boolean audioCompatible) {
-    var mode = audioCompatible ? TranscodeMode.REMUX : TranscodeMode.PARTIAL_TRANSCODE;
+    var mode = audioCompatible ? TranscodeMode.REMUX : TranscodeMode.AUDIO_TRANSCODE;
 
     return TranscodeDecision.builder()
         .transcodeMode(mode)

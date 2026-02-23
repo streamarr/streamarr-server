@@ -6,7 +6,7 @@ type StreamSession {
 
 enum TranscodeMode {
     REMUX
-    PARTIAL_TRANSCODE
+    AUDIO_TRANSCODE
     FULL_TRANSCODE
 }
 

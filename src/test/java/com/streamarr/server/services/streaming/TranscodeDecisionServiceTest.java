@@ -49,14 +49,14 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
-  @DisplayName("Should partial transcode when video matches but audio needs conversion")
-  void shouldPartialTranscodeWhenVideoMatchesButAudioNeedsConversion() {
+  @DisplayName("Should audio transcode when video matches but audio needs conversion")
+  void shouldAudioTranscodeWhenVideoMatchesButAudioNeedsConversion() {
     var source = probe("h264", "flac");
     var clientOptions = options(List.of("h264"));
 
     var decision = service.decide(source, clientOptions);
 
-    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.PARTIAL_TRANSCODE);
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
     assertThat(decision.videoCodecFamily()).isEqualTo("h264");
     assertThat(decision.audioCodec()).isEqualTo("aac");
     assertThat(decision.needsKeyframeAlignment()).isTrue();
@@ -124,14 +124,14 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
-  @DisplayName("Should partial transcode AV1 source when audio is not AAC")
-  void shouldPartialTranscodeAv1SourceWhenAudioIsNotAac() {
+  @DisplayName("Should audio transcode AV1 source when audio is not AAC")
+  void shouldAudioTranscodeAv1SourceWhenAudioIsNotAac() {
     var source = probe("av1", "ac3");
     var clientOptions = options(List.of("av1"));
 
     var decision = service.decide(source, clientOptions);
 
-    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.PARTIAL_TRANSCODE);
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
     assertThat(decision.videoCodecFamily()).isEqualTo("av1");
     assertThat(decision.audioCodec()).isEqualTo("aac");
   }
@@ -159,8 +159,8 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
-  @DisplayName("Should need keyframe alignment when doing partial transcode")
-  void shouldNeedKeyframeAlignmentWhenDoingPartialTranscode() {
+  @DisplayName("Should need keyframe alignment when doing audio transcode")
+  void shouldNeedKeyframeAlignmentWhenDoingAudioTranscode() {
     var source = probe("h264", "flac");
     var clientOptions = options(List.of("h264"));
 

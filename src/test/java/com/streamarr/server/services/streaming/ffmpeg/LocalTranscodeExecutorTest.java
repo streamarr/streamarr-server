@@ -160,9 +160,9 @@ class LocalTranscodeExecutorTest {
   }
 
   @Test
-  @DisplayName("Should use copy encoder when mode is partial transcode")
-  void shouldUseCopyEncoderWhenModeIsPartialTranscode() {
-    var request = createRequest(TranscodeMode.PARTIAL_TRANSCODE, "h264");
+  @DisplayName("Should use copy encoder when mode is audio transcode")
+  void shouldUseCopyEncoderWhenModeIsAudioTranscode() {
+    var request = createRequest(TranscodeMode.AUDIO_TRANSCODE, "h264");
 
     var handle = executor.start(request);
 

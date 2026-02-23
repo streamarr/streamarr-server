@@ -83,7 +83,7 @@ public class LocalTranscodeExecutor implements TranscodeExecutor {
 
   private String resolveEncoder(TranscodeRequest request) {
     var mode = request.transcodeDecision().transcodeMode();
-    if (mode == TranscodeMode.REMUX || mode == TranscodeMode.PARTIAL_TRANSCODE) {
+    if (mode == TranscodeMode.REMUX || mode == TranscodeMode.AUDIO_TRANSCODE) {
       return "copy";
     }
 

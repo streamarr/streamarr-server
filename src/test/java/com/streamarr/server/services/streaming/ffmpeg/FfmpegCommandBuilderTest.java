@@ -183,10 +183,10 @@ class FfmpegCommandBuilderTest {
   }
 
   @Test
-  @DisplayName("Should not include scale or bitrate when mode is partial transcode")
-  void shouldNotIncludeScaleOrBitrateWhenModeIsPartialTranscode() {
+  @DisplayName("Should not include scale or bitrate when mode is audio transcode")
+  void shouldNotIncludeScaleOrBitrateWhenModeIsAudioTranscode() {
     var j =
-        job(TranscodeMode.PARTIAL_TRANSCODE, "h264", "aac", ContainerFormat.MPEGTS, "copy", true);
+        job(TranscodeMode.AUDIO_TRANSCODE, "h264", "aac", ContainerFormat.MPEGTS, "copy", true);
 
     var cmd = builder.buildCommand(j);
 
@@ -194,10 +194,10 @@ class FfmpegCommandBuilderTest {
   }
 
   @Test
-  @DisplayName("Should use copy video and AAC audio when mode is partial transcode")
-  void shouldUseCopyVideoAndAacAudioWhenModeIsPartialTranscode() {
+  @DisplayName("Should use copy video and AAC audio when mode is audio transcode")
+  void shouldUseCopyVideoAndAacAudioWhenModeIsAudioTranscode() {
     var j =
-        job(TranscodeMode.PARTIAL_TRANSCODE, "h264", "aac", ContainerFormat.MPEGTS, "copy", true);
+        job(TranscodeMode.AUDIO_TRANSCODE, "h264", "aac", ContainerFormat.MPEGTS, "copy", true);
 
     var cmd = builder.buildCommand(j);
 
@@ -515,10 +515,10 @@ class FfmpegCommandBuilderTest {
   }
 
   @Test
-  @DisplayName("Should downmix audio to stereo when mode is partial transcode")
-  void shouldDownmixAudioToStereoWhenModeIsPartialTranscode() {
+  @DisplayName("Should downmix audio to stereo when mode is audio transcode")
+  void shouldDownmixAudioToStereoWhenModeIsAudioTranscode() {
     var j =
-        job(TranscodeMode.PARTIAL_TRANSCODE, "h264", "aac", ContainerFormat.MPEGTS, "copy", true);
+        job(TranscodeMode.AUDIO_TRANSCODE, "h264", "aac", ContainerFormat.MPEGTS, "copy", true);
 
     var cmd = builder.buildCommand(j);
 

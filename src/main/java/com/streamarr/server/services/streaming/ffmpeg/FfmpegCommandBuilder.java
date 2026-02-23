@@ -87,7 +87,7 @@ public class FfmpegCommandBuilder {
 
     switch (mode) {
       case REMUX -> cmd.addAll(List.of("-c:v", "copy", "-c:a", "copy"));
-      case PARTIAL_TRANSCODE ->
+      case AUDIO_TRANSCODE ->
           cmd.addAll(List.of("-c:v", "copy", "-c:a", "aac", "-ac", "2", "-b:a", "128k"));
       case FULL_TRANSCODE -> {
         cmd.addAll(List.of("-c:v", job.videoEncoder(), "-c:a", "aac", "-ac", "2", "-b:a", "128k"));
