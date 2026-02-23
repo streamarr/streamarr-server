@@ -18,10 +18,14 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
 @DisplayName("HLS Playlist Service Tests")
@@ -488,37 +492,32 @@ class HlsPlaylistServiceTest {
     return session;
   }
 
-  @Test
-  @DisplayName("Should use AC-3 codec string when audio is AC-3")
-  void shouldUseAc3CodecStringWhenAudioIsAc3() {
-    var audio = AudioDecision.copy("ac3", 6, 384_000L);
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("audioPlaylistAttributes")
+  @DisplayName("Should include expected audio attribute in master playlist")
+  void shouldIncludeExpectedAudioAttributeInMasterPlaylist(
+      String scenario, AudioDecision audio, String expectedFragment) {
     var session = createSessionWithAudio(audio, "h264");
 
     var playlist = service.generateMasterPlaylist(session);
 
-    assertThat(playlist).contains("CODECS=\"avc1.640028,ac-3\"");
+    assertThat(playlist).contains(expectedFragment);
   }
 
-  @Test
-  @DisplayName("Should use E-AC-3 codec string when audio is E-AC-3")
-  void shouldUseEac3CodecStringWhenAudioIsEac3() {
-    var audio = AudioDecision.copy("eac3", 6, 640_000L);
-    var session = createSessionWithAudio(audio, "h264");
-
-    var playlist = service.generateMasterPlaylist(session);
-
-    assertThat(playlist).contains("CODECS=\"avc1.640028,ec-3\"");
-  }
-
-  @Test
-  @DisplayName("Should include CHANNELS attribute when audio has more than 2 channels")
-  void shouldIncludeChannelsAttributeWhenAudioHasMoreThan2Channels() {
-    var audio = AudioDecision.copy("ac3", 6, 384_000L);
-    var session = createSessionWithAudio(audio, "h264");
-
-    var playlist = service.generateMasterPlaylist(session);
-
-    assertThat(playlist).contains("CHANNELS=\"6\"");
+  static Stream<Arguments> audioPlaylistAttributes() {
+    return Stream.of(
+        Arguments.of(
+            "AC-3 codec string",
+            AudioDecision.copy("ac3", 6, 384_000L),
+            "CODECS=\"avc1.640028,ac-3\""),
+        Arguments.of(
+            "E-AC-3 codec string",
+            AudioDecision.copy("eac3", 6, 640_000L),
+            "CODECS=\"avc1.640028,ec-3\""),
+        Arguments.of(
+            "CHANNELS attribute for surround audio",
+            AudioDecision.copy("ac3", 6, 384_000L),
+            "CHANNELS=\"6\""));
   }
 
   @Test

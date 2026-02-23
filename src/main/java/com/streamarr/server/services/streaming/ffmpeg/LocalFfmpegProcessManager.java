@@ -124,7 +124,7 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
             key.variantLabel(),
             stderr.substring(0, Math.min(stderr.length(), 2000)));
       }
-    } catch (Exception e) {
+    } catch (Exception _) {
       log.debug("Could not read FFmpeg exit details for session {}", key.sessionId());
     }
   }

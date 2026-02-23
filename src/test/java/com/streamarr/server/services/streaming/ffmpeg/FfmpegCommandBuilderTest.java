@@ -11,9 +11,13 @@ import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import java.nio.file.Path;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
 @DisplayName("FFmpeg Command Builder Tests")
@@ -176,15 +180,23 @@ class FfmpegCommandBuilderTest {
         .doesNotContain("-b:v", "-maxrate", "-bufsize");
   }
 
-  @Test
-  @DisplayName("Should include scale filter when mode is full transcode")
-  void shouldIncludeScaleFilterWhenModeIsFullTranscode() {
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("fullTranscodeExpectedFlags")
+  @DisplayName("Should include expected flags when mode is full transcode")
+  void shouldIncludeExpectedFlagsWhenModeIsFullTranscode(String scenario, String... expectedFlags) {
     var j =
         job(TranscodeMode.FULL_TRANSCODE, "h264", "aac", ContainerFormat.MPEGTS, "libx264", false);
 
     var cmd = builder.buildCommand(j);
 
-    assertThat(cmd).contains("-vf", "scale=-2:1080");
+    assertThat(cmd).contains(expectedFlags);
+  }
+
+  static Stream<Arguments> fullTranscodeExpectedFlags() {
+    return Stream.of(
+        Arguments.of("scale filter", new String[] {"-vf", "scale=-2:1080"}),
+        Arguments.of("forced IDR", new String[] {"-forced-idr", "1"}),
+        Arguments.of("audio downmix to stereo", new String[] {"-ac", "2"}));
   }
 
   @Test
@@ -313,17 +325,6 @@ class FfmpegCommandBuilderTest {
     var cmd = builder.buildCommand(j);
 
     assertThat(cmd).contains("-g:v:0");
-  }
-
-  @Test
-  @DisplayName("Should include forced IDR when mode is full transcode")
-  void shouldIncludeForcedIdrWhenModeIsFullTranscode() {
-    var j =
-        job(TranscodeMode.FULL_TRANSCODE, "h264", "aac", ContainerFormat.MPEGTS, "libx264", false);
-
-    var cmd = builder.buildCommand(j);
-
-    assertThat(cmd).contains("-forced-idr", "1");
   }
 
   @Test
@@ -566,17 +567,6 @@ class FfmpegCommandBuilderTest {
   }
 
   @Test
-  @DisplayName("Should downmix audio to stereo when mode is full transcode")
-  void shouldDownmixAudioToStereoWhenModeIsFullTranscode() {
-    var j =
-        job(TranscodeMode.FULL_TRANSCODE, "h264", "aac", ContainerFormat.MPEGTS, "libx264", false);
-
-    var cmd = builder.buildCommand(j);
-
-    assertThat(cmd).contains("-ac", "2");
-  }
-
-  @Test
   @DisplayName("Should not downmix audio when mode is remux")
   void shouldNotDownmixAudioWhenModeIsRemux() {
     var j = job(TranscodeMode.REMUX, "h264", "aac", ContainerFormat.MPEGTS, "copy", true);
@@ -689,6 +679,10 @@ class FfmpegCommandBuilderTest {
 
     var cmd = builder.buildCommand(j);
 
-    assertThat(cmd).isNotEmpty().contains("-c:a", "copy").doesNotContain("-ac").doesNotContain("-b:a");
+    assertThat(cmd)
+        .isNotEmpty()
+        .contains("-c:a", "copy")
+        .doesNotContain("-ac")
+        .doesNotContain("-b:a");
   }
 }
