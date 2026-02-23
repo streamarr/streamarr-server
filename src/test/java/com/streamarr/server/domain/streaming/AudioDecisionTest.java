@@ -65,6 +65,12 @@ class AudioDecisionTest {
   }
 
   @Test
+  @DisplayName("Should return empty HLS codec string when audio mode is none")
+  void shouldReturnEmptyHlsCodecStringWhenAudioModeIsNone() {
+    assertThat(AudioDecision.none().hlsCodecString()).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should create copy decision preserving source values")
   void shouldCreateCopyDecisionPreservingSourceValues() {
     var decision = AudioDecision.copy("ac3", 6, 384_000L);

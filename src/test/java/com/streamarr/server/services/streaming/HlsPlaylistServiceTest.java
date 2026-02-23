@@ -533,6 +533,18 @@ class HlsPlaylistServiceTest {
   }
 
   @Test
+  @DisplayName("Should omit audio codec from CODECS attribute when audio mode is none")
+  void shouldOmitAudioCodecFromCodecsAttributeWhenAudioModeIsNone() {
+    var audio = AudioDecision.none();
+    var session = createSessionWithAudio(audio, "h264");
+
+    var playlist = service.generateMasterPlaylist(session);
+
+    assertThat(playlist).contains("CODECS=\"avc1.640028\"");
+    assertThat(playlist).doesNotContain("CODECS=\"avc1.640028,\"");
+  }
+
+  @Test
   @DisplayName("Should use AAC codec string when audio is stereo AAC")
   void shouldUseAacCodecStringWhenAudioIsStereoAac() {
     var audio = AudioDecision.stereoAac();

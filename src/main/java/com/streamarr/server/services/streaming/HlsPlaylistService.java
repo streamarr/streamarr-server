@@ -23,7 +23,8 @@ public class HlsPlaylistService {
     var decision = session.getTranscodeDecision();
     var audio = decision.audioDecision();
     var videoCodecString = CODEC_STRINGS.getOrDefault(decision.videoCodecFamily(), "avc1.640028");
-    var codecs = videoCodecString + "," + audio.hlsCodecString();
+    var audioCodecString = audio.hlsCodecString();
+    var codecs = audioCodecString.isEmpty() ? videoCodecString : videoCodecString + "," + audioCodecString;
 
     var sb = new StringBuilder();
     sb.append("#EXTM3U\n");
