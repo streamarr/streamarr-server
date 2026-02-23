@@ -15,6 +15,9 @@ import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.domain.AlphabetLetter;
+import com.streamarr.server.domain.LibraryMetadata;
+import com.streamarr.server.repositories.LibraryMetadataRepository;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
@@ -42,6 +45,8 @@ class LibraryResolverTest {
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
 
   @MockitoBean private LibraryRepository libraryRepository;
+
+  @MockitoBean private LibraryMetadataRepository libraryMetadataRepository;
 
   @MockitoBean private LibraryManagementService libraryManagementService;
 
@@ -289,5 +294,85 @@ class LibraryResolverTest {
 
     assertThat(result.getErrors()).isNotEmpty();
     assertThat(result.getErrors().get(0).getMessage()).contains("Invalid ID format");
+  }
+
+  @Test
+  @DisplayName("Should return alphabet index for library")
+  void shouldReturnAlphabetIndexForLibrary() {
+    var libraryId = UUID.randomUUID();
+    var library =
+        Library.builder()
+            .name("Movies")
+            .filepathUri("file:///mpool/media/movies")
+            .status(LibraryStatus.HEALTHY)
+            .backend(LibraryBackend.LOCAL)
+            .type(MediaType.MOVIE)
+            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+            .build();
+    library.setId(libraryId);
+
+    var metadataA =
+        LibraryMetadata.builder()
+            .libraryId(libraryId)
+            .letter(AlphabetLetter.A)
+            .itemCount(5)
+            .build();
+    metadataA.setId(UUID.randomUUID());
+
+    var metadataM =
+        LibraryMetadata.builder()
+            .libraryId(libraryId)
+            .letter(AlphabetLetter.M)
+            .itemCount(12)
+            .build();
+    metadataM.setId(UUID.randomUUID());
+
+    when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
+    when(libraryMetadataRepository.findByLibraryIdOrderByLetterAsc(libraryId))
+        .thenReturn(List.of(metadataA, metadataM));
+
+    List<String> letters =
+        dgsQueryExecutor.executeAndExtractJsonPath(
+            String.format(
+                "{ library(id: \"%s\") { alphabetIndex { letter count } } }", libraryId),
+            "data.library.alphabetIndex[*].letter");
+
+    assertThat(letters).containsExactly("A", "M");
+
+    List<Integer> counts =
+        dgsQueryExecutor.executeAndExtractJsonPath(
+            String.format(
+                "{ library(id: \"%s\") { alphabetIndex { letter count } } }", libraryId),
+            "data.library.alphabetIndex[*].count");
+
+    assertThat(counts).containsExactly(5, 12);
+  }
+
+  @Test
+  @DisplayName("Should return empty alphabet index when no metadata")
+  void shouldReturnEmptyAlphabetIndexWhenNoMetadata() {
+    var libraryId = UUID.randomUUID();
+    var library =
+        Library.builder()
+            .name("Empty Library")
+            .filepathUri("file:///mpool/media/empty")
+            .status(LibraryStatus.HEALTHY)
+            .backend(LibraryBackend.LOCAL)
+            .type(MediaType.MOVIE)
+            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+            .build();
+    library.setId(libraryId);
+
+    when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
+    when(libraryMetadataRepository.findByLibraryIdOrderByLetterAsc(libraryId))
+        .thenReturn(List.of());
+
+    List<Object> alphabetIndex =
+        dgsQueryExecutor.executeAndExtractJsonPath(
+            String.format(
+                "{ library(id: \"%s\") { alphabetIndex { letter count } } }", libraryId),
+            "data.library.alphabetIndex");
+
+    assertThat(alphabetIndex).isEmpty();
   }
 }
