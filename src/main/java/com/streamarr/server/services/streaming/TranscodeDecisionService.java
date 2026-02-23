@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.StreamingOptions;
@@ -28,11 +29,13 @@ public class TranscodeDecisionService {
 
   private TranscodeDecision buildCopyVideoDecision(String videoCodec, boolean audioCompatible) {
     var mode = audioCompatible ? TranscodeMode.REMUX : TranscodeMode.AUDIO_TRANSCODE;
+    var audio =
+        audioCompatible ? AudioDecision.copy("aac", 2, 0) : AudioDecision.stereoAac();
 
     return TranscodeDecision.builder()
         .transcodeMode(mode)
         .videoCodecFamily(videoCodec)
-        .audioCodec(COMPATIBLE_AUDIO_CODEC)
+        .audioDecision(audio)
         .containerFormat(containerForCodec(videoCodec))
         .needsKeyframeAlignment(true)
         .build();
@@ -44,7 +47,7 @@ public class TranscodeDecisionService {
     return TranscodeDecision.builder()
         .transcodeMode(TranscodeMode.FULL_TRANSCODE)
         .videoCodecFamily(selectedCodec)
-        .audioCodec(COMPATIBLE_AUDIO_CODEC)
+        .audioDecision(AudioDecision.stereoAac())
         .containerFormat(containerForCodec(selectedCodec))
         .needsKeyframeAlignment(false)
         .build();

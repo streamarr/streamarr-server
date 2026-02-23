@@ -22,8 +22,7 @@ public class HlsPlaylistService {
   public String generateMasterPlaylist(StreamSession session) {
     var decision = session.getTranscodeDecision();
     var codecString = CODEC_STRINGS.getOrDefault(decision.videoCodecFamily(), "avc1.640028");
-    var audioCodecString = "mp4a.40.2";
-    var codecs = codecString + "," + audioCodecString;
+    var codecs = codecString + ",mp4a.40.2";
 
     var sb = new StringBuilder();
     sb.append("#EXTM3U\n");

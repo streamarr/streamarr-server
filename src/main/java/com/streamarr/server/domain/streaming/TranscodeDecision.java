@@ -6,6 +6,6 @@ import lombok.Builder;
 public record TranscodeDecision(
     TranscodeMode transcodeMode,
     String videoCodecFamily,
-    String audioCodec,
+    AudioDecision audioDecision,
     ContainerFormat containerFormat,
     boolean needsKeyframeAlignment) {}

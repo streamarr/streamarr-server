@@ -44,7 +44,7 @@ class TranscodeDecisionServiceTest {
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
     assertThat(decision.videoCodecFamily()).isEqualTo("h264");
-    assertThat(decision.audioCodec()).isEqualTo("aac");
+    assertThat(decision.audioDecision().codec()).isEqualTo("aac");
     assertThat(decision.needsKeyframeAlignment()).isTrue();
   }
 
@@ -58,7 +58,7 @@ class TranscodeDecisionServiceTest {
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
     assertThat(decision.videoCodecFamily()).isEqualTo("h264");
-    assertThat(decision.audioCodec()).isEqualTo("aac");
+    assertThat(decision.audioDecision().codec()).isEqualTo("aac");
     assertThat(decision.needsKeyframeAlignment()).isTrue();
   }
 
@@ -72,7 +72,7 @@ class TranscodeDecisionServiceTest {
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.FULL_TRANSCODE);
     assertThat(decision.videoCodecFamily()).isEqualTo("h264");
-    assertThat(decision.audioCodec()).isEqualTo("aac");
+    assertThat(decision.audioDecision().codec()).isEqualTo("aac");
     assertThat(decision.needsKeyframeAlignment()).isFalse();
   }
 
@@ -133,7 +133,7 @@ class TranscodeDecisionServiceTest {
 
     assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
     assertThat(decision.videoCodecFamily()).isEqualTo("av1");
-    assertThat(decision.audioCodec()).isEqualTo("aac");
+    assertThat(decision.audioDecision().codec()).isEqualTo("aac");
   }
 
   @Test

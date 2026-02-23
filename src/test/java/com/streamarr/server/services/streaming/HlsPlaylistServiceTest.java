@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.QualityVariant;
@@ -60,7 +61,7 @@ class HlsPlaylistServiceTest {
                 TranscodeDecision.builder()
                     .transcodeMode(mode)
                     .videoCodecFamily(container == ContainerFormat.FMP4 ? "av1" : "h264")
-                    .audioCodec("aac")
+                    .audioDecision(AudioDecision.stereoAac())
                     .containerFormat(container)
                     .needsKeyframeAlignment(mode != TranscodeMode.FULL_TRANSCODE)
                     .build())
@@ -278,7 +279,7 @@ class HlsPlaylistServiceTest {
                 TranscodeDecision.builder()
                     .transcodeMode(mode)
                     .videoCodecFamily(container == ContainerFormat.FMP4 ? "av1" : "h264")
-                    .audioCodec("aac")
+                    .audioDecision(AudioDecision.stereoAac())
                     .containerFormat(container)
                     .needsKeyframeAlignment(mode != TranscodeMode.FULL_TRANSCODE)
                     .build())
@@ -368,7 +369,7 @@ class HlsPlaylistServiceTest {
                 TranscodeDecision.builder()
                     .transcodeMode(TranscodeMode.FULL_TRANSCODE)
                     .videoCodecFamily("h264")
-                    .audioCodec("aac")
+                    .audioDecision(AudioDecision.stereoAac())
                     .containerFormat(ContainerFormat.MPEGTS)
                     .needsKeyframeAlignment(false)
                     .build())

@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming.ffmpeg;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
@@ -58,7 +59,7 @@ class LocalTranscodeExecutorTest {
             TranscodeDecision.builder()
                 .transcodeMode(mode)
                 .videoCodecFamily(codecFamily)
-                .audioCodec("aac")
+                .audioDecision(AudioDecision.stereoAac())
                 .containerFormat(
                     "av1".equals(codecFamily) ? ContainerFormat.FMP4 : ContainerFormat.MPEGTS)
                 .needsKeyframeAlignment(mode != TranscodeMode.FULL_TRANSCODE)

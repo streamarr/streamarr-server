@@ -1,5 +1,6 @@
 package com.streamarr.server.fixtures;
 
+import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.StreamSession;
@@ -38,7 +39,7 @@ public final class StreamSessionFixture {
                 TranscodeDecision.builder()
                     .transcodeMode(TranscodeMode.REMUX)
                     .videoCodecFamily("h264")
-                    .audioCodec("aac")
+                    .audioDecision(AudioDecision.copy("aac", 2, 0))
                     .containerFormat(ContainerFormat.MPEGTS)
                     .needsKeyframeAlignment(true)
                     .build())

@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming.ffmpeg;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeJob;
@@ -61,6 +62,7 @@ class FfmpegCommandBuilderTest {
       int width,
       int height,
       long bitrate) {
+    var audio = audioDecisionFor(mode, audioCodec);
     return TranscodeJob.builder()
         .request(
             TranscodeRequest.builder()
@@ -73,7 +75,7 @@ class FfmpegCommandBuilderTest {
                     TranscodeDecision.builder()
                         .transcodeMode(mode)
                         .videoCodecFamily(codecFamily)
-                        .audioCodec(audioCodec)
+                        .audioDecision(audio)
                         .containerFormat(container)
                         .needsKeyframeAlignment(needsKeyframeAlignment)
                         .build())
@@ -94,6 +96,7 @@ class FfmpegCommandBuilderTest {
       String videoEncoder,
       boolean needsKeyframeAlignment,
       int startNumber) {
+    var audio = audioDecisionFor(mode, audioCodec);
     return TranscodeJob.builder()
         .request(
             TranscodeRequest.builder()
@@ -106,7 +109,7 @@ class FfmpegCommandBuilderTest {
                     TranscodeDecision.builder()
                         .transcodeMode(mode)
                         .videoCodecFamily(codecFamily)
-                        .audioCodec(audioCodec)
+                        .audioDecision(audio)
                         .containerFormat(container)
                         .needsKeyframeAlignment(needsKeyframeAlignment)
                         .build())
@@ -118,6 +121,13 @@ class FfmpegCommandBuilderTest {
         .videoEncoder(videoEncoder)
         .outputDir(Path.of("/tmp/session-123"))
         .build();
+  }
+
+  private AudioDecision audioDecisionFor(TranscodeMode mode, String audioCodec) {
+    return switch (mode) {
+      case REMUX, VIDEO_TRANSCODE -> AudioDecision.copy(audioCodec, 2, 0);
+      case AUDIO_TRANSCODE, FULL_TRANSCODE -> AudioDecision.stereoAac();
+    };
   }
 
   @Test

@@ -1,5 +1,7 @@
 package com.streamarr.server.services.streaming.ffmpeg;
 
+import com.streamarr.server.domain.streaming.AudioDecision;
+import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.TranscodeJob;
 import com.streamarr.server.domain.streaming.TranscodeMode;
@@ -83,21 +85,28 @@ public class FfmpegCommandBuilder {
   }
 
   private void addCodecArgs(List<String> cmd, TranscodeJob job) {
-    var mode = job.request().transcodeDecision().transcodeMode();
+    var decision = job.request().transcodeDecision();
+    var mode = decision.transcodeMode();
 
-    switch (mode) {
-      case REMUX -> cmd.addAll(List.of("-c:v", "copy", "-c:a", "copy"));
-      case AUDIO_TRANSCODE ->
-          cmd.addAll(List.of("-c:v", "copy", "-c:a", "aac", "-ac", "2", "-b:a", "128k"));
-      case VIDEO_TRANSCODE -> {
-        cmd.addAll(List.of("-c:v", job.videoEncoder(), "-c:a", "copy"));
-        addScaleAndBitrateArgs(cmd, job.request());
-      }
-      case FULL_TRANSCODE -> {
-        cmd.addAll(List.of("-c:v", job.videoEncoder(), "-c:a", "aac", "-ac", "2", "-b:a", "128k"));
-        addScaleAndBitrateArgs(cmd, job.request());
-      }
+    if (mode == TranscodeMode.REMUX || mode == TranscodeMode.AUDIO_TRANSCODE) {
+      cmd.addAll(List.of("-c:v", "copy"));
+    } else {
+      cmd.addAll(List.of("-c:v", job.videoEncoder()));
+      addScaleAndBitrateArgs(cmd, job.request());
     }
+
+    addAudioArgs(cmd, decision.audioDecision());
+  }
+
+  private void addAudioArgs(List<String> cmd, AudioDecision audio) {
+    if (audio.mode() == AudioMode.COPY) {
+      cmd.addAll(List.of("-c:a", "copy"));
+      return;
+    }
+
+    cmd.addAll(List.of("-c:a", audio.codec()));
+    cmd.addAll(List.of("-ac", String.valueOf(audio.channels())));
+    cmd.addAll(List.of("-b:a", audio.bitrate() / 1000 + "k"));
   }
 
   private void addScaleAndBitrateArgs(List<String> cmd, TranscodeRequest request) {
