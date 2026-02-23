@@ -11,12 +11,12 @@ import com.streamarr.server.domain.LibraryMetadata;
 import com.streamarr.server.jooq.generated.Tables;
 import com.streamarr.server.repositories.LibraryMetadataRepository;
 import com.streamarr.server.services.concurrency.MutexFactory;
+import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.library.events.ItemProcessedEvent;
 import com.streamarr.server.services.library.events.ScanCompletedEvent;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jooq.DSLContext;
 import org.jooq.Field;
@@ -27,7 +27,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class LibraryMetadataMaintainer {
 
   private final DSLContext context;
@@ -35,6 +34,19 @@ public class LibraryMetadataMaintainer {
   private final TransactionTemplate transactionTemplate;
   private final ActiveScanChecker activeScanChecker;
   private final MutexFactory<String> mutexFactory;
+
+  public LibraryMetadataMaintainer(
+      DSLContext context,
+      LibraryMetadataRepository metadataRepository,
+      TransactionTemplate transactionTemplate,
+      ActiveScanChecker activeScanChecker,
+      MutexFactoryProvider mutexFactoryProvider) {
+    this.context = context;
+    this.metadataRepository = metadataRepository;
+    this.transactionTemplate = transactionTemplate;
+    this.activeScanChecker = activeScanChecker;
+    this.mutexFactory = mutexFactoryProvider.getMutexFactory();
+  }
 
   @EventListener
   public void onScanCompleted(ScanCompletedEvent event) {

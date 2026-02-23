@@ -1,5 +1,8 @@
 package com.streamarr.server.repositories;
 
+import static org.jooq.impl.DSL.inline;
+import static org.jooq.impl.DSL.left;
+import static org.jooq.impl.DSL.lower;
 import static org.jooq.impl.DSL.noCondition;
 
 import com.streamarr.server.domain.AlphabetLetter;
@@ -29,10 +32,21 @@ public class JooqQueryHelper {
       return noCondition();
     }
 
+    var firstCharLower = lower(left(Tables.BASE_COLLECTABLE.TITLE_SORT, 1));
+
     if (startLetter == AlphabetLetter.HASH) {
-      return Tables.BASE_COLLECTABLE.TITLE_SORT.lessThan("a");
+      return firstCharLower.lt(inline("a")).or(firstCharLower.gt(inline("z")));
     }
 
-    return Tables.BASE_COLLECTABLE.TITLE_SORT.greaterOrEqual(startLetter.name().toLowerCase());
+    var letter = startLetter.name().toLowerCase();
+
+    if (startLetter == AlphabetLetter.Z) {
+      return firstCharLower.eq(inline(letter));
+    }
+
+    var nextLetter = String.valueOf((char) (letter.charAt(0) + 1));
+    return firstCharLower
+        .greaterOrEqual(inline(letter))
+        .and(firstCharLower.lessThan(inline(nextLetter)));
   }
 }

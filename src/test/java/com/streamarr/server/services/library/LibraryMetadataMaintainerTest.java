@@ -9,7 +9,7 @@ import static org.mockito.Mockito.when;
 import com.streamarr.server.domain.AlphabetLetter;
 import com.streamarr.server.domain.LibraryMetadata;
 import com.streamarr.server.fakes.FakeLibraryMetadataRepository;
-import com.streamarr.server.services.concurrency.MutexFactory;
+import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.library.events.ItemProcessedEvent;
 import com.streamarr.server.services.library.events.ScanCompletedEvent;
 import java.util.UUID;
@@ -36,7 +36,7 @@ class LibraryMetadataMaintainerTest {
 
   private final FakeLibraryMetadataRepository fakeMetadataRepository =
       new FakeLibraryMetadataRepository();
-  private final MutexFactory<String> mutexFactory = new MutexFactory<>();
+  private final MutexFactoryProvider mutexFactoryProvider = new MutexFactoryProvider();
   private DSLContext mockContext;
   private LibraryMetadataMaintainer maintainer;
 
@@ -53,7 +53,7 @@ class LibraryMetadataMaintainerTest {
             fakeMetadataRepository,
             noOpTransactionTemplate(),
             _ -> false,
-            mutexFactory);
+            mutexFactoryProvider);
 
     fakeMetadataRepository.deleteAll();
   }
@@ -83,10 +83,7 @@ class LibraryMetadataMaintainerTest {
   @Test
   @DisplayName("Should recalculate letter counts when item processed and not scanning")
   void shouldRecalculateLetterCountsWhenItemProcessedAndNotScanning() {
-    stubDslContextReturning(
-        new Object[][] {
-          {"B", 7}
-        });
+    stubDslContextReturning(new Object[][] {{"B", 7}});
 
     maintainer.onItemProcessed(new ItemProcessedEvent(libraryId));
 
@@ -105,7 +102,7 @@ class LibraryMetadataMaintainerTest {
             fakeMetadataRepository,
             noOpTransactionTemplate(),
             _ -> true,
-            mutexFactory);
+            mutexFactoryProvider);
 
     scanningMaintainer.onItemProcessed(new ItemProcessedEvent(libraryId));
 
@@ -123,10 +120,7 @@ class LibraryMetadataMaintainerTest {
             .itemCount(99)
             .build());
 
-    stubDslContextReturning(
-        new Object[][] {
-          {"A", 1}
-        });
+    stubDslContextReturning(new Object[][] {{"A", 1}});
 
     maintainer.onScanCompleted(new ScanCompletedEvent(libraryId));
 

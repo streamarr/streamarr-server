@@ -60,6 +60,7 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
             .on(Tables.MOVIE.ID.eq(Tables.BASE_COLLECTABLE.ID))
             .where(seekCondition)
             .and(libraryCondition(filter))
+            .and(JooqQueryHelper.startLetterCondition(filter.getStartLetter()))
             .orderBy(orderByColumns)
             // N+2 (Allows us to efficiently check if there are items before AND after N)
             .limit(options.getPaginationOptions().getLimit() + 2);

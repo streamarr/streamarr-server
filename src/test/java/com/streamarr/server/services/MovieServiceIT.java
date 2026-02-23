@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.AlphabetLetter;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
@@ -35,6 +36,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
   private Library savedLibraryA;
   private Library savedLibraryB;
   private Library savedLibraryC;
+  private Library savedLibraryD;
 
   @BeforeAll
   public void setup() {
@@ -48,12 +50,28 @@ class MovieServiceIT extends AbstractIntegrationTest {
     var libraryC = LibraryFixtureCreator.buildFakeLibrary();
     savedLibraryC = libraryRepository.saveAndFlush(libraryC);
 
+    var libraryD = LibraryFixtureCreator.buildFakeLibrary();
+    savedLibraryD = libraryRepository.saveAndFlush(libraryD);
+
     movieRepository.saveAndFlush(Movie.builder().title("Alpha").library(savedLibraryA).build());
     movieRepository.saveAndFlush(Movie.builder().title("Beta").library(savedLibraryA).build());
     movieRepository.saveAndFlush(Movie.builder().title("Gamma").library(savedLibraryB).build());
 
     movieRepository.saveAndFlush(Movie.builder().title("First").library(savedLibraryC).build());
     movieRepository.saveAndFlush(Movie.builder().title("Second").library(savedLibraryC).build());
+
+    movieRepository.saveAndFlush(
+        Movie.builder().title("Alpha").titleSort("Alpha").library(savedLibraryD).build());
+    movieRepository.saveAndFlush(
+        Movie.builder().title("Avengers").titleSort("Avengers").library(savedLibraryD).build());
+    movieRepository.saveAndFlush(
+        Movie.builder().title("Batman").titleSort("Batman").library(savedLibraryD).build());
+    movieRepository.saveAndFlush(
+        Movie.builder().title("Beta").titleSort("Beta").library(savedLibraryD).build());
+    movieRepository.saveAndFlush(
+        Movie.builder().title("Gamma").titleSort("Gamma").library(savedLibraryD).build());
+    movieRepository.saveAndFlush(
+        Movie.builder().title("123 Movie").titleSort("123 Movie").library(savedLibraryD).build());
   }
 
   private MediaFilter filterForLibrary(Library library) {
@@ -267,5 +285,66 @@ class MovieServiceIT extends AbstractIntegrationTest {
             thirdPage.getEdges().get(0).getNode().getId());
 
     assertThat(allIds).doesNotHaveDuplicates();
+  }
+
+  @Test
+  @DisplayName("Should return only B movies when start letter is B")
+  void shouldReturnOnlyBMoviesWhenStartLetterIsB() {
+
+    var filter =
+        MediaFilter.builder()
+            .libraryId(savedLibraryD.getId())
+            .startLetter(AlphabetLetter.B)
+            .build();
+
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactlyInAnyOrder("Batman", "Beta");
+  }
+
+  @Test
+  @DisplayName("Should return only non-alpha movies when start letter is HASH")
+  void shouldReturnOnlyHashMoviesWhenStartLetterIsHash() {
+
+    var filter =
+        MediaFilter.builder()
+            .libraryId(savedLibraryD.getId())
+            .startLetter(AlphabetLetter.HASH)
+            .build();
+
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactly("123 Movie");
+  }
+
+  @Test
+  @DisplayName("Should maintain letter filter across pages when paginating")
+  void shouldMaintainLetterFilterAcrossPagesWhenPaginating() {
+
+    var filter =
+        MediaFilter.builder()
+            .libraryId(savedLibraryD.getId())
+            .startLetter(AlphabetLetter.B)
+            .build();
+
+    var firstPage = movieService.getMoviesWithFilter(1, null, 0, null, filter);
+    assertThat(firstPage.getEdges()).hasSize(1);
+    assertThat(firstPage.getPageInfo().isHasNextPage()).isTrue();
+
+    var cursor = firstPage.getPageInfo().getEndCursor().getValue();
+    var secondPage = movieService.getMoviesWithFilter(1, cursor, 0, null, filter);
+    assertThat(secondPage.getEdges()).hasSize(1);
+    assertThat(secondPage.getPageInfo().isHasNextPage()).isFalse();
+
+    var allTitles =
+        List.of(
+            firstPage.getEdges().get(0).getNode().getTitle(),
+            secondPage.getEdges().get(0).getNode().getTitle());
+
+    assertThat(allTitles).containsExactlyInAnyOrder("Batman", "Beta");
   }
 }
