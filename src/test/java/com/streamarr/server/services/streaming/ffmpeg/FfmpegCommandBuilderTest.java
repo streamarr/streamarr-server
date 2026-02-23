@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming.ffmpeg;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.streaming.AudioDecision;
+import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeJob;
@@ -130,6 +131,37 @@ class FfmpegCommandBuilderTest {
     };
   }
 
+  private TranscodeJob jobWithAudio(
+      TranscodeMode mode,
+      String codecFamily,
+      AudioDecision audio,
+      ContainerFormat container,
+      String videoEncoder) {
+    return TranscodeJob.builder()
+        .request(
+            TranscodeRequest.builder()
+                .sessionId(UUID.randomUUID())
+                .sourcePath(Path.of("/media/movie.mkv"))
+                .seekPosition(0)
+                .segmentDuration(6)
+                .framerate(23.976)
+                .transcodeDecision(
+                    TranscodeDecision.builder()
+                        .transcodeMode(mode)
+                        .videoCodecFamily(codecFamily)
+                        .audioDecision(audio)
+                        .containerFormat(container)
+                        .needsKeyframeAlignment(mode == TranscodeMode.REMUX)
+                        .build())
+                .width(1920)
+                .height(1080)
+                .bitrate(5_000_000L)
+                .build())
+        .videoEncoder(videoEncoder)
+        .outputDir(Path.of("/tmp/session-123"))
+        .build();
+  }
+
   @Test
   @DisplayName("Should use copy codecs when mode is remux")
   void shouldUseCopyCodecsWhenModeIsRemux() {
@@ -195,8 +227,7 @@ class FfmpegCommandBuilderTest {
   @Test
   @DisplayName("Should not include scale or bitrate when mode is audio transcode")
   void shouldNotIncludeScaleOrBitrateWhenModeIsAudioTranscode() {
-    var j =
-        job(TranscodeMode.AUDIO_TRANSCODE, "h264", "aac", ContainerFormat.MPEGTS, "copy", true);
+    var j = job(TranscodeMode.AUDIO_TRANSCODE, "h264", "aac", ContainerFormat.MPEGTS, "copy", true);
 
     var cmd = builder.buildCommand(j);
 
@@ -206,8 +237,7 @@ class FfmpegCommandBuilderTest {
   @Test
   @DisplayName("Should use copy video and AAC audio when mode is audio transcode")
   void shouldUseCopyVideoAndAacAudioWhenModeIsAudioTranscode() {
-    var j =
-        job(TranscodeMode.AUDIO_TRANSCODE, "h264", "aac", ContainerFormat.MPEGTS, "copy", true);
+    var j = job(TranscodeMode.AUDIO_TRANSCODE, "h264", "aac", ContainerFormat.MPEGTS, "copy", true);
 
     var cmd = builder.buildCommand(j);
 
@@ -527,8 +557,7 @@ class FfmpegCommandBuilderTest {
   @Test
   @DisplayName("Should downmix audio to stereo when mode is audio transcode")
   void shouldDownmixAudioToStereoWhenModeIsAudioTranscode() {
-    var j =
-        job(TranscodeMode.AUDIO_TRANSCODE, "h264", "aac", ContainerFormat.MPEGTS, "copy", true);
+    var j = job(TranscodeMode.AUDIO_TRANSCODE, "h264", "aac", ContainerFormat.MPEGTS, "copy", true);
 
     var cmd = builder.buildCommand(j);
 
@@ -560,13 +589,7 @@ class FfmpegCommandBuilderTest {
   @DisplayName("Should use video encoder with audio copy when mode is video transcode")
   void shouldUseVideoEncoderWithAudioCopyWhenModeIsVideoTranscode() {
     var j =
-        job(
-            TranscodeMode.VIDEO_TRANSCODE,
-            "h264",
-            "ac3",
-            ContainerFormat.MPEGTS,
-            "libx264",
-            false);
+        job(TranscodeMode.VIDEO_TRANSCODE, "h264", "ac3", ContainerFormat.MPEGTS, "libx264", false);
 
     var cmd = builder.buildCommand(j);
 
@@ -582,13 +605,7 @@ class FfmpegCommandBuilderTest {
   @DisplayName("Should include keyframe args when mode is video transcode")
   void shouldIncludeKeyframeArgsWhenModeIsVideoTranscode() {
     var j =
-        job(
-            TranscodeMode.VIDEO_TRANSCODE,
-            "h264",
-            "ac3",
-            ContainerFormat.MPEGTS,
-            "libx264",
-            false);
+        job(TranscodeMode.VIDEO_TRANSCODE, "h264", "ac3", ContainerFormat.MPEGTS, "libx264", false);
 
     var cmd = builder.buildCommand(j);
 
@@ -614,5 +631,42 @@ class FfmpegCommandBuilderTest {
         .doesNotContain("-g:v:0")
         .isNotEmpty()
         .noneMatch(s -> s.startsWith("-force_key_frames"));
+  }
+
+  // --- Surround sound audio args ---
+
+  @Test
+  @DisplayName("Should transcode to AC-3 5.1 when audio decision is AC-3 transcode")
+  void shouldTranscodeToAc3SurroundWhenAudioDecisionIsAc3Transcode() {
+    var audio = new AudioDecision(AudioMode.TRANSCODE, "ac3", 6, 384_000L);
+    var j =
+        jobWithAudio(TranscodeMode.AUDIO_TRANSCODE, "h264", audio, ContainerFormat.MPEGTS, "copy");
+
+    var cmd = builder.buildCommand(j);
+
+    assertThat(cmd).contains("-c:a", "ac3").contains("-ac", "6").contains("-b:a", "384k");
+  }
+
+  @Test
+  @DisplayName("Should transcode to E-AC-3 7.1 when audio decision is E-AC-3 transcode")
+  void shouldTranscodeToEac3SurroundWhenAudioDecisionIsEac3Transcode() {
+    var audio = new AudioDecision(AudioMode.TRANSCODE, "eac3", 8, 512_000L);
+    var j =
+        jobWithAudio(TranscodeMode.AUDIO_TRANSCODE, "h264", audio, ContainerFormat.MPEGTS, "copy");
+
+    var cmd = builder.buildCommand(j);
+
+    assertThat(cmd).contains("-c:a", "eac3").contains("-ac", "8").contains("-b:a", "512k");
+  }
+
+  @Test
+  @DisplayName("Should copy surround audio when audio decision is copy with 5.1 channels")
+  void shouldCopySurroundAudioWhenAudioDecisionIsCopyWith51Channels() {
+    var audio = AudioDecision.copy("ac3", 6, 384_000L);
+    var j = jobWithAudio(TranscodeMode.REMUX, "h264", audio, ContainerFormat.MPEGTS, "copy");
+
+    var cmd = builder.buildCommand(j);
+
+    assertThat(cmd).contains("-c:a", "copy").doesNotContain("-ac").doesNotContain("-b:a");
   }
 }
