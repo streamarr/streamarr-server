@@ -1,5 +1,6 @@
 package com.streamarr.server.graphql.cursor;
 
+import com.streamarr.server.domain.AlphabetLetter;
 import java.util.UUID;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -17,6 +18,7 @@ public class MediaFilter {
   @Builder.Default private final SortOrder sortDirection = SortOrder.ASC;
 
   private UUID libraryId;
+  private AlphabetLetter startLetter;
 
   // Used for seek pagination
   private Object previousSortFieldValue;

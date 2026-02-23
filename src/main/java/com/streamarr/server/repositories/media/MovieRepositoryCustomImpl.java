@@ -4,6 +4,7 @@ import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.noCondition;
 import static org.jooq.impl.DSL.row;
 
+import com.streamarr.server.domain.AlphabetLetter;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.graphql.cursor.MediaPaginationOptions;
@@ -121,6 +122,7 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
             .innerJoin(Tables.BASE_COLLECTABLE)
             .on(Tables.MOVIE.ID.eq(Tables.BASE_COLLECTABLE.ID))
             .where(libraryCondition(options.getMediaFilter()))
+            .and(startLetterCondition(options.getMediaFilter()))
             .orderBy(orderByColumns)
             .limit(options.getPaginationOptions().getLimit() + 1);
 
@@ -132,14 +134,29 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
     return libraryId != null ? Tables.BASE_COLLECTABLE.LIBRARY_ID.eq(libraryId) : noCondition();
   }
 
-  // TODO(#45): new sort fields (RELEASE_DATE, RUNTIME, TITLE_SORT) need a composite index
+  // TODO(#45): new sort fields (RELEASE_DATE, RUNTIME) need a composite index
   // on (library_id, <sort_field>, id) and CursorUtil support for their value types.
   private SortField<?> buildOrderBy(MediaFilter filter) {
     var direction = filter.getSortDirection();
 
     return switch (filter.getSortBy()) {
-      case TITLE -> Tables.BASE_COLLECTABLE.TITLE.sort(direction);
+      case TITLE -> Tables.BASE_COLLECTABLE.TITLE_SORT.sort(direction);
       case ADDED -> Tables.BASE_COLLECTABLE.CREATED_ON.sort(direction);
     };
+  }
+
+  private Condition startLetterCondition(MediaFilter filter) {
+    var startLetter = filter.getStartLetter();
+
+    if (startLetter == null) {
+      return noCondition();
+    }
+
+    if (startLetter == AlphabetLetter.HASH) {
+      return Tables.BASE_COLLECTABLE.TITLE_SORT.lessThan("a");
+    }
+
+    return Tables.BASE_COLLECTABLE.TITLE_SORT.greaterOrEqual(
+        startLetter.name().toLowerCase());
   }
 }

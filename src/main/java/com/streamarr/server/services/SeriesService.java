@@ -265,7 +265,7 @@ public class SeriesService {
 
   private Object getOrderByValue(MediaFilter filter, Series series) {
     return switch (filter.getSortBy()) {
-      case TITLE -> series.getTitle();
+      case TITLE -> series.getTitleSort();
       case ADDED -> series.getCreatedOn();
     };
   }
@@ -289,5 +289,7 @@ public class SeriesService {
         "sortDirection", previousFilter.getSortDirection(), filter.getSortDirection());
     relayPaginationService.validateCursorField(
         "libraryId", previousFilter.getLibraryId(), filter.getLibraryId());
+    relayPaginationService.validateCursorField(
+        "startLetter", previousFilter.getStartLetter(), filter.getStartLetter());
   }
 }
