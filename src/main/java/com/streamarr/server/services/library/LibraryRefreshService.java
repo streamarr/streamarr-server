@@ -72,7 +72,7 @@ public class LibraryRefreshService {
         return;
       }
 
-      seriesService.refreshSeriesMetadata(series, metadataOpt.get());
+      var refreshedSeries = seriesService.refreshSeriesMetadata(series, metadataOpt.get());
 
       var seasonNumbers = seriesMetadataProviderResolver.getAvailableSeasonNumbers(library, tmdbId);
 
@@ -85,7 +85,7 @@ public class LibraryRefreshService {
           continue;
         }
 
-        seriesService.refreshSeasonWithEpisodes(series, seasonDetailsOpt.get(), library);
+        seriesService.refreshSeasonWithEpisodes(refreshedSeries, seasonDetailsOpt.get(), library);
       }
     } catch (Exception ex) {
       log.error("Failed to refresh series '{}' TMDB id '{}'", series.getTitle(), tmdbId, ex);
@@ -123,7 +123,7 @@ public class LibraryRefreshService {
         return;
       }
 
-      movieService.refreshMovieMetadata(movie, metadataOpt.get());
+      var refreshedMovie = movieService.refreshMovieMetadata(movie, metadataOpt.get());
     } catch (Exception ex) {
       log.error("Failed to refresh movie '{}' TMDB id '{}'", movie.getTitle(), tmdbId, ex);
     }
