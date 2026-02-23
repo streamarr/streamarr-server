@@ -16,6 +16,7 @@ import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
+import com.streamarr.server.services.library.events.ItemProcessedEvent;
 import com.streamarr.server.services.library.events.LibraryAddedEvent;
 import com.streamarr.server.services.library.events.LibraryRemovedEvent;
 import com.streamarr.server.services.library.events.ScanCompletedEvent;
@@ -198,6 +199,7 @@ public class LibraryManagementService implements ActiveScanChecker {
             .orElseThrow(() -> new LibraryNotFoundException(libraryId));
 
     processFile(library, path);
+    eventPublisher.publishEvent(new ItemProcessedEvent(libraryId));
   }
 
   public void scanLibrary(UUID libraryId) {
