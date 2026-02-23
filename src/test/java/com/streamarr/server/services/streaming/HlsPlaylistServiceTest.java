@@ -452,6 +452,97 @@ class HlsPlaylistServiceTest {
     }
   }
 
+  // --- Surround sound playlist tests ---
+
+  private StreamSession createSessionWithAudio(AudioDecision audio, String videoCodecFamily) {
+    var container = "av1".equals(videoCodecFamily) ? ContainerFormat.FMP4 : ContainerFormat.MPEGTS;
+    var session =
+        StreamSession.builder()
+            .sessionId(UUID.randomUUID())
+            .mediaFileId(UUID.randomUUID())
+            .sourcePath(Path.of("/media/test.mkv"))
+            .mediaProbe(
+                MediaProbe.builder()
+                    .duration(Duration.ofSeconds(120))
+                    .framerate(23.976)
+                    .width(1920)
+                    .height(1080)
+                    .videoCodec("h264")
+                    .audioCodec("ac3")
+                    .bitrate(5_000_000L)
+                    .build())
+            .transcodeDecision(
+                TranscodeDecision.builder()
+                    .transcodeMode(TranscodeMode.REMUX)
+                    .videoCodecFamily(videoCodecFamily)
+                    .audioDecision(audio)
+                    .containerFormat(container)
+                    .needsKeyframeAlignment(true)
+                    .build())
+            .options(StreamingOptions.builder().supportedCodecs(List.of("h264", "av1")).build())
+            .seekPosition(0)
+            .createdAt(Instant.now())
+            .lastAccessedAt(Instant.now())
+            .build();
+    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
+    return session;
+  }
+
+  @Test
+  @DisplayName("Should use AC-3 codec string when audio is AC-3")
+  void shouldUseAc3CodecStringWhenAudioIsAc3() {
+    var audio = AudioDecision.copy("ac3", 6, 384_000L);
+    var session = createSessionWithAudio(audio, "h264");
+
+    var playlist = service.generateMasterPlaylist(session);
+
+    assertThat(playlist).contains("CODECS=\"avc1.640028,ac-3\"");
+  }
+
+  @Test
+  @DisplayName("Should use E-AC-3 codec string when audio is E-AC-3")
+  void shouldUseEac3CodecStringWhenAudioIsEac3() {
+    var audio = AudioDecision.copy("eac3", 6, 640_000L);
+    var session = createSessionWithAudio(audio, "h264");
+
+    var playlist = service.generateMasterPlaylist(session);
+
+    assertThat(playlist).contains("CODECS=\"avc1.640028,ec-3\"");
+  }
+
+  @Test
+  @DisplayName("Should include CHANNELS attribute when audio has more than 2 channels")
+  void shouldIncludeChannelsAttributeWhenAudioHasMoreThan2Channels() {
+    var audio = AudioDecision.copy("ac3", 6, 384_000L);
+    var session = createSessionWithAudio(audio, "h264");
+
+    var playlist = service.generateMasterPlaylist(session);
+
+    assertThat(playlist).contains("CHANNELS=\"6\"");
+  }
+
+  @Test
+  @DisplayName("Should not include CHANNELS attribute when audio is stereo")
+  void shouldNotIncludeChannelsAttributeWhenAudioIsStereo() {
+    var audio = AudioDecision.stereoAac();
+    var session = createSessionWithAudio(audio, "h264");
+
+    var playlist = service.generateMasterPlaylist(session);
+
+    assertThat(playlist).doesNotContain("CHANNELS=");
+  }
+
+  @Test
+  @DisplayName("Should use AAC codec string when audio is stereo AAC")
+  void shouldUseAacCodecStringWhenAudioIsStereoAac() {
+    var audio = AudioDecision.stereoAac();
+    var session = createSessionWithAudio(audio, "h264");
+
+    var playlist = service.generateMasterPlaylist(session);
+
+    assertThat(playlist).contains("CODECS=\"avc1.640028,mp4a.40.2\"");
+  }
+
   @Test
   @DisplayName("Should reduce segment count when seek position is non-zero")
   void shouldReduceSegmentCountWhenSeekPositionIsNonZero() {
