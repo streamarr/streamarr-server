@@ -80,6 +80,7 @@ class LibraryMetadataListenerIT extends AbstractIntegrationTest {
     assertThat(metadata)
         .extracting(LibraryMetadata::getLetter)
         .containsExactly(AlphabetLetter.A, AlphabetLetter.B, AlphabetLetter.HASH);
+    assertThat(metadata).extracting(LibraryMetadata::getItemCount).containsExactly(2, 1, 1);
   }
 
   @Test
@@ -120,5 +121,24 @@ class LibraryMetadataListenerIT extends AbstractIntegrationTest {
     assertThat(metadata).hasSize(1);
     assertThat(metadata.getFirst().getLetter()).isEqualTo(AlphabetLetter.A);
     assertThat(metadata.getFirst().getItemCount()).isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName("Should produce empty metadata when library has no items")
+  void shouldProduceEmptyMetadataWhenLibraryHasNoItems() {
+    var emptyLibrary = LibraryFixtureCreator.buildFakeLibrary();
+    var savedEmpty = libraryRepository.saveAndFlush(emptyLibrary);
+
+    metadataRepository.save(
+        LibraryMetadata.builder()
+            .libraryId(savedEmpty.getId())
+            .letter(AlphabetLetter.A)
+            .itemCount(99)
+            .build());
+
+    listener.onScanCompleted(new ScanCompletedEvent(savedEmpty.getId()));
+
+    var metadata = metadataRepository.findByLibraryIdOrderByLetterAsc(savedEmpty.getId());
+    assertThat(metadata).isEmpty();
   }
 }
