@@ -27,14 +27,14 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 @Slf4j
 @Component
-public class LibraryMetadataMaintainer {
+public class LibraryMetadataListener {
 
   private final DSLContext context;
   private final TransactionTemplate transactionTemplate;
   private final ActiveScanChecker activeScanChecker;
   private final MutexFactory<String> mutexFactory;
 
-  public LibraryMetadataMaintainer(
+  public LibraryMetadataListener(
       DSLContext context,
       TransactionTemplate transactionTemplate,
       ActiveScanChecker activeScanChecker,

@@ -20,12 +20,12 @@ import org.springframework.transaction.support.DefaultTransactionStatus;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("UnitTest")
-@DisplayName("Library Metadata Maintainer Tests")
-class LibraryMetadataMaintainerTest {
+@DisplayName("Library Metadata Listener Tests")
+class LibraryMetadataListenerTest {
 
   private final MutexFactoryProvider mutexFactoryProvider = new MutexFactoryProvider();
   private DSLContext mockContext;
-  private LibraryMetadataMaintainer maintainer;
+  private LibraryMetadataListener listener;
 
   private final UUID libraryId = UUID.randomUUID();
 
@@ -33,20 +33,20 @@ class LibraryMetadataMaintainerTest {
   void setup() {
     mockContext = mock(DSLContext.class);
 
-    maintainer =
-        new LibraryMetadataMaintainer(
+    listener =
+        new LibraryMetadataListener(
             mockContext, noOpTransactionTemplate(), _ -> false, mutexFactoryProvider);
   }
 
   @Test
   @DisplayName("Should skip recalculation when item processed during active scan")
   void shouldSkipRecalculationWhenItemProcessedDuringActiveScan() {
-    var scanningMaintainer =
-        new LibraryMetadataMaintainer(
+    var scanningListener =
+        new LibraryMetadataListener(
             mockContext, noOpTransactionTemplate(), _ -> true, mutexFactoryProvider);
 
     assertThatNoException()
-        .isThrownBy(() -> scanningMaintainer.onItemProcessed(new ItemProcessedEvent(libraryId)));
+        .isThrownBy(() -> scanningListener.onItemProcessed(new ItemProcessedEvent(libraryId)));
   }
 
   @Test
@@ -54,12 +54,12 @@ class LibraryMetadataMaintainerTest {
   void shouldRecalculateOnScanCompletedEvenDuringActiveScan() {
     when(mockContext.select(any(), any())).thenThrow(new RuntimeException("query would run"));
 
-    var scanningMaintainer =
-        new LibraryMetadataMaintainer(
+    var scanningListener =
+        new LibraryMetadataListener(
             mockContext, noOpTransactionTemplate(), _ -> true, mutexFactoryProvider);
 
     assertThatNoException()
-        .isThrownBy(() -> scanningMaintainer.onScanCompleted(new ScanCompletedEvent(libraryId)));
+        .isThrownBy(() -> scanningListener.onScanCompleted(new ScanCompletedEvent(libraryId)));
   }
 
   @Test
@@ -68,7 +68,7 @@ class LibraryMetadataMaintainerTest {
     when(mockContext.select(any(), any())).thenThrow(new RuntimeException("DB error"));
 
     assertThatNoException()
-        .isThrownBy(() -> maintainer.onScanCompleted(new ScanCompletedEvent(libraryId)));
+        .isThrownBy(() -> listener.onScanCompleted(new ScanCompletedEvent(libraryId)));
   }
 
   @Test
@@ -77,7 +77,7 @@ class LibraryMetadataMaintainerTest {
     when(mockContext.select(any(), any())).thenThrow(new RuntimeException("DB error"));
 
     assertThatNoException()
-        .isThrownBy(() -> maintainer.onItemProcessed(new ItemProcessedEvent(libraryId)));
+        .isThrownBy(() -> listener.onItemProcessed(new ItemProcessedEvent(libraryId)));
   }
 
   private static TransactionTemplate noOpTransactionTemplate() {

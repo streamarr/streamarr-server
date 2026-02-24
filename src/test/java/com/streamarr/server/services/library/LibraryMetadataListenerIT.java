@@ -21,11 +21,11 @@ import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
 
 @Tag("IntegrationTest")
-@DisplayName("Library Metadata Maintainer Integration Tests")
+@DisplayName("Library Metadata Listener Integration Tests")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-class LibraryMetadataMaintainerIT extends AbstractIntegrationTest {
+class LibraryMetadataListenerIT extends AbstractIntegrationTest {
 
-  @Autowired private LibraryMetadataMaintainer maintainer;
+  @Autowired private LibraryMetadataListener listener;
 
   @Autowired private LibraryRepository libraryRepository;
 
@@ -58,7 +58,7 @@ class LibraryMetadataMaintainerIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should calculate correct letter counts when scan completed")
   void shouldCalculateCorrectLetterCountsWhenScanCompleted() {
-    maintainer.onScanCompleted(new ScanCompletedEvent(libraryId));
+    listener.onScanCompleted(new ScanCompletedEvent(libraryId));
 
     var metadata = metadataRepository.findByLibraryIdOrderByLetterAsc(libraryId);
 
@@ -72,7 +72,7 @@ class LibraryMetadataMaintainerIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should calculate correct counts when item processed and not scanning")
   void shouldCalculateCorrectCountsWhenItemProcessedAndNotScanning() {
-    maintainer.onItemProcessed(new ItemProcessedEvent(libraryId));
+    listener.onItemProcessed(new ItemProcessedEvent(libraryId));
 
     var metadata = metadataRepository.findByLibraryIdOrderByLetterAsc(libraryId);
 
@@ -92,7 +92,7 @@ class LibraryMetadataMaintainerIT extends AbstractIntegrationTest {
             .itemCount(99)
             .build());
 
-    maintainer.onScanCompleted(new ScanCompletedEvent(libraryId));
+    listener.onScanCompleted(new ScanCompletedEvent(libraryId));
 
     var metadata = metadataRepository.findByLibraryIdOrderByLetterAsc(libraryId);
 
@@ -113,7 +113,7 @@ class LibraryMetadataMaintainerIT extends AbstractIntegrationTest {
     movieRepository.saveAndFlush(
         Movie.builder().title("Avengers").titleSort("Avengers").library(savedCaseLibrary).build());
 
-    maintainer.onScanCompleted(new ScanCompletedEvent(savedCaseLibrary.getId()));
+    listener.onScanCompleted(new ScanCompletedEvent(savedCaseLibrary.getId()));
 
     var metadata = metadataRepository.findByLibraryIdOrderByLetterAsc(savedCaseLibrary.getId());
 
