@@ -28,7 +28,7 @@ public class JooqQueryHelper {
   }
 
   public Condition startLetterCondition(AlphabetLetter startLetter) {
-    if (startLetter == null || startLetter == AlphabetLetter.A || startLetter == AlphabetLetter.HASH) {
+    if (startLetter == null || startLetter == AlphabetLetter.HASH) {
       return noCondition();
     }
 

@@ -473,6 +473,23 @@ class SeriesServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should return only alpha series when start letter is A")
+  void shouldReturnOnlyAlphaSeriesWhenStartLetterIsA() {
+    var filter =
+        MediaFilter.builder()
+            .libraryId(savedLibraryD.getId())
+            .startLetter(AlphabetLetter.A)
+            .build();
+
+    var result = seriesService.getSeriesWithFilter(10, null, 0, null, filter);
+
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    assertThat(titles)
+        .containsExactly(
+            "Alpha Show", "Avengers Show", "Batman Show", "Beta Show", "Gamma Show");
+  }
+
+  @Test
   @DisplayName("Should return series from B onward when start letter is B")
   void shouldReturnSeriesFromBOnwardWhenStartLetterIsB() {
     var filter =

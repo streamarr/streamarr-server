@@ -305,6 +305,23 @@ class MovieServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should return only alpha movies when start letter is A")
+  void shouldReturnOnlyAlphaMoviesWhenStartLetterIsA() {
+
+    var filter =
+        MediaFilter.builder()
+            .libraryId(savedLibraryD.getId())
+            .startLetter(AlphabetLetter.A)
+            .build();
+
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactly("Alpha", "Avengers", "Batman", "Beta", "Gamma");
+  }
+
+  @Test
   @DisplayName("Should return movies from B onward when start letter is B")
   void shouldReturnMoviesFromBOnwardWhenStartLetterIsB() {
 
