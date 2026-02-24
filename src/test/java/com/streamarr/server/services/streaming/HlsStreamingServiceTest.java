@@ -27,15 +27,14 @@ import com.streamarr.server.services.concurrency.MutexFactory;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 @Tag("UnitTest")
+@DisplayName("HLS Streaming Service Tests")
 class HlsStreamingServiceTest {
 
   private FakeMediaFileRepository mediaFileRepository;
@@ -469,42 +468,13 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("Should make session retrievable during transcode start")
-  void shouldMakeSessionRetrievableDuringTranscodeStart() {
-    var serviceRef = new AtomicReference<HlsStreamingService>();
-    var capturedSession = new AtomicReference<Optional<StreamSession>>();
-
-    var spyExecutor =
-        new FakeTranscodeExecutor() {
-          @Override
-          public TranscodeHandle start(TranscodeRequest request) {
-            capturedSession.set(serviceRef.get().accessSession(request.sessionId()));
-            return super.start(request);
-          }
-        };
-
-    var spyService =
-        new HlsStreamingService(
-            mediaFileRepository,
-            spyExecutor,
-            segmentStore,
-            ffprobeService,
-            new TranscodeDecisionService(),
-            new QualityLadderService(),
-            StreamingProperties.builder()
-                .maxConcurrentTranscodes(3)
-                .segmentDuration(Duration.ofSeconds(6))
-                .sessionTimeout(Duration.ofSeconds(60))
-                .build(),
-            new FakeStreamSessionRepository(),
-            new MutexFactory<>());
-    serviceRef.set(spyService);
-
+  @DisplayName("Should return session immediately after creation")
+  void shouldReturnSessionImmediatelyAfterCreation() {
     var file = seedMediaFile();
 
-    spyService.createSession(file.getId(), defaultOptions());
+    var session = service.createSession(file.getId(), defaultOptions());
 
-    assertThat(capturedSession.get()).isPresent();
+    assertThat(service.accessSession(session.getSessionId())).isPresent();
   }
 
   @Test

@@ -96,15 +96,13 @@ class StreamingResolverTest {
             """,
             UUID.randomUUID());
 
-    var id = dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.createStreamSession.id");
-    var streamUrl =
-        dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.createStreamSession.streamUrl");
-    var transcodeMode =
-        dgsQueryExecutor.executeAndExtractJsonPath(
-            mutation, "data.createStreamSession.transcodeMode");
+    var context = dgsQueryExecutor.executeAndGetDocumentContext(mutation);
+    String id = context.read("data.createStreamSession.id");
+    String streamUrl = context.read("data.createStreamSession.streamUrl");
+    String transcodeMode = context.read("data.createStreamSession.transcodeMode");
 
     assertThat(id).isEqualTo(sessionId.toString());
-    assertThat(streamUrl.toString()).contains("/api/stream/" + sessionId + "/master.m3u8");
+    assertThat(streamUrl).contains("/api/stream/" + sessionId + "/master.m3u8");
     assertThat(transcodeMode).isEqualTo("REMUX");
   }
 
