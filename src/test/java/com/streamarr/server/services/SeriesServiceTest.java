@@ -530,6 +530,31 @@ class SeriesServiceTest {
     assertThat(result.getContentRating().value()).isEqualTo("TV-MA");
     assertThat(result.getFirstAirDate()).isEqualTo(LocalDate.of(2020, 6, 15));
     assertThat(result.getId()).isEqualTo(existing.getId());
+
+    var persisted = seriesRepository.findById(result.getId()).orElseThrow();
+    assertThat(persisted.getTitle()).isEqualTo("New Title");
+  }
+
+  @Test
+  @DisplayName("Should overwrite existing fields with null when fresh metadata has null fields")
+  void shouldOverwriteExistingFieldsWithNullWhenFreshMetadataHasNullFields() {
+    var existing =
+        seriesRepository.save(
+            Series.builder()
+                .title("Breaking Bad")
+                .tagline("Old tagline")
+                .summary("Old summary")
+                .contentRating(new ContentRating("MPAA", "PG", "US"))
+                .build());
+
+    var fresh = Series.builder().title("Breaking Bad").titleSort("breaking bad").build();
+    var metadataResult = new MetadataResult<>(fresh, List.of(), Map.of(), Map.of());
+
+    var result = seriesService.refreshSeriesMetadata(existing, metadataResult);
+
+    assertThat(result.getTagline()).isNull();
+    assertThat(result.getSummary()).isNull();
+    assertThat(result.getContentRating()).isNull();
   }
 
   @Test
