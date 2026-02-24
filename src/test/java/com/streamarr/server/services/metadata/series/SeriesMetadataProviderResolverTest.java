@@ -14,8 +14,10 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+@Tag("UnitTest")
 @DisplayName("Series Metadata Provider Resolver Tests")
 class SeriesMetadataProviderResolverTest {
 

@@ -3,6 +3,7 @@ package com.streamarr.server.services;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -536,18 +537,30 @@ class SeriesServiceTest {
   void shouldUpdateAssociationsWhenRefreshingSeriesMetadata() {
     var existing = seriesRepository.save(Series.builder().title("Breaking Bad").build());
 
-    var freshCast = List.of(Person.builder().name("Bryan Cranston").build());
-    var freshDirectors = List.of(Person.builder().name("Vince Gilligan").build());
+    var castInput = List.of(Person.builder().name("Bryan Cranston").build());
+    var directorInput = List.of(Person.builder().name("Vince Gilligan").build());
     var freshGenres = Set.of(Genre.builder().name("Drama").build());
     var freshStudios = Set.of(Company.builder().name("Sony Pictures").build());
 
-    when(personService.getOrCreatePersons(any(), any()))
-        .thenReturn(freshCast)
-        .thenReturn(freshDirectors);
+    when(personService.getOrCreatePersons(
+            argThat(
+                persons ->
+                    persons != null
+                        && persons.stream().anyMatch(p -> "Bryan Cranston".equals(p.getName()))),
+            any()))
+        .thenReturn(castInput);
+    when(personService.getOrCreatePersons(
+            argThat(
+                persons ->
+                    persons != null
+                        && persons.stream().anyMatch(p -> "Vince Gilligan".equals(p.getName()))),
+            any()))
+        .thenReturn(directorInput);
     when(genreService.getOrCreateGenres(any())).thenReturn(freshGenres);
     when(companyService.getOrCreateCompanies(any(), any())).thenReturn(freshStudios);
 
-    var fresh = Series.builder().title("Breaking Bad").build();
+    var fresh =
+        Series.builder().title("Breaking Bad").cast(castInput).directors(directorInput).build();
     var metadataResult = new MetadataResult<>(fresh, List.of(), Map.of(), Map.of());
 
     var result = seriesService.refreshSeriesMetadata(existing, metadataResult);

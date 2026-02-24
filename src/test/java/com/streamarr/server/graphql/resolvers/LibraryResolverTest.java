@@ -304,5 +304,4 @@ class LibraryResolverTest {
 
     assertThat(result).isTrue();
   }
-
 }

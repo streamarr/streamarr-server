@@ -3,6 +3,7 @@ package com.streamarr.server.services;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -296,18 +297,29 @@ class MovieServiceTest {
   void shouldUpdateAssociationsWhenRefreshingMovieMetadata() {
     var existing = movieRepository.save(Movie.builder().title("Inception").build());
 
-    var freshCast = List.of(Person.builder().name("Leonardo DiCaprio").build());
-    var freshDirectors = List.of(Person.builder().name("Christopher Nolan").build());
+    var castInput = List.of(Person.builder().name("Leonardo DiCaprio").build());
+    var directorInput = List.of(Person.builder().name("Christopher Nolan").build());
     var freshGenres = Set.of(Genre.builder().name("Sci-Fi").build());
     var freshStudios = Set.of(Company.builder().name("Warner Bros.").build());
 
-    when(personService.getOrCreatePersons(any(), any()))
-        .thenReturn(freshCast)
-        .thenReturn(freshDirectors);
+    when(personService.getOrCreatePersons(
+            argThat(
+                persons ->
+                    persons != null
+                        && persons.stream().anyMatch(p -> "Leonardo DiCaprio".equals(p.getName()))),
+            any()))
+        .thenReturn(castInput);
+    when(personService.getOrCreatePersons(
+            argThat(
+                persons ->
+                    persons != null
+                        && persons.stream().anyMatch(p -> "Christopher Nolan".equals(p.getName()))),
+            any()))
+        .thenReturn(directorInput);
     when(genreService.getOrCreateGenres(any())).thenReturn(freshGenres);
     when(companyService.getOrCreateCompanies(any(), any())).thenReturn(freshStudios);
 
-    var fresh = Movie.builder().title("Inception").build();
+    var fresh = Movie.builder().title("Inception").cast(castInput).directors(directorInput).build();
     var metadataResult = new MetadataResult<>(fresh, List.of(), Map.of(), Map.of());
 
     var result = movieService.refreshMovieMetadata(existing, metadataResult);
