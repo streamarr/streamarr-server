@@ -3,6 +3,7 @@ package com.streamarr.server.services.library;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -20,6 +21,7 @@ import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
+import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeImageRepository;
@@ -426,9 +428,9 @@ class LibraryRefreshServiceTest {
   }
 
   private static <T> T argThatHasExternalId(String externalId) {
-    return org.mockito.ArgumentMatchers.argThat(
+    return argThat(
         arg -> {
-          if (arg instanceof com.streamarr.server.services.metadata.RemoteSearchResult rsr) {
+          if (arg instanceof RemoteSearchResult rsr) {
             return externalId.equals(rsr.externalId());
           }
           return false;

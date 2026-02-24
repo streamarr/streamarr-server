@@ -16,6 +16,7 @@ import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
+import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Genre;
@@ -593,7 +594,7 @@ class SeriesServiceTest {
 
     var existingSeason =
         seasonRepository.saveAndFlush(
-            com.streamarr.server.domain.media.Season.builder()
+            Season.builder()
                 .title("Old Season 1")
                 .seasonNumber(1)
                 .overview("Old overview")
@@ -649,7 +650,7 @@ class SeriesServiceTest {
     var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
     var season =
         seasonRepository.saveAndFlush(
-            com.streamarr.server.domain.media.Season.builder()
+            Season.builder()
                 .title("Season 1")
                 .seasonNumber(1)
                 .series(series)
@@ -699,7 +700,7 @@ class SeriesServiceTest {
     var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
     var season =
         seasonRepository.saveAndFlush(
-            com.streamarr.server.domain.media.Season.builder()
+            Season.builder()
                 .title("Season 1")
                 .seasonNumber(1)
                 .series(series)
