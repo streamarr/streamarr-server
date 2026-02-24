@@ -676,6 +676,22 @@ class LibraryManagementServiceTest {
             });
   }
 
+  @Test
+  @DisplayName("Should start async scan on virtual thread when triggerAsyncScan called")
+  void shouldStartAsyncScanOnVirtualThreadWhenTriggerAsyncScanCalled() throws Exception {
+    createRootLibraryDirectory();
+
+    libraryManagementService.triggerAsyncScan(savedLibraryId);
+
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () -> {
+              var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+              assertThat(library.getStatus()).isEqualTo(LibraryStatus.HEALTHY);
+            });
+  }
+
   @Nested
   @DisplayName("Add Library Tests")
   class AddLibraryTests {
@@ -1098,6 +1114,20 @@ class LibraryManagementServiceTest {
           () -> libraryManagementService.refreshLibrary(savedLibraryId));
 
       release.countDown();
+    }
+
+    @Test
+    @DisplayName("Should start async refresh on virtual thread when triggerAsyncRefresh called")
+    void shouldStartAsyncRefreshOnVirtualThreadWhenTriggerAsyncRefreshCalled() {
+      libraryManagementService.triggerAsyncRefresh(savedLibraryId);
+
+      await()
+          .atMost(Duration.ofSeconds(5))
+          .untilAsserted(
+              () -> {
+                var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+                assertThat(library.getStatus()).isEqualTo(LibraryStatus.HEALTHY);
+              });
     }
   }
 

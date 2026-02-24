@@ -154,6 +154,17 @@ public class LibraryManagementService implements ActiveScanChecker {
         });
   }
 
+  public void triggerAsyncRefresh(UUID libraryId) {
+    Thread.startVirtualThread(
+        () -> {
+          try {
+            refreshLibrary(libraryId);
+          } catch (Exception e) {
+            log.error("Async library refresh failed for library: {}", libraryId, e);
+          }
+        });
+  }
+
   @Transactional
   public void removeLibrary(UUID libraryId) {
     var libraryMutex = mutexFactory.getMutex(libraryId.toString());

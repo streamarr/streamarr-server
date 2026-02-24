@@ -60,13 +60,13 @@ public class LibraryResolver {
 
   @DgsMutation
   public boolean scanLibrary(String id) {
-    libraryManagementService.scanLibrary(parseUuid(id));
+    libraryManagementService.triggerAsyncScan(parseUuid(id));
     return true;
   }
 
   @DgsMutation
   public boolean refreshLibrary(String id) {
-    libraryManagementService.refreshLibrary(parseUuid(id));
+    libraryManagementService.triggerAsyncRefresh(parseUuid(id));
     return true;
   }
 
