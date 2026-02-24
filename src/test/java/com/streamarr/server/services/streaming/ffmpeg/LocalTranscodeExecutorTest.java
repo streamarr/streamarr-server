@@ -50,6 +50,11 @@ class LocalTranscodeExecutorTest {
   }
 
   private TranscodeRequest createRequest(TranscodeMode mode, String codecFamily) {
+    return createRequest(mode, codecFamily, null);
+  }
+
+  private TranscodeRequest createRequest(
+      TranscodeMode mode, String codecFamily, String variantLabel) {
     return TranscodeRequest.builder()
         .sessionId(UUID.randomUUID())
         .sourcePath(Path.of("/media/movie.mkv"))
@@ -68,6 +73,7 @@ class LocalTranscodeExecutorTest {
         .width(1920)
         .height(1080)
         .bitrate(5_000_000L)
+        .variantLabel(variantLabel)
         .build();
   }
 
@@ -164,34 +170,14 @@ class LocalTranscodeExecutorTest {
   @Test
   @DisplayName("Should create variant subdirectory when variant label is provided")
   void shouldCreateVariantSubdirectoryWhenVariantLabelProvided() {
-    var sessionId = UUID.randomUUID();
-    var request =
-        TranscodeRequest.builder()
-            .sessionId(sessionId)
-            .sourcePath(Path.of("/media/movie.mkv"))
-            .seekPosition(0)
-            .segmentDuration(6)
-            .framerate(23.976)
-            .transcodeDecision(
-                TranscodeDecision.builder()
-                    .transcodeMode(TranscodeMode.FULL_TRANSCODE)
-                    .videoCodecFamily("h264")
-                    .audioDecision(AudioDecision.stereoAac())
-                    .containerFormat(ContainerFormat.MPEGTS)
-                    .needsKeyframeAlignment(false)
-                    .build())
-            .width(1280)
-            .height(720)
-            .bitrate(3_000_000L)
-            .variantLabel("720p")
-            .build();
+    var request = createRequest(TranscodeMode.FULL_TRANSCODE, "h264", "720p");
 
     var handle = executor.start(request);
 
     assertThat(handle.status()).isEqualTo(TranscodeStatus.ACTIVE);
-    assertThat(executor.isRunning(sessionId, "720p")).isTrue();
+    assertThat(executor.isRunning(request.sessionId(), "720p")).isTrue();
 
-    var variantDir = tempDir.resolve(sessionId.toString()).resolve("720p");
+    var variantDir = tempDir.resolve(request.sessionId().toString()).resolve("720p");
     assertThat(variantDir).exists().isDirectory();
   }
 
