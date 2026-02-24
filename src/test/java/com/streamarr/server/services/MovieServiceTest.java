@@ -290,6 +290,31 @@ class MovieServiceTest {
     assertThat(result.getContentRating().value()).isEqualTo("PG-13");
     assertThat(result.getReleaseDate()).isEqualTo(LocalDate.of(2010, 7, 16));
     assertThat(result.getId()).isEqualTo(existing.getId());
+
+    var persisted = movieRepository.findById(result.getId()).orElseThrow();
+    assertThat(persisted.getTitle()).isEqualTo("New Title");
+  }
+
+  @Test
+  @DisplayName("Should overwrite existing fields with null when fresh metadata has null fields")
+  void shouldOverwriteExistingFieldsWithNullWhenFreshMetadataHasNullFields() {
+    var existing =
+        movieRepository.save(
+            Movie.builder()
+                .title("Inception")
+                .tagline("Old tagline")
+                .summary("Old summary")
+                .contentRating(new ContentRating("MPAA", "PG", "US"))
+                .build());
+
+    var fresh = Movie.builder().title("Inception").titleSort("inception").build();
+    var metadataResult = new MetadataResult<>(fresh, List.of(), Map.of(), Map.of());
+
+    var result = movieService.refreshMovieMetadata(existing, metadataResult);
+
+    assertThat(result.getTagline()).isNull();
+    assertThat(result.getSummary()).isNull();
+    assertThat(result.getContentRating()).isNull();
   }
 
   @Test
