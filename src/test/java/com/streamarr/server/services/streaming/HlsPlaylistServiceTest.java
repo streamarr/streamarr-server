@@ -539,8 +539,9 @@ class HlsPlaylistServiceTest {
 
     var playlist = service.generateMasterPlaylist(session);
 
-    assertThat(playlist).contains("CODECS=\"avc1.640028\"");
-    assertThat(playlist).doesNotContain("CODECS=\"avc1.640028,\"");
+    assertThat(playlist)
+        .contains("CODECS=\"avc1.640028\"")
+        .doesNotContain("CODECS=\"avc1.640028,\"");
   }
 
   @Test
