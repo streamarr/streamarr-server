@@ -77,6 +77,8 @@ class MovieServiceIT extends AbstractIntegrationTest {
         Movie.builder().title("Gamma").titleSort("Gamma").library(savedLibraryD).build());
     movieRepository.saveAndFlush(
         Movie.builder().title("123 Movie").titleSort("123 Movie").library(savedLibraryD).build());
+    movieRepository.saveAndFlush(
+        Movie.builder().title("Zorro").titleSort("Zorro").library(savedLibraryD).build());
   }
 
   private MediaFilter filterForLibrary(Library library) {
@@ -318,7 +320,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
 
     var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
-    assertThat(titles).containsExactly("Alpha", "Avengers", "Batman", "Beta", "Gamma");
+    assertThat(titles).containsExactly("Alpha", "Avengers", "Batman", "Beta", "Gamma", "Zorro");
   }
 
   @Test
@@ -335,7 +337,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
 
     var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
-    assertThat(titles).containsExactly("Batman", "Beta", "Gamma");
+    assertThat(titles).containsExactly("Batman", "Beta", "Gamma", "Zorro");
   }
 
   @Test
@@ -352,7 +354,8 @@ class MovieServiceIT extends AbstractIntegrationTest {
 
     var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
-    assertThat(titles).containsExactly("123 Movie", "Alpha", "Avengers", "Batman", "Beta", "Gamma");
+    assertThat(titles)
+        .containsExactly("123 Movie", "Alpha", "Avengers", "Batman", "Beta", "Gamma", "Zorro");
   }
 
   @Test
@@ -371,15 +374,119 @@ class MovieServiceIT extends AbstractIntegrationTest {
 
     var cursor = firstPage.getPageInfo().getEndCursor().getValue();
     var secondPage = movieService.getMoviesWithFilter(2, cursor, 0, null, filter);
-    assertThat(secondPage.getEdges()).hasSize(1);
+    assertThat(secondPage.getEdges()).hasSize(2);
     assertThat(secondPage.getPageInfo().isHasNextPage()).isFalse();
 
     var allTitles =
         List.of(
             firstPage.getEdges().get(0).getNode().getTitle(),
             firstPage.getEdges().get(1).getNode().getTitle(),
-            secondPage.getEdges().get(0).getNode().getTitle());
+            secondPage.getEdges().get(0).getNode().getTitle(),
+            secondPage.getEdges().get(1).getNode().getTitle());
 
-    assertThat(allTitles).containsExactly("Batman", "Beta", "Gamma");
+    assertThat(allTitles).containsExactly("Batman", "Beta", "Gamma", "Zorro");
+  }
+
+  @Test
+  @DisplayName("Should return only Z movies when start letter is Z")
+  void shouldReturnOnlyZMoviesWhenStartLetterIsZ() {
+
+    var filter =
+        MediaFilter.builder()
+            .libraryId(savedLibraryD.getId())
+            .startLetter(AlphabetLetter.Z)
+            .build();
+
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactly("Zorro");
+  }
+
+  @Test
+  @DisplayName("Should return movies from B backward when start letter is B and sort is DESC")
+  void shouldReturnMoviesFromBBackwardWhenStartLetterIsBDesc() {
+
+    var filter =
+        MediaFilter.builder()
+            .libraryId(savedLibraryD.getId())
+            .startLetter(AlphabetLetter.B)
+            .sortDirection(SortOrder.DESC)
+            .build();
+
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactly("Beta", "Batman", "Avengers", "Alpha", "123 Movie");
+  }
+
+  @Test
+  @DisplayName("Should return all movies when start letter is Z and sort is DESC")
+  void shouldReturnAllMoviesWhenStartLetterIsZDesc() {
+
+    var filter =
+        MediaFilter.builder()
+            .libraryId(savedLibraryD.getId())
+            .startLetter(AlphabetLetter.Z)
+            .sortDirection(SortOrder.DESC)
+            .build();
+
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles)
+        .containsExactly("Zorro", "Gamma", "Beta", "Batman", "Avengers", "Alpha", "123 Movie");
+  }
+
+  @Test
+  @DisplayName("Should return only hash movies when start letter is hash and sort is DESC")
+  void shouldReturnOnlyHashMoviesWhenStartLetterIsHashDesc() {
+
+    var filter =
+        MediaFilter.builder()
+            .libraryId(savedLibraryD.getId())
+            .startLetter(AlphabetLetter.HASH)
+            .sortDirection(SortOrder.DESC)
+            .build();
+
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactly("123 Movie");
+  }
+
+  @Test
+  @DisplayName("Should continue pagination backward when start letter is B and sort is DESC")
+  void shouldContinuePaginationOnwardWhenStartLetterIsBDesc() {
+
+    var filter =
+        MediaFilter.builder()
+            .libraryId(savedLibraryD.getId())
+            .startLetter(AlphabetLetter.B)
+            .sortDirection(SortOrder.DESC)
+            .build();
+
+    var firstPage = movieService.getMoviesWithFilter(3, null, 0, null, filter);
+    assertThat(firstPage.getEdges()).hasSize(3);
+    assertThat(firstPage.getPageInfo().isHasNextPage()).isTrue();
+
+    var cursor = firstPage.getPageInfo().getEndCursor().getValue();
+    var secondPage = movieService.getMoviesWithFilter(3, cursor, 0, null, filter);
+    assertThat(secondPage.getEdges()).hasSize(2);
+    assertThat(secondPage.getPageInfo().isHasNextPage()).isFalse();
+
+    var allTitles =
+        List.of(
+            firstPage.getEdges().get(0).getNode().getTitle(),
+            firstPage.getEdges().get(1).getNode().getTitle(),
+            firstPage.getEdges().get(2).getNode().getTitle(),
+            secondPage.getEdges().get(0).getNode().getTitle(),
+            secondPage.getEdges().get(1).getNode().getTitle());
+
+    assertThat(allTitles).containsExactly("Beta", "Batman", "Avengers", "Alpha", "123 Movie");
   }
 }

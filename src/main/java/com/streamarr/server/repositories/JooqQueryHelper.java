@@ -33,13 +33,31 @@ public class JooqQueryHelper {
       return noCondition();
     }
 
+    return direction == SortOrder.DESC
+        ? descLetterCondition(startLetter)
+        : ascLetterCondition(startLetter);
+  }
+
+  private Condition ascLetterCondition(AlphabetLetter startLetter) {
     if (startLetter == AlphabetLetter.HASH) {
       return noCondition();
     }
 
-    var letter = startLetter.name().toLowerCase();
+    var firstCharLower = lower(left(Tables.BASE_COLLECTABLE.TITLE_SORT, 1));
+    return firstCharLower.greaterOrEqual(inline(startLetter.name().toLowerCase()));
+  }
+
+  private Condition descLetterCondition(AlphabetLetter startLetter) {
+    if (startLetter == AlphabetLetter.Z) {
+      return noCondition();
+    }
+
     var firstCharLower = lower(left(Tables.BASE_COLLECTABLE.TITLE_SORT, 1));
 
-    return firstCharLower.greaterOrEqual(inline(letter));
+    if (startLetter == AlphabetLetter.HASH) {
+      return firstCharLower.lessThan(inline("a"));
+    }
+
+    return firstCharLower.lessOrEqual(inline(startLetter.name().toLowerCase()));
   }
 }
