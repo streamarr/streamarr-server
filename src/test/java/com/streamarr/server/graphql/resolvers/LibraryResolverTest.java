@@ -26,7 +26,6 @@ import graphql.relay.DefaultConnectionCursor;
 import graphql.relay.DefaultEdge;
 import graphql.relay.DefaultPageInfo;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -329,20 +328,16 @@ class LibraryResolverTest {
     when(libraryManagementService.getAlphabetIndex(libraryId))
         .thenReturn(List.of(metadataA, metadataM));
 
-    var result =
-        dgsQueryExecutor.execute(
-            String.format("{ library(id: \"%s\") { alphabetIndex { letter count } } }", libraryId));
+    var query =
+        String.format("{ library(id: \"%s\") { alphabetIndex { letter count } } }", libraryId);
 
-    assertThat(result.getErrors()).isEmpty();
+    List<String> letters =
+        dgsQueryExecutor.executeAndExtractJsonPath(query, "data.library.alphabetIndex[*].letter");
+    List<Integer> counts =
+        dgsQueryExecutor.executeAndExtractJsonPath(query, "data.library.alphabetIndex[*].count");
 
-    Map<String, Object> data = result.getData();
-    @SuppressWarnings("unchecked")
-    var libraryData = (Map<String, Object>) data.get("library");
-    @SuppressWarnings("unchecked")
-    var alphabetIndex = (List<Map<String, Object>>) libraryData.get("alphabetIndex");
-
-    assertThat(alphabetIndex).extracting(m -> m.get("letter")).containsExactly("A", "M");
-    assertThat(alphabetIndex).extracting(m -> m.get("count")).containsExactly(5, 12);
+    assertThat(letters).containsExactly("A", "M");
+    assertThat(counts).containsExactly(5, 12);
   }
 
   @Test
@@ -363,17 +358,11 @@ class LibraryResolverTest {
     when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
     when(libraryManagementService.getAlphabetIndex(libraryId)).thenReturn(List.of());
 
-    var result =
-        dgsQueryExecutor.execute(
-            String.format("{ library(id: \"%s\") { alphabetIndex { letter count } } }", libraryId));
+    var query =
+        String.format("{ library(id: \"%s\") { alphabetIndex { letter count } } }", libraryId);
 
-    assertThat(result.getErrors()).isEmpty();
-
-    Map<String, Object> data = result.getData();
-    @SuppressWarnings("unchecked")
-    var libraryData = (Map<String, Object>) data.get("library");
-    @SuppressWarnings("unchecked")
-    var alphabetIndex = (List<Object>) libraryData.get("alphabetIndex");
+    List<Object> alphabetIndex =
+        dgsQueryExecutor.executeAndExtractJsonPath(query, "data.library.alphabetIndex");
 
     assertThat(alphabetIndex).isEmpty();
   }
