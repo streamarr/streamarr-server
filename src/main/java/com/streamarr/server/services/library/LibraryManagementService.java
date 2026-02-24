@@ -212,22 +212,16 @@ public class LibraryManagementService implements ActiveScanChecker {
     try {
       var library = transitionToRefreshing(libraryId);
 
-      Thread.startVirtualThread(
-          () -> {
-            try {
-              libraryRefreshService.refreshLibrary(library);
-              completeRefreshSuccessfully(library);
-            } catch (Exception ex) {
-              log.error("Refresh failed for library '{}'", library.getName(), ex);
-              completeRefreshWithFailure(library);
-            } finally {
-              eventPublisher.publishEvent(new RefreshEndedEvent(libraryId));
-              activeRefreshes.remove(libraryId);
-            }
-          });
-    } catch (Exception ex) {
+      try {
+        libraryRefreshService.refreshLibrary(library);
+        completeRefreshSuccessfully(library);
+      } catch (Exception ex) {
+        log.error("Refresh failed for library '{}'", library.getName(), ex);
+        completeRefreshWithFailure(library);
+      }
+    } finally {
+      eventPublisher.publishEvent(new RefreshEndedEvent(libraryId));
       activeRefreshes.remove(libraryId);
-      throw ex;
     }
   }
 

@@ -986,13 +986,8 @@ class LibraryManagementServiceTest {
     void shouldTransitionToHealthyWhenRefreshSucceeds() {
       libraryManagementService.refreshLibrary(savedLibraryId);
 
-      await()
-          .atMost(Duration.ofSeconds(5))
-          .untilAsserted(
-              () -> {
-                var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
-                assertThat(library.getStatus()).isEqualTo(LibraryStatus.HEALTHY);
-              });
+      var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+      assertThat(library.getStatus()).isEqualTo(LibraryStatus.HEALTHY);
     }
 
     @Test
@@ -1004,13 +999,8 @@ class LibraryManagementServiceTest {
 
       libraryManagementService.refreshLibrary(savedLibraryId);
 
-      await()
-          .atMost(Duration.ofSeconds(5))
-          .untilAsserted(
-              () -> {
-                var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
-                assertThat(library.getStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
-              });
+      var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+      assertThat(library.getStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
     }
 
     @Test
@@ -1053,14 +1043,9 @@ class LibraryManagementServiceTest {
     void shouldPublishRefreshEndedEventWhenRefreshSucceeds() {
       libraryManagementService.refreshLibrary(savedLibraryId);
 
-      await()
-          .atMost(Duration.ofSeconds(5))
-          .untilAsserted(
-              () -> {
-                var events = capturingEventPublisher.getEventsOfType(RefreshEndedEvent.class);
-                assertThat(events).hasSize(1);
-                assertThat(events.getFirst().libraryId()).isEqualTo(savedLibraryId);
-              });
+      var events = capturingEventPublisher.getEventsOfType(RefreshEndedEvent.class);
+      assertThat(events).hasSize(1);
+      assertThat(events.getFirst().libraryId()).isEqualTo(savedLibraryId);
     }
 
     @Test
@@ -1072,14 +1057,9 @@ class LibraryManagementServiceTest {
 
       libraryManagementService.refreshLibrary(savedLibraryId);
 
-      await()
-          .atMost(Duration.ofSeconds(5))
-          .untilAsserted(
-              () -> {
-                var events = capturingEventPublisher.getEventsOfType(RefreshEndedEvent.class);
-                assertThat(events).hasSize(1);
-                assertThat(events.getFirst().libraryId()).isEqualTo(savedLibraryId);
-              });
+      var events = capturingEventPublisher.getEventsOfType(RefreshEndedEvent.class);
+      assertThat(events).hasSize(1);
+      assertThat(events.getFirst().libraryId()).isEqualTo(savedLibraryId);
     }
 
     @Test
@@ -1091,13 +1071,8 @@ class LibraryManagementServiceTest {
 
       libraryManagementService.refreshLibrary(savedLibraryId);
 
-      await()
-          .atMost(Duration.ofSeconds(5))
-          .untilAsserted(
-              () -> {
-                var updated = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
-                assertThat(updated.getStatus()).isEqualTo(LibraryStatus.HEALTHY);
-              });
+      var updated = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+      assertThat(updated.getStatus()).isEqualTo(LibraryStatus.HEALTHY);
     }
 
     @Test
@@ -1115,7 +1090,7 @@ class LibraryManagementServiceTest {
           .when(libraryRefreshService)
           .refreshLibrary(any(Library.class));
 
-      libraryManagementService.refreshLibrary(savedLibraryId);
+      Thread.startVirtualThread(() -> libraryManagementService.refreshLibrary(savedLibraryId));
       assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
 
       assertThrows(
