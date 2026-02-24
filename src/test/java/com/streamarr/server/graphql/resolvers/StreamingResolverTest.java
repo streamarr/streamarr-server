@@ -11,6 +11,7 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
+import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.services.streaming.StreamingService;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -108,6 +109,41 @@ class StreamingResolverTest {
   }
 
   @Test
+  @DisplayName("Should map GraphQL options input to streaming options when options provided")
+  void shouldMapGraphqlOptionsInputToStreamingOptionsWhenOptionsProvided() {
+    var sessionId = UUID.randomUUID();
+    var session = buildSession(sessionId);
+    STUB_SERVICE.setNextResult(session);
+
+    var mutation =
+        String.format(
+            """
+            mutation {
+              createStreamSession(
+                mediaFileId: "%s",
+                options: {
+                  quality: HIGH_720P,
+                  supportedCodecs: ["h264"],
+                  supportedAudioCodecs: ["aac", "ac3"],
+                  maxAudioChannels: 6
+                }
+              ) {
+                id
+              }
+            }
+            """,
+            UUID.randomUUID());
+
+    dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.createStreamSession.id");
+
+    var receivedOptions = STUB_SERVICE.getLastReceivedOptions();
+    assertThat(receivedOptions.quality()).isEqualTo(VideoQuality.HIGH_720P);
+    assertThat(receivedOptions.supportedCodecs()).containsExactly("h264");
+    assertThat(receivedOptions.supportedAudioCodecs()).containsExactly("aac", "ac3");
+    assertThat(receivedOptions.maxAudioChannels()).isEqualTo(6);
+  }
+
+  @Test
   @DisplayName("Should return error when create session media file ID is invalid")
   void shouldReturnErrorWhenMediaFileIdIsInvalid() {
     var result =
@@ -201,13 +237,19 @@ class StreamingResolverTest {
   private static class StubStreamingService implements StreamingService {
 
     private StreamSession nextResult;
+    private StreamingOptions lastReceivedOptions;
 
     void setNextResult(StreamSession session) {
       this.nextResult = session;
     }
 
+    StreamingOptions getLastReceivedOptions() {
+      return lastReceivedOptions;
+    }
+
     @Override
     public StreamSession createSession(UUID mediaFileId, StreamingOptions options) {
+      this.lastReceivedOptions = options;
       return nextResult;
     }
 

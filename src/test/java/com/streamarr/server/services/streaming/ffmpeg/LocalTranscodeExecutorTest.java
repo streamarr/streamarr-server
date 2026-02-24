@@ -162,6 +162,40 @@ class LocalTranscodeExecutorTest {
   }
 
   @Test
+  @DisplayName("Should create variant subdirectory when variant label is provided")
+  void shouldCreateVariantSubdirectoryWhenVariantLabelProvided() {
+    var sessionId = UUID.randomUUID();
+    var request =
+        TranscodeRequest.builder()
+            .sessionId(sessionId)
+            .sourcePath(Path.of("/media/movie.mkv"))
+            .seekPosition(0)
+            .segmentDuration(6)
+            .framerate(23.976)
+            .transcodeDecision(
+                TranscodeDecision.builder()
+                    .transcodeMode(TranscodeMode.FULL_TRANSCODE)
+                    .videoCodecFamily("h264")
+                    .audioDecision(AudioDecision.stereoAac())
+                    .containerFormat(ContainerFormat.MPEGTS)
+                    .needsKeyframeAlignment(false)
+                    .build())
+            .width(1280)
+            .height(720)
+            .bitrate(3_000_000L)
+            .variantLabel("720p")
+            .build();
+
+    var handle = executor.start(request);
+
+    assertThat(handle.status()).isEqualTo(TranscodeStatus.ACTIVE);
+    assertThat(executor.isRunning(sessionId, "720p")).isTrue();
+
+    var variantDir = tempDir.resolve(sessionId.toString()).resolve("720p");
+    assertThat(variantDir).exists().isDirectory();
+  }
+
+  @Test
   @DisplayName("Should use copy encoder when mode is audio transcode")
   void shouldUseCopyEncoderWhenModeIsAudioTranscode() {
     var request = createRequest(TranscodeMode.AUDIO_TRANSCODE, "h264");

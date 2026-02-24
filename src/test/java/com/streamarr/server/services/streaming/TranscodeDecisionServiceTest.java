@@ -358,6 +358,36 @@ class TranscodeDecisionServiceTest {
   }
 
   @Test
+  @DisplayName("Should transcode to E-AC-3 when surround and client supports E-AC-3")
+  void shouldTranscodeToEac3WhenSurroundAndEac3Supported() {
+    var source = probe("h264", "dts", 8, 640_000L);
+    var clientOptions = options(List.of("h264"), List.of("eac3", "aac"), 8);
+
+    var decision = service.decide(source, clientOptions);
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.TRANSCODE);
+    assertThat(decision.audioDecision().codec()).isEqualTo("eac3");
+    assertThat(decision.audioDecision().channels()).isEqualTo(8);
+    assertThat(decision.audioDecision().bitrate()).isEqualTo(512_000L);
+  }
+
+  @Test
+  @DisplayName("Should transcode to multichannel AAC in fMP4 when only AAC supported")
+  void shouldTranscodeToMultichannelAacInFmp4WhenOnlyAacSupported() {
+    var source = probe("av1", "dts", 6, 1_500_000L);
+    var clientOptions = options(List.of("av1"), List.of("aac"), 6);
+
+    var decision = service.decide(source, clientOptions);
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.AUDIO_TRANSCODE);
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.TRANSCODE);
+    assertThat(decision.audioDecision().codec()).isEqualTo("aac");
+    assertThat(decision.audioDecision().channels()).isEqualTo(6);
+    assertThat(decision.containerFormat()).isEqualTo(ContainerFormat.FMP4);
+  }
+
+  @Test
   @DisplayName("Should copy stereo AAC passthrough")
   void shouldCopyStereoAacPassthrough() {
     var source = probe("h264", "aac", 2, 128_000L);

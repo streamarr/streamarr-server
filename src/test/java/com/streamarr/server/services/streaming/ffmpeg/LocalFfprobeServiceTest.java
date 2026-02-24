@@ -197,6 +197,75 @@ class LocalFfprobeServiceTest {
   }
 
   @Test
+  @DisplayName("Should default bitrate to zero when bit_rate is non-numeric")
+  void shouldDefaultBitrateToZeroWhenBitRateIsNonNumeric() {
+    var json =
+        """
+        {
+          "streams": [
+            {
+              "codec_type": "video",
+              "codec_name": "h264",
+              "width": 1920,
+              "height": 1080,
+              "r_frame_rate": "24/1"
+            },
+            {
+              "codec_type": "audio",
+              "codec_name": "flac",
+              "channels": 2,
+              "bit_rate": "N/A"
+            }
+          ],
+          "format": {
+            "duration": "60.0",
+            "bit_rate": "5000000"
+          }
+        }
+        """;
+
+    var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
+
+    var probe = service.probe(Path.of("/test/movie.mkv"));
+
+    assertThat(probe.audioBitrate()).isZero();
+    assertThat(probe.audioChannels()).isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName("Should parse simple framerate when not expressed as fraction")
+  void shouldParseSimpleFramerateWhenNotExpressedAsFraction() {
+    var json =
+        """
+        {
+          "streams": [
+            {
+              "codec_type": "video",
+              "codec_name": "h264",
+              "width": 1920,
+              "height": 1080,
+              "r_frame_rate": "25"
+            },
+            {
+              "codec_type": "audio",
+              "codec_name": "aac"
+            }
+          ],
+          "format": {
+            "duration": "60.0",
+            "bit_rate": "5000000"
+          }
+        }
+        """;
+
+    var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
+
+    var probe = service.probe(Path.of("/test/movie.mkv"));
+
+    assertThat(probe.framerate()).isCloseTo(25.0, within(0.001));
+  }
+
+  @Test
   @DisplayName("Should default audio channels to zero when missing")
   void shouldDefaultAudioChannelsToZeroWhenMissing() {
     var json =
