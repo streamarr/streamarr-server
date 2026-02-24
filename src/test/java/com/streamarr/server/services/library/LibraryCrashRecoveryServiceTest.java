@@ -125,6 +125,28 @@ class LibraryCrashRecoveryServiceTest {
         .isEqualTo(LibraryStatus.UNHEALTHY);
   }
 
+  @Test
+  @DisplayName("Should reset REFRESHING library to UNHEALTHY when starting up")
+  void shouldResetRefreshingLibraryToUnhealthyWhenStartingUp() {
+    var refreshingLibrary = fakeLibraryRepository.save(buildLibrary(LibraryStatus.REFRESHING));
+
+    recoveryService.onStartup();
+
+    assertThat(fakeLibraryRepository.findById(refreshingLibrary.getId()).orElseThrow().getStatus())
+        .isEqualTo(LibraryStatus.UNHEALTHY);
+  }
+
+  @Test
+  @DisplayName("Should reset REFRESHING library to UNHEALTHY when shutting down")
+  void shouldResetRefreshingLibraryToUnhealthyWhenShuttingDown() {
+    var refreshingLibrary = fakeLibraryRepository.save(buildLibrary(LibraryStatus.REFRESHING));
+
+    recoveryService.onShutdown();
+
+    assertThat(fakeLibraryRepository.findById(refreshingLibrary.getId()).orElseThrow().getStatus())
+        .isEqualTo(LibraryStatus.UNHEALTHY);
+  }
+
   private static Library buildLibrary(LibraryStatus status) {
     return Library.builder()
         .name("Test Library")

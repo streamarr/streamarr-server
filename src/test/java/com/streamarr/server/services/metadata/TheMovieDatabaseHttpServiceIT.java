@@ -1003,9 +1003,7 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
                     """)));
 
     assertThatThrownBy(
-            () ->
-                service.searchForMovie(
-                    VideoFileParserResult.builder().title("Slow").build()))
+            () -> service.searchForMovie(VideoFileParserResult.builder().title("Slow").build()))
         .isInstanceOf(HttpTimeoutException.class);
   }
 }

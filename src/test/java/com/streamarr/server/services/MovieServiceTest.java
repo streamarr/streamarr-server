@@ -2,18 +2,25 @@ package com.streamarr.server.services;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
 import com.streamarr.server.config.ImageProperties;
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.media.ContentRating;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.domain.metadata.Company;
+import com.streamarr.server.domain.metadata.Genre;
+import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeMovieRepository;
@@ -26,8 +33,10 @@ import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.jooq.SortOrder;
 import org.junit.jupiter.api.BeforeEach;
@@ -43,6 +52,9 @@ class MovieServiceTest {
   private FakeMovieRepository movieRepository;
   private FakeImageRepository imageRepository;
   private CapturingEventPublisher eventPublisher;
+  private PersonService personService;
+  private GenreService genreService;
+  private CompanyService companyService;
   private MovieService movieService;
 
   @BeforeEach
@@ -50,6 +62,9 @@ class MovieServiceTest {
     movieRepository = new FakeMovieRepository();
     imageRepository = new FakeImageRepository();
     eventPublisher = new CapturingEventPublisher();
+    personService = mock(PersonService.class);
+    genreService = mock(GenreService.class);
+    companyService = mock(CompanyService.class);
     var cursorUtil = new CursorUtil(new ObjectMapper());
     var relayPaginationService = new RelayPaginationService();
     var fileSystem = Jimfs.newFileSystem(Configuration.unix());
@@ -62,9 +77,9 @@ class MovieServiceTest {
     movieService =
         new MovieService(
             movieRepository,
-            mock(PersonService.class),
-            mock(GenreService.class),
-            mock(CompanyService.class),
+            personService,
+            genreService,
+            companyService,
             cursorUtil,
             relayPaginationService,
             eventPublisher,
@@ -233,6 +248,141 @@ class MovieServiceTest {
 
     assertThat(imageRepository.findByEntityId(movie1.getId())).isEmpty();
     assertThat(imageRepository.findByEntityId(movie2.getId())).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should overwrite scalar fields when refreshing movie metadata")
+  void shouldOverwriteScalarFieldsWhenRefreshingMovieMetadata() {
+    var existing =
+        movieRepository.save(
+            Movie.builder()
+                .title("Old Title")
+                .originalTitle("Old Original")
+                .titleSort("old title")
+                .tagline("Old tagline")
+                .summary("Old summary")
+                .runtime(90)
+                .contentRating(new ContentRating("MPAA", "PG", "US"))
+                .releaseDate(LocalDate.of(2000, 1, 1))
+                .build());
+
+    var fresh =
+        Movie.builder()
+            .title("New Title")
+            .originalTitle("New Original")
+            .titleSort("new title")
+            .tagline("New tagline")
+            .summary("New summary")
+            .runtime(148)
+            .contentRating(new ContentRating("MPAA", "PG-13", "US"))
+            .releaseDate(LocalDate.of(2010, 7, 16))
+            .build();
+    var metadataResult = new MetadataResult<>(fresh, List.of(), Map.of(), Map.of());
+
+    var result = movieService.refreshMovieMetadata(existing, metadataResult);
+
+    assertThat(result.getTitle()).isEqualTo("New Title");
+    assertThat(result.getOriginalTitle()).isEqualTo("New Original");
+    assertThat(result.getTitleSort()).isEqualTo("new title");
+    assertThat(result.getTagline()).isEqualTo("New tagline");
+    assertThat(result.getSummary()).isEqualTo("New summary");
+    assertThat(result.getRuntime()).isEqualTo(148);
+    assertThat(result.getContentRating().value()).isEqualTo("PG-13");
+    assertThat(result.getReleaseDate()).isEqualTo(LocalDate.of(2010, 7, 16));
+    assertThat(result.getId()).isEqualTo(existing.getId());
+
+    var persisted = movieRepository.findById(result.getId()).orElseThrow();
+    assertThat(persisted.getTitle()).isEqualTo("New Title");
+  }
+
+  @Test
+  @DisplayName("Should overwrite existing fields with null when fresh metadata has null fields")
+  void shouldOverwriteExistingFieldsWithNullWhenFreshMetadataHasNullFields() {
+    var existing =
+        movieRepository.save(
+            Movie.builder()
+                .title("Inception")
+                .tagline("Old tagline")
+                .summary("Old summary")
+                .contentRating(new ContentRating("MPAA", "PG", "US"))
+                .build());
+
+    var fresh = Movie.builder().title("Inception").titleSort("inception").build();
+    var metadataResult = new MetadataResult<>(fresh, List.of(), Map.of(), Map.of());
+
+    var result = movieService.refreshMovieMetadata(existing, metadataResult);
+
+    assertThat(result.getTagline()).isNull();
+    assertThat(result.getSummary()).isNull();
+    assertThat(result.getContentRating()).isNull();
+  }
+
+  @Test
+  @DisplayName("Should update associations when refreshing movie metadata")
+  void shouldUpdateAssociationsWhenRefreshingMovieMetadata() {
+    var existing = movieRepository.save(Movie.builder().title("Inception").build());
+
+    var castInput = List.of(Person.builder().name("Leonardo DiCaprio").build());
+    var directorInput = List.of(Person.builder().name("Christopher Nolan").build());
+    var freshGenres = Set.of(Genre.builder().name("Sci-Fi").build());
+    var freshStudios = Set.of(Company.builder().name("Warner Bros.").build());
+
+    when(personService.getOrCreatePersons(
+            argThat(
+                persons ->
+                    persons != null
+                        && persons.stream().anyMatch(p -> "Leonardo DiCaprio".equals(p.getName()))),
+            any()))
+        .thenReturn(castInput);
+    when(personService.getOrCreatePersons(
+            argThat(
+                persons ->
+                    persons != null
+                        && persons.stream().anyMatch(p -> "Christopher Nolan".equals(p.getName()))),
+            any()))
+        .thenReturn(directorInput);
+    when(genreService.getOrCreateGenres(any())).thenReturn(freshGenres);
+    when(companyService.getOrCreateCompanies(any(), any())).thenReturn(freshStudios);
+
+    var fresh = Movie.builder().title("Inception").cast(castInput).directors(directorInput).build();
+    var metadataResult = new MetadataResult<>(fresh, List.of(), Map.of(), Map.of());
+
+    var result = movieService.refreshMovieMetadata(existing, metadataResult);
+
+    assertThat(result.getCast()).extracting(Person::getName).containsExactly("Leonardo DiCaprio");
+    assertThat(result.getDirectors())
+        .extracting(Person::getName)
+        .containsExactly("Christopher Nolan");
+    assertThat(result.getGenres()).extracting(Genre::getName).containsExactly("Sci-Fi");
+    assertThat(result.getStudios()).extracting(Company::getName).containsExactly("Warner Bros.");
+  }
+
+  @Test
+  @DisplayName("Should publish image event when refreshing movie metadata with image sources")
+  void shouldPublishImageEventWhenRefreshingMovieMetadataWithImageSources() {
+    var existing = movieRepository.save(Movie.builder().title("Inception").build());
+    var imageSources = List.<ImageSource>of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg"));
+    var fresh = Movie.builder().title("Inception").build();
+    var metadataResult = new MetadataResult<>(fresh, imageSources, Map.of(), Map.of());
+
+    movieService.refreshMovieMetadata(existing, metadataResult);
+
+    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
+    assertThat(events).hasSize(1);
+    assertThat(events.getFirst().entityId()).isEqualTo(existing.getId());
+    assertThat(events.getFirst().entityType()).isEqualTo(ImageEntityType.MOVIE);
+  }
+
+  @Test
+  @DisplayName("Should not publish image event when refreshing movie metadata with empty sources")
+  void shouldNotPublishImageEventWhenRefreshingMovieMetadataWithEmptySources() {
+    var existing = movieRepository.save(Movie.builder().title("Inception").build());
+    var fresh = Movie.builder().title("Inception").build();
+    var metadataResult = new MetadataResult<>(fresh, List.of(), Map.of(), Map.of());
+
+    movieService.refreshMovieMetadata(existing, metadataResult);
+
+    assertThat(eventPublisher.getEventsOfType(MetadataEnrichedEvent.class)).isEmpty();
   }
 
   private void seedImage(UUID entityId) {

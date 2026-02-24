@@ -146,6 +146,83 @@ public class SeriesService {
   }
 
   @Transactional
+  public Series refreshSeriesMetadata(Series existing, MetadataResult<Series> metadataResult) {
+    var fresh = metadataResult.entity();
+
+    existing.setTitle(fresh.getTitle());
+    existing.setOriginalTitle(fresh.getOriginalTitle());
+    existing.setTitleSort(fresh.getTitleSort());
+    existing.setTagline(fresh.getTagline());
+    existing.setSummary(fresh.getSummary());
+    existing.setRuntime(fresh.getRuntime());
+    existing.setContentRating(fresh.getContentRating());
+    existing.setFirstAirDate(fresh.getFirstAirDate());
+
+    existing.setCast(
+        personService.getOrCreatePersons(fresh.getCast(), metadataResult.personImageSources()));
+    existing.setDirectors(
+        personService.getOrCreatePersons(
+            fresh.getDirectors(), metadataResult.personImageSources()));
+    existing.setGenres(genreService.getOrCreateGenres(fresh.getGenres()));
+    existing.setStudios(
+        companyService.getOrCreateCompanies(
+            fresh.getStudios(), metadataResult.companyImageSources()));
+
+    var saved = seriesRepository.saveAndFlush(existing);
+    publishImageEvent(saved.getId(), ImageEntityType.SERIES, metadataResult.imageSources());
+    return saved;
+  }
+
+  @Transactional
+  public Season refreshSeasonWithEpisodes(Series series, SeasonDetails details, Library library) {
+    var season =
+        seasonRepository
+            .findBySeriesIdAndSeasonNumber(series.getId(), details.seasonNumber())
+            .orElseGet(() -> Season.builder().series(series).library(library).build());
+
+    season.setTitle(details.name());
+    season.setSeasonNumber(details.seasonNumber());
+    season.setOverview(details.overview());
+    season.setAirDate(details.airDate());
+
+    var savedSeason = seasonRepository.saveAndFlush(season);
+    publishImageEvent(savedSeason.getId(), ImageEntityType.SEASON, details.imageSources());
+
+    var episodes =
+        details.episodes().stream()
+            .map(
+                epDetails -> {
+                  var episode =
+                      episodeRepository
+                          .findBySeasonIdAndEpisodeNumber(
+                              savedSeason.getId(), epDetails.episodeNumber())
+                          .orElseGet(
+                              () -> Episode.builder().season(savedSeason).library(library).build());
+
+                  episode.setTitle(epDetails.name());
+                  episode.setEpisodeNumber(epDetails.episodeNumber());
+                  episode.setOverview(epDetails.overview());
+                  episode.setAirDate(epDetails.airDate());
+                  episode.setRuntime(epDetails.runtime());
+
+                  return episode;
+                })
+            .toList();
+
+    var savedEpisodes = episodeRepository.saveAllAndFlush(episodes);
+
+    for (var episode : savedEpisodes) {
+      details.episodes().stream()
+          .filter(ed -> ed.episodeNumber() == episode.getEpisodeNumber())
+          .findFirst()
+          .ifPresent(
+              ed -> publishImageEvent(episode.getId(), ImageEntityType.EPISODE, ed.imageSources()));
+    }
+
+    return savedSeason;
+  }
+
+  @Transactional
   public Series addMediaFile(UUID seriesId, MediaFile mediaFile) {
     var series = seriesRepository.findById(seriesId).orElseThrow();
     series.addFile(mediaFile);

@@ -63,6 +63,19 @@ public class SeriesMetadataProviderResolver {
     return optionalProvider.get().getSeasonDetails(library.getId(), seriesExternalId, seasonNumber);
   }
 
+  public List<Integer> getAvailableSeasonNumbers(Library library, String seriesExternalId) {
+    var optionalProvider = getProviderForLibrary(library);
+
+    if (optionalProvider.isEmpty()) {
+      log.error(
+          "No metadata provider found for {} library while fetching available season numbers",
+          library.getName());
+      return List.of();
+    }
+
+    return optionalProvider.get().getAvailableSeasonNumbers(library.getId(), seriesExternalId);
+  }
+
   public OptionalInt resolveSeasonNumber(
       Library library, String seriesExternalId, int parsedSeasonNumber) {
     var optionalProvider = getProviderForLibrary(library);

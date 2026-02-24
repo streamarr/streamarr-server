@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -23,6 +25,7 @@ import com.streamarr.server.exceptions.InvalidLibraryPathException;
 import com.streamarr.server.exceptions.LibraryAlreadyExistsException;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.exceptions.LibraryPathPermissionDeniedException;
+import com.streamarr.server.exceptions.LibraryRefreshInProgressException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeLibraryRepository;
@@ -42,6 +45,7 @@ import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.library.events.LibraryAddedEvent;
 import com.streamarr.server.services.library.events.LibraryRemovedEvent;
+import com.streamarr.server.services.library.events.RefreshEndedEvent;
 import com.streamarr.server.services.library.events.ScanCompletedEvent;
 import com.streamarr.server.services.library.events.ScanEndedEvent;
 import com.streamarr.server.services.metadata.MetadataProvider;
@@ -64,8 +68,10 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -121,6 +127,8 @@ class LibraryManagementServiceTest {
   private final SeriesFileProcessor seriesFileProcessor = mock(SeriesFileProcessor.class);
   private final SeriesService seriesService = mock(SeriesService.class);
 
+  private final LibraryRefreshService libraryRefreshService = mock(LibraryRefreshService.class);
+
   private final LibraryManagementService libraryManagementService =
       new LibraryManagementService(
           new IgnoredFileValidator(new LibraryScanProperties(null, null, null)),
@@ -133,6 +141,7 @@ class LibraryManagementServiceTest {
           seriesService,
           capturingEventPublisher,
           new MutexFactoryProvider(),
+          libraryRefreshService,
           fileSystem);
 
   private UUID savedLibraryId;
@@ -200,6 +209,18 @@ class LibraryManagementServiceTest {
   }
 
   @Test
+  @DisplayName("Should throw refresh in progress exception when scanning a refreshing library")
+  void shouldThrowRefreshInProgressExceptionWhenScanningRefreshingLibrary() {
+    var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+    library.setStatus(LibraryStatus.REFRESHING);
+    fakeLibraryRepository.save(library);
+
+    assertThrows(
+        LibraryRefreshInProgressException.class,
+        () -> libraryManagementService.scanLibrary(savedLibraryId));
+  }
+
+  @Test
   @DisplayName(
       "Should set library status to unhealthy when the library filepath cannot be accessed")
   void shouldSetLibraryStatusToUnhealthyWhenLibraryFilepathInaccessible() {
@@ -232,6 +253,7 @@ class LibraryManagementServiceTest {
             seriesService,
             capturingEventPublisher,
             new MutexFactoryProvider(),
+            libraryRefreshService,
             throwingFileSystem);
 
     serviceWithThrowingFs.scanLibrary(savedLibraryId);
@@ -265,6 +287,7 @@ class LibraryManagementServiceTest {
             seriesService,
             capturingEventPublisher,
             new MutexFactoryProvider(),
+            libraryRefreshService,
             throwingFileSystem);
 
     serviceWithThrowingFs.scanLibrary(savedLibraryId);
@@ -359,6 +382,7 @@ class LibraryManagementServiceTest {
             seriesService,
             capturingEventPublisher,
             new MutexFactoryProvider(),
+            libraryRefreshService,
             throwingFileSystem);
 
     serviceWithThrowingFs.scanLibrary(savedLibraryId);
@@ -652,6 +676,22 @@ class LibraryManagementServiceTest {
             });
   }
 
+  @Test
+  @DisplayName("Should start async scan on virtual thread when triggerAsyncScan called")
+  void shouldStartAsyncScanOnVirtualThreadWhenTriggerAsyncScanCalled() throws Exception {
+    createRootLibraryDirectory();
+
+    libraryManagementService.triggerAsyncScan(savedLibraryId);
+
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () -> {
+              var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+              assertThat(library.getStatus()).isEqualTo(LibraryStatus.HEALTHY);
+            });
+  }
+
   @Nested
   @DisplayName("Add Library Tests")
   class AddLibraryTests {
@@ -815,6 +855,7 @@ class LibraryManagementServiceTest {
               seriesService,
               capturingEventPublisher,
               new MutexFactoryProvider(),
+              libraryRefreshService,
               securityExceptionFs);
 
       var library = LibraryFixtureCreator.buildUnsavedLibrary("Test Library", "/secure-path");
@@ -934,6 +975,159 @@ class LibraryManagementServiceTest {
 
       var events = capturingEventPublisher.getEventsOfType(LibraryRemovedEvent.class);
       assertThat(events).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should not publish LibraryRemovedEvent when library is refreshing")
+    void shouldNotPublishLibraryRemovedEventWhenLibraryIsRefreshing() {
+      var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+      library.setStatus(LibraryStatus.REFRESHING);
+      fakeLibraryRepository.save(library);
+
+      assertThrows(
+          LibraryRefreshInProgressException.class,
+          () -> libraryManagementService.removeLibrary(savedLibraryId));
+
+      var events = capturingEventPublisher.getEventsOfType(LibraryRemovedEvent.class);
+      assertThat(events).isEmpty();
+    }
+  }
+
+  @Nested
+  @DisplayName("Refresh Library Tests")
+  class RefreshLibraryTests {
+
+    @Test
+    @DisplayName("Should transition library to HEALTHY when refresh succeeds")
+    void shouldTransitionToHealthyWhenRefreshSucceeds() {
+      libraryManagementService.refreshLibrary(savedLibraryId);
+
+      var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+      assertThat(library.getStatus()).isEqualTo(LibraryStatus.HEALTHY);
+    }
+
+    @Test
+    @DisplayName("Should transition library to UNHEALTHY when refresh fails")
+    void shouldTransitionToUnhealthyWhenRefreshFails() {
+      doThrow(new RuntimeException("simulated refresh failure"))
+          .when(libraryRefreshService)
+          .refreshLibrary(any(Library.class));
+
+      libraryManagementService.refreshLibrary(savedLibraryId);
+
+      var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+      assertThat(library.getStatus()).isEqualTo(LibraryStatus.UNHEALTHY);
+    }
+
+    @Test
+    @DisplayName("Should throw LibraryNotFoundException when library does not exist")
+    void shouldThrowWhenLibraryNotFoundForRefresh() {
+      var nonExistentId = UUID.randomUUID();
+
+      assertThrows(
+          LibraryNotFoundException.class,
+          () -> libraryManagementService.refreshLibrary(nonExistentId));
+    }
+
+    @Test
+    @DisplayName("Should throw LibraryScanInProgressException when library is currently scanning")
+    void shouldThrowWhenLibraryIsCurrentlyScanning() {
+      var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+      library.setStatus(LibraryStatus.SCANNING);
+      fakeLibraryRepository.save(library);
+
+      assertThrows(
+          LibraryScanInProgressException.class,
+          () -> libraryManagementService.refreshLibrary(savedLibraryId));
+    }
+
+    @Test
+    @DisplayName(
+        "Should throw LibraryRefreshInProgressException when library is currently refreshing")
+    void shouldThrowWhenLibraryIsCurrentlyRefreshing() {
+      var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+      library.setStatus(LibraryStatus.REFRESHING);
+      fakeLibraryRepository.save(library);
+
+      assertThrows(
+          LibraryRefreshInProgressException.class,
+          () -> libraryManagementService.refreshLibrary(savedLibraryId));
+    }
+
+    @Test
+    @DisplayName("Should publish RefreshEndedEvent when refresh succeeds")
+    void shouldPublishRefreshEndedEventWhenRefreshSucceeds() {
+      libraryManagementService.refreshLibrary(savedLibraryId);
+
+      var events = capturingEventPublisher.getEventsOfType(RefreshEndedEvent.class);
+      assertThat(events).hasSize(1);
+      assertThat(events.getFirst().libraryId()).isEqualTo(savedLibraryId);
+    }
+
+    @Test
+    @DisplayName("Should publish RefreshEndedEvent when refresh fails")
+    void shouldPublishRefreshEndedEventWhenRefreshFails() {
+      doThrow(new RuntimeException("simulated refresh failure"))
+          .when(libraryRefreshService)
+          .refreshLibrary(any(Library.class));
+
+      libraryManagementService.refreshLibrary(savedLibraryId);
+
+      var events = capturingEventPublisher.getEventsOfType(RefreshEndedEvent.class);
+      assertThat(events).hasSize(1);
+      assertThat(events.getFirst().libraryId()).isEqualTo(savedLibraryId);
+    }
+
+    @Test
+    @DisplayName("Should transition from UNHEALTHY to HEALTHY when refresh succeeds")
+    void shouldTransitionFromUnhealthyToHealthyWhenRefreshSucceeds() {
+      var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+      library.setStatus(LibraryStatus.UNHEALTHY);
+      fakeLibraryRepository.save(library);
+
+      libraryManagementService.refreshLibrary(savedLibraryId);
+
+      var updated = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+      assertThat(updated.getStatus()).isEqualTo(LibraryStatus.HEALTHY);
+    }
+
+    @Test
+    @DisplayName("Should reject refresh when library is already being refreshed")
+    void shouldRejectRefreshWhenLibraryIsAlreadyBeingRefreshed() throws Exception {
+      var started = new CountDownLatch(1);
+      var release = new CountDownLatch(1);
+
+      doAnswer(
+              invocation -> {
+                started.countDown();
+                release.await(5, TimeUnit.SECONDS);
+                return null;
+              })
+          .when(libraryRefreshService)
+          .refreshLibrary(any(Library.class));
+
+      Thread.startVirtualThread(() -> libraryManagementService.refreshLibrary(savedLibraryId));
+      assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
+
+      assertThrows(
+          LibraryRefreshInProgressException.class,
+          () -> libraryManagementService.refreshLibrary(savedLibraryId));
+
+      release.countDown();
+    }
+
+    @Test
+    @DisplayName("Should start async refresh on virtual thread when triggerAsyncRefresh called")
+    void shouldStartAsyncRefreshOnVirtualThreadWhenTriggerAsyncRefreshCalled() {
+      libraryManagementService.triggerAsyncRefresh(savedLibraryId);
+
+      await()
+          .atMost(Duration.ofSeconds(5))
+          .untilAsserted(
+              () -> {
+                var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+                assertThat(library.getStatus()).isEqualTo(LibraryStatus.HEALTHY);
+              });
     }
   }
 
