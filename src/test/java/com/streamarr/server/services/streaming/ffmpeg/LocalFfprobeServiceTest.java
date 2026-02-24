@@ -192,13 +192,13 @@ class LocalFfprobeServiceTest {
 
     var probe = service.probe(Path.of("/test/movie.mkv"));
 
-    assertThat(probe.audioChannels()).isEqualTo(6);
-    assertThat(probe.audioBitrate()).isEqualTo(384_000L);
+    assertThat(probe.audioChannels()).hasValue(6);
+    assertThat(probe.audioBitrate()).hasValue(384_000L);
   }
 
   @Test
-  @DisplayName("Should default bitrate to zero when bit_rate is non-numeric")
-  void shouldDefaultBitrateToZeroWhenBitRateIsNonNumeric() {
+  @DisplayName("Should return empty bitrate when bit_rate is non-numeric")
+  void shouldReturnEmptyBitrateWhenBitRateIsNonNumeric() {
     var json =
         """
         {
@@ -228,8 +228,8 @@ class LocalFfprobeServiceTest {
 
     var probe = service.probe(Path.of("/test/movie.mkv"));
 
-    assertThat(probe.audioBitrate()).isZero();
-    assertThat(probe.audioChannels()).isEqualTo(2);
+    assertThat(probe.audioBitrate()).isEmpty();
+    assertThat(probe.audioChannels()).hasValue(2);
   }
 
   @Test
@@ -266,8 +266,8 @@ class LocalFfprobeServiceTest {
   }
 
   @Test
-  @DisplayName("Should default audio channels to zero when missing")
-  void shouldDefaultAudioChannelsToZeroWhenMissing() {
+  @DisplayName("Should return empty audio channels when missing")
+  void shouldReturnEmptyAudioChannelsWhenMissing() {
     var json =
         """
         {
@@ -295,8 +295,8 @@ class LocalFfprobeServiceTest {
 
     var probe = service.probe(Path.of("/test/movie.mkv"));
 
-    assertThat(probe.audioChannels()).isZero();
-    assertThat(probe.audioBitrate()).isZero();
+    assertThat(probe.audioChannels()).isEmpty();
+    assertThat(probe.audioBitrate()).isEmpty();
   }
 
   private Process createFakeProcess(String stdout, int exitCode) {

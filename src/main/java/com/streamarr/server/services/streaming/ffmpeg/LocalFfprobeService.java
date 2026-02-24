@@ -7,6 +7,8 @@ import com.streamarr.server.services.streaming.FfprobeService;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Optional;
+import java.util.OptionalInt;
+import java.util.OptionalLong;
 import java.util.function.Function;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -53,8 +55,9 @@ public class LocalFfprobeService implements FfprobeService {
     return MediaProbe.builder()
         .videoCodec(videoStream.get("codec_name").asString())
         .audioCodec(audioStream.map(s -> s.get("codec_name").asString()).orElse(null))
-        .audioChannels(audioStream.map(s -> optionalInt(s, "channels")).orElse(0))
-        .audioBitrate(audioStream.map(s -> optionalLong(s, "bit_rate")).orElse(0L))
+        .audioChannels(audioStream.map(s -> optionalInt(s, "channels")).orElse(OptionalInt.empty()))
+        .audioBitrate(
+            audioStream.map(s -> optionalLong(s, "bit_rate")).orElse(OptionalLong.empty()))
         .width(videoStream.get("width").asInt())
         .height(videoStream.get("height").asInt())
         .framerate(parseFrameRate(videoStream.get("r_frame_rate").asString()))
@@ -77,21 +80,21 @@ public class LocalFfprobeService implements FfprobeService {
     return Optional.empty();
   }
 
-  private int optionalInt(JsonNode node, String field) {
+  private OptionalInt optionalInt(JsonNode node, String field) {
     var value = node.get(field);
-    return value != null && !value.isNull() ? value.asInt() : 0;
+    return value != null && !value.isNull() ? OptionalInt.of(value.asInt()) : OptionalInt.empty();
   }
 
-  private long optionalLong(JsonNode node, String field) {
+  private OptionalLong optionalLong(JsonNode node, String field) {
     var value = node.get(field);
     if (value == null || value.isNull()) {
-      return 0L;
+      return OptionalLong.empty();
     }
     var text = value.asString();
     try {
-      return Long.parseLong(text);
+      return OptionalLong.of(Long.parseLong(text));
     } catch (NumberFormatException _) {
-      return 0L;
+      return OptionalLong.empty();
     }
   }
 

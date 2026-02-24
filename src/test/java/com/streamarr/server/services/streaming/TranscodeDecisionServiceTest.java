@@ -9,6 +9,8 @@ import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import java.time.Duration;
 import java.util.List;
+import java.util.OptionalInt;
+import java.util.OptionalLong;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -33,8 +35,8 @@ class TranscodeDecisionServiceTest {
         .videoCodec(videoCodec)
         .audioCodec(audioCodec)
         .bitrate(5_000_000L)
-        .audioChannels(audioChannels)
-        .audioBitrate(audioBitrate)
+        .audioChannels(OptionalInt.of(audioChannels))
+        .audioBitrate(OptionalLong.of(audioBitrate))
         .build();
   }
 
@@ -219,8 +221,6 @@ class TranscodeDecisionServiceTest {
             .videoCodec("h264")
             .audioCodec(null)
             .bitrate(5_000_000L)
-            .audioChannels(0)
-            .audioBitrate(0)
             .build();
     var clientOptions = options(List.of("h264"));
 
