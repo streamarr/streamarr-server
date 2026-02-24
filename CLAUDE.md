@@ -114,7 +114,7 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 ## Testing Conventions
 - Integration tests: `*IT.java` suffix, `@Tag("IntegrationTest")`
 - Unit tests: `*Test.java` suffix
-- Always use `@DisplayName` on test methods for human-readable test output
+- Always use `@DisplayName` on test methods — human-readable (not camelCase) and follows the same `Should ... when ...` pattern as the method name
 - Use TestContainers for all database tests — no H2
 - Prefer "Fake" implementations (e.g., `FakeMovieRepository`) over Mockito for collaborators
 - Mockito **stubs** are acceptable when Fakes can't reach a code path (e.g., `mockStatic` for `ImageIO` IOException). Stubs provide canned answers — see [Mocks Aren't Stubs](https://martinfowler.com/articles/mocksArentStubs.html)

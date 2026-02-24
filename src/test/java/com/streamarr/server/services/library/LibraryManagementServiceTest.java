@@ -209,8 +209,8 @@ class LibraryManagementServiceTest {
   }
 
   @Test
-  @DisplayName("Should not allow scanning a library that is currently being refreshed")
-  void shouldFailWhenLibraryCurrentlyBeingRefreshed() {
+  @DisplayName("Should throw refresh in progress exception when scanning a refreshing library")
+  void shouldThrowRefreshInProgressExceptionWhenScanningRefreshingLibrary() {
     var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
     library.setStatus(LibraryStatus.REFRESHING);
     fakeLibraryRepository.save(library);
@@ -1076,8 +1076,8 @@ class LibraryManagementServiceTest {
     }
 
     @Test
-    @DisplayName("Should reject concurrent refresh of the same library")
-    void shouldRejectConcurrentRefreshOfSameLibrary() throws Exception {
+    @DisplayName("Should reject refresh when library is already being refreshed")
+    void shouldRejectRefreshWhenLibraryIsAlreadyBeingRefreshed() throws Exception {
       var started = new CountDownLatch(1);
       var release = new CountDownLatch(1);
 

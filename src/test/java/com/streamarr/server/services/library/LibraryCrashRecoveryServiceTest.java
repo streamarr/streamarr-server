@@ -126,8 +126,8 @@ class LibraryCrashRecoveryServiceTest {
   }
 
   @Test
-  @DisplayName("Should reset REFRESHING library to UNHEALTHY on startup")
-  void shouldResetRefreshingLibraryToUnhealthyOnStartup() {
+  @DisplayName("Should reset REFRESHING library to UNHEALTHY when starting up")
+  void shouldResetRefreshingLibraryToUnhealthyWhenStartingUp() {
     var refreshingLibrary = fakeLibraryRepository.save(buildLibrary(LibraryStatus.REFRESHING));
 
     recoveryService.onStartup();
@@ -137,8 +137,8 @@ class LibraryCrashRecoveryServiceTest {
   }
 
   @Test
-  @DisplayName("Should reset REFRESHING library to UNHEALTHY on shutdown")
-  void shouldResetRefreshingLibraryToUnhealthyOnShutdown() {
+  @DisplayName("Should reset REFRESHING library to UNHEALTHY when shutting down")
+  void shouldResetRefreshingLibraryToUnhealthyWhenShuttingDown() {
     var refreshingLibrary = fakeLibraryRepository.save(buildLibrary(LibraryStatus.REFRESHING));
 
     recoveryService.onShutdown();

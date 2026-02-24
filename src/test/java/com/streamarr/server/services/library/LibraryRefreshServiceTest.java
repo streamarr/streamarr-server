@@ -129,8 +129,8 @@ class LibraryRefreshServiceTest {
   }
 
   @Test
-  @DisplayName("Should refresh all series in library with fresh TMDB metadata")
-  void shouldRefreshAllSeriesInLibraryWithFreshTmdbMetadata() {
+  @DisplayName("Should refresh all series with fresh TMDB metadata when refreshing library")
+  void shouldRefreshAllSeriesWithFreshTmdbMetadataWhenRefreshingLibrary() {
     var library = buildSeriesLibrary();
     var series1 = saveSeriesWithTmdbId("Breaking Bad", "1396", library);
     var series2 = saveSeriesWithTmdbId("Better Call Saul", "60059", library);
@@ -201,8 +201,8 @@ class LibraryRefreshServiceTest {
   }
 
   @Test
-  @DisplayName("Should skip series with only non-TMDB external IDs")
-  void shouldSkipSeriesWithOnlyNonTmdbExternalIds() {
+  @DisplayName("Should skip series when series has only non-TMDB external IDs")
+  void shouldSkipSeriesWhenSeriesHasOnlyNonTmdbExternalIds() {
     var library = buildSeriesLibrary();
     var series =
         seriesRepository.save(
@@ -224,8 +224,8 @@ class LibraryRefreshServiceTest {
   }
 
   @Test
-  @DisplayName("Should refresh seasons and episodes for each series")
-  void shouldRefreshSeasonsAndEpisodesForEachSeries() {
+  @DisplayName("Should refresh seasons and episodes when refreshing series")
+  void shouldRefreshSeasonsAndEpisodesWhenRefreshingSeries() {
     var library = buildSeriesLibrary();
     var series = saveSeriesWithTmdbId("Breaking Bad", "1396", library);
 
@@ -263,8 +263,8 @@ class LibraryRefreshServiceTest {
   }
 
   @Test
-  @DisplayName("Should refresh all movies in library with fresh TMDB metadata")
-  void shouldRefreshAllMoviesInLibraryWithFreshTmdbMetadata() {
+  @DisplayName("Should refresh all movies with fresh TMDB metadata when refreshing library")
+  void shouldRefreshAllMoviesWithFreshTmdbMetadataWhenRefreshingLibrary() {
     var library = buildMovieLibrary();
     var movie = saveMovieWithTmdbId("Inception", "27205", library);
 
