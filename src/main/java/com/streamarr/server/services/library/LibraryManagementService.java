@@ -222,10 +222,11 @@ public class LibraryManagementService implements ActiveScanChecker {
 
     try {
       var library = transitionToRefreshing(libraryId);
+      var startTime = Instant.now();
 
       try {
         libraryRefreshService.refreshLibrary(library);
-        completeRefreshSuccessfully(library);
+        completeRefreshSuccessfully(library, startTime);
       } catch (Exception ex) {
         log.error("Refresh failed for library '{}'", library.getName(), ex);
         completeRefreshWithFailure(library);
@@ -261,10 +262,13 @@ public class LibraryManagementService implements ActiveScanChecker {
     }
   }
 
-  private void completeRefreshSuccessfully(Library library) {
+  private void completeRefreshSuccessfully(Library library, Instant startTime) {
+    var elapsedSeconds = Duration.between(startTime, Instant.now()).getSeconds();
+
     library.setStatus(LibraryStatus.HEALTHY);
     libraryRepository.save(library);
-    log.info("Finished {} library refresh.", library.getName());
+
+    log.info("Finished {} library refresh in {} seconds.", library.getName(), elapsedSeconds);
   }
 
   private void completeRefreshWithFailure(Library library) {
