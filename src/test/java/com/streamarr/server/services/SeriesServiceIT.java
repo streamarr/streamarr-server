@@ -12,6 +12,7 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.graphql.cursor.InvalidCursorException;
 import com.streamarr.server.graphql.cursor.MediaFilter;
@@ -20,7 +21,10 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
+import com.streamarr.server.services.metadata.MetadataResult;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.jooq.SortOrder;
@@ -41,6 +45,7 @@ class SeriesServiceIT extends AbstractIntegrationTest {
   @Autowired private SeasonRepository seasonRepository;
   @Autowired private EpisodeRepository episodeRepository;
   @Autowired private LibraryRepository libraryRepository;
+  @Autowired private PersonService personService;
 
   private Library savedLibrary;
   private Library savedLibraryB;
@@ -404,5 +409,42 @@ class SeriesServiceIT extends AbstractIntegrationTest {
             thirdPage.getEdges().get(0).getNode().getId());
 
     assertThat(allIds).doesNotHaveDuplicates();
+  }
+
+  @Test
+  @DisplayName("Should update cast when refreshing series metadata with changed cast")
+  void shouldUpdateCastWhenRefreshingSeriesMetadataWithChangedCast() {
+    var personA =
+        personService.getOrCreatePersons(
+            List.of(Person.builder().name("Actor A").sourceId("src-a").build()), Map.of());
+    var personB =
+        personService.getOrCreatePersons(
+            List.of(Person.builder().name("Actor B").sourceId("src-b").build()), Map.of());
+
+    var series =
+        seriesRepository.saveAndFlush(
+            Series.builder()
+                .title("Cast Change Test")
+                .library(savedLibrary)
+                .cast(new ArrayList<>(List.of(personA.getFirst(), personB.getFirst())))
+                .build());
+
+    var personC =
+        Person.builder().name("Actor C").sourceId("src-c").build();
+
+    var freshSeries =
+        Series.builder()
+            .title("Cast Change Test")
+            .cast(List.of(personB.getFirst(), personC))
+            .directors(List.of())
+            .genres(Set.of())
+            .studios(Set.of())
+            .build();
+
+    var metadataResult = new MetadataResult<>(freshSeries, List.of(), Map.of(), Map.of());
+
+    var refreshed = seriesService.refreshSeriesMetadata(series, metadataResult);
+
+    assertThat(refreshed.getCast()).extracting(Person::getName).containsExactly("Actor B", "Actor C");
   }
 }
