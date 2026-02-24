@@ -55,16 +55,32 @@ class SeriesServiceIT extends AbstractIntegrationTest {
     savedLibraryC = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
 
     seriesRepository.saveAndFlush(
-        Series.builder().title("Alpha Show").library(savedLibraryB).build());
+        Series.builder()
+            .title("Alpha Show")
+            .titleSort("Alpha Show")
+            .library(savedLibraryB)
+            .build());
     seriesRepository.saveAndFlush(
-        Series.builder().title("Beta Show").library(savedLibraryB).build());
+        Series.builder().title("Beta Show").titleSort("Beta Show").library(savedLibraryB).build());
     seriesRepository.saveAndFlush(
-        Series.builder().title("Gamma Show").library(savedLibraryB).build());
+        Series.builder()
+            .title("Gamma Show")
+            .titleSort("Gamma Show")
+            .library(savedLibraryB)
+            .build());
 
     seriesRepository.saveAndFlush(
-        Series.builder().title("First Show").library(savedLibraryC).build());
+        Series.builder()
+            .title("First Show")
+            .titleSort("First Show")
+            .library(savedLibraryC)
+            .build());
     seriesRepository.saveAndFlush(
-        Series.builder().title("Second Show").library(savedLibraryC).build());
+        Series.builder()
+            .title("Second Show")
+            .titleSort("Second Show")
+            .library(savedLibraryC)
+            .build());
   }
 
   @Test
@@ -370,11 +386,23 @@ class SeriesServiceIT extends AbstractIntegrationTest {
         libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
 
     seriesRepository.saveAndFlush(
-        Series.builder().title("Same Show").library(duplicateLibrary).build());
+        Series.builder()
+            .title("Same Show")
+            .titleSort("Same Show")
+            .library(duplicateLibrary)
+            .build());
     seriesRepository.saveAndFlush(
-        Series.builder().title("Same Show").library(duplicateLibrary).build());
+        Series.builder()
+            .title("Same Show")
+            .titleSort("Same Show")
+            .library(duplicateLibrary)
+            .build());
     seriesRepository.saveAndFlush(
-        Series.builder().title("Same Show").library(duplicateLibrary).build());
+        Series.builder()
+            .title("Same Show")
+            .titleSort("Same Show")
+            .library(duplicateLibrary)
+            .build());
 
     var filter =
         MediaFilter.builder()

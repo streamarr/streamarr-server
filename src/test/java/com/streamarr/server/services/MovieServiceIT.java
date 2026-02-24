@@ -53,12 +53,17 @@ class MovieServiceIT extends AbstractIntegrationTest {
     var libraryD = LibraryFixtureCreator.buildFakeLibrary();
     savedLibraryD = libraryRepository.saveAndFlush(libraryD);
 
-    movieRepository.saveAndFlush(Movie.builder().title("Alpha").library(savedLibraryA).build());
-    movieRepository.saveAndFlush(Movie.builder().title("Beta").library(savedLibraryA).build());
-    movieRepository.saveAndFlush(Movie.builder().title("Gamma").library(savedLibraryB).build());
+    movieRepository.saveAndFlush(
+        Movie.builder().title("Alpha").titleSort("Alpha").library(savedLibraryA).build());
+    movieRepository.saveAndFlush(
+        Movie.builder().title("Beta").titleSort("Beta").library(savedLibraryA).build());
+    movieRepository.saveAndFlush(
+        Movie.builder().title("Gamma").titleSort("Gamma").library(savedLibraryB).build());
 
-    movieRepository.saveAndFlush(Movie.builder().title("First").library(savedLibraryC).build());
-    movieRepository.saveAndFlush(Movie.builder().title("Second").library(savedLibraryC).build());
+    movieRepository.saveAndFlush(
+        Movie.builder().title("First").titleSort("First").library(savedLibraryC).build());
+    movieRepository.saveAndFlush(
+        Movie.builder().title("Second").titleSort("Second").library(savedLibraryC).build());
 
     movieRepository.saveAndFlush(
         Movie.builder().title("Alpha").titleSort("Alpha").library(savedLibraryD).build());
@@ -251,11 +256,23 @@ class MovieServiceIT extends AbstractIntegrationTest {
     var duplicateLibrary = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
 
     movieRepository.saveAndFlush(
-        Movie.builder().title("Same Title").library(duplicateLibrary).build());
+        Movie.builder()
+            .title("Same Title")
+            .titleSort("Same Title")
+            .library(duplicateLibrary)
+            .build());
     movieRepository.saveAndFlush(
-        Movie.builder().title("Same Title").library(duplicateLibrary).build());
+        Movie.builder()
+            .title("Same Title")
+            .titleSort("Same Title")
+            .library(duplicateLibrary)
+            .build());
     movieRepository.saveAndFlush(
-        Movie.builder().title("Same Title").library(duplicateLibrary).build());
+        Movie.builder()
+            .title("Same Title")
+            .titleSort("Same Title")
+            .library(duplicateLibrary)
+            .build());
 
     var filter =
         MediaFilter.builder()

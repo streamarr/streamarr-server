@@ -81,11 +81,10 @@ public class LibraryMetadataMaintainer {
   }
 
   private void doRecalculate(UUID libraryId) {
+    var firstChar = left(Tables.BASE_COLLECTABLE.TITLE_SORT, inline(1));
+
     Field<String> letterExpression =
-        when(
-                left(Tables.BASE_COLLECTABLE.TITLE_SORT, 1).likeRegex("[a-zA-Z]"),
-                upper(left(Tables.BASE_COLLECTABLE.TITLE_SORT, 1)))
-            .otherwise(inline("HASH"));
+        when(firstChar.likeRegex(inline("[a-zA-Z]")), upper(firstChar)).otherwise(inline("HASH"));
 
     List<Record2<String, Integer>> results =
         context
