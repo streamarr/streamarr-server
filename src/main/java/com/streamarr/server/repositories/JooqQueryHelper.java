@@ -11,6 +11,7 @@ import jakarta.persistence.EntityManager;
 import java.util.List;
 import lombok.experimental.UtilityClass;
 import org.jooq.Condition;
+import org.jooq.SortOrder;
 
 @UtilityClass
 public class JooqQueryHelper {
@@ -27,8 +28,12 @@ public class JooqQueryHelper {
     return result.getResultList();
   }
 
-  public Condition startLetterCondition(AlphabetLetter startLetter) {
-    if (startLetter == null || startLetter == AlphabetLetter.HASH) {
+  public Condition startLetterCondition(AlphabetLetter startLetter, SortOrder direction) {
+    if (startLetter == null) {
+      return noCondition();
+    }
+
+    if (startLetter == AlphabetLetter.HASH) {
       return noCondition();
     }
 
