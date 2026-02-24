@@ -73,12 +73,14 @@ public class TranscodeDecisionService {
     var candidates = new HashSet<>(clientAudioCodecs);
     candidates.retainAll(containerCodecs);
 
-    int normalizedChannels = AudioDecision.normalizeChannels(source.audioChannels().orElse(0));
+    int normalizedChannels = AudioDecision.normalizeChannels(source.audioChannels().orElse(2));
     int effectiveChannels = Math.min(normalizedChannels, maxChannels);
 
     if (canCopyAudio(source, candidates, normalizedChannels, maxChannels, containerFormat)) {
       return AudioDecision.copy(
-          source.audioCodec(), normalizedChannels, source.audioBitrate().orElse(0L));
+          source.audioCodec(),
+          normalizedChannels,
+          source.audioBitrate().orElse(AudioDecision.bitrateForChannels(normalizedChannels)));
     }
 
     return selectTranscodeAudio(candidates, effectiveChannels, containerFormat);
