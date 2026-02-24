@@ -207,8 +207,9 @@ public class LibraryManagementService implements ActiveScanChecker {
             .findById(libraryId)
             .orElseThrow(() -> new LibraryNotFoundException(libraryId));
 
-    processFile(library, path);
-    eventPublisher.publishEvent(new ItemProcessedEvent(libraryId));
+    if (processFile(library, path)) {
+      eventPublisher.publishEvent(new ItemProcessedEvent(libraryId));
+    }
   }
 
   public void scanLibrary(UUID libraryId) {
@@ -293,20 +294,20 @@ public class LibraryManagementService implements ActiveScanChecker {
     }
   }
 
-  private void processFile(Library library, Path path) {
+  private boolean processFile(Library library, Path path) {
 
     if (!hasSupportedExtension(path)) {
       log.warn(
           "Unsupported file extension: {} for filepath {}.",
           getExtension(path),
           path.toAbsolutePath());
-      return;
+      return false;
     }
 
     var mediaFile = probeFile(library, path);
 
     if (isAlreadyMatched(mediaFile)) {
-      return;
+      return false;
     }
 
     switch (library.getType()) {
@@ -314,6 +315,8 @@ public class LibraryManagementService implements ActiveScanChecker {
       case SERIES -> seriesFileProcessor.process(library, mediaFile);
       default -> throw new IllegalStateException("Unsupported media type: " + library.getType());
     }
+
+    return true;
   }
 
   private boolean hasSupportedExtension(Path path) {
