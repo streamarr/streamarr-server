@@ -33,7 +33,9 @@ class SeriesMetadataProviderResolverTest {
 
     var resolver =
         new SeriesMetadataProviderResolver(
-            List.of(new FakeSeriesMetadataProvider(expectedResult, null, List.of())));
+            List.of(
+                new FakeSeriesMetadataProvider(
+                    expectedResult, null, List.of(), Optional.empty())));
 
     var library =
         Library.builder().name("TV").externalAgentStrategy(ExternalAgentStrategy.TMDB).build();
@@ -67,7 +69,9 @@ class SeriesMetadataProviderResolverTest {
 
     var resolver =
         new SeriesMetadataProviderResolver(
-            List.of(new FakeSeriesMetadataProvider(null, expectedSeries, List.of())));
+            List.of(
+                new FakeSeriesMetadataProvider(
+                    null, expectedSeries, List.of(), Optional.empty())));
 
     var library =
         Library.builder().name("TV").externalAgentStrategy(ExternalAgentStrategy.TMDB).build();
@@ -89,7 +93,9 @@ class SeriesMetadataProviderResolverTest {
   void shouldReturnSeasonNumbersWhenProviderMatchesLibraryStrategy() {
     var resolver =
         new SeriesMetadataProviderResolver(
-            List.of(new FakeSeriesMetadataProvider(null, null, List.of(1, 2, 3))));
+            List.of(
+                new FakeSeriesMetadataProvider(
+                    null, null, List.of(1, 2, 3), Optional.empty())));
 
     var library =
         Library.builder()
@@ -136,17 +142,67 @@ class SeriesMetadataProviderResolverTest {
     assertThat(result).isEmpty();
   }
 
+  @Test
+  @DisplayName("Should return season details when provider matches library strategy")
+  void shouldReturnSeasonDetailsWhenProviderMatchesLibraryStrategy() {
+    var expectedDetails =
+        SeasonDetails.builder()
+            .name("Season 1")
+            .seasonNumber(1)
+            .overview("The first season")
+            .imageSources(List.of())
+            .episodes(List.of())
+            .build();
+
+    var resolver =
+        new SeriesMetadataProviderResolver(
+            List.of(
+                new FakeSeriesMetadataProvider(
+                    null, null, List.of(), Optional.of(expectedDetails))));
+
+    var library =
+        Library.builder()
+            .id(UUID.randomUUID())
+            .name("TV")
+            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+            .build();
+
+    var result = resolver.getSeasonDetails(library, "1396", 1);
+
+    assertThat(result).isPresent();
+    assertThat(result.get().name()).isEqualTo("Season 1");
+    assertThat(result.get().seasonNumber()).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("Should return empty when no provider matches library strategy for season details")
+  void shouldReturnEmptyWhenNoProviderMatchesForSeasonDetails() {
+    var resolver = new SeriesMetadataProviderResolver(List.of());
+
+    var library =
+        Library.builder().name("TV").externalAgentStrategy(ExternalAgentStrategy.TMDB).build();
+
+    var result = resolver.getSeasonDetails(library, "1396", 1);
+
+    assertThat(result).isEmpty();
+  }
+
   private static class FakeSeriesMetadataProvider implements SeriesMetadataProvider {
 
     private final RemoteSearchResult searchResult;
     private final Series series;
     private final List<Integer> seasonNumbers;
+    private final Optional<SeasonDetails> seasonDetails;
 
     FakeSeriesMetadataProvider(
-        RemoteSearchResult searchResult, Series series, List<Integer> seasonNumbers) {
+        RemoteSearchResult searchResult,
+        Series series,
+        List<Integer> seasonNumbers,
+        Optional<SeasonDetails> seasonDetails) {
       this.searchResult = searchResult;
       this.series = series;
       this.seasonNumbers = seasonNumbers;
+      this.seasonDetails = seasonDetails;
     }
 
     @Override
@@ -166,7 +222,7 @@ class SeriesMetadataProviderResolverTest {
     @Override
     public Optional<SeasonDetails> getSeasonDetails(
         UUID libraryId, String seriesExternalId, int seasonNumber) {
-      return Optional.empty();
+      return seasonDetails;
     }
 
     @Override
