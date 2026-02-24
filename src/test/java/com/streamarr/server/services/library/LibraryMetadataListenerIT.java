@@ -101,7 +101,7 @@ class LibraryMetadataListenerIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should replace stale metadata on recalculation")
+  @DisplayName("Should replace stale metadata when recalculation is triggered")
   void shouldReplaceStaleMetadataOnRecalculation() {
     metadataRepository.save(
         LibraryMetadata.builder()
@@ -121,7 +121,7 @@ class LibraryMetadataListenerIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should bucket upper and lower case titles into same letter")
+  @DisplayName("Should bucket mixed case titles into same letter when titles differ only by case")
   void shouldBucketUpperAndLowerCaseTitlesIntoSameLetter() {
     var caseLibrary = LibraryFixtureCreator.buildFakeLibrary();
     var savedCaseLibrary = libraryRepository.saveAndFlush(caseLibrary);

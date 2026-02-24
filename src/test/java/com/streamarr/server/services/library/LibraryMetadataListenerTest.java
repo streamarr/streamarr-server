@@ -43,7 +43,7 @@ class LibraryMetadataListenerTest {
   }
 
   @Test
-  @DisplayName("Should recalculate on scan completed even during active scan")
+  @DisplayName("Should recalculate when scan completes during active scan")
   void shouldRecalculateOnScanCompletedEvenDuringActiveScan() {
     var tripwireContext =
         mock(

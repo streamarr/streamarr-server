@@ -592,7 +592,7 @@ class LibraryManagementServiceTest {
   }
 
   @Test
-  @DisplayName("Should not publish ItemProcessedEvent when file is already matched")
+  @DisplayName("Should not publish item processed event when file is already matched")
   void shouldNotPublishItemProcessedEventWhenFileAlreadyMatched() throws IOException {
     var rootPath = createRootLibraryDirectory();
     var moviePath = createMovieFile(rootPath, "Already Matched", "Already Matched (2024).mkv");
