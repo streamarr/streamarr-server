@@ -175,7 +175,8 @@ class FfmpegCommandBuilderTest {
 
     assertThat(cmd)
         .isNotEmpty()
-        .contains("-c:v", "copy", "-c:a", "copy")
+        .containsSubsequence("-c:v", "copy")
+        .containsSubsequence("-c:a", "copy")
         .doesNotContain("-vf")
         .doesNotContain("-b:v", "-maxrate", "-bufsize");
   }
@@ -254,7 +255,10 @@ class FfmpegCommandBuilderTest {
 
     var cmd = builder.buildCommand(j);
 
-    assertThat(cmd).contains("-c:v", "copy").contains("-c:a", "aac", "-b:a", "128k");
+    assertThat(cmd)
+        .containsSubsequence("-c:v", "copy")
+        .containsSubsequence("-c:a", "aac")
+        .containsSubsequence("-b:a", "128k");
   }
 
   @Test
@@ -266,9 +270,10 @@ class FfmpegCommandBuilderTest {
     var cmd = builder.buildCommand(j);
 
     assertThat(cmd)
-        .contains("-c:v", "libx264")
-        .contains("-c:a", "aac", "-b:a", "128k")
-        .contains("-hls_segment_type", "mpegts");
+        .containsSubsequence("-c:v", "libx264")
+        .containsSubsequence("-c:a", "aac")
+        .containsSubsequence("-b:a", "128k")
+        .containsSubsequence("-hls_segment_type", "mpegts");
   }
 
   @Test
@@ -656,7 +661,10 @@ class FfmpegCommandBuilderTest {
 
     var cmd = builder.buildCommand(j);
 
-    assertThat(cmd).contains("-c:a", "ac3").contains("-ac", "6").contains("-b:a", "384k");
+    assertThat(cmd)
+        .containsSubsequence("-c:a", "ac3")
+        .containsSubsequence("-ac", "6")
+        .containsSubsequence("-b:a", "384k");
   }
 
   @Test
@@ -668,7 +676,10 @@ class FfmpegCommandBuilderTest {
 
     var cmd = builder.buildCommand(j);
 
-    assertThat(cmd).contains("-c:a", "eac3").contains("-ac", "8").contains("-b:a", "512k");
+    assertThat(cmd)
+        .containsSubsequence("-c:a", "eac3")
+        .containsSubsequence("-ac", "8")
+        .containsSubsequence("-b:a", "512k");
   }
 
   @Test
