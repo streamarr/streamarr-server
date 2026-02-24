@@ -49,7 +49,8 @@ class LibraryMetadataListenerTest {
         new LibraryMetadataListener(
             mockContext, noOpTransactionTemplate(), _ -> true, mutexFactoryProvider);
 
-    scanningListener.onItemProcessed(new ItemProcessedEvent(libraryId));
+    assertThatNoException()
+        .isThrownBy(() -> scanningListener.onItemProcessed(new ItemProcessedEvent(libraryId)));
   }
 
   @Test
@@ -62,9 +63,9 @@ class LibraryMetadataListenerTest {
         new LibraryMetadataListener(
             mockContext, noOpTransactionTemplate(), _ -> true, mutexFactoryProvider);
 
-    assertThatThrownBy(
-            () -> scanningListener.onScanCompleted(new ScanCompletedEvent(libraryId)))
-        .isInstanceOf(AssertionError.class);
+    assertThatThrownBy(() -> scanningListener.onScanCompleted(new ScanCompletedEvent(libraryId)))
+        .isInstanceOf(AssertionError.class)
+        .hasMessage("recalculation was attempted");
   }
 
   @Test
