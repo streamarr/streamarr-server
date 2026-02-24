@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThatNoException;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -41,25 +42,29 @@ class LibraryMetadataListenerTest {
   @Test
   @DisplayName("Should skip recalculation when item processed during active scan")
   void shouldSkipRecalculationWhenItemProcessedDuringActiveScan() {
+    when(mockContext.select(any(), any()))
+        .thenThrow(new AssertionError("recalculation should not have been attempted"));
+
     var scanningListener =
         new LibraryMetadataListener(
             mockContext, noOpTransactionTemplate(), _ -> true, mutexFactoryProvider);
 
-    assertThatNoException()
-        .isThrownBy(() -> scanningListener.onItemProcessed(new ItemProcessedEvent(libraryId)));
+    scanningListener.onItemProcessed(new ItemProcessedEvent(libraryId));
   }
 
   @Test
   @DisplayName("Should recalculate on scan completed even during active scan")
   void shouldRecalculateOnScanCompletedEvenDuringActiveScan() {
-    when(mockContext.select(any(), any())).thenThrow(new RuntimeException("query would run"));
+    when(mockContext.select(any(), any()))
+        .thenThrow(new AssertionError("recalculation was attempted"));
 
     var scanningListener =
         new LibraryMetadataListener(
             mockContext, noOpTransactionTemplate(), _ -> true, mutexFactoryProvider);
 
-    assertThatNoException()
-        .isThrownBy(() -> scanningListener.onScanCompleted(new ScanCompletedEvent(libraryId)));
+    assertThatThrownBy(
+            () -> scanningListener.onScanCompleted(new ScanCompletedEvent(libraryId)))
+        .isInstanceOf(AssertionError.class);
   }
 
   @Test

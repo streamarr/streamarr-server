@@ -70,8 +70,8 @@ class LibraryMetadataListenerIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should calculate correct counts when item processed and not scanning")
-  void shouldCalculateCorrectCountsWhenItemProcessedAndNotScanning() {
+  @DisplayName("Should trigger recalculation when item processed and not scanning")
+  void shouldTriggerRecalculationWhenItemProcessedAndNotScanning() {
     listener.onItemProcessed(new ItemProcessedEvent(libraryId));
 
     var metadata = metadataRepository.findByLibraryIdOrderByLetterAsc(libraryId);
@@ -96,10 +96,10 @@ class LibraryMetadataListenerIT extends AbstractIntegrationTest {
 
     var metadata = metadataRepository.findByLibraryIdOrderByLetterAsc(libraryId);
 
-    assertThat(metadata).extracting(LibraryMetadata::getLetter).doesNotContain(AlphabetLetter.Z);
     assertThat(metadata)
         .extracting(LibraryMetadata::getLetter)
-        .contains(AlphabetLetter.A, AlphabetLetter.B);
+        .containsExactly(AlphabetLetter.A, AlphabetLetter.B, AlphabetLetter.HASH);
+    assertThat(metadata).extracting(LibraryMetadata::getItemCount).containsExactly(2, 1, 1);
   }
 
   @Test
