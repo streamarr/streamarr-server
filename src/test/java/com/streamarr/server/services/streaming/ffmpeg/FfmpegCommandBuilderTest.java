@@ -685,4 +685,30 @@ class FfmpegCommandBuilderTest {
         .doesNotContain("-ac")
         .doesNotContain("-b:a");
   }
+
+  // --- Map ordering ---
+
+  @Test
+  @DisplayName("Should map video, audio, and exclude subtitles in correct order")
+  void shouldMapVideoAudioAndExcludeSubtitlesInCorrectOrder() {
+    var transcodeJob =
+        job(TranscodeMode.REMUX, "h264", "aac", ContainerFormat.MPEGTS, "copy", true);
+
+    var cmd = builder.buildCommand(transcodeJob);
+
+    assertThat(cmd).containsSequence("-map", "0:v:0", "-map", "0:a:0", "-map", "-0:s");
+  }
+
+  @Test
+  @DisplayName("Should map video and exclude subtitles without audio when audio mode is none")
+  void shouldMapVideoAndExcludeSubtitlesWithoutAudioWhenAudioModeIsNone() {
+    var audio = AudioDecision.none();
+    var transcodeJob =
+        jobWithAudio(
+            TranscodeMode.FULL_TRANSCODE, "h264", audio, ContainerFormat.MPEGTS, "libx264");
+
+    var cmd = builder.buildCommand(transcodeJob);
+
+    assertThat(cmd).containsSequence("-map", "0:v:0", "-map", "-0:s").doesNotContain("0:a:0");
+  }
 }

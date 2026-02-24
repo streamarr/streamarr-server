@@ -182,6 +182,24 @@ class LocalTranscodeExecutorTest {
   }
 
   @Test
+  @DisplayName("Should report running by session ID when variant is active")
+  void shouldReportRunningBySessionIdWhenVariantIsActive() {
+    var request = createRequest(TranscodeMode.FULL_TRANSCODE, "h264", "720p");
+    executor.start(request);
+
+    assertThat(executor.isRunning(request.sessionId())).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should report not running for unstarted variant")
+  void shouldReportNotRunningForUnstartedVariant() {
+    var request = createRequest(TranscodeMode.FULL_TRANSCODE, "h264", "720p");
+    executor.start(request);
+
+    assertThat(executor.isRunning(request.sessionId(), "1080p")).isFalse();
+  }
+
+  @Test
   @DisplayName("Should use copy encoder when mode is audio transcode")
   void shouldUseCopyEncoderWhenModeIsAudioTranscode() {
     var request = createRequest(TranscodeMode.AUDIO_TRANSCODE, "h264");

@@ -586,6 +586,43 @@ class HlsStreamingServiceTest {
   }
 
   @Test
+  @DisplayName("Should truncate to one variant when only one slot is available")
+  void shouldTruncateToOneVariantWhenOnlyOneSlotAvailable() {
+    ffprobeService.setDefaultProbe(
+        MediaProbe.builder()
+            .duration(Duration.ofMinutes(120))
+            .framerate(23.976)
+            .width(1920)
+            .height(1080)
+            .videoCodec("hevc")
+            .audioCodec("aac")
+            .bitrate(8_000_000L)
+            .build());
+
+    var singleVariantOptions =
+        StreamingOptions.builder()
+            .quality(VideoQuality.FULL_HD_1080P)
+            .supportedCodecs(List.of("h264"))
+            .build();
+
+    for (int i = 0; i < 2; i++) {
+      var file = seedMediaFile();
+      service.createSession(file.getId(), singleVariantOptions);
+    }
+
+    var abrOptions =
+        StreamingOptions.builder()
+            .quality(VideoQuality.AUTO)
+            .supportedCodecs(List.of("h264"))
+            .build();
+    var file = seedMediaFile();
+
+    var session = service.createSession(file.getId(), abrOptions);
+
+    assertThat(session.getVariants()).hasSize(1);
+  }
+
+  @Test
   @DisplayName("Should reject ABR session when all transcode slots are full")
   void shouldRejectAbrSessionWhenAllTranscodeSlotsAreFull() {
     ffprobeService.setDefaultProbe(

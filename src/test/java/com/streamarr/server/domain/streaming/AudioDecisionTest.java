@@ -61,4 +61,23 @@ class AudioDecisionTest {
     assertThat(decision.channels()).isEqualTo(6);
     assertThat(decision.bitrate()).isEqualTo(384_000L);
   }
+
+  @Test
+  @DisplayName("Should return AAC codec string when codec is unrecognized")
+  void shouldReturnAacCodecStringWhenCodecIsUnrecognized() {
+    var decision = new AudioDecision(AudioMode.COPY, "opus", 2, 128_000L);
+
+    assertThat(decision.hlsCodecString()).isEqualTo("mp4a.40.2");
+  }
+
+  @Test
+  @DisplayName("Should create none decision with null codec and zero channels and zero bitrate")
+  void shouldCreateNoneDecisionWithNullCodecAndZeroChannelsAndZeroBitrate() {
+    var decision = AudioDecision.none();
+
+    assertThat(decision.mode()).isEqualTo(AudioMode.NONE);
+    assertThat(decision.codec()).isNull();
+    assertThat(decision.channels()).isZero();
+    assertThat(decision.bitrate()).isZero();
+  }
 }

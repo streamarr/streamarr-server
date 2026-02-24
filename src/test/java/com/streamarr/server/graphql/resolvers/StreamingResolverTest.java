@@ -144,6 +144,36 @@ class StreamingResolverTest {
   }
 
   @Test
+  @DisplayName("Should use default options when options input is null")
+  void shouldUseDefaultOptionsWhenOptionsInputIsNull() {
+    var sessionId = UUID.randomUUID();
+    var session = buildSession(sessionId);
+    STUB_SERVICE.setNextResult(session);
+
+    var mutation =
+        String.format(
+            """
+            mutation {
+              createStreamSession(mediaFileId: "%s") {
+                id
+              }
+            }
+            """,
+            UUID.randomUUID());
+
+    dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.createStreamSession.id");
+
+    var receivedOptions = STUB_SERVICE.getLastReceivedOptions();
+    assertThat(receivedOptions.quality()).isEqualTo(VideoQuality.AUTO);
+    assertThat(receivedOptions.supportedCodecs())
+        .isEqualTo(StreamingOptions.DEFAULT_SUPPORTED_CODECS);
+    assertThat(receivedOptions.supportedAudioCodecs())
+        .isEqualTo(StreamingOptions.DEFAULT_SUPPORTED_AUDIO_CODECS);
+    assertThat(receivedOptions.maxAudioChannels())
+        .isEqualTo(StreamingOptions.DEFAULT_MAX_AUDIO_CHANNELS);
+  }
+
+  @Test
   @DisplayName("Should return error when create session media file ID is invalid")
   void shouldReturnErrorWhenMediaFileIdIsInvalid() {
     var result =

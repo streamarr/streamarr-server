@@ -400,4 +400,49 @@ class TranscodeDecisionServiceTest {
     assertThat(decision.audioDecision().codec()).isEqualTo("aac");
     assertThat(decision.audioDecision().channels()).isEqualTo(2);
   }
+
+  // --- Null-safe defaults ---
+
+  @Test
+  @DisplayName("Should use default audio codecs when client sends null")
+  void shouldUseDefaultAudioCodecsWhenClientSendsNull() {
+    var source = probe("h264", "aac");
+    var clientOptions =
+        StreamingOptions.builder()
+            .supportedCodecs(List.of("h264"))
+            .supportedAudioCodecs(null)
+            .maxAudioChannels(null)
+            .build();
+
+    var decision = service.decide(source, clientOptions);
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.COPY);
+    assertThat(decision.audioDecision().codec()).isEqualTo("aac");
+  }
+
+  @Test
+  @DisplayName("Should default to stereo when source audio channels are empty")
+  void shouldDefaultToStereoWhenSourceAudioChannelsAreEmpty() {
+    var source =
+        MediaProbe.builder()
+            .duration(Duration.ofMinutes(120))
+            .framerate(23.976)
+            .width(1920)
+            .height(1080)
+            .videoCodec("h264")
+            .audioCodec("aac")
+            .bitrate(5_000_000L)
+            .audioChannels(OptionalInt.empty())
+            .audioBitrate(OptionalLong.empty())
+            .build();
+    var clientOptions = options(List.of("h264"));
+
+    var decision = service.decide(source, clientOptions);
+
+    assertThat(decision.transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+    assertThat(decision.audioDecision().mode()).isEqualTo(AudioMode.COPY);
+    assertThat(decision.audioDecision().channels()).isEqualTo(2);
+    assertThat(decision.audioDecision().bitrate()).isEqualTo(128_000L);
+  }
 }
