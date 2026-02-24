@@ -11,5 +11,3 @@ CREATE TABLE library_metadata (
   item_count INTEGER NOT NULL DEFAULT 0,
   UNIQUE (library_id, letter)
 );
-
-CREATE INDEX idx_library_metadata_library_id ON library_metadata(library_id);
