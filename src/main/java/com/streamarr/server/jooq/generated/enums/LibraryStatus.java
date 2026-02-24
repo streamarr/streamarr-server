@@ -19,6 +19,8 @@ public enum LibraryStatus implements EnumType {
 
     SCANNING("SCANNING"),
 
+    REFRESHING("REFRESHING"),
+
     HEALTHY("HEALTHY"),
 
     UNHEALTHY("UNHEALTHY");

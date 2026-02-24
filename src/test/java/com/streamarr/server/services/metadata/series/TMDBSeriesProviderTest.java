@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.fakes.FakeTmdbHttpService;
+import com.streamarr.server.services.library.events.RefreshEndedEvent;
 import com.streamarr.server.services.library.events.ScanEndedEvent;
 import com.streamarr.server.services.metadata.TmdbSearchDelegate;
 import com.streamarr.server.services.metadata.tmdb.TmdbTvSearchResult;
@@ -79,6 +80,100 @@ class TMDBSeriesProviderTest {
 
     var result = provider.resolveSeasonNumber(libraryId, "1396", 2020);
     assertThat(result).isEqualTo(OptionalInt.of(3));
+  }
+
+  @Test
+  @DisplayName("Should return fresh data when cache cleared by refresh ended")
+  void shouldReturnFreshDataWhenCacheClearedByRefreshEnded() {
+    var initialSeries =
+        TmdbTvSeries.builder()
+            .seasons(
+                List.of(
+                    TmdbTvSeasonSummary.builder().seasonNumber(1).airDate("2020-01-15").build()))
+            .build();
+
+    var libraryId = UUID.randomUUID();
+
+    fakeTmdbHttpService.setTvSeriesMetadata("1396", initialSeries);
+    provider.resolveSeasonNumber(libraryId, "1396", 2020);
+
+    var updatedSeries =
+        TmdbTvSeries.builder()
+            .seasons(
+                List.of(
+                    TmdbTvSeasonSummary.builder().seasonNumber(3).airDate("2020-03-01").build()))
+            .build();
+
+    fakeTmdbHttpService.setTvSeriesMetadata("1396", updatedSeries);
+    provider.onRefreshEnded(new RefreshEndedEvent(libraryId));
+
+    var result = provider.resolveSeasonNumber(libraryId, "1396", 2020);
+    assertThat(result).isEqualTo(OptionalInt.of(3));
+  }
+
+  @Test
+  @DisplayName("Should return fresh season numbers when cache cleared by refresh ended")
+  void shouldReturnFreshSeasonNumbersWhenCacheClearedByRefreshEnded() {
+    var initialSeries =
+        TmdbTvSeries.builder()
+            .seasons(
+                List.of(
+                    TmdbTvSeasonSummary.builder().seasonNumber(1).build(),
+                    TmdbTvSeasonSummary.builder().seasonNumber(2).build()))
+            .build();
+
+    var libraryId = UUID.randomUUID();
+    fakeTmdbHttpService.setTvSeriesMetadata("1396", initialSeries);
+    provider.getAvailableSeasonNumbers(libraryId, "1396");
+
+    var updatedSeries =
+        TmdbTvSeries.builder()
+            .seasons(
+                List.of(
+                    TmdbTvSeasonSummary.builder().seasonNumber(1).build(),
+                    TmdbTvSeasonSummary.builder().seasonNumber(2).build(),
+                    TmdbTvSeasonSummary.builder().seasonNumber(3).build()))
+            .build();
+
+    fakeTmdbHttpService.setTvSeriesMetadata("1396", updatedSeries);
+    provider.onRefreshEnded(new RefreshEndedEvent(libraryId));
+
+    var result = provider.getAvailableSeasonNumbers(libraryId, "1396");
+    assertThat(result).containsExactly(1, 2, 3);
+  }
+
+  @Test
+  @DisplayName("Should not clear other library cache when refresh ended for specific library")
+  void shouldNotClearOtherLibraryCacheWhenRefreshEndedForSpecificLibrary() {
+    var libraryA = UUID.randomUUID();
+    var libraryB = UUID.randomUUID();
+
+    var initialSeries =
+        TmdbTvSeries.builder()
+            .seasons(
+                List.of(
+                    TmdbTvSeasonSummary.builder().seasonNumber(1).airDate("2020-01-15").build()))
+            .build();
+
+    fakeTmdbHttpService.setTvSeriesMetadata("1396", initialSeries);
+
+    provider.resolveSeasonNumber(libraryA, "1396", 2020);
+    provider.resolveSeasonNumber(libraryB, "1396", 2020);
+
+    var updatedSeries =
+        TmdbTvSeries.builder()
+            .seasons(
+                List.of(
+                    TmdbTvSeasonSummary.builder().seasonNumber(5).airDate("2020-05-01").build()))
+            .build();
+    fakeTmdbHttpService.setTvSeriesMetadata("1396", updatedSeries);
+    provider.onRefreshEnded(new RefreshEndedEvent(libraryA));
+
+    assertThat(provider.resolveSeasonNumber(libraryA, "1396", 2020))
+        .isEqualTo(OptionalInt.of(5));
+
+    assertThat(provider.resolveSeasonNumber(libraryB, "1396", 2020))
+        .isEqualTo(OptionalInt.of(1));
   }
 
   @Test

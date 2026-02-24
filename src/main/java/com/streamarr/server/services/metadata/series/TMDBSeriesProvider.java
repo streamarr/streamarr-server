@@ -7,6 +7,7 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.ContentRating;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.services.library.events.RefreshEndedEvent;
 import com.streamarr.server.services.library.events.ScanEndedEvent;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
@@ -271,9 +272,23 @@ public class TMDBSeriesProvider implements SeriesMetadataProvider {
         .findFirst();
   }
 
+  @Override
+  public List<Integer> getAvailableSeasonNumbers(UUID libraryId, String seriesExternalId) {
+    return getOrFetchSeasonSummaries(libraryId, seriesExternalId).stream()
+        .map(TmdbTvSeasonSummary::getSeasonNumber)
+        .toList();
+  }
+
   @EventListener
   public void onScanEnded(ScanEndedEvent event) {
     log.debug("Clearing series metadata cache for library {}", event.libraryId());
+    seasonSummariesByLibrary.remove(event.libraryId());
+    failedSeasonDetailsByLibrary.remove(event.libraryId());
+  }
+
+  @EventListener
+  public void onRefreshEnded(RefreshEndedEvent event) {
+    log.debug("Clearing series metadata cache for library {} after refresh", event.libraryId());
     seasonSummariesByLibrary.remove(event.libraryId());
     failedSeasonDetailsByLibrary.remove(event.libraryId());
   }

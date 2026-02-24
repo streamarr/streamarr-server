@@ -123,4 +123,9 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
         .filter(movie -> movie.getLibrary() != null && libraryId.equals(movie.getLibrary().getId()))
         .toList();
   }
+
+  @Override
+  public List<Movie> findByLibraryIdWithExternalIds(UUID libraryId) {
+    return findByLibrary_Id(libraryId);
+  }
 }

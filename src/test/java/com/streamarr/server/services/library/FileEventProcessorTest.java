@@ -139,6 +139,7 @@ class FileEventProcessorTest {
             seriesService,
             event -> {},
             new MutexFactoryProvider(),
+            mock(LibraryRefreshService.class),
             fileSystem);
 
     var taskRepository = new FakeFileProcessingTaskRepository();

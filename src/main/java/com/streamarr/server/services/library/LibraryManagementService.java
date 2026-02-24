@@ -9,6 +9,7 @@ import com.streamarr.server.exceptions.InvalidLibraryPathException;
 import com.streamarr.server.exceptions.LibraryAlreadyExistsException;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.exceptions.LibraryPathPermissionDeniedException;
+import com.streamarr.server.exceptions.LibraryRefreshInProgressException;
 import com.streamarr.server.exceptions.LibraryScanFailedException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.repositories.LibraryMetadataRepository;
@@ -21,6 +22,7 @@ import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.library.events.ItemProcessedEvent;
 import com.streamarr.server.services.library.events.LibraryAddedEvent;
 import com.streamarr.server.services.library.events.LibraryRemovedEvent;
+import com.streamarr.server.services.library.events.RefreshEndedEvent;
 import com.streamarr.server.services.library.events.ScanCompletedEvent;
 import com.streamarr.server.services.library.events.ScanEndedEvent;
 import com.streamarr.server.services.validation.IgnoredFileValidator;
@@ -59,9 +61,11 @@ public class LibraryManagementService implements ActiveScanChecker {
   private final MovieService movieService;
   private final SeriesService seriesService;
   private final ApplicationEventPublisher eventPublisher;
+  private final LibraryRefreshService libraryRefreshService;
   private final FileSystem fileSystem;
   private final MutexFactory<String> mutexFactory;
   private final Set<UUID> activeScans = ConcurrentHashMap.newKeySet();
+  private final Set<UUID> activeRefreshes = ConcurrentHashMap.newKeySet();
 
   public LibraryManagementService(
       IgnoredFileValidator ignoredFileValidator,
@@ -75,6 +79,7 @@ public class LibraryManagementService implements ActiveScanChecker {
       SeriesService seriesService,
       ApplicationEventPublisher eventPublisher,
       MutexFactoryProvider mutexFactoryProvider,
+      LibraryRefreshService libraryRefreshService,
       FileSystem fileSystem) {
     this.ignoredFileValidator = ignoredFileValidator;
     this.videoExtensionValidator = videoExtensionValidator;
@@ -86,6 +91,7 @@ public class LibraryManagementService implements ActiveScanChecker {
     this.movieService = movieService;
     this.seriesService = seriesService;
     this.eventPublisher = eventPublisher;
+    this.libraryRefreshService = libraryRefreshService;
     this.fileSystem = fileSystem;
 
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
@@ -147,13 +153,24 @@ public class LibraryManagementService implements ActiveScanChecker {
     }
   }
 
-  private void triggerAsyncScan(UUID libraryId) {
+  public void triggerAsyncScan(UUID libraryId) {
     Thread.startVirtualThread(
         () -> {
           try {
             scanLibrary(libraryId);
           } catch (Exception e) {
             log.error("Async library scan failed for library: {}", libraryId, e);
+          }
+        });
+  }
+
+  public void triggerAsyncRefresh(UUID libraryId) {
+    Thread.startVirtualThread(
+        () -> {
+          try {
+            refreshLibrary(libraryId);
+          } catch (Exception e) {
+            log.error("Async library refresh failed for library: {}", libraryId, e);
           }
         });
   }
@@ -166,6 +183,7 @@ public class LibraryManagementService implements ActiveScanChecker {
     try {
       var library = findLibraryOrThrow(libraryId);
       rejectIfScanning(library);
+      rejectIfRefreshing(library);
 
       var mediaFiles = mediaFileRepository.findByLibraryId(libraryId);
       var mediaFileIds = extractMediaFileIds(mediaFiles);
@@ -191,6 +209,12 @@ public class LibraryManagementService implements ActiveScanChecker {
     }
   }
 
+  private void rejectIfRefreshing(Library library) {
+    if (library.getStatus() == LibraryStatus.REFRESHING) {
+      throw new LibraryRefreshInProgressException(library.getId());
+    }
+  }
+
   private Set<UUID> extractMediaFileIds(List<MediaFile> mediaFiles) {
     return mediaFiles.stream().map(MediaFile::getId).collect(Collectors.toSet());
   }
@@ -199,6 +223,67 @@ public class LibraryManagementService implements ActiveScanChecker {
     movieService.deleteByLibraryId(libraryId);
     seriesService.deleteByLibraryId(libraryId);
     mediaFileRepository.deleteAll(mediaFiles);
+  }
+
+  public void refreshLibrary(UUID libraryId) {
+    if (!activeRefreshes.add(libraryId)) {
+      throw new LibraryRefreshInProgressException(libraryId);
+    }
+
+    try {
+      var library = transitionToRefreshing(libraryId);
+      var startTime = Instant.now();
+
+      try {
+        libraryRefreshService.refreshLibrary(library);
+        completeRefreshSuccessfully(library, startTime);
+      } catch (Exception ex) {
+        log.error("Refresh failed for library '{}'", library.getName(), ex);
+        completeRefreshWithFailure(library);
+      }
+    } finally {
+      eventPublisher.publishEvent(new RefreshEndedEvent(libraryId));
+      activeRefreshes.remove(libraryId);
+    }
+  }
+
+  private Library transitionToRefreshing(UUID libraryId) {
+    var libraryMutex = mutexFactory.getMutex(libraryId.toString());
+    libraryMutex.lock();
+
+    try {
+      var library = findLibraryOrThrow(libraryId);
+
+      if (library.getStatus() == LibraryStatus.SCANNING) {
+        throw new LibraryScanInProgressException(libraryId);
+      }
+      if (library.getStatus() == LibraryStatus.REFRESHING) {
+        throw new LibraryRefreshInProgressException(libraryId);
+      }
+
+      log.info("Starting {} library refresh.", library.getName());
+
+      library.setStatus(LibraryStatus.REFRESHING);
+      libraryRepository.save(library);
+
+      return library;
+    } finally {
+      libraryMutex.unlock();
+    }
+  }
+
+  private void completeRefreshSuccessfully(Library library, Instant startTime) {
+    var elapsedSeconds = Duration.between(startTime, Instant.now()).getSeconds();
+
+    library.setStatus(LibraryStatus.HEALTHY);
+    libraryRepository.save(library);
+
+    log.info("Finished {} library refresh in {} seconds.", library.getName(), elapsedSeconds);
+  }
+
+  private void completeRefreshWithFailure(Library library) {
+    library.setStatus(LibraryStatus.UNHEALTHY);
+    libraryRepository.save(library);
   }
 
   public void processDiscoveredFile(UUID libraryId, Path path) {
@@ -278,8 +363,11 @@ public class LibraryManagementService implements ActiveScanChecker {
               .findById(libraryId)
               .orElseThrow(() -> new LibraryNotFoundException(libraryId));
 
-      if (library.getStatus().equals(LibraryStatus.SCANNING)) {
+      if (library.getStatus() == LibraryStatus.SCANNING) {
         throw new LibraryScanInProgressException(libraryId);
+      }
+      if (library.getStatus() == LibraryStatus.REFRESHING) {
+        throw new LibraryRefreshInProgressException(libraryId);
       }
 
       log.info("Starting {} library scan.", library.getName());

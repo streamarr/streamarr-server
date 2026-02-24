@@ -21,6 +21,7 @@ type Library {
 
 enum LibraryStatus {
     SCANNING
+    REFRESHING
     HEALTHY
     UNHEALTHY
 }

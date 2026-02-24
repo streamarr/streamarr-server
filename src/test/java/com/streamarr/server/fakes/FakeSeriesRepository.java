@@ -75,6 +75,11 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
         .toList();
   }
 
+  @Override
+  public List<Series> findByLibraryIdWithExternalIds(UUID libraryId) {
+    return findByLibrary_Id(libraryId);
+  }
+
   private int findCursorIndex(List<Series> sorted, Optional<UUID> cursorId) {
     if (cursorId.isEmpty()) {
       return 0;

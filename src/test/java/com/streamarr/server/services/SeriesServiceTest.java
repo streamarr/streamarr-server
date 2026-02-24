@@ -2,18 +2,26 @@ package com.streamarr.server.services;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
 import com.streamarr.server.config.ImageProperties;
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.media.ContentRating;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
+import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.domain.metadata.Company;
+import com.streamarr.server.domain.metadata.Genre;
+import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeImageRepository;
@@ -29,8 +37,10 @@ import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import com.streamarr.server.services.metadata.series.SeasonDetails;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.jooq.SortOrder;
 import org.junit.jupiter.api.BeforeEach;
@@ -48,6 +58,9 @@ class SeriesServiceTest {
   private FakeEpisodeRepository episodeRepository;
   private FakeImageRepository imageRepository;
   private CapturingEventPublisher eventPublisher;
+  private PersonService personService;
+  private GenreService genreService;
+  private CompanyService companyService;
   private SeriesService seriesService;
 
   @BeforeEach
@@ -57,6 +70,9 @@ class SeriesServiceTest {
     episodeRepository = new FakeEpisodeRepository();
     imageRepository = new FakeImageRepository();
     eventPublisher = new CapturingEventPublisher();
+    personService = mock(PersonService.class);
+    genreService = mock(GenreService.class);
+    companyService = mock(CompanyService.class);
     var cursorUtil = new CursorUtil(new ObjectMapper());
     var relayPaginationService = new RelayPaginationService();
     var fileSystem = Jimfs.newFileSystem(Configuration.unix());
@@ -69,9 +85,9 @@ class SeriesServiceTest {
     seriesService =
         new SeriesService(
             seriesRepository,
-            mock(PersonService.class),
-            mock(GenreService.class),
-            mock(CompanyService.class),
+            personService,
+            genreService,
+            companyService,
             cursorUtil,
             relayPaginationService,
             eventPublisher,
@@ -472,6 +488,320 @@ class SeriesServiceTest {
     assertThat(episodeEvents)
         .extracting(MetadataEnrichedEvent::entityId)
         .containsExactlyInAnyOrder(ep1.getId(), ep3.getId());
+  }
+
+  @Test
+  @DisplayName("Should overwrite scalar fields when refreshing series metadata")
+  void shouldOverwriteScalarFieldsWhenRefreshingSeriesMetadata() {
+    var existing =
+        seriesRepository.save(
+            Series.builder()
+                .title("Old Title")
+                .originalTitle("Old Original")
+                .titleSort("old title")
+                .tagline("Old tagline")
+                .summary("Old summary")
+                .runtime(30)
+                .contentRating(new ContentRating("MPAA", "PG", "US"))
+                .firstAirDate(LocalDate.of(2000, 1, 1))
+                .build());
+
+    var fresh =
+        Series.builder()
+            .title("New Title")
+            .originalTitle("New Original")
+            .titleSort("new title")
+            .tagline("New tagline")
+            .summary("New summary")
+            .runtime(60)
+            .contentRating(new ContentRating("TV Parental Guidelines", "TV-MA", "US"))
+            .firstAirDate(LocalDate.of(2020, 6, 15))
+            .build();
+    var metadataResult = new MetadataResult<>(fresh, List.of(), Map.of(), Map.of());
+
+    var result = seriesService.refreshSeriesMetadata(existing, metadataResult);
+
+    assertThat(result.getTitle()).isEqualTo("New Title");
+    assertThat(result.getOriginalTitle()).isEqualTo("New Original");
+    assertThat(result.getTitleSort()).isEqualTo("new title");
+    assertThat(result.getTagline()).isEqualTo("New tagline");
+    assertThat(result.getSummary()).isEqualTo("New summary");
+    assertThat(result.getRuntime()).isEqualTo(60);
+    assertThat(result.getContentRating().value()).isEqualTo("TV-MA");
+    assertThat(result.getFirstAirDate()).isEqualTo(LocalDate.of(2020, 6, 15));
+    assertThat(result.getId()).isEqualTo(existing.getId());
+
+    var persisted = seriesRepository.findById(result.getId()).orElseThrow();
+    assertThat(persisted.getTitle()).isEqualTo("New Title");
+  }
+
+  @Test
+  @DisplayName("Should overwrite existing fields with null when fresh metadata has null fields")
+  void shouldOverwriteExistingFieldsWithNullWhenFreshMetadataHasNullFields() {
+    var existing =
+        seriesRepository.save(
+            Series.builder()
+                .title("Breaking Bad")
+                .tagline("Old tagline")
+                .summary("Old summary")
+                .contentRating(new ContentRating("MPAA", "PG", "US"))
+                .build());
+
+    var fresh = Series.builder().title("Breaking Bad").titleSort("breaking bad").build();
+    var metadataResult = new MetadataResult<>(fresh, List.of(), Map.of(), Map.of());
+
+    var result = seriesService.refreshSeriesMetadata(existing, metadataResult);
+
+    assertThat(result.getTagline()).isNull();
+    assertThat(result.getSummary()).isNull();
+    assertThat(result.getContentRating()).isNull();
+  }
+
+  @Test
+  @DisplayName("Should update associations when refreshing series metadata")
+  void shouldUpdateAssociationsWhenRefreshingSeriesMetadata() {
+    var existing = seriesRepository.save(Series.builder().title("Breaking Bad").build());
+
+    var castInput = List.of(Person.builder().name("Bryan Cranston").build());
+    var directorInput = List.of(Person.builder().name("Vince Gilligan").build());
+    var freshGenres = Set.of(Genre.builder().name("Drama").build());
+    var freshStudios = Set.of(Company.builder().name("Sony Pictures").build());
+
+    when(personService.getOrCreatePersons(
+            argThat(
+                persons ->
+                    persons != null
+                        && persons.stream().anyMatch(p -> "Bryan Cranston".equals(p.getName()))),
+            any()))
+        .thenReturn(castInput);
+    when(personService.getOrCreatePersons(
+            argThat(
+                persons ->
+                    persons != null
+                        && persons.stream().anyMatch(p -> "Vince Gilligan".equals(p.getName()))),
+            any()))
+        .thenReturn(directorInput);
+    when(genreService.getOrCreateGenres(any())).thenReturn(freshGenres);
+    when(companyService.getOrCreateCompanies(any(), any())).thenReturn(freshStudios);
+
+    var fresh =
+        Series.builder().title("Breaking Bad").cast(castInput).directors(directorInput).build();
+    var metadataResult = new MetadataResult<>(fresh, List.of(), Map.of(), Map.of());
+
+    var result = seriesService.refreshSeriesMetadata(existing, metadataResult);
+
+    assertThat(result.getCast()).extracting(Person::getName).containsExactly("Bryan Cranston");
+    assertThat(result.getDirectors()).extracting(Person::getName).containsExactly("Vince Gilligan");
+    assertThat(result.getGenres()).extracting(Genre::getName).containsExactly("Drama");
+    assertThat(result.getStudios()).extracting(Company::getName).containsExactly("Sony Pictures");
+  }
+
+  @Test
+  @DisplayName("Should publish image event when refreshing series metadata with image sources")
+  void shouldPublishImageEventWhenRefreshingSeriesMetadataWithImageSources() {
+    var existing = seriesRepository.save(Series.builder().title("Breaking Bad").build());
+    var imageSources = List.<ImageSource>of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg"));
+    var fresh = Series.builder().title("Breaking Bad").build();
+    var metadataResult = new MetadataResult<>(fresh, imageSources, Map.of(), Map.of());
+
+    seriesService.refreshSeriesMetadata(existing, metadataResult);
+
+    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
+    assertThat(events).hasSize(1);
+    assertThat(events.getFirst().entityId()).isEqualTo(existing.getId());
+    assertThat(events.getFirst().entityType()).isEqualTo(ImageEntityType.SERIES);
+  }
+
+  @Test
+  @DisplayName("Should not publish image event when refreshing series metadata with empty sources")
+  void shouldNotPublishImageEventWhenRefreshingSeriesMetadataWithEmptySources() {
+    var existing = seriesRepository.save(Series.builder().title("Breaking Bad").build());
+    var fresh = Series.builder().title("Breaking Bad").build();
+    var metadataResult = new MetadataResult<>(fresh, List.of(), Map.of(), Map.of());
+
+    seriesService.refreshSeriesMetadata(existing, metadataResult);
+
+    assertThat(eventPublisher.getEventsOfType(MetadataEnrichedEvent.class)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should update existing season when refreshing with matching season number")
+  void shouldUpdateExistingSeasonWhenRefreshingWithMatchingSeasonNumber() {
+    var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
+    var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
+
+    var existingSeason =
+        seasonRepository.saveAndFlush(
+            Season.builder()
+                .title("Old Season 1")
+                .seasonNumber(1)
+                .overview("Old overview")
+                .series(series)
+                .library(library)
+                .build());
+
+    var details =
+        SeasonDetails.builder()
+            .name("Season 1")
+            .seasonNumber(1)
+            .overview("Updated overview")
+            .airDate(LocalDate.of(2008, 1, 20))
+            .imageSources(List.of())
+            .episodes(List.of())
+            .build();
+
+    var result = seriesService.refreshSeasonWithEpisodes(series, details, library);
+
+    assertThat(result.getId()).isEqualTo(existingSeason.getId());
+    assertThat(result.getTitle()).isEqualTo("Season 1");
+    assertThat(result.getOverview()).isEqualTo("Updated overview");
+    assertThat(result.getAirDate()).isEqualTo(LocalDate.of(2008, 1, 20));
+    assertThat(seasonRepository.findBySeriesId(series.getId())).hasSize(1);
+  }
+
+  @Test
+  @DisplayName("Should create new season when refreshing with unknown season number")
+  void shouldCreateNewSeasonWhenRefreshingWithUnknownSeasonNumber() {
+    var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
+    var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
+
+    var details =
+        SeasonDetails.builder()
+            .name("Season 2")
+            .seasonNumber(2)
+            .overview("The second season")
+            .imageSources(List.of())
+            .episodes(List.of())
+            .build();
+
+    var result = seriesService.refreshSeasonWithEpisodes(series, details, library);
+
+    assertThat(result.getTitle()).isEqualTo("Season 2");
+    assertThat(result.getSeasonNumber()).isEqualTo(2);
+    assertThat(result.getSeries().getId()).isEqualTo(series.getId());
+  }
+
+  @Test
+  @DisplayName("Should update existing episode when refreshing with matching episode number")
+  void shouldUpdateExistingEpisodeWhenRefreshingWithMatchingEpisodeNumber() {
+    var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
+    var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
+    var season =
+        seasonRepository.saveAndFlush(
+            Season.builder()
+                .title("Season 1")
+                .seasonNumber(1)
+                .series(series)
+                .library(library)
+                .build());
+    var existingEpisode =
+        episodeRepository.save(
+            Episode.builder()
+                .title("Old Pilot")
+                .episodeNumber(1)
+                .overview("Old overview")
+                .season(season)
+                .library(library)
+                .build());
+
+    var details =
+        SeasonDetails.builder()
+            .name("Season 1")
+            .seasonNumber(1)
+            .imageSources(List.of())
+            .episodes(
+                List.of(
+                    SeasonDetails.EpisodeDetails.builder()
+                        .episodeNumber(1)
+                        .name("Pilot")
+                        .overview("Updated pilot overview")
+                        .airDate(LocalDate.of(2008, 1, 20))
+                        .runtime(58)
+                        .imageSources(List.of())
+                        .build()))
+            .build();
+
+    seriesService.refreshSeasonWithEpisodes(series, details, library);
+
+    var episodes = episodeRepository.findBySeasonId(season.getId());
+    assertThat(episodes).hasSize(1);
+    assertThat(episodes.getFirst().getId()).isEqualTo(existingEpisode.getId());
+    assertThat(episodes.getFirst().getTitle()).isEqualTo("Pilot");
+    assertThat(episodes.getFirst().getOverview()).isEqualTo("Updated pilot overview");
+    assertThat(episodes.getFirst().getRuntime()).isEqualTo(58);
+  }
+
+  @Test
+  @DisplayName("Should create new episode when refreshing with unknown episode number")
+  void shouldCreateNewEpisodeWhenRefreshingWithUnknownEpisodeNumber() {
+    var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
+    var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
+    var season =
+        seasonRepository.saveAndFlush(
+            Season.builder()
+                .title("Season 1")
+                .seasonNumber(1)
+                .series(series)
+                .library(library)
+                .build());
+    episodeRepository.save(
+        Episode.builder().title("Pilot").episodeNumber(1).season(season).library(library).build());
+
+    var details =
+        SeasonDetails.builder()
+            .name("Season 1")
+            .seasonNumber(1)
+            .imageSources(List.of())
+            .episodes(
+                List.of(
+                    SeasonDetails.EpisodeDetails.builder()
+                        .episodeNumber(1)
+                        .name("Pilot")
+                        .imageSources(List.of())
+                        .build(),
+                    SeasonDetails.EpisodeDetails.builder()
+                        .episodeNumber(2)
+                        .name("Cat's in the Bag...")
+                        .imageSources(List.of())
+                        .build()))
+            .build();
+
+    seriesService.refreshSeasonWithEpisodes(series, details, library);
+
+    var episodes = episodeRepository.findBySeasonId(season.getId());
+    assertThat(episodes).hasSize(2);
+    assertThat(episodes)
+        .extracting(Episode::getTitle)
+        .containsExactlyInAnyOrder("Pilot", "Cat's in the Bag...");
+  }
+
+  @Test
+  @DisplayName("Should publish image events for season and episodes when refreshing")
+  void shouldPublishImageEventsForSeasonAndEpisodesWhenRefreshing() {
+    var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
+    var library = Library.builder().id(UUID.randomUUID()).name("TV Shows").build();
+
+    var details =
+        SeasonDetails.builder()
+            .name("Season 1")
+            .seasonNumber(1)
+            .imageSources(List.of(new TmdbImageSource(ImageType.POSTER, "/season1.jpg")))
+            .episodes(
+                List.of(
+                    SeasonDetails.EpisodeDetails.builder()
+                        .episodeNumber(1)
+                        .name("Pilot")
+                        .imageSources(
+                            List.of(new TmdbImageSource(ImageType.STILL, "/ep1_still.jpg")))
+                        .build()))
+            .build();
+
+    seriesService.refreshSeasonWithEpisodes(series, details, library);
+
+    var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
+    assertThat(events).hasSize(2);
+    assertThat(events).filteredOn(e -> e.entityType() == ImageEntityType.SEASON).hasSize(1);
+    assertThat(events).filteredOn(e -> e.entityType() == ImageEntityType.EPISODE).hasSize(1);
   }
 
   private void seedImage(UUID entityId) {
