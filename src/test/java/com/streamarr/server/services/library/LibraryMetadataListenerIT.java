@@ -72,15 +72,32 @@ class LibraryMetadataListenerIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should trigger recalculation when item processed and not scanning")
   void shouldTriggerRecalculationWhenItemProcessedAndNotScanning() {
-    listener.onItemProcessed(new ItemProcessedEvent(libraryId));
+    var isolatedLibrary = LibraryFixtureCreator.buildFakeLibrary();
+    var savedIsolatedLibrary = libraryRepository.saveAndFlush(isolatedLibrary);
 
-    var metadata = metadataRepository.findByLibraryIdOrderByLetterAsc(libraryId);
+    movieRepository.saveAndFlush(
+        Movie.builder()
+            .title("Delta")
+            .titleSort("Delta")
+            .library(savedIsolatedLibrary)
+            .build());
+    movieRepository.saveAndFlush(
+        Movie.builder()
+            .title("Echo")
+            .titleSort("Echo")
+            .library(savedIsolatedLibrary)
+            .build());
 
-    assertThat(metadata).hasSize(3);
+    listener.onItemProcessed(new ItemProcessedEvent(savedIsolatedLibrary.getId()));
+
+    var metadata =
+        metadataRepository.findByLibraryIdOrderByLetterAsc(savedIsolatedLibrary.getId());
+
+    assertThat(metadata).hasSize(2);
     assertThat(metadata)
         .extracting(LibraryMetadata::getLetter)
-        .containsExactly(AlphabetLetter.A, AlphabetLetter.B, AlphabetLetter.HASH);
-    assertThat(metadata).extracting(LibraryMetadata::getItemCount).containsExactly(2, 1, 1);
+        .containsExactly(AlphabetLetter.D, AlphabetLetter.E);
+    assertThat(metadata).extracting(LibraryMetadata::getItemCount).containsExactly(1, 1);
   }
 
   @Test
