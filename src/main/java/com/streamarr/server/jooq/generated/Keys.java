@@ -12,6 +12,7 @@ import com.streamarr.server.jooq.generated.tables.FileProcessingTask;
 import com.streamarr.server.jooq.generated.tables.Genre;
 import com.streamarr.server.jooq.generated.tables.Image;
 import com.streamarr.server.jooq.generated.tables.Library;
+import com.streamarr.server.jooq.generated.tables.LibraryMetadata;
 import com.streamarr.server.jooq.generated.tables.MediaFile;
 import com.streamarr.server.jooq.generated.tables.Movie;
 import com.streamarr.server.jooq.generated.tables.MovieCompany;
@@ -35,6 +36,7 @@ import com.streamarr.server.jooq.generated.tables.records.ExternalIdentifierReco
 import com.streamarr.server.jooq.generated.tables.records.FileProcessingTaskRecord;
 import com.streamarr.server.jooq.generated.tables.records.GenreRecord;
 import com.streamarr.server.jooq.generated.tables.records.ImageRecord;
+import com.streamarr.server.jooq.generated.tables.records.LibraryMetadataRecord;
 import com.streamarr.server.jooq.generated.tables.records.LibraryRecord;
 import com.streamarr.server.jooq.generated.tables.records.MediaFileRecord;
 import com.streamarr.server.jooq.generated.tables.records.MovieCompanyRecord;
@@ -84,6 +86,8 @@ public class Keys {
     public static final UniqueKey<GenreRecord> GENRE_SOURCE_ID_UNIQUE = Internal.createUniqueKey(Genre.GENRE, DSL.name("genre_source_id_unique"), new TableField[] { Genre.GENRE.SOURCE_ID }, true);
     public static final UniqueKey<ImageRecord> IMAGE_PKEY = Internal.createUniqueKey(Image.IMAGE, DSL.name("image_pkey"), new TableField[] { Image.IMAGE.ID }, true);
     public static final UniqueKey<LibraryRecord> LIBRARY_PKEY = Internal.createUniqueKey(Library.LIBRARY, DSL.name("library_pkey"), new TableField[] { Library.LIBRARY.ID }, true);
+    public static final UniqueKey<LibraryMetadataRecord> LIBRARY_METADATA_LIBRARY_ID_LETTER_KEY = Internal.createUniqueKey(LibraryMetadata.LIBRARY_METADATA, DSL.name("library_metadata_library_id_letter_key"), new TableField[] { LibraryMetadata.LIBRARY_METADATA.LIBRARY_ID, LibraryMetadata.LIBRARY_METADATA.LETTER }, true);
+    public static final UniqueKey<LibraryMetadataRecord> LIBRARY_METADATA_PKEY = Internal.createUniqueKey(LibraryMetadata.LIBRARY_METADATA, DSL.name("library_metadata_pkey"), new TableField[] { LibraryMetadata.LIBRARY_METADATA.ID }, true);
     public static final UniqueKey<MediaFileRecord> MOVIE_FILE_PKEY = Internal.createUniqueKey(MediaFile.MEDIA_FILE, DSL.name("movie_file_pkey"), new TableField[] { MediaFile.MEDIA_FILE.ID }, true);
     public static final UniqueKey<MovieRecord> MOVIE_PKEY = Internal.createUniqueKey(Movie.MOVIE, DSL.name("movie_pkey"), new TableField[] { Movie.MOVIE.ID }, true);
     public static final UniqueKey<MovieCompanyRecord> MOVIE_COMPANY_PKEY = Internal.createUniqueKey(MovieCompany.MOVIE_COMPANY, DSL.name("movie_company_pkey"), new TableField[] { MovieCompany.MOVIE_COMPANY.ID }, true);
@@ -112,6 +116,7 @@ public class Keys {
     public static final ForeignKey<EpisodeRecord, SeasonRecord> EPISODE__FK_SEASON = Internal.createForeignKey(Episode.EPISODE, DSL.name("fk_season"), new TableField[] { Episode.EPISODE.SEASON_ID }, Keys.SEASON_PKEY, new TableField[] { Season.SEASON.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<ExternalIdentifierRecord, BaseCollectableRecord> EXTERNAL_IDENTIFIER__FK_BASE_COLLECTABLE = Internal.createForeignKey(ExternalIdentifier.EXTERNAL_IDENTIFIER, DSL.name("fk_base_collectable"), new TableField[] { ExternalIdentifier.EXTERNAL_IDENTIFIER.ENTITY_ID }, Keys.BASE_COLLECTABLE_PKEY, new TableField[] { BaseCollectable.BASE_COLLECTABLE.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<FileProcessingTaskRecord, LibraryRecord> FILE_PROCESSING_TASK__FK_LIBRARY = Internal.createForeignKey(FileProcessingTask.FILE_PROCESSING_TASK, DSL.name("fk_library"), new TableField[] { FileProcessingTask.FILE_PROCESSING_TASK.LIBRARY_ID }, Keys.LIBRARY_PKEY, new TableField[] { Library.LIBRARY.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<LibraryMetadataRecord, LibraryRecord> LIBRARY_METADATA__LIBRARY_METADATA_LIBRARY_ID_FKEY = Internal.createForeignKey(LibraryMetadata.LIBRARY_METADATA, DSL.name("library_metadata_library_id_fkey"), new TableField[] { LibraryMetadata.LIBRARY_METADATA.LIBRARY_ID }, Keys.LIBRARY_PKEY, new TableField[] { Library.LIBRARY.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<MediaFileRecord, BaseCollectableRecord> MEDIA_FILE__FK_BASE_COLLECTABLE = Internal.createForeignKey(MediaFile.MEDIA_FILE, DSL.name("fk_base_collectable"), new TableField[] { MediaFile.MEDIA_FILE.MEDIA_ID }, Keys.BASE_COLLECTABLE_PKEY, new TableField[] { BaseCollectable.BASE_COLLECTABLE.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<MediaFileRecord, LibraryRecord> MEDIA_FILE__FK_LIBRARY = Internal.createForeignKey(MediaFile.MEDIA_FILE, DSL.name("fk_library"), new TableField[] { MediaFile.MEDIA_FILE.LIBRARY_ID }, Keys.LIBRARY_PKEY, new TableField[] { Library.LIBRARY.ID }, true, ForeignKeyRule.NO_ACTION, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<MovieRecord, BaseCollectableRecord> MOVIE__FK_MOVIE = Internal.createForeignKey(Movie.MOVIE, DSL.name("fk_movie"), new TableField[] { Movie.MOVIE.ID }, Keys.BASE_COLLECTABLE_PKEY, new TableField[] { BaseCollectable.BASE_COLLECTABLE.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);

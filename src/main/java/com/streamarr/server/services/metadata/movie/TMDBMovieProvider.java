@@ -90,8 +90,7 @@ public class TMDBMovieProvider implements MetadataProvider<Movie> {
   public Optional<MetadataResult<Movie>> getMetadata(
       RemoteSearchResult remoteSearchResult, Library library) {
     try {
-      var tmdbMovie =
-          theMovieDatabaseHttpService.getMovieMetadata(remoteSearchResult.externalId());
+      var tmdbMovie = theMovieDatabaseHttpService.getMovieMetadata(remoteSearchResult.externalId());
 
       var credits = Optional.ofNullable(tmdbMovie.getCredits());
       var castList = credits.map(TmdbCredits::getCast).orElse(Collections.emptyList());

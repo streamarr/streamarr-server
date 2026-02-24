@@ -10,6 +10,7 @@ import com.streamarr.server.jooq.generated.tables.ExternalIdentifier;
 import com.streamarr.server.jooq.generated.tables.FileProcessingTask;
 import com.streamarr.server.jooq.generated.tables.Image;
 import com.streamarr.server.jooq.generated.tables.Library;
+import com.streamarr.server.jooq.generated.tables.LibraryMetadata;
 import com.streamarr.server.jooq.generated.tables.MediaFile;
 import com.streamarr.server.jooq.generated.tables.MovieCompany;
 import com.streamarr.server.jooq.generated.tables.MovieDirector;
@@ -49,6 +50,7 @@ public class Indexes {
     public static final Index IDX_BASE_COLLECTABLE_LIBRARY_TITLESORT_ID = Internal.createIndex(DSL.name("idx_base_collectable_library_titlesort_id"), BaseCollectable.BASE_COLLECTABLE, new OrderField[] { BaseCollectable.BASE_COLLECTABLE.LIBRARY_ID, BaseCollectable.BASE_COLLECTABLE.TITLE_SORT, BaseCollectable.BASE_COLLECTABLE.ID }, false);
     public static final Index IDX_EPISODE_SEASON_ID = Internal.createIndex(DSL.name("idx_episode_season_id"), Episode.EPISODE, new OrderField[] { Episode.EPISODE.SEASON_ID }, false);
     public static final Index IDX_EXTERNAL_IDENTIFIER_ENTITY_ID = Internal.createIndex(DSL.name("idx_external_identifier_entity_id"), ExternalIdentifier.EXTERNAL_IDENTIFIER, new OrderField[] { ExternalIdentifier.EXTERNAL_IDENTIFIER.ENTITY_ID }, false);
+    public static final Index IDX_LIBRARY_METADATA_LIBRARY_ID = Internal.createIndex(DSL.name("idx_library_metadata_library_id"), LibraryMetadata.LIBRARY_METADATA, new OrderField[] { LibraryMetadata.LIBRARY_METADATA.LIBRARY_ID }, false);
     public static final Index IDX_MEDIA_FILE_LIBRARY_ID = Internal.createIndex(DSL.name("idx_media_file_library_id"), MediaFile.MEDIA_FILE, new OrderField[] { MediaFile.MEDIA_FILE.LIBRARY_ID }, false);
     public static final Index IDX_MEDIA_FILE_MEDIA_ID = Internal.createIndex(DSL.name("idx_media_file_media_id"), MediaFile.MEDIA_FILE, new OrderField[] { MediaFile.MEDIA_FILE.MEDIA_ID }, false);
     public static final Index IDX_MOVIE_COMPANY_COMPANY_ID = Internal.createIndex(DSL.name("idx_movie_company_company_id"), MovieCompany.MOVIE_COMPANY, new OrderField[] { MovieCompany.MOVIE_COMPANY.COMPANY_ID }, false);
