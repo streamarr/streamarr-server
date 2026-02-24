@@ -295,8 +295,8 @@ class LibraryResolverTest {
   }
 
   @Test
-  @DisplayName("Should return alphabet index for library")
-  void shouldReturnAlphabetIndexForLibrary() {
+  @DisplayName("Should return alphabet index when library exists")
+  void shouldReturnAlphabetIndexWhenLibraryExists() {
     var libraryId = UUID.randomUUID();
     var library =
         Library.builder()
