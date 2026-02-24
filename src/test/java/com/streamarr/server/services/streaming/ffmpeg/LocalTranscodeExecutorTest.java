@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 @Tag("UnitTest")
+@DisplayName("Local Transcode Executor Tests")
 class LocalTranscodeExecutorTest {
 
   @TempDir Path tempDir;
