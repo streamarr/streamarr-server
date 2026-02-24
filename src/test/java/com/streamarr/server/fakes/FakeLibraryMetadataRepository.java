@@ -96,7 +96,9 @@ public class FakeLibraryMetadataRepository implements LibraryMetadataRepository 
   }
 
   @Override
-  public void flush() {}
+  public void flush() {
+    // no-op for test fake
+  }
 
   @Override
   public <S extends LibraryMetadata> S saveAndFlush(S entity) {

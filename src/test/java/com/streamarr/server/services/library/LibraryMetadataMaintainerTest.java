@@ -109,13 +109,19 @@ class LibraryMetadataMaintainerTest {
           }
 
           @Override
-          protected void doBegin(Object transaction, TransactionDefinition definition) {}
+          protected void doBegin(Object transaction, TransactionDefinition definition) {
+            // no-op for test fake
+          }
 
           @Override
-          protected void doCommit(DefaultTransactionStatus status) {}
+          protected void doCommit(DefaultTransactionStatus status) {
+            // no-op for test fake
+          }
 
           @Override
-          protected void doRollback(DefaultTransactionStatus status) {}
+          protected void doRollback(DefaultTransactionStatus status) {
+            // no-op for test fake
+          }
         });
   }
 }
