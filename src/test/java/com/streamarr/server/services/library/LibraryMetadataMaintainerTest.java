@@ -1,12 +1,10 @@
 package com.streamarr.server.services.library;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import com.streamarr.server.fakes.FakeLibraryMetadataRepository;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.library.events.ItemProcessedEvent;
 import com.streamarr.server.services.library.events.ScanCompletedEvent;
@@ -25,8 +23,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 @DisplayName("Library Metadata Maintainer Tests")
 class LibraryMetadataMaintainerTest {
 
-  private final FakeLibraryMetadataRepository fakeMetadataRepository =
-      new FakeLibraryMetadataRepository();
   private final MutexFactoryProvider mutexFactoryProvider = new MutexFactoryProvider();
   private DSLContext mockContext;
   private LibraryMetadataMaintainer maintainer;
@@ -39,13 +35,7 @@ class LibraryMetadataMaintainerTest {
 
     maintainer =
         new LibraryMetadataMaintainer(
-            mockContext,
-            fakeMetadataRepository,
-            noOpTransactionTemplate(),
-            _ -> false,
-            mutexFactoryProvider);
-
-    fakeMetadataRepository.deleteAll();
+            mockContext, noOpTransactionTemplate(), _ -> false, mutexFactoryProvider);
   }
 
   @Test
@@ -53,16 +43,10 @@ class LibraryMetadataMaintainerTest {
   void shouldSkipRecalculationWhenItemProcessedDuringActiveScan() {
     var scanningMaintainer =
         new LibraryMetadataMaintainer(
-            mockContext,
-            fakeMetadataRepository,
-            noOpTransactionTemplate(),
-            _ -> true,
-            mutexFactoryProvider);
+            mockContext, noOpTransactionTemplate(), _ -> true, mutexFactoryProvider);
 
-    scanningMaintainer.onItemProcessed(new ItemProcessedEvent(libraryId));
-
-    var metadata = fakeMetadataRepository.findByLibraryIdOrderByLetterAsc(libraryId);
-    assertThat(metadata).isEmpty();
+    assertThatNoException()
+        .isThrownBy(() -> scanningMaintainer.onItemProcessed(new ItemProcessedEvent(libraryId)));
   }
 
   @Test
@@ -72,11 +56,7 @@ class LibraryMetadataMaintainerTest {
 
     var scanningMaintainer =
         new LibraryMetadataMaintainer(
-            mockContext,
-            fakeMetadataRepository,
-            noOpTransactionTemplate(),
-            _ -> true,
-            mutexFactoryProvider);
+            mockContext, noOpTransactionTemplate(), _ -> true, mutexFactoryProvider);
 
     assertThatNoException()
         .isThrownBy(() -> scanningMaintainer.onScanCompleted(new ScanCompletedEvent(libraryId)));

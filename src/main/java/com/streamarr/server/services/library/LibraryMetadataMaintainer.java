@@ -9,7 +9,6 @@ import static org.jooq.impl.DSL.when;
 import com.streamarr.server.domain.AlphabetLetter;
 import com.streamarr.server.domain.LibraryMetadata;
 import com.streamarr.server.jooq.generated.Tables;
-import com.streamarr.server.repositories.LibraryMetadataRepository;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.library.events.ItemProcessedEvent;
@@ -20,6 +19,7 @@ import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.jooq.DSLContext;
 import org.jooq.Field;
+import org.jooq.Query;
 import org.jooq.Record2;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
@@ -30,19 +30,16 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class LibraryMetadataMaintainer {
 
   private final DSLContext context;
-  private final LibraryMetadataRepository metadataRepository;
   private final TransactionTemplate transactionTemplate;
   private final ActiveScanChecker activeScanChecker;
   private final MutexFactory<String> mutexFactory;
 
   public LibraryMetadataMaintainer(
       DSLContext context,
-      LibraryMetadataRepository metadataRepository,
       TransactionTemplate transactionTemplate,
       ActiveScanChecker activeScanChecker,
       MutexFactoryProvider mutexFactoryProvider) {
     this.context = context;
-    this.metadataRepository = metadataRepository;
     this.transactionTemplate = transactionTemplate;
     this.activeScanChecker = activeScanChecker;
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
@@ -128,11 +125,45 @@ public class LibraryMetadataMaintainer {
   }
 
   private void persistLetterCounts(UUID libraryId, List<LibraryMetadata> entries) {
+    var lm = Tables.LIBRARY_METADATA;
+
     transactionTemplate.executeWithoutResult(
         status -> {
-          metadataRepository.deleteByLibraryId(libraryId);
-          metadataRepository.saveAll(entries);
+          if (!entries.isEmpty()) {
+            var upserts =
+                entries.stream()
+                    .map(
+                        entry ->
+                            (Query)
+                                context
+                                    .insertInto(lm)
+                                    .set(lm.LIBRARY_ID, libraryId)
+                                    .set(lm.LETTER, toJooqLetter(entry.getLetter()))
+                                    .set(lm.ITEM_COUNT, entry.getItemCount())
+                                    .onConflict(lm.LIBRARY_ID, lm.LETTER)
+                                    .doUpdate()
+                                    .set(lm.ITEM_COUNT, entry.getItemCount()))
+                    .toArray(Query[]::new);
+
+            context.batch(upserts).execute();
+          }
+
+          var currentLetters = entries.stream().map(e -> toJooqLetter(e.getLetter())).toList();
+
+          context
+              .deleteFrom(lm)
+              .where(lm.LIBRARY_ID.eq(libraryId))
+              .and(
+                  currentLetters.isEmpty()
+                      ? lm.LETTER.isNotNull()
+                      : lm.LETTER.notIn(currentLetters))
+              .execute();
         });
+  }
+
+  private static com.streamarr.server.jooq.generated.enums.AlphabetLetter toJooqLetter(
+      AlphabetLetter letter) {
+    return com.streamarr.server.jooq.generated.enums.AlphabetLetter.valueOf(letter.name());
   }
 
   private AlphabetLetter parseAlphabetLetter(String value) {
