@@ -143,7 +143,7 @@ public class LibraryManagementService implements ActiveScanChecker {
     }
   }
 
-  private void triggerAsyncScan(UUID libraryId) {
+  public void triggerAsyncScan(UUID libraryId) {
     Thread.startVirtualThread(
         () -> {
           try {
