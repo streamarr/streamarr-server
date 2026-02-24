@@ -374,6 +374,53 @@ class LibraryRefreshServiceTest {
         .isEqualTo("Working Movie (Updated)");
   }
 
+  @Test
+  @DisplayName("Should complete successfully when series library has no items")
+  void shouldCompleteSuccessfullyWhenSeriesLibraryHasNoItems() {
+    var library = buildSeriesLibrary();
+
+    refreshService.refreshLibrary(library);
+
+    assertThat(seriesRepository.findAll()).isEmpty();
+    assertThat(seasonRepository.findAll()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should complete successfully when movie library has no items")
+  void shouldCompleteSuccessfullyWhenMovieLibraryHasNoItems() {
+    var library = buildMovieLibrary();
+
+    refreshService.refreshLibrary(library);
+
+    assertThat(movieRepository.findAll()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should abort remaining season refresh when season details fetch throws exception")
+  void shouldAbortRemainingSeasonRefreshWhenSeasonDetailsFetchThrowsException() {
+    var library = buildSeriesLibrary();
+    var series = saveSeriesWithTmdbId("Breaking Bad", "1396", library);
+
+    stubSeriesMetadata("1396", "Breaking Bad", library);
+    when(seriesProviderResolver.getAvailableSeasonNumbers(library, "1396"))
+        .thenReturn(List.of(1, 2));
+    when(seriesProviderResolver.getSeasonDetails(library, "1396", 1))
+        .thenThrow(new RuntimeException("API failure"));
+    when(seriesProviderResolver.getSeasonDetails(library, "1396", 2))
+        .thenReturn(
+            Optional.of(
+                SeasonDetails.builder()
+                    .name("Season 2")
+                    .seasonNumber(2)
+                    .imageSources(List.of())
+                    .episodes(List.of())
+                    .build()));
+
+    refreshService.refreshLibrary(library);
+
+    assertThat(seasonRepository.findBySeriesId(series.getId())).isEmpty();
+  }
+
   private Library buildSeriesLibrary() {
     return Library.builder()
         .id(UUID.randomUUID())
