@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.AlphabetLetter;
 import com.streamarr.server.domain.ExternalIdentifier;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
@@ -45,6 +46,7 @@ class SeriesServiceIT extends AbstractIntegrationTest {
   private Library savedLibrary;
   private Library savedLibraryB;
   private Library savedLibraryC;
+  private Library savedLibraryD;
 
   @BeforeAll
   void setup() {
@@ -81,6 +83,37 @@ class SeriesServiceIT extends AbstractIntegrationTest {
             .titleSort("Second Show")
             .library(savedLibraryC)
             .build());
+
+    savedLibraryD = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
+
+    seriesRepository.saveAndFlush(
+        Series.builder()
+            .title("Alpha Show")
+            .titleSort("Alpha Show")
+            .library(savedLibraryD)
+            .build());
+    seriesRepository.saveAndFlush(
+        Series.builder()
+            .title("Avengers Show")
+            .titleSort("Avengers Show")
+            .library(savedLibraryD)
+            .build());
+    seriesRepository.saveAndFlush(
+        Series.builder()
+            .title("Batman Show")
+            .titleSort("Batman Show")
+            .library(savedLibraryD)
+            .build());
+    seriesRepository.saveAndFlush(
+        Series.builder().title("Beta Show").titleSort("Beta Show").library(savedLibraryD).build());
+    seriesRepository.saveAndFlush(
+        Series.builder()
+            .title("Gamma Show")
+            .titleSort("Gamma Show")
+            .library(savedLibraryD)
+            .build());
+    seriesRepository.saveAndFlush(
+        Series.builder().title("123 Show").titleSort("123 Show").library(savedLibraryD).build());
   }
 
   @Test
@@ -432,5 +465,60 @@ class SeriesServiceIT extends AbstractIntegrationTest {
             thirdPage.getEdges().get(0).getNode().getId());
 
     assertThat(allIds).doesNotHaveDuplicates();
+  }
+
+  @Test
+  @DisplayName("Should return only B series when start letter is B")
+  void shouldReturnOnlyBSeriesWhenStartLetterIsB() {
+    var filter =
+        MediaFilter.builder()
+            .libraryId(savedLibraryD.getId())
+            .startLetter(AlphabetLetter.B)
+            .build();
+
+    var result = seriesService.getSeriesWithFilter(10, null, 0, null, filter);
+
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    assertThat(titles).containsExactlyInAnyOrder("Batman Show", "Beta Show");
+  }
+
+  @Test
+  @DisplayName("Should return only non-alpha series when start letter is HASH")
+  void shouldReturnOnlyHashSeriesWhenStartLetterIsHash() {
+    var filter =
+        MediaFilter.builder()
+            .libraryId(savedLibraryD.getId())
+            .startLetter(AlphabetLetter.HASH)
+            .build();
+
+    var result = seriesService.getSeriesWithFilter(10, null, 0, null, filter);
+
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    assertThat(titles).containsExactly("123 Show");
+  }
+
+  @Test
+  @DisplayName("Should maintain letter filter across pages when paginating")
+  void shouldMaintainLetterFilterAcrossPagesWhenPaginating() {
+    var filter =
+        MediaFilter.builder()
+            .libraryId(savedLibraryD.getId())
+            .startLetter(AlphabetLetter.B)
+            .build();
+
+    var firstPage = seriesService.getSeriesWithFilter(1, null, 0, null, filter);
+    assertThat(firstPage.getEdges()).hasSize(1);
+    assertThat(firstPage.getPageInfo().isHasNextPage()).isTrue();
+
+    var cursor = firstPage.getPageInfo().getEndCursor().getValue();
+    var secondPage = seriesService.getSeriesWithFilter(1, cursor, 0, null, filter);
+    assertThat(secondPage.getEdges()).hasSize(1);
+    assertThat(secondPage.getPageInfo().isHasNextPage()).isFalse();
+
+    var allTitles =
+        List.of(
+            firstPage.getEdges().get(0).getNode().getTitle(),
+            secondPage.getEdges().get(0).getNode().getTitle());
+    assertThat(allTitles).containsExactlyInAnyOrder("Batman Show", "Beta Show");
   }
 }
