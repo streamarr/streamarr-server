@@ -2,16 +2,13 @@ package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.library.events.ItemProcessedEvent;
 import com.streamarr.server.services.library.events.ScanCompletedEvent;
 import java.util.UUID;
 import org.jooq.DSLContext;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -25,45 +22,41 @@ import org.springframework.transaction.support.TransactionTemplate;
 class LibraryMetadataListenerTest {
 
   private final MutexFactoryProvider mutexFactoryProvider = new MutexFactoryProvider();
-  private DSLContext mockContext;
-  private LibraryMetadataListener listener;
-
   private final UUID libraryId = UUID.randomUUID();
-
-  @BeforeEach
-  void setup() {
-    mockContext = mock(DSLContext.class);
-
-    listener =
-        new LibraryMetadataListener(
-            mockContext, noOpTransactionTemplate(), _ -> false, mutexFactoryProvider);
-  }
 
   @Test
   @DisplayName("Should skip recalculation when item processed during active scan")
   void shouldSkipRecalculationWhenItemProcessedDuringActiveScan() {
-    when(mockContext.select(any(), any()))
-        .thenThrow(new AssertionError("recalculation should not have been attempted"));
+    var tripwireContext =
+        mock(
+            DSLContext.class,
+            invocation -> {
+              throw new AssertionError("recalculation should not have been attempted");
+            });
 
-    var scanningListener =
+    var listener =
         new LibraryMetadataListener(
-            mockContext, noOpTransactionTemplate(), _ -> true, mutexFactoryProvider);
+            tripwireContext, noOpTransactionTemplate(), _ -> true, mutexFactoryProvider);
 
     assertThatNoException()
-        .isThrownBy(() -> scanningListener.onItemProcessed(new ItemProcessedEvent(libraryId)));
+        .isThrownBy(() -> listener.onItemProcessed(new ItemProcessedEvent(libraryId)));
   }
 
   @Test
   @DisplayName("Should recalculate on scan completed even during active scan")
   void shouldRecalculateOnScanCompletedEvenDuringActiveScan() {
-    when(mockContext.select(any(), any()))
-        .thenThrow(new AssertionError("recalculation was attempted"));
+    var tripwireContext =
+        mock(
+            DSLContext.class,
+            invocation -> {
+              throw new AssertionError("recalculation was attempted");
+            });
 
-    var scanningListener =
+    var listener =
         new LibraryMetadataListener(
-            mockContext, noOpTransactionTemplate(), _ -> true, mutexFactoryProvider);
+            tripwireContext, noOpTransactionTemplate(), _ -> true, mutexFactoryProvider);
 
-    assertThatThrownBy(() -> scanningListener.onScanCompleted(new ScanCompletedEvent(libraryId)))
+    assertThatThrownBy(() -> listener.onScanCompleted(new ScanCompletedEvent(libraryId)))
         .isInstanceOf(AssertionError.class)
         .hasMessage("recalculation was attempted");
   }
@@ -71,7 +64,16 @@ class LibraryMetadataListenerTest {
   @Test
   @DisplayName("Should not propagate exception when scan completed recalculation fails")
   void shouldNotPropagateExceptionWhenScanCompletedRecalculationFails() {
-    when(mockContext.select(any(), any())).thenThrow(new RuntimeException("DB error"));
+    var failingContext =
+        mock(
+            DSLContext.class,
+            invocation -> {
+              throw new RuntimeException("DB error");
+            });
+
+    var listener =
+        new LibraryMetadataListener(
+            failingContext, noOpTransactionTemplate(), _ -> false, mutexFactoryProvider);
 
     assertThatNoException()
         .isThrownBy(() -> listener.onScanCompleted(new ScanCompletedEvent(libraryId)));
@@ -80,7 +82,16 @@ class LibraryMetadataListenerTest {
   @Test
   @DisplayName("Should not propagate exception when item processed recalculation fails")
   void shouldNotPropagateExceptionWhenItemProcessedRecalculationFails() {
-    when(mockContext.select(any(), any())).thenThrow(new RuntimeException("DB error"));
+    var failingContext =
+        mock(
+            DSLContext.class,
+            invocation -> {
+              throw new RuntimeException("DB error");
+            });
+
+    var listener =
+        new LibraryMetadataListener(
+            failingContext, noOpTransactionTemplate(), _ -> false, mutexFactoryProvider);
 
     assertThatNoException()
         .isThrownBy(() -> listener.onItemProcessed(new ItemProcessedEvent(libraryId)));
