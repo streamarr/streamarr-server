@@ -56,7 +56,9 @@ class LibraryMetadataListenerTest {
         new LibraryMetadataListener(
             tripwireContext, noOpTransactionTemplate(), _ -> true, mutexFactoryProvider);
 
-    assertThatThrownBy(() -> listener.onScanCompleted(new ScanCompletedEvent(libraryId)))
+    var event = new ScanCompletedEvent(libraryId);
+
+    assertThatThrownBy(() -> listener.onScanCompleted(event))
         .isInstanceOf(AssertionError.class)
         .hasMessage("recalculation was attempted");
   }
