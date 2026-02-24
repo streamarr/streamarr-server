@@ -322,6 +322,9 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
     assertThatThrownBy(() -> libraryManagementService.removeLibrary(libraryId))
         .isInstanceOf(LibraryRefreshInProgressException.class)
         .hasMessageContaining(libraryId.toString());
+
+    var persisted = libraryRepository.findById(libraryId).orElseThrow();
+    assertThat(persisted.getStatus()).isEqualTo(LibraryStatus.REFRESHING);
   }
 
   @Test

@@ -4,11 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.domain.ExternalAgentStrategy;
+import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
 import com.streamarr.server.domain.LibraryStatus;
@@ -292,6 +294,22 @@ class LibraryResolverTest {
             "data.addLibrary.name");
 
     assertThat(name).isEqualTo("Movies");
+  }
+
+  @Test
+  @DisplayName("Should return error when refreshLibrary called for nonexistent library")
+  void shouldReturnErrorWhenRefreshLibraryCalledForNonexistentLibrary() {
+    var nonExistentId = UUID.randomUUID();
+    doThrow(new LibraryNotFoundException(nonExistentId))
+        .when(libraryManagementService)
+        .refreshLibrary(nonExistentId);
+
+    var result =
+        dgsQueryExecutor.execute(
+            String.format("mutation { refreshLibrary(id: \"%s\") }", nonExistentId));
+
+    assertThat(result.getErrors()).isNotEmpty();
+    assertThat(result.getErrors().get(0).getMessage()).contains(nonExistentId.toString());
   }
 
   @Test

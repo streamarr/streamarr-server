@@ -1083,6 +1083,24 @@ class LibraryManagementServiceTest {
     }
 
     @Test
+    @DisplayName("Should transition from UNHEALTHY to HEALTHY when refresh succeeds")
+    void shouldTransitionFromUnhealthyToHealthyWhenRefreshSucceeds() {
+      var library = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+      library.setStatus(LibraryStatus.UNHEALTHY);
+      fakeLibraryRepository.save(library);
+
+      libraryManagementService.refreshLibrary(savedLibraryId);
+
+      await()
+          .atMost(Duration.ofSeconds(5))
+          .untilAsserted(
+              () -> {
+                var updated = fakeLibraryRepository.findById(savedLibraryId).orElseThrow();
+                assertThat(updated.getStatus()).isEqualTo(LibraryStatus.HEALTHY);
+              });
+    }
+
+    @Test
     @DisplayName("Should reject concurrent refresh of the same library")
     void shouldRejectConcurrentRefreshOfSameLibrary() throws Exception {
       var started = new CountDownLatch(1);
