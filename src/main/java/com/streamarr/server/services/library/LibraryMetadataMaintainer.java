@@ -81,6 +81,16 @@ public class LibraryMetadataMaintainer {
   }
 
   private void doRecalculate(UUID libraryId) {
+    var entries = queryLetterCounts(libraryId);
+    persistLetterCounts(libraryId, entries);
+
+    log.info(
+        "Recalculated letter index for library {}: {} distinct letters.",
+        libraryId,
+        entries.size());
+  }
+
+  private List<LibraryMetadata> queryLetterCounts(UUID libraryId) {
     var firstChar = left(Tables.BASE_COLLECTABLE.TITLE_SORT, inline(1));
 
     Field<String> letterExpression =
@@ -114,16 +124,15 @@ public class LibraryMetadataMaintainer {
               .build());
     }
 
+    return metadataEntries;
+  }
+
+  private void persistLetterCounts(UUID libraryId, List<LibraryMetadata> entries) {
     transactionTemplate.executeWithoutResult(
         status -> {
           metadataRepository.deleteByLibraryId(libraryId);
-          metadataRepository.saveAll(metadataEntries);
+          metadataRepository.saveAll(entries);
         });
-
-    log.info(
-        "Recalculated letter index for library {}: {} distinct letters.",
-        libraryId,
-        metadataEntries.size());
   }
 
   private AlphabetLetter parseAlphabetLetter(String value) {
