@@ -473,8 +473,8 @@ class SeriesServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should return only B series when start letter is B")
-  void shouldReturnOnlyBSeriesWhenStartLetterIsB() {
+  @DisplayName("Should return series from B onward when start letter is B")
+  void shouldReturnSeriesFromBOnwardWhenStartLetterIsB() {
     var filter =
         MediaFilter.builder()
             .libraryId(savedLibraryD.getId())
@@ -484,12 +484,12 @@ class SeriesServiceIT extends AbstractIntegrationTest {
     var result = seriesService.getSeriesWithFilter(10, null, 0, null, filter);
 
     var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
-    assertThat(titles).containsExactlyInAnyOrder("Batman Show", "Beta Show");
+    assertThat(titles).containsExactly("Batman Show", "Beta Show", "Gamma Show");
   }
 
   @Test
-  @DisplayName("Should return only non-alpha series when start letter is HASH")
-  void shouldReturnOnlyHashSeriesWhenStartLetterIsHash() {
+  @DisplayName("Should return all series when start letter is hash")
+  void shouldReturnAllSeriesWhenStartLetterIsHash() {
     var filter =
         MediaFilter.builder()
             .libraryId(savedLibraryD.getId())
@@ -499,32 +499,35 @@ class SeriesServiceIT extends AbstractIntegrationTest {
     var result = seriesService.getSeriesWithFilter(10, null, 0, null, filter);
 
     var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
-    assertThat(titles).containsExactly("123 Show");
+    assertThat(titles)
+        .containsExactly(
+            "123 Show", "Alpha Show", "Avengers Show", "Batman Show", "Beta Show", "Gamma Show");
   }
 
   @Test
-  @DisplayName("Should maintain letter filter across pages when paginating")
-  void shouldMaintainLetterFilterAcrossPagesWhenPaginating() {
+  @DisplayName("Should continue pagination onward when start letter is B")
+  void shouldContinuePaginationOnwardWhenStartLetterIsB() {
     var filter =
         MediaFilter.builder()
             .libraryId(savedLibraryD.getId())
             .startLetter(AlphabetLetter.B)
             .build();
 
-    var firstPage = seriesService.getSeriesWithFilter(1, null, 0, null, filter);
-    assertThat(firstPage.getEdges()).hasSize(1);
+    var firstPage = seriesService.getSeriesWithFilter(2, null, 0, null, filter);
+    assertThat(firstPage.getEdges()).hasSize(2);
     assertThat(firstPage.getPageInfo().isHasNextPage()).isTrue();
 
     var cursor = firstPage.getPageInfo().getEndCursor().getValue();
-    var secondPage = seriesService.getSeriesWithFilter(1, cursor, 0, null, filter);
+    var secondPage = seriesService.getSeriesWithFilter(2, cursor, 0, null, filter);
     assertThat(secondPage.getEdges()).hasSize(1);
     assertThat(secondPage.getPageInfo().isHasNextPage()).isFalse();
 
     var allTitles =
         List.of(
             firstPage.getEdges().get(0).getNode().getTitle(),
+            firstPage.getEdges().get(1).getNode().getTitle(),
             secondPage.getEdges().get(0).getNode().getTitle());
-    assertThat(allTitles).containsExactlyInAnyOrder("Batman Show", "Beta Show");
+    assertThat(allTitles).containsExactly("Batman Show", "Beta Show", "Gamma Show");
   }
 
   @Test

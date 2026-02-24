@@ -28,25 +28,13 @@ public class JooqQueryHelper {
   }
 
   public Condition startLetterCondition(AlphabetLetter startLetter) {
-    if (startLetter == null) {
+    if (startLetter == null || startLetter == AlphabetLetter.A || startLetter == AlphabetLetter.HASH) {
       return noCondition();
     }
 
+    var letter = startLetter.name().toLowerCase();
     var firstCharLower = lower(left(Tables.BASE_COLLECTABLE.TITLE_SORT, 1));
 
-    if (startLetter == AlphabetLetter.HASH) {
-      return firstCharLower.lt(inline("a")).or(firstCharLower.gt(inline("z")));
-    }
-
-    var letter = startLetter.name().toLowerCase();
-
-    if (startLetter == AlphabetLetter.Z) {
-      return firstCharLower.eq(inline(letter));
-    }
-
-    var nextLetter = String.valueOf((char) (letter.charAt(0) + 1));
-    return firstCharLower
-        .greaterOrEqual(inline(letter))
-        .and(firstCharLower.lessThan(inline(nextLetter)));
+    return firstCharLower.greaterOrEqual(inline(letter));
   }
 }

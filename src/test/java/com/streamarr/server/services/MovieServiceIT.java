@@ -305,8 +305,8 @@ class MovieServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should return only B movies when start letter is B")
-  void shouldReturnOnlyBMoviesWhenStartLetterIsB() {
+  @DisplayName("Should return movies from B onward when start letter is B")
+  void shouldReturnMoviesFromBOnwardWhenStartLetterIsB() {
 
     var filter =
         MediaFilter.builder()
@@ -318,12 +318,12 @@ class MovieServiceIT extends AbstractIntegrationTest {
 
     var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
-    assertThat(titles).containsExactlyInAnyOrder("Batman", "Beta");
+    assertThat(titles).containsExactly("Batman", "Beta", "Gamma");
   }
 
   @Test
-  @DisplayName("Should return only non-alpha movies when start letter is HASH")
-  void shouldReturnOnlyHashMoviesWhenStartLetterIsHash() {
+  @DisplayName("Should return all movies when start letter is hash")
+  void shouldReturnAllMoviesWhenStartLetterIsHash() {
 
     var filter =
         MediaFilter.builder()
@@ -335,12 +335,12 @@ class MovieServiceIT extends AbstractIntegrationTest {
 
     var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
-    assertThat(titles).containsExactly("123 Movie");
+    assertThat(titles).containsExactly("123 Movie", "Alpha", "Avengers", "Batman", "Beta", "Gamma");
   }
 
   @Test
-  @DisplayName("Should maintain letter filter across pages when paginating")
-  void shouldMaintainLetterFilterAcrossPagesWhenPaginating() {
+  @DisplayName("Should continue pagination onward when start letter is B")
+  void shouldContinuePaginationOnwardWhenStartLetterIsB() {
 
     var filter =
         MediaFilter.builder()
@@ -348,20 +348,21 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .startLetter(AlphabetLetter.B)
             .build();
 
-    var firstPage = movieService.getMoviesWithFilter(1, null, 0, null, filter);
-    assertThat(firstPage.getEdges()).hasSize(1);
+    var firstPage = movieService.getMoviesWithFilter(2, null, 0, null, filter);
+    assertThat(firstPage.getEdges()).hasSize(2);
     assertThat(firstPage.getPageInfo().isHasNextPage()).isTrue();
 
     var cursor = firstPage.getPageInfo().getEndCursor().getValue();
-    var secondPage = movieService.getMoviesWithFilter(1, cursor, 0, null, filter);
+    var secondPage = movieService.getMoviesWithFilter(2, cursor, 0, null, filter);
     assertThat(secondPage.getEdges()).hasSize(1);
     assertThat(secondPage.getPageInfo().isHasNextPage()).isFalse();
 
     var allTitles =
         List.of(
             firstPage.getEdges().get(0).getNode().getTitle(),
+            firstPage.getEdges().get(1).getNode().getTitle(),
             secondPage.getEdges().get(0).getNode().getTitle());
 
-    assertThat(allTitles).containsExactlyInAnyOrder("Batman", "Beta");
+    assertThat(allTitles).containsExactly("Batman", "Beta", "Gamma");
   }
 }
