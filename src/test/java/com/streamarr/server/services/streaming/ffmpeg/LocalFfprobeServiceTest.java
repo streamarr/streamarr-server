@@ -366,6 +366,7 @@ class LocalFfprobeServiceTest {
         {
           "streams": [
             {
+              "index": 0,
               "codec_type": "video",
               "codec_name": "h264",
               "width": 1920,
@@ -375,6 +376,7 @@ class LocalFfprobeServiceTest {
               "disposition": { "default": 1, "forced": 0 }
             },
             {
+              "index": 1,
               "codec_type": "audio",
               "codec_name": "ac3",
               "channels": 6,
@@ -383,12 +385,14 @@ class LocalFfprobeServiceTest {
               "disposition": { "default": 1, "forced": 0 }
             },
             {
+              "index": 2,
               "codec_type": "subtitle",
               "codec_name": "subrip",
               "tags": { "language": "eng" },
               "disposition": { "default": 0, "forced": 0 }
             },
             {
+              "index": 3,
               "codec_type": "subtitle",
               "codec_name": "hdmv_pgs_subtitle",
               "tags": { "language": "spa" },
@@ -434,6 +438,50 @@ class LocalFfprobeServiceTest {
     assertThat(pgsSub.codec()).isEqualTo("hdmv_pgs_subtitle");
     assertThat(pgsSub.language()).isEqualTo("spa");
     assertThat(pgsSub.isForced()).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should parse stream index from ffprobe JSON when indices are non-sequential")
+  void shouldParseStreamIndexFromFfprobeJsonWhenIndicesAreNonSequential() {
+    var json =
+        """
+        {
+          "streams": [
+            {
+              "index": 0,
+              "codec_type": "video",
+              "codec_name": "h264",
+              "width": 1920,
+              "height": 1080,
+              "r_frame_rate": "24/1"
+            },
+            {
+              "index": 2,
+              "codec_type": "audio",
+              "codec_name": "ac3",
+              "channels": 6
+            },
+            {
+              "index": 5,
+              "codec_type": "subtitle",
+              "codec_name": "subrip"
+            }
+          ],
+          "format": {
+            "duration": "60.0",
+            "bit_rate": "5000000"
+          }
+        }
+        """;
+
+    var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
+
+    var probe = service.probe(Path.of("/test/movie.mkv"));
+
+    assertThat(probe.streams()).hasSize(3);
+    assertThat(probe.streams().get(0).index()).isZero();
+    assertThat(probe.streams().get(1).index()).isEqualTo(2);
+    assertThat(probe.streams().get(2).index()).isEqualTo(5);
   }
 
   @Test

@@ -78,12 +78,13 @@ public class LocalFfprobeService implements FfprobeService {
     }
 
     var result = new ArrayList<StreamInfo>();
-    int index = 0;
-    for (var stream : streamsNode) {
+    for (int i = 0; i < streamsNode.size(); i++) {
+      var stream = streamsNode.get(i);
       var codecType = stream.get("codec_type").asString();
+      var indexNode = stream.get("index");
       result.add(
           StreamInfo.builder()
-              .index(index++)
+              .index(indexNode != null && !indexNode.isNull() ? indexNode.asInt() : i)
               .codecType(codecType)
               .codec(stream.get("codec_name").asString())
               .language(extractLanguage(stream))
