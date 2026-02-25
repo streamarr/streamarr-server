@@ -14,6 +14,7 @@ import com.streamarr.server.graphql.cursor.OrderMediaBy;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import java.util.List;
+import java.util.stream.Stream;
 import org.jooq.SortOrder;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -378,11 +379,9 @@ class MovieServiceIT extends AbstractIntegrationTest {
     assertThat(secondPage.getPageInfo().isHasNextPage()).isFalse();
 
     var allTitles =
-        List.of(
-            firstPage.getEdges().get(0).getNode().getTitle(),
-            firstPage.getEdges().get(1).getNode().getTitle(),
-            secondPage.getEdges().get(0).getNode().getTitle(),
-            secondPage.getEdges().get(1).getNode().getTitle());
+        Stream.concat(firstPage.getEdges().stream(), secondPage.getEdges().stream())
+            .map(e -> e.getNode().getTitle())
+            .toList();
 
     assertThat(allTitles).containsExactly("Batman", "Beta", "Gamma", "Zorro");
   }
@@ -480,12 +479,9 @@ class MovieServiceIT extends AbstractIntegrationTest {
     assertThat(secondPage.getPageInfo().isHasNextPage()).isFalse();
 
     var allTitles =
-        List.of(
-            firstPage.getEdges().get(0).getNode().getTitle(),
-            firstPage.getEdges().get(1).getNode().getTitle(),
-            firstPage.getEdges().get(2).getNode().getTitle(),
-            secondPage.getEdges().get(0).getNode().getTitle(),
-            secondPage.getEdges().get(1).getNode().getTitle());
+        Stream.concat(firstPage.getEdges().stream(), secondPage.getEdges().stream())
+            .map(e -> e.getNode().getTitle())
+            .toList();
 
     assertThat(allTitles).containsExactly("Beta", "Batman", "Avengers", "Alpha", "123 Movie");
   }

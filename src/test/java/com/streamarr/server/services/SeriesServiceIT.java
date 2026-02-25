@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.jooq.SortOrder;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -552,11 +553,9 @@ class SeriesServiceIT extends AbstractIntegrationTest {
     assertThat(secondPage.getPageInfo().isHasNextPage()).isFalse();
 
     var allTitles =
-        List.of(
-            firstPage.getEdges().get(0).getNode().getTitle(),
-            firstPage.getEdges().get(1).getNode().getTitle(),
-            secondPage.getEdges().get(0).getNode().getTitle(),
-            secondPage.getEdges().get(1).getNode().getTitle());
+        Stream.concat(firstPage.getEdges().stream(), secondPage.getEdges().stream())
+            .map(e -> e.getNode().getTitle())
+            .toList();
     assertThat(allTitles).containsExactly("Batman Show", "Beta Show", "Gamma Show", "Zorro Show");
   }
 
@@ -652,12 +651,9 @@ class SeriesServiceIT extends AbstractIntegrationTest {
     assertThat(secondPage.getPageInfo().isHasNextPage()).isFalse();
 
     var allTitles =
-        List.of(
-            firstPage.getEdges().get(0).getNode().getTitle(),
-            firstPage.getEdges().get(1).getNode().getTitle(),
-            firstPage.getEdges().get(2).getNode().getTitle(),
-            secondPage.getEdges().get(0).getNode().getTitle(),
-            secondPage.getEdges().get(1).getNode().getTitle());
+        Stream.concat(firstPage.getEdges().stream(), secondPage.getEdges().stream())
+            .map(e -> e.getNode().getTitle())
+            .toList();
     assertThat(allTitles)
         .containsExactly("Beta Show", "Batman Show", "Avengers Show", "Alpha Show", "123 Show");
   }
