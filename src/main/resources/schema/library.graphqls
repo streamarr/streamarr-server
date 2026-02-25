@@ -16,6 +16,7 @@ type Library {
           last: Int
           before: String
           filter: Filter): MediaConnection!
+    alphabetIndex: [AlphabetIndex!]!
 }
 
 enum LibraryStatus {
@@ -49,6 +50,18 @@ enum SortOrder {
 input Filter {
     sortBy: OrderMediaBy
     sortDirection: SortOrder
+    startLetter: AlphabetLetter
+}
+
+enum AlphabetLetter {
+    A B C D E F G H I J K L M
+    N O P Q R S T U V W X Y Z
+    HASH
+}
+
+type AlphabetIndex {
+    letter: AlphabetLetter!
+    count: Int!
 }
 
 type MediaConnection {

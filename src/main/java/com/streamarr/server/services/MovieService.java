@@ -246,7 +246,7 @@ public class MovieService {
 
   private Object getOrderByValue(MediaFilter filter, Movie movie) {
     return switch (filter.getSortBy()) {
-      case TITLE -> movie.getTitle();
+      case TITLE -> movie.getTitleSort();
       case ADDED -> movie.getCreatedOn();
     };
   }
@@ -270,5 +270,7 @@ public class MovieService {
         "sortDirection", previousFilter.getSortDirection(), filter.getSortDirection());
     relayPaginationService.validateCursorField(
         "libraryId", previousFilter.getLibraryId(), filter.getLibraryId());
+    relayPaginationService.validateCursorField(
+        "startLetter", previousFilter.getStartLetter(), filter.getStartLetter());
   }
 }

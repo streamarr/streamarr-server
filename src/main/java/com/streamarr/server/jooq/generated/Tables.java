@@ -12,6 +12,7 @@ import com.streamarr.server.jooq.generated.tables.FileProcessingTask;
 import com.streamarr.server.jooq.generated.tables.Genre;
 import com.streamarr.server.jooq.generated.tables.Image;
 import com.streamarr.server.jooq.generated.tables.Library;
+import com.streamarr.server.jooq.generated.tables.LibraryMetadata;
 import com.streamarr.server.jooq.generated.tables.MediaFile;
 import com.streamarr.server.jooq.generated.tables.Movie;
 import com.streamarr.server.jooq.generated.tables.MovieCompany;
@@ -75,6 +76,11 @@ public class Tables {
      * The table <code>public.library</code>.
      */
     public static final Library LIBRARY = Library.LIBRARY;
+
+    /**
+     * The table <code>public.library_metadata</code>.
+     */
+    public static final LibraryMetadata LIBRARY_METADATA = LibraryMetadata.LIBRARY_METADATA;
 
     /**
      * The table <code>public.media_file</code>.

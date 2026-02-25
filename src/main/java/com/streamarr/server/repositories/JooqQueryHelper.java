@@ -1,8 +1,17 @@
 package com.streamarr.server.repositories;
 
+import static org.jooq.impl.DSL.inline;
+import static org.jooq.impl.DSL.left;
+import static org.jooq.impl.DSL.lower;
+import static org.jooq.impl.DSL.noCondition;
+
+import com.streamarr.server.domain.AlphabetLetter;
+import com.streamarr.server.jooq.generated.Tables;
 import jakarta.persistence.EntityManager;
 import java.util.List;
 import lombok.experimental.UtilityClass;
+import org.jooq.Condition;
+import org.jooq.SortOrder;
 
 @UtilityClass
 public class JooqQueryHelper {
@@ -17,5 +26,38 @@ public class JooqQueryHelper {
     }
 
     return result.getResultList();
+  }
+
+  public Condition startLetterCondition(AlphabetLetter startLetter, SortOrder direction) {
+    if (startLetter == null) {
+      return noCondition();
+    }
+
+    return direction == SortOrder.DESC
+        ? descLetterCondition(startLetter)
+        : ascLetterCondition(startLetter);
+  }
+
+  private Condition ascLetterCondition(AlphabetLetter startLetter) {
+    if (startLetter == AlphabetLetter.HASH) {
+      return noCondition();
+    }
+
+    var firstCharLower = lower(left(Tables.BASE_COLLECTABLE.TITLE_SORT, 1));
+    return firstCharLower.greaterOrEqual(inline(startLetter.name().toLowerCase()));
+  }
+
+  private Condition descLetterCondition(AlphabetLetter startLetter) {
+    if (startLetter == AlphabetLetter.Z) {
+      return noCondition();
+    }
+
+    var firstCharLower = lower(left(Tables.BASE_COLLECTABLE.TITLE_SORT, 1));
+
+    if (startLetter == AlphabetLetter.HASH) {
+      return firstCharLower.lessThan(inline("a"));
+    }
+
+    return firstCharLower.lessOrEqual(inline(startLetter.name().toLowerCase()));
   }
 }

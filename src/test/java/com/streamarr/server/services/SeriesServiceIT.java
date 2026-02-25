@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.AlphabetLetter;
 import com.streamarr.server.domain.ExternalIdentifier;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
@@ -27,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.jooq.SortOrder;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -50,6 +52,7 @@ class SeriesServiceIT extends AbstractIntegrationTest {
   private Library savedLibrary;
   private Library savedLibraryB;
   private Library savedLibraryC;
+  private Library savedLibraryD;
 
   @BeforeAll
   void setup() {
@@ -60,16 +63,69 @@ class SeriesServiceIT extends AbstractIntegrationTest {
     savedLibraryC = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
 
     seriesRepository.saveAndFlush(
-        Series.builder().title("Alpha Show").library(savedLibraryB).build());
+        Series.builder()
+            .title("Alpha Show")
+            .titleSort("Alpha Show")
+            .library(savedLibraryB)
+            .build());
     seriesRepository.saveAndFlush(
-        Series.builder().title("Beta Show").library(savedLibraryB).build());
+        Series.builder().title("Beta Show").titleSort("Beta Show").library(savedLibraryB).build());
     seriesRepository.saveAndFlush(
-        Series.builder().title("Gamma Show").library(savedLibraryB).build());
+        Series.builder()
+            .title("Gamma Show")
+            .titleSort("Gamma Show")
+            .library(savedLibraryB)
+            .build());
 
     seriesRepository.saveAndFlush(
-        Series.builder().title("First Show").library(savedLibraryC).build());
+        Series.builder()
+            .title("First Show")
+            .titleSort("First Show")
+            .library(savedLibraryC)
+            .build());
     seriesRepository.saveAndFlush(
-        Series.builder().title("Second Show").library(savedLibraryC).build());
+        Series.builder()
+            .title("Second Show")
+            .titleSort("Second Show")
+            .library(savedLibraryC)
+            .build());
+
+    savedLibraryD = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
+
+    seriesRepository.saveAndFlush(
+        Series.builder()
+            .title("Alpha Show")
+            .titleSort("Alpha Show")
+            .library(savedLibraryD)
+            .build());
+    seriesRepository.saveAndFlush(
+        Series.builder()
+            .title("Avengers Show")
+            .titleSort("Avengers Show")
+            .library(savedLibraryD)
+            .build());
+    seriesRepository.saveAndFlush(
+        Series.builder()
+            .title("Batman Show")
+            .titleSort("Batman Show")
+            .library(savedLibraryD)
+            .build());
+    seriesRepository.saveAndFlush(
+        Series.builder().title("Beta Show").titleSort("Beta Show").library(savedLibraryD).build());
+    seriesRepository.saveAndFlush(
+        Series.builder()
+            .title("Gamma Show")
+            .titleSort("Gamma Show")
+            .library(savedLibraryD)
+            .build());
+    seriesRepository.saveAndFlush(
+        Series.builder().title("123 Show").titleSort("123 Show").library(savedLibraryD).build());
+    seriesRepository.saveAndFlush(
+        Series.builder()
+            .title("Zorro Show")
+            .titleSort("Zorro Show")
+            .library(savedLibraryD)
+            .build());
   }
 
   @Test
@@ -375,11 +431,23 @@ class SeriesServiceIT extends AbstractIntegrationTest {
         libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
 
     seriesRepository.saveAndFlush(
-        Series.builder().title("Same Show").library(duplicateLibrary).build());
+        Series.builder()
+            .title("Same Show")
+            .titleSort("Same Show")
+            .library(duplicateLibrary)
+            .build());
     seriesRepository.saveAndFlush(
-        Series.builder().title("Same Show").library(duplicateLibrary).build());
+        Series.builder()
+            .title("Same Show")
+            .titleSort("Same Show")
+            .library(duplicateLibrary)
+            .build());
     seriesRepository.saveAndFlush(
-        Series.builder().title("Same Show").library(duplicateLibrary).build());
+        Series.builder()
+            .title("Same Show")
+            .titleSort("Same Show")
+            .library(duplicateLibrary)
+            .build());
 
     var filter =
         MediaFilter.builder()
@@ -412,6 +480,185 @@ class SeriesServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should return only alpha series when start letter is A")
+  void shouldReturnOnlyAlphaSeriesWhenStartLetterIsA() {
+    var filter =
+        MediaFilter.builder()
+            .libraryId(savedLibraryD.getId())
+            .startLetter(AlphabetLetter.A)
+            .build();
+
+    var result = seriesService.getSeriesWithFilter(10, null, 0, null, filter);
+
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    assertThat(titles)
+        .containsExactly(
+            "Alpha Show", "Avengers Show", "Batman Show", "Beta Show", "Gamma Show", "Zorro Show");
+  }
+
+  @Test
+  @DisplayName("Should return series from B onward when start letter is B")
+  void shouldReturnSeriesFromBOnwardWhenStartLetterIsB() {
+    var filter =
+        MediaFilter.builder()
+            .libraryId(savedLibraryD.getId())
+            .startLetter(AlphabetLetter.B)
+            .build();
+
+    var result = seriesService.getSeriesWithFilter(10, null, 0, null, filter);
+
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    assertThat(titles).containsExactly("Batman Show", "Beta Show", "Gamma Show", "Zorro Show");
+  }
+
+  @Test
+  @DisplayName("Should return all series when start letter is hash")
+  void shouldReturnAllSeriesWhenStartLetterIsHash() {
+    var filter =
+        MediaFilter.builder()
+            .libraryId(savedLibraryD.getId())
+            .startLetter(AlphabetLetter.HASH)
+            .build();
+
+    var result = seriesService.getSeriesWithFilter(10, null, 0, null, filter);
+
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    assertThat(titles)
+        .containsExactly(
+            "123 Show",
+            "Alpha Show",
+            "Avengers Show",
+            "Batman Show",
+            "Beta Show",
+            "Gamma Show",
+            "Zorro Show");
+  }
+
+  @Test
+  @DisplayName("Should continue pagination onward when start letter is B")
+  void shouldContinuePaginationOnwardWhenStartLetterIsB() {
+    var filter =
+        MediaFilter.builder()
+            .libraryId(savedLibraryD.getId())
+            .startLetter(AlphabetLetter.B)
+            .build();
+
+    var firstPage = seriesService.getSeriesWithFilter(2, null, 0, null, filter);
+    assertThat(firstPage.getEdges()).hasSize(2);
+    assertThat(firstPage.getPageInfo().isHasNextPage()).isTrue();
+
+    var cursor = firstPage.getPageInfo().getEndCursor().getValue();
+    var secondPage = seriesService.getSeriesWithFilter(2, cursor, 0, null, filter);
+    assertThat(secondPage.getEdges()).hasSize(2);
+    assertThat(secondPage.getPageInfo().isHasNextPage()).isFalse();
+
+    var allTitles =
+        Stream.concat(firstPage.getEdges().stream(), secondPage.getEdges().stream())
+            .map(e -> e.getNode().getTitle())
+            .toList();
+    assertThat(allTitles).containsExactly("Batman Show", "Beta Show", "Gamma Show", "Zorro Show");
+  }
+
+  @Test
+  @DisplayName("Should return only Z series when start letter is Z")
+  void shouldReturnOnlyZSeriesWhenStartLetterIsZ() {
+    var filter =
+        MediaFilter.builder()
+            .libraryId(savedLibraryD.getId())
+            .startLetter(AlphabetLetter.Z)
+            .build();
+
+    var result = seriesService.getSeriesWithFilter(10, null, 0, null, filter);
+
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    assertThat(titles).containsExactly("Zorro Show");
+  }
+
+  @Test
+  @DisplayName("Should return series from B backward when start letter is B and sort is DESC")
+  void shouldReturnSeriesFromBBackwardWhenStartLetterIsBDesc() {
+    var filter =
+        MediaFilter.builder()
+            .libraryId(savedLibraryD.getId())
+            .startLetter(AlphabetLetter.B)
+            .sortDirection(SortOrder.DESC)
+            .build();
+
+    var result = seriesService.getSeriesWithFilter(10, null, 0, null, filter);
+
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    assertThat(titles)
+        .containsExactly("Beta Show", "Batman Show", "Avengers Show", "Alpha Show", "123 Show");
+  }
+
+  @Test
+  @DisplayName("Should return all series when start letter is Z and sort is DESC")
+  void shouldReturnAllSeriesWhenStartLetterIsZDesc() {
+    var filter =
+        MediaFilter.builder()
+            .libraryId(savedLibraryD.getId())
+            .startLetter(AlphabetLetter.Z)
+            .sortDirection(SortOrder.DESC)
+            .build();
+
+    var result = seriesService.getSeriesWithFilter(10, null, 0, null, filter);
+
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    assertThat(titles)
+        .containsExactly(
+            "Zorro Show",
+            "Gamma Show",
+            "Beta Show",
+            "Batman Show",
+            "Avengers Show",
+            "Alpha Show",
+            "123 Show");
+  }
+
+  @Test
+  @DisplayName("Should return only hash series when start letter is hash and sort is DESC")
+  void shouldReturnOnlyHashSeriesWhenStartLetterIsHashDesc() {
+    var filter =
+        MediaFilter.builder()
+            .libraryId(savedLibraryD.getId())
+            .startLetter(AlphabetLetter.HASH)
+            .sortDirection(SortOrder.DESC)
+            .build();
+
+    var result = seriesService.getSeriesWithFilter(10, null, 0, null, filter);
+
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    assertThat(titles).containsExactly("123 Show");
+  }
+
+  @Test
+  @DisplayName("Should continue pagination backward when start letter is B and sort is DESC")
+  void shouldContinuePaginationOnwardWhenStartLetterIsBDesc() {
+    var filter =
+        MediaFilter.builder()
+            .libraryId(savedLibraryD.getId())
+            .startLetter(AlphabetLetter.B)
+            .sortDirection(SortOrder.DESC)
+            .build();
+
+    var firstPage = seriesService.getSeriesWithFilter(3, null, 0, null, filter);
+    assertThat(firstPage.getEdges()).hasSize(3);
+    assertThat(firstPage.getPageInfo().isHasNextPage()).isTrue();
+
+    var cursor = firstPage.getPageInfo().getEndCursor().getValue();
+    var secondPage = seriesService.getSeriesWithFilter(3, cursor, 0, null, filter);
+    assertThat(secondPage.getEdges()).hasSize(2);
+    assertThat(secondPage.getPageInfo().isHasNextPage()).isFalse();
+
+    var allTitles =
+        Stream.concat(firstPage.getEdges().stream(), secondPage.getEdges().stream())
+            .map(e -> e.getNode().getTitle())
+            .toList();
+    assertThat(allTitles)
+        .containsExactly("Beta Show", "Batman Show", "Avengers Show", "Alpha Show", "123 Show");
+  }
+
+  @Test
   @DisplayName("Should update cast when refreshing series metadata with changed cast")
   void shouldUpdateCastWhenRefreshingSeriesMetadataWithChangedCast() {
     var personA =
@@ -429,8 +676,7 @@ class SeriesServiceIT extends AbstractIntegrationTest {
                 .cast(new ArrayList<>(List.of(personA.getFirst(), personB.getFirst())))
                 .build());
 
-    var personC =
-        Person.builder().name("Actor C").sourceId("src-c").build();
+    var personC = Person.builder().name("Actor C").sourceId("src-c").build();
 
     var freshSeries =
         Series.builder()
@@ -445,6 +691,8 @@ class SeriesServiceIT extends AbstractIntegrationTest {
 
     var refreshed = seriesService.refreshSeriesMetadata(series, metadataResult);
 
-    assertThat(refreshed.getCast()).extracting(Person::getName).containsExactly("Actor B", "Actor C");
+    assertThat(refreshed.getCast())
+        .extracting(Person::getName)
+        .containsExactly("Actor B", "Actor C");
   }
 }

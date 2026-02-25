@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.Library;
+import com.streamarr.server.domain.LibraryMetadata;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
@@ -11,12 +12,14 @@ import com.streamarr.server.exceptions.LibraryPathPermissionDeniedException;
 import com.streamarr.server.exceptions.LibraryRefreshInProgressException;
 import com.streamarr.server.exceptions.LibraryScanFailedException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
+import com.streamarr.server.repositories.LibraryMetadataRepository;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
+import com.streamarr.server.services.library.events.ItemProcessedEvent;
 import com.streamarr.server.services.library.events.LibraryAddedEvent;
 import com.streamarr.server.services.library.events.LibraryRemovedEvent;
 import com.streamarr.server.services.library.events.RefreshEndedEvent;
@@ -53,6 +56,7 @@ public class LibraryManagementService implements ActiveScanChecker {
   private final MovieFileProcessor movieFileProcessor;
   private final SeriesFileProcessor seriesFileProcessor;
   private final LibraryRepository libraryRepository;
+  private final LibraryMetadataRepository libraryMetadataRepository;
   private final MediaFileRepository mediaFileRepository;
   private final MovieService movieService;
   private final SeriesService seriesService;
@@ -69,6 +73,7 @@ public class LibraryManagementService implements ActiveScanChecker {
       MovieFileProcessor movieFileProcessor,
       SeriesFileProcessor seriesFileProcessor,
       LibraryRepository libraryRepository,
+      LibraryMetadataRepository libraryMetadataRepository,
       MediaFileRepository mediaFileRepository,
       MovieService movieService,
       SeriesService seriesService,
@@ -81,6 +86,7 @@ public class LibraryManagementService implements ActiveScanChecker {
     this.movieFileProcessor = movieFileProcessor;
     this.seriesFileProcessor = seriesFileProcessor;
     this.libraryRepository = libraryRepository;
+    this.libraryMetadataRepository = libraryMetadataRepository;
     this.mediaFileRepository = mediaFileRepository;
     this.movieService = movieService;
     this.seriesService = seriesService;
@@ -94,6 +100,10 @@ public class LibraryManagementService implements ActiveScanChecker {
   @Override
   public boolean isActivelyScanning(UUID libraryId) {
     return activeScans.contains(libraryId);
+  }
+
+  public List<LibraryMetadata> getAlphabetIndex(UUID libraryId) {
+    return libraryMetadataRepository.findByLibraryIdOrderByLetterAsc(libraryId);
   }
 
   public Library addLibrary(Library library) {
@@ -282,7 +292,9 @@ public class LibraryManagementService implements ActiveScanChecker {
             .findById(libraryId)
             .orElseThrow(() -> new LibraryNotFoundException(libraryId));
 
-    processFile(library, path);
+    if (processFile(library, path)) {
+      eventPublisher.publishEvent(new ItemProcessedEvent(libraryId));
+    }
   }
 
   public void scanLibrary(UUID libraryId) {
@@ -370,20 +382,20 @@ public class LibraryManagementService implements ActiveScanChecker {
     }
   }
 
-  private void processFile(Library library, Path path) {
+  private boolean processFile(Library library, Path path) {
 
     if (!hasSupportedExtension(path)) {
       log.warn(
           "Unsupported file extension: {} for filepath {}.",
           getExtension(path),
           path.toAbsolutePath());
-      return;
+      return false;
     }
 
     var mediaFile = probeFile(library, path);
 
     if (isAlreadyMatched(mediaFile)) {
-      return;
+      return false;
     }
 
     switch (library.getType()) {
@@ -391,6 +403,8 @@ public class LibraryManagementService implements ActiveScanChecker {
       case SERIES -> seriesFileProcessor.process(library, mediaFile);
       default -> throw new IllegalStateException("Unsupported media type: " + library.getType());
     }
+
+    return true;
   }
 
   private boolean hasSupportedExtension(Path path) {
