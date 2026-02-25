@@ -115,15 +115,43 @@ public class MovieService {
 
     var savedMovie = saveMovieWithMediaFile(movie, mediaFile);
 
-    publishImageEvent(savedMovie, metadataResult.imageSources());
+    publishImageEvent(savedMovie.getId(), ImageEntityType.MOVIE, metadataResult.imageSources());
 
     return savedMovie;
   }
 
-  private void publishImageEvent(Movie movie, List<ImageSource> sources) {
+  @Transactional
+  public Movie refreshMovieMetadata(Movie existing, MetadataResult<Movie> metadataResult) {
+    var fresh = metadataResult.entity();
+
+    existing.setTitle(fresh.getTitle());
+    existing.setOriginalTitle(fresh.getOriginalTitle());
+    existing.setTitleSort(fresh.getTitleSort());
+    existing.setTagline(fresh.getTagline());
+    existing.setSummary(fresh.getSummary());
+    existing.setRuntime(fresh.getRuntime());
+    existing.setContentRating(fresh.getContentRating());
+    existing.setReleaseDate(fresh.getReleaseDate());
+
+    existing.setCast(
+        personService.getOrCreatePersons(fresh.getCast(), metadataResult.personImageSources()));
+    existing.setDirectors(
+        personService.getOrCreatePersons(
+            fresh.getDirectors(), metadataResult.personImageSources()));
+    existing.setGenres(genreService.getOrCreateGenres(fresh.getGenres()));
+    existing.setStudios(
+        companyService.getOrCreateCompanies(
+            fresh.getStudios(), metadataResult.companyImageSources()));
+
+    var saved = movieRepository.saveAndFlush(existing);
+    publishImageEvent(saved.getId(), ImageEntityType.MOVIE, metadataResult.imageSources());
+    return saved;
+  }
+
+  private void publishImageEvent(
+      UUID entityId, ImageEntityType entityType, List<ImageSource> sources) {
     if (!sources.isEmpty()) {
-      eventPublisher.publishEvent(
-          new MetadataEnrichedEvent(movie.getId(), ImageEntityType.MOVIE, sources));
+      eventPublisher.publishEvent(new MetadataEnrichedEvent(entityId, entityType, sources));
     }
   }
 
@@ -218,7 +246,7 @@ public class MovieService {
 
   private Object getOrderByValue(MediaFilter filter, Movie movie) {
     return switch (filter.getSortBy()) {
-      case TITLE -> movie.getTitle();
+      case TITLE -> movie.getTitleSort();
       case ADDED -> movie.getCreatedOn();
     };
   }
@@ -242,5 +270,7 @@ public class MovieService {
         "sortDirection", previousFilter.getSortDirection(), filter.getSortDirection());
     relayPaginationService.validateCursorField(
         "libraryId", previousFilter.getLibraryId(), filter.getLibraryId());
+    relayPaginationService.validateCursorField(
+        "startLetter", previousFilter.getStartLetter(), filter.getStartLetter());
   }
 }

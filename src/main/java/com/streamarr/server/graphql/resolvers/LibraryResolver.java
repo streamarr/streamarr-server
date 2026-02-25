@@ -14,6 +14,7 @@ import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.exceptions.InvalidIdException;
 import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
 import com.streamarr.server.graphql.cursor.MediaFilter;
+import com.streamarr.server.graphql.dto.AlphabetIndexDto;
 import com.streamarr.server.graphql.inputs.AddLibraryInput;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.MovieService;
@@ -60,7 +61,13 @@ public class LibraryResolver {
 
   @DgsMutation
   public boolean scanLibrary(String id) {
-    libraryManagementService.scanLibrary(parseUuid(id));
+    libraryManagementService.triggerAsyncScan(parseUuid(id));
+    return true;
+  }
+
+  @DgsMutation
+  public boolean refreshLibrary(String id) {
+    libraryManagementService.triggerAsyncRefresh(parseUuid(id));
     return true;
   }
 
@@ -93,6 +100,14 @@ public class LibraryResolver {
       case SERIES -> seriesService.getSeriesWithFilter(first, after, last, before, effectiveFilter);
       default -> throw new UnsupportedMediaTypeException(library.getType().name());
     };
+  }
+
+  @DgsData(parentType = "Library")
+  public List<AlphabetIndexDto> alphabetIndex(DataFetchingEnvironment dfe) {
+    Library library = dfe.getSource();
+    return libraryManagementService.getAlphabetIndex(library.getId()).stream()
+        .map(m -> new AlphabetIndexDto(m.getLetter(), m.getItemCount()))
+        .toList();
   }
 
   @DgsTypeResolver(name = "Media")

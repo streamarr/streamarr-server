@@ -17,6 +17,7 @@ import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
+import com.streamarr.server.exceptions.LibraryRefreshInProgressException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fakes.FakeSegmentStore;
@@ -307,6 +308,23 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
     assertThatThrownBy(() -> libraryManagementService.removeLibrary(libraryId))
         .isInstanceOf(LibraryScanInProgressException.class)
         .hasMessageContaining(libraryId.toString());
+  }
+
+  @Test
+  @DisplayName("Should throw LibraryRefreshInProgressException when library is refreshing")
+  void shouldThrowLibraryRefreshInProgressExceptionWhenLibraryIsRefreshing() {
+    var libraryToSave = LibraryFixtureCreator.buildFakeLibrary();
+    libraryToSave.setStatus(LibraryStatus.REFRESHING);
+    var library = libraryRepository.saveAndFlush(libraryToSave);
+
+    var libraryId = library.getId();
+
+    assertThatThrownBy(() -> libraryManagementService.removeLibrary(libraryId))
+        .isInstanceOf(LibraryRefreshInProgressException.class)
+        .hasMessageContaining(libraryId.toString());
+
+    var persisted = libraryRepository.findById(libraryId).orElseThrow();
+    assertThat(persisted.getStatus()).isEqualTo(LibraryStatus.REFRESHING);
   }
 
   @Test

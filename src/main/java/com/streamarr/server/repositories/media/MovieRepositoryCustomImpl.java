@@ -34,6 +34,7 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
     var shouldReverse =
         options.getPaginationOptions().getPaginationDirection().equals(PaginationDirection.REVERSE);
     var filter = options.getMediaFilter();
+    var originalDirection = filter.getSortDirection();
 
     if (shouldReverse) {
       filter = reverseFilter(filter);
@@ -60,6 +61,7 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
             .on(Tables.MOVIE.ID.eq(Tables.BASE_COLLECTABLE.ID))
             .where(seekCondition)
             .and(libraryCondition(filter))
+            .and(JooqQueryHelper.startLetterCondition(filter.getStartLetter(), originalDirection))
             .orderBy(orderByColumns)
             // N+2 (Allows us to efficiently check if there are items before AND after N)
             .limit(options.getPaginationOptions().getLimit() + 2);
@@ -121,6 +123,10 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
             .innerJoin(Tables.BASE_COLLECTABLE)
             .on(Tables.MOVIE.ID.eq(Tables.BASE_COLLECTABLE.ID))
             .where(libraryCondition(options.getMediaFilter()))
+            .and(
+                JooqQueryHelper.startLetterCondition(
+                    options.getMediaFilter().getStartLetter(),
+                    options.getMediaFilter().getSortDirection()))
             .orderBy(orderByColumns)
             .limit(options.getPaginationOptions().getLimit() + 1);
 
@@ -132,13 +138,13 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
     return libraryId != null ? Tables.BASE_COLLECTABLE.LIBRARY_ID.eq(libraryId) : noCondition();
   }
 
-  // TODO(#45): new sort fields (RELEASE_DATE, RUNTIME, TITLE_SORT) need a composite index
+  // TODO(#45): new sort fields (RELEASE_DATE, RUNTIME) need a composite index
   // on (library_id, <sort_field>, id) and CursorUtil support for their value types.
   private SortField<?> buildOrderBy(MediaFilter filter) {
     var direction = filter.getSortDirection();
 
     return switch (filter.getSortBy()) {
-      case TITLE -> Tables.BASE_COLLECTABLE.TITLE.sort(direction);
+      case TITLE -> Tables.BASE_COLLECTABLE.TITLE_SORT.sort(direction);
       case ADDED -> Tables.BASE_COLLECTABLE.CREATED_ON.sort(direction);
     };
   }

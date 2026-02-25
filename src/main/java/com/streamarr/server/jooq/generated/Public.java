@@ -12,6 +12,7 @@ import com.streamarr.server.jooq.generated.tables.FileProcessingTask;
 import com.streamarr.server.jooq.generated.tables.Genre;
 import com.streamarr.server.jooq.generated.tables.Image;
 import com.streamarr.server.jooq.generated.tables.Library;
+import com.streamarr.server.jooq.generated.tables.LibraryMetadata;
 import com.streamarr.server.jooq.generated.tables.MediaFile;
 import com.streamarr.server.jooq.generated.tables.Movie;
 import com.streamarr.server.jooq.generated.tables.MovieCompany;
@@ -90,6 +91,11 @@ public class Public extends SchemaImpl {
      * The table <code>public.library</code>.
      */
     public final Library LIBRARY = Library.LIBRARY;
+
+    /**
+     * The table <code>public.library_metadata</code>.
+     */
+    public final LibraryMetadata LIBRARY_METADATA = LibraryMetadata.LIBRARY_METADATA;
 
     /**
      * The table <code>public.media_file</code>.
@@ -195,6 +201,7 @@ public class Public extends SchemaImpl {
             Genre.GENRE,
             Image.IMAGE,
             Library.LIBRARY,
+            LibraryMetadata.LIBRARY_METADATA,
             MediaFile.MEDIA_FILE,
             Movie.MOVIE,
             MovieCompany.MOVIE_COMPANY,
