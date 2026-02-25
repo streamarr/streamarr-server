@@ -1,11 +1,14 @@
 package com.streamarr.server.services.streaming.ffmpeg;
 
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.StreamInfo;
 import com.streamarr.server.exceptions.FfmpegNotAvailableException;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.streaming.FfprobeService;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
@@ -63,7 +66,59 @@ public class LocalFfprobeService implements FfprobeService {
         .framerate(parseFrameRate(videoStream.get("r_frame_rate").asString()))
         .duration(parseDuration(format.get("duration").asString()))
         .bitrate(format.get("bit_rate").asLong())
+        .containerFormat(optionalString(format, "format_name"))
+        .streams(parseAllStreams(root))
         .build();
+  }
+
+  private List<StreamInfo> parseAllStreams(JsonNode root) {
+    var streamsNode = root.get("streams");
+    if (streamsNode == null) {
+      return List.of();
+    }
+
+    var result = new ArrayList<StreamInfo>();
+    int index = 0;
+    for (var stream : streamsNode) {
+      var codecType = stream.get("codec_type").asString();
+      result.add(
+          StreamInfo.builder()
+              .index(index++)
+              .codecType(codecType)
+              .codec(stream.get("codec_name").asString())
+              .language(extractLanguage(stream))
+              .channels(
+                  "audio".equals(codecType) ? optionalInt(stream, "channels") : OptionalInt.empty())
+              .bitrate(
+                  "audio".equals(codecType)
+                      ? optionalLong(stream, "bit_rate")
+                      : OptionalLong.empty())
+              .isDefault(extractDisposition(stream, "default"))
+              .isForced(extractDisposition(stream, "forced"))
+              .build());
+    }
+    return List.copyOf(result);
+  }
+
+  private String extractLanguage(JsonNode stream) {
+    var tags = stream.get("tags");
+    if (tags == null || tags.isNull()) {
+      return null;
+    }
+    var language = tags.get("language");
+    if (language == null || language.isNull()) {
+      return null;
+    }
+    return language.asString();
+  }
+
+  private boolean extractDisposition(JsonNode stream, String flag) {
+    var disposition = stream.get("disposition");
+    if (disposition == null || disposition.isNull()) {
+      return false;
+    }
+    var value = disposition.get(flag);
+    return value != null && !value.isNull() && value.asInt() == 1;
   }
 
   private Optional<JsonNode> findStream(JsonNode root, String codecType) {
@@ -78,6 +133,11 @@ public class LocalFfprobeService implements FfprobeService {
       }
     }
     return Optional.empty();
+  }
+
+  private String optionalString(JsonNode node, String field) {
+    var value = node.get(field);
+    return value != null && !value.isNull() ? value.asString() : null;
   }
 
   private OptionalInt optionalInt(JsonNode node, String field) {

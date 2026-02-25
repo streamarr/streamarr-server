@@ -299,6 +299,248 @@ class LocalFfprobeServiceTest {
     assertThat(probe.audioBitrate()).isEmpty();
   }
 
+  @Test
+  @DisplayName("Should parse container format from format node")
+  void shouldParseContainerFormatFromFormatNode() {
+    var json =
+        """
+        {
+          "streams": [
+            {
+              "codec_type": "video",
+              "codec_name": "h264",
+              "width": 1920,
+              "height": 1080,
+              "r_frame_rate": "24/1"
+            }
+          ],
+          "format": {
+            "format_name": "matroska,webm",
+            "duration": "60.0",
+            "bit_rate": "5000000"
+          }
+        }
+        """;
+
+    var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
+
+    var probe = service.probe(Path.of("/test/movie.mkv"));
+
+    assertThat(probe.containerFormat()).isEqualTo("matroska,webm");
+  }
+
+  @Test
+  @DisplayName("Should return null container format when format_name is absent")
+  void shouldReturnNullContainerFormatWhenFormatNameIsAbsent() {
+    var json =
+        """
+        {
+          "streams": [
+            {
+              "codec_type": "video",
+              "codec_name": "h264",
+              "width": 1920,
+              "height": 1080,
+              "r_frame_rate": "24/1"
+            }
+          ],
+          "format": {
+            "duration": "60.0",
+            "bit_rate": "5000000"
+          }
+        }
+        """;
+
+    var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
+
+    var probe = service.probe(Path.of("/test/movie.mkv"));
+
+    assertThat(probe.containerFormat()).isNull();
+  }
+
+  @Test
+  @DisplayName("Should build stream list with all stream types")
+  void shouldBuildStreamListWithAllStreamTypes() {
+    var json =
+        """
+        {
+          "streams": [
+            {
+              "codec_type": "video",
+              "codec_name": "h264",
+              "width": 1920,
+              "height": 1080,
+              "r_frame_rate": "24/1",
+              "tags": { "language": "und" },
+              "disposition": { "default": 1, "forced": 0 }
+            },
+            {
+              "codec_type": "audio",
+              "codec_name": "ac3",
+              "channels": 6,
+              "bit_rate": "384000",
+              "tags": { "language": "eng" },
+              "disposition": { "default": 1, "forced": 0 }
+            },
+            {
+              "codec_type": "subtitle",
+              "codec_name": "subrip",
+              "tags": { "language": "eng" },
+              "disposition": { "default": 0, "forced": 0 }
+            },
+            {
+              "codec_type": "subtitle",
+              "codec_name": "hdmv_pgs_subtitle",
+              "tags": { "language": "spa" },
+              "disposition": { "default": 0, "forced": 1 }
+            }
+          ],
+          "format": {
+            "format_name": "matroska,webm",
+            "duration": "7200.0",
+            "bit_rate": "5000000"
+          }
+        }
+        """;
+
+    var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
+
+    var probe = service.probe(Path.of("/test/movie.mkv"));
+
+    assertThat(probe.streams()).hasSize(4);
+
+    var video = probe.streams().get(0);
+    assertThat(video.index()).isZero();
+    assertThat(video.codecType()).isEqualTo("video");
+    assertThat(video.codec()).isEqualTo("h264");
+    assertThat(video.language()).isEqualTo("und");
+    assertThat(video.isDefault()).isTrue();
+
+    var audio = probe.streams().get(1);
+    assertThat(audio.index()).isEqualTo(1);
+    assertThat(audio.codecType()).isEqualTo("audio");
+    assertThat(audio.codec()).isEqualTo("ac3");
+    assertThat(audio.language()).isEqualTo("eng");
+    assertThat(audio.channels()).hasValue(6);
+    assertThat(audio.bitrate()).hasValue(384_000L);
+
+    var srtSub = probe.streams().get(2);
+    assertThat(srtSub.codecType()).isEqualTo("subtitle");
+    assertThat(srtSub.codec()).isEqualTo("subrip");
+    assertThat(srtSub.language()).isEqualTo("eng");
+    assertThat(srtSub.isForced()).isFalse();
+
+    var pgsSub = probe.streams().get(3);
+    assertThat(pgsSub.codec()).isEqualTo("hdmv_pgs_subtitle");
+    assertThat(pgsSub.language()).isEqualTo("spa");
+    assertThat(pgsSub.isForced()).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should return empty streams when streams node is absent")
+  void shouldReturnEmptyStreamsWhenStreamsNodeIsAbsent() {
+    var json =
+        """
+        {
+          "streams": [
+            {
+              "codec_type": "video",
+              "codec_name": "h264",
+              "width": 1920,
+              "height": 1080,
+              "r_frame_rate": "24/1"
+            }
+          ],
+          "format": {
+            "duration": "60.0",
+            "bit_rate": "5000000"
+          }
+        }
+        """;
+
+    var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
+
+    var probe = service.probe(Path.of("/test/movie.mkv"));
+
+    assertThat(probe.streams()).isNotEmpty();
+    assertThat(probe.subtitleStreams()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should populate audio streams convenience method")
+  void shouldPopulateAudioStreamsConvenienceMethod() {
+    var json =
+        """
+        {
+          "streams": [
+            {
+              "codec_type": "video",
+              "codec_name": "h264",
+              "width": 1920,
+              "height": 1080,
+              "r_frame_rate": "24/1"
+            },
+            {
+              "codec_type": "audio",
+              "codec_name": "ac3",
+              "channels": 6,
+              "tags": { "language": "eng" }
+            },
+            {
+              "codec_type": "audio",
+              "codec_name": "aac",
+              "channels": 2,
+              "tags": { "language": "jpn" }
+            }
+          ],
+          "format": {
+            "duration": "60.0",
+            "bit_rate": "5000000"
+          }
+        }
+        """;
+
+    var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
+
+    var probe = service.probe(Path.of("/test/movie.mkv"));
+
+    assertThat(probe.audioStreams()).hasSize(2);
+    assertThat(probe.audioStreams().get(0).language()).isEqualTo("eng");
+    assertThat(probe.audioStreams().get(1).language()).isEqualTo("jpn");
+  }
+
+  @Test
+  @DisplayName("Should handle missing tags and disposition gracefully")
+  void shouldHandleMissingTagsAndDispositionGracefully() {
+    var json =
+        """
+        {
+          "streams": [
+            {
+              "codec_type": "video",
+              "codec_name": "h264",
+              "width": 1920,
+              "height": 1080,
+              "r_frame_rate": "24/1"
+            }
+          ],
+          "format": {
+            "duration": "60.0",
+            "bit_rate": "5000000"
+          }
+        }
+        """;
+
+    var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
+
+    var probe = service.probe(Path.of("/test/movie.mkv"));
+
+    var video = probe.streams().getFirst();
+    assertThat(video.language()).isNull();
+    assertThat(video.isDefault()).isFalse();
+    assertThat(video.isForced()).isFalse();
+  }
+
   private Process createFakeProcess(String stdout, int exitCode) {
     return new FakeProcess(stdout, exitCode);
   }
