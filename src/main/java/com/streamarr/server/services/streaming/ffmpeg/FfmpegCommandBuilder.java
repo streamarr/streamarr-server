@@ -99,11 +99,12 @@ public class FfmpegCommandBuilder {
 
     if (mode == TranscodeMode.REMUX || mode == TranscodeMode.AUDIO_TRANSCODE) {
       cmd.addAll(List.of("-c:v", "copy"));
-    } else {
-      cmd.addAll(List.of("-c:v", job.videoEncoder()));
-      addScaleAndBitrateArgs(cmd, job.request());
+      addAudioArgs(cmd, decision.audioDecision());
+      return;
     }
 
+    cmd.addAll(List.of("-c:v", job.videoEncoder()));
+    addScaleAndBitrateArgs(cmd, job.request());
     addAudioArgs(cmd, decision.audioDecision());
   }
 
