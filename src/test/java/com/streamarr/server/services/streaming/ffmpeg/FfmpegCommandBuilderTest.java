@@ -7,6 +7,7 @@ import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeJob;
+import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import java.nio.file.Path;
@@ -81,6 +82,7 @@ class FfmpegCommandBuilderTest {
                         .transcodeMode(mode)
                         .videoCodecFamily(codecFamily)
                         .audioDecision(audio)
+                        .subtitleDecision(SubtitleDecision.exclude())
                         .containerFormat(container)
                         .needsKeyframeAlignment(needsKeyframeAlignment)
                         .build())
@@ -115,6 +117,7 @@ class FfmpegCommandBuilderTest {
                         .transcodeMode(mode)
                         .videoCodecFamily(codecFamily)
                         .audioDecision(audio)
+                        .subtitleDecision(SubtitleDecision.exclude())
                         .containerFormat(container)
                         .needsKeyframeAlignment(needsKeyframeAlignment)
                         .build())
@@ -154,6 +157,7 @@ class FfmpegCommandBuilderTest {
                         .transcodeMode(mode)
                         .videoCodecFamily(codecFamily)
                         .audioDecision(audio)
+                        .subtitleDecision(SubtitleDecision.exclude())
                         .containerFormat(container)
                         .needsKeyframeAlignment(mode == TranscodeMode.REMUX)
                         .build())

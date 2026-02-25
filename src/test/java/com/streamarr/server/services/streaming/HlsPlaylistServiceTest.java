@@ -9,6 +9,7 @@ import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
+import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeMode;
@@ -66,6 +67,7 @@ class HlsPlaylistServiceTest {
                     .transcodeMode(mode)
                     .videoCodecFamily(container == ContainerFormat.FMP4 ? "av1" : "h264")
                     .audioDecision(AudioDecision.stereoAac())
+                    .subtitleDecision(SubtitleDecision.exclude())
                     .containerFormat(container)
                     .needsKeyframeAlignment(mode != TranscodeMode.FULL_TRANSCODE)
                     .build())
@@ -284,6 +286,7 @@ class HlsPlaylistServiceTest {
                     .transcodeMode(mode)
                     .videoCodecFamily(container == ContainerFormat.FMP4 ? "av1" : "h264")
                     .audioDecision(AudioDecision.stereoAac())
+                    .subtitleDecision(SubtitleDecision.exclude())
                     .containerFormat(container)
                     .needsKeyframeAlignment(mode != TranscodeMode.FULL_TRANSCODE)
                     .build())
@@ -374,6 +377,7 @@ class HlsPlaylistServiceTest {
                     .transcodeMode(TranscodeMode.FULL_TRANSCODE)
                     .videoCodecFamily("h264")
                     .audioDecision(AudioDecision.stereoAac())
+                    .subtitleDecision(SubtitleDecision.exclude())
                     .containerFormat(ContainerFormat.MPEGTS)
                     .needsKeyframeAlignment(false)
                     .build())
@@ -480,6 +484,7 @@ class HlsPlaylistServiceTest {
                     .transcodeMode(TranscodeMode.REMUX)
                     .videoCodecFamily(videoCodecFamily)
                     .audioDecision(audio)
+                    .subtitleDecision(SubtitleDecision.exclude())
                     .containerFormat(container)
                     .needsKeyframeAlignment(true)
                     .build())
@@ -588,6 +593,7 @@ class HlsPlaylistServiceTest {
                     .transcodeMode(TranscodeMode.VIDEO_TRANSCODE)
                     .videoCodecFamily("h264")
                     .audioDecision(audio)
+                    .subtitleDecision(SubtitleDecision.exclude())
                     .containerFormat(ContainerFormat.MPEGTS)
                     .needsKeyframeAlignment(false)
                     .build())

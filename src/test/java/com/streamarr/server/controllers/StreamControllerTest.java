@@ -11,6 +11,7 @@ import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
+import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeMode;
@@ -215,6 +216,7 @@ class StreamControllerTest {
                 .transcodeMode(TranscodeMode.REMUX)
                 .videoCodecFamily("h264")
                 .audioDecision(AudioDecision.copy("aac", 2, 0))
+                .subtitleDecision(SubtitleDecision.exclude())
                 .containerFormat(ContainerFormat.MPEGTS)
                 .needsKeyframeAlignment(true)
                 .build())
@@ -244,6 +246,7 @@ class StreamControllerTest {
                 .transcodeMode(TranscodeMode.FULL_TRANSCODE)
                 .videoCodecFamily("av1")
                 .audioDecision(AudioDecision.stereoAac())
+                .subtitleDecision(SubtitleDecision.exclude())
                 .containerFormat(ContainerFormat.FMP4)
                 .needsKeyframeAlignment(false)
                 .build())
@@ -293,6 +296,7 @@ class StreamControllerTest {
                     .transcodeMode(TranscodeMode.FULL_TRANSCODE)
                     .videoCodecFamily("h264")
                     .audioDecision(AudioDecision.stereoAac())
+                    .subtitleDecision(SubtitleDecision.exclude())
                     .containerFormat(ContainerFormat.MPEGTS)
                     .needsKeyframeAlignment(false)
                     .build())

@@ -3,6 +3,8 @@ package com.streamarr.server.services.streaming.ffmpeg;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.ContainerFormat;
+import com.streamarr.server.domain.streaming.SubtitleDecision;
+import com.streamarr.server.domain.streaming.SubtitleMode;
 import com.streamarr.server.domain.streaming.TranscodeJob;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
@@ -49,7 +51,7 @@ public class FfmpegCommandBuilder {
 
     cmd.addAll(List.of("-i", request.sourcePath().toString()));
 
-    addStreamSelection(cmd, decision.audioDecision());
+    addStreamSelection(cmd, decision.audioDecision(), decision.subtitleDecision());
     addCommonFlags(cmd);
     addCodecArgs(cmd, job);
 
@@ -64,12 +66,15 @@ public class FfmpegCommandBuilder {
     return List.copyOf(cmd);
   }
 
-  private void addStreamSelection(List<String> cmd, AudioDecision audio) {
+  private void addStreamSelection(
+      List<String> cmd, AudioDecision audio, SubtitleDecision subtitle) {
     cmd.addAll(List.of("-map", "0:v:0"));
     if (audio.mode() != AudioMode.NONE) {
       cmd.addAll(List.of("-map", "0:a:0"));
     }
-    cmd.addAll(List.of("-map", "-0:s"));
+    if (subtitle.mode() == SubtitleMode.EXCLUDE) {
+      cmd.addAll(List.of("-map", "-0:s"));
+    }
   }
 
   private void addCommonFlags(List<String> cmd) {

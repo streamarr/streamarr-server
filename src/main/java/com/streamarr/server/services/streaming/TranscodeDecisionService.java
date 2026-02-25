@@ -5,6 +5,8 @@ import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.StreamingOptions;
+import com.streamarr.server.domain.streaming.SubtitleDecision;
+import com.streamarr.server.domain.streaming.SubtitleMode;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import java.util.HashSet;
@@ -26,8 +28,9 @@ public class TranscodeDecisionService {
         videoCompatible ? source.videoCodec() : selectPreferredCodec(supportedCodecs);
     var containerFormat = containerForCodec(videoCodecFamily);
     var audioDecision = decideAudio(source, clientOptions, containerFormat);
+    var subtitleDecision = SubtitleDecision.exclude();
 
-    var mode = resolveTranscodeMode(videoCompatible, audioDecision);
+    var mode = resolveTranscodeMode(videoCompatible, audioDecision, subtitleDecision);
     boolean needsKeyframeAlignment =
         mode == TranscodeMode.REMUX || mode == TranscodeMode.AUDIO_TRANSCODE;
 
@@ -35,18 +38,22 @@ public class TranscodeDecisionService {
         .transcodeMode(mode)
         .videoCodecFamily(videoCodecFamily)
         .audioDecision(audioDecision)
+        .subtitleDecision(subtitleDecision)
         .containerFormat(containerFormat)
         .needsKeyframeAlignment(needsKeyframeAlignment)
         .build();
   }
 
-  private TranscodeMode resolveTranscodeMode(boolean videoCompatible, AudioDecision audio) {
+  private TranscodeMode resolveTranscodeMode(
+      boolean videoCompatible, AudioDecision audio, SubtitleDecision subtitle) {
+    boolean subtitleForcesTranscode = subtitle.mode() == SubtitleMode.BURN_IN;
+    boolean effectiveVideoCompatible = videoCompatible && !subtitleForcesTranscode;
     boolean audioPassthrough = audio.mode() == AudioMode.COPY || audio.mode() == AudioMode.NONE;
 
-    if (videoCompatible && audioPassthrough) {
+    if (effectiveVideoCompatible && audioPassthrough) {
       return TranscodeMode.REMUX;
     }
-    if (videoCompatible) {
+    if (effectiveVideoCompatible) {
       return TranscodeMode.AUDIO_TRANSCODE;
     }
     if (audioPassthrough) {

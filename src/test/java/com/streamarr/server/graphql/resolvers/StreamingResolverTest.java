@@ -9,6 +9,7 @@ import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
+import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoQuality;
@@ -67,6 +68,7 @@ class StreamingResolverTest {
                 .transcodeMode(TranscodeMode.REMUX)
                 .videoCodecFamily("h264")
                 .audioDecision(AudioDecision.copy("aac", 2, 0))
+                .subtitleDecision(SubtitleDecision.exclude())
                 .containerFormat(ContainerFormat.MPEGTS)
                 .needsKeyframeAlignment(true)
                 .build())

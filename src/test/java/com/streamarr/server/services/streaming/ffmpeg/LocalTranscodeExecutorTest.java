@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.ContainerFormat;
+import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
@@ -66,6 +67,7 @@ class LocalTranscodeExecutorTest {
                 .transcodeMode(mode)
                 .videoCodecFamily(codecFamily)
                 .audioDecision(AudioDecision.stereoAac())
+                .subtitleDecision(SubtitleDecision.exclude())
                 .containerFormat(
                     "av1".equals(codecFamily) ? ContainerFormat.FMP4 : ContainerFormat.MPEGTS)
                 .needsKeyframeAlignment(mode != TranscodeMode.FULL_TRANSCODE)
