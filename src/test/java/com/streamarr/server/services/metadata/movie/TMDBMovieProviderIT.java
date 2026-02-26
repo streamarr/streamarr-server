@@ -4,12 +4,10 @@ import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
-import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.github.mizosoft.methanol.HttpCache;
-import com.github.tomakehurst.wiremock.WireMockServer;
-import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.AbstractWireMockIntegrationTest;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.ImageType;
@@ -22,7 +20,6 @@ import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
 import java.io.IOException;
 import java.time.LocalDate;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -30,24 +27,11 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 
 @Tag("IntegrationTest")
 @DisplayName("TMDB Movie Provider Integration Tests")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-class TMDBMovieProviderIT extends AbstractIntegrationTest {
-
-  private static final WireMockServer wireMock = new WireMockServer(wireMockConfig().dynamicPort());
-
-  @DynamicPropertySource
-  static void configureWireMock(DynamicPropertyRegistry registry) {
-    wireMock.start();
-
-    registry.add("tmdb.api.base-url", wireMock::baseUrl);
-    registry.add("tmdb.image.base-url", wireMock::baseUrl);
-    registry.add("tmdb.api.token", () -> "test-api-token");
-  }
+class TMDBMovieProviderIT extends AbstractWireMockIntegrationTest {
 
   @Autowired private TMDBMovieProvider provider;
 
@@ -66,11 +50,6 @@ class TMDBMovieProviderIT extends AbstractIntegrationTest {
   void resetStubs() throws IOException {
     wireMock.resetAll();
     tmdbHttpCache.clear();
-  }
-
-  @AfterAll
-  static void tearDown() {
-    wireMock.stop();
   }
 
   // --- search() tests ---
