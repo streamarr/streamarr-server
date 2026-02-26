@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.streamarr.server.config.StreamingProperties;
@@ -26,6 +27,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -338,5 +340,31 @@ class HlsStreamingSmokeTest {
     streamingService.destroySession(sessionId);
 
     assertThat(streamingService.accessSession(sessionId)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should not deadlock when FFmpeg produces verbose stderr output")
+  void shouldNotDeadlockWhenFfmpegProducesVerboseStderrOutput() {
+    var sessionId = UUID.randomUUID();
+    var processManager = new LocalFfmpegProcessManager();
+
+    // -loglevel debug produces ~200KB+ of stderr for a 10s video, well beyond the ~64KB pipe
+    // buffer.
+    // Without stderr draining, FFmpeg blocks on write() and the process never exits.
+    var command =
+        List.of("ffmpeg", "-loglevel", "debug", "-i", TEST_VIDEO.toString(), "-f", "null", "-");
+
+    var process =
+        processManager.startProcess(sessionId, "deadlock-test", command, TEST_VIDEO.getParent());
+
+    await()
+        .atMost(Duration.ofSeconds(30))
+        .untilAsserted(
+            () -> {
+              assertThat(process.isAlive()).isFalse();
+              assertThat(process.exitValue()).isZero();
+            });
+
+    processManager.stopProcess(sessionId);
   }
 }
