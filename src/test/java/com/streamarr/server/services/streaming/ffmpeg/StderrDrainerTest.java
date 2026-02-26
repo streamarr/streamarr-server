@@ -36,7 +36,7 @@ class StderrDrainerTest {
 
   @Test
   @DisplayName("Should return empty list when stream is empty")
-  void shouldReturnEmptyListWhenStreamIsEmpty() throws Exception {
+  void shouldReturnEmptyListWhenStreamIsEmpty() {
     var input = new ByteArrayInputStream(new byte[0]);
 
     try (var drainer = new StderrDrainer(input)) {
@@ -66,7 +66,7 @@ class StderrDrainerTest {
 
   @Test
   @DisplayName("Should allow idempotent close")
-  void shouldAllowIdempotentClose() throws Exception {
+  void shouldAllowIdempotentClose() {
     var input = new ByteArrayInputStream("line\n".getBytes(StandardCharsets.UTF_8));
     var drainer = new StderrDrainer(input);
 

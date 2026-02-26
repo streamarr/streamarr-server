@@ -51,24 +51,27 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
         processes.keySet().stream().filter(key -> key.sessionId().equals(sessionId)).toList();
 
     for (var key : keysToRemove) {
-      var managed = processes.remove(key);
-      if (managed == null) {
-        continue;
-      }
-
-      if (!managed.process().isAlive()) {
-        managed.drainer().close();
-        continue;
-      }
-
-      sendQuitSignal(managed.process(), sessionId);
-      awaitGracefulShutdown(managed.process(), sessionId);
-      managed.drainer().close();
+      shutdownManagedProcess(processes.remove(key), sessionId);
     }
 
     if (!keysToRemove.isEmpty()) {
       log.info("Stopped FFmpeg process(es) for session {}", sessionId);
     }
+  }
+
+  private void shutdownManagedProcess(ManagedProcess managed, UUID sessionId) {
+    if (managed == null) {
+      return;
+    }
+
+    if (!managed.process().isAlive()) {
+      managed.drainer().close();
+      return;
+    }
+
+    sendQuitSignal(managed.process(), sessionId);
+    awaitGracefulShutdown(managed.process(), sessionId);
+    managed.drainer().close();
   }
 
   private void sendQuitSignal(Process process, UUID sessionId) {
