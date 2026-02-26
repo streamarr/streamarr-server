@@ -92,7 +92,69 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
             : database.values().stream()
                 .filter(m -> m.getLibrary() != null && libraryId.equals(m.getLibrary().getId()));
 
-    return filterByStartLetter(stream, filter);
+    return applyFilters(filterByStartLetter(stream, filter), filter);
+  }
+
+  private Stream<Movie> applyFilters(Stream<Movie> stream, MediaFilter filter) {
+    var genreIds = filter.getGenreIds();
+    if (genreIds != null && !genreIds.isEmpty()) {
+      stream =
+          stream.filter(
+              m ->
+                  m.getGenres().stream()
+                      .anyMatch(g -> genreIds.contains(g.getId())));
+    }
+
+    var years = filter.getYears();
+    if (years != null && !years.isEmpty()) {
+      stream =
+          stream.filter(
+              m ->
+                  m.getReleaseDate() != null
+                      && years.contains(m.getReleaseDate().getYear()));
+    }
+
+    var contentRatings = filter.getContentRatings();
+    if (contentRatings != null && !contentRatings.isEmpty()) {
+      stream =
+          stream.filter(
+              m ->
+                  m.getContentRating() != null
+                      && contentRatings.contains(m.getContentRating().value()));
+    }
+
+    var studioIds = filter.getStudioIds();
+    if (studioIds != null && !studioIds.isEmpty()) {
+      stream =
+          stream.filter(
+              m ->
+                  m.getStudios().stream()
+                      .anyMatch(s -> studioIds.contains(s.getId())));
+    }
+
+    var directorIds = filter.getDirectorIds();
+    if (directorIds != null && !directorIds.isEmpty()) {
+      stream =
+          stream.filter(
+              m ->
+                  m.getDirectors().stream()
+                      .anyMatch(d -> directorIds.contains(d.getId())));
+    }
+
+    var castMemberIds = filter.getCastMemberIds();
+    if (castMemberIds != null && !castMemberIds.isEmpty()) {
+      stream =
+          stream.filter(
+              m ->
+                  m.getCast().stream()
+                      .anyMatch(p -> castMemberIds.contains(p.getId())));
+    }
+
+    if (Boolean.TRUE.equals(filter.getUnmatched())) {
+      stream = stream.filter(m -> m.getExternalIds().isEmpty());
+    }
+
+    return stream;
   }
 
   private Stream<Movie> filterByStartLetter(Stream<Movie> stream, MediaFilter filter) {

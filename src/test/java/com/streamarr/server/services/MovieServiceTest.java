@@ -34,6 +34,7 @@ import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import java.time.LocalDate;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -255,6 +256,164 @@ class MovieServiceTest {
     var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
     assertThat(titles).containsExactly("Alpha", "Avengers", "Batman", "Cherry");
+  }
+
+  @Test
+  @DisplayName("Should filter by single genre when genreIds has one ID")
+  void shouldFilterBySingleGenre() {
+    var genreAction = Genre.builder().name("Action").sourceId("action").build();
+    genreAction.setId(UUID.randomUUID());
+    var genreComedy = Genre.builder().name("Comedy").sourceId("comedy").build();
+    genreComedy.setId(UUID.randomUUID());
+
+    movieRepository.save(
+        Movie.builder().title("Action Movie").genres(Set.of(genreAction)).build());
+    movieRepository.save(
+        Movie.builder().title("Comedy Movie").genres(Set.of(genreComedy)).build());
+    movieRepository.save(
+        Movie.builder()
+            .title("Action Comedy")
+            .genres(Set.of(genreAction, genreComedy))
+            .build());
+
+    var filter = MediaFilter.builder().genreIds(List.of(genreAction.getId())).build();
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactlyInAnyOrder("Action Movie", "Action Comedy");
+  }
+
+  @Test
+  @DisplayName("Should filter by multiple genres with OR semantics")
+  void shouldFilterByMultipleGenresWithOrSemantics() {
+    var genreAction = Genre.builder().name("Action").sourceId("action").build();
+    genreAction.setId(UUID.randomUUID());
+    var genreComedy = Genre.builder().name("Comedy").sourceId("comedy").build();
+    genreComedy.setId(UUID.randomUUID());
+    var genreDrama = Genre.builder().name("Drama").sourceId("drama").build();
+    genreDrama.setId(UUID.randomUUID());
+
+    movieRepository.save(
+        Movie.builder().title("Action Movie").genres(Set.of(genreAction)).build());
+    movieRepository.save(
+        Movie.builder().title("Comedy Movie").genres(Set.of(genreComedy)).build());
+    movieRepository.save(Movie.builder().title("Drama Movie").genres(Set.of(genreDrama)).build());
+
+    var filter =
+        MediaFilter.builder()
+            .genreIds(List.of(genreAction.getId(), genreComedy.getId()))
+            .build();
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactlyInAnyOrder("Action Movie", "Comedy Movie");
+  }
+
+  @Test
+  @DisplayName("Should return all movies when genreIds is empty")
+  void shouldReturnAllWhenGenreIdsEmpty() {
+    movieRepository.save(Movie.builder().title("Movie A").build());
+    movieRepository.save(Movie.builder().title("Movie B").build());
+
+    var filter = MediaFilter.builder().genreIds(List.of()).build();
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+
+    assertThat(result.getEdges()).hasSize(2);
+  }
+
+  @Test
+  @DisplayName("Should filter by single year when years has one value")
+  void shouldFilterBySingleYear() {
+    movieRepository.save(
+        Movie.builder().title("Old Movie").releaseDate(LocalDate.of(2000, 6, 15)).build());
+    movieRepository.save(
+        Movie.builder().title("New Movie").releaseDate(LocalDate.of(2024, 3, 10)).build());
+    movieRepository.save(
+        Movie.builder().title("Mid Movie").releaseDate(LocalDate.of(2010, 11, 1)).build());
+
+    var filter = MediaFilter.builder().years(List.of(2024)).build();
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactly("New Movie");
+  }
+
+  @Test
+  @DisplayName("Should filter by multiple years with OR semantics")
+  void shouldFilterByMultipleYearsWithOrSemantics() {
+    movieRepository.save(
+        Movie.builder().title("Year 2000").releaseDate(LocalDate.of(2000, 1, 1)).build());
+    movieRepository.save(
+        Movie.builder().title("Year 2010").releaseDate(LocalDate.of(2010, 6, 15)).build());
+    movieRepository.save(
+        Movie.builder().title("Year 2020").releaseDate(LocalDate.of(2020, 12, 25)).build());
+
+    var filter = MediaFilter.builder().years(List.of(2000, 2020)).build();
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactlyInAnyOrder("Year 2000", "Year 2020");
+  }
+
+  @Test
+  @DisplayName("Should exclude null release date when filtering by year")
+  void shouldExcludeNullReleaseDateWhenFilteringByYear() {
+    movieRepository.save(
+        Movie.builder().title("Dated").releaseDate(LocalDate.of(2024, 1, 1)).build());
+    movieRepository.save(Movie.builder().title("Undated").build());
+
+    var filter = MediaFilter.builder().years(List.of(2024)).build();
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactly("Dated");
+  }
+
+  @Test
+  @DisplayName("Should filter by single content rating")
+  void shouldFilterBySingleContentRating() {
+    movieRepository.save(
+        Movie.builder()
+            .title("PG-13 Movie")
+            .contentRating(new ContentRating("MPAA", "PG-13", "US"))
+            .build());
+    movieRepository.save(
+        Movie.builder()
+            .title("R Movie")
+            .contentRating(new ContentRating("MPAA", "R", "US"))
+            .build());
+
+    var filter = MediaFilter.builder().contentRatings(List.of("PG-13")).build();
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactly("PG-13 Movie");
+  }
+
+  @Test
+  @DisplayName("Should filter by multiple content ratings with OR semantics")
+  void shouldFilterByMultipleContentRatingsWithOrSemantics() {
+    movieRepository.save(
+        Movie.builder()
+            .title("PG Movie")
+            .contentRating(new ContentRating("MPAA", "PG", "US"))
+            .build());
+    movieRepository.save(
+        Movie.builder()
+            .title("R Movie")
+            .contentRating(new ContentRating("MPAA", "R", "US"))
+            .build());
+    movieRepository.save(
+        Movie.builder()
+            .title("G Movie")
+            .contentRating(new ContentRating("MPAA", "G", "US"))
+            .build());
+
+    var filter = MediaFilter.builder().contentRatings(List.of("PG", "R")).build();
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactlyInAnyOrder("PG Movie", "R Movie");
   }
 
   @Test
