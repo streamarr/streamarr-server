@@ -534,8 +534,8 @@ class HlsPlaylistServiceTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("audioPlaylistAttributes")
-    @DisplayName("Should include expected audio attribute in master playlist")
-    void shouldIncludeExpectedAudioAttributeInMasterPlaylist(
+    @DisplayName("Should include expected audio attribute in master playlist when codec is present")
+    void shouldIncludeExpectedAudioAttributeInMasterPlaylistWhenCodecIsPresent(
         String scenario, AudioDecision audio, String expectedFragment) {
       var session = createSessionWithAudio(audio, "h264");
 
