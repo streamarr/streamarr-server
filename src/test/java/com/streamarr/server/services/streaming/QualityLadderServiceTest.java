@@ -106,8 +106,8 @@ class QualityLadderServiceTest {
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("aspectRatioVariants")
-  @DisplayName("Should compute aspect-ratio-correct width for all tiers")
-  void shouldComputeAspectRatioCorrectWidthForAllTiers(
+  @DisplayName("Should compute aspect-ratio-correct width when source has varying aspect ratios")
+  void shouldComputeAspectRatioCorrectWidthWhenSourceHasVaryingAspectRatios(
       String scenario,
       int sourceWidth,
       int sourceHeight,
@@ -132,17 +132,6 @@ class QualityLadderServiceTest {
         Arguments.of("16:9 source", 1920, 1080, 1920, 1280, 854, 640),
         Arguments.of("4:3 source", 1440, 1080, 1440, 960, 640, 480),
         Arguments.of("21:9 ultrawide source", 2560, 1080, 2560, 1708, 1138, 854));
-  }
-
-  @Test
-  @DisplayName("Should align width to even number when aspect ratio produces odd value")
-  void shouldAlignWidthToEvenNumberWhenAspectRatioProducesOddValue() {
-    var probe = buildProbe(2560, 1080, 8_000_000L);
-    var options = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();
-
-    var variants = service.generateVariants(probe, options);
-
-    assertThat(variants).allSatisfy(v -> assertThat(v.width() % 2).isZero());
   }
 
   private MediaProbe buildProbe(int width, int height, long bitrate) {

@@ -59,10 +59,7 @@ public class QualityLadderService {
         continue;
       }
 
-      int width = (int) Math.round((double) source.width() / source.height() * tier.height());
-      if (width % 2 != 0) {
-        width++;
-      }
+      var width = computeEvenAlignedWidth(source, tier.height());
 
       variants.add(
           QualityVariant.builder()
@@ -94,6 +91,14 @@ public class QualityLadderService {
     }
 
     return source.height();
+  }
+
+  private int computeEvenAlignedWidth(MediaProbe source, int targetHeight) {
+    int width = (int) Math.round((double) source.width() / source.height() * targetHeight);
+    if (width % 2 != 0) {
+      width++;
+    }
+    return width;
   }
 
   private Integer resolveMaxBitrate(StreamingOptions options) {
