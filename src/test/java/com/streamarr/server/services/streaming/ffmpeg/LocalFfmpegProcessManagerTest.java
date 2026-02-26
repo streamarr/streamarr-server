@@ -2,9 +2,11 @@ package com.streamarr.server.services.streaming.ffmpeg;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.server.exceptions.TranscodeException;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
@@ -15,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 @Tag("UnitTest")
+@DisplayName("Local FFmpeg Process Manager Tests")
 class LocalFfmpegProcessManagerTest {
 
   @TempDir Path tempDir;
@@ -124,5 +127,17 @@ class LocalFfmpegProcessManagerTest {
     assertThat(manager.isRunning(sessionId, "360p")).isFalse();
 
     manager.stopProcess(sessionId);
+  }
+
+  @Test
+  @DisplayName("Should throw with generic message when process start fails")
+  void shouldThrowWithGenericMessageWhenProcessStartFails() {
+    var sessionId = UUID.randomUUID();
+
+    var command = List.of("/nonexistent-binary-12345");
+
+    assertThatThrownBy(() -> manager.startProcess(sessionId, "default", command, tempDir))
+        .isInstanceOf(TranscodeException.class)
+        .hasMessage(TranscodeException.GENERIC_MESSAGE);
   }
 }
