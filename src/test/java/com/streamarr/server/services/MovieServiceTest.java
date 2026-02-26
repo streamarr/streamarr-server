@@ -160,6 +160,46 @@ class MovieServiceTest {
   }
 
   @Test
+  @DisplayName("Should paginate backward from DESC maintaining canonical order")
+  void shouldPaginateBackwardFromDescMaintainingCanonicalOrder() {
+    movieRepository.save(Movie.builder().title("Apple").build());
+    movieRepository.save(Movie.builder().title("Banana").build());
+    movieRepository.save(Movie.builder().title("Cherry").build());
+
+    var filter =
+        MediaFilter.builder().sortBy(OrderMediaBy.TITLE).sortDirection(SortOrder.DESC).build();
+
+    var allMovies = movieService.getMoviesWithFilter(3, null, 0, null, filter);
+    assertThat(allMovies.getEdges()).hasSize(3);
+
+    var endCursor = allMovies.getPageInfo().getEndCursor().getValue();
+    var backwardPage = movieService.getMoviesWithFilter(0, null, 1, endCursor, filter);
+
+    assertThat(backwardPage.getEdges()).hasSize(1);
+    assertThat(backwardPage.getEdges().get(0).getNode().getTitle()).isEqualTo("Banana");
+  }
+
+  @Test
+  @DisplayName("Should maintain canonical order when paginating backward")
+  void shouldMaintainCanonicalOrderWhenPaginatingBackward() {
+    movieRepository.save(Movie.builder().title("Apple").build());
+    movieRepository.save(Movie.builder().title("Banana").build());
+    movieRepository.save(Movie.builder().title("Cherry").build());
+    movieRepository.save(Movie.builder().title("Date").build());
+
+    var forwardAll = movieService.getMoviesWithFilter(4, null, 0, null, null);
+    var forwardTitles =
+        forwardAll.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    var endCursor = forwardAll.getPageInfo().getEndCursor().getValue();
+    var backwardPage = movieService.getMoviesWithFilter(0, null, 3, endCursor, null);
+    var backwardTitles =
+        backwardPage.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(backwardTitles).containsExactlyElementsOf(forwardTitles.subList(0, 3));
+  }
+
+  @Test
   @DisplayName("Should return empty connection when no movies exist")
   void shouldReturnEmptyConnectionWhenNoMoviesExist() {
     var result = movieService.getMoviesWithFilter(10, null, 0, null, null);

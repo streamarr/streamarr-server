@@ -410,6 +410,38 @@ class SeriesServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should paginate backward when given last and before arguments")
+  void shouldPaginateBackwardWhenGivenLastAndCursor() {
+    var filter = filterForLibrary(savedLibraryB);
+
+    var allSeries = seriesService.getSeriesWithFilter(3, null, 0, null, filter);
+    assertThat(allSeries.getEdges()).hasSize(3);
+
+    var endCursor = allSeries.getPageInfo().getEndCursor().getValue();
+    var backwardPage = seriesService.getSeriesWithFilter(0, null, 1, endCursor.toString(), filter);
+
+    assertThat(backwardPage.getEdges()).hasSize(1);
+    assertThat(backwardPage.getEdges().get(0).getNode().getTitle()).isEqualTo("Beta Show");
+  }
+
+  @Test
+  @DisplayName("Should maintain canonical order when paginating backward")
+  void shouldMaintainCanonicalOrderWhenPaginatingBackward() {
+    var filter = filterForLibrary(savedLibraryB);
+
+    var forwardAll = seriesService.getSeriesWithFilter(3, null, 0, null, filter);
+    var forwardTitles =
+        forwardAll.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    var endCursor = forwardAll.getPageInfo().getEndCursor().getValue();
+    var backwardPage = seriesService.getSeriesWithFilter(0, null, 2, endCursor.toString(), filter);
+    var backwardTitles =
+        backwardPage.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(backwardTitles).containsExactlyElementsOf(forwardTitles.subList(0, 2));
+  }
+
+  @Test
   @DisplayName("Should reject cursor when libraryId does not match")
   void shouldRejectCursorWhenLibraryIdMismatch() {
     var filterB = filterForLibrary(savedLibraryB);

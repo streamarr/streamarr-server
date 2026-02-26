@@ -145,6 +145,25 @@ class MovieServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should maintain canonical order when paginating backward")
+  void shouldMaintainCanonicalOrderWhenPaginatingBackward() {
+
+    var filter = filterForLibrary(savedLibraryD);
+
+    var forwardAll = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+    var allTitles = forwardAll.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    var endCursor = forwardAll.getPageInfo().getEndCursor().getValue();
+    var backwardPage = movieService.getMoviesWithFilter(0, null, 3, endCursor, filter);
+    var backwardTitles =
+        backwardPage.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(backwardTitles).isSortedAccordingTo(String::compareTo);
+    assertThat(backwardTitles)
+        .containsExactlyElementsOf(allTitles.subList(allTitles.size() - 4, allTitles.size() - 1));
+  }
+
+  @Test
   @DisplayName("Should return only movies from specified library when libraryId filter is set")
   void shouldReturnOnlyMoviesFromSpecifiedLibraryWhenLibraryIdFilterSet() {
 
