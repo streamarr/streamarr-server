@@ -417,6 +417,180 @@ class MovieServiceTest {
   }
 
   @Test
+  @DisplayName("Should filter by single studio when studioIds has one ID")
+  void shouldFilterBySingleStudio() {
+    var studioA = Company.builder().name("Studio A").build();
+    studioA.setId(UUID.randomUUID());
+    var studioB = Company.builder().name("Studio B").build();
+    studioB.setId(UUID.randomUUID());
+
+    movieRepository.save(
+        Movie.builder().title("Studio A Movie").studios(Set.of(studioA)).build());
+    movieRepository.save(
+        Movie.builder().title("Studio B Movie").studios(Set.of(studioB)).build());
+
+    var filter = MediaFilter.builder().studioIds(List.of(studioA.getId())).build();
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactly("Studio A Movie");
+  }
+
+  @Test
+  @DisplayName("Should filter by multiple studios with OR semantics")
+  void shouldFilterByMultipleStudiosWithOrSemantics() {
+    var studioA = Company.builder().name("Studio A").build();
+    studioA.setId(UUID.randomUUID());
+    var studioB = Company.builder().name("Studio B").build();
+    studioB.setId(UUID.randomUUID());
+    var studioC = Company.builder().name("Studio C").build();
+    studioC.setId(UUID.randomUUID());
+
+    movieRepository.save(
+        Movie.builder().title("Studio A Movie").studios(Set.of(studioA)).build());
+    movieRepository.save(
+        Movie.builder().title("Studio B Movie").studios(Set.of(studioB)).build());
+    movieRepository.save(
+        Movie.builder().title("Studio C Movie").studios(Set.of(studioC)).build());
+
+    var filter =
+        MediaFilter.builder()
+            .studioIds(List.of(studioA.getId(), studioB.getId()))
+            .build();
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactlyInAnyOrder("Studio A Movie", "Studio B Movie");
+  }
+
+  @Test
+  @DisplayName("Should filter by single director when directorIds has one ID")
+  void shouldFilterBySingleDirector() {
+    var directorA = Person.builder().name("Director A").build();
+    directorA.setId(UUID.randomUUID());
+    var directorB = Person.builder().name("Director B").build();
+    directorB.setId(UUID.randomUUID());
+
+    movieRepository.save(
+        Movie.builder().title("Director A Movie").directors(List.of(directorA)).build());
+    movieRepository.save(
+        Movie.builder().title("Director B Movie").directors(List.of(directorB)).build());
+
+    var filter = MediaFilter.builder().directorIds(List.of(directorA.getId())).build();
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactly("Director A Movie");
+  }
+
+  @Test
+  @DisplayName("Should filter by multiple directors with OR semantics")
+  void shouldFilterByMultipleDirectorsWithOrSemantics() {
+    var dirA = Person.builder().name("Dir A").build();
+    dirA.setId(UUID.randomUUID());
+    var dirB = Person.builder().name("Dir B").build();
+    dirB.setId(UUID.randomUUID());
+    var dirC = Person.builder().name("Dir C").build();
+    dirC.setId(UUID.randomUUID());
+
+    movieRepository.save(
+        Movie.builder().title("Movie A").directors(List.of(dirA)).build());
+    movieRepository.save(
+        Movie.builder().title("Movie B").directors(List.of(dirB)).build());
+    movieRepository.save(
+        Movie.builder().title("Movie C").directors(List.of(dirC)).build());
+
+    var filter =
+        MediaFilter.builder().directorIds(List.of(dirA.getId(), dirB.getId())).build();
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactlyInAnyOrder("Movie A", "Movie B");
+  }
+
+  @Test
+  @DisplayName("Should filter by single cast member when castMemberIds has one ID")
+  void shouldFilterBySingleCastMember() {
+    var actorA = Person.builder().name("Actor A").build();
+    actorA.setId(UUID.randomUUID());
+    var actorB = Person.builder().name("Actor B").build();
+    actorB.setId(UUID.randomUUID());
+
+    movieRepository.save(
+        Movie.builder().title("Actor A Movie").cast(List.of(actorA)).build());
+    movieRepository.save(
+        Movie.builder().title("Actor B Movie").cast(List.of(actorB)).build());
+
+    var filter = MediaFilter.builder().castMemberIds(List.of(actorA.getId())).build();
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactly("Actor A Movie");
+  }
+
+  @Test
+  @DisplayName("Should filter by multiple cast members with OR semantics")
+  void shouldFilterByMultipleCastMembersWithOrSemantics() {
+    var actorA = Person.builder().name("Actor A").build();
+    actorA.setId(UUID.randomUUID());
+    var actorB = Person.builder().name("Actor B").build();
+    actorB.setId(UUID.randomUUID());
+    var actorC = Person.builder().name("Actor C").build();
+    actorC.setId(UUID.randomUUID());
+
+    movieRepository.save(
+        Movie.builder().title("Movie A").cast(List.of(actorA)).build());
+    movieRepository.save(
+        Movie.builder().title("Movie B").cast(List.of(actorB)).build());
+    movieRepository.save(
+        Movie.builder().title("Movie C").cast(List.of(actorC)).build());
+
+    var filter =
+        MediaFilter.builder()
+            .castMemberIds(List.of(actorA.getId(), actorB.getId()))
+            .build();
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactlyInAnyOrder("Movie A", "Movie B");
+  }
+
+  @Test
+  @DisplayName("Should return only unmatched movies when unmatched is true")
+  void shouldReturnOnlyUnmatchedWhenUnmatchedTrue() {
+    movieRepository.save(Movie.builder().title("Unmatched Movie").build());
+    movieRepository.save(
+        Movie.builder()
+            .title("Matched Movie")
+            .externalIds(
+                Set.of(
+                    com.streamarr.server.domain.ExternalIdentifier.builder()
+                        .externalSourceType(
+                            com.streamarr.server.domain.ExternalSourceType.TMDB)
+                        .externalId("12345")
+                        .build()))
+            .build());
+
+    var filter = MediaFilter.builder().unmatched(true).build();
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactly("Unmatched Movie");
+  }
+
+  @Test
+  @DisplayName("Should return all movies when unmatched is null")
+  void shouldReturnAllWhenUnmatchedNull() {
+    movieRepository.save(Movie.builder().title("Movie A").build());
+    movieRepository.save(Movie.builder().title("Movie B").build());
+
+    var filter = MediaFilter.builder().unmatched(null).build();
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+
+    assertThat(result.getEdges()).hasSize(2);
+  }
+
+  @Test
   @DisplayName("Should reject cursor when sort direction changes between queries")
   void shouldRejectCursorWhenSortDirectionChanges() {
     movieRepository.save(Movie.builder().title("Apple").build());
