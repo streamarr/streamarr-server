@@ -721,8 +721,9 @@ class HlsPlaylistServiceTest {
 
       var mediaIndex = playlist.indexOf("#EXT-X-MEDIA:TYPE=AUDIO");
       var streamInfIndex = playlist.indexOf("#EXT-X-STREAM-INF:");
-      assertThat(mediaIndex).as("EXT-X-MEDIA tag should be present").isGreaterThanOrEqualTo(0);
       assertThat(mediaIndex)
+          .as("EXT-X-MEDIA tag should be present")
+          .isGreaterThanOrEqualTo(0)
           .as("EXT-X-MEDIA should appear before EXT-X-STREAM-INF")
           .isLessThan(streamInfIndex);
     }
