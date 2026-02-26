@@ -108,7 +108,8 @@ class QualityLadderServiceTest {
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("aspectRatioVariants")
-  @DisplayName("Should compute aspect-ratio-correct dimensions when generating variants for each quality tier")
+  @DisplayName(
+      "Should compute aspect-ratio-correct dimensions when generating variants for each quality tier")
   void shouldComputeAspectRatioCorrectDimensionsWhenGeneratingVariantsForEachQualityTier(
       String scenario, int sourceWidth, int sourceHeight, List<Integer> expectedWidths) {
     var probe = buildProbe(sourceWidth, sourceHeight, 8_000_000L);
@@ -116,8 +117,7 @@ class QualityLadderServiceTest {
 
     var variants = service.generateVariants(probe, options);
 
-    var expectedHeights =
-        STANDARD_TIER_HEIGHTS.stream().filter(h -> h <= sourceHeight).toList();
+    var expectedHeights = STANDARD_TIER_HEIGHTS.stream().filter(h -> h <= sourceHeight).toList();
     assertThat(variants).hasSize(expectedWidths.size());
     for (int i = 0; i < variants.size(); i++) {
       assertThat(variants.get(i).width()).isEqualTo(expectedWidths.get(i));
