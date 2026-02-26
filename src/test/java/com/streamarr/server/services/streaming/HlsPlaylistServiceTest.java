@@ -22,6 +22,7 @@ import java.util.UUID;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -80,6 +81,138 @@ class HlsPlaylistServiceTest {
     return session;
   }
 
+  private StreamSession createSessionWithDuration(
+      ContainerFormat container, TranscodeMode mode, Duration duration) {
+    var session =
+        StreamSession.builder()
+            .sessionId(UUID.randomUUID())
+            .mediaFileId(UUID.randomUUID())
+            .sourcePath(Path.of("/media/test.mkv"))
+            .mediaProbe(
+                MediaProbe.builder()
+                    .duration(duration)
+                    .framerate(23.976)
+                    .width(1920)
+                    .height(1080)
+                    .videoCodec("h264")
+                    .audioCodec("aac")
+                    .bitrate(5_000_000L)
+                    .build())
+            .transcodeDecision(
+                TranscodeDecision.builder()
+                    .transcodeMode(mode)
+                    .videoCodecFamily(container == ContainerFormat.FMP4 ? "av1" : "h264")
+                    .audioDecision(AudioDecision.stereoAac())
+                    .subtitleDecision(SubtitleDecision.exclude())
+                    .containerFormat(container)
+                    .needsKeyframeAlignment(mode != TranscodeMode.FULL_TRANSCODE)
+                    .build())
+            .options(StreamingOptions.builder().supportedCodecs(List.of("h264", "av1")).build())
+            .seekPosition(0)
+            .createdAt(Instant.now())
+            .lastAccessedAt(Instant.now())
+            .build();
+    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
+    return session;
+  }
+
+  private StreamSession createSessionWithAudio(AudioDecision audio, String videoCodecFamily) {
+    var container = "av1".equals(videoCodecFamily) ? ContainerFormat.FMP4 : ContainerFormat.MPEGTS;
+    var session =
+        StreamSession.builder()
+            .sessionId(UUID.randomUUID())
+            .mediaFileId(UUID.randomUUID())
+            .sourcePath(Path.of("/media/test.mkv"))
+            .mediaProbe(
+                MediaProbe.builder()
+                    .duration(Duration.ofSeconds(120))
+                    .framerate(23.976)
+                    .width(1920)
+                    .height(1080)
+                    .videoCodec("h264")
+                    .audioCodec("ac3")
+                    .bitrate(5_000_000L)
+                    .build())
+            .transcodeDecision(
+                TranscodeDecision.builder()
+                    .transcodeMode(TranscodeMode.REMUX)
+                    .videoCodecFamily(videoCodecFamily)
+                    .audioDecision(audio)
+                    .subtitleDecision(SubtitleDecision.exclude())
+                    .containerFormat(container)
+                    .needsKeyframeAlignment(true)
+                    .build())
+            .options(StreamingOptions.builder().supportedCodecs(List.of("h264", "av1")).build())
+            .seekPosition(0)
+            .createdAt(Instant.now())
+            .lastAccessedAt(Instant.now())
+            .build();
+    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
+    return session;
+  }
+
+  private StreamSession createAbrSession(int durationSeconds) {
+    var variants =
+        List.of(
+            QualityVariant.builder()
+                .width(1920)
+                .height(1080)
+                .videoBitrate(5_000_000L)
+                .audioBitrate(128_000L)
+                .label("1080p")
+                .build(),
+            QualityVariant.builder()
+                .width(1280)
+                .height(720)
+                .videoBitrate(3_000_000L)
+                .audioBitrate(128_000L)
+                .label("720p")
+                .build(),
+            QualityVariant.builder()
+                .width(854)
+                .height(480)
+                .videoBitrate(1_500_000L)
+                .audioBitrate(96_000L)
+                .label("480p")
+                .build());
+
+    var session =
+        StreamSession.builder()
+            .sessionId(UUID.randomUUID())
+            .mediaFileId(UUID.randomUUID())
+            .sourcePath(Path.of("/media/test.mkv"))
+            .mediaProbe(
+                MediaProbe.builder()
+                    .duration(Duration.ofSeconds(durationSeconds))
+                    .framerate(23.976)
+                    .width(1920)
+                    .height(1080)
+                    .videoCodec("hevc")
+                    .audioCodec("aac")
+                    .bitrate(8_000_000L)
+                    .build())
+            .transcodeDecision(
+                TranscodeDecision.builder()
+                    .transcodeMode(TranscodeMode.FULL_TRANSCODE)
+                    .videoCodecFamily("h264")
+                    .audioDecision(AudioDecision.stereoAac())
+                    .subtitleDecision(SubtitleDecision.exclude())
+                    .containerFormat(ContainerFormat.MPEGTS)
+                    .needsKeyframeAlignment(false)
+                    .build())
+            .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
+            .variants(variants)
+            .seekPosition(0)
+            .createdAt(Instant.now())
+            .lastAccessedAt(Instant.now())
+            .build();
+
+    for (var variant : variants) {
+      session.setVariantHandle(variant.label(), new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
+    }
+    return session;
+  }
+
   @Test
   @DisplayName("Should start with EXTM3U when generating master playlist")
   void shouldStartWithExtm3uWhenGeneratingMasterPlaylist() {
@@ -135,7 +268,7 @@ class HlsPlaylistServiceTest {
   }
 
   @Test
-  @DisplayName("Should include EXT-X-MAP when container is fMP4")
+  @DisplayName("Should include EXT-X-Map when container is fMP4")
   void shouldIncludeExtXMapWhenContainerIsFmp4() {
     var session = createSession(ContainerFormat.FMP4, TranscodeMode.FULL_TRANSCODE, 60);
 
@@ -264,41 +397,6 @@ class HlsPlaylistServiceTest {
     assertThat(duration).isLessThanOrEqualTo(6.0);
   }
 
-  private StreamSession createSessionWithDuration(
-      ContainerFormat container, TranscodeMode mode, Duration duration) {
-    var session =
-        StreamSession.builder()
-            .sessionId(UUID.randomUUID())
-            .mediaFileId(UUID.randomUUID())
-            .sourcePath(Path.of("/media/test.mkv"))
-            .mediaProbe(
-                MediaProbe.builder()
-                    .duration(duration)
-                    .framerate(23.976)
-                    .width(1920)
-                    .height(1080)
-                    .videoCodec("h264")
-                    .audioCodec("aac")
-                    .bitrate(5_000_000L)
-                    .build())
-            .transcodeDecision(
-                TranscodeDecision.builder()
-                    .transcodeMode(mode)
-                    .videoCodecFamily(container == ContainerFormat.FMP4 ? "av1" : "h264")
-                    .audioDecision(AudioDecision.stereoAac())
-                    .subtitleDecision(SubtitleDecision.exclude())
-                    .containerFormat(container)
-                    .needsKeyframeAlignment(mode != TranscodeMode.FULL_TRANSCODE)
-                    .build())
-            .options(StreamingOptions.builder().supportedCodecs(List.of("h264", "av1")).build())
-            .seekPosition(0)
-            .createdAt(Instant.now())
-            .lastAccessedAt(Instant.now())
-            .build();
-    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
-    return session;
-  }
-
   @Test
   @DisplayName("Should include extra segment when duration has sub-second remainder")
   void shouldIncludeExtraSegmentWhenDurationHasSubSecondRemainder() {
@@ -330,286 +428,6 @@ class HlsPlaylistServiceTest {
     assertThat(duration).isCloseTo(0.5, org.assertj.core.api.Assertions.within(0.01));
   }
 
-  // --- Multi-variant (ABR) tests ---
-
-  private StreamSession createAbrSession(int durationSeconds) {
-    var variants =
-        List.of(
-            QualityVariant.builder()
-                .width(1920)
-                .height(1080)
-                .videoBitrate(5_000_000L)
-                .audioBitrate(128_000L)
-                .label("1080p")
-                .build(),
-            QualityVariant.builder()
-                .width(1280)
-                .height(720)
-                .videoBitrate(3_000_000L)
-                .audioBitrate(128_000L)
-                .label("720p")
-                .build(),
-            QualityVariant.builder()
-                .width(854)
-                .height(480)
-                .videoBitrate(1_500_000L)
-                .audioBitrate(96_000L)
-                .label("480p")
-                .build());
-
-    var session =
-        StreamSession.builder()
-            .sessionId(UUID.randomUUID())
-            .mediaFileId(UUID.randomUUID())
-            .sourcePath(Path.of("/media/test.mkv"))
-            .mediaProbe(
-                MediaProbe.builder()
-                    .duration(Duration.ofSeconds(durationSeconds))
-                    .framerate(23.976)
-                    .width(1920)
-                    .height(1080)
-                    .videoCodec("hevc")
-                    .audioCodec("aac")
-                    .bitrate(8_000_000L)
-                    .build())
-            .transcodeDecision(
-                TranscodeDecision.builder()
-                    .transcodeMode(TranscodeMode.FULL_TRANSCODE)
-                    .videoCodecFamily("h264")
-                    .audioDecision(AudioDecision.stereoAac())
-                    .subtitleDecision(SubtitleDecision.exclude())
-                    .containerFormat(ContainerFormat.MPEGTS)
-                    .needsKeyframeAlignment(false)
-                    .build())
-            .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
-            .variants(variants)
-            .seekPosition(0)
-            .createdAt(Instant.now())
-            .lastAccessedAt(Instant.now())
-            .build();
-
-    for (var variant : variants) {
-      session.setVariantHandle(variant.label(), new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
-    }
-    return session;
-  }
-
-  @Test
-  @DisplayName("Should generate one stream inf per variant when session has multiple variants")
-  void shouldGenerateOneStreamInfPerVariantWhenSessionHasMultipleVariants() {
-    var session = createAbrSession(120);
-
-    var playlist = service.generateMasterPlaylist(session);
-
-    var streamInfLines = playlist.lines().filter(l -> l.startsWith("#EXT-X-STREAM-INF:")).toList();
-    assertThat(streamInfLines).hasSize(3);
-
-    assertThat(streamInfLines.get(0)).contains("RESOLUTION=1920x1080");
-    assertThat(streamInfLines.get(1)).contains("RESOLUTION=1280x720");
-    assertThat(streamInfLines.get(2)).contains("RESOLUTION=854x480");
-  }
-
-  @Test
-  @DisplayName("Should include correct bandwidth when session has multiple variants")
-  void shouldIncludeCorrectBandwidthWhenSessionHasMultipleVariants() {
-    var session = createAbrSession(120);
-
-    var playlist = service.generateMasterPlaylist(session);
-
-    assertThat(playlist)
-        .contains("BANDWIDTH=5128000")
-        .contains("BANDWIDTH=3128000")
-        .contains("BANDWIDTH=1628000");
-  }
-
-  @Test
-  @DisplayName("Should point each variant to labeled URL when session has multiple variants")
-  void shouldPointEachVariantToLabeledUrlWhenSessionHasMultipleVariants() {
-    var session = createAbrSession(120);
-
-    var playlist = service.generateMasterPlaylist(session);
-
-    assertThat(playlist)
-        .contains("1080p/stream.m3u8")
-        .contains("720p/stream.m3u8")
-        .contains("480p/stream.m3u8");
-  }
-
-  @Test
-  @DisplayName("Should keep single variant format when session has no variant list")
-  void shouldKeepSingleVariantFormatWhenSessionHasNoVariantList() {
-    var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 120);
-
-    var playlist = service.generateMasterPlaylist(session);
-
-    var streamInfLines = playlist.lines().filter(l -> l.startsWith("#EXT-X-STREAM-INF:")).toList();
-    assertThat(streamInfLines).hasSize(1);
-    assertThat(playlist).contains("stream.m3u8").doesNotContain("/stream.m3u8");
-  }
-
-  @Test
-  @DisplayName("Should include codecs attribute on each variant when session has multiple variants")
-  void shouldIncludeCodecsAttributeOnEachVariantWhenSessionHasMultipleVariants() {
-    var session = createAbrSession(120);
-
-    var playlist = service.generateMasterPlaylist(session);
-
-    var streamInfLines = playlist.lines().filter(l -> l.startsWith("#EXT-X-STREAM-INF:")).toList();
-    for (var line : streamInfLines) {
-      assertThat(line).contains("CODECS=");
-    }
-  }
-
-  // --- Surround sound playlist tests ---
-
-  private StreamSession createSessionWithAudio(AudioDecision audio, String videoCodecFamily) {
-    var container = "av1".equals(videoCodecFamily) ? ContainerFormat.FMP4 : ContainerFormat.MPEGTS;
-    var session =
-        StreamSession.builder()
-            .sessionId(UUID.randomUUID())
-            .mediaFileId(UUID.randomUUID())
-            .sourcePath(Path.of("/media/test.mkv"))
-            .mediaProbe(
-                MediaProbe.builder()
-                    .duration(Duration.ofSeconds(120))
-                    .framerate(23.976)
-                    .width(1920)
-                    .height(1080)
-                    .videoCodec("h264")
-                    .audioCodec("ac3")
-                    .bitrate(5_000_000L)
-                    .build())
-            .transcodeDecision(
-                TranscodeDecision.builder()
-                    .transcodeMode(TranscodeMode.REMUX)
-                    .videoCodecFamily(videoCodecFamily)
-                    .audioDecision(audio)
-                    .subtitleDecision(SubtitleDecision.exclude())
-                    .containerFormat(container)
-                    .needsKeyframeAlignment(true)
-                    .build())
-            .options(StreamingOptions.builder().supportedCodecs(List.of("h264", "av1")).build())
-            .seekPosition(0)
-            .createdAt(Instant.now())
-            .lastAccessedAt(Instant.now())
-            .build();
-    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
-    return session;
-  }
-
-  @ParameterizedTest(name = "{0}")
-  @MethodSource("audioPlaylistAttributes")
-  @DisplayName("Should include expected audio attribute in master playlist")
-  void shouldIncludeExpectedAudioAttributeInMasterPlaylist(
-      String scenario, AudioDecision audio, String expectedFragment) {
-    var session = createSessionWithAudio(audio, "h264");
-
-    var playlist = service.generateMasterPlaylist(session);
-
-    assertThat(playlist).contains(expectedFragment);
-  }
-
-  static Stream<Arguments> audioPlaylistAttributes() {
-    return Stream.of(
-        Arguments.of(
-            "AC-3 codec string",
-            AudioDecision.copy("ac3", 6, 384_000L),
-            "CODECS=\"avc1.640028,ac-3\""),
-        Arguments.of(
-            "E-AC-3 codec string",
-            AudioDecision.copy("eac3", 6, 640_000L),
-            "CODECS=\"avc1.640028,ec-3\""),
-        Arguments.of(
-            "CHANNELS attribute for surround audio",
-            AudioDecision.copy("ac3", 6, 384_000L),
-            "CHANNELS=\"6\""));
-  }
-
-  @Test
-  @DisplayName("Should not include CHANNELS attribute when audio is stereo")
-  void shouldNotIncludeChannelsAttributeWhenAudioIsStereo() {
-    var audio = AudioDecision.stereoAac();
-    var session = createSessionWithAudio(audio, "h264");
-
-    var playlist = service.generateMasterPlaylist(session);
-
-    assertThat(playlist).doesNotContain("CHANNELS=");
-  }
-
-  @Test
-  @DisplayName("Should omit audio codec from CODECS attribute when audio mode is none")
-  void shouldOmitAudioCodecFromCodecsAttributeWhenAudioModeIsNone() {
-    var audio = AudioDecision.none();
-    var session = createSessionWithAudio(audio, "h264");
-
-    var playlist = service.generateMasterPlaylist(session);
-
-    assertThat(playlist)
-        .contains("CODECS=\"avc1.640028\"")
-        .doesNotContain("CODECS=\"avc1.640028,\"");
-  }
-
-  @Test
-  @DisplayName("Should use AAC codec string when audio is stereo AAC")
-  void shouldUseAacCodecStringWhenAudioIsStereoAac() {
-    var audio = AudioDecision.stereoAac();
-    var session = createSessionWithAudio(audio, "h264");
-
-    var playlist = service.generateMasterPlaylist(session);
-
-    assertThat(playlist).contains("CODECS=\"avc1.640028,mp4a.40.2\"");
-  }
-
-  @Test
-  @DisplayName("Should use audio decision bitrate for bandwidth when audio is copied")
-  void shouldUseAudioDecisionBitrateForBandwidthWhenAudioIsCopied() {
-    var audio = AudioDecision.copy("ac3", 6, 384_000L);
-    var variant =
-        QualityVariant.builder()
-            .width(1920)
-            .height(1080)
-            .videoBitrate(5_000_000L)
-            .audioBitrate(128_000L)
-            .label("1080p")
-            .build();
-
-    var session =
-        StreamSession.builder()
-            .sessionId(UUID.randomUUID())
-            .mediaFileId(UUID.randomUUID())
-            .sourcePath(Path.of("/media/test.mkv"))
-            .mediaProbe(
-                MediaProbe.builder()
-                    .duration(Duration.ofSeconds(120))
-                    .framerate(23.976)
-                    .width(1920)
-                    .height(1080)
-                    .videoCodec("hevc")
-                    .audioCodec("ac3")
-                    .bitrate(8_000_000L)
-                    .build())
-            .transcodeDecision(
-                TranscodeDecision.builder()
-                    .transcodeMode(TranscodeMode.VIDEO_TRANSCODE)
-                    .videoCodecFamily("h264")
-                    .audioDecision(audio)
-                    .subtitleDecision(SubtitleDecision.exclude())
-                    .containerFormat(ContainerFormat.MPEGTS)
-                    .needsKeyframeAlignment(false)
-                    .build())
-            .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
-            .variants(List.of(variant))
-            .seekPosition(0)
-            .createdAt(Instant.now())
-            .lastAccessedAt(Instant.now())
-            .build();
-    session.setVariantHandle("1080p", new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
-
-    var playlist = service.generateMasterPlaylist(session);
-
-    assertThat(playlist).contains("BANDWIDTH=5384000");
-  }
-
   @Test
   @DisplayName("Should reduce segment count when seek position is non-zero")
   void shouldReduceSegmentCountWhenSeekPositionIsNonZero() {
@@ -633,5 +451,311 @@ class HlsPlaylistServiceTest {
     var segmentLines =
         playlist.lines().filter(l -> l.startsWith("segment") && l.endsWith(".ts")).toList();
     assertThat(segmentLines).hasSize(20);
+  }
+
+  @Nested
+  @DisplayName("Multi-variant ABR")
+  class MultiVariantAbrTests {
+
+    @Test
+    @DisplayName("Should generate one stream inf per variant when session has multiple variants")
+    void shouldGenerateOneStreamInfPerVariantWhenSessionHasMultipleVariants() {
+      var session = createAbrSession(120);
+
+      var playlist = service.generateMasterPlaylist(session);
+
+      var streamInfLines =
+          playlist.lines().filter(l -> l.startsWith("#EXT-X-STREAM-INF:")).toList();
+      assertThat(streamInfLines).hasSize(3);
+
+      assertThat(streamInfLines.get(0)).contains("RESOLUTION=1920x1080");
+      assertThat(streamInfLines.get(1)).contains("RESOLUTION=1280x720");
+      assertThat(streamInfLines.get(2)).contains("RESOLUTION=854x480");
+    }
+
+    @Test
+    @DisplayName("Should include correct bandwidth when session has multiple variants")
+    void shouldIncludeCorrectBandwidthWhenSessionHasMultipleVariants() {
+      var session = createAbrSession(120);
+
+      var playlist = service.generateMasterPlaylist(session);
+
+      assertThat(playlist)
+          .contains("BANDWIDTH=5128000")
+          .contains("BANDWIDTH=3128000")
+          .contains("BANDWIDTH=1628000");
+    }
+
+    @Test
+    @DisplayName("Should point each variant to labeled URL when session has multiple variants")
+    void shouldPointEachVariantToLabeledUrlWhenSessionHasMultipleVariants() {
+      var session = createAbrSession(120);
+
+      var playlist = service.generateMasterPlaylist(session);
+
+      assertThat(playlist)
+          .contains("1080p/stream.m3u8")
+          .contains("720p/stream.m3u8")
+          .contains("480p/stream.m3u8");
+    }
+
+    @Test
+    @DisplayName("Should keep single variant format when session has no variant list")
+    void shouldKeepSingleVariantFormatWhenSessionHasNoVariantList() {
+      var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 120);
+
+      var playlist = service.generateMasterPlaylist(session);
+
+      var streamInfLines =
+          playlist.lines().filter(l -> l.startsWith("#EXT-X-STREAM-INF:")).toList();
+      assertThat(streamInfLines).hasSize(1);
+      assertThat(playlist).contains("stream.m3u8").doesNotContain("/stream.m3u8");
+    }
+
+    @Test
+    @DisplayName(
+        "Should include codecs attribute on each variant when session has multiple variants")
+    void shouldIncludeCodecsAttributeOnEachVariantWhenSessionHasMultipleVariants() {
+      var session = createAbrSession(120);
+
+      var playlist = service.generateMasterPlaylist(session);
+
+      var streamInfLines =
+          playlist.lines().filter(l -> l.startsWith("#EXT-X-STREAM-INF:")).toList();
+      for (var line : streamInfLines) {
+        assertThat(line).contains("CODECS=");
+      }
+    }
+  }
+
+  @Nested
+  @DisplayName("Audio codec attributes")
+  class AudioCodecAttributeTests {
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("audioPlaylistAttributes")
+    @DisplayName("Should include expected audio attribute in master playlist when codec is present")
+    void shouldIncludeExpectedAudioAttributeInMasterPlaylistWhenCodecIsPresent(
+        String scenario, AudioDecision audio, String expectedFragment) {
+      var session = createSessionWithAudio(audio, "h264");
+
+      var playlist = service.generateMasterPlaylist(session);
+
+      assertThat(playlist).contains(expectedFragment);
+    }
+
+    static Stream<Arguments> audioPlaylistAttributes() {
+      return Stream.of(
+          Arguments.of(
+              "AC-3 codec string",
+              AudioDecision.copy("ac3", 6, 384_000L),
+              "CODECS=\"avc1.640028,ac-3\""),
+          Arguments.of(
+              "E-AC-3 codec string",
+              AudioDecision.copy("eac3", 6, 640_000L),
+              "CODECS=\"avc1.640028,ec-3\""));
+    }
+
+    @Test
+    @DisplayName("Should not include CHANNELS on STREAM-INF when audio is stereo")
+    void shouldNotIncludeChannelsOnStreamInfWhenAudioIsStereo() {
+      var audio = AudioDecision.stereoAac();
+      var session = createSessionWithAudio(audio, "h264");
+
+      var playlist = service.generateMasterPlaylist(session);
+
+      var streamInfLines =
+          playlist.lines().filter(l -> l.startsWith("#EXT-X-STREAM-INF:")).toList();
+      assertThat(streamInfLines).isNotEmpty();
+      for (var line : streamInfLines) {
+        assertThat(line).doesNotContain("CHANNELS=");
+      }
+    }
+
+    @Test
+    @DisplayName("Should omit audio codec from CODECS attribute when audio mode is none")
+    void shouldOmitAudioCodecFromCodecsAttributeWhenAudioModeIsNone() {
+      var audio = AudioDecision.none();
+      var session = createSessionWithAudio(audio, "h264");
+
+      var playlist = service.generateMasterPlaylist(session);
+
+      assertThat(playlist)
+          .contains("CODECS=\"avc1.640028\"")
+          .doesNotContain("CODECS=\"avc1.640028,\"");
+    }
+
+    @Test
+    @DisplayName("Should use AAC codec string when audio is stereo AAC")
+    void shouldUseAacCodecStringWhenAudioIsStereoAac() {
+      var audio = AudioDecision.stereoAac();
+      var session = createSessionWithAudio(audio, "h264");
+
+      var playlist = service.generateMasterPlaylist(session);
+
+      assertThat(playlist).contains("CODECS=\"avc1.640028,mp4a.40.2\"");
+    }
+
+    @Test
+    @DisplayName("Should use audio decision bitrate for bandwidth when audio is copied")
+    void shouldUseAudioDecisionBitrateForBandwidthWhenAudioIsCopied() {
+      var audio = AudioDecision.copy("ac3", 6, 384_000L);
+      var variant =
+          QualityVariant.builder()
+              .width(1920)
+              .height(1080)
+              .videoBitrate(5_000_000L)
+              .audioBitrate(128_000L)
+              .label("1080p")
+              .build();
+
+      var session =
+          StreamSession.builder()
+              .sessionId(UUID.randomUUID())
+              .mediaFileId(UUID.randomUUID())
+              .sourcePath(Path.of("/media/test.mkv"))
+              .mediaProbe(
+                  MediaProbe.builder()
+                      .duration(Duration.ofSeconds(120))
+                      .framerate(23.976)
+                      .width(1920)
+                      .height(1080)
+                      .videoCodec("hevc")
+                      .audioCodec("ac3")
+                      .bitrate(8_000_000L)
+                      .build())
+              .transcodeDecision(
+                  TranscodeDecision.builder()
+                      .transcodeMode(TranscodeMode.VIDEO_TRANSCODE)
+                      .videoCodecFamily("h264")
+                      .audioDecision(audio)
+                      .subtitleDecision(SubtitleDecision.exclude())
+                      .containerFormat(ContainerFormat.MPEGTS)
+                      .needsKeyframeAlignment(false)
+                      .build())
+              .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
+              .variants(List.of(variant))
+              .seekPosition(0)
+              .createdAt(Instant.now())
+              .lastAccessedAt(Instant.now())
+              .build();
+      session.setVariantHandle("1080p", new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
+
+      var playlist = service.generateMasterPlaylist(session);
+
+      assertThat(playlist).contains("BANDWIDTH=5384000");
+    }
+  }
+
+  @Nested
+  @DisplayName("EXT-X-MEDIA audio rendition")
+  class AudioRenditionTests {
+
+    @Test
+    @DisplayName("Should include EXT-X-MEDIA with CHANNELS when audio is stereo")
+    void shouldIncludeExtXMediaWithChannelsWhenAudioIsStereo() {
+      var session = createSessionWithAudio(AudioDecision.stereoAac(), "h264");
+
+      var playlist = service.generateMasterPlaylist(session);
+
+      assertThat(playlist)
+          .contains(
+              "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio\",NAME=\"Audio\","
+                  + "DEFAULT=YES,AUTOSELECT=YES,CHANNELS=\"2\"");
+    }
+
+    @Test
+    @DisplayName("Should include EXT-X-MEDIA with CHANNELS when audio is surround")
+    void shouldIncludeExtXMediaWithChannelsWhenAudioIsSurround() {
+      var session = createSessionWithAudio(AudioDecision.copy("ac3", 6, 384_000L), "h264");
+
+      var playlist = service.generateMasterPlaylist(session);
+
+      assertThat(playlist)
+          .contains(
+              "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio\",NAME=\"Audio\","
+                  + "DEFAULT=YES,AUTOSELECT=YES,CHANNELS=\"6\"");
+    }
+
+    @Test
+    @DisplayName("Should include AUDIO group reference on STREAM-INF when audio exists")
+    void shouldIncludeAudioGroupReferenceOnStreamInfWhenAudioExists() {
+      var session = createSessionWithAudio(AudioDecision.stereoAac(), "h264");
+
+      var playlist = service.generateMasterPlaylist(session);
+
+      var streamInfLines =
+          playlist.lines().filter(l -> l.startsWith("#EXT-X-STREAM-INF:")).toList();
+      assertThat(streamInfLines).isNotEmpty();
+      for (var line : streamInfLines) {
+        assertThat(line).contains("AUDIO=\"audio\"");
+      }
+    }
+
+    @Test
+    @DisplayName("Should not include EXT-X-MEDIA when audio mode is none")
+    void shouldNotIncludeExtXMediaWhenAudioModeIsNone() {
+      var session = createSessionWithAudio(AudioDecision.none(), "h264");
+
+      var playlist = service.generateMasterPlaylist(session);
+
+      assertThat(playlist).doesNotContain("#EXT-X-MEDIA:TYPE=AUDIO");
+    }
+
+    @Test
+    @DisplayName("Should not include AUDIO group reference when audio mode is none")
+    void shouldNotIncludeAudioGroupReferenceWhenAudioModeIsNone() {
+      var session = createSessionWithAudio(AudioDecision.none(), "h264");
+
+      var playlist = service.generateMasterPlaylist(session);
+
+      assertThat(playlist).doesNotContain("AUDIO=\"audio\"");
+    }
+
+    @Test
+    @DisplayName("Should emit EXT-X-MEDIA before STREAM-INF when audio exists")
+    void shouldEmitExtXMediaBeforeStreamInfWhenAudioExists() {
+      var session = createSessionWithAudio(AudioDecision.stereoAac(), "h264");
+
+      var playlist = service.generateMasterPlaylist(session);
+
+      var mediaIndex = playlist.indexOf("#EXT-X-MEDIA:TYPE=AUDIO");
+      var streamInfIndex = playlist.indexOf("#EXT-X-STREAM-INF:");
+      assertThat(mediaIndex)
+          .as("EXT-X-MEDIA tag should be present")
+          .isGreaterThanOrEqualTo(0)
+          .as("EXT-X-MEDIA should appear before EXT-X-STREAM-INF")
+          .isLessThan(streamInfIndex);
+    }
+
+    @Test
+    @DisplayName("Should not include CHANNELS on STREAM-INF when audio is surround")
+    void shouldNotIncludeChannelsOnStreamInfWhenAudioIsSurround() {
+      var session = createSessionWithAudio(AudioDecision.copy("ac3", 6, 384_000L), "h264");
+
+      var playlist = service.generateMasterPlaylist(session);
+
+      var streamInfLines =
+          playlist.lines().filter(l -> l.startsWith("#EXT-X-STREAM-INF:")).toList();
+      assertThat(streamInfLines).isNotEmpty();
+      for (var line : streamInfLines) {
+        assertThat(line).doesNotContain("CHANNELS=");
+      }
+    }
+
+    @Test
+    @DisplayName("Should include AUDIO group reference on all variants when ABR session has audio")
+    void shouldIncludeAudioGroupReferenceOnAllVariantsWhenAbrSessionHasAudio() {
+      var session = createAbrSession(120);
+
+      var playlist = service.generateMasterPlaylist(session);
+
+      var streamInfLines =
+          playlist.lines().filter(l -> l.startsWith("#EXT-X-STREAM-INF:")).toList();
+      assertThat(streamInfLines).hasSize(3);
+      for (var line : streamInfLines) {
+        assertThat(line).contains("AUDIO=\"audio\"");
+      }
+    }
   }
 }
