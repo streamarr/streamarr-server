@@ -32,7 +32,7 @@ class FakeProcess extends Process {
   }
 
   @Override
-  public int waitFor() {
+  public int waitFor() throws InterruptedException {
     return exitCode;
   }
 
