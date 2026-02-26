@@ -1,6 +1,7 @@
 package com.streamarr.server.graphql.resolvers;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.doReturn;
@@ -17,6 +18,7 @@ import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
@@ -388,5 +390,17 @@ class LibraryResolverTest {
         dgsQueryExecutor.executeAndExtractJsonPath(query, "data.library.alphabetIndex");
 
     assertThat(alphabetIndex).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should throw with simple class name when unsupported media type in type resolver")
+  void shouldThrowWithSimpleClassNameWhenUnsupportedMediaTypeInTypeResolver() {
+    var resolver = new LibraryResolver(null, null, null, null);
+
+    var unsupportedMedia = new Object();
+
+    assertThatThrownBy(() -> resolver.resolveMedia(unsupportedMedia))
+        .isInstanceOf(UnsupportedMediaTypeException.class)
+        .hasMessage("Unsupported media type: Object");
   }
 }

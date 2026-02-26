@@ -811,8 +811,8 @@ class LibraryManagementServiceTest {
     }
 
     @Test
-    @DisplayName("Should set status to HEALTHY when adding library")
-    void shouldSetStatusToHealthyWhenAdding() throws IOException {
+    @DisplayName("Should set status to HEALTHY when adding library with empty directory")
+    void shouldSetStatusToHealthyWhenAddingLibraryWithEmptyDirectory() throws IOException {
       var newLibraryPath = fileSystem.getPath("/healthy-library");
       Files.createDirectories(newLibraryPath);
 
@@ -821,7 +821,13 @@ class LibraryManagementServiceTest {
 
       var savedLibrary = libraryManagementService.addLibrary(library);
 
-      assertThat(savedLibrary.getStatus()).isEqualTo(LibraryStatus.HEALTHY);
+      await()
+          .atMost(Duration.ofSeconds(5))
+          .untilAsserted(
+              () -> {
+                var persisted = fakeLibraryRepository.findById(savedLibrary.getId()).orElseThrow();
+                assertThat(persisted.getStatus()).isEqualTo(LibraryStatus.HEALTHY);
+              });
     }
 
     @Test

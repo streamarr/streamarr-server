@@ -40,7 +40,8 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
           variantLabel);
       return process;
     } catch (IOException e) {
-      throw new TranscodeException("Failed to start FFmpeg process for session: " + sessionId, e);
+      log.error("Failed to start FFmpeg process for session: {}", sessionId, e);
+      throw new TranscodeException(TranscodeException.GENERIC_MESSAGE, e);
     }
   }
 

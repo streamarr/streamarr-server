@@ -115,7 +115,7 @@ class LocalFfprobeServiceTest {
 
     assertThatThrownBy(() -> service.probe(filePath))
         .isInstanceOf(TranscodeException.class)
-        .hasMessageContaining("video stream");
+        .hasMessage(TranscodeException.GENERIC_MESSAGE);
   }
 
   @Test
@@ -126,7 +126,8 @@ class LocalFfprobeServiceTest {
     var filePath = Path.of("/test/movie.mkv");
 
     assertThatThrownBy(() -> service.probe(filePath))
-        .isInstanceOf(FfmpegNotAvailableException.class);
+        .isInstanceOf(FfmpegNotAvailableException.class)
+        .hasMessage(FfmpegNotAvailableException.GENERIC_MESSAGE);
   }
 
   @Test
@@ -587,6 +588,39 @@ class LocalFfprobeServiceTest {
     assertThat(video.language()).isEmpty();
     assertThat(video.isDefault()).isFalse();
     assertThat(video.isForced()).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should throw with generic message when ffprobe output cannot be parsed")
+  void shouldThrowWithGenericMessageWhenFfprobeOutputCannotBeParsed() {
+    var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess("not json", 0));
+
+    var filePath = Path.of("/test/corrupt.mkv");
+
+    assertThatThrownBy(() -> service.probe(filePath))
+        .isInstanceOf(TranscodeException.class)
+        .hasMessage(TranscodeException.GENERIC_MESSAGE);
+  }
+
+  @Test
+  @DisplayName("Should throw with generic message when ffprobe is interrupted")
+  void shouldThrowWithGenericMessageWhenFfprobeIsInterrupted() {
+    var service =
+        new LocalFfprobeService(
+            objectMapper,
+            path ->
+                new FakeProcess("{}", 0) {
+                  @Override
+                  public int waitFor() throws InterruptedException {
+                    throw new InterruptedException("thread interrupted");
+                  }
+                });
+
+    var filePath = Path.of("/test/movie.mkv");
+
+    assertThatThrownBy(() -> service.probe(filePath))
+        .isInstanceOf(TranscodeException.class)
+        .hasMessage(TranscodeException.GENERIC_MESSAGE);
   }
 
   private Process createFakeProcess(String stdout, int exitCode) {
