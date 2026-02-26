@@ -518,22 +518,21 @@ class HlsPlaylistServiceTest {
         Arguments.of(
             "E-AC-3 codec string",
             AudioDecision.copy("eac3", 6, 640_000L),
-            "CODECS=\"avc1.640028,ec-3\""),
-        Arguments.of(
-            "CHANNELS attribute for surround audio",
-            AudioDecision.copy("ac3", 6, 384_000L),
-            "CHANNELS=\"6\""));
+            "CODECS=\"avc1.640028,ec-3\""));
   }
 
   @Test
-  @DisplayName("Should not include CHANNELS attribute when audio is stereo")
-  void shouldNotIncludeChannelsAttributeWhenAudioIsStereo() {
+  @DisplayName("Should not include CHANNELS on STREAM-INF when audio is stereo")
+  void shouldNotIncludeChannelsOnStreamInfWhenAudioIsStereo() {
     var audio = AudioDecision.stereoAac();
     var session = createSessionWithAudio(audio, "h264");
 
     var playlist = service.generateMasterPlaylist(session);
 
-    assertThat(playlist).doesNotContain("CHANNELS=");
+    var streamInfLines = playlist.lines().filter(l -> l.startsWith("#EXT-X-STREAM-INF:")).toList();
+    for (var line : streamInfLines) {
+      assertThat(line).doesNotContain("CHANNELS=");
+    }
   }
 
   @Test
@@ -633,5 +632,106 @@ class HlsPlaylistServiceTest {
     var segmentLines =
         playlist.lines().filter(l -> l.startsWith("segment") && l.endsWith(".ts")).toList();
     assertThat(segmentLines).hasSize(20);
+  }
+
+  // --- EXT-X-MEDIA audio rendition tests ---
+
+  @Test
+  @DisplayName("Should include EXT-X-MEDIA with CHANNELS when audio is stereo")
+  void shouldIncludeExtXMediaWithChannelsWhenAudioIsStereo() {
+    var session = createSessionWithAudio(AudioDecision.stereoAac(), "h264");
+
+    var playlist = service.generateMasterPlaylist(session);
+
+    assertThat(playlist)
+        .contains(
+            "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio\",NAME=\"Audio\","
+                + "DEFAULT=YES,AUTOSELECT=YES,CHANNELS=\"2\"");
+  }
+
+  @Test
+  @DisplayName("Should include EXT-X-MEDIA with CHANNELS when audio is surround")
+  void shouldIncludeExtXMediaWithChannelsWhenAudioIsSurround() {
+    var session = createSessionWithAudio(AudioDecision.copy("ac3", 6, 384_000L), "h264");
+
+    var playlist = service.generateMasterPlaylist(session);
+
+    assertThat(playlist)
+        .contains(
+            "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio\",NAME=\"Audio\","
+                + "DEFAULT=YES,AUTOSELECT=YES,CHANNELS=\"6\"");
+  }
+
+  @Test
+  @DisplayName("Should include AUDIO group reference on STREAM-INF when audio exists")
+  void shouldIncludeAudioGroupReferenceOnStreamInfWhenAudioExists() {
+    var session = createSessionWithAudio(AudioDecision.stereoAac(), "h264");
+
+    var playlist = service.generateMasterPlaylist(session);
+
+    var streamInfLines = playlist.lines().filter(l -> l.startsWith("#EXT-X-STREAM-INF:")).toList();
+    for (var line : streamInfLines) {
+      assertThat(line).contains("AUDIO=\"audio\"");
+    }
+  }
+
+  @Test
+  @DisplayName("Should not include EXT-X-MEDIA when audio mode is none")
+  void shouldNotIncludeExtXMediaWhenAudioModeIsNone() {
+    var session = createSessionWithAudio(AudioDecision.none(), "h264");
+
+    var playlist = service.generateMasterPlaylist(session);
+
+    assertThat(playlist).doesNotContain("#EXT-X-MEDIA:TYPE=AUDIO");
+  }
+
+  @Test
+  @DisplayName("Should not include AUDIO group reference when audio mode is none")
+  void shouldNotIncludeAudioGroupReferenceWhenAudioModeIsNone() {
+    var session = createSessionWithAudio(AudioDecision.none(), "h264");
+
+    var playlist = service.generateMasterPlaylist(session);
+
+    assertThat(playlist).doesNotContain("AUDIO=\"audio\"");
+  }
+
+  @Test
+  @DisplayName("Should emit EXT-X-MEDIA before STREAM-INF when audio exists")
+  void shouldEmitExtXMediaBeforeStreamInfWhenAudioExists() {
+    var session = createSessionWithAudio(AudioDecision.stereoAac(), "h264");
+
+    var playlist = service.generateMasterPlaylist(session);
+
+    var mediaIndex = playlist.indexOf("#EXT-X-MEDIA:TYPE=AUDIO");
+    var streamInfIndex = playlist.indexOf("#EXT-X-STREAM-INF:");
+    assertThat(mediaIndex).isGreaterThanOrEqualTo(0);
+    assertThat(mediaIndex).isLessThan(streamInfIndex);
+  }
+
+  @Test
+  @DisplayName("Should not include CHANNELS on STREAM-INF when audio is surround")
+  void shouldNotIncludeChannelsOnStreamInfWhenAudioIsSurround() {
+    var session = createSessionWithAudio(AudioDecision.copy("ac3", 6, 384_000L), "h264");
+
+    var playlist = service.generateMasterPlaylist(session);
+
+    var streamInfLines = playlist.lines().filter(l -> l.startsWith("#EXT-X-STREAM-INF:")).toList();
+    for (var line : streamInfLines) {
+      assertThat(line).doesNotContain("CHANNELS=");
+    }
+  }
+
+  @Test
+  @DisplayName("Should include AUDIO group reference on all variants when ABR session has audio")
+  void shouldIncludeAudioGroupReferenceOnAllVariantsWhenAbrSessionHasAudio() {
+    var session = createAbrSession(120);
+
+    var playlist = service.generateMasterPlaylist(session);
+
+    var streamInfLines = playlist.lines().filter(l -> l.startsWith("#EXT-X-STREAM-INF:")).toList();
+    assertThat(streamInfLines).hasSize(3);
+    for (var line : streamInfLines) {
+      assertThat(line).contains("AUDIO=\"audio\"");
+    }
   }
 }
