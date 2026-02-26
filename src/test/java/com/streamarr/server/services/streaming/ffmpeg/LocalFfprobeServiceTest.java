@@ -115,7 +115,7 @@ class LocalFfprobeServiceTest {
 
     assertThatThrownBy(() -> service.probe(filePath))
         .isInstanceOf(TranscodeException.class)
-        .hasMessageContaining("processing failed");
+        .hasMessage(TranscodeException.GENERIC_MESSAGE);
   }
 
   @Test
@@ -127,7 +127,7 @@ class LocalFfprobeServiceTest {
 
     assertThatThrownBy(() -> service.probe(filePath))
         .isInstanceOf(FfmpegNotAvailableException.class)
-        .hasMessageContaining("unavailable");
+        .hasMessage(FfmpegNotAvailableException.GENERIC_MESSAGE);
   }
 
   @Test

@@ -140,6 +140,6 @@ class LocalFfmpegProcessManagerTest {
                 manager.startProcess(
                     sessionId, "default", List.of("/nonexistent-binary-12345"), tempDir))
         .isInstanceOf(TranscodeException.class)
-        .hasMessageContaining("processing failed");
+        .hasMessage(TranscodeException.GENERIC_MESSAGE);
   }
 }
