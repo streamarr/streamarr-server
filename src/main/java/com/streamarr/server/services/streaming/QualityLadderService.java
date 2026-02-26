@@ -59,7 +59,19 @@ public class QualityLadderService {
         continue;
       }
 
-      variants.add(tier);
+      int width = (int) Math.round((double) source.width() / source.height() * tier.height());
+      if (width % 2 != 0) {
+        width++;
+      }
+
+      variants.add(
+          QualityVariant.builder()
+              .width(width)
+              .height(tier.height())
+              .videoBitrate(tier.videoBitrate())
+              .audioBitrate(tier.audioBitrate())
+              .label(tier.label())
+              .build());
     }
 
     if (variants.isEmpty()) {

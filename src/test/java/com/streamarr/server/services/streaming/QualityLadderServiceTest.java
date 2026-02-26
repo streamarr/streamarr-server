@@ -6,9 +6,13 @@ import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import java.time.Duration;
 import java.util.List;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
 @DisplayName("Quality Ladder Service Tests")
@@ -98,6 +102,47 @@ class QualityLadderServiceTest {
     assertThat(variants.get(1).videoBitrate()).isEqualTo(3_000_000L);
     assertThat(variants.get(2).videoBitrate()).isEqualTo(1_500_000L);
     assertThat(variants.get(3).videoBitrate()).isEqualTo(800_000L);
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("aspectRatioVariants")
+  @DisplayName("Should compute aspect-ratio-correct width for all tiers")
+  void shouldComputeAspectRatioCorrectWidthForAllTiers(
+      String scenario,
+      int sourceWidth,
+      int sourceHeight,
+      int expectedWidth1080p,
+      int expectedWidth720p,
+      int expectedWidth480p,
+      int expectedWidth360p) {
+    var probe = buildProbe(sourceWidth, sourceHeight, 8_000_000L);
+    var options = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();
+
+    var variants = service.generateVariants(probe, options);
+
+    assertThat(variants).hasSize(4);
+    assertThat(variants.get(0).width()).isEqualTo(expectedWidth1080p);
+    assertThat(variants.get(1).width()).isEqualTo(expectedWidth720p);
+    assertThat(variants.get(2).width()).isEqualTo(expectedWidth480p);
+    assertThat(variants.get(3).width()).isEqualTo(expectedWidth360p);
+  }
+
+  static Stream<Arguments> aspectRatioVariants() {
+    return Stream.of(
+        Arguments.of("16:9 source", 1920, 1080, 1920, 1280, 854, 640),
+        Arguments.of("4:3 source", 1440, 1080, 1440, 960, 640, 480),
+        Arguments.of("21:9 ultrawide source", 2560, 1080, 2560, 1708, 1138, 854));
+  }
+
+  @Test
+  @DisplayName("Should align width to even number when aspect ratio produces odd value")
+  void shouldAlignWidthToEvenNumberWhenAspectRatioProducesOddValue() {
+    var probe = buildProbe(2560, 1080, 8_000_000L);
+    var options = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();
+
+    var variants = service.generateVariants(probe, options);
+
+    assertThat(variants).allSatisfy(v -> assertThat(v.width() % 2).isZero());
   }
 
   private MediaProbe buildProbe(int width, int height, long bitrate) {
