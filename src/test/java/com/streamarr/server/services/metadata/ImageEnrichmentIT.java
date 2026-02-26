@@ -43,7 +43,7 @@ class ImageEnrichmentIT extends AbstractIntegrationTest {
     wireMock.start();
     registry.add("tmdb.image.base-url", wireMock::baseUrl);
     registry.add("tmdb.api.base-url", wireMock::baseUrl);
-    registry.add("tmdb.api.token", () -> "test-token");
+    registry.add("tmdb.api.token", () -> "test-api-token");
   }
 
   @Autowired private ApplicationEventPublisher eventPublisher;
