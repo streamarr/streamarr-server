@@ -41,7 +41,6 @@ public class HlsPlaylistService {
     if (session.getVariants().isEmpty()) {
       var probe = session.getMediaProbe();
       appendStreamInf(sb, probe.bitrate(), probe.width(), probe.height(), codecs, hasAudio);
-      sb.append("\n");
       sb.append("stream.m3u8\n");
       return sb.toString();
     }
@@ -49,7 +48,6 @@ public class HlsPlaylistService {
     for (var variant : session.getVariants()) {
       var bandwidth = variant.videoBitrate() + audio.bitrate();
       appendStreamInf(sb, bandwidth, variant.width(), variant.height(), codecs, hasAudio);
-      sb.append("\n");
       sb.append(variant.label()).append("/stream.m3u8\n");
     }
 
@@ -76,6 +74,7 @@ public class HlsPlaylistService {
     if (hasAudio) {
       sb.append(",AUDIO=\"").append(AUDIO_GROUP_ID).append("\"");
     }
+    sb.append("\n");
   }
 
   public String generateMediaPlaylist(StreamSession session) {
