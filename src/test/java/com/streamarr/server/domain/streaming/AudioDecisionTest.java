@@ -13,22 +13,22 @@ import org.junit.jupiter.params.provider.CsvSource;
 class AudioDecisionTest {
 
   @ParameterizedTest(name = "sourceChannels={0} → normalized={1}")
-  @DisplayName("Should normalize channel count to HLS-valid values")
+  @DisplayName("Should normalize channel count when source channels vary")
   @CsvSource({"0, 2", "1, 1", "2, 2", "3, 2", "4, 2", "5, 6", "6, 6", "7, 8", "8, 8"})
-  void shouldNormalizeChannelCountToHlsValidValues(int sourceChannels, int expected) {
+  void shouldNormalizeChannelCountWhenSourceChannelsVary(int sourceChannels, int expected) {
     assertThat(AudioDecision.normalizeChannels(sourceChannels)).isEqualTo(expected);
   }
 
   @ParameterizedTest(name = "channels={0} → bitrate={1}")
-  @DisplayName("Should calculate bitrate for channel count")
+  @DisplayName("Should calculate bitrate when channel count given")
   @CsvSource({"1, 64000", "2, 128000", "6, 384000", "8, 512000"})
-  void shouldCalculateBitrateForChannelCount(int channels, long expectedBitrate) {
+  void shouldCalculateBitrateWhenChannelCountGiven(int channels, long expectedBitrate) {
     assertThat(AudioDecision.bitrateForChannels(channels)).isEqualTo(expectedBitrate);
   }
 
   @Test
-  @DisplayName("Should create stereo AAC decision with correct defaults")
-  void shouldCreateStereoAacDecisionWithCorrectDefaults() {
+  @DisplayName("Should set stereo AAC defaults when factory method called")
+  void shouldSetStereoAacDefaultsWhenFactoryMethodCalled() {
     var decision = AudioDecision.stereoAac();
 
     assertThat(decision.mode()).isEqualTo(AudioMode.TRANSCODE);
@@ -38,9 +38,9 @@ class AudioDecisionTest {
   }
 
   @ParameterizedTest(name = "codec={0} → hls={1}")
-  @DisplayName("Should return correct HLS codec string")
+  @DisplayName("Should return correct HLS codec string when codec varies")
   @CsvSource({"aac, mp4a.40.2", "ac3, ac-3", "eac3, ec-3"})
-  void shouldReturnCorrectHlsCodecString(String codec, String expected) {
+  void shouldReturnCorrectHlsCodecStringWhenCodecVaries(String codec, String expected) {
     var decision = new AudioDecision(AudioMode.COPY, codec, 2, 128_000L);
     assertThat(decision.hlsCodecString()).isEqualTo(expected);
   }
@@ -52,8 +52,8 @@ class AudioDecisionTest {
   }
 
   @Test
-  @DisplayName("Should create copy decision preserving source values")
-  void shouldCreateCopyDecisionPreservingSourceValues() {
+  @DisplayName("Should preserve source values when copy decision created")
+  void shouldPreserveSourceValuesWhenCopyDecisionCreated() {
     var decision = AudioDecision.copy("ac3", 6, 384_000L);
 
     assertThat(decision.mode()).isEqualTo(AudioMode.COPY);
@@ -71,8 +71,8 @@ class AudioDecisionTest {
   }
 
   @Test
-  @DisplayName("Should create none decision with null codec and zero channels and zero bitrate")
-  void shouldCreateNoneDecisionWithNullCodecAndZeroChannelsAndZeroBitrate() {
+  @DisplayName("Should set null codec and zero values when none decision created")
+  void shouldSetNullCodecAndZeroValuesWhenNoneDecisionCreated() {
     var decision = AudioDecision.none();
 
     assertThat(decision.mode()).isEqualTo(AudioMode.NONE);

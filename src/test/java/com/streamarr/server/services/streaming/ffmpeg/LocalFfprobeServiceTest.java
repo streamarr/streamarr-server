@@ -330,8 +330,8 @@ class LocalFfprobeServiceTest {
   }
 
   @Test
-  @DisplayName("Should return null container format when format_name is absent")
-  void shouldReturnNullContainerFormatWhenFormatNameIsAbsent() {
+  @DisplayName("Should return empty container format when format_name is absent")
+  void shouldReturnEmptyContainerFormatWhenFormatNameIsAbsent() {
     var json =
         """
         {
@@ -485,8 +485,8 @@ class LocalFfprobeServiceTest {
   }
 
   @Test
-  @DisplayName("Should return empty streams when streams node is absent")
-  void shouldReturnEmptyStreamsWhenStreamsNodeIsAbsent() {
+  @DisplayName("Should return no subtitle streams when only video stream present")
+  void shouldReturnNoSubtitleStreamsWhenOnlyVideoStreamPresent() {
     var json =
         """
         {

@@ -388,8 +388,8 @@ class FfmpegCommandBuilderTest {
   }
 
   @Test
-  @DisplayName("Should include common flags when building command")
-  void shouldIncludeCommonFlagsWhenBuildingCommand() {
+  @DisplayName("Should include common flags when mode is full transcode")
+  void shouldIncludeCommonFlagsWhenModeIsFullTranscode() {
     var j =
         job(TranscodeMode.FULL_TRANSCODE, "h264", "aac", ContainerFormat.MPEGTS, "libx264", false);
 

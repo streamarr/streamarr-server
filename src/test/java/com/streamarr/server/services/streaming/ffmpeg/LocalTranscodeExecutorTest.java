@@ -80,8 +80,8 @@ class LocalTranscodeExecutorTest {
   }
 
   @Test
-  @DisplayName("Should start transcode with GPU encoder when available")
-  void shouldStartTranscodeWithGpuEncoderWhenAvailable() {
+  @DisplayName("Should start active transcode when GPU encoder available")
+  void shouldStartActiveTranscodeWhenGpuEncoderAvailable() {
     var request = createRequest(TranscodeMode.FULL_TRANSCODE, "h264");
 
     var handle = executor.start(request);
@@ -92,8 +92,8 @@ class LocalTranscodeExecutorTest {
   }
 
   @Test
-  @DisplayName("Should fall back to software encoder when no GPU")
-  void shouldFallbackToSoftwareEncoderWhenNoGpu() {
+  @DisplayName("Should start active transcode when no GPU available")
+  void shouldStartActiveTranscodeWhenNoGpuAvailable() {
     var noHwCapability =
         HardwareEncodingCapability.builder().available(false).encoders(Set.of()).build();
     var capabilityService = createCapabilityService(true, noHwCapability);
@@ -159,8 +159,8 @@ class LocalTranscodeExecutorTest {
   }
 
   @Test
-  @DisplayName("Should use copy encoder when mode is remux")
-  void shouldUseCopyEncoderWhenModeIsRemux() {
+  @DisplayName("Should start active transcode when mode is remux")
+  void shouldStartActiveTranscodeWhenModeIsRemux() {
     var request = createRequest(TranscodeMode.REMUX, "h264");
 
     var handle = executor.start(request);
@@ -202,8 +202,8 @@ class LocalTranscodeExecutorTest {
   }
 
   @Test
-  @DisplayName("Should use copy encoder when mode is audio transcode")
-  void shouldUseCopyEncoderWhenModeIsAudioTranscode() {
+  @DisplayName("Should start active transcode when mode is audio transcode")
+  void shouldStartActiveTranscodeWhenModeIsAudioTranscode() {
     var request = createRequest(TranscodeMode.AUDIO_TRANSCODE, "h264");
 
     var handle = executor.start(request);
