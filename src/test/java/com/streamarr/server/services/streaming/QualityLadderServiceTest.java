@@ -108,8 +108,8 @@ class QualityLadderServiceTest {
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("aspectRatioVariants")
-  @DisplayName("Should compute aspect-ratio-correct dimensions for each quality tier")
-  void shouldComputeAspectRatioCorrectDimensionsForEachQualityTier(
+  @DisplayName("Should compute aspect-ratio-correct dimensions when generating variants for each quality tier")
+  void shouldComputeAspectRatioCorrectDimensionsWhenGeneratingVariantsForEachQualityTier(
       String scenario, int sourceWidth, int sourceHeight, List<Integer> expectedWidths) {
     var probe = buildProbe(sourceWidth, sourceHeight, 8_000_000L);
     var options = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();
