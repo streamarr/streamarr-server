@@ -4,15 +4,22 @@ import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.left;
 import static org.jooq.impl.DSL.lower;
 import static org.jooq.impl.DSL.noCondition;
+import static org.jooq.impl.DSL.not;
+import static org.jooq.impl.DSL.select;
 
 import com.streamarr.server.domain.AlphabetLetter;
 import com.streamarr.server.graphql.cursor.OrderMediaBy;
 import com.streamarr.server.jooq.generated.Tables;
 import jakarta.persistence.EntityManager;
+import java.util.Collection;
 import java.util.List;
+import java.util.UUID;
 import lombok.experimental.UtilityClass;
 import org.jooq.Condition;
+import org.jooq.Field;
 import org.jooq.SortOrder;
+import org.jooq.Table;
+import org.jooq.TableField;
 
 @UtilityClass
 public class JooqQueryHelper {
@@ -75,5 +82,32 @@ public class JooqQueryHelper {
     }
 
     return firstCharLower.lessOrEqual(inline(startLetter.name().toLowerCase()));
+  }
+
+  public Condition libraryCondition(UUID libraryId) {
+    return libraryId != null ? Tables.BASE_COLLECTABLE.LIBRARY_ID.eq(libraryId) : noCondition();
+  }
+
+  public Condition unmatchedCondition(Boolean unmatched) {
+    if (!Boolean.TRUE.equals(unmatched)) {
+      return noCondition();
+    }
+    return not(
+        Tables.BASE_COLLECTABLE.ID.in(
+            select(Tables.EXTERNAL_IDENTIFIER.ENTITY_ID).from(Tables.EXTERNAL_IDENTIFIER)));
+  }
+
+  @SuppressWarnings({"unchecked", "rawtypes"})
+  public <R extends org.jooq.Record> Condition semiJoinCondition(
+      Field<UUID> entityIdField,
+      Table<R> joinTable,
+      TableField<R, UUID> joinEntityIdField,
+      TableField<R, UUID> joinFilterIdField,
+      Collection<UUID> filterIds) {
+    if (filterIds == null || filterIds.isEmpty()) {
+      return noCondition();
+    }
+    return entityIdField.in(
+        select(joinEntityIdField).from(joinTable).where(joinFilterIdField.in(filterIds)));
   }
 }

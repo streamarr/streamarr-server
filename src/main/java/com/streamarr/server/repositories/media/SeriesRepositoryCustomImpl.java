@@ -2,9 +2,7 @@ package com.streamarr.server.repositories.media;
 
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.noCondition;
-import static org.jooq.impl.DSL.not;
 import static org.jooq.impl.DSL.row;
-import static org.jooq.impl.DSL.select;
 
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.graphql.cursor.MediaFilter;
@@ -61,7 +59,7 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
             .innerJoin(Tables.BASE_COLLECTABLE)
             .on(Tables.SERIES.ID.eq(Tables.BASE_COLLECTABLE.ID))
             .where(seekCondition)
-            .and(libraryCondition(filter))
+            .and(JooqQueryHelper.libraryCondition(filter.getLibraryId()))
             .and(JooqQueryHelper.startLetterCondition(
                 filter.getStartLetter(), originalDirection, filter.getSortBy()))
             .and(filterConditions(filter))
@@ -125,7 +123,7 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
             .from(Tables.SERIES)
             .innerJoin(Tables.BASE_COLLECTABLE)
             .on(Tables.SERIES.ID.eq(Tables.BASE_COLLECTABLE.ID))
-            .where(libraryCondition(options.getMediaFilter()))
+            .where(JooqQueryHelper.libraryCondition(options.getMediaFilter().getLibraryId()))
             .and(
                 JooqQueryHelper.startLetterCondition(
                     options.getMediaFilter().getStartLetter(),
@@ -141,15 +139,14 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
   private Condition filterConditions(MediaFilter filter) {
     var condition = noCondition();
 
-    var genreIds = filter.getGenreIds();
-    if (genreIds != null && !genreIds.isEmpty()) {
-      condition =
-          condition.and(
-              Tables.SERIES.ID.in(
-                  select(Tables.SERIES_GENRE.SERIES_ID)
-                      .from(Tables.SERIES_GENRE)
-                      .where(Tables.SERIES_GENRE.GENRE_ID.in(genreIds))));
-    }
+    condition =
+        condition.and(
+            JooqQueryHelper.semiJoinCondition(
+                Tables.SERIES.ID,
+                Tables.SERIES_GENRE,
+                Tables.SERIES_GENRE.SERIES_ID,
+                Tables.SERIES_GENRE.GENRE_ID,
+                filter.getGenreIds()));
 
     var years = filter.getYears();
     if (years != null && !years.isEmpty()) {
@@ -169,51 +166,36 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
       condition = condition.and(Tables.SERIES.CONTENT_RATING_VALUE.in(contentRatings));
     }
 
-    var studioIds = filter.getStudioIds();
-    if (studioIds != null && !studioIds.isEmpty()) {
-      condition =
-          condition.and(
-              Tables.SERIES.ID.in(
-                  select(Tables.SERIES_COMPANY.SERIES_ID)
-                      .from(Tables.SERIES_COMPANY)
-                      .where(Tables.SERIES_COMPANY.COMPANY_ID.in(studioIds))));
-    }
+    condition =
+        condition.and(
+            JooqQueryHelper.semiJoinCondition(
+                Tables.SERIES.ID,
+                Tables.SERIES_COMPANY,
+                Tables.SERIES_COMPANY.SERIES_ID,
+                Tables.SERIES_COMPANY.COMPANY_ID,
+                filter.getStudioIds()));
 
-    var directorIds = filter.getDirectorIds();
-    if (directorIds != null && !directorIds.isEmpty()) {
-      condition =
-          condition.and(
-              Tables.SERIES.ID.in(
-                  select(Tables.SERIES_DIRECTOR.SERIES_ID)
-                      .from(Tables.SERIES_DIRECTOR)
-                      .where(Tables.SERIES_DIRECTOR.PERSON_ID.in(directorIds))));
-    }
+    condition =
+        condition.and(
+            JooqQueryHelper.semiJoinCondition(
+                Tables.SERIES.ID,
+                Tables.SERIES_DIRECTOR,
+                Tables.SERIES_DIRECTOR.SERIES_ID,
+                Tables.SERIES_DIRECTOR.PERSON_ID,
+                filter.getDirectorIds()));
 
-    var castMemberIds = filter.getCastMemberIds();
-    if (castMemberIds != null && !castMemberIds.isEmpty()) {
-      condition =
-          condition.and(
-              Tables.SERIES.ID.in(
-                  select(Tables.SERIES_PERSON.SERIES_ID)
-                      .from(Tables.SERIES_PERSON)
-                      .where(Tables.SERIES_PERSON.PERSON_ID.in(castMemberIds))));
-    }
+    condition =
+        condition.and(
+            JooqQueryHelper.semiJoinCondition(
+                Tables.SERIES.ID,
+                Tables.SERIES_PERSON,
+                Tables.SERIES_PERSON.SERIES_ID,
+                Tables.SERIES_PERSON.PERSON_ID,
+                filter.getCastMemberIds()));
 
-    if (Boolean.TRUE.equals(filter.getUnmatched())) {
-      condition =
-          condition.and(
-              not(
-                  Tables.BASE_COLLECTABLE.ID.in(
-                      select(Tables.EXTERNAL_IDENTIFIER.ENTITY_ID)
-                          .from(Tables.EXTERNAL_IDENTIFIER))));
-    }
+    condition = condition.and(JooqQueryHelper.unmatchedCondition(filter.getUnmatched()));
 
     return condition;
-  }
-
-  private Condition libraryCondition(MediaFilter filter) {
-    var libraryId = filter.getLibraryId();
-    return libraryId != null ? Tables.BASE_COLLECTABLE.LIBRARY_ID.eq(libraryId) : noCondition();
   }
 
   private Field<?> sortField(MediaFilter filter) {
