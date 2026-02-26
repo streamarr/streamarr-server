@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.StreamSession;
 import java.util.Map;
@@ -10,6 +11,8 @@ import org.springframework.stereotype.Service;
 @Service
 @RequiredArgsConstructor
 public class HlsPlaylistService {
+
+  private static final String AUDIO_GROUP_ID = "audio";
 
   private static final Map<String, String> CODEC_STRINGS =
       Map.of(
@@ -26,34 +29,50 @@ public class HlsPlaylistService {
     var audioCodecString = audio.hlsCodecString();
     var codecs =
         audioCodecString.isEmpty() ? videoCodecString : videoCodecString + "," + audioCodecString;
+    var hasAudio = audio.mode() != AudioMode.NONE;
 
     var sb = new StringBuilder();
     sb.append("#EXTM3U\n");
 
+    if (hasAudio) {
+      appendAudioMedia(sb, audio.channels());
+    }
+
     if (session.getVariants().isEmpty()) {
       var probe = session.getMediaProbe();
-      appendStreamInf(sb, probe.bitrate(), probe.width(), probe.height(), codecs, audio.channels());
+      appendStreamInf(sb, probe.bitrate(), probe.width(), probe.height(), codecs, hasAudio);
       sb.append("stream.m3u8\n");
       return sb.toString();
     }
 
     for (var variant : session.getVariants()) {
       var bandwidth = variant.videoBitrate() + audio.bitrate();
-      appendStreamInf(sb, bandwidth, variant.width(), variant.height(), codecs, audio.channels());
+      appendStreamInf(sb, bandwidth, variant.width(), variant.height(), codecs, hasAudio);
       sb.append(variant.label()).append("/stream.m3u8\n");
     }
 
     return sb.toString();
   }
 
+  private void appendAudioMedia(StringBuilder sb, int audioChannels) {
+    sb.append("#EXT-X-MEDIA:");
+    sb.append("TYPE=AUDIO");
+    sb.append(",GROUP-ID=\"").append(AUDIO_GROUP_ID).append("\"");
+    sb.append(",NAME=\"Audio\"");
+    sb.append(",DEFAULT=YES");
+    sb.append(",AUTOSELECT=YES");
+    sb.append(",CHANNELS=\"").append(audioChannels).append("\"");
+    sb.append("\n");
+  }
+
   private void appendStreamInf(
-      StringBuilder sb, long bandwidth, int width, int height, String codecs, int audioChannels) {
+      StringBuilder sb, long bandwidth, int width, int height, String codecs, boolean hasAudio) {
     sb.append("#EXT-X-STREAM-INF:");
     sb.append("BANDWIDTH=").append(bandwidth);
     sb.append(",RESOLUTION=").append(width).append("x").append(height);
     sb.append(",CODECS=\"").append(codecs).append("\"");
-    if (audioChannels > 2) {
-      sb.append(",CHANNELS=\"").append(audioChannels).append("\"");
+    if (hasAudio) {
+      sb.append(",AUDIO=\"").append(AUDIO_GROUP_ID).append("\"");
     }
     sb.append("\n");
   }
