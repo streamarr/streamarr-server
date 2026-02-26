@@ -38,8 +38,7 @@ public class LocalFfprobeService implements FfprobeService {
 
       if (exitCode != 0) {
         log.error("ffprobe exited with code {} for: {}", exitCode, filepath);
-        throw new FfmpegNotAvailableException(
-            "Media processing is unavailable. Check server logs for details");
+        throw new FfmpegNotAvailableException(FfmpegNotAvailableException.GENERIC_MESSAGE);
       }
 
       return parseProbe(json, filepath);
