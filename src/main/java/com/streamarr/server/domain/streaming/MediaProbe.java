@@ -28,12 +28,13 @@ public record MediaProbe(
     if (audioBitrate == null) {
       audioBitrate = OptionalLong.empty();
     }
-    if (containerFormat == null) {
-      containerFormat = Optional.empty();
-    }
     if (streams == null) {
       streams = List.of();
     }
+  }
+
+  public static class MediaProbeBuilder {
+    private Optional<String> containerFormat = Optional.empty();
   }
 
   public List<StreamInfo> audioStreams() {

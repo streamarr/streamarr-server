@@ -17,14 +17,15 @@ public record StreamInfo(
     boolean isForced) {
 
   public StreamInfo {
-    if (language == null) {
-      language = Optional.empty();
-    }
     if (channels == null) {
       channels = OptionalInt.empty();
     }
     if (bitrate == null) {
       bitrate = OptionalLong.empty();
     }
+  }
+
+  public static class StreamInfoBuilder {
+    private Optional<String> language = Optional.empty();
   }
 }
