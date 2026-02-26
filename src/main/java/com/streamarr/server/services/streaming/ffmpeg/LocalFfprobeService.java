@@ -56,12 +56,7 @@ public class LocalFfprobeService implements FfprobeService {
   }
 
   private MediaProbe parseProbe(JsonNode root, Path filepath) {
-    var videoStream =
-        findStream(root, "video")
-            .orElseThrow(() -> {
-              log.error("No video stream found in: {}", filepath);
-              return new TranscodeException(TranscodeException.GENERIC_MESSAGE);
-            });
+    var videoStream = findStream(root, "video").orElseThrow(() -> noVideoStreamFound(filepath));
     var audioStream = findStream(root, AUDIO);
     var format = root.get("format");
 
@@ -78,6 +73,11 @@ public class LocalFfprobeService implements FfprobeService {
         .containerFormat(optionalString(format, "format_name"))
         .streams(parseAllStreams(root))
         .build();
+  }
+
+  private TranscodeException noVideoStreamFound(Path filepath) {
+    log.error("No video stream found in: {}", filepath);
+    return new TranscodeException(TranscodeException.GENERIC_MESSAGE);
   }
 
   private List<StreamInfo> parseAllStreams(JsonNode root) {
