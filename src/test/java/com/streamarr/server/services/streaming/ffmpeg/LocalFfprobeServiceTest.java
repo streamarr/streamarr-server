@@ -326,7 +326,7 @@ class LocalFfprobeServiceTest {
 
     var probe = service.probe(Path.of("/test/movie.mkv"));
 
-    assertThat(probe.containerFormat()).isEqualTo("matroska,webm");
+    assertThat(probe.containerFormat()).hasValue("matroska,webm");
   }
 
   @Test
@@ -355,7 +355,7 @@ class LocalFfprobeServiceTest {
 
     var probe = service.probe(Path.of("/test/movie.mkv"));
 
-    assertThat(probe.containerFormat()).isNull();
+    assertThat(probe.containerFormat()).isEmpty();
   }
 
   @Test
@@ -417,26 +417,26 @@ class LocalFfprobeServiceTest {
     assertThat(video.index()).isZero();
     assertThat(video.codecType()).isEqualTo("video");
     assertThat(video.codec()).isEqualTo("h264");
-    assertThat(video.language()).isEqualTo("und");
+    assertThat(video.language()).hasValue("und");
     assertThat(video.isDefault()).isTrue();
 
     var audio = probe.streams().get(1);
     assertThat(audio.index()).isEqualTo(1);
     assertThat(audio.codecType()).isEqualTo("audio");
     assertThat(audio.codec()).isEqualTo("ac3");
-    assertThat(audio.language()).isEqualTo("eng");
+    assertThat(audio.language()).hasValue("eng");
     assertThat(audio.channels()).hasValue(6);
     assertThat(audio.bitrate()).hasValue(384_000L);
 
     var srtSub = probe.streams().get(2);
     assertThat(srtSub.codecType()).isEqualTo("subtitle");
     assertThat(srtSub.codec()).isEqualTo("subrip");
-    assertThat(srtSub.language()).isEqualTo("eng");
+    assertThat(srtSub.language()).hasValue("eng");
     assertThat(srtSub.isForced()).isFalse();
 
     var pgsSub = probe.streams().get(3);
     assertThat(pgsSub.codec()).isEqualTo("hdmv_pgs_subtitle");
-    assertThat(pgsSub.language()).isEqualTo("spa");
+    assertThat(pgsSub.language()).hasValue("spa");
     assertThat(pgsSub.isForced()).isTrue();
   }
 
@@ -553,8 +553,8 @@ class LocalFfprobeServiceTest {
     var probe = service.probe(Path.of("/test/movie.mkv"));
 
     assertThat(probe.audioStreams()).hasSize(2);
-    assertThat(probe.audioStreams().get(0).language()).isEqualTo("eng");
-    assertThat(probe.audioStreams().get(1).language()).isEqualTo("jpn");
+    assertThat(probe.audioStreams().get(0).language()).hasValue("eng");
+    assertThat(probe.audioStreams().get(1).language()).hasValue("jpn");
   }
 
   @Test
@@ -584,7 +584,7 @@ class LocalFfprobeServiceTest {
     var probe = service.probe(Path.of("/test/movie.mkv"));
 
     var video = probe.streams().getFirst();
-    assertThat(video.language()).isNull();
+    assertThat(video.language()).isEmpty();
     assertThat(video.isDefault()).isFalse();
     assertThat(video.isForced()).isFalse();
   }

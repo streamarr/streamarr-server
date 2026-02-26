@@ -2,6 +2,7 @@ package com.streamarr.server.domain.streaming;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
 import lombok.Builder;
@@ -17,7 +18,7 @@ public record MediaProbe(
     long bitrate,
     OptionalInt audioChannels,
     OptionalLong audioBitrate,
-    String containerFormat,
+    Optional<String> containerFormat,
     List<StreamInfo> streams) {
 
   public MediaProbe {
@@ -26,6 +27,9 @@ public record MediaProbe(
     }
     if (audioBitrate == null) {
       audioBitrate = OptionalLong.empty();
+    }
+    if (containerFormat == null) {
+      containerFormat = Optional.empty();
     }
     if (streams == null) {
       streams = List.of();

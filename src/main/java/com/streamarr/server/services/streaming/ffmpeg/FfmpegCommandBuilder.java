@@ -2,7 +2,6 @@ package com.streamarr.server.services.streaming.ffmpeg;
 
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
-import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.SubtitleMode;
 import com.streamarr.server.domain.streaming.TranscodeJob;
@@ -38,19 +37,10 @@ public class FfmpegCommandBuilder {
 
   public List<String> buildCommand(TranscodeJob job) {
     var cmd = new ArrayList<String>();
-    var request = job.request();
-    var decision = request.transcodeDecision();
+    var decision = job.request().transcodeDecision();
     var mode = decision.transcodeMode();
 
-    cmd.add(ffmpegPath);
-    cmd.add("-y");
-
-    if (request.seekPosition() > 0) {
-      cmd.addAll(List.of("-ss", String.valueOf(request.seekPosition())));
-    }
-
-    cmd.addAll(List.of("-i", request.sourcePath().toString()));
-
+    addInputArgs(cmd, job.request());
     addStreamSelection(cmd, decision.audioDecision(), decision.subtitleDecision());
     addCommonFlags(cmd);
     addCodecArgs(cmd, job);
@@ -64,6 +54,17 @@ public class FfmpegCommandBuilder {
     cmd.add(job.outputDir().resolve("stream.m3u8").toString());
 
     return List.copyOf(cmd);
+  }
+
+  private void addInputArgs(List<String> cmd, TranscodeRequest request) {
+    cmd.add(ffmpegPath);
+    cmd.add("-y");
+
+    if (request.seekPosition() > 0) {
+      cmd.addAll(List.of("-ss", String.valueOf(request.seekPosition())));
+    }
+
+    cmd.addAll(List.of("-i", request.sourcePath().toString()));
   }
 
   private void addStreamSelection(
@@ -180,12 +181,13 @@ public class FfmpegCommandBuilder {
       cmd.addAll(List.of("-start_number", String.valueOf(request.startNumber())));
     }
 
-    if (container == ContainerFormat.FMP4) {
-      cmd.addAll(List.of("-hls_segment_type", "fmp4"));
-      cmd.addAll(List.of("-hls_fmp4_init_filename", "init.mp4"));
-      cmd.addAll(List.of("-hls_segment_options", "movflags=+frag_discont"));
-    } else {
-      cmd.addAll(List.of("-hls_segment_type", "mpegts"));
+    switch (container) {
+      case FMP4 -> {
+        cmd.addAll(List.of("-hls_segment_type", "fmp4"));
+        cmd.addAll(List.of("-hls_fmp4_init_filename", "init.mp4"));
+        cmd.addAll(List.of("-hls_segment_options", "movflags=+frag_discont"));
+      }
+      case MPEGTS -> cmd.addAll(List.of("-hls_segment_type", "mpegts"));
     }
 
     cmd.addAll(

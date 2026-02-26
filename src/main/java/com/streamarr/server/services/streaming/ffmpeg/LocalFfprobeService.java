@@ -101,16 +101,16 @@ public class LocalFfprobeService implements FfprobeService {
     return List.copyOf(result);
   }
 
-  private String extractLanguage(JsonNode stream) {
+  private Optional<String> extractLanguage(JsonNode stream) {
     var tags = stream.get("tags");
     if (tags == null || tags.isNull()) {
-      return null;
+      return Optional.empty();
     }
     var language = tags.get("language");
     if (language == null || language.isNull()) {
-      return null;
+      return Optional.empty();
     }
-    return language.asString();
+    return Optional.of(language.asString());
   }
 
   private boolean extractDisposition(JsonNode stream, String flag) {
@@ -136,9 +136,12 @@ public class LocalFfprobeService implements FfprobeService {
     return Optional.empty();
   }
 
-  private String optionalString(JsonNode node, String field) {
+  private Optional<String> optionalString(JsonNode node, String field) {
     var value = node.get(field);
-    return value != null && !value.isNull() ? value.asString() : null;
+    if (value == null || value.isNull()) {
+      return Optional.empty();
+    }
+    return Optional.of(value.asString());
   }
 
   private OptionalInt optionalInt(JsonNode node, String field) {

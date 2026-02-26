@@ -169,11 +169,9 @@ class TMDBSeriesProviderTest {
     fakeTmdbHttpService.setTvSeriesMetadata("1396", updatedSeries);
     provider.onRefreshEnded(new RefreshEndedEvent(libraryA));
 
-    assertThat(provider.resolveSeasonNumber(libraryA, "1396", 2020))
-        .isEqualTo(OptionalInt.of(5));
+    assertThat(provider.resolveSeasonNumber(libraryA, "1396", 2020)).isEqualTo(OptionalInt.of(5));
 
-    assertThat(provider.resolveSeasonNumber(libraryB, "1396", 2020))
-        .isEqualTo(OptionalInt.of(1));
+    assertThat(provider.resolveSeasonNumber(libraryB, "1396", 2020)).isEqualTo(OptionalInt.of(1));
   }
 
   @Test

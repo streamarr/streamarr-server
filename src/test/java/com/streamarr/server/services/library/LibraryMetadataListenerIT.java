@@ -76,22 +76,13 @@ class LibraryMetadataListenerIT extends AbstractIntegrationTest {
     var savedIsolatedLibrary = libraryRepository.saveAndFlush(isolatedLibrary);
 
     movieRepository.saveAndFlush(
-        Movie.builder()
-            .title("Delta")
-            .titleSort("Delta")
-            .library(savedIsolatedLibrary)
-            .build());
+        Movie.builder().title("Delta").titleSort("Delta").library(savedIsolatedLibrary).build());
     movieRepository.saveAndFlush(
-        Movie.builder()
-            .title("Echo")
-            .titleSort("Echo")
-            .library(savedIsolatedLibrary)
-            .build());
+        Movie.builder().title("Echo").titleSort("Echo").library(savedIsolatedLibrary).build());
 
     listener.onItemProcessed(new ItemProcessedEvent(savedIsolatedLibrary.getId()));
 
-    var metadata =
-        metadataRepository.findByLibraryIdOrderByLetterAsc(savedIsolatedLibrary.getId());
+    var metadata = metadataRepository.findByLibraryIdOrderByLetterAsc(savedIsolatedLibrary.getId());
 
     assertThat(metadata).hasSize(2);
     assertThat(metadata)

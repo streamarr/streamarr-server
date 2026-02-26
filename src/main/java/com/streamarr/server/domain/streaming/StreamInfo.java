@@ -1,5 +1,6 @@
 package com.streamarr.server.domain.streaming;
 
+import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
 import lombok.Builder;
@@ -9,13 +10,16 @@ public record StreamInfo(
     int index,
     String codecType,
     String codec,
-    String language,
+    Optional<String> language,
     OptionalInt channels,
     OptionalLong bitrate,
     boolean isDefault,
     boolean isForced) {
 
   public StreamInfo {
+    if (language == null) {
+      language = Optional.empty();
+    }
     if (channels == null) {
       channels = OptionalInt.empty();
     }

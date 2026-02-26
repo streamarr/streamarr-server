@@ -34,8 +34,7 @@ class SeriesMetadataProviderResolverTest {
     var resolver =
         new SeriesMetadataProviderResolver(
             List.of(
-                new FakeSeriesMetadataProvider(
-                    expectedResult, null, List.of(), Optional.empty())));
+                new FakeSeriesMetadataProvider(expectedResult, null, List.of(), Optional.empty())));
 
     var library =
         Library.builder().name("TV").externalAgentStrategy(ExternalAgentStrategy.TMDB).build();
@@ -70,8 +69,7 @@ class SeriesMetadataProviderResolverTest {
     var resolver =
         new SeriesMetadataProviderResolver(
             List.of(
-                new FakeSeriesMetadataProvider(
-                    null, expectedSeries, List.of(), Optional.empty())));
+                new FakeSeriesMetadataProvider(null, expectedSeries, List.of(), Optional.empty())));
 
     var library =
         Library.builder().name("TV").externalAgentStrategy(ExternalAgentStrategy.TMDB).build();
@@ -94,8 +92,7 @@ class SeriesMetadataProviderResolverTest {
     var resolver =
         new SeriesMetadataProviderResolver(
             List.of(
-                new FakeSeriesMetadataProvider(
-                    null, null, List.of(1, 2, 3), Optional.empty())));
+                new FakeSeriesMetadataProvider(null, null, List.of(1, 2, 3), Optional.empty())));
 
     var library =
         Library.builder()
