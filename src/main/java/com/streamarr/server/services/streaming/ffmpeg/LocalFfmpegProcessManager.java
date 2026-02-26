@@ -39,8 +39,7 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
       return process;
     } catch (IOException e) {
       log.error("Failed to start FFmpeg process for session: {}", sessionId, e);
-      throw new TranscodeException(
-          "Media processing failed. Check server logs for details", e);
+      throw new TranscodeException(TranscodeException.GENERIC_MESSAGE, e);
     }
   }
 

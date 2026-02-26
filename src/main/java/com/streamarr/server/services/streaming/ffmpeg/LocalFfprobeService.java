@@ -48,12 +48,10 @@ public class LocalFfprobeService implements FfprobeService {
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       log.error("ffprobe interrupted for: {}", filepath, e);
-      throw new TranscodeException(
-          "Media processing failed. Check server logs for details", e);
+      throw new TranscodeException(TranscodeException.GENERIC_MESSAGE, e);
     } catch (Exception e) {
       log.error("Failed to parse ffprobe output for: {}", filepath, e);
-      throw new TranscodeException(
-          "Media processing failed. Check server logs for details", e);
+      throw new TranscodeException(TranscodeException.GENERIC_MESSAGE, e);
     }
   }
 
@@ -62,8 +60,7 @@ public class LocalFfprobeService implements FfprobeService {
         findStream(root, "video")
             .orElseThrow(() -> {
               log.error("No video stream found in: {}", filepath);
-              return new TranscodeException(
-                  "Media processing failed. Check server logs for details");
+              return new TranscodeException(TranscodeException.GENERIC_MESSAGE);
             });
     var audioStream = findStream(root, AUDIO);
     var format = root.get("format");
