@@ -166,6 +166,7 @@ public class FfmpegCommandBuilder {
     }
   }
 
+  @SuppressWarnings("java:S1301") // exhaustive enum switch preferred over if/else per project style
   private void addHlsArgs(List<String> cmd, TranscodeJob job) {
     var request = job.request();
     var decision = request.transcodeDecision();

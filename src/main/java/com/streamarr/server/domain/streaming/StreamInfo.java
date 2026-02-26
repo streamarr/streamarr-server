@@ -25,6 +25,7 @@ public record StreamInfo(
     }
   }
 
+  @SuppressWarnings("java:S1068") // Lombok builder default — field is used by generated code
   public static class StreamInfoBuilder {
     private Optional<String> language = Optional.empty();
   }

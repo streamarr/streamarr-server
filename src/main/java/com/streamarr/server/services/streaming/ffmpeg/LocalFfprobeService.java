@@ -22,6 +22,10 @@ import tools.jackson.databind.ObjectMapper;
 @RequiredArgsConstructor
 public class LocalFfprobeService implements FfprobeService {
 
+  private static final String AUDIO = "audio";
+  private static final String CODEC_NAME = "codec_name";
+  private static final String BIT_RATE = "bit_rate";
+
   private final ObjectMapper objectMapper;
   private final Function<Path, Process> processFactory;
 
@@ -52,20 +56,19 @@ public class LocalFfprobeService implements FfprobeService {
     var videoStream =
         findStream(root, "video")
             .orElseThrow(() -> new TranscodeException("No video stream found in: " + filepath));
-    var audioStream = findStream(root, "audio");
+    var audioStream = findStream(root, AUDIO);
     var format = root.get("format");
 
     return MediaProbe.builder()
-        .videoCodec(videoStream.get("codec_name").asString())
-        .audioCodec(audioStream.map(s -> s.get("codec_name").asString()).orElse(null))
+        .videoCodec(videoStream.get(CODEC_NAME).asString())
+        .audioCodec(audioStream.map(s -> s.get(CODEC_NAME).asString()).orElse(null))
         .audioChannels(audioStream.map(s -> optionalInt(s, "channels")).orElse(OptionalInt.empty()))
-        .audioBitrate(
-            audioStream.map(s -> optionalLong(s, "bit_rate")).orElse(OptionalLong.empty()))
+        .audioBitrate(audioStream.map(s -> optionalLong(s, BIT_RATE)).orElse(OptionalLong.empty()))
         .width(videoStream.get("width").asInt())
         .height(videoStream.get("height").asInt())
         .framerate(parseFrameRate(videoStream.get("r_frame_rate").asString()))
         .duration(parseDuration(format.get("duration").asString()))
-        .bitrate(format.get("bit_rate").asLong())
+        .bitrate(format.get(BIT_RATE).asLong())
         .containerFormat(optionalString(format, "format_name"))
         .streams(parseAllStreams(root))
         .build();
@@ -86,14 +89,12 @@ public class LocalFfprobeService implements FfprobeService {
           StreamInfo.builder()
               .index(indexNode != null && !indexNode.isNull() ? indexNode.asInt() : i)
               .codecType(codecType)
-              .codec(stream.get("codec_name").asString())
+              .codec(stream.get(CODEC_NAME).asString())
               .language(extractLanguage(stream))
               .channels(
-                  "audio".equals(codecType) ? optionalInt(stream, "channels") : OptionalInt.empty())
+                  AUDIO.equals(codecType) ? optionalInt(stream, "channels") : OptionalInt.empty())
               .bitrate(
-                  "audio".equals(codecType)
-                      ? optionalLong(stream, "bit_rate")
-                      : OptionalLong.empty())
+                  AUDIO.equals(codecType) ? optionalLong(stream, BIT_RATE) : OptionalLong.empty())
               .isDefault(extractDisposition(stream, "default"))
               .isForced(extractDisposition(stream, "forced"))
               .build());

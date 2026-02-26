@@ -33,6 +33,7 @@ public record MediaProbe(
     }
   }
 
+  @SuppressWarnings("java:S1068") // Lombok builder default — field is used by generated code
   public static class MediaProbeBuilder {
     private Optional<String> containerFormat = Optional.empty();
   }
