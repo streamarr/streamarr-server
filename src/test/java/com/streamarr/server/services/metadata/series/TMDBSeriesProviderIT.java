@@ -46,6 +46,7 @@ class TMDBSeriesProviderIT extends AbstractIntegrationTest {
     wireMock.start();
 
     registry.add("tmdb.api.base-url", wireMock::baseUrl);
+    registry.add("tmdb.image.base-url", wireMock::baseUrl);
     registry.add("tmdb.api.token", () -> "test-api-token");
   }
 

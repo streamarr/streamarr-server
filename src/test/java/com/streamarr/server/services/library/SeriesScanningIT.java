@@ -49,6 +49,7 @@ class SeriesScanningIT extends AbstractIntegrationTest {
   static void configureWireMock(DynamicPropertyRegistry registry) {
     wireMock.start();
     registry.add("tmdb.api.base-url", wireMock::baseUrl);
+    registry.add("tmdb.image.base-url", wireMock::baseUrl);
     registry.add("tmdb.api.token", () -> "test-api-token");
   }
 
