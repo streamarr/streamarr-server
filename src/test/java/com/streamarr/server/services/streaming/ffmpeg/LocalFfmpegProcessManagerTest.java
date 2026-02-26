@@ -125,4 +125,48 @@ class LocalFfmpegProcessManagerTest {
 
     manager.stopProcess(sessionId);
   }
+
+  @Test
+  @DisplayName("Should not deadlock when process produces large stderr output")
+  void shouldNotDeadlockWhenProcessProducesLargeStderrOutput() {
+    var sessionId = UUID.randomUUID();
+
+    // Write 5000 lines to stderr (well beyond the ~64KB OS pipe buffer), then exit.
+    // Without stderr draining, the process blocks on write() and never reaches exit.
+    var script = "for i in $(seq 1 5000); do echo \"stderr line $i\" >&2; done; exit 0";
+
+    var process =
+        manager.startProcess(
+            sessionId, StreamSession.defaultVariant(), List.of("bash", "-c", script), tempDir);
+
+    await()
+        .atMost(Duration.ofSeconds(10))
+        .untilAsserted(
+            () -> {
+              assertThat(process.isAlive()).isFalse();
+              assertThat(process.exitValue()).isZero();
+            });
+
+    manager.stopProcess(sessionId);
+  }
+
+  @Test
+  @DisplayName("Should capture stderr in exit details when process exits naturally")
+  void shouldCaptureStderrInExitDetailsWhenProcessExitsNaturally() throws Exception {
+    var sessionId = UUID.randomUUID();
+
+    var process =
+        manager.startProcess(
+            sessionId,
+            StreamSession.defaultVariant(),
+            List.of("bash", "-c", "echo 'error output' >&2; exit 1"),
+            tempDir);
+    process.waitFor();
+
+    await().pollDelay(Duration.ofMillis(200)).until(() -> true);
+
+    // isRunning triggers cleanup + logExitDetails — should not throw
+    assertThatNoException().isThrownBy(() -> manager.isRunning(sessionId));
+    assertThat(manager.isRunning(sessionId)).isFalse();
+  }
 }
