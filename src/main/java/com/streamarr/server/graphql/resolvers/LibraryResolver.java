@@ -120,7 +120,7 @@ public class LibraryResolver {
       return "Series";
     }
 
-    throw new UnsupportedMediaTypeException(media.getClass().getName());
+    throw new UnsupportedMediaTypeException(media.getClass().getSimpleName());
   }
 
   private UUID parseUuid(String id) {
