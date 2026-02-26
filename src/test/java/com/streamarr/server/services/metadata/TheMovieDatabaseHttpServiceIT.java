@@ -4,15 +4,13 @@ import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
-import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static com.github.tomakehurst.wiremock.stubbing.Scenario.STARTED;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 import com.github.mizosoft.methanol.HttpCache;
-import com.github.tomakehurst.wiremock.WireMockServer;
-import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.AbstractWireMockIntegrationTest;
 import com.streamarr.server.services.metadata.tmdb.TmdbApiException;
 import com.streamarr.server.services.metadata.tmdb.TmdbSearchResults;
 import com.streamarr.server.services.parsers.video.VideoFileParserResult;
@@ -23,7 +21,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -34,17 +31,10 @@ import org.springframework.test.context.DynamicPropertySource;
 
 @Tag("IntegrationTest")
 @DisplayName("TMDB HTTP Service Integration Tests")
-class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
-
-  private static final WireMockServer wireMock = new WireMockServer(wireMockConfig().dynamicPort());
+class TheMovieDatabaseHttpServiceIT extends AbstractWireMockIntegrationTest {
 
   @DynamicPropertySource
-  static void configureWireMock(DynamicPropertyRegistry registry) {
-    wireMock.start();
-
-    registry.add("tmdb.api.base-url", wireMock::baseUrl);
-    registry.add("tmdb.image.base-url", wireMock::baseUrl);
-    registry.add("tmdb.api.token", () -> "test-api-token");
+  static void configureRateLimitAndTimeout(DynamicPropertyRegistry registry) {
     registry.add("tmdb.api.requests-per-second", () -> "1000");
     registry.add("tmdb.api.request-timeout-seconds", () -> "2");
   }
@@ -57,11 +47,6 @@ class TheMovieDatabaseHttpServiceIT extends AbstractIntegrationTest {
   void resetStubs() throws IOException {
     wireMock.resetAll();
     tmdbHttpCache.clear();
-  }
-
-  @AfterAll
-  static void tearDown() {
-    wireMock.stop();
   }
 
   @Test
