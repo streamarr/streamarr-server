@@ -566,6 +566,7 @@ class HlsPlaylistServiceTest {
 
       var streamInfLines =
           playlist.lines().filter(l -> l.startsWith("#EXT-X-STREAM-INF:")).toList();
+      assertThat(streamInfLines).isNotEmpty();
       for (var line : streamInfLines) {
         assertThat(line).doesNotContain("CHANNELS=");
       }
@@ -685,6 +686,7 @@ class HlsPlaylistServiceTest {
 
       var streamInfLines =
           playlist.lines().filter(l -> l.startsWith("#EXT-X-STREAM-INF:")).toList();
+      assertThat(streamInfLines).isNotEmpty();
       for (var line : streamInfLines) {
         assertThat(line).contains("AUDIO=\"audio\"");
       }
@@ -719,8 +721,10 @@ class HlsPlaylistServiceTest {
 
       var mediaIndex = playlist.indexOf("#EXT-X-MEDIA:TYPE=AUDIO");
       var streamInfIndex = playlist.indexOf("#EXT-X-STREAM-INF:");
-      assertThat(mediaIndex).isGreaterThanOrEqualTo(0);
-      assertThat(mediaIndex).isLessThan(streamInfIndex);
+      assertThat(mediaIndex).as("EXT-X-MEDIA tag should be present").isGreaterThanOrEqualTo(0);
+      assertThat(mediaIndex)
+          .as("EXT-X-MEDIA should appear before EXT-X-STREAM-INF")
+          .isLessThan(streamInfIndex);
     }
 
     @Test
@@ -732,6 +736,7 @@ class HlsPlaylistServiceTest {
 
       var streamInfLines =
           playlist.lines().filter(l -> l.startsWith("#EXT-X-STREAM-INF:")).toList();
+      assertThat(streamInfLines).isNotEmpty();
       for (var line : streamInfLines) {
         assertThat(line).doesNotContain("CHANNELS=");
       }
