@@ -134,10 +134,9 @@ class LocalFfmpegProcessManagerTest {
   void shouldThrowWithGenericMessageWhenProcessStartFails() {
     var sessionId = UUID.randomUUID();
 
-    assertThatThrownBy(
-            () ->
-                manager.startProcess(
-                    sessionId, "default", List.of("/nonexistent-binary-12345"), tempDir))
+    var command = List.of("/nonexistent-binary-12345");
+
+    assertThatThrownBy(() -> manager.startProcess(sessionId, "default", command, tempDir))
         .isInstanceOf(TranscodeException.class)
         .hasMessage(TranscodeException.GENERIC_MESSAGE);
   }

@@ -397,7 +397,9 @@ class LibraryResolverTest {
   void shouldThrowWithSimpleClassNameWhenUnsupportedMediaTypeInTypeResolver() {
     var resolver = new LibraryResolver(null, null, null, null);
 
-    assertThatThrownBy(() -> resolver.resolveMedia(new Object()))
+    var unsupportedMedia = new Object();
+
+    assertThatThrownBy(() -> resolver.resolveMedia(unsupportedMedia))
         .isInstanceOf(UnsupportedMediaTypeException.class)
         .hasMessage("Unsupported media type: Object");
   }
