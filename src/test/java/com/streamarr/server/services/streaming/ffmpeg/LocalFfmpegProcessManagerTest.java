@@ -5,9 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
-import com.streamarr.server.exceptions.TranscodeException;
-
 import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.server.exceptions.TranscodeException;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
