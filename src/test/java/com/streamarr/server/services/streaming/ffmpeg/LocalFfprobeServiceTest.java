@@ -115,7 +115,7 @@ class LocalFfprobeServiceTest {
 
     assertThatThrownBy(() -> service.probe(filePath))
         .isInstanceOf(TranscodeException.class)
-        .hasMessageContaining("video stream");
+        .hasMessageContaining("processing failed");
   }
 
   @Test
@@ -126,7 +126,8 @@ class LocalFfprobeServiceTest {
     var filePath = Path.of("/test/movie.mkv");
 
     assertThatThrownBy(() -> service.probe(filePath))
-        .isInstanceOf(FfmpegNotAvailableException.class);
+        .isInstanceOf(FfmpegNotAvailableException.class)
+        .hasMessageContaining("unavailable");
   }
 
   @Test

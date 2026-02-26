@@ -37,8 +37,9 @@ public class LocalFfprobeService implements FfprobeService {
       var exitCode = process.waitFor();
 
       if (exitCode != 0) {
+        log.error("ffprobe exited with code {} for: {}", exitCode, filepath);
         throw new FfmpegNotAvailableException(
-            "ffprobe exited with code " + exitCode + " for: " + filepath);
+            "Media processing is unavailable. Check server logs for details");
       }
 
       return parseProbe(json, filepath);
@@ -46,16 +47,24 @@ public class LocalFfprobeService implements FfprobeService {
       throw e;
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
-      throw new TranscodeException("ffprobe interrupted for: " + filepath, e);
+      log.error("ffprobe interrupted for: {}", filepath, e);
+      throw new TranscodeException(
+          "Media processing failed. Check server logs for details", e);
     } catch (Exception e) {
-      throw new TranscodeException("Failed to parse ffprobe output for: " + filepath, e);
+      log.error("Failed to parse ffprobe output for: {}", filepath, e);
+      throw new TranscodeException(
+          "Media processing failed. Check server logs for details", e);
     }
   }
 
   private MediaProbe parseProbe(JsonNode root, Path filepath) {
     var videoStream =
         findStream(root, "video")
-            .orElseThrow(() -> new TranscodeException("No video stream found in: " + filepath));
+            .orElseThrow(() -> {
+              log.error("No video stream found in: {}", filepath);
+              return new TranscodeException(
+                  "Media processing failed. Check server logs for details");
+            });
     var audioStream = findStream(root, AUDIO);
     var format = root.get("format");
 
