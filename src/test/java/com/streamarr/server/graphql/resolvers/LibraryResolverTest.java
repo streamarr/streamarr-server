@@ -49,8 +49,6 @@ class LibraryResolverTest {
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
 
-  @Autowired private LibraryResolver libraryResolver;
-
   @MockitoBean private LibraryRepository libraryRepository;
 
   @MockitoBean private LibraryManagementService libraryManagementService;
@@ -397,7 +395,9 @@ class LibraryResolverTest {
   @Test
   @DisplayName("Should throw without package name when unknown media type in type resolver")
   void shouldThrowWithoutPackageNameWhenUnknownMediaTypeInTypeResolver() {
-    assertThatThrownBy(() -> libraryResolver.resolveMedia(new Object()))
+    var resolver = new LibraryResolver(null, null, null, null);
+
+    assertThatThrownBy(() -> resolver.resolveMedia(new Object()))
         .isInstanceOf(UnsupportedMediaTypeException.class)
         .hasMessage("Unsupported media type: Object");
   }
