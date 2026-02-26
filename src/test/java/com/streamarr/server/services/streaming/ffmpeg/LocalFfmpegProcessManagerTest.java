@@ -2,7 +2,10 @@ package com.streamarr.server.services.streaming.ffmpeg;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
+
+import com.streamarr.server.exceptions.TranscodeException;
 
 import com.streamarr.server.domain.streaming.StreamSession;
 import java.nio.file.Path;
@@ -124,5 +127,18 @@ class LocalFfmpegProcessManagerTest {
     assertThat(manager.isRunning(sessionId, "360p")).isFalse();
 
     manager.stopProcess(sessionId);
+  }
+
+  @Test
+  @DisplayName("Should throw with generic message when process start fails")
+  void shouldThrowWithGenericMessageWhenProcessStartFails() {
+    var sessionId = UUID.randomUUID();
+
+    assertThatThrownBy(
+            () ->
+                manager.startProcess(
+                    sessionId, "default", List.of("/nonexistent-binary-12345"), tempDir))
+        .isInstanceOf(TranscodeException.class)
+        .hasMessageContaining("processing failed");
   }
 }
