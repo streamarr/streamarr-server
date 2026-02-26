@@ -108,30 +108,23 @@ class QualityLadderServiceTest {
   @MethodSource("aspectRatioVariants")
   @DisplayName("Should compute aspect-ratio-correct width when source has varying aspect ratios")
   void shouldComputeAspectRatioCorrectWidthWhenSourceHasVaryingAspectRatios(
-      String scenario,
-      int sourceWidth,
-      int sourceHeight,
-      int expectedWidth1080p,
-      int expectedWidth720p,
-      int expectedWidth480p,
-      int expectedWidth360p) {
+      String scenario, int sourceWidth, int sourceHeight, List<Integer> expectedWidths) {
     var probe = buildProbe(sourceWidth, sourceHeight, 8_000_000L);
     var options = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();
 
     var variants = service.generateVariants(probe, options);
 
-    assertThat(variants).hasSize(4);
-    assertThat(variants.get(0).width()).isEqualTo(expectedWidth1080p);
-    assertThat(variants.get(1).width()).isEqualTo(expectedWidth720p);
-    assertThat(variants.get(2).width()).isEqualTo(expectedWidth480p);
-    assertThat(variants.get(3).width()).isEqualTo(expectedWidth360p);
+    assertThat(variants).hasSize(expectedWidths.size());
+    for (int i = 0; i < variants.size(); i++) {
+      assertThat(variants.get(i).width()).isEqualTo(expectedWidths.get(i));
+    }
   }
 
   static Stream<Arguments> aspectRatioVariants() {
     return Stream.of(
-        Arguments.of("16:9 source", 1920, 1080, 1920, 1280, 854, 640),
-        Arguments.of("4:3 source", 1440, 1080, 1440, 960, 640, 480),
-        Arguments.of("21:9 ultrawide source", 2560, 1080, 2560, 1708, 1138, 854));
+        Arguments.of("16:9 source", 1920, 1080, List.of(1920, 1280, 854, 640)),
+        Arguments.of("4:3 source", 1440, 1080, List.of(1440, 960, 640, 480)),
+        Arguments.of("21:9 ultrawide source", 2560, 1080, List.of(2560, 1708, 1138, 854)));
   }
 
   @Test
