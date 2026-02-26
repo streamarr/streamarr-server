@@ -12,17 +12,13 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.library.events.ItemProcessedEvent;
 import com.streamarr.server.services.library.events.ScanCompletedEvent;
-import java.util.UUID;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
 
 @Tag("IntegrationTest")
 @DisplayName("Library Metadata Listener Integration Tests")
-@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class LibraryMetadataListenerIT extends AbstractIntegrationTest {
 
   @Autowired private LibraryMetadataListener listener;
@@ -33,34 +29,22 @@ class LibraryMetadataListenerIT extends AbstractIntegrationTest {
 
   @Autowired private LibraryMetadataRepository metadataRepository;
 
-  private UUID libraryId;
-
-  @BeforeAll
-  void setup() {
-    var library = LibraryFixtureCreator.buildFakeLibrary();
-    var savedLibrary = libraryRepository.saveAndFlush(library);
-    libraryId = savedLibrary.getId();
-
-    movieRepository.saveAndFlush(
-        Movie.builder().title("Alpha").titleSort("Alpha").library(savedLibrary).build());
-    movieRepository.saveAndFlush(
-        Movie.builder().title("Avengers").titleSort("Avengers").library(savedLibrary).build());
-    movieRepository.saveAndFlush(
-        Movie.builder().title("Batman").titleSort("Batman").library(savedLibrary).build());
-    movieRepository.saveAndFlush(
-        Movie.builder()
-            .title("123 Numbers")
-            .titleSort("123 Numbers")
-            .library(savedLibrary)
-            .build());
-  }
-
   @Test
   @DisplayName("Should calculate correct letter counts when scan completed")
   void shouldCalculateCorrectLetterCountsWhenScanCompleted() {
-    listener.onScanCompleted(new ScanCompletedEvent(libraryId));
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    movieRepository.saveAndFlush(
+        Movie.builder().title("Alpha").titleSort("Alpha").library(library).build());
+    movieRepository.saveAndFlush(
+        Movie.builder().title("Avengers").titleSort("Avengers").library(library).build());
+    movieRepository.saveAndFlush(
+        Movie.builder().title("Batman").titleSort("Batman").library(library).build());
+    movieRepository.saveAndFlush(
+        Movie.builder().title("123 Numbers").titleSort("123 Numbers").library(library).build());
 
-    var metadata = metadataRepository.findByLibraryIdOrderByLetterAsc(libraryId);
+    listener.onScanCompleted(new ScanCompletedEvent(library.getId()));
+
+    var metadata = metadataRepository.findByLibraryIdOrderByLetterAsc(library.getId());
 
     assertThat(metadata).hasSize(3);
     assertThat(metadata)
@@ -94,16 +78,26 @@ class LibraryMetadataListenerIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should replace stale metadata when recalculation is triggered")
   void shouldReplaceStaleMetadataOnRecalculation() {
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    movieRepository.saveAndFlush(
+        Movie.builder().title("Alpha").titleSort("Alpha").library(library).build());
+    movieRepository.saveAndFlush(
+        Movie.builder().title("Avengers").titleSort("Avengers").library(library).build());
+    movieRepository.saveAndFlush(
+        Movie.builder().title("Batman").titleSort("Batman").library(library).build());
+    movieRepository.saveAndFlush(
+        Movie.builder().title("123 Numbers").titleSort("123 Numbers").library(library).build());
+
     metadataRepository.save(
         LibraryMetadata.builder()
-            .libraryId(libraryId)
+            .libraryId(library.getId())
             .letter(AlphabetLetter.Z)
             .itemCount(99)
             .build());
 
-    listener.onScanCompleted(new ScanCompletedEvent(libraryId));
+    listener.onScanCompleted(new ScanCompletedEvent(library.getId()));
 
-    var metadata = metadataRepository.findByLibraryIdOrderByLetterAsc(libraryId);
+    var metadata = metadataRepository.findByLibraryIdOrderByLetterAsc(library.getId());
 
     assertThat(metadata)
         .extracting(LibraryMetadata::getLetter)
