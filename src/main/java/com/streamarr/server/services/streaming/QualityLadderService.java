@@ -74,7 +74,7 @@ public class QualityLadderService {
     if (variants.isEmpty()) {
       variants.add(
           QualityVariant.builder()
-              .width(source.width())
+              .width(computeEvenAlignedWidth(source, source.height()))
               .height(source.height())
               .videoBitrate(source.bitrate())
               .audioBitrate(64_000L)

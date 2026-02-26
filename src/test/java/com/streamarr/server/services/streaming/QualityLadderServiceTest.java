@@ -134,6 +134,19 @@ class QualityLadderServiceTest {
         Arguments.of("21:9 ultrawide source", 2560, 1080, 2560, 1708, 1138, 854));
   }
 
+  @Test
+  @DisplayName("Should align width to even number when source resolution is below all tiers")
+  void shouldAlignWidthToEvenNumberWhenSourceResolutionIsBelowAllTiers() {
+    var probe = buildProbe(319, 179, 500_000L);
+    var options = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();
+
+    var variants = service.generateVariants(probe, options);
+
+    assertThat(variants).hasSize(1);
+    assertThat(variants.get(0).width()).isEqualTo(320);
+    assertThat(variants.get(0).height()).isEqualTo(179);
+  }
+
   private MediaProbe buildProbe(int width, int height, long bitrate) {
     return MediaProbe.builder()
         .duration(Duration.ofMinutes(120))
