@@ -6,7 +6,8 @@ type StreamSession {
 
 enum TranscodeMode {
     REMUX
-    PARTIAL_TRANSCODE
+    AUDIO_TRANSCODE
+    VIDEO_TRANSCODE
     FULL_TRANSCODE
 }
 
@@ -16,6 +17,8 @@ input StreamingOptionsInput {
     maxHeight: Int
     maxBitrate: Int
     supportedCodecs: [String!]
+    supportedAudioCodecs: [String!]
+    maxAudioChannels: Int
     audioLanguage: String
     subtitleLanguage: String
 }

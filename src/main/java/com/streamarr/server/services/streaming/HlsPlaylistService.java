@@ -21,23 +21,25 @@ public class HlsPlaylistService {
 
   public String generateMasterPlaylist(StreamSession session) {
     var decision = session.getTranscodeDecision();
-    var codecString = CODEC_STRINGS.getOrDefault(decision.videoCodecFamily(), "avc1.640028");
-    var audioCodecString = "mp4a.40.2";
-    var codecs = codecString + "," + audioCodecString;
+    var audio = decision.audioDecision();
+    var videoCodecString = CODEC_STRINGS.getOrDefault(decision.videoCodecFamily(), "avc1.640028");
+    var audioCodecString = audio.hlsCodecString();
+    var codecs =
+        audioCodecString.isEmpty() ? videoCodecString : videoCodecString + "," + audioCodecString;
 
     var sb = new StringBuilder();
     sb.append("#EXTM3U\n");
 
     if (session.getVariants().isEmpty()) {
       var probe = session.getMediaProbe();
-      appendStreamInf(sb, probe.bitrate(), probe.width(), probe.height(), codecs);
+      appendStreamInf(sb, probe.bitrate(), probe.width(), probe.height(), codecs, audio.channels());
       sb.append("stream.m3u8\n");
       return sb.toString();
     }
 
     for (var variant : session.getVariants()) {
-      var bandwidth = variant.videoBitrate() + variant.audioBitrate();
-      appendStreamInf(sb, bandwidth, variant.width(), variant.height(), codecs);
+      var bandwidth = variant.videoBitrate() + audio.bitrate();
+      appendStreamInf(sb, bandwidth, variant.width(), variant.height(), codecs, audio.channels());
       sb.append(variant.label()).append("/stream.m3u8\n");
     }
 
@@ -45,11 +47,14 @@ public class HlsPlaylistService {
   }
 
   private void appendStreamInf(
-      StringBuilder sb, long bandwidth, int width, int height, String codecs) {
+      StringBuilder sb, long bandwidth, int width, int height, String codecs, int audioChannels) {
     sb.append("#EXT-X-STREAM-INF:");
     sb.append("BANDWIDTH=").append(bandwidth);
     sb.append(",RESOLUTION=").append(width).append("x").append(height);
     sb.append(",CODECS=\"").append(codecs).append("\"");
+    if (audioChannels > 2) {
+      sb.append(",CHANNELS=\"").append(audioChannels).append("\"");
+    }
     sb.append("\n");
   }
 

@@ -5,11 +5,13 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
+import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeMode;
@@ -213,7 +215,8 @@ class StreamControllerTest {
             TranscodeDecision.builder()
                 .transcodeMode(TranscodeMode.REMUX)
                 .videoCodecFamily("h264")
-                .audioCodec("aac")
+                .audioDecision(AudioDecision.copy("aac", 2, 0))
+                .subtitleDecision(SubtitleDecision.exclude())
                 .containerFormat(ContainerFormat.MPEGTS)
                 .needsKeyframeAlignment(true)
                 .build())
@@ -242,7 +245,8 @@ class StreamControllerTest {
             TranscodeDecision.builder()
                 .transcodeMode(TranscodeMode.FULL_TRANSCODE)
                 .videoCodecFamily("av1")
-                .audioCodec("aac")
+                .audioDecision(AudioDecision.stereoAac())
+                .subtitleDecision(SubtitleDecision.exclude())
                 .containerFormat(ContainerFormat.FMP4)
                 .needsKeyframeAlignment(false)
                 .build())
@@ -291,7 +295,8 @@ class StreamControllerTest {
                 TranscodeDecision.builder()
                     .transcodeMode(TranscodeMode.FULL_TRANSCODE)
                     .videoCodecFamily("h264")
-                    .audioCodec("aac")
+                    .audioDecision(AudioDecision.stereoAac())
+                    .subtitleDecision(SubtitleDecision.exclude())
                     .containerFormat(ContainerFormat.MPEGTS)
                     .needsKeyframeAlignment(false)
                     .build())

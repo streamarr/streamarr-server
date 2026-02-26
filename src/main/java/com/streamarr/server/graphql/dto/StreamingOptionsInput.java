@@ -8,5 +8,7 @@ public record StreamingOptionsInput(
     Integer maxHeight,
     Integer maxBitrate,
     List<String> supportedCodecs,
+    List<String> supportedAudioCodecs,
+    Integer maxAudioChannels,
     String audioLanguage,
     String subtitleLanguage) {}

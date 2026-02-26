@@ -1,6 +1,9 @@
 package com.streamarr.server.services.streaming.ffmpeg;
 
-import com.streamarr.server.domain.streaming.ContainerFormat;
+import com.streamarr.server.domain.streaming.AudioDecision;
+import com.streamarr.server.domain.streaming.AudioMode;
+import com.streamarr.server.domain.streaming.SubtitleDecision;
+import com.streamarr.server.domain.streaming.SubtitleMode;
 import com.streamarr.server.domain.streaming.TranscodeJob;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
@@ -34,23 +37,15 @@ public class FfmpegCommandBuilder {
 
   public List<String> buildCommand(TranscodeJob job) {
     var cmd = new ArrayList<String>();
-    var request = job.request();
-    var decision = request.transcodeDecision();
+    var decision = job.request().transcodeDecision();
     var mode = decision.transcodeMode();
 
-    cmd.add(ffmpegPath);
-    cmd.add("-y");
-
-    if (request.seekPosition() > 0) {
-      cmd.addAll(List.of("-ss", String.valueOf(request.seekPosition())));
-    }
-
-    cmd.addAll(List.of("-i", request.sourcePath().toString()));
-
+    addInputArgs(cmd, job.request());
+    addStreamSelection(cmd, decision.audioDecision(), decision.subtitleDecision());
     addCommonFlags(cmd);
     addCodecArgs(cmd, job);
 
-    if (mode == TranscodeMode.FULL_TRANSCODE) {
+    if (mode == TranscodeMode.VIDEO_TRANSCODE || mode == TranscodeMode.FULL_TRANSCODE) {
       addKeyframeArgs(cmd, job);
     }
 
@@ -59,6 +54,28 @@ public class FfmpegCommandBuilder {
     cmd.add(job.outputDir().resolve("stream.m3u8").toString());
 
     return List.copyOf(cmd);
+  }
+
+  private void addInputArgs(List<String> cmd, TranscodeRequest request) {
+    cmd.add(ffmpegPath);
+    cmd.add("-y");
+
+    if (request.seekPosition() > 0) {
+      cmd.addAll(List.of("-ss", String.valueOf(request.seekPosition())));
+    }
+
+    cmd.addAll(List.of("-i", request.sourcePath().toString()));
+  }
+
+  private void addStreamSelection(
+      List<String> cmd, AudioDecision audio, SubtitleDecision subtitle) {
+    cmd.addAll(List.of("-map", "0:v:0"));
+    if (audio.mode() != AudioMode.NONE) {
+      cmd.addAll(List.of("-map", "0:a:0"));
+    }
+    if (subtitle.mode() == SubtitleMode.EXCLUDE) {
+      cmd.addAll(List.of("-map", "-0:s"));
+    }
   }
 
   private void addCommonFlags(List<String> cmd) {
@@ -78,16 +95,32 @@ public class FfmpegCommandBuilder {
   }
 
   private void addCodecArgs(List<String> cmd, TranscodeJob job) {
-    var mode = job.request().transcodeDecision().transcodeMode();
+    var decision = job.request().transcodeDecision();
+    var mode = decision.transcodeMode();
 
-    switch (mode) {
-      case REMUX -> cmd.addAll(List.of("-c:v", "copy", "-c:a", "copy"));
-      case PARTIAL_TRANSCODE -> cmd.addAll(List.of("-c:v", "copy", "-c:a", "aac", "-b:a", "128k"));
-      case FULL_TRANSCODE -> {
-        cmd.addAll(List.of("-c:v", job.videoEncoder(), "-c:a", "aac", "-b:a", "128k"));
-        addScaleAndBitrateArgs(cmd, job.request());
-      }
+    if (mode == TranscodeMode.REMUX || mode == TranscodeMode.AUDIO_TRANSCODE) {
+      cmd.addAll(List.of("-c:v", "copy"));
+      addAudioArgs(cmd, decision.audioDecision());
+      return;
     }
+
+    cmd.addAll(List.of("-c:v", job.videoEncoder()));
+    addScaleAndBitrateArgs(cmd, job.request());
+    addAudioArgs(cmd, decision.audioDecision());
+  }
+
+  private void addAudioArgs(List<String> cmd, AudioDecision audio) {
+    if (audio.mode() == AudioMode.NONE) {
+      return;
+    }
+    if (audio.mode() == AudioMode.COPY) {
+      cmd.addAll(List.of("-c:a", "copy"));
+      return;
+    }
+
+    cmd.addAll(List.of("-c:a", audio.codec()));
+    cmd.addAll(List.of("-ac", String.valueOf(audio.channels())));
+    cmd.addAll(List.of("-b:a", audio.bitrate() / 1000 + "k"));
   }
 
   private void addScaleAndBitrateArgs(List<String> cmd, TranscodeRequest request) {
@@ -133,6 +166,7 @@ public class FfmpegCommandBuilder {
     }
   }
 
+  @SuppressWarnings("java:S1301") // exhaustive enum switch preferred over if/else per project style
   private void addHlsArgs(List<String> cmd, TranscodeJob job) {
     var request = job.request();
     var decision = request.transcodeDecision();
@@ -148,12 +182,13 @@ public class FfmpegCommandBuilder {
       cmd.addAll(List.of("-start_number", String.valueOf(request.startNumber())));
     }
 
-    if (container == ContainerFormat.FMP4) {
-      cmd.addAll(List.of("-hls_segment_type", "fmp4"));
-      cmd.addAll(List.of("-hls_fmp4_init_filename", "init.mp4"));
-      cmd.addAll(List.of("-hls_segment_options", "movflags=+frag_discont"));
-    } else {
-      cmd.addAll(List.of("-hls_segment_type", "mpegts"));
+    switch (container) {
+      case FMP4 -> {
+        cmd.addAll(List.of("-hls_segment_type", "fmp4"));
+        cmd.addAll(List.of("-hls_fmp4_init_filename", "init.mp4"));
+        cmd.addAll(List.of("-hls_segment_options", "movflags=+frag_discont"));
+      }
+      case MPEGTS -> cmd.addAll(List.of("-hls_segment_type", "mpegts"));
     }
 
     cmd.addAll(

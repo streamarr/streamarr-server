@@ -2,7 +2,9 @@ package com.streamarr.server.services.streaming.ffmpeg;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.ContainerFormat;
+import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
@@ -20,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 @Tag("UnitTest")
+@DisplayName("Local Transcode Executor Tests")
 class LocalTranscodeExecutorTest {
 
   @TempDir Path tempDir;
@@ -48,6 +51,11 @@ class LocalTranscodeExecutorTest {
   }
 
   private TranscodeRequest createRequest(TranscodeMode mode, String codecFamily) {
+    return createRequest(mode, codecFamily, null);
+  }
+
+  private TranscodeRequest createRequest(
+      TranscodeMode mode, String codecFamily, String variantLabel) {
     return TranscodeRequest.builder()
         .sessionId(UUID.randomUUID())
         .sourcePath(Path.of("/media/movie.mkv"))
@@ -58,7 +66,8 @@ class LocalTranscodeExecutorTest {
             TranscodeDecision.builder()
                 .transcodeMode(mode)
                 .videoCodecFamily(codecFamily)
-                .audioCodec("aac")
+                .audioDecision(AudioDecision.stereoAac())
+                .subtitleDecision(SubtitleDecision.exclude())
                 .containerFormat(
                     "av1".equals(codecFamily) ? ContainerFormat.FMP4 : ContainerFormat.MPEGTS)
                 .needsKeyframeAlignment(mode != TranscodeMode.FULL_TRANSCODE)
@@ -66,12 +75,13 @@ class LocalTranscodeExecutorTest {
         .width(1920)
         .height(1080)
         .bitrate(5_000_000L)
+        .variantLabel(variantLabel)
         .build();
   }
 
   @Test
-  @DisplayName("Should start transcode with GPU encoder when available")
-  void shouldStartTranscodeWithGpuEncoderWhenAvailable() {
+  @DisplayName("Should start active transcode when GPU encoder available")
+  void shouldStartActiveTranscodeWhenGpuEncoderAvailable() {
     var request = createRequest(TranscodeMode.FULL_TRANSCODE, "h264");
 
     var handle = executor.start(request);
@@ -82,8 +92,8 @@ class LocalTranscodeExecutorTest {
   }
 
   @Test
-  @DisplayName("Should fall back to software encoder when no GPU")
-  void shouldFallbackToSoftwareEncoderWhenNoGpu() {
+  @DisplayName("Should start active transcode when no GPU available")
+  void shouldStartActiveTranscodeWhenNoGpuAvailable() {
     var noHwCapability =
         HardwareEncodingCapability.builder().available(false).encoders(Set.of()).build();
     var capabilityService = createCapabilityService(true, noHwCapability);
@@ -149,8 +159,8 @@ class LocalTranscodeExecutorTest {
   }
 
   @Test
-  @DisplayName("Should use copy encoder when mode is remux")
-  void shouldUseCopyEncoderWhenModeIsRemux() {
+  @DisplayName("Should start active transcode when mode is remux")
+  void shouldStartActiveTranscodeWhenModeIsRemux() {
     var request = createRequest(TranscodeMode.REMUX, "h264");
 
     var handle = executor.start(request);
@@ -160,9 +170,41 @@ class LocalTranscodeExecutorTest {
   }
 
   @Test
-  @DisplayName("Should use copy encoder when mode is partial transcode")
-  void shouldUseCopyEncoderWhenModeIsPartialTranscode() {
-    var request = createRequest(TranscodeMode.PARTIAL_TRANSCODE, "h264");
+  @DisplayName("Should create variant subdirectory when variant label is provided")
+  void shouldCreateVariantSubdirectoryWhenVariantLabelProvided() {
+    var request = createRequest(TranscodeMode.FULL_TRANSCODE, "h264", "720p");
+
+    var handle = executor.start(request);
+
+    assertThat(handle.status()).isEqualTo(TranscodeStatus.ACTIVE);
+    assertThat(executor.isRunning(request.sessionId(), "720p")).isTrue();
+
+    var variantDir = tempDir.resolve(request.sessionId().toString()).resolve("720p");
+    assertThat(variantDir).exists().isDirectory();
+  }
+
+  @Test
+  @DisplayName("Should report running by session ID when variant is active")
+  void shouldReportRunningBySessionIdWhenVariantIsActive() {
+    var request = createRequest(TranscodeMode.FULL_TRANSCODE, "h264", "720p");
+    executor.start(request);
+
+    assertThat(executor.isRunning(request.sessionId())).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should report not running for unstarted variant")
+  void shouldReportNotRunningForUnstartedVariant() {
+    var request = createRequest(TranscodeMode.FULL_TRANSCODE, "h264", "720p");
+    executor.start(request);
+
+    assertThat(executor.isRunning(request.sessionId(), "1080p")).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should start active transcode when mode is audio transcode")
+  void shouldStartActiveTranscodeWhenModeIsAudioTranscode() {
+    var request = createRequest(TranscodeMode.AUDIO_TRANSCODE, "h264");
 
     var handle = executor.start(request);
 

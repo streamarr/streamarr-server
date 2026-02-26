@@ -6,7 +6,7 @@
 * **GraphQL** via Netflix DGS
 * **jOOQ** for complex queries (keyset pagination)
 * **Flyway** for database migrations
-* **FFmpeg** via ProcessBuilder for HLS transcoding (planned)
+* **FFmpeg** via ProcessBuilder for HLS transcoding
 
 == Layered Architecture
 
@@ -87,6 +87,30 @@ Side effects triggered by transactional operations use `@TransactionalEventListe
 
 See link:adr/0010-spring-application-events.adoc[ADR 0010] for full rationale.
 
+== Streaming Pipeline
+
+----
+StreamingOptions (client)  +  MediaProbe (ffprobe)
+                    |
+            TranscodeDecisionService
+            ├── Video: copy or transcode?
+            ├── AudioDecision: COPY / TRANSCODE / NONE
+            └── SubtitleDecision: EXCLUDE / BURN_IN / SIDECAR / HLS / EMBED
+                    |
+            TranscodeDecision (composite)
+            → TranscodeMode, ContainerFormat, needsKeyframeAlignment
+                    |
+            TranscodeExecutor → resolves encoder (HW/SW)
+                    |
+            FfmpegCommandBuilder → -map, codecs, keyframes, HLS args
+                    |
+            HlsPlaylistService → master + media playlists
+----
+
+See link:adr/0007-transcode-first-with-smart-remux.adoc[ADR 0007],
+link:adr/0009-h264-plus-av1-codec-strategy.adoc[ADR 0009],
+link:adr/0013-stream-decision-architecture.adoc[ADR 0013].
+
 == Key Design Decisions
 
 See link:adr/[Architecture Decision Records] for detailed rationale. Summary:
@@ -114,4 +138,7 @@ See link:adr/[Architecture Decision Records] for detailed rationale. Summary:
 
 | Spring Application Events
 | Decouples side effects from core operations, eliminates circular dependencies (link:adr/0010-spring-application-events.adoc[ADR 0010])
+
+| Stream decision architecture
+| Per-stream decision records compose into TranscodeDecision; mode resolution considers all stream types (link:adr/0013-stream-decision-architecture.adoc[ADR 0013])
 |===

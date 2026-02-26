@@ -4,12 +4,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
+import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
+import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
+import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.services.streaming.StreamingService;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -64,7 +67,8 @@ class StreamingResolverTest {
             TranscodeDecision.builder()
                 .transcodeMode(TranscodeMode.REMUX)
                 .videoCodecFamily("h264")
-                .audioCodec("aac")
+                .audioDecision(AudioDecision.copy("aac", 2, 0))
+                .subtitleDecision(SubtitleDecision.exclude())
                 .containerFormat(ContainerFormat.MPEGTS)
                 .needsKeyframeAlignment(true)
                 .build())
@@ -94,16 +98,79 @@ class StreamingResolverTest {
             """,
             UUID.randomUUID());
 
-    var id = dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.createStreamSession.id");
-    var streamUrl =
-        dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.createStreamSession.streamUrl");
-    var transcodeMode =
-        dgsQueryExecutor.executeAndExtractJsonPath(
-            mutation, "data.createStreamSession.transcodeMode");
+    var context = dgsQueryExecutor.executeAndGetDocumentContext(mutation);
+    String id = context.read("data.createStreamSession.id");
+    String streamUrl = context.read("data.createStreamSession.streamUrl");
+    String transcodeMode = context.read("data.createStreamSession.transcodeMode");
 
     assertThat(id).isEqualTo(sessionId.toString());
-    assertThat(streamUrl.toString()).contains("/api/stream/" + sessionId + "/master.m3u8");
+    assertThat(streamUrl).contains("/api/stream/" + sessionId + "/master.m3u8");
     assertThat(transcodeMode).isEqualTo("REMUX");
+  }
+
+  @Test
+  @DisplayName("Should map GraphQL options input to streaming options when options provided")
+  void shouldMapGraphqlOptionsInputToStreamingOptionsWhenOptionsProvided() {
+    var sessionId = UUID.randomUUID();
+    var session = buildSession(sessionId);
+    STUB_SERVICE.setNextResult(session);
+
+    var mutation =
+        String.format(
+            """
+            mutation {
+              createStreamSession(
+                mediaFileId: "%s",
+                options: {
+                  quality: HIGH_720P,
+                  supportedCodecs: ["h264"],
+                  supportedAudioCodecs: ["aac", "ac3"],
+                  maxAudioChannels: 6
+                }
+              ) {
+                id
+              }
+            }
+            """,
+            UUID.randomUUID());
+
+    dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.createStreamSession.id");
+
+    var receivedOptions = STUB_SERVICE.getLastReceivedOptions();
+    assertThat(receivedOptions.quality()).isEqualTo(VideoQuality.HIGH_720P);
+    assertThat(receivedOptions.supportedCodecs()).containsExactly("h264");
+    assertThat(receivedOptions.supportedAudioCodecs()).containsExactly("aac", "ac3");
+    assertThat(receivedOptions.maxAudioChannels()).isEqualTo(6);
+  }
+
+  @Test
+  @DisplayName("Should use default options when options input is null")
+  void shouldUseDefaultOptionsWhenOptionsInputIsNull() {
+    var sessionId = UUID.randomUUID();
+    var session = buildSession(sessionId);
+    STUB_SERVICE.setNextResult(session);
+
+    var mutation =
+        String.format(
+            """
+            mutation {
+              createStreamSession(mediaFileId: "%s") {
+                id
+              }
+            }
+            """,
+            UUID.randomUUID());
+
+    dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.createStreamSession.id");
+
+    var receivedOptions = STUB_SERVICE.getLastReceivedOptions();
+    assertThat(receivedOptions.quality()).isEqualTo(VideoQuality.AUTO);
+    assertThat(receivedOptions.supportedCodecs())
+        .isEqualTo(StreamingOptions.DEFAULT_SUPPORTED_CODECS);
+    assertThat(receivedOptions.supportedAudioCodecs())
+        .isEqualTo(StreamingOptions.DEFAULT_SUPPORTED_AUDIO_CODECS);
+    assertThat(receivedOptions.maxAudioChannels())
+        .isEqualTo(StreamingOptions.DEFAULT_MAX_AUDIO_CHANNELS);
   }
 
   @Test
@@ -200,13 +267,19 @@ class StreamingResolverTest {
   private static class StubStreamingService implements StreamingService {
 
     private StreamSession nextResult;
+    private StreamingOptions lastReceivedOptions;
 
     void setNextResult(StreamSession session) {
       this.nextResult = session;
     }
 
+    StreamingOptions getLastReceivedOptions() {
+      return lastReceivedOptions;
+    }
+
     @Override
     public StreamSession createSession(UUID mediaFileId, StreamingOptions options) {
+      this.lastReceivedOptions = options;
       return nextResult;
     }
 

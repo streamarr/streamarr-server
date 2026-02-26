@@ -27,15 +27,14 @@ import com.streamarr.server.services.concurrency.MutexFactory;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 @Tag("UnitTest")
+@DisplayName("HLS Streaming Service Tests")
 class HlsStreamingServiceTest {
 
   private FakeMediaFileRepository mediaFileRepository;
@@ -301,8 +300,8 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("Should set full transcode decision when video codec is incompatible")
-  void shouldSetFullTranscodeDecisionWhenVideoCodecIsIncompatible() {
+  @DisplayName("Should transcode video when video codec is incompatible")
+  void shouldTranscodeVideoWhenVideoCodecIsIncompatible() {
     ffprobeService.setDefaultProbe(
         MediaProbe.builder()
             .duration(Duration.ofMinutes(90))
@@ -320,7 +319,7 @@ class HlsStreamingServiceTest {
     var session = service.createSession(file.getId(), options);
 
     assertThat(session.getTranscodeDecision().transcodeMode())
-        .isEqualTo(TranscodeMode.FULL_TRANSCODE);
+        .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
     assertThat(session.getTranscodeDecision().videoCodecFamily()).isEqualTo("h264");
   }
 
@@ -469,42 +468,13 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("Should make session retrievable during transcode start")
-  void shouldMakeSessionRetrievableDuringTranscodeStart() {
-    var serviceRef = new AtomicReference<HlsStreamingService>();
-    var capturedSession = new AtomicReference<Optional<StreamSession>>();
-
-    var spyExecutor =
-        new FakeTranscodeExecutor() {
-          @Override
-          public TranscodeHandle start(TranscodeRequest request) {
-            capturedSession.set(serviceRef.get().accessSession(request.sessionId()));
-            return super.start(request);
-          }
-        };
-
-    var spyService =
-        new HlsStreamingService(
-            mediaFileRepository,
-            spyExecutor,
-            segmentStore,
-            ffprobeService,
-            new TranscodeDecisionService(),
-            new QualityLadderService(),
-            StreamingProperties.builder()
-                .maxConcurrentTranscodes(3)
-                .segmentDuration(Duration.ofSeconds(6))
-                .sessionTimeout(Duration.ofSeconds(60))
-                .build(),
-            new FakeStreamSessionRepository(),
-            new MutexFactory<>());
-    serviceRef.set(spyService);
-
+  @DisplayName("Should return session immediately after creation")
+  void shouldReturnSessionImmediatelyAfterCreation() {
     var file = seedMediaFile();
 
-    spyService.createSession(file.getId(), defaultOptions());
+    var session = service.createSession(file.getId(), defaultOptions());
 
-    assertThat(capturedSession.get()).isPresent();
+    assertThat(service.accessSession(session.getSessionId())).isPresent();
   }
 
   @Test
@@ -583,6 +553,80 @@ class HlsStreamingServiceTest {
     var session = limitedService.createSession(file.getId(), options);
 
     assertThat(session.getVariants()).hasSize(2);
+  }
+
+  @Test
+  @DisplayName("Should truncate to one variant when only one slot is available")
+  void shouldTruncateToOneVariantWhenOnlyOneSlotAvailable() {
+    ffprobeService.setDefaultProbe(
+        MediaProbe.builder()
+            .duration(Duration.ofMinutes(120))
+            .framerate(23.976)
+            .width(1920)
+            .height(1080)
+            .videoCodec("hevc")
+            .audioCodec("aac")
+            .bitrate(8_000_000L)
+            .build());
+
+    var singleVariantOptions =
+        StreamingOptions.builder()
+            .quality(VideoQuality.FULL_HD_1080P)
+            .supportedCodecs(List.of("h264"))
+            .build();
+
+    for (int i = 0; i < 2; i++) {
+      var file = seedMediaFile();
+      service.createSession(file.getId(), singleVariantOptions);
+    }
+
+    var abrOptions =
+        StreamingOptions.builder()
+            .quality(VideoQuality.AUTO)
+            .supportedCodecs(List.of("h264"))
+            .build();
+    var file = seedMediaFile();
+
+    var session = service.createSession(file.getId(), abrOptions);
+
+    assertThat(session.getVariants()).hasSize(1);
+  }
+
+  @Test
+  @DisplayName("Should reject ABR session when all transcode slots are full")
+  void shouldRejectAbrSessionWhenAllTranscodeSlotsAreFull() {
+    ffprobeService.setDefaultProbe(
+        MediaProbe.builder()
+            .duration(Duration.ofMinutes(120))
+            .framerate(23.976)
+            .width(1920)
+            .height(1080)
+            .videoCodec("hevc")
+            .audioCodec("aac")
+            .bitrate(5_000_000L)
+            .build());
+
+    var singleVariantOptions =
+        StreamingOptions.builder()
+            .quality(VideoQuality.FULL_HD_1080P)
+            .supportedCodecs(List.of("h264"))
+            .build();
+
+    for (int i = 0; i < 3; i++) {
+      var file = seedMediaFile();
+      service.createSession(file.getId(), singleVariantOptions);
+    }
+
+    var abrOptions =
+        StreamingOptions.builder()
+            .quality(VideoQuality.AUTO)
+            .supportedCodecs(List.of("h264"))
+            .build();
+    var abrFile = seedMediaFile();
+    var abrFileId = abrFile.getId();
+
+    assertThatThrownBy(() -> service.createSession(abrFileId, abrOptions))
+        .isInstanceOf(MaxConcurrentTranscodesException.class);
   }
 
   @Test
