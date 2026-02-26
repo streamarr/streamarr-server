@@ -15,7 +15,8 @@ type Library {
           after: String
           last: Int
           before: String
-          filter: Filter): MediaConnection!
+          sort: MediaSort
+          filter: MediaFilter): MediaConnection!
     alphabetIndex: [AlphabetIndex!]!
 }
 
@@ -47,9 +48,12 @@ enum SortOrder {
     DESC
 }
 
-input Filter {
-    sortBy: OrderMediaBy
-    sortDirection: SortOrder
+input MediaSort {
+    by: OrderMediaBy = TITLE
+    direction: SortOrder = ASC
+}
+
+input MediaFilter {
     startLetter: AlphabetLetter
 }
 
