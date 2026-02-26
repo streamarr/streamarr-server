@@ -6,13 +6,19 @@ import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import java.time.Duration;
 import java.util.List;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
 @DisplayName("Quality Ladder Service Tests")
 class QualityLadderServiceTest {
+
+  private static final List<Integer> STANDARD_TIER_HEIGHTS = List.of(1080, 720, 480, 360);
 
   private final QualityLadderService service = new QualityLadderService();
 
@@ -98,6 +104,49 @@ class QualityLadderServiceTest {
     assertThat(variants.get(1).videoBitrate()).isEqualTo(3_000_000L);
     assertThat(variants.get(2).videoBitrate()).isEqualTo(1_500_000L);
     assertThat(variants.get(3).videoBitrate()).isEqualTo(800_000L);
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("aspectRatioVariants")
+  @DisplayName(
+      "Should compute aspect-ratio-correct dimensions when generating variants for each quality tier")
+  void shouldComputeAspectRatioCorrectDimensionsWhenGeneratingVariantsForEachQualityTier(
+      String scenario, int sourceWidth, int sourceHeight, List<Integer> expectedWidths) {
+    var probe = buildProbe(sourceWidth, sourceHeight, 8_000_000L);
+    var options = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();
+
+    var variants = service.generateVariants(probe, options);
+
+    var expectedHeights = STANDARD_TIER_HEIGHTS.stream().filter(h -> h <= sourceHeight).toList();
+    assertThat(variants).hasSize(expectedWidths.size());
+    for (int i = 0; i < variants.size(); i++) {
+      assertThat(variants.get(i).width()).isEqualTo(expectedWidths.get(i));
+      assertThat(variants.get(i).height()).isEqualTo(expectedHeights.get(i));
+    }
+  }
+
+  static Stream<Arguments> aspectRatioVariants() {
+    return Stream.of(
+        Arguments.of("16:9 source", 1920, 1080, List.of(1920, 1280, 854, 640)),
+        Arguments.of("4:3 source", 1440, 1080, List.of(1440, 960, 640, 480)),
+        Arguments.of("21:9 ultrawide source", 2560, 1080, List.of(2560, 1708, 1138, 854)),
+        Arguments.of("1:1 square source", 1080, 1080, List.of(1080, 720, 480, 360)),
+        Arguments.of("9:16 portrait source", 1080, 1920, List.of(608, 406, 270, 204)),
+        Arguments.of("4:3 at 720p", 960, 720, List.of(960, 640, 480)));
+  }
+
+  @Test
+  @DisplayName("Should align width to even number when source resolution is below all tiers")
+  void shouldAlignWidthToEvenNumberWhenSourceResolutionIsBelowAllTiers() {
+    var probe = buildProbe(319, 179, 500_000L);
+    var options = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();
+
+    var variants = service.generateVariants(probe, options);
+
+    assertThat(variants).hasSize(1);
+    assertThat(variants.get(0).width()).isEqualTo(320);
+    assertThat(variants.get(0).height()).isEqualTo(179);
+    assertThat(variants.get(0).label()).isEqualTo("179p");
   }
 
   private MediaProbe buildProbe(int width, int height, long bitrate) {
