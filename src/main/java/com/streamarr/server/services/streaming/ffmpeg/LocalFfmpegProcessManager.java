@@ -18,7 +18,9 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
 
   private record ProcessKey(UUID sessionId, String variantLabel) {}
 
-  private final ConcurrentHashMap<ProcessKey, Process> processes = new ConcurrentHashMap<>();
+  private record ManagedProcess(Process process) {}
+
+  private final ConcurrentHashMap<ProcessKey, ManagedProcess> processes = new ConcurrentHashMap<>();
 
   @Override
   public Process startProcess(
@@ -26,10 +28,9 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
     try {
       var processBuilder = new ProcessBuilder(command);
       processBuilder.directory(workingDir.toFile());
-      processBuilder.redirectErrorStream(false);
 
       var process = processBuilder.start();
-      processes.put(new ProcessKey(sessionId, variantLabel), process);
+      processes.put(new ProcessKey(sessionId, variantLabel), new ManagedProcess(process));
 
       log.info(
           "Started FFmpeg process (PID {}) for session {} variant {}",
@@ -48,13 +49,13 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
         processes.keySet().stream().filter(key -> key.sessionId().equals(sessionId)).toList();
 
     for (var key : keysToRemove) {
-      var process = processes.remove(key);
-      if (process == null || !process.isAlive()) {
+      var managed = processes.remove(key);
+      if (managed == null || !managed.process().isAlive()) {
         continue;
       }
 
-      sendQuitSignal(process, sessionId);
-      awaitGracefulShutdown(process, sessionId);
+      sendQuitSignal(managed.process(), sessionId);
+      awaitGracefulShutdown(managed.process(), sessionId);
     }
 
     if (!keysToRemove.isEmpty()) {
@@ -88,18 +89,18 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
   public boolean isRunning(UUID sessionId) {
     return processes.entrySet().stream()
         .filter(e -> e.getKey().sessionId().equals(sessionId))
-        .anyMatch(e -> isAliveOrCleanup(e.getKey(), e.getValue()));
+        .anyMatch(e -> isAliveOrCleanup(e.getKey(), e.getValue().process()));
   }
 
   @Override
   public boolean isRunning(UUID sessionId, String variantLabel) {
     var key = new ProcessKey(sessionId, variantLabel);
-    var process = processes.get(key);
-    if (process == null) {
+    var managed = processes.get(key);
+    if (managed == null) {
       return false;
     }
 
-    return isAliveOrCleanup(key, process);
+    return isAliveOrCleanup(key, managed.process());
   }
 
   private boolean isAliveOrCleanup(ProcessKey key, Process process) {
