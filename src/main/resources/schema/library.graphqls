@@ -55,6 +55,13 @@ input MediaSort {
 
 input MediaFilter {
     startLetter: AlphabetLetter
+    genreIds: [ID!]
+    years: [Int!]
+    contentRatings: [String!]
+    studioIds: [ID!]
+    directorIds: [ID!]
+    castMemberIds: [ID!]
+    unmatched: Boolean
 }
 
 enum AlphabetLetter {

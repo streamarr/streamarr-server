@@ -272,5 +272,19 @@ public class MovieService {
         "libraryId", previousFilter.getLibraryId(), filter.getLibraryId());
     relayPaginationService.validateCursorField(
         "startLetter", previousFilter.getStartLetter(), filter.getStartLetter());
+    relayPaginationService.validateCursorField(
+        "genreIds", previousFilter.getGenreIds(), filter.getGenreIds());
+    relayPaginationService.validateCursorField(
+        "years", previousFilter.getYears(), filter.getYears());
+    relayPaginationService.validateCursorField(
+        "contentRatings", previousFilter.getContentRatings(), filter.getContentRatings());
+    relayPaginationService.validateCursorField(
+        "studioIds", previousFilter.getStudioIds(), filter.getStudioIds());
+    relayPaginationService.validateCursorField(
+        "directorIds", previousFilter.getDirectorIds(), filter.getDirectorIds());
+    relayPaginationService.validateCursorField(
+        "castMemberIds", previousFilter.getCastMemberIds(), filter.getCastMemberIds());
+    relayPaginationService.validateCursorField(
+        "unmatched", previousFilter.getUnmatched(), filter.getUnmatched());
   }
 }

@@ -106,7 +106,15 @@ public class LibraryResolver {
     }
 
     if (filter != null) {
-      builder.startLetter(filter.startLetter());
+      builder
+          .startLetter(filter.startLetter())
+          .genreIds(parseUuidList(filter.genreIds()))
+          .years(filter.years())
+          .contentRatings(filter.contentRatings())
+          .studioIds(parseUuidList(filter.studioIds()))
+          .directorIds(parseUuidList(filter.directorIds()))
+          .castMemberIds(parseUuidList(filter.castMemberIds()))
+          .unmatched(filter.unmatched());
     }
 
     var effectiveFilter = builder.build();
@@ -145,5 +153,12 @@ public class LibraryResolver {
     } catch (IllegalArgumentException _) {
       throw new InvalidIdException(id);
     }
+  }
+
+  private List<UUID> parseUuidList(List<String> ids) {
+    if (ids == null || ids.isEmpty()) {
+      return null;
+    }
+    return ids.stream().map(this::parseUuid).toList();
   }
 }
