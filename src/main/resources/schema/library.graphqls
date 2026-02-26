@@ -41,6 +41,8 @@ enum MediaType {
 enum OrderMediaBy {
     TITLE
     ADDED
+    RELEASE_DATE
+    RUNTIME
 }
 
 enum SortOrder {

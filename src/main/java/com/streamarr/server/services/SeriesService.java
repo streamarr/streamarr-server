@@ -344,6 +344,8 @@ public class SeriesService {
     return switch (filter.getSortBy()) {
       case TITLE -> series.getTitleSort();
       case ADDED -> series.getCreatedOn();
+      case RELEASE_DATE -> series.getFirstAirDate();
+      case RUNTIME -> series.getRuntime();
     };
   }
 

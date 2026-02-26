@@ -248,6 +248,8 @@ public class MovieService {
     return switch (filter.getSortBy()) {
       case TITLE -> movie.getTitleSort();
       case ADDED -> movie.getCreatedOn();
+      case RELEASE_DATE -> movie.getReleaseDate();
+      case RUNTIME -> movie.getRuntime();
     };
   }
 

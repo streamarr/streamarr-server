@@ -150,10 +150,15 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
 
   private Comparator<Movie> comparatorFor(MediaFilter filter, SortOrder idSortOrder) {
     Comparator<Movie> primary =
-        filter.getSortBy() == OrderMediaBy.ADDED
-            ? Comparator.comparing(
-                Movie::getCreatedOn, Comparator.nullsLast(Comparator.naturalOrder()))
-            : Comparator.comparing(Movie::getTitle);
+        switch (filter.getSortBy()) {
+          case ADDED -> Comparator.comparing(
+              Movie::getCreatedOn, Comparator.nullsLast(Comparator.naturalOrder()));
+          case RELEASE_DATE -> Comparator.comparing(
+              Movie::getReleaseDate, Comparator.nullsLast(Comparator.naturalOrder()));
+          case RUNTIME -> Comparator.comparing(
+              Movie::getRuntime, Comparator.nullsLast(Comparator.naturalOrder()));
+          default -> Comparator.comparing(Movie::getTitle);
+        };
 
     if (filter.getSortDirection() == SortOrder.DESC) {
       primary = primary.reversed();

@@ -163,10 +163,15 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
 
   private Comparator<Series> comparatorFor(MediaFilter filter, SortOrder idSortOrder) {
     Comparator<Series> primary =
-        filter.getSortBy() == OrderMediaBy.ADDED
-            ? Comparator.comparing(
-                Series::getCreatedOn, Comparator.nullsLast(Comparator.naturalOrder()))
-            : Comparator.comparing(Series::getTitle);
+        switch (filter.getSortBy()) {
+          case ADDED -> Comparator.comparing(
+              Series::getCreatedOn, Comparator.nullsLast(Comparator.naturalOrder()));
+          case RELEASE_DATE -> Comparator.comparing(
+              Series::getFirstAirDate, Comparator.nullsLast(Comparator.naturalOrder()));
+          case RUNTIME -> Comparator.comparing(
+              Series::getRuntime, Comparator.nullsLast(Comparator.naturalOrder()));
+          default -> Comparator.comparing(Series::getTitle);
+        };
 
     if (filter.getSortDirection() == SortOrder.DESC) {
       primary = primary.reversed();

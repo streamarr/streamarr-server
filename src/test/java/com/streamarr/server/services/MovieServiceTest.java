@@ -274,6 +274,138 @@ class MovieServiceTest {
   }
 
   @Test
+  @DisplayName("Should sort by release date ascending when sort is RELEASE_DATE ASC")
+  void shouldSortByReleaseDateAsc() {
+    movieRepository.save(
+        Movie.builder().title("Old Movie").releaseDate(LocalDate.of(2000, 1, 1)).build());
+    movieRepository.save(
+        Movie.builder().title("New Movie").releaseDate(LocalDate.of(2024, 6, 15)).build());
+    movieRepository.save(
+        Movie.builder().title("Mid Movie").releaseDate(LocalDate.of(2010, 3, 20)).build());
+
+    var filter =
+        MediaFilter.builder()
+            .sortBy(OrderMediaBy.RELEASE_DATE)
+            .sortDirection(SortOrder.ASC)
+            .build();
+
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactly("Old Movie", "Mid Movie", "New Movie");
+  }
+
+  @Test
+  @DisplayName("Should sort by release date descending when sort is RELEASE_DATE DESC")
+  void shouldSortByReleaseDateDesc() {
+    movieRepository.save(
+        Movie.builder().title("Old Movie").releaseDate(LocalDate.of(2000, 1, 1)).build());
+    movieRepository.save(
+        Movie.builder().title("New Movie").releaseDate(LocalDate.of(2024, 6, 15)).build());
+
+    var filter =
+        MediaFilter.builder()
+            .sortBy(OrderMediaBy.RELEASE_DATE)
+            .sortDirection(SortOrder.DESC)
+            .build();
+
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactly("New Movie", "Old Movie");
+  }
+
+  @Test
+  @DisplayName("Should sort by runtime ascending when sort is RUNTIME ASC")
+  void shouldSortByRuntimeAsc() {
+    movieRepository.save(Movie.builder().title("Short").runtime(90).build());
+    movieRepository.save(Movie.builder().title("Long").runtime(180).build());
+    movieRepository.save(Movie.builder().title("Medium").runtime(120).build());
+
+    var filter =
+        MediaFilter.builder().sortBy(OrderMediaBy.RUNTIME).sortDirection(SortOrder.ASC).build();
+
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactly("Short", "Medium", "Long");
+  }
+
+  @Test
+  @DisplayName("Should sort by runtime descending when sort is RUNTIME DESC")
+  void shouldSortByRuntimeDesc() {
+    movieRepository.save(Movie.builder().title("Short").runtime(90).build());
+    movieRepository.save(Movie.builder().title("Long").runtime(180).build());
+
+    var filter =
+        MediaFilter.builder().sortBy(OrderMediaBy.RUNTIME).sortDirection(SortOrder.DESC).build();
+
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactly("Long", "Short");
+  }
+
+  @Test
+  @DisplayName("Should place null release date last when sorting by RELEASE_DATE ASC")
+  void shouldPlaceNullReleaseDateLast() {
+    movieRepository.save(
+        Movie.builder().title("Dated Movie").releaseDate(LocalDate.of(2020, 1, 1)).build());
+    movieRepository.save(Movie.builder().title("Undated Movie").build());
+
+    var filter =
+        MediaFilter.builder()
+            .sortBy(OrderMediaBy.RELEASE_DATE)
+            .sortDirection(SortOrder.ASC)
+            .build();
+
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactly("Dated Movie", "Undated Movie");
+  }
+
+  @Test
+  @DisplayName("Should place null runtime last when sorting by RUNTIME ASC")
+  void shouldPlaceNullRuntimeLast() {
+    movieRepository.save(Movie.builder().title("With Runtime").runtime(120).build());
+    movieRepository.save(Movie.builder().title("No Runtime").build());
+
+    var filter =
+        MediaFilter.builder().sortBy(OrderMediaBy.RUNTIME).sortDirection(SortOrder.ASC).build();
+
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactly("With Runtime", "No Runtime");
+  }
+
+  @Test
+  @DisplayName("Should paginate forward when sorted by release date")
+  void shouldPaginateForwardWhenSortedByReleaseDate() {
+    movieRepository.save(
+        Movie.builder().title("First").releaseDate(LocalDate.of(2000, 1, 1)).build());
+    movieRepository.save(
+        Movie.builder().title("Second").releaseDate(LocalDate.of(2010, 1, 1)).build());
+    movieRepository.save(
+        Movie.builder().title("Third").releaseDate(LocalDate.of(2020, 1, 1)).build());
+
+    var filter =
+        MediaFilter.builder()
+            .sortBy(OrderMediaBy.RELEASE_DATE)
+            .sortDirection(SortOrder.ASC)
+            .build();
+
+    var firstPage = movieService.getMoviesWithFilter(1, null, 0, null, filter);
+    assertThat(firstPage.getEdges().get(0).getNode().getTitle()).isEqualTo("First");
+    assertThat(firstPage.getPageInfo().isHasNextPage()).isTrue();
+
+    var cursor = firstPage.getPageInfo().getEndCursor().getValue();
+    var secondPage = movieService.getMoviesWithFilter(1, cursor, 0, null, filter);
+    assertThat(secondPage.getEdges().get(0).getNode().getTitle()).isEqualTo("Second");
+  }
+
+  @Test
   @DisplayName("Should publish MetadataEnrichedEvent when creating movie")
   void shouldPublishMetadataEnrichedEventWhenCreatingMovie() {
     var movie = Movie.builder().title("Inception").build();
