@@ -10,36 +10,14 @@ import org.springframework.stereotype.Service;
 @Service
 public class QualityLadderService {
 
-  private static final List<QualityVariant> STANDARD_TIERS =
+  private record QualityTier(int height, long videoBitrate, long audioBitrate, String label) {}
+
+  private static final List<QualityTier> STANDARD_TIERS =
       List.of(
-          QualityVariant.builder()
-              .width(1920)
-              .height(1080)
-              .videoBitrate(5_000_000L)
-              .audioBitrate(128_000L)
-              .label("1080p")
-              .build(),
-          QualityVariant.builder()
-              .width(1280)
-              .height(720)
-              .videoBitrate(3_000_000L)
-              .audioBitrate(128_000L)
-              .label("720p")
-              .build(),
-          QualityVariant.builder()
-              .width(854)
-              .height(480)
-              .videoBitrate(1_500_000L)
-              .audioBitrate(96_000L)
-              .label("480p")
-              .build(),
-          QualityVariant.builder()
-              .width(640)
-              .height(360)
-              .videoBitrate(800_000L)
-              .audioBitrate(64_000L)
-              .label("360p")
-              .build());
+          new QualityTier(1080, 5_000_000L, 128_000L, "1080p"),
+          new QualityTier(720, 3_000_000L, 128_000L, "720p"),
+          new QualityTier(480, 1_500_000L, 96_000L, "480p"),
+          new QualityTier(360, 800_000L, 64_000L, "360p"));
 
   public List<QualityVariant> generateVariants(MediaProbe source, StreamingOptions options) {
     var maxHeight = resolveMaxHeight(source, options);
@@ -59,7 +37,7 @@ public class QualityLadderService {
         continue;
       }
 
-      var width = computeEvenAlignedWidth(source, tier.height());
+      var width = computeWidthForHeight(source, tier.height());
 
       variants.add(
           QualityVariant.builder()
@@ -74,7 +52,7 @@ public class QualityLadderService {
     if (variants.isEmpty()) {
       variants.add(
           QualityVariant.builder()
-              .width(computeEvenAlignedWidth(source, source.height()))
+              .width(computeWidthForHeight(source, source.height()))
               .height(source.height())
               .videoBitrate(source.bitrate())
               .audioBitrate(64_000L)
@@ -93,7 +71,7 @@ public class QualityLadderService {
     return source.height();
   }
 
-  private int computeEvenAlignedWidth(MediaProbe source, int targetHeight) {
+  private int computeWidthForHeight(MediaProbe source, int targetHeight) {
     int width = (int) Math.round((double) source.width() / source.height() * targetHeight);
     if (width % 2 != 0) {
       width++;
