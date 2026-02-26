@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 @Tag("UnitTest")
+@DisplayName("Local FFmpeg Process Manager Tests")
 class LocalFfmpegProcessManagerTest {
 
   @TempDir Path tempDir;

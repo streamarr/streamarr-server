@@ -393,8 +393,8 @@ class LibraryResolverTest {
   }
 
   @Test
-  @DisplayName("Should throw without package name when unknown media type in type resolver")
-  void shouldThrowWithoutPackageNameWhenUnknownMediaTypeInTypeResolver() {
+  @DisplayName("Should throw with simple class name when unsupported media type in type resolver")
+  void shouldThrowWithSimpleClassNameWhenUnsupportedMediaTypeInTypeResolver() {
     var resolver = new LibraryResolver(null, null, null, null);
 
     assertThatThrownBy(() -> resolver.resolveMedia(new Object()))
