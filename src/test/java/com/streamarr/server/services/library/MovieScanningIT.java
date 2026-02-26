@@ -4,11 +4,9 @@ import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
-import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.github.tomakehurst.wiremock.WireMockServer;
-import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.AbstractWireMockIntegrationTest;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.fakes.FakeFfprobeService;
@@ -23,7 +21,6 @@ import com.streamarr.server.services.streaming.TranscodeExecutor;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -31,24 +28,12 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.Isolated;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.convention.TestBean;
 
 @Isolated
 @Tag("IntegrationTest")
 @DisplayName("Movie Scanning Integration Tests")
-class MovieScanningIT extends AbstractIntegrationTest {
-
-  private static final WireMockServer wireMock = new WireMockServer(wireMockConfig().dynamicPort());
-
-  @DynamicPropertySource
-  static void configureWireMock(DynamicPropertyRegistry registry) {
-    wireMock.start();
-    registry.add("tmdb.api.base-url", wireMock::baseUrl);
-    registry.add("tmdb.image.base-url", wireMock::baseUrl);
-    registry.add("tmdb.api.token", () -> "test-api-token");
-  }
+class MovieScanningIT extends AbstractWireMockIntegrationTest {
 
   @Autowired private LibraryManagementService libraryManagementService;
   @Autowired private LibraryRepository libraryRepository;
@@ -83,11 +68,6 @@ class MovieScanningIT extends AbstractIntegrationTest {
     mediaFileRepository.deleteAll();
     movieRepository.deleteAll();
     libraryRepository.deleteAll();
-  }
-
-  @AfterAll
-  static void tearDown() {
-    wireMock.stop();
   }
 
   @Test
