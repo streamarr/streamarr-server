@@ -32,14 +32,22 @@ public class HlsPlaylistService {
 
     if (session.getVariants().isEmpty()) {
       var probe = session.getMediaProbe();
-      appendStreamInf(sb, probe.bitrate(), probe.width(), probe.height(), codecs, audio.channels());
+      appendStreamInf(sb, probe.bitrate(), probe.width(), probe.height(), codecs);
+      if (audio.channels() > 2) {
+        sb.append(",CHANNELS=\"").append(audio.channels()).append("\"");
+      }
+      sb.append("\n");
       sb.append("stream.m3u8\n");
       return sb.toString();
     }
 
     for (var variant : session.getVariants()) {
       var bandwidth = variant.videoBitrate() + audio.bitrate();
-      appendStreamInf(sb, bandwidth, variant.width(), variant.height(), codecs, audio.channels());
+      appendStreamInf(sb, bandwidth, variant.width(), variant.height(), codecs);
+      if (audio.channels() > 2) {
+        sb.append(",CHANNELS=\"").append(audio.channels()).append("\"");
+      }
+      sb.append("\n");
       sb.append(variant.label()).append("/stream.m3u8\n");
     }
 
@@ -47,15 +55,11 @@ public class HlsPlaylistService {
   }
 
   private void appendStreamInf(
-      StringBuilder sb, long bandwidth, int width, int height, String codecs, int audioChannels) {
+      StringBuilder sb, long bandwidth, int width, int height, String codecs) {
     sb.append("#EXT-X-STREAM-INF:");
     sb.append("BANDWIDTH=").append(bandwidth);
     sb.append(",RESOLUTION=").append(width).append("x").append(height);
     sb.append(",CODECS=\"").append(codecs).append("\"");
-    if (audioChannels > 2) {
-      sb.append(",CHANNELS=\"").append(audioChannels).append("\"");
-    }
-    sb.append("\n");
   }
 
   public String generateMediaPlaylist(StreamSession session) {
