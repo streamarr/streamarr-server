@@ -61,7 +61,8 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
             .on(Tables.MOVIE.ID.eq(Tables.BASE_COLLECTABLE.ID))
             .where(seekCondition)
             .and(libraryCondition(filter))
-            .and(JooqQueryHelper.startLetterCondition(filter.getStartLetter(), originalDirection))
+            .and(JooqQueryHelper.startLetterCondition(
+                filter.getStartLetter(), originalDirection, filter.getSortBy()))
             .orderBy(orderByColumns)
             // N+2 (Allows us to efficiently check if there are items before AND after N)
             .limit(options.getPaginationOptions().getLimit() + 2);
@@ -126,7 +127,8 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
             .and(
                 JooqQueryHelper.startLetterCondition(
                     options.getMediaFilter().getStartLetter(),
-                    options.getMediaFilter().getSortDirection()))
+                    options.getMediaFilter().getSortDirection(),
+                    options.getMediaFilter().getSortBy()))
             .orderBy(orderByColumns)
             .limit(options.getPaginationOptions().getLimit() + 1);
 

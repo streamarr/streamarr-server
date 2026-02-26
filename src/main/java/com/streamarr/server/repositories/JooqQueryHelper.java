@@ -6,6 +6,7 @@ import static org.jooq.impl.DSL.lower;
 import static org.jooq.impl.DSL.noCondition;
 
 import com.streamarr.server.domain.AlphabetLetter;
+import com.streamarr.server.graphql.cursor.OrderMediaBy;
 import com.streamarr.server.jooq.generated.Tables;
 import jakarta.persistence.EntityManager;
 import java.util.List;
@@ -28,14 +29,29 @@ public class JooqQueryHelper {
     return result.getResultList();
   }
 
-  public Condition startLetterCondition(AlphabetLetter startLetter, SortOrder direction) {
+  public Condition startLetterCondition(
+      AlphabetLetter startLetter, SortOrder direction, OrderMediaBy sortBy) {
     if (startLetter == null) {
       return noCondition();
+    }
+
+    if (sortBy != OrderMediaBy.TITLE) {
+      return equalityLetterCondition(startLetter);
     }
 
     return direction == SortOrder.DESC
         ? descLetterCondition(startLetter)
         : ascLetterCondition(startLetter);
+  }
+
+  private Condition equalityLetterCondition(AlphabetLetter startLetter) {
+    var firstCharLower = lower(left(Tables.BASE_COLLECTABLE.TITLE_SORT, 1));
+
+    if (startLetter == AlphabetLetter.HASH) {
+      return firstCharLower.lessThan(inline("a"));
+    }
+
+    return firstCharLower.eq(inline(startLetter.name().toLowerCase()));
   }
 
   private Condition ascLetterCondition(AlphabetLetter startLetter) {

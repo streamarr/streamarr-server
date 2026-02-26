@@ -210,6 +210,54 @@ class MovieServiceTest {
   }
 
   @Test
+  @DisplayName("Should filter by start letter as equality when sort is not TITLE")
+  void shouldFilterByStartLetterAsEqualityWhenSortIsNotTitle() {
+    var libraryId = UUID.randomUUID();
+    var library = Library.builder().id(libraryId).name("Movies").build();
+    movieRepository.save(Movie.builder().title("Alpha").library(library).build());
+    movieRepository.save(Movie.builder().title("Avengers").library(library).build());
+    movieRepository.save(Movie.builder().title("Batman").library(library).build());
+    movieRepository.save(Movie.builder().title("Cherry").library(library).build());
+
+    var filter =
+        MediaFilter.builder()
+            .sortBy(OrderMediaBy.ADDED)
+            .sortDirection(SortOrder.ASC)
+            .libraryId(libraryId)
+            .startLetter(com.streamarr.server.domain.AlphabetLetter.A)
+            .build();
+
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactlyInAnyOrder("Alpha", "Avengers");
+  }
+
+  @Test
+  @DisplayName("Should filter by start letter as range when sort is TITLE")
+  void shouldFilterByStartLetterAsRangeWhenSortIsTitle() {
+    var libraryId = UUID.randomUUID();
+    var library = Library.builder().id(libraryId).name("Movies").build();
+    movieRepository.save(Movie.builder().title("Alpha").library(library).build());
+    movieRepository.save(Movie.builder().title("Avengers").library(library).build());
+    movieRepository.save(Movie.builder().title("Batman").library(library).build());
+    movieRepository.save(Movie.builder().title("Cherry").library(library).build());
+
+    var filter =
+        MediaFilter.builder()
+            .sortBy(OrderMediaBy.TITLE)
+            .sortDirection(SortOrder.ASC)
+            .libraryId(libraryId)
+            .startLetter(com.streamarr.server.domain.AlphabetLetter.A)
+            .build();
+
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactly("Alpha", "Avengers", "Batman", "Cherry");
+  }
+
+  @Test
   @DisplayName("Should reject cursor when sort direction changes between queries")
   void shouldRejectCursorWhenSortDirectionChanges() {
     movieRepository.save(Movie.builder().title("Apple").build());

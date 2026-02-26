@@ -1,5 +1,6 @@
 package com.streamarr.server.fakes;
 
+import com.streamarr.server.domain.AlphabetLetter;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.graphql.cursor.MediaFilter;
@@ -98,12 +99,66 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
   private Stream<Series> filterByLibrary(MediaFilter filter) {
     var libraryId = filter.getLibraryId();
 
-    if (libraryId == null) {
-      return database.values().stream();
+    Stream<Series> stream =
+        libraryId == null
+            ? database.values().stream()
+            : database.values().stream()
+                .filter(s -> s.getLibrary() != null && libraryId.equals(s.getLibrary().getId()));
+
+    return filterByStartLetter(stream, filter);
+  }
+
+  private Stream<Series> filterByStartLetter(Stream<Series> stream, MediaFilter filter) {
+    var letter = filter.getStartLetter();
+    if (letter == null) {
+      return stream;
     }
 
-    return database.values().stream()
-        .filter(s -> s.getLibrary() != null && libraryId.equals(s.getLibrary().getId()));
+    if (filter.getSortBy() != OrderMediaBy.TITLE) {
+      return stream.filter(s -> matchesLetterEquality(s.getTitle(), letter));
+    }
+
+    if (filter.getSortDirection() == SortOrder.DESC) {
+      return stream.filter(s -> matchesLetterDescRange(s.getTitle(), letter));
+    }
+
+    return stream.filter(s -> matchesLetterAscRange(s.getTitle(), letter));
+  }
+
+  private boolean matchesLetterEquality(String title, AlphabetLetter letter) {
+    if (title == null || title.isEmpty()) {
+      return false;
+    }
+    var firstChar = Character.toLowerCase(title.charAt(0));
+    if (letter == AlphabetLetter.HASH) {
+      return firstChar < 'a' || firstChar > 'z';
+    }
+    return firstChar == Character.toLowerCase(letter.name().charAt(0));
+  }
+
+  private boolean matchesLetterAscRange(String title, AlphabetLetter letter) {
+    if (letter == AlphabetLetter.HASH) {
+      return true;
+    }
+    if (title == null || title.isEmpty()) {
+      return false;
+    }
+    var firstChar = Character.toLowerCase(title.charAt(0));
+    return firstChar >= Character.toLowerCase(letter.name().charAt(0));
+  }
+
+  private boolean matchesLetterDescRange(String title, AlphabetLetter letter) {
+    if (letter == AlphabetLetter.Z) {
+      return true;
+    }
+    if (title == null || title.isEmpty()) {
+      return false;
+    }
+    var firstChar = Character.toLowerCase(title.charAt(0));
+    if (letter == AlphabetLetter.HASH) {
+      return firstChar < 'a' || firstChar > 'z';
+    }
+    return firstChar <= Character.toLowerCase(letter.name().charAt(0));
   }
 
   private Comparator<Series> comparatorFor(MediaFilter filter, SortOrder idSortOrder) {
