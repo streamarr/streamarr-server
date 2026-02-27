@@ -94,13 +94,19 @@ public class RelayPaginationService {
     var hasNextPage = false;
 
     if (cursorId.isPresent() && direction.equals(PaginationDirection.FORWARD)) {
-      hasPreviousPage = edges.getFirst().getNode().getId().equals(cursorId.get());
-      edges = edges.subList(1, edges.size());
+      var cursorFound = edges.getFirst().getNode().getId().equals(cursorId.get());
+      hasPreviousPage = cursorFound;
+      if (cursorFound) {
+        edges = edges.subList(1, edges.size());
+      }
     }
 
     if (cursorId.isPresent() && direction.equals(PaginationDirection.REVERSE)) {
-      hasNextPage = edges.getLast().getNode().getId().equals(cursorId.get());
-      edges = edges.subList(0, edges.size() - 1);
+      var cursorFound = edges.getLast().getNode().getId().equals(cursorId.get());
+      hasNextPage = cursorFound;
+      if (cursorFound) {
+        edges = edges.subList(0, edges.size() - 1);
+      }
     }
 
     if (edges.isEmpty()) {
