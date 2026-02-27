@@ -1,5 +1,6 @@
 package com.streamarr.server.repositories;
 
+import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.left;
 import static org.jooq.impl.DSL.lower;
@@ -115,8 +116,10 @@ public class JooqQueryHelper {
       return noCondition();
     }
     return not(
-        Tables.BASE_COLLECTABLE.ID.in(
-            select(Tables.EXTERNAL_IDENTIFIER.ENTITY_ID).from(Tables.EXTERNAL_IDENTIFIER)));
+        exists(
+            select(Tables.EXTERNAL_IDENTIFIER.ENTITY_ID)
+                .from(Tables.EXTERNAL_IDENTIFIER)
+                .where(Tables.EXTERNAL_IDENTIFIER.ENTITY_ID.eq(Tables.BASE_COLLECTABLE.ID))));
   }
 
   @SuppressWarnings({"unchecked", "rawtypes"})
@@ -164,13 +167,23 @@ public class JooqQueryHelper {
     var coercedValue = coerceSortValue(filter);
     var isAsc = filter.getSortDirection() == SortOrder.ASC;
 
-    if (!isNullableSortField(filter.getSortBy()) || coercedValue != null) {
+    if (!isNullableSortField(filter.getSortBy())) {
       var fields = Arrays.stream(orderByColumns).map(SortField::$field).toList();
       var seekValues = new Object[] {coercedValue, cursorId};
       return isAsc ? row(fields).greaterOrEqual(seekValues) : row(fields).lessOrEqual(seekValues);
     }
 
     var typedCol = (Field<Object>) sortCol;
+
+    if (coercedValue != null) {
+      var fields = Arrays.stream(orderByColumns).map(SortField::$field).toList();
+      var seekValues = new Object[] {coercedValue, cursorId};
+      var rowSeek =
+          isAsc ? row(fields).greaterOrEqual(seekValues) : row(fields).lessOrEqual(seekValues);
+      // NULLS LAST: null rows come after all non-null rows regardless of sort direction
+      return rowSeek.or(typedCol.isNull());
+    }
+
     if (isAsc) {
       return typedCol.isNull().and(idField.greaterOrEqual(cursorId));
     }

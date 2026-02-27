@@ -13,16 +13,19 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.graphql.cursor.InvalidCursorException;
 import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.graphql.cursor.OrderMediaBy;
+import com.streamarr.server.repositories.GenreRepository;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.services.metadata.MetadataResult;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -47,6 +50,7 @@ class SeriesServiceIT extends AbstractIntegrationTest {
   @Autowired private SeasonRepository seasonRepository;
   @Autowired private EpisodeRepository episodeRepository;
   @Autowired private LibraryRepository libraryRepository;
+  @Autowired private GenreRepository genreRepository;
   @Autowired private PersonService personService;
 
   private Library savedLibrary;
@@ -724,5 +728,240 @@ class SeriesServiceIT extends AbstractIntegrationTest {
     assertThat(refreshed.getCast())
         .extracting(Person::getName)
         .containsExactly("Actor B", "Actor C");
+  }
+
+  // --- Nullable Sort Field Pagination (RELEASE_DATE = firstAirDate, RUNTIME) ---
+
+  @Test
+  @DisplayName("Should sort by RELEASE_DATE ASC (firstAirDate) placing nulls last")
+  void shouldSortByReleaseDateAscPlacingNullsLast() {
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
+
+    seriesRepository.saveAndFlush(
+        Series.builder()
+            .title("Mid Show")
+            .titleSort("mid show")
+            .firstAirDate(LocalDate.of(2010, 6, 1))
+            .library(library)
+            .build());
+    seriesRepository.saveAndFlush(
+        Series.builder()
+            .title("Early Show")
+            .titleSort("early show")
+            .firstAirDate(LocalDate.of(2000, 1, 1))
+            .library(library)
+            .build());
+    seriesRepository.saveAndFlush(
+        Series.builder().title("Undated Show").titleSort("undated show").library(library).build());
+
+    var filter =
+        MediaFilter.builder()
+            .libraryId(library.getId())
+            .sortBy(OrderMediaBy.RELEASE_DATE)
+            .sortDirection(SortOrder.ASC)
+            .build();
+
+    var result = seriesService.getSeriesWithFilter(10, null, 0, null, filter);
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactly("Early Show", "Mid Show", "Undated Show");
+  }
+
+  @Test
+  @DisplayName("Should paginate forward through RELEASE_DATE ASC with cursor")
+  void shouldPaginateForwardThroughReleaseDateAscWithCursor() {
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
+
+    seriesRepository.saveAndFlush(
+        Series.builder()
+            .title("First Show")
+            .titleSort("first show")
+            .firstAirDate(LocalDate.of(2000, 1, 1))
+            .library(library)
+            .build());
+    seriesRepository.saveAndFlush(
+        Series.builder()
+            .title("Second Show")
+            .titleSort("second show")
+            .firstAirDate(LocalDate.of(2010, 6, 1))
+            .library(library)
+            .build());
+    seriesRepository.saveAndFlush(
+        Series.builder()
+            .title("Third Show")
+            .titleSort("third show")
+            .firstAirDate(LocalDate.of(2020, 12, 25))
+            .library(library)
+            .build());
+
+    var filter =
+        MediaFilter.builder()
+            .libraryId(library.getId())
+            .sortBy(OrderMediaBy.RELEASE_DATE)
+            .sortDirection(SortOrder.ASC)
+            .build();
+
+    var page1 = seriesService.getSeriesWithFilter(1, null, 0, null, filter);
+    assertThat(page1.getEdges().get(0).getNode().getTitle()).isEqualTo("First Show");
+    assertThat(page1.getPageInfo().isHasNextPage()).isTrue();
+
+    var cursor = page1.getPageInfo().getEndCursor().getValue();
+    var page2 = seriesService.getSeriesWithFilter(1, cursor, 0, null, filter);
+    assertThat(page2.getEdges().get(0).getNode().getTitle()).isEqualTo("Second Show");
+  }
+
+  @Test
+  @DisplayName("Should paginate through null firstAirDate values using cursor")
+  void shouldPaginateThroughNullFirstAirDateValuesUsingCursor() {
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
+
+    seriesRepository.saveAndFlush(
+        Series.builder()
+            .title("Dated Show")
+            .titleSort("dated show")
+            .firstAirDate(LocalDate.of(2010, 1, 1))
+            .library(library)
+            .build());
+    seriesRepository.saveAndFlush(
+        Series.builder().title("Undated A").titleSort("undated a").library(library).build());
+    seriesRepository.saveAndFlush(
+        Series.builder().title("Undated B").titleSort("undated b").library(library).build());
+
+    var filter =
+        MediaFilter.builder()
+            .libraryId(library.getId())
+            .sortBy(OrderMediaBy.RELEASE_DATE)
+            .sortDirection(SortOrder.ASC)
+            .build();
+
+    // Page 1: first=2 returns Dated + one Undated (nulls last)
+    var page1 = seriesService.getSeriesWithFilter(2, null, 0, null, filter);
+    assertThat(page1.getEdges()).hasSize(2);
+    assertThat(page1.getEdges().get(0).getNode().getTitle()).isEqualTo("Dated Show");
+    assertThat(page1.getPageInfo().isHasNextPage()).isTrue();
+
+    // Page 2: cursor from undated row exercises null-value branch of buildSeekCondition
+    var cursor = page1.getPageInfo().getEndCursor().getValue();
+    var page2 = seriesService.getSeriesWithFilter(2, cursor, 0, null, filter);
+    assertThat(page2.getEdges()).hasSize(1);
+    assertThat(page2.getPageInfo().isHasNextPage()).isFalse();
+
+    // All 3 series seen without duplicates
+    var allTitles =
+        Stream.concat(page1.getEdges().stream(), page2.getEdges().stream())
+            .map(e -> e.getNode().getTitle())
+            .toList();
+    assertThat(allTitles).hasSize(3).doesNotHaveDuplicates();
+  }
+
+  @Test
+  @DisplayName("Should sort by RUNTIME ASC placing nulls last")
+  void shouldSortByRuntimeAscPlacingNullsLast() {
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
+
+    seriesRepository.saveAndFlush(
+        Series.builder()
+            .title("Long Show")
+            .titleSort("long show")
+            .runtime(60)
+            .library(library)
+            .build());
+    seriesRepository.saveAndFlush(
+        Series.builder()
+            .title("Short Show")
+            .titleSort("short show")
+            .runtime(30)
+            .library(library)
+            .build());
+    seriesRepository.saveAndFlush(
+        Series.builder()
+            .title("No Runtime Show")
+            .titleSort("no runtime show")
+            .library(library)
+            .build());
+
+    var filter =
+        MediaFilter.builder()
+            .libraryId(library.getId())
+            .sortBy(OrderMediaBy.RUNTIME)
+            .sortDirection(SortOrder.ASC)
+            .build();
+
+    var result = seriesService.getSeriesWithFilter(10, null, 0, null, filter);
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactly("Short Show", "Long Show", "No Runtime Show");
+  }
+
+  @Test
+  @DisplayName("Should paginate forward through RUNTIME ASC with cursor")
+  void shouldPaginateForwardThroughRuntimeAscWithCursor() {
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
+
+    seriesRepository.saveAndFlush(
+        Series.builder().title("Short").titleSort("short").runtime(30).library(library).build());
+    seriesRepository.saveAndFlush(
+        Series.builder().title("Long").titleSort("long").runtime(60).library(library).build());
+
+    var filter =
+        MediaFilter.builder()
+            .libraryId(library.getId())
+            .sortBy(OrderMediaBy.RUNTIME)
+            .sortDirection(SortOrder.ASC)
+            .build();
+
+    var page1 = seriesService.getSeriesWithFilter(1, null, 0, null, filter);
+    assertThat(page1.getEdges().get(0).getNode().getTitle()).isEqualTo("Short");
+
+    var cursor = page1.getPageInfo().getEndCursor().getValue();
+    var page2 = seriesService.getSeriesWithFilter(1, cursor, 0, null, filter);
+    assertThat(page2.getEdges().get(0).getNode().getTitle()).isEqualTo("Long");
+  }
+
+  @Test
+  @DisplayName("Should reject cursor when sortBy changes between pages")
+  void shouldRejectCursorWhenSortByChangesBetweenPages() {
+    var filter1 =
+        MediaFilter.builder().libraryId(savedLibraryB.getId()).sortBy(OrderMediaBy.TITLE).build();
+
+    var page1 = seriesService.getSeriesWithFilter(1, null, 0, null, filter1);
+    var cursor = page1.getPageInfo().getEndCursor().getValue();
+
+    var filter2 =
+        MediaFilter.builder().libraryId(savedLibraryB.getId()).sortBy(OrderMediaBy.ADDED).build();
+
+    assertThatThrownBy(() -> seriesService.getSeriesWithFilter(1, cursor, 0, null, filter2))
+        .isInstanceOf(InvalidCursorException.class);
+  }
+
+  @Test
+  @DisplayName("Should return only series matching genre filter")
+  void shouldReturnOnlySeriesMatchingGenreFilter() {
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
+
+    var genre =
+        genreRepository.saveAndFlush(
+            Genre.builder()
+                .name("Drama IT")
+                .sourceId("drama-series-it-" + library.getId())
+                .build());
+
+    seriesRepository.saveAndFlush(
+        Series.builder()
+            .title("Drama Series")
+            .titleSort("drama series")
+            .library(library)
+            .genres(Set.of(genre))
+            .build());
+    seriesRepository.saveAndFlush(
+        Series.builder().title("Other Series").titleSort("other series").library(library).build());
+
+    var filter =
+        MediaFilter.builder().libraryId(library.getId()).genreIds(List.of(genre.getId())).build();
+
+    var result = seriesService.getSeriesWithFilter(10, null, 0, null, filter);
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactly("Drama Series");
   }
 }
