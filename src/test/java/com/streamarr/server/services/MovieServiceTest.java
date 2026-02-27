@@ -260,7 +260,7 @@ class MovieServiceTest {
 
   @Test
   @DisplayName("Should filter by single genre when genreIds has one ID")
-  void shouldFilterBySingleGenre() {
+  void shouldFilterBySingleGenreWhenGenreIdsHasOneId() {
     var genreAction = Genre.builder().name("Action").sourceId("action").build();
     genreAction.setId(UUID.randomUUID());
     var genreComedy = Genre.builder().name("Comedy").sourceId("comedy").build();
@@ -284,8 +284,8 @@ class MovieServiceTest {
   }
 
   @Test
-  @DisplayName("Should filter by multiple genres with OR semantics")
-  void shouldFilterByMultipleGenresWithOrSemantics() {
+  @DisplayName("Should filter by multiple genres when genreIds has multiple IDs")
+  void shouldFilterByMultipleGenresWhenGenreIdsHasMultipleIds() {
     var genreAction = Genre.builder().name("Action").sourceId("action").build();
     genreAction.setId(UUID.randomUUID());
     var genreComedy = Genre.builder().name("Comedy").sourceId("comedy").build();
@@ -311,7 +311,7 @@ class MovieServiceTest {
 
   @Test
   @DisplayName("Should return all movies when genreIds is empty")
-  void shouldReturnAllWhenGenreIdsEmpty() {
+  void shouldReturnAllMoviesWhenGenreIdsIsEmpty() {
     movieRepository.save(Movie.builder().title("Movie A").build());
     movieRepository.save(Movie.builder().title("Movie B").build());
 
@@ -323,7 +323,7 @@ class MovieServiceTest {
 
   @Test
   @DisplayName("Should filter by single year when years has one value")
-  void shouldFilterBySingleYear() {
+  void shouldFilterBySingleYearWhenYearsHasOneValue() {
     movieRepository.save(
         Movie.builder().title("Old Movie").releaseDate(LocalDate.of(2000, 6, 15)).build());
     movieRepository.save(
@@ -339,8 +339,8 @@ class MovieServiceTest {
   }
 
   @Test
-  @DisplayName("Should filter by multiple years with OR semantics")
-  void shouldFilterByMultipleYearsWithOrSemantics() {
+  @DisplayName("Should filter by multiple years when years has multiple values")
+  void shouldFilterByMultipleYearsWhenYearsHasMultipleValues() {
     movieRepository.save(
         Movie.builder().title("Year 2000").releaseDate(LocalDate.of(2000, 1, 1)).build());
     movieRepository.save(
@@ -370,8 +370,8 @@ class MovieServiceTest {
   }
 
   @Test
-  @DisplayName("Should filter by single content rating")
-  void shouldFilterBySingleContentRating() {
+  @DisplayName("Should filter by single content rating when contentRatings has one value")
+  void shouldFilterBySingleContentRatingWhenContentRatingsHasOneValue() {
     movieRepository.save(
         Movie.builder()
             .title("PG-13 Movie")
@@ -391,8 +391,8 @@ class MovieServiceTest {
   }
 
   @Test
-  @DisplayName("Should filter by multiple content ratings with OR semantics")
-  void shouldFilterByMultipleContentRatingsWithOrSemantics() {
+  @DisplayName("Should filter by multiple content ratings when contentRatings has multiple values")
+  void shouldFilterByMultipleContentRatingsWhenContentRatingsHasMultipleValues() {
     movieRepository.save(
         Movie.builder()
             .title("PG Movie")
@@ -418,7 +418,7 @@ class MovieServiceTest {
 
   @Test
   @DisplayName("Should filter by single studio when studioIds has one ID")
-  void shouldFilterBySingleStudio() {
+  void shouldFilterBySingleStudioWhenStudioIdsHasOneId() {
     var studioA = Company.builder().name("Studio A").build();
     studioA.setId(UUID.randomUUID());
     var studioB = Company.builder().name("Studio B").build();
@@ -437,8 +437,8 @@ class MovieServiceTest {
   }
 
   @Test
-  @DisplayName("Should filter by multiple studios with OR semantics")
-  void shouldFilterByMultipleStudiosWithOrSemantics() {
+  @DisplayName("Should filter by multiple studios when studioIds has multiple IDs")
+  void shouldFilterByMultipleStudiosWhenStudioIdsHasMultipleIds() {
     var studioA = Company.builder().name("Studio A").build();
     studioA.setId(UUID.randomUUID());
     var studioB = Company.builder().name("Studio B").build();
@@ -465,7 +465,7 @@ class MovieServiceTest {
 
   @Test
   @DisplayName("Should filter by single director when directorIds has one ID")
-  void shouldFilterBySingleDirector() {
+  void shouldFilterBySingleDirectorWhenDirectorIdsHasOneId() {
     var directorA = Person.builder().name("Director A").build();
     directorA.setId(UUID.randomUUID());
     var directorB = Person.builder().name("Director B").build();
@@ -484,8 +484,8 @@ class MovieServiceTest {
   }
 
   @Test
-  @DisplayName("Should filter by multiple directors with OR semantics")
-  void shouldFilterByMultipleDirectorsWithOrSemantics() {
+  @DisplayName("Should filter by multiple directors when directorIds has multiple IDs")
+  void shouldFilterByMultipleDirectorsWhenDirectorIdsHasMultipleIds() {
     var dirA = Person.builder().name("Dir A").build();
     dirA.setId(UUID.randomUUID());
     var dirB = Person.builder().name("Dir B").build();
@@ -510,7 +510,7 @@ class MovieServiceTest {
 
   @Test
   @DisplayName("Should filter by single cast member when castMemberIds has one ID")
-  void shouldFilterBySingleCastMember() {
+  void shouldFilterBySingleCastMemberWhenCastMemberIdsHasOneId() {
     var actorA = Person.builder().name("Actor A").build();
     actorA.setId(UUID.randomUUID());
     var actorB = Person.builder().name("Actor B").build();
@@ -529,8 +529,8 @@ class MovieServiceTest {
   }
 
   @Test
-  @DisplayName("Should filter by multiple cast members with OR semantics")
-  void shouldFilterByMultipleCastMembersWithOrSemantics() {
+  @DisplayName("Should filter by multiple cast members when castMemberIds has multiple IDs")
+  void shouldFilterByMultipleCastMembersWhenCastMemberIdsHasMultipleIds() {
     var actorA = Person.builder().name("Actor A").build();
     actorA.setId(UUID.randomUUID());
     var actorB = Person.builder().name("Actor B").build();
@@ -608,7 +608,7 @@ class MovieServiceTest {
 
   @Test
   @DisplayName("Should sort by release date ascending when sort is RELEASE_DATE ASC")
-  void shouldSortByReleaseDateAsc() {
+  void shouldSortByReleaseDateWhenSortIsReleaseDateAsc() {
     movieRepository.save(
         Movie.builder().title("Old Movie").releaseDate(LocalDate.of(2000, 1, 1)).build());
     movieRepository.save(
@@ -630,7 +630,7 @@ class MovieServiceTest {
 
   @Test
   @DisplayName("Should sort by release date descending when sort is RELEASE_DATE DESC")
-  void shouldSortByReleaseDateDesc() {
+  void shouldSortByReleaseDateWhenSortIsReleaseDateDesc() {
     movieRepository.save(
         Movie.builder().title("Old Movie").releaseDate(LocalDate.of(2000, 1, 1)).build());
     movieRepository.save(
@@ -650,7 +650,7 @@ class MovieServiceTest {
 
   @Test
   @DisplayName("Should sort by runtime ascending when sort is RUNTIME ASC")
-  void shouldSortByRuntimeAsc() {
+  void shouldSortByRuntimeWhenSortIsRuntimeAsc() {
     movieRepository.save(Movie.builder().title("Short").runtime(90).build());
     movieRepository.save(Movie.builder().title("Long").runtime(180).build());
     movieRepository.save(Movie.builder().title("Medium").runtime(120).build());
@@ -666,7 +666,7 @@ class MovieServiceTest {
 
   @Test
   @DisplayName("Should sort by runtime descending when sort is RUNTIME DESC")
-  void shouldSortByRuntimeDesc() {
+  void shouldSortByRuntimeWhenSortIsRuntimeDesc() {
     movieRepository.save(Movie.builder().title("Short").runtime(90).build());
     movieRepository.save(Movie.builder().title("Long").runtime(180).build());
 
@@ -680,8 +680,8 @@ class MovieServiceTest {
   }
 
   @Test
-  @DisplayName("Should place null release date last when sorting by RELEASE_DATE ASC")
-  void shouldPlaceNullReleaseDateLast() {
+  @DisplayName("Should place null release date last when sorting by release date")
+  void shouldPlaceNullReleaseDateLastWhenSortingByReleaseDate() {
     movieRepository.save(
         Movie.builder().title("Dated Movie").releaseDate(LocalDate.of(2020, 1, 1)).build());
     movieRepository.save(Movie.builder().title("Undated Movie").build());
@@ -699,8 +699,8 @@ class MovieServiceTest {
   }
 
   @Test
-  @DisplayName("Should place null runtime last when sorting by RUNTIME ASC")
-  void shouldPlaceNullRuntimeLast() {
+  @DisplayName("Should place null runtime last when sorting by runtime")
+  void shouldPlaceNullRuntimeLastWhenSortingByRuntime() {
     movieRepository.save(Movie.builder().title("With Runtime").runtime(120).build());
     movieRepository.save(Movie.builder().title("No Runtime").build());
 
