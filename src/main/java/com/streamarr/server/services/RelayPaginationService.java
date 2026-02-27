@@ -145,10 +145,10 @@ public class RelayPaginationService {
     }
 
     if (direction.equals(PaginationDirection.REVERSE)) {
-      return list.subList(1, list.size());
+      return list.subList(list.size() - limit, list.size());
     }
 
-    return list.subList(0, list.size() - 1);
+    return list.subList(0, limit);
   }
 
   public <T> void validateCursorField(String fieldName, T prior, T current) {

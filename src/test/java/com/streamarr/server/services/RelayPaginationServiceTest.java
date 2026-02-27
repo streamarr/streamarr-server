@@ -504,6 +504,33 @@ class RelayPaginationServiceTest {
   }
 
   @Test
+  @DisplayName("Should return at most limit edges when cursor item absent from forward results")
+  void shouldReturnAtMostLimitEdgesWhenCursorItemAbsentFromForwardResults() {
+    var cursorId = UUID.randomUUID();
+
+    // Simulate DB returning limit+2 edges where cursor item is absent (deleted)
+    List<Edge<Movie>> edges =
+        List.of(
+            new DefaultEdge<>(
+                Movie.builder().id(UUID.randomUUID()).build(), new DefaultConnectionCursor("c1")),
+            new DefaultEdge<>(
+                Movie.builder().id(UUID.randomUUID()).build(), new DefaultConnectionCursor("c2")),
+            new DefaultEdge<>(
+                Movie.builder().id(UUID.randomUUID()).build(), new DefaultConnectionCursor("c3")));
+
+    var options =
+        PaginationOptions.builder()
+            .cursor(Optional.of("c1"))
+            .paginationDirection(PaginationDirection.FORWARD)
+            .limit(1)
+            .build();
+
+    var connection = relayPaginationService.buildConnection(edges, options, Optional.of(cursorId));
+
+    assertThat(connection.getEdges()).hasSize(1);
+  }
+
+  @Test
   @DisplayName("Should not throw when validating cursor field with both values null")
   void shouldNotThrowWhenValidatingCursorFieldWithBothValuesNull() {
     assertThatNoException()
