@@ -18,7 +18,9 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
 
   private record ProcessKey(UUID sessionId, String variantLabel) {}
 
-  private final ConcurrentHashMap<ProcessKey, Process> processes = new ConcurrentHashMap<>();
+  private record ManagedProcess(Process process, StderrDrainer drainer) {}
+
+  private final ConcurrentHashMap<ProcessKey, ManagedProcess> processes = new ConcurrentHashMap<>();
 
   @Override
   public Process startProcess(
@@ -26,10 +28,10 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
     try {
       var processBuilder = new ProcessBuilder(command);
       processBuilder.directory(workingDir.toFile());
-      processBuilder.redirectErrorStream(false);
 
       var process = processBuilder.start();
-      processes.put(new ProcessKey(sessionId, variantLabel), process);
+      var drainer = new StderrDrainer(process.getErrorStream());
+      processes.put(new ProcessKey(sessionId, variantLabel), new ManagedProcess(process, drainer));
 
       log.info(
           "Started FFmpeg process (PID {}) for session {} variant {}",
@@ -49,18 +51,27 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
         processes.keySet().stream().filter(key -> key.sessionId().equals(sessionId)).toList();
 
     for (var key : keysToRemove) {
-      var process = processes.remove(key);
-      if (process == null || !process.isAlive()) {
-        continue;
-      }
-
-      sendQuitSignal(process, sessionId);
-      awaitGracefulShutdown(process, sessionId);
+      shutdownManagedProcess(processes.remove(key), sessionId);
     }
 
     if (!keysToRemove.isEmpty()) {
       log.info("Stopped FFmpeg process(es) for session {}", sessionId);
     }
+  }
+
+  private void shutdownManagedProcess(ManagedProcess managed, UUID sessionId) {
+    if (managed == null) {
+      return;
+    }
+
+    if (!managed.process().isAlive()) {
+      managed.drainer().close();
+      return;
+    }
+
+    sendQuitSignal(managed.process(), sessionId);
+    awaitGracefulShutdown(managed.process(), sessionId);
+    managed.drainer().close();
   }
 
   private void sendQuitSignal(Process process, UUID sessionId) {
@@ -95,17 +106,18 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
   @Override
   public boolean isRunning(UUID sessionId, String variantLabel) {
     var key = new ProcessKey(sessionId, variantLabel);
-    var process = processes.get(key);
-    if (process == null) {
+    var managed = processes.get(key);
+    if (managed == null) {
       return false;
     }
 
-    return isAliveOrCleanup(key, process);
+    return isAliveOrCleanup(key, managed);
   }
 
-  private boolean isAliveOrCleanup(ProcessKey key, Process process) {
-    if (!process.isAlive()) {
-      logExitDetails(key, process);
+  private boolean isAliveOrCleanup(ProcessKey key, ManagedProcess managed) {
+    if (!managed.process().isAlive()) {
+      logExitDetails(key, managed);
+      managed.drainer().close();
       processes.remove(key);
       return false;
     }
@@ -113,11 +125,12 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
     return true;
   }
 
-  private void logExitDetails(ProcessKey key, Process process) {
+  private void logExitDetails(ProcessKey key, ManagedProcess managed) {
     try {
-      var exitCode = process.exitValue();
-      var stderr = new String(process.getErrorStream().readAllBytes());
-      if (!stderr.isBlank()) {
+      var exitCode = managed.process().exitValue();
+      var recentLines = managed.drainer().getRecentOutput();
+      if (!recentLines.isEmpty()) {
+        var stderr = String.join("\n", recentLines);
         log.warn(
             "FFmpeg exited with code {} for session {} variant {}: {}",
             exitCode,
