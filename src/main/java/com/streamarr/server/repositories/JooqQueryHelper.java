@@ -17,7 +17,6 @@ import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 import lombok.experimental.UtilityClass;
 import org.jooq.Condition;
@@ -94,6 +93,23 @@ public class JooqQueryHelper {
     return libraryId != null ? Tables.BASE_COLLECTABLE.LIBRARY_ID.eq(libraryId) : noCondition();
   }
 
+  public Condition yearCondition(Field<LocalDate> dateField, List<Integer> years) {
+    if (years == null || years.isEmpty()) {
+      return noCondition();
+    }
+    return years.stream()
+        .map(year -> dateField.between(LocalDate.of(year, 1, 1), LocalDate.of(year, 12, 31)))
+        .reduce(Condition::or)
+        .orElse(noCondition());
+  }
+
+  public Condition contentRatingCondition(Field<String> ratingField, List<String> ratings) {
+    if (ratings == null || ratings.isEmpty()) {
+      return noCondition();
+    }
+    return ratingField.in(ratings);
+  }
+
   public Condition unmatchedCondition(Boolean unmatched) {
     if (!Boolean.TRUE.equals(unmatched)) {
       return noCondition();
@@ -143,25 +159,21 @@ public class JooqQueryHelper {
 
   @SuppressWarnings("unchecked")
   public Condition buildSeekCondition(
-      MediaFilter filter,
-      Field<?> sortCol,
-      SortField<?>[] orderByColumns,
-      Optional<UUID> cursorId) {
+      MediaFilter filter, Field<?> sortCol, SortField<?>[] orderByColumns, UUID cursorId) {
     var idField = Tables.BASE_COLLECTABLE.ID;
     var coercedValue = coerceSortValue(filter);
-    var cursorIdValue = cursorId.orElse(null);
     var isAsc = filter.getSortDirection() == SortOrder.ASC;
 
     if (!isNullableSortField(filter.getSortBy()) || coercedValue != null) {
       var fields = Arrays.stream(orderByColumns).map(SortField::$field).toList();
-      var seekValues = new Object[] {coercedValue, cursorIdValue};
+      var seekValues = new Object[] {coercedValue, cursorId};
       return isAsc ? row(fields).greaterOrEqual(seekValues) : row(fields).lessOrEqual(seekValues);
     }
 
     var typedCol = (Field<Object>) sortCol;
     if (isAsc) {
-      return typedCol.isNull().and(idField.greaterOrEqual(cursorIdValue));
+      return typedCol.isNull().and(idField.greaterOrEqual(cursorId));
     }
-    return typedCol.isNull().and(idField.lessOrEqual(cursorIdValue));
+    return typedCol.isNull().and(idField.lessOrEqual(cursorId));
   }
 }

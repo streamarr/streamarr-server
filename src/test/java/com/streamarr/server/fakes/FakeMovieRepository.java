@@ -157,7 +157,7 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
           case RUNTIME ->
               Comparator.comparing(
                   Movie::getRuntime, Comparator.nullsLast(Comparator.naturalOrder()));
-          default -> Comparator.comparing(Movie::getTitle);
+          case TITLE -> Comparator.comparing(Movie::getTitle);
         };
 
     if (filter.getSortDirection() == SortOrder.DESC) {

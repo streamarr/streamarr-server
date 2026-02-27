@@ -170,7 +170,7 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
           case RUNTIME ->
               Comparator.comparing(
                   Series::getRuntime, Comparator.nullsLast(Comparator.naturalOrder()));
-          default -> Comparator.comparing(Series::getTitle);
+          case TITLE -> Comparator.comparing(Series::getTitle);
         };
 
     if (filter.getSortDirection() == SortOrder.DESC) {

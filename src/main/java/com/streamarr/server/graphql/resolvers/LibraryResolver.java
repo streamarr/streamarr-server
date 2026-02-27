@@ -148,7 +148,7 @@ public class LibraryResolver {
       builder.sortBy(sort.by());
     }
     if (sort.direction() != null) {
-      builder.sortDirection(sort.direction());
+      builder.sortDirection(sort.direction().toSortOrder());
     }
   }
 

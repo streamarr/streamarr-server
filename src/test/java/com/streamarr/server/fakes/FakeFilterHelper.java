@@ -49,8 +49,11 @@ public class FakeFilterHelper {
   }
 
   public MediaFilter reverseFilter(MediaFilter filter) {
-    var reversed = filter.getSortDirection() == SortOrder.DESC ? SortOrder.ASC : SortOrder.DESC;
-    return filter.toBuilder().sortDirection(reversed).build();
+    if (filter.getSortDirection().equals(SortOrder.DESC)) {
+      return filter.toBuilder().sortDirection(SortOrder.ASC).build();
+    }
+
+    return filter.toBuilder().sortDirection(SortOrder.DESC).build();
   }
 
   public int findCursorIndex(

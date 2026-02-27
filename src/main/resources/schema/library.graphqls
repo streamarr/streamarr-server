@@ -45,14 +45,14 @@ enum OrderMediaBy {
     RUNTIME
 }
 
-enum SortOrder {
+enum SortDirection {
     ASC
     DESC
 }
 
 input MediaSort {
     by: OrderMediaBy = TITLE
-    direction: SortOrder = ASC
+    direction: SortDirection = ASC
 }
 
 input MediaFilter {

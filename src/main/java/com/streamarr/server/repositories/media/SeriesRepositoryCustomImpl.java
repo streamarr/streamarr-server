@@ -12,7 +12,6 @@ import com.streamarr.server.jooq.generated.enums.ExternalSourceType;
 import com.streamarr.server.repositories.JooqQueryHelper;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
-import java.time.LocalDate;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -46,7 +45,7 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
 
     var seekCondition =
         JooqQueryHelper.buildSeekCondition(
-            filter, sortField(filter), orderByColumns, options.getCursorId());
+            filter, sortField(filter), orderByColumns, options.getCursorId().orElseThrow());
 
     var query =
         context
@@ -137,23 +136,14 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
                 Tables.SERIES_GENRE.GENRE_ID,
                 filter.getGenreIds()));
 
-    var years = filter.getYears();
-    if (years != null && !years.isEmpty()) {
-      var yearCondition =
-          years.stream()
-              .map(
-                  year ->
-                      Tables.SERIES.FIRST_AIR_DATE.between(
-                          LocalDate.of(year, 1, 1), LocalDate.of(year, 12, 31)))
-              .reduce(Condition::or)
-              .orElse(noCondition());
-      condition = condition.and(yearCondition);
-    }
+    condition =
+        condition.and(
+            JooqQueryHelper.yearCondition(Tables.SERIES.FIRST_AIR_DATE, filter.getYears()));
 
-    var contentRatings = filter.getContentRatings();
-    if (contentRatings != null && !contentRatings.isEmpty()) {
-      condition = condition.and(Tables.SERIES.CONTENT_RATING_VALUE.in(contentRatings));
-    }
+    condition =
+        condition.and(
+            JooqQueryHelper.contentRatingCondition(
+                Tables.SERIES.CONTENT_RATING_VALUE, filter.getContentRatings()));
 
     condition =
         condition.and(
