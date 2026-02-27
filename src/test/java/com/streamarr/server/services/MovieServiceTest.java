@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
 import com.streamarr.server.config.ImageProperties;
+import com.streamarr.server.domain.AlphabetLetter;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.ContentRating;
 import com.streamarr.server.domain.media.Image;
@@ -609,6 +610,168 @@ class MovieServiceTest {
         MediaFilter.builder().sortBy(OrderMediaBy.TITLE).sortDirection(SortOrder.DESC).build();
 
     assertThatThrownBy(() -> movieService.getMoviesWithFilter(1, cursor, 0, null, descFilter))
+        .isInstanceOf(InvalidCursorException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject cursor when sortBy changes between queries")
+  void shouldRejectCursorWhenSortByChanges() {
+    movieRepository.save(Movie.builder().title("Apple").build());
+    movieRepository.save(Movie.builder().title("Banana").build());
+
+    var filter1 = MediaFilter.builder().sortBy(OrderMediaBy.TITLE).build();
+    var result = movieService.getMoviesWithFilter(1, null, 0, null, filter1);
+    var cursor = result.getPageInfo().getEndCursor().getValue();
+
+    var filter2 = MediaFilter.builder().sortBy(OrderMediaBy.ADDED).build();
+
+    assertThatThrownBy(() -> movieService.getMoviesWithFilter(1, cursor, 0, null, filter2))
+        .isInstanceOf(InvalidCursorException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject cursor when startLetter changes between queries")
+  void shouldRejectCursorWhenStartLetterChanges() {
+    movieRepository.save(Movie.builder().title("Apple").build());
+    movieRepository.save(Movie.builder().title("Banana").build());
+
+    var filter1 = MediaFilter.builder().startLetter(AlphabetLetter.A).build();
+    var result = movieService.getMoviesWithFilter(1, null, 0, null, filter1);
+    var cursor = result.getPageInfo().getEndCursor().getValue();
+
+    var filter2 = MediaFilter.builder().startLetter(AlphabetLetter.B).build();
+
+    assertThatThrownBy(() -> movieService.getMoviesWithFilter(1, cursor, 0, null, filter2))
+        .isInstanceOf(InvalidCursorException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject cursor when genreIds change between queries")
+  void shouldRejectCursorWhenGenreIdsChange() {
+    var genreA = Genre.builder().name("Action").sourceId("action").build();
+    genreA.setId(UUID.randomUUID());
+    movieRepository.save(Movie.builder().title("Movie A").genres(Set.of(genreA)).build());
+    movieRepository.save(Movie.builder().title("Movie B").genres(Set.of(genreA)).build());
+
+    var filter1 = MediaFilter.builder().genreIds(List.of(genreA.getId())).build();
+    var result = movieService.getMoviesWithFilter(1, null, 0, null, filter1);
+    var cursor = result.getPageInfo().getEndCursor().getValue();
+
+    var filter2 = MediaFilter.builder().genreIds(List.of(UUID.randomUUID())).build();
+
+    assertThatThrownBy(() -> movieService.getMoviesWithFilter(1, cursor, 0, null, filter2))
+        .isInstanceOf(InvalidCursorException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject cursor when years change between queries")
+  void shouldRejectCursorWhenYearsChange() {
+    movieRepository.save(
+        Movie.builder().title("Movie A").releaseDate(LocalDate.of(2024, 1, 1)).build());
+    movieRepository.save(
+        Movie.builder().title("Movie B").releaseDate(LocalDate.of(2024, 6, 1)).build());
+
+    var filter1 = MediaFilter.builder().years(List.of(2024)).build();
+    var result = movieService.getMoviesWithFilter(1, null, 0, null, filter1);
+    var cursor = result.getPageInfo().getEndCursor().getValue();
+
+    var filter2 = MediaFilter.builder().years(List.of(2023)).build();
+
+    assertThatThrownBy(() -> movieService.getMoviesWithFilter(1, cursor, 0, null, filter2))
+        .isInstanceOf(InvalidCursorException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject cursor when contentRatings change between queries")
+  void shouldRejectCursorWhenContentRatingsChange() {
+    movieRepository.save(
+        Movie.builder()
+            .title("Movie A")
+            .contentRating(new ContentRating("MPAA", "PG-13", "US"))
+            .build());
+    movieRepository.save(
+        Movie.builder()
+            .title("Movie B")
+            .contentRating(new ContentRating("MPAA", "PG-13", "US"))
+            .build());
+
+    var filter1 = MediaFilter.builder().contentRatings(List.of("PG-13")).build();
+    var result = movieService.getMoviesWithFilter(1, null, 0, null, filter1);
+    var cursor = result.getPageInfo().getEndCursor().getValue();
+
+    var filter2 = MediaFilter.builder().contentRatings(List.of("R")).build();
+
+    assertThatThrownBy(() -> movieService.getMoviesWithFilter(1, cursor, 0, null, filter2))
+        .isInstanceOf(InvalidCursorException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject cursor when studioIds change between queries")
+  void shouldRejectCursorWhenStudioIdsChange() {
+    var studio = Company.builder().name("Studio A").build();
+    studio.setId(UUID.randomUUID());
+    movieRepository.save(Movie.builder().title("Movie A").studios(Set.of(studio)).build());
+    movieRepository.save(Movie.builder().title("Movie B").studios(Set.of(studio)).build());
+
+    var filter1 = MediaFilter.builder().studioIds(List.of(studio.getId())).build();
+    var result = movieService.getMoviesWithFilter(1, null, 0, null, filter1);
+    var cursor = result.getPageInfo().getEndCursor().getValue();
+
+    var filter2 = MediaFilter.builder().studioIds(List.of(UUID.randomUUID())).build();
+
+    assertThatThrownBy(() -> movieService.getMoviesWithFilter(1, cursor, 0, null, filter2))
+        .isInstanceOf(InvalidCursorException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject cursor when directorIds change between queries")
+  void shouldRejectCursorWhenDirectorIdsChange() {
+    var director = Person.builder().name("Director A").build();
+    director.setId(UUID.randomUUID());
+    movieRepository.save(Movie.builder().title("Movie A").directors(List.of(director)).build());
+    movieRepository.save(Movie.builder().title("Movie B").directors(List.of(director)).build());
+
+    var filter1 = MediaFilter.builder().directorIds(List.of(director.getId())).build();
+    var result = movieService.getMoviesWithFilter(1, null, 0, null, filter1);
+    var cursor = result.getPageInfo().getEndCursor().getValue();
+
+    var filter2 = MediaFilter.builder().directorIds(List.of(UUID.randomUUID())).build();
+
+    assertThatThrownBy(() -> movieService.getMoviesWithFilter(1, cursor, 0, null, filter2))
+        .isInstanceOf(InvalidCursorException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject cursor when castMemberIds change between queries")
+  void shouldRejectCursorWhenCastMemberIdsChange() {
+    var actor = Person.builder().name("Actor A").build();
+    actor.setId(UUID.randomUUID());
+    movieRepository.save(Movie.builder().title("Movie A").cast(List.of(actor)).build());
+    movieRepository.save(Movie.builder().title("Movie B").cast(List.of(actor)).build());
+
+    var filter1 = MediaFilter.builder().castMemberIds(List.of(actor.getId())).build();
+    var result = movieService.getMoviesWithFilter(1, null, 0, null, filter1);
+    var cursor = result.getPageInfo().getEndCursor().getValue();
+
+    var filter2 = MediaFilter.builder().castMemberIds(List.of(UUID.randomUUID())).build();
+
+    assertThatThrownBy(() -> movieService.getMoviesWithFilter(1, cursor, 0, null, filter2))
+        .isInstanceOf(InvalidCursorException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject cursor when unmatched changes between queries")
+  void shouldRejectCursorWhenUnmatchedChanges() {
+    movieRepository.save(Movie.builder().title("Movie A").build());
+    movieRepository.save(Movie.builder().title("Movie B").build());
+
+    var filter1 = MediaFilter.builder().unmatched(true).build();
+    var result = movieService.getMoviesWithFilter(1, null, 0, null, filter1);
+    var cursor = result.getPageInfo().getEndCursor().getValue();
+
+    var filter2 = MediaFilter.builder().unmatched(false).build();
+
+    assertThatThrownBy(() -> movieService.getMoviesWithFilter(1, cursor, 0, null, filter2))
         .isInstanceOf(InvalidCursorException.class);
   }
 

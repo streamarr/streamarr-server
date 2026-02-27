@@ -393,6 +393,88 @@ class LibraryResolverTest {
   }
 
   @Test
+  @DisplayName("Should pass sort options to movie service when sort input provided")
+  void shouldPassSortOptionsToMovieServiceWhenSortInputProvided() {
+    var libraryId = UUID.randomUUID();
+    var library =
+        Library.builder()
+            .name("Movies")
+            .filepathUri("file:///mpool/media/movies")
+            .status(LibraryStatus.HEALTHY)
+            .backend(LibraryBackend.LOCAL)
+            .type(MediaType.MOVIE)
+            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+            .build();
+    library.setId(libraryId);
+
+    var movie = Movie.builder().title("Inception").build();
+    movie.setId(UUID.randomUUID());
+
+    var cursor = new DefaultConnectionCursor("cursor1");
+    var connection =
+        new DefaultConnection<>(
+            List.of(new DefaultEdge<>(movie, cursor)),
+            new DefaultPageInfo(cursor, cursor, false, false));
+
+    when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
+    doReturn(connection)
+        .when(movieService)
+        .getMoviesWithFilter(anyInt(), any(), anyInt(), any(), any());
+
+    String title =
+        dgsQueryExecutor.executeAndExtractJsonPath(
+            String.format(
+                """
+                { library(id: "%s") { items(first: 10, sort: {by: ADDED, direction: DESC}) { edges { node { ... on Movie { title } } } } } }
+                """,
+                libraryId),
+            "data.library.items.edges[0].node.title");
+
+    assertThat(title).isEqualTo("Inception");
+  }
+
+  @Test
+  @DisplayName("Should pass filter options to movie service when filter input provided")
+  void shouldPassFilterOptionsToMovieServiceWhenFilterInputProvided() {
+    var libraryId = UUID.randomUUID();
+    var library =
+        Library.builder()
+            .name("Movies")
+            .filepathUri("file:///mpool/media/movies")
+            .status(LibraryStatus.HEALTHY)
+            .backend(LibraryBackend.LOCAL)
+            .type(MediaType.MOVIE)
+            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+            .build();
+    library.setId(libraryId);
+
+    var movie = Movie.builder().title("Filtered Movie").build();
+    movie.setId(UUID.randomUUID());
+
+    var cursor = new DefaultConnectionCursor("cursor1");
+    var connection =
+        new DefaultConnection<>(
+            List.of(new DefaultEdge<>(movie, cursor)),
+            new DefaultPageInfo(cursor, cursor, false, false));
+
+    when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
+    doReturn(connection)
+        .when(movieService)
+        .getMoviesWithFilter(anyInt(), any(), anyInt(), any(), any());
+
+    String title =
+        dgsQueryExecutor.executeAndExtractJsonPath(
+            String.format(
+                """
+                { library(id: "%s") { items(first: 10, filter: {startLetter: A, years: [2024], contentRatings: ["PG-13"], unmatched: false}) { edges { node { ... on Movie { title } } } } } }
+                """,
+                libraryId),
+            "data.library.items.edges[0].node.title");
+
+    assertThat(title).isEqualTo("Filtered Movie");
+  }
+
+  @Test
   @DisplayName("Should throw with simple class name when unsupported media type in type resolver")
   void shouldThrowWithSimpleClassNameWhenUnsupportedMediaTypeInTypeResolver() {
     var resolver = new LibraryResolver(null, null, null, null);
