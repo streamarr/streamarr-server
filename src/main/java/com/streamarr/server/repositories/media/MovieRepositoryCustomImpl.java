@@ -49,8 +49,7 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
         };
 
     var seekCondition =
-        buildSeekCondition(
-            filter, sortField(filter), filter.getPreviousSortFieldValue(), options.getCursorId());
+        buildSeekCondition(filter, sortField(filter), options.getCursorId());
 
     var query =
         context
@@ -225,7 +224,7 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
 
   @SuppressWarnings("unchecked")
   private Condition buildSeekCondition(
-      MediaFilter filter, Field<?> sortCol, Object sortValue, Optional<java.util.UUID> cursorId) {
+      MediaFilter filter, Field<?> sortCol, Optional<java.util.UUID> cursorId) {
     var idField = Tables.BASE_COLLECTABLE.ID;
     var coercedValue = coerceSortValue(filter);
     var cursorIdValue = cursorId.orElse(null);
