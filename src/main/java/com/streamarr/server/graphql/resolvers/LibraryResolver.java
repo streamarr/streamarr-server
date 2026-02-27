@@ -16,6 +16,8 @@ import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
 import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.graphql.dto.AlphabetIndexDto;
 import com.streamarr.server.graphql.inputs.AddLibraryInput;
+import com.streamarr.server.graphql.inputs.MediaFilterInput;
+import com.streamarr.server.graphql.inputs.MediaSortInput;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
@@ -83,17 +85,32 @@ public class LibraryResolver {
 
   @DgsData(parentType = "Library")
   public Connection<? extends BaseCollectable<?>> items(
-      @InputArgument MediaFilter filter, DataFetchingEnvironment dfe) {
+      @InputArgument MediaSortInput sort,
+      @InputArgument MediaFilterInput filter,
+      DataFetchingEnvironment dfe) {
     Library library = dfe.getSource();
     int first = dfe.getArgumentOrDefault("first", 0);
     String after = dfe.getArgument("after");
     int last = dfe.getArgumentOrDefault("last", 0);
     String before = dfe.getArgument("before");
 
-    var effectiveFilter =
-        (filter != null ? filter.toBuilder() : MediaFilter.builder())
-            .libraryId(library.getId())
-            .build();
+    var builder = MediaFilter.builder().libraryId(library.getId());
+
+    applySortOptions(builder, sort);
+
+    if (filter != null) {
+      builder
+          .startLetter(filter.startLetter())
+          .genreIds(parseUuidList(filter.genreIds()))
+          .years(filter.years())
+          .contentRatings(filter.contentRatings())
+          .studioIds(parseUuidList(filter.studioIds()))
+          .directorIds(parseUuidList(filter.directorIds()))
+          .castMemberIds(parseUuidList(filter.castMemberIds()))
+          .unmatched(filter.unmatched());
+    }
+
+    var effectiveFilter = builder.build();
 
     return switch (library.getType()) {
       case MOVIE -> movieService.getMoviesWithFilter(first, after, last, before, effectiveFilter);
@@ -123,11 +140,30 @@ public class LibraryResolver {
     throw new UnsupportedMediaTypeException(media.getClass().getSimpleName());
   }
 
+  private void applySortOptions(MediaFilter.MediaFilterBuilder builder, MediaSortInput sort) {
+    if (sort == null) {
+      return;
+    }
+    if (sort.by() != null) {
+      builder.sortBy(sort.by());
+    }
+    if (sort.direction() != null) {
+      builder.sortDirection(sort.direction().toSortOrder());
+    }
+  }
+
   private UUID parseUuid(String id) {
     try {
       return UUID.fromString(id);
     } catch (IllegalArgumentException _) {
       throw new InvalidIdException(id);
     }
+  }
+
+  private List<UUID> parseUuidList(List<String> ids) {
+    if (ids == null || ids.isEmpty()) {
+      return List.of();
+    }
+    return ids.stream().map(this::parseUuid).toList();
   }
 }

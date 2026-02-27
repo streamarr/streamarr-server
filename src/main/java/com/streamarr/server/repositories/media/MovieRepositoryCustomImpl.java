@@ -2,7 +2,6 @@ package com.streamarr.server.repositories.media;
 
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.noCondition;
-import static org.jooq.impl.DSL.row;
 
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.graphql.cursor.MediaFilter;
@@ -13,15 +12,14 @@ import com.streamarr.server.jooq.generated.enums.ExternalSourceType;
 import com.streamarr.server.repositories.JooqQueryHelper;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
+import org.jooq.Field;
 import org.jooq.SortField;
-import org.jooq.SortOrder;
 
 @RequiredArgsConstructor
 public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
@@ -37,21 +35,17 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
     var originalDirection = filter.getSortDirection();
 
     if (shouldReverse) {
-      filter = reverseFilter(filter);
+      filter = JooqQueryHelper.reverseFilter(filter);
     }
 
     var orderByColumns =
         new SortField[] {
           buildOrderBy(filter), Tables.BASE_COLLECTABLE.ID.sort(filter.getSortDirection())
         };
-    var seekValues = new Object[] {filter.getPreviousSortFieldValue(), options.getCursorId()};
-
-    var fields = Arrays.stream(orderByColumns).map(SortField::$field).toList();
 
     var seekCondition =
-        filter.getSortDirection().equals(SortOrder.DESC)
-            ? row(fields).lessOrEqual(seekValues)
-            : row(fields).greaterOrEqual(seekValues);
+        JooqQueryHelper.buildSeekCondition(
+            filter, sortField(filter), orderByColumns, options.getCursorId().orElseThrow());
 
     var query =
         context
@@ -60,8 +54,11 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
             .innerJoin(Tables.BASE_COLLECTABLE)
             .on(Tables.MOVIE.ID.eq(Tables.BASE_COLLECTABLE.ID))
             .where(seekCondition)
-            .and(libraryCondition(filter))
-            .and(JooqQueryHelper.startLetterCondition(filter.getStartLetter(), originalDirection))
+            .and(JooqQueryHelper.libraryCondition(filter.getLibraryId()))
+            .and(
+                JooqQueryHelper.startLetterCondition(
+                    filter.getStartLetter(), originalDirection, filter.getSortBy()))
+            .and(filterConditions(filter))
             .orderBy(orderByColumns)
             // N+2 (Allows us to efficiently check if there are items before AND after N)
             .limit(options.getPaginationOptions().getLimit() + 2);
@@ -100,14 +97,6 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
     return Optional.of(results.getFirst());
   }
 
-  private MediaFilter reverseFilter(MediaFilter filter) {
-    if (filter.getSortDirection().equals(SortOrder.DESC)) {
-      return filter.toBuilder().sortDirection(SortOrder.ASC).build();
-    }
-
-    return filter.toBuilder().sortDirection(SortOrder.DESC).build();
-  }
-
   public List<Movie> findFirstWithFilter(MediaPaginationOptions options) {
 
     var orderByColumns =
@@ -122,30 +111,88 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
             .from(Tables.MOVIE)
             .innerJoin(Tables.BASE_COLLECTABLE)
             .on(Tables.MOVIE.ID.eq(Tables.BASE_COLLECTABLE.ID))
-            .where(libraryCondition(options.getMediaFilter()))
+            .where(JooqQueryHelper.libraryCondition(options.getMediaFilter().getLibraryId()))
             .and(
                 JooqQueryHelper.startLetterCondition(
                     options.getMediaFilter().getStartLetter(),
-                    options.getMediaFilter().getSortDirection()))
+                    options.getMediaFilter().getSortDirection(),
+                    options.getMediaFilter().getSortBy()))
+            .and(filterConditions(options.getMediaFilter()))
             .orderBy(orderByColumns)
             .limit(options.getPaginationOptions().getLimit() + 1);
 
     return JooqQueryHelper.nativeQuery(entityManager, query, Movie.class);
   }
 
-  private Condition libraryCondition(MediaFilter filter) {
-    var libraryId = filter.getLibraryId();
-    return libraryId != null ? Tables.BASE_COLLECTABLE.LIBRARY_ID.eq(libraryId) : noCondition();
+  private Condition filterConditions(MediaFilter filter) {
+    var condition = noCondition();
+
+    condition =
+        condition.and(
+            JooqQueryHelper.semiJoinCondition(
+                Tables.MOVIE.ID,
+                Tables.MOVIE_GENRE,
+                Tables.MOVIE_GENRE.MOVIE_ID,
+                Tables.MOVIE_GENRE.GENRE_ID,
+                filter.getGenreIds()));
+
+    condition =
+        condition.and(JooqQueryHelper.yearCondition(Tables.MOVIE.RELEASE_DATE, filter.getYears()));
+
+    condition =
+        condition.and(
+            JooqQueryHelper.contentRatingCondition(
+                Tables.MOVIE.CONTENT_RATING_VALUE, filter.getContentRatings()));
+
+    condition =
+        condition.and(
+            JooqQueryHelper.semiJoinCondition(
+                Tables.MOVIE.ID,
+                Tables.MOVIE_COMPANY,
+                Tables.MOVIE_COMPANY.MOVIE_ID,
+                Tables.MOVIE_COMPANY.COMPANY_ID,
+                filter.getStudioIds()));
+
+    condition =
+        condition.and(
+            JooqQueryHelper.semiJoinCondition(
+                Tables.MOVIE.ID,
+                Tables.MOVIE_DIRECTOR,
+                Tables.MOVIE_DIRECTOR.MOVIE_ID,
+                Tables.MOVIE_DIRECTOR.PERSON_ID,
+                filter.getDirectorIds()));
+
+    condition =
+        condition.and(
+            JooqQueryHelper.semiJoinCondition(
+                Tables.MOVIE.ID,
+                Tables.MOVIE_PERSON,
+                Tables.MOVIE_PERSON.MOVIE_ID,
+                Tables.MOVIE_PERSON.PERSON_ID,
+                filter.getCastMemberIds()));
+
+    condition = condition.and(JooqQueryHelper.unmatchedCondition(filter.getUnmatched()));
+
+    return condition;
   }
 
-  // TODO(#45): new sort fields (RELEASE_DATE, RUNTIME) need a composite index
-  // on (library_id, <sort_field>, id) and CursorUtil support for their value types.
+  private Field<?> sortField(MediaFilter filter) {
+    return switch (filter.getSortBy()) {
+      case TITLE -> Tables.BASE_COLLECTABLE.TITLE_SORT;
+      case ADDED -> Tables.BASE_COLLECTABLE.CREATED_ON;
+      case RELEASE_DATE -> Tables.MOVIE.RELEASE_DATE;
+      case RUNTIME -> Tables.MOVIE.RUNTIME;
+    };
+  }
+
   private SortField<?> buildOrderBy(MediaFilter filter) {
     var direction = filter.getSortDirection();
 
     return switch (filter.getSortBy()) {
       case TITLE -> Tables.BASE_COLLECTABLE.TITLE_SORT.sort(direction);
       case ADDED -> Tables.BASE_COLLECTABLE.CREATED_ON.sort(direction);
+      case RELEASE_DATE -> Tables.MOVIE.RELEASE_DATE.sort(direction).nullsLast();
+      case RUNTIME -> Tables.MOVIE.RUNTIME.sort(direction).nullsLast();
     };
   }
 }

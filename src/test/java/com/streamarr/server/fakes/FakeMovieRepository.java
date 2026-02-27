@@ -49,14 +49,14 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
         options.getPaginationOptions().getPaginationDirection().equals(PaginationDirection.REVERSE);
     var limit = options.getPaginationOptions().getLimit();
 
-    var effectiveFilter = shouldReverse ? reverseFilter(filter) : filter;
+    var effectiveFilter = shouldReverse ? FakeFilterHelper.reverseFilter(filter) : filter;
 
     var sorted =
         filterByLibrary(effectiveFilter)
             .sorted(comparatorFor(effectiveFilter, effectiveFilter.getSortDirection()))
             .toList();
 
-    var startIndex = findCursorIndex(sorted, options.getCursorId());
+    var startIndex = FakeFilterHelper.findCursorIndex(sorted, options.getCursorId());
     var endIndex = Math.min(sorted.size(), startIndex + limit + 2);
     var result = new ArrayList<>(sorted.subList(startIndex, endIndex));
 
@@ -67,42 +67,98 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
     return result;
   }
 
-  private int findCursorIndex(List<Movie> sorted, Optional<UUID> cursorId) {
-    if (cursorId.isEmpty()) {
-      return 0;
-    }
-
-    var id = cursorId.get();
-    for (int i = 0; i < sorted.size(); i++) {
-      if (sorted.get(i).getId().equals(id)) {
-        return i;
-      }
-    }
-
-    return 0;
-  }
-
   private Stream<Movie> filterByLibrary(MediaFilter filter) {
     var libraryId = filter.getLibraryId();
 
-    if (libraryId == null) {
-      return database.values().stream();
+    Stream<Movie> stream =
+        libraryId == null
+            ? database.values().stream()
+            : database.values().stream()
+                .filter(m -> m.getLibrary() != null && libraryId.equals(m.getLibrary().getId()));
+
+    return applyFilters(filterByStartLetter(stream, filter), filter);
+  }
+
+  private Stream<Movie> applyFilters(Stream<Movie> stream, MediaFilter filter) {
+    var genreIds = filter.getGenreIds();
+    if (genreIds != null && !genreIds.isEmpty()) {
+      stream =
+          stream.filter(m -> m.getGenres().stream().anyMatch(g -> genreIds.contains(g.getId())));
     }
 
-    return database.values().stream()
-        .filter(m -> m.getLibrary() != null && libraryId.equals(m.getLibrary().getId()));
+    var years = filter.getYears();
+    if (years != null && !years.isEmpty()) {
+      stream =
+          stream.filter(
+              m -> m.getReleaseDate() != null && years.contains(m.getReleaseDate().getYear()));
+    }
+
+    var contentRatings = filter.getContentRatings();
+    if (contentRatings != null && !contentRatings.isEmpty()) {
+      stream =
+          stream.filter(
+              m ->
+                  m.getContentRating() != null
+                      && contentRatings.contains(m.getContentRating().value()));
+    }
+
+    var studioIds = filter.getStudioIds();
+    if (studioIds != null && !studioIds.isEmpty()) {
+      stream =
+          stream.filter(m -> m.getStudios().stream().anyMatch(s -> studioIds.contains(s.getId())));
+    }
+
+    var directorIds = filter.getDirectorIds();
+    if (directorIds != null && !directorIds.isEmpty()) {
+      stream =
+          stream.filter(
+              m -> m.getDirectors().stream().anyMatch(d -> directorIds.contains(d.getId())));
+    }
+
+    var castMemberIds = filter.getCastMemberIds();
+    if (castMemberIds != null && !castMemberIds.isEmpty()) {
+      stream =
+          stream.filter(m -> m.getCast().stream().anyMatch(p -> castMemberIds.contains(p.getId())));
+    }
+
+    if (Boolean.TRUE.equals(filter.getUnmatched())) {
+      stream = stream.filter(m -> m.getExternalIds().isEmpty());
+    }
+
+    return stream;
+  }
+
+  private Stream<Movie> filterByStartLetter(Stream<Movie> stream, MediaFilter filter) {
+    var letter = filter.getStartLetter();
+    if (letter == null) {
+      return stream;
+    }
+
+    if (filter.getSortBy() != OrderMediaBy.TITLE) {
+      return stream.filter(m -> FakeFilterHelper.matchesLetterEquality(m.getTitle(), letter));
+    }
+
+    if (filter.getSortDirection() == SortOrder.DESC) {
+      return stream.filter(m -> FakeFilterHelper.matchesLetterDescRange(m.getTitle(), letter));
+    }
+
+    return stream.filter(m -> FakeFilterHelper.matchesLetterAscRange(m.getTitle(), letter));
   }
 
   private Comparator<Movie> comparatorFor(MediaFilter filter, SortOrder idSortOrder) {
-    Comparator<Movie> primary =
-        filter.getSortBy() == OrderMediaBy.ADDED
-            ? Comparator.comparing(
-                Movie::getCreatedOn, Comparator.nullsLast(Comparator.naturalOrder()))
-            : Comparator.comparing(Movie::getTitle);
+    var isDesc = filter.getSortDirection() == SortOrder.DESC;
 
-    if (filter.getSortDirection() == SortOrder.DESC) {
-      primary = primary.reversed();
-    }
+    Comparator<Movie> primary =
+        switch (filter.getSortBy()) {
+          case ADDED -> Comparator.comparing(Movie::getCreatedOn, nullsLastDirectional(isDesc));
+          case RELEASE_DATE ->
+              Comparator.comparing(Movie::getReleaseDate, nullsLastDirectional(isDesc));
+          case RUNTIME -> Comparator.comparing(Movie::getRuntime, nullsLastDirectional(isDesc));
+          case TITLE ->
+              isDesc
+                  ? Comparator.comparing(Movie::getTitle, Comparator.reverseOrder())
+                  : Comparator.comparing(Movie::getTitle);
+        };
 
     Comparator<Movie> idComparator = Comparator.comparing(Movie::getId);
     if (idSortOrder == SortOrder.DESC) {
@@ -112,9 +168,9 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
     return primary.thenComparing(idComparator);
   }
 
-  private MediaFilter reverseFilter(MediaFilter filter) {
-    var reversed = filter.getSortDirection() == SortOrder.DESC ? SortOrder.ASC : SortOrder.DESC;
-    return filter.toBuilder().sortDirection(reversed).build();
+  private <T extends Comparable<T>> Comparator<T> nullsLastDirectional(boolean desc) {
+    Comparator<T> inner = desc ? Comparator.reverseOrder() : Comparator.naturalOrder();
+    return Comparator.nullsLast(inner);
   }
 
   @Override

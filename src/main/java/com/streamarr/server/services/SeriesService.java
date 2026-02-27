@@ -306,7 +306,7 @@ public class SeriesService {
 
     var mediaOptionsFromCursor = cursorUtil.decodeMediaCursor(paginationOptions);
 
-    validateDecodedCursorAgainstFilter(mediaOptionsFromCursor, filter);
+    relayPaginationService.validateCursorAgainstFilter(mediaOptionsFromCursor, filter);
 
     return usingCursorGetSeriesAsConnection(mediaOptionsFromCursor);
   }
@@ -344,6 +344,8 @@ public class SeriesService {
     return switch (filter.getSortBy()) {
       case TITLE -> series.getTitleSort();
       case ADDED -> series.getCreatedOn();
+      case RELEASE_DATE -> series.getFirstAirDate();
+      case RUNTIME -> series.getRuntime();
     };
   }
 
@@ -354,19 +356,5 @@ public class SeriesService {
 
     return relayPaginationService.buildConnection(
         edges, options.getPaginationOptions(), options.getCursorId());
-  }
-
-  private void validateDecodedCursorAgainstFilter(
-      MediaPaginationOptions decodedOptions, MediaFilter filter) {
-    var previousFilter = decodedOptions.getMediaFilter();
-
-    relayPaginationService.validateCursorField(
-        "sortBy", previousFilter.getSortBy(), filter.getSortBy());
-    relayPaginationService.validateCursorField(
-        "sortDirection", previousFilter.getSortDirection(), filter.getSortDirection());
-    relayPaginationService.validateCursorField(
-        "libraryId", previousFilter.getLibraryId(), filter.getLibraryId());
-    relayPaginationService.validateCursorField(
-        "startLetter", previousFilter.getStartLetter(), filter.getStartLetter());
   }
 }

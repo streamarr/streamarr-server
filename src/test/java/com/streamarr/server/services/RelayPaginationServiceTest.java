@@ -452,6 +452,85 @@ class RelayPaginationServiceTest {
   }
 
   @Test
+  @DisplayName("Should not drop first edge when cursor item is absent from forward seek results")
+  void shouldNotDropFirstEdgeWhenCursorItemAbsentFromForwardSeekResults() {
+    var cursorId = UUID.randomUUID();
+    var edgeId = UUID.randomUUID();
+
+    List<Edge<Movie>> edges =
+        List.of(
+            new DefaultEdge<>(
+                Movie.builder().id(edgeId).build(), new DefaultConnectionCursor("c1")));
+
+    var options =
+        PaginationOptions.builder()
+            .cursor(Optional.of("c1"))
+            .paginationDirection(PaginationDirection.FORWARD)
+            .limit(1)
+            .build();
+
+    // cursorId does NOT match any edge — simulates deleted cursor item
+    var connection = relayPaginationService.buildConnection(edges, options, Optional.of(cursorId));
+
+    assertThat(connection.getEdges()).hasSize(1);
+    assertThat(connection.getEdges().getFirst().getNode().getId()).isEqualTo(edgeId);
+    assertThat(connection.getPageInfo().isHasPreviousPage()).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should not drop last edge when cursor item is absent from backward seek results")
+  void shouldNotDropLastEdgeWhenCursorItemAbsentFromBackwardSeekResults() {
+    var cursorId = UUID.randomUUID();
+    var edgeId = UUID.randomUUID();
+
+    List<Edge<Movie>> edges =
+        List.of(
+            new DefaultEdge<>(
+                Movie.builder().id(edgeId).build(), new DefaultConnectionCursor("c1")));
+
+    var options =
+        PaginationOptions.builder()
+            .cursor(Optional.of("c1"))
+            .paginationDirection(PaginationDirection.REVERSE)
+            .limit(1)
+            .build();
+
+    // cursorId does NOT match any edge — simulates deleted cursor item
+    var connection = relayPaginationService.buildConnection(edges, options, Optional.of(cursorId));
+
+    assertThat(connection.getEdges()).hasSize(1);
+    assertThat(connection.getEdges().getFirst().getNode().getId()).isEqualTo(edgeId);
+    assertThat(connection.getPageInfo().isHasNextPage()).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should return at most limit edges when cursor item absent from forward results")
+  void shouldReturnAtMostLimitEdgesWhenCursorItemAbsentFromForwardResults() {
+    var cursorId = UUID.randomUUID();
+
+    // Simulate DB returning limit+2 edges where cursor item is absent (deleted)
+    List<Edge<Movie>> edges =
+        List.of(
+            new DefaultEdge<>(
+                Movie.builder().id(UUID.randomUUID()).build(), new DefaultConnectionCursor("c1")),
+            new DefaultEdge<>(
+                Movie.builder().id(UUID.randomUUID()).build(), new DefaultConnectionCursor("c2")),
+            new DefaultEdge<>(
+                Movie.builder().id(UUID.randomUUID()).build(), new DefaultConnectionCursor("c3")));
+
+    var options =
+        PaginationOptions.builder()
+            .cursor(Optional.of("c1"))
+            .paginationDirection(PaginationDirection.FORWARD)
+            .limit(1)
+            .build();
+
+    var connection = relayPaginationService.buildConnection(edges, options, Optional.of(cursorId));
+
+    assertThat(connection.getEdges()).hasSize(1);
+  }
+
+  @Test
   @DisplayName("Should not throw when validating cursor field with both values null")
   void shouldNotThrowWhenValidatingCursorFieldWithBothValuesNull() {
     assertThatNoException()
