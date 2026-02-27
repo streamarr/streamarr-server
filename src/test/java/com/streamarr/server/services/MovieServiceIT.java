@@ -571,4 +571,46 @@ class MovieServiceIT extends AbstractIntegrationTest {
 
     assertThat(titles).containsExactlyInAnyOrder("123 Numbers", "~Tilde Movie");
   }
+
+  @Test
+  @DisplayName(
+      "Should place null release dates last when sorting by RELEASE_DATE DESC")
+  void shouldPlaceNullReleaseDatesLastWhenSortingByReleaseDateDesc() {
+
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+
+    movieRepository.saveAndFlush(
+        Movie.builder()
+            .title("Dated Early")
+            .titleSort("dated early")
+            .releaseDate(LocalDate.of(2000, 1, 1))
+            .library(library)
+            .build());
+    movieRepository.saveAndFlush(
+        Movie.builder()
+            .title("Dated Late")
+            .titleSort("dated late")
+            .releaseDate(LocalDate.of(2024, 6, 15))
+            .library(library)
+            .build());
+    movieRepository.saveAndFlush(
+        Movie.builder()
+            .title("Undated")
+            .titleSort("undated")
+            .library(library)
+            .build());
+
+    var filter =
+        MediaFilter.builder()
+            .libraryId(library.getId())
+            .sortBy(OrderMediaBy.RELEASE_DATE)
+            .sortDirection(SortOrder.DESC)
+            .build();
+
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactly("Dated Late", "Dated Early", "Undated");
+  }
 }
