@@ -204,8 +204,8 @@ class MovieServiceIT extends AbstractIntegrationTest {
     var backwardPage = movieService.getMoviesWithFilter(0, null, 3, endCursor, filter);
     var backwardTitles = backwardPage.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
-    assertThat(backwardTitles).isSortedAccordingTo(String::compareTo);
     assertThat(backwardTitles)
+        .isSortedAccordingTo(String::compareTo)
         .containsExactlyElementsOf(allTitles.subList(allTitles.size() - 4, allTitles.size() - 1));
   }
 
@@ -802,8 +802,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
     var page2Title = page2.getEdges().get(0).getNode().getTitle();
 
     // Page 2 must contain whichever undated movie was not on page 1
-    assertThat(page2Title).isNotEqualTo(page1SecondTitle);
-    assertThat(page2Title).startsWith("Undated");
+    assertThat(page2Title).isNotEqualTo(page1SecondTitle).startsWith("Undated");
 
     // All 3 movies seen — no duplicates, no skips
     assertThat(List.of("Dated", page1SecondTitle, page2Title)).doesNotHaveDuplicates();

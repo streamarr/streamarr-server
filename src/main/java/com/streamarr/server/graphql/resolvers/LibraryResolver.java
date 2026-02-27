@@ -162,7 +162,7 @@ public class LibraryResolver {
 
   private List<UUID> parseUuidList(List<String> ids) {
     if (ids == null || ids.isEmpty()) {
-      return null;
+      return List.of();
     }
     return ids.stream().map(this::parseUuid).toList();
   }

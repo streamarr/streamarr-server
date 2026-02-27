@@ -422,7 +422,7 @@ class SeriesServiceIT extends AbstractIntegrationTest {
     assertThat(allSeries.getEdges()).hasSize(3);
 
     var endCursor = allSeries.getPageInfo().getEndCursor().getValue();
-    var backwardPage = seriesService.getSeriesWithFilter(0, null, 1, endCursor.toString(), filter);
+    var backwardPage = seriesService.getSeriesWithFilter(0, null, 1, endCursor, filter);
 
     assertThat(backwardPage.getEdges()).hasSize(1);
     assertThat(backwardPage.getEdges().get(0).getNode().getTitle()).isEqualTo("Beta Show");
@@ -437,7 +437,7 @@ class SeriesServiceIT extends AbstractIntegrationTest {
     var forwardTitles = forwardAll.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
     var endCursor = forwardAll.getPageInfo().getEndCursor().getValue();
-    var backwardPage = seriesService.getSeriesWithFilter(0, null, 2, endCursor.toString(), filter);
+    var backwardPage = seriesService.getSeriesWithFilter(0, null, 2, endCursor, filter);
     var backwardTitles = backwardPage.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
     assertThat(backwardTitles).containsExactlyElementsOf(forwardTitles.subList(0, 2));
@@ -862,8 +862,7 @@ class SeriesServiceIT extends AbstractIntegrationTest {
     var page2Title = page2.getEdges().get(0).getNode().getTitle();
 
     // Page 2 must contain whichever undated series was not on page 1
-    assertThat(page2Title).isNotEqualTo(page1SecondTitle);
-    assertThat(page2Title).startsWith("Undated");
+    assertThat(page2Title).isNotEqualTo(page1SecondTitle).startsWith("Undated");
 
     // All 3 series seen — no duplicates, no skips
     assertThat(List.of("Dated Show", page1SecondTitle, page2Title)).doesNotHaveDuplicates();
