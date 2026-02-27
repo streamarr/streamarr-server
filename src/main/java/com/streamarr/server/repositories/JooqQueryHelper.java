@@ -61,7 +61,9 @@ public class JooqQueryHelper {
     var firstCharLower = lower(left(Tables.BASE_COLLECTABLE.TITLE_SORT, 1));
 
     if (startLetter == AlphabetLetter.HASH) {
-      return firstCharLower.lessThan(inline("a"));
+      return firstCharLower
+          .lessThan(inline("a"))
+          .or(firstCharLower.greaterThan(inline("z")));
     }
 
     return firstCharLower.eq(inline(startLetter.name().toLowerCase()));
@@ -84,7 +86,9 @@ public class JooqQueryHelper {
     var firstCharLower = lower(left(Tables.BASE_COLLECTABLE.TITLE_SORT, 1));
 
     if (startLetter == AlphabetLetter.HASH) {
-      return firstCharLower.lessThan(inline("a"));
+      return firstCharLower
+          .lessThan(inline("a"))
+          .or(firstCharLower.greaterThan(inline("z")));
     }
 
     return firstCharLower.lessOrEqual(inline(startLetter.name().toLowerCase()));

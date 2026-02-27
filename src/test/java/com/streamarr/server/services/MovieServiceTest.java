@@ -211,6 +211,44 @@ class MovieServiceTest {
   }
 
   @Test
+  @DisplayName("Should include title above z in HASH filter when sortBy is RELEASE_DATE")
+  void shouldIncludeTitleAboveZInHashFilterWhenSortByIsReleaseDate() {
+    var libraryId = UUID.randomUUID();
+    var library = Library.builder().id(libraryId).name("Movies").build();
+    movieRepository.save(
+        Movie.builder()
+            .title("~Tilde Movie")
+            .releaseDate(LocalDate.of(2024, 1, 1))
+            .library(library)
+            .build());
+    movieRepository.save(
+        Movie.builder()
+            .title("123 Numbers")
+            .releaseDate(LocalDate.of(2023, 6, 15))
+            .library(library)
+            .build());
+    movieRepository.save(
+        Movie.builder()
+            .title("Alpha Movie")
+            .releaseDate(LocalDate.of(2022, 3, 10))
+            .library(library)
+            .build());
+
+    var filter =
+        MediaFilter.builder()
+            .sortBy(OrderMediaBy.RELEASE_DATE)
+            .sortDirection(SortOrder.ASC)
+            .libraryId(libraryId)
+            .startLetter(com.streamarr.server.domain.AlphabetLetter.HASH)
+            .build();
+
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactlyInAnyOrder("123 Numbers", "~Tilde Movie");
+  }
+
+  @Test
   @DisplayName("Should filter by start letter as equality when sort is not TITLE")
   void shouldFilterByStartLetterAsEqualityWhenSortIsNotTitle() {
     var libraryId = UUID.randomUUID();

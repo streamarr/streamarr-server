@@ -13,6 +13,7 @@ import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.graphql.cursor.OrderMediaBy;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.stream.Stream;
 import org.jooq.SortOrder;
@@ -38,6 +39,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
   private Library savedLibraryB;
   private Library savedLibraryC;
   private Library savedLibraryD;
+  private Library savedLibraryE;
 
   @BeforeAll
   public void setup() {
@@ -80,6 +82,31 @@ class MovieServiceIT extends AbstractIntegrationTest {
         Movie.builder().title("123 Movie").titleSort("123 Movie").library(savedLibraryD).build());
     movieRepository.saveAndFlush(
         Movie.builder().title("Zorro").titleSort("Zorro").library(savedLibraryD).build());
+
+    var libraryE = LibraryFixtureCreator.buildFakeLibrary();
+    savedLibraryE = libraryRepository.saveAndFlush(libraryE);
+
+    movieRepository.saveAndFlush(
+        Movie.builder()
+            .title("~Tilde Movie")
+            .titleSort("~tilde movie")
+            .releaseDate(LocalDate.of(2024, 1, 1))
+            .library(savedLibraryE)
+            .build());
+    movieRepository.saveAndFlush(
+        Movie.builder()
+            .title("123 Numbers")
+            .titleSort("123 numbers")
+            .releaseDate(LocalDate.of(2023, 6, 15))
+            .library(savedLibraryE)
+            .build());
+    movieRepository.saveAndFlush(
+        Movie.builder()
+            .title("Alpha Movie")
+            .titleSort("alpha movie")
+            .releaseDate(LocalDate.of(2022, 3, 10))
+            .library(savedLibraryE)
+            .build());
   }
 
   private MediaFilter filterForLibrary(Library library) {
@@ -503,5 +530,45 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .toList();
 
     assertThat(allTitles).containsExactly("Beta", "Batman", "Avengers", "Alpha", "123 Movie");
+  }
+
+  @Test
+  @DisplayName(
+      "Should include title starting above z in HASH filter when sortBy is RELEASE_DATE")
+  void shouldIncludeTitleStartingAboveZInHashFilterWhenSortByIsReleaseDate() {
+
+    var filter =
+        MediaFilter.builder()
+            .libraryId(savedLibraryE.getId())
+            .sortBy(OrderMediaBy.RELEASE_DATE)
+            .sortDirection(SortOrder.ASC)
+            .startLetter(AlphabetLetter.HASH)
+            .build();
+
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactlyInAnyOrder("123 Numbers", "~Tilde Movie");
+  }
+
+  @Test
+  @DisplayName(
+      "Should include title starting above z in HASH filter when sortBy is TITLE DESC")
+  void shouldIncludeTitleStartingAboveZInHashFilterWhenSortByIsTitleDesc() {
+
+    var filter =
+        MediaFilter.builder()
+            .libraryId(savedLibraryE.getId())
+            .sortBy(OrderMediaBy.TITLE)
+            .sortDirection(SortOrder.DESC)
+            .startLetter(AlphabetLetter.HASH)
+            .build();
+
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactlyInAnyOrder("123 Numbers", "~Tilde Movie");
   }
 }
