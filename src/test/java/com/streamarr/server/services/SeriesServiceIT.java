@@ -430,13 +430,11 @@ class SeriesServiceIT extends AbstractIntegrationTest {
     var filter = filterForLibrary(savedLibraryB);
 
     var forwardAll = seriesService.getSeriesWithFilter(3, null, 0, null, filter);
-    var forwardTitles =
-        forwardAll.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var forwardTitles = forwardAll.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
     var endCursor = forwardAll.getPageInfo().getEndCursor().getValue();
     var backwardPage = seriesService.getSeriesWithFilter(0, null, 2, endCursor.toString(), filter);
-    var backwardTitles =
-        backwardPage.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var backwardTitles = backwardPage.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
     assertThat(backwardTitles).containsExactlyElementsOf(forwardTitles.subList(0, 2));
   }

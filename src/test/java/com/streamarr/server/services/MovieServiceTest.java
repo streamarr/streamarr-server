@@ -34,7 +34,6 @@ import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import java.time.LocalDate;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -189,13 +188,11 @@ class MovieServiceTest {
     movieRepository.save(Movie.builder().title("Date").build());
 
     var forwardAll = movieService.getMoviesWithFilter(4, null, 0, null, null);
-    var forwardTitles =
-        forwardAll.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var forwardTitles = forwardAll.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
     var endCursor = forwardAll.getPageInfo().getEndCursor().getValue();
     var backwardPage = movieService.getMoviesWithFilter(0, null, 3, endCursor, null);
-    var backwardTitles =
-        backwardPage.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var backwardTitles = backwardPage.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
     assertThat(backwardTitles).containsExactlyElementsOf(forwardTitles.subList(0, 3));
   }
@@ -304,15 +301,10 @@ class MovieServiceTest {
     var genreComedy = Genre.builder().name("Comedy").sourceId("comedy").build();
     genreComedy.setId(UUID.randomUUID());
 
+    movieRepository.save(Movie.builder().title("Action Movie").genres(Set.of(genreAction)).build());
+    movieRepository.save(Movie.builder().title("Comedy Movie").genres(Set.of(genreComedy)).build());
     movieRepository.save(
-        Movie.builder().title("Action Movie").genres(Set.of(genreAction)).build());
-    movieRepository.save(
-        Movie.builder().title("Comedy Movie").genres(Set.of(genreComedy)).build());
-    movieRepository.save(
-        Movie.builder()
-            .title("Action Comedy")
-            .genres(Set.of(genreAction, genreComedy))
-            .build());
+        Movie.builder().title("Action Comedy").genres(Set.of(genreAction, genreComedy)).build());
 
     var filter = MediaFilter.builder().genreIds(List.of(genreAction.getId())).build();
     var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
@@ -331,16 +323,12 @@ class MovieServiceTest {
     var genreDrama = Genre.builder().name("Drama").sourceId("drama").build();
     genreDrama.setId(UUID.randomUUID());
 
-    movieRepository.save(
-        Movie.builder().title("Action Movie").genres(Set.of(genreAction)).build());
-    movieRepository.save(
-        Movie.builder().title("Comedy Movie").genres(Set.of(genreComedy)).build());
+    movieRepository.save(Movie.builder().title("Action Movie").genres(Set.of(genreAction)).build());
+    movieRepository.save(Movie.builder().title("Comedy Movie").genres(Set.of(genreComedy)).build());
     movieRepository.save(Movie.builder().title("Drama Movie").genres(Set.of(genreDrama)).build());
 
     var filter =
-        MediaFilter.builder()
-            .genreIds(List.of(genreAction.getId(), genreComedy.getId()))
-            .build();
+        MediaFilter.builder().genreIds(List.of(genreAction.getId(), genreComedy.getId())).build();
     var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
     var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
@@ -462,10 +450,8 @@ class MovieServiceTest {
     var studioB = Company.builder().name("Studio B").build();
     studioB.setId(UUID.randomUUID());
 
-    movieRepository.save(
-        Movie.builder().title("Studio A Movie").studios(Set.of(studioA)).build());
-    movieRepository.save(
-        Movie.builder().title("Studio B Movie").studios(Set.of(studioB)).build());
+    movieRepository.save(Movie.builder().title("Studio A Movie").studios(Set.of(studioA)).build());
+    movieRepository.save(Movie.builder().title("Studio B Movie").studios(Set.of(studioB)).build());
 
     var filter = MediaFilter.builder().studioIds(List.of(studioA.getId())).build();
     var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
@@ -484,17 +470,11 @@ class MovieServiceTest {
     var studioC = Company.builder().name("Studio C").build();
     studioC.setId(UUID.randomUUID());
 
-    movieRepository.save(
-        Movie.builder().title("Studio A Movie").studios(Set.of(studioA)).build());
-    movieRepository.save(
-        Movie.builder().title("Studio B Movie").studios(Set.of(studioB)).build());
-    movieRepository.save(
-        Movie.builder().title("Studio C Movie").studios(Set.of(studioC)).build());
+    movieRepository.save(Movie.builder().title("Studio A Movie").studios(Set.of(studioA)).build());
+    movieRepository.save(Movie.builder().title("Studio B Movie").studios(Set.of(studioB)).build());
+    movieRepository.save(Movie.builder().title("Studio C Movie").studios(Set.of(studioC)).build());
 
-    var filter =
-        MediaFilter.builder()
-            .studioIds(List.of(studioA.getId(), studioB.getId()))
-            .build();
+    var filter = MediaFilter.builder().studioIds(List.of(studioA.getId(), studioB.getId())).build();
     var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
     var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
@@ -531,15 +511,11 @@ class MovieServiceTest {
     var dirC = Person.builder().name("Dir C").build();
     dirC.setId(UUID.randomUUID());
 
-    movieRepository.save(
-        Movie.builder().title("Movie A").directors(List.of(dirA)).build());
-    movieRepository.save(
-        Movie.builder().title("Movie B").directors(List.of(dirB)).build());
-    movieRepository.save(
-        Movie.builder().title("Movie C").directors(List.of(dirC)).build());
+    movieRepository.save(Movie.builder().title("Movie A").directors(List.of(dirA)).build());
+    movieRepository.save(Movie.builder().title("Movie B").directors(List.of(dirB)).build());
+    movieRepository.save(Movie.builder().title("Movie C").directors(List.of(dirC)).build());
 
-    var filter =
-        MediaFilter.builder().directorIds(List.of(dirA.getId(), dirB.getId())).build();
+    var filter = MediaFilter.builder().directorIds(List.of(dirA.getId(), dirB.getId())).build();
     var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
     var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
@@ -554,10 +530,8 @@ class MovieServiceTest {
     var actorB = Person.builder().name("Actor B").build();
     actorB.setId(UUID.randomUUID());
 
-    movieRepository.save(
-        Movie.builder().title("Actor A Movie").cast(List.of(actorA)).build());
-    movieRepository.save(
-        Movie.builder().title("Actor B Movie").cast(List.of(actorB)).build());
+    movieRepository.save(Movie.builder().title("Actor A Movie").cast(List.of(actorA)).build());
+    movieRepository.save(Movie.builder().title("Actor B Movie").cast(List.of(actorB)).build());
 
     var filter = MediaFilter.builder().castMemberIds(List.of(actorA.getId())).build();
     var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
@@ -576,17 +550,12 @@ class MovieServiceTest {
     var actorC = Person.builder().name("Actor C").build();
     actorC.setId(UUID.randomUUID());
 
-    movieRepository.save(
-        Movie.builder().title("Movie A").cast(List.of(actorA)).build());
-    movieRepository.save(
-        Movie.builder().title("Movie B").cast(List.of(actorB)).build());
-    movieRepository.save(
-        Movie.builder().title("Movie C").cast(List.of(actorC)).build());
+    movieRepository.save(Movie.builder().title("Movie A").cast(List.of(actorA)).build());
+    movieRepository.save(Movie.builder().title("Movie B").cast(List.of(actorB)).build());
+    movieRepository.save(Movie.builder().title("Movie C").cast(List.of(actorC)).build());
 
     var filter =
-        MediaFilter.builder()
-            .castMemberIds(List.of(actorA.getId(), actorB.getId()))
-            .build();
+        MediaFilter.builder().castMemberIds(List.of(actorA.getId(), actorB.getId())).build();
     var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
     var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
@@ -603,8 +572,7 @@ class MovieServiceTest {
             .externalIds(
                 Set.of(
                     com.streamarr.server.domain.ExternalIdentifier.builder()
-                        .externalSourceType(
-                            com.streamarr.server.domain.ExternalSourceType.TMDB)
+                        .externalSourceType(com.streamarr.server.domain.ExternalSourceType.TMDB)
                         .externalId("12345")
                         .build()))
             .build());

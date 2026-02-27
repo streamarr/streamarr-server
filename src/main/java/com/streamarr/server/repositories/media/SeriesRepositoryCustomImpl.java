@@ -56,8 +56,9 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
             .on(Tables.SERIES.ID.eq(Tables.BASE_COLLECTABLE.ID))
             .where(seekCondition)
             .and(JooqQueryHelper.libraryCondition(filter.getLibraryId()))
-            .and(JooqQueryHelper.startLetterCondition(
-                filter.getStartLetter(), originalDirection, filter.getSortBy()))
+            .and(
+                JooqQueryHelper.startLetterCondition(
+                    filter.getStartLetter(), originalDirection, filter.getSortBy()))
             .and(filterConditions(filter))
             .orderBy(orderByColumns)
             // N+2 (Allows us to efficiently check if there are items before AND after N)

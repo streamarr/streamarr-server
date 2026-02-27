@@ -96,19 +96,14 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
     var genreIds = filter.getGenreIds();
     if (genreIds != null && !genreIds.isEmpty()) {
       stream =
-          stream.filter(
-              s ->
-                  s.getGenres().stream()
-                      .anyMatch(g -> genreIds.contains(g.getId())));
+          stream.filter(s -> s.getGenres().stream().anyMatch(g -> genreIds.contains(g.getId())));
     }
 
     var years = filter.getYears();
     if (years != null && !years.isEmpty()) {
       stream =
           stream.filter(
-              s ->
-                  s.getFirstAirDate() != null
-                      && years.contains(s.getFirstAirDate().getYear()));
+              s -> s.getFirstAirDate() != null && years.contains(s.getFirstAirDate().getYear()));
     }
 
     var contentRatings = filter.getContentRatings();
@@ -123,28 +118,20 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
     var studioIds = filter.getStudioIds();
     if (studioIds != null && !studioIds.isEmpty()) {
       stream =
-          stream.filter(
-              s ->
-                  s.getStudios().stream()
-                      .anyMatch(c -> studioIds.contains(c.getId())));
+          stream.filter(s -> s.getStudios().stream().anyMatch(c -> studioIds.contains(c.getId())));
     }
 
     var directorIds = filter.getDirectorIds();
     if (directorIds != null && !directorIds.isEmpty()) {
       stream =
           stream.filter(
-              s ->
-                  s.getDirectors().stream()
-                      .anyMatch(d -> directorIds.contains(d.getId())));
+              s -> s.getDirectors().stream().anyMatch(d -> directorIds.contains(d.getId())));
     }
 
     var castMemberIds = filter.getCastMemberIds();
     if (castMemberIds != null && !castMemberIds.isEmpty()) {
       stream =
-          stream.filter(
-              s ->
-                  s.getCast().stream()
-                      .anyMatch(p -> castMemberIds.contains(p.getId())));
+          stream.filter(s -> s.getCast().stream().anyMatch(p -> castMemberIds.contains(p.getId())));
     }
 
     if (Boolean.TRUE.equals(filter.getUnmatched())) {
@@ -174,12 +161,15 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
   private Comparator<Series> comparatorFor(MediaFilter filter, SortOrder idSortOrder) {
     Comparator<Series> primary =
         switch (filter.getSortBy()) {
-          case ADDED -> Comparator.comparing(
-              Series::getCreatedOn, Comparator.nullsLast(Comparator.naturalOrder()));
-          case RELEASE_DATE -> Comparator.comparing(
-              Series::getFirstAirDate, Comparator.nullsLast(Comparator.naturalOrder()));
-          case RUNTIME -> Comparator.comparing(
-              Series::getRuntime, Comparator.nullsLast(Comparator.naturalOrder()));
+          case ADDED ->
+              Comparator.comparing(
+                  Series::getCreatedOn, Comparator.nullsLast(Comparator.naturalOrder()));
+          case RELEASE_DATE ->
+              Comparator.comparing(
+                  Series::getFirstAirDate, Comparator.nullsLast(Comparator.naturalOrder()));
+          case RUNTIME ->
+              Comparator.comparing(
+                  Series::getRuntime, Comparator.nullsLast(Comparator.naturalOrder()));
           default -> Comparator.comparing(Series::getTitle);
         };
 
@@ -194,5 +184,4 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
 
     return primary.thenComparing(idComparator);
   }
-
 }

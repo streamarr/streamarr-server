@@ -182,8 +182,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
 
     var endCursor = forwardAll.getPageInfo().getEndCursor().getValue();
     var backwardPage = movieService.getMoviesWithFilter(0, null, 3, endCursor, filter);
-    var backwardTitles =
-        backwardPage.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var backwardTitles = backwardPage.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
     assertThat(backwardTitles).isSortedAccordingTo(String::compareTo);
     assertThat(backwardTitles)
@@ -533,8 +532,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName(
-      "Should include title starting above z in HASH filter when sortBy is RELEASE_DATE")
+  @DisplayName("Should include title starting above z in HASH filter when sortBy is RELEASE_DATE")
   void shouldIncludeTitleStartingAboveZInHashFilterWhenSortByIsReleaseDate() {
 
     var filter =
@@ -553,8 +551,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName(
-      "Should include title starting above z in HASH filter when sortBy is TITLE DESC")
+  @DisplayName("Should include title starting above z in HASH filter when sortBy is TITLE DESC")
   void shouldIncludeTitleStartingAboveZInHashFilterWhenSortByIsTitleDesc() {
 
     var filter =
@@ -573,8 +570,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName(
-      "Should place null release dates last when sorting by RELEASE_DATE DESC")
+  @DisplayName("Should place null release dates last when sorting by RELEASE_DATE DESC")
   void shouldPlaceNullReleaseDatesLastWhenSortingByReleaseDateDesc() {
 
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
@@ -594,11 +590,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .library(library)
             .build());
     movieRepository.saveAndFlush(
-        Movie.builder()
-            .title("Undated")
-            .titleSort("undated")
-            .library(library)
-            .build());
+        Movie.builder().title("Undated").titleSort("undated").library(library).build());
 
     var filter =
         MediaFilter.builder()
