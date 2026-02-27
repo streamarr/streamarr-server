@@ -868,6 +868,25 @@ class MovieServiceTest {
   }
 
   @Test
+  @DisplayName("Should place null release date last when sorting by RELEASE_DATE DESC")
+  void shouldPlaceNullReleaseDateLastWhenSortingByReleaseDateDesc() {
+    movieRepository.save(
+        Movie.builder().title("Dated Movie").releaseDate(LocalDate.of(2020, 1, 1)).build());
+    movieRepository.save(Movie.builder().title("Undated Movie").build());
+
+    var filter =
+        MediaFilter.builder()
+            .sortBy(OrderMediaBy.RELEASE_DATE)
+            .sortDirection(SortOrder.DESC)
+            .build();
+
+    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+
+    assertThat(titles).containsExactly("Dated Movie", "Undated Movie");
+  }
+
+  @Test
   @DisplayName("Should place null runtime last when sorting by runtime")
   void shouldPlaceNullRuntimeLastWhenSortingByRuntime() {
     movieRepository.save(Movie.builder().title("With Runtime").runtime(120).build());

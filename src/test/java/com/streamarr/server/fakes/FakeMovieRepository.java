@@ -146,23 +146,19 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
   }
 
   private Comparator<Movie> comparatorFor(MediaFilter filter, SortOrder idSortOrder) {
+    var isDesc = filter.getSortDirection() == SortOrder.DESC;
+
     Comparator<Movie> primary =
         switch (filter.getSortBy()) {
-          case ADDED ->
-              Comparator.comparing(
-                  Movie::getCreatedOn, Comparator.nullsLast(Comparator.naturalOrder()));
+          case ADDED -> Comparator.comparing(Movie::getCreatedOn, nullsLastDirectional(isDesc));
           case RELEASE_DATE ->
-              Comparator.comparing(
-                  Movie::getReleaseDate, Comparator.nullsLast(Comparator.naturalOrder()));
-          case RUNTIME ->
-              Comparator.comparing(
-                  Movie::getRuntime, Comparator.nullsLast(Comparator.naturalOrder()));
-          case TITLE -> Comparator.comparing(Movie::getTitle);
+              Comparator.comparing(Movie::getReleaseDate, nullsLastDirectional(isDesc));
+          case RUNTIME -> Comparator.comparing(Movie::getRuntime, nullsLastDirectional(isDesc));
+          case TITLE ->
+              isDesc
+                  ? Comparator.comparing(Movie::getTitle, Comparator.reverseOrder())
+                  : Comparator.comparing(Movie::getTitle);
         };
-
-    if (filter.getSortDirection() == SortOrder.DESC) {
-      primary = primary.reversed();
-    }
 
     Comparator<Movie> idComparator = Comparator.comparing(Movie::getId);
     if (idSortOrder == SortOrder.DESC) {
@@ -170,6 +166,11 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
     }
 
     return primary.thenComparing(idComparator);
+  }
+
+  private <T extends Comparable<T>> Comparator<T> nullsLastDirectional(boolean desc) {
+    Comparator<T> inner = desc ? Comparator.reverseOrder() : Comparator.naturalOrder();
+    return Comparator.nullsLast(inner);
   }
 
   @Override

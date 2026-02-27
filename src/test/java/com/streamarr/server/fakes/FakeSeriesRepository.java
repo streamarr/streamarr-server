@@ -159,23 +159,19 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
   }
 
   private Comparator<Series> comparatorFor(MediaFilter filter, SortOrder idSortOrder) {
+    var isDesc = filter.getSortDirection() == SortOrder.DESC;
+
     Comparator<Series> primary =
         switch (filter.getSortBy()) {
-          case ADDED ->
-              Comparator.comparing(
-                  Series::getCreatedOn, Comparator.nullsLast(Comparator.naturalOrder()));
+          case ADDED -> Comparator.comparing(Series::getCreatedOn, nullsLastDirectional(isDesc));
           case RELEASE_DATE ->
-              Comparator.comparing(
-                  Series::getFirstAirDate, Comparator.nullsLast(Comparator.naturalOrder()));
-          case RUNTIME ->
-              Comparator.comparing(
-                  Series::getRuntime, Comparator.nullsLast(Comparator.naturalOrder()));
-          case TITLE -> Comparator.comparing(Series::getTitle);
+              Comparator.comparing(Series::getFirstAirDate, nullsLastDirectional(isDesc));
+          case RUNTIME -> Comparator.comparing(Series::getRuntime, nullsLastDirectional(isDesc));
+          case TITLE ->
+              isDesc
+                  ? Comparator.comparing(Series::getTitle, Comparator.reverseOrder())
+                  : Comparator.comparing(Series::getTitle);
         };
-
-    if (filter.getSortDirection() == SortOrder.DESC) {
-      primary = primary.reversed();
-    }
 
     Comparator<Series> idComparator = Comparator.comparing(Series::getId);
     if (idSortOrder == SortOrder.DESC) {
@@ -183,5 +179,10 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
     }
 
     return primary.thenComparing(idComparator);
+  }
+
+  private <T extends Comparable<T>> Comparator<T> nullsLastDirectional(boolean desc) {
+    Comparator<T> inner = desc ? Comparator.reverseOrder() : Comparator.naturalOrder();
+    return Comparator.nullsLast(inner);
   }
 }
