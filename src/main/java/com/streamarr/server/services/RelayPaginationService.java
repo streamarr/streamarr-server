@@ -3,6 +3,8 @@ package com.streamarr.server.services;
 import com.streamarr.server.domain.BaseAuditableEntity;
 import com.streamarr.server.exceptions.InvalidPaginationArgumentException;
 import com.streamarr.server.graphql.cursor.InvalidCursorException;
+import com.streamarr.server.graphql.cursor.MediaFilter;
+import com.streamarr.server.graphql.cursor.MediaPaginationOptions;
 import com.streamarr.server.graphql.cursor.PaginationDirection;
 import com.streamarr.server.graphql.cursor.PaginationOptions;
 import graphql.relay.Connection;
@@ -151,7 +153,27 @@ public class RelayPaginationService {
     return list.subList(0, limit);
   }
 
-  public <T> void validateCursorField(String fieldName, T prior, T current) {
+  public void validateCursorAgainstFilter(
+      MediaPaginationOptions decodedOptions, MediaFilter filter) {
+    var previousFilter = decodedOptions.getMediaFilter();
+
+    validateCursorField("sortBy", previousFilter.getSortBy(), filter.getSortBy());
+    validateCursorField(
+        "sortDirection", previousFilter.getSortDirection(), filter.getSortDirection());
+    validateCursorField("libraryId", previousFilter.getLibraryId(), filter.getLibraryId());
+    validateCursorField("startLetter", previousFilter.getStartLetter(), filter.getStartLetter());
+    validateCursorField("genreIds", previousFilter.getGenreIds(), filter.getGenreIds());
+    validateCursorField("years", previousFilter.getYears(), filter.getYears());
+    validateCursorField(
+        "contentRatings", previousFilter.getContentRatings(), filter.getContentRatings());
+    validateCursorField("studioIds", previousFilter.getStudioIds(), filter.getStudioIds());
+    validateCursorField("directorIds", previousFilter.getDirectorIds(), filter.getDirectorIds());
+    validateCursorField(
+        "castMemberIds", previousFilter.getCastMemberIds(), filter.getCastMemberIds());
+    validateCursorField("unmatched", previousFilter.getUnmatched(), filter.getUnmatched());
+  }
+
+  <T> void validateCursorField(String fieldName, T prior, T current) {
     if (Objects.equals(prior, current)) {
       return;
     }

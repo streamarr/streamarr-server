@@ -171,7 +171,7 @@ public class MovieService {
 
     var mediaOptionsFromCursor = cursorUtil.decodeMediaCursor(paginationOptions);
 
-    validateDecodedCursorAgainstFilter(mediaOptionsFromCursor, filter);
+    relayPaginationService.validateCursorAgainstFilter(mediaOptionsFromCursor, filter);
 
     return usingCursorGetMoviesAsConnection(mediaOptionsFromCursor);
   }
@@ -260,33 +260,5 @@ public class MovieService {
 
     return relayPaginationService.buildConnection(
         edges, options.getPaginationOptions(), options.getCursorId());
-  }
-
-  private void validateDecodedCursorAgainstFilter(
-      MediaPaginationOptions decodedOptions, MediaFilter filter) {
-    var previousFilter = decodedOptions.getMediaFilter();
-
-    relayPaginationService.validateCursorField(
-        "sortBy", previousFilter.getSortBy(), filter.getSortBy());
-    relayPaginationService.validateCursorField(
-        "sortDirection", previousFilter.getSortDirection(), filter.getSortDirection());
-    relayPaginationService.validateCursorField(
-        "libraryId", previousFilter.getLibraryId(), filter.getLibraryId());
-    relayPaginationService.validateCursorField(
-        "startLetter", previousFilter.getStartLetter(), filter.getStartLetter());
-    relayPaginationService.validateCursorField(
-        "genreIds", previousFilter.getGenreIds(), filter.getGenreIds());
-    relayPaginationService.validateCursorField(
-        "years", previousFilter.getYears(), filter.getYears());
-    relayPaginationService.validateCursorField(
-        "contentRatings", previousFilter.getContentRatings(), filter.getContentRatings());
-    relayPaginationService.validateCursorField(
-        "studioIds", previousFilter.getStudioIds(), filter.getStudioIds());
-    relayPaginationService.validateCursorField(
-        "directorIds", previousFilter.getDirectorIds(), filter.getDirectorIds());
-    relayPaginationService.validateCursorField(
-        "castMemberIds", previousFilter.getCastMemberIds(), filter.getCastMemberIds());
-    relayPaginationService.validateCursorField(
-        "unmatched", previousFilter.getUnmatched(), filter.getUnmatched());
   }
 }
