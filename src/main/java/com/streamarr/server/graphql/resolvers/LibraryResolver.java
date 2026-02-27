@@ -96,14 +96,7 @@ public class LibraryResolver {
 
     var builder = MediaFilter.builder().libraryId(library.getId());
 
-    if (sort != null) {
-      if (sort.by() != null) {
-        builder.sortBy(sort.by());
-      }
-      if (sort.direction() != null) {
-        builder.sortDirection(sort.direction());
-      }
-    }
+    applySortOptions(builder, sort);
 
     if (filter != null) {
       builder
@@ -145,6 +138,18 @@ public class LibraryResolver {
     }
 
     throw new UnsupportedMediaTypeException(media.getClass().getSimpleName());
+  }
+
+  private void applySortOptions(MediaFilter.MediaFilterBuilder builder, MediaSortInput sort) {
+    if (sort == null) {
+      return;
+    }
+    if (sort.by() != null) {
+      builder.sortBy(sort.by());
+    }
+    if (sort.direction() != null) {
+      builder.sortDirection(sort.direction());
+    }
   }
 
   private UUID parseUuid(String id) {
