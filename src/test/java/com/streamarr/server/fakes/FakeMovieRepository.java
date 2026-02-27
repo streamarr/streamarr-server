@@ -1,6 +1,5 @@
 package com.streamarr.server.fakes;
 
-import com.streamarr.server.domain.AlphabetLetter;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.graphql.cursor.MediaFilter;
@@ -50,14 +49,14 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
         options.getPaginationOptions().getPaginationDirection().equals(PaginationDirection.REVERSE);
     var limit = options.getPaginationOptions().getLimit();
 
-    var effectiveFilter = shouldReverse ? reverseFilter(filter) : filter;
+    var effectiveFilter = shouldReverse ? FakeFilterHelper.reverseFilter(filter) : filter;
 
     var sorted =
         filterByLibrary(effectiveFilter)
             .sorted(comparatorFor(effectiveFilter, effectiveFilter.getSortDirection()))
             .toList();
 
-    var startIndex = findCursorIndex(sorted, options.getCursorId());
+    var startIndex = FakeFilterHelper.findCursorIndex(sorted, options.getCursorId());
     var endIndex = Math.min(sorted.size(), startIndex + limit + 2);
     var result = new ArrayList<>(sorted.subList(startIndex, endIndex));
 
@@ -66,21 +65,6 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
     }
 
     return result;
-  }
-
-  private int findCursorIndex(List<Movie> sorted, Optional<UUID> cursorId) {
-    if (cursorId.isEmpty()) {
-      return 0;
-    }
-
-    var id = cursorId.get();
-    for (int i = 0; i < sorted.size(); i++) {
-      if (sorted.get(i).getId().equals(id)) {
-        return i;
-      }
-    }
-
-    return 0;
   }
 
   private Stream<Movie> filterByLibrary(MediaFilter filter) {
@@ -164,50 +148,14 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
     }
 
     if (filter.getSortBy() != OrderMediaBy.TITLE) {
-      return stream.filter(m -> matchesLetterEquality(m.getTitle(), letter));
+      return stream.filter(m -> FakeFilterHelper.matchesLetterEquality(m.getTitle(), letter));
     }
 
     if (filter.getSortDirection() == SortOrder.DESC) {
-      return stream.filter(m -> matchesLetterDescRange(m.getTitle(), letter));
+      return stream.filter(m -> FakeFilterHelper.matchesLetterDescRange(m.getTitle(), letter));
     }
 
-    return stream.filter(m -> matchesLetterAscRange(m.getTitle(), letter));
-  }
-
-  private boolean matchesLetterEquality(String title, AlphabetLetter letter) {
-    if (title == null || title.isEmpty()) {
-      return false;
-    }
-    var firstChar = Character.toLowerCase(title.charAt(0));
-    if (letter == AlphabetLetter.HASH) {
-      return firstChar < 'a' || firstChar > 'z';
-    }
-    return firstChar == Character.toLowerCase(letter.name().charAt(0));
-  }
-
-  private boolean matchesLetterAscRange(String title, AlphabetLetter letter) {
-    if (letter == AlphabetLetter.HASH) {
-      return true;
-    }
-    if (title == null || title.isEmpty()) {
-      return false;
-    }
-    var firstChar = Character.toLowerCase(title.charAt(0));
-    return firstChar >= Character.toLowerCase(letter.name().charAt(0));
-  }
-
-  private boolean matchesLetterDescRange(String title, AlphabetLetter letter) {
-    if (letter == AlphabetLetter.Z) {
-      return true;
-    }
-    if (title == null || title.isEmpty()) {
-      return false;
-    }
-    var firstChar = Character.toLowerCase(title.charAt(0));
-    if (letter == AlphabetLetter.HASH) {
-      return firstChar < 'a' || firstChar > 'z';
-    }
-    return firstChar <= Character.toLowerCase(letter.name().charAt(0));
+    return stream.filter(m -> FakeFilterHelper.matchesLetterAscRange(m.getTitle(), letter));
   }
 
   private Comparator<Movie> comparatorFor(MediaFilter filter, SortOrder idSortOrder) {
@@ -232,11 +180,6 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
     }
 
     return primary.thenComparing(idComparator);
-  }
-
-  private MediaFilter reverseFilter(MediaFilter filter) {
-    var reversed = filter.getSortDirection() == SortOrder.DESC ? SortOrder.ASC : SortOrder.DESC;
-    return filter.toBuilder().sortDirection(reversed).build();
   }
 
   @Override

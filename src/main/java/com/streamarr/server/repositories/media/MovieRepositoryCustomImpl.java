@@ -2,12 +2,10 @@ package com.streamarr.server.repositories.media;
 
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.noCondition;
-import static org.jooq.impl.DSL.row;
 
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.graphql.cursor.MediaPaginationOptions;
-import com.streamarr.server.graphql.cursor.OrderMediaBy;
 import com.streamarr.server.graphql.cursor.PaginationDirection;
 import com.streamarr.server.jooq.generated.Tables;
 import com.streamarr.server.jooq.generated.enums.ExternalSourceType;
@@ -15,7 +13,6 @@ import com.streamarr.server.repositories.JooqQueryHelper;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import java.time.LocalDate;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -24,7 +21,6 @@ import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.SortField;
-import org.jooq.SortOrder;
 
 @RequiredArgsConstructor
 public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
@@ -40,7 +36,7 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
     var originalDirection = filter.getSortDirection();
 
     if (shouldReverse) {
-      filter = reverseFilter(filter);
+      filter = JooqQueryHelper.reverseFilter(filter);
     }
 
     var orderByColumns =
@@ -49,7 +45,8 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
         };
 
     var seekCondition =
-        buildSeekCondition(filter, sortField(filter), options.getCursorId());
+        JooqQueryHelper.buildSeekCondition(
+            filter, sortField(filter), orderByColumns, options.getCursorId());
 
     var query =
         context
@@ -98,14 +95,6 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
     }
 
     return Optional.of(results.getFirst());
-  }
-
-  private MediaFilter reverseFilter(MediaFilter filter) {
-    if (filter.getSortDirection().equals(SortOrder.DESC)) {
-      return filter.toBuilder().sortDirection(SortOrder.ASC).build();
-    }
-
-    return filter.toBuilder().sortDirection(SortOrder.DESC).build();
   }
 
   public List<Movie> findFirstWithFilter(MediaPaginationOptions options) {
@@ -204,49 +193,6 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
       case RELEASE_DATE -> Tables.MOVIE.RELEASE_DATE;
       case RUNTIME -> Tables.MOVIE.RUNTIME;
     };
-  }
-
-  private boolean isNullableSortField(OrderMediaBy sortBy) {
-    return sortBy == OrderMediaBy.RELEASE_DATE || sortBy == OrderMediaBy.RUNTIME;
-  }
-
-  private Object coerceSortValue(MediaFilter filter) {
-    var value = filter.getPreviousSortFieldValue();
-    if (value == null) {
-      return null;
-    }
-    return switch (filter.getSortBy()) {
-      case RELEASE_DATE -> value instanceof LocalDate d ? d : LocalDate.parse(value.toString());
-      case RUNTIME -> value instanceof Integer i ? i : Integer.parseInt(value.toString());
-      default -> value;
-    };
-  }
-
-  @SuppressWarnings("unchecked")
-  private Condition buildSeekCondition(
-      MediaFilter filter, Field<?> sortCol, Optional<java.util.UUID> cursorId) {
-    var idField = Tables.BASE_COLLECTABLE.ID;
-    var coercedValue = coerceSortValue(filter);
-    var cursorIdValue = cursorId.orElse(null);
-    var isAsc = filter.getSortDirection() == SortOrder.ASC;
-
-    if (!isNullableSortField(filter.getSortBy()) || coercedValue != null) {
-      var orderByColumns =
-          new SortField[] {buildOrderBy(filter), idField.sort(filter.getSortDirection())};
-      var fields = Arrays.stream(orderByColumns).map(SortField::$field).toList();
-      var seekValues = new Object[] {coercedValue, cursorIdValue};
-      return isAsc ? row(fields).greaterOrEqual(seekValues) : row(fields).lessOrEqual(seekValues);
-    }
-
-    // Cursor value is NULL — we're in the NULLS LAST region
-    // All non-null sort values come before us, so we only need to seek within nulls by ID
-    var typedCol = (Field<Object>) sortCol;
-    if (isAsc) {
-      // NULLS LAST + ASC: null region is at the end
-      return typedCol.isNull().and(idField.greaterOrEqual(cursorIdValue));
-    }
-    // NULLS LAST + DESC: null region is at the end (reversed)
-    return typedCol.isNull().and(idField.lessOrEqual(cursorIdValue));
   }
 
   private SortField<?> buildOrderBy(MediaFilter filter) {

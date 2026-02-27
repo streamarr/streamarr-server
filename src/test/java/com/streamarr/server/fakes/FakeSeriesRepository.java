@@ -1,6 +1,5 @@
 package com.streamarr.server.fakes;
 
-import com.streamarr.server.domain.AlphabetLetter;
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.graphql.cursor.MediaFilter;
@@ -50,14 +49,14 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
         options.getPaginationOptions().getPaginationDirection().equals(PaginationDirection.REVERSE);
     var limit = options.getPaginationOptions().getLimit();
 
-    var effectiveFilter = shouldReverse ? reverseFilter(filter) : filter;
+    var effectiveFilter = shouldReverse ? FakeFilterHelper.reverseFilter(filter) : filter;
 
     var sorted =
         filterByLibrary(effectiveFilter)
             .sorted(comparatorFor(effectiveFilter, effectiveFilter.getSortDirection()))
             .toList();
 
-    var startIndex = findCursorIndex(sorted, options.getCursorId());
+    var startIndex = FakeFilterHelper.findCursorIndex(sorted, options.getCursorId());
     var endIndex = Math.min(sorted.size(), startIndex + limit + 2);
     var result = new ArrayList<>(sorted.subList(startIndex, endIndex));
 
@@ -79,21 +78,6 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
   @Override
   public List<Series> findByLibraryIdWithExternalIds(UUID libraryId) {
     return findByLibrary_Id(libraryId);
-  }
-
-  private int findCursorIndex(List<Series> sorted, Optional<UUID> cursorId) {
-    if (cursorId.isEmpty()) {
-      return 0;
-    }
-
-    var id = cursorId.get();
-    for (int i = 0; i < sorted.size(); i++) {
-      if (sorted.get(i).getId().equals(id)) {
-        return i;
-      }
-    }
-
-    return 0;
   }
 
   private Stream<Series> filterByLibrary(MediaFilter filter) {
@@ -177,50 +161,14 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
     }
 
     if (filter.getSortBy() != OrderMediaBy.TITLE) {
-      return stream.filter(s -> matchesLetterEquality(s.getTitle(), letter));
+      return stream.filter(s -> FakeFilterHelper.matchesLetterEquality(s.getTitle(), letter));
     }
 
     if (filter.getSortDirection() == SortOrder.DESC) {
-      return stream.filter(s -> matchesLetterDescRange(s.getTitle(), letter));
+      return stream.filter(s -> FakeFilterHelper.matchesLetterDescRange(s.getTitle(), letter));
     }
 
-    return stream.filter(s -> matchesLetterAscRange(s.getTitle(), letter));
-  }
-
-  private boolean matchesLetterEquality(String title, AlphabetLetter letter) {
-    if (title == null || title.isEmpty()) {
-      return false;
-    }
-    var firstChar = Character.toLowerCase(title.charAt(0));
-    if (letter == AlphabetLetter.HASH) {
-      return firstChar < 'a' || firstChar > 'z';
-    }
-    return firstChar == Character.toLowerCase(letter.name().charAt(0));
-  }
-
-  private boolean matchesLetterAscRange(String title, AlphabetLetter letter) {
-    if (letter == AlphabetLetter.HASH) {
-      return true;
-    }
-    if (title == null || title.isEmpty()) {
-      return false;
-    }
-    var firstChar = Character.toLowerCase(title.charAt(0));
-    return firstChar >= Character.toLowerCase(letter.name().charAt(0));
-  }
-
-  private boolean matchesLetterDescRange(String title, AlphabetLetter letter) {
-    if (letter == AlphabetLetter.Z) {
-      return true;
-    }
-    if (title == null || title.isEmpty()) {
-      return false;
-    }
-    var firstChar = Character.toLowerCase(title.charAt(0));
-    if (letter == AlphabetLetter.HASH) {
-      return firstChar < 'a' || firstChar > 'z';
-    }
-    return firstChar <= Character.toLowerCase(letter.name().charAt(0));
+    return stream.filter(s -> FakeFilterHelper.matchesLetterAscRange(s.getTitle(), letter));
   }
 
   private Comparator<Series> comparatorFor(MediaFilter filter, SortOrder idSortOrder) {
@@ -247,8 +195,4 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
     return primary.thenComparing(idComparator);
   }
 
-  private MediaFilter reverseFilter(MediaFilter filter) {
-    var reversed = filter.getSortDirection() == SortOrder.DESC ? SortOrder.ASC : SortOrder.DESC;
-    return filter.toBuilder().sortDirection(reversed).build();
-  }
 }

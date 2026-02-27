@@ -5,18 +5,24 @@ import static org.jooq.impl.DSL.left;
 import static org.jooq.impl.DSL.lower;
 import static org.jooq.impl.DSL.noCondition;
 import static org.jooq.impl.DSL.not;
+import static org.jooq.impl.DSL.row;
 import static org.jooq.impl.DSL.select;
 
 import com.streamarr.server.domain.AlphabetLetter;
+import com.streamarr.server.graphql.cursor.MediaFilter;
 import com.streamarr.server.graphql.cursor.OrderMediaBy;
 import com.streamarr.server.jooq.generated.Tables;
 import jakarta.persistence.EntityManager;
+import java.time.LocalDate;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.experimental.UtilityClass;
 import org.jooq.Condition;
 import org.jooq.Field;
+import org.jooq.SortField;
 import org.jooq.SortOrder;
 import org.jooq.Table;
 import org.jooq.TableField;
@@ -109,5 +115,53 @@ public class JooqQueryHelper {
     }
     return entityIdField.in(
         select(joinEntityIdField).from(joinTable).where(joinFilterIdField.in(filterIds)));
+  }
+
+  public MediaFilter reverseFilter(MediaFilter filter) {
+    if (filter.getSortDirection().equals(SortOrder.DESC)) {
+      return filter.toBuilder().sortDirection(SortOrder.ASC).build();
+    }
+
+    return filter.toBuilder().sortDirection(SortOrder.DESC).build();
+  }
+
+  public boolean isNullableSortField(OrderMediaBy sortBy) {
+    return sortBy == OrderMediaBy.RELEASE_DATE || sortBy == OrderMediaBy.RUNTIME;
+  }
+
+  public Object coerceSortValue(MediaFilter filter) {
+    var value = filter.getPreviousSortFieldValue();
+    if (value == null) {
+      return null;
+    }
+    return switch (filter.getSortBy()) {
+      case RELEASE_DATE -> value instanceof LocalDate d ? d : LocalDate.parse(value.toString());
+      case RUNTIME -> value instanceof Integer i ? i : Integer.parseInt(value.toString());
+      default -> value;
+    };
+  }
+
+  @SuppressWarnings("unchecked")
+  public Condition buildSeekCondition(
+      MediaFilter filter,
+      Field<?> sortCol,
+      SortField<?>[] orderByColumns,
+      Optional<UUID> cursorId) {
+    var idField = Tables.BASE_COLLECTABLE.ID;
+    var coercedValue = coerceSortValue(filter);
+    var cursorIdValue = cursorId.orElse(null);
+    var isAsc = filter.getSortDirection() == SortOrder.ASC;
+
+    if (!isNullableSortField(filter.getSortBy()) || coercedValue != null) {
+      var fields = Arrays.stream(orderByColumns).map(SortField::$field).toList();
+      var seekValues = new Object[] {coercedValue, cursorIdValue};
+      return isAsc ? row(fields).greaterOrEqual(seekValues) : row(fields).lessOrEqual(seekValues);
+    }
+
+    var typedCol = (Field<Object>) sortCol;
+    if (isAsc) {
+      return typedCol.isNull().and(idField.greaterOrEqual(cursorIdValue));
+    }
+    return typedCol.isNull().and(idField.lessOrEqual(cursorIdValue));
   }
 }
