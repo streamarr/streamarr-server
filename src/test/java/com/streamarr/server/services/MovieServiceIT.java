@@ -629,8 +629,8 @@ class MovieServiceIT extends AbstractIntegrationTest {
   // --- 3a. Nullable Sort Field Pagination (RELEASE_DATE, RUNTIME) ---
 
   @Test
-  @DisplayName("Should sort by RELEASE_DATE ASC with nulls last on initial page")
-  void shouldSortByReleaseDateAscWithNullsLastOnInitialPage() {
+  @DisplayName("Should place nulls last when sorting by RELEASE_DATE ASC")
+  void shouldPlaceNullsLastWhenSortingByReleaseDateAsc() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
 
     movieRepository.saveAndFlush(
@@ -671,8 +671,8 @@ class MovieServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should paginate forward through RELEASE_DATE ASC using cursor")
-  void shouldPaginateForwardThroughReleaseDateAscUsingCursor() {
+  @DisplayName("Should paginate forward using cursor when sorted by RELEASE_DATE ASC")
+  void shouldPaginateForwardUsingCursorWhenSortedByReleaseDateAsc() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
 
     movieRepository.saveAndFlush(
@@ -715,8 +715,8 @@ class MovieServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should paginate forward through RELEASE_DATE DESC using cursor")
-  void shouldPaginateForwardThroughReleaseDateDescUsingCursor() {
+  @DisplayName("Should paginate forward using cursor when sorted by RELEASE_DATE DESC")
+  void shouldPaginateForwardUsingCursorWhenSortedByReleaseDateDesc() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
 
     movieRepository.saveAndFlush(
@@ -757,8 +757,9 @@ class MovieServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should paginate through null RELEASE_DATE values using cursor")
-  void shouldPaginateThroughNullReleaseDateValuesUsingCursor() {
+  @DisplayName(
+      "Should paginate through null RELEASE_DATE values using cursor when cursor is on null row")
+  void shouldPaginateThroughNullReleaseDateValuesUsingCursorWhenCursorIsOnNullRow() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
 
     movieRepository.saveAndFlush(
@@ -780,29 +781,33 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .sortDirection(SortOrder.ASC)
             .build();
 
-    // Page 1: first=2 returns Dated + one Undated (nulls last)
+    // Page 1: first=2 returns Dated + one Undated (nulls last, secondary sort by ID)
     var page1 = movieService.getMoviesWithFilter(2, null, 0, null, filter);
     assertThat(page1.getEdges()).hasSize(2);
     assertThat(page1.getEdges().get(0).getNode().getTitle()).isEqualTo("Dated");
     assertThat(page1.getPageInfo().isHasNextPage()).isTrue();
 
-    // Page 2: cursor from undated row exercises null-value branch of buildSeekCondition
+    var page1SecondTitle = page1.getEdges().get(1).getNode().getTitle();
+
+    // Page 2: cursor from null-valued row exercises IS NULL branch of buildSeekCondition
     var cursor = page1.getPageInfo().getEndCursor().getValue();
     var page2 = movieService.getMoviesWithFilter(2, cursor, 0, null, filter);
     assertThat(page2.getEdges()).hasSize(1);
     assertThat(page2.getPageInfo().isHasNextPage()).isFalse();
 
-    // All 3 movies seen without duplicates
-    var allTitles =
-        Stream.concat(page1.getEdges().stream(), page2.getEdges().stream())
-            .map(e -> e.getNode().getTitle())
-            .toList();
-    assertThat(allTitles).hasSize(3).doesNotHaveDuplicates();
+    var page2Title = page2.getEdges().get(0).getNode().getTitle();
+
+    // Page 2 must contain whichever undated movie was not on page 1
+    assertThat(page2Title).isNotEqualTo(page1SecondTitle);
+    assertThat(page2Title).startsWith("Undated");
+
+    // All 3 movies seen — no duplicates, no skips
+    assertThat(List.of("Dated", page1SecondTitle, page2Title)).doesNotHaveDuplicates();
   }
 
   @Test
-  @DisplayName("Should sort by RUNTIME ASC with nulls last on initial page")
-  void shouldSortByRuntimeAscWithNullsLastOnInitialPage() {
+  @DisplayName("Should place nulls last when sorting by RUNTIME ASC")
+  void shouldPlaceNullsLastWhenSortingByRuntimeAsc() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
 
     movieRepository.saveAndFlush(
@@ -828,8 +833,8 @@ class MovieServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should paginate forward through RUNTIME ASC using cursor")
-  void shouldPaginateForwardThroughRuntimeAscUsingCursor() {
+  @DisplayName("Should paginate forward using cursor when sorted by RUNTIME ASC")
+  void shouldPaginateForwardUsingCursorWhenSortedByRuntimeAsc() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
 
     movieRepository.saveAndFlush(
@@ -855,8 +860,8 @@ class MovieServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should paginate forward through RUNTIME DESC using cursor")
-  void shouldPaginateForwardThroughRuntimeDescUsingCursor() {
+  @DisplayName("Should paginate forward using cursor when sorted by RUNTIME DESC")
+  void shouldPaginateForwardUsingCursorWhenSortedByRuntimeDesc() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
 
     movieRepository.saveAndFlush(
@@ -882,8 +887,8 @@ class MovieServiceIT extends AbstractIntegrationTest {
   // --- 3b. Backward Pagination with Nullable Sort Fields ---
 
   @Test
-  @DisplayName("Should paginate backward through RELEASE_DATE ASC maintaining canonical order")
-  void shouldPaginateBackwardThroughReleaseDateAscMaintainingCanonicalOrder() {
+  @DisplayName("Should maintain canonical order when paginating backward by RELEASE_DATE ASC")
+  void shouldMaintainCanonicalOrderWhenPaginatingBackwardByReleaseDateAsc() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
 
     movieRepository.saveAndFlush(
@@ -926,8 +931,8 @@ class MovieServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should paginate backward through RUNTIME DESC maintaining canonical order")
-  void shouldPaginateBackwardThroughRuntimeDescMaintainingCanonicalOrder() {
+  @DisplayName("Should maintain canonical order when paginating backward by RUNTIME DESC")
+  void shouldMaintainCanonicalOrderWhenPaginatingBackwardByRuntimeDesc() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
 
     movieRepository.saveAndFlush(
@@ -957,8 +962,9 @@ class MovieServiceIT extends AbstractIntegrationTest {
   // --- 3c. PageInfo Correctness (Relay Spec §5) ---
 
   @Test
-  @DisplayName("Should report hasNextPage true and hasPreviousPage false on first forward page")
-  void shouldReportHasNextPageTrueAndHasPreviousPageFalseOnFirstForwardPage() {
+  @DisplayName(
+      "Should report hasNextPage true and hasPreviousPage false when on first forward page")
+  void shouldReportHasNextPageTrueAndHasPreviousPageFalseWhenOnFirstForwardPage() {
     var filter = filterForLibrary(savedLibraryA);
 
     var result = movieService.getMoviesWithFilter(1, null, 0, null, filter);
@@ -980,8 +986,8 @@ class MovieServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should report hasNextPage false on final forward page")
-  void shouldReportHasNextPageFalseOnFinalForwardPage() {
+  @DisplayName("Should report hasNextPage false when on final forward page")
+  void shouldReportHasNextPageFalseWhenOnFinalForwardPage() {
     var filter = filterForLibrary(savedLibraryA);
 
     var page1 = movieService.getMoviesWithFilter(1, null, 0, null, filter);
@@ -992,8 +998,9 @@ class MovieServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should report hasPreviousPage false and hasNextPage true on backward page at start")
-  void shouldReportHasPreviousPageFalseAndHasNextPageTrueOnBackwardPageAtStart() {
+  @DisplayName(
+      "Should report hasPreviousPage false and hasNextPage true when backward page reaches start")
+  void shouldReportHasPreviousPageFalseAndHasNextPageTrueWhenBackwardPageReachesStart() {
     var filter = filterForLibrary(savedLibraryA);
 
     var allMovies = movieService.getMoviesWithFilter(2, null, 0, null, filter);
@@ -1019,8 +1026,8 @@ class MovieServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should set startCursor to first edge cursor and endCursor to last edge cursor")
-  void shouldSetStartCursorToFirstEdgeCursorAndEndCursorToLastEdgeCursor() {
+  @DisplayName("Should set startCursor and endCursor to match edge boundaries when results exist")
+  void shouldSetStartCursorAndEndCursorToMatchEdgeBoundariesWhenResultsExist() {
     var filter = filterForLibrary(savedLibraryA);
 
     var result = movieService.getMoviesWithFilter(2, null, 0, null, filter);
@@ -1034,8 +1041,8 @@ class MovieServiceIT extends AbstractIntegrationTest {
   // --- 3d. Filter Dimension ITs (Real SQL via jOOQ → PostgreSQL) ---
 
   @Test
-  @DisplayName("Should return only movies matching genre filter")
-  void shouldReturnOnlyMoviesMatchingGenreFilter() {
+  @DisplayName("Should return only matching movies when genre filter applied")
+  void shouldReturnOnlyMatchingMoviesWhenGenreFilterApplied() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
 
     var genreAction =
@@ -1073,8 +1080,8 @@ class MovieServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should return only movies matching year filter")
-  void shouldReturnOnlyMoviesMatchingYearFilter() {
+  @DisplayName("Should return only matching movies when year filter applied")
+  void shouldReturnOnlyMatchingMoviesWhenYearFilterApplied() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
 
     movieRepository.saveAndFlush(
@@ -1101,8 +1108,8 @@ class MovieServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should return only movies matching content rating filter")
-  void shouldReturnOnlyMoviesMatchingContentRatingFilter() {
+  @DisplayName("Should return only matching movies when content rating filter applied")
+  void shouldReturnOnlyMatchingMoviesWhenContentRatingFilterApplied() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
 
     movieRepository.saveAndFlush(
@@ -1130,8 +1137,8 @@ class MovieServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should return only movies matching studio filter")
-  void shouldReturnOnlyMoviesMatchingStudioFilter() {
+  @DisplayName("Should return only matching movies when studio filter applied")
+  void shouldReturnOnlyMatchingMoviesWhenStudioFilterApplied() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
 
     var studioA =
@@ -1175,8 +1182,8 @@ class MovieServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should return only movies matching director filter")
-  void shouldReturnOnlyMoviesMatchingDirectorFilter() {
+  @DisplayName("Should return only matching movies when director filter applied")
+  void shouldReturnOnlyMatchingMoviesWhenDirectorFilterApplied() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
 
     var directorA =
@@ -1214,8 +1221,8 @@ class MovieServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should return only movies matching cast member filter")
-  void shouldReturnOnlyMoviesMatchingCastMemberFilter() {
+  @DisplayName("Should return only matching movies when cast member filter applied")
+  void shouldReturnOnlyMatchingMoviesWhenCastMemberFilterApplied() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
 
     var actorA =
@@ -1298,8 +1305,8 @@ class MovieServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should paginate past non-null into null RELEASE_DATE values using cursor")
-  void shouldPaginatePastNonNullIntoNullReleaseDateValuesUsingCursor() {
+  @DisplayName("Should bridge into null RELEASE_DATE values when cursor is on non-null row")
+  void shouldBridgeIntoNullReleaseDateValuesWhenCursorIsOnNonNullRow() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
 
     movieRepository.saveAndFlush(
@@ -1340,8 +1347,8 @@ class MovieServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should paginate past non-null into null RUNTIME values using cursor")
-  void shouldPaginatePastNonNullIntoNullRuntimeValuesUsingCursor() {
+  @DisplayName("Should bridge into null RUNTIME values when cursor is on non-null row")
+  void shouldBridgeIntoNullRuntimeValuesWhenCursorIsOnNonNullRow() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
 
     movieRepository.saveAndFlush(

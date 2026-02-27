@@ -733,8 +733,8 @@ class SeriesServiceIT extends AbstractIntegrationTest {
   // --- Nullable Sort Field Pagination (RELEASE_DATE = firstAirDate, RUNTIME) ---
 
   @Test
-  @DisplayName("Should sort by RELEASE_DATE ASC (firstAirDate) placing nulls last")
-  void shouldSortByReleaseDateAscPlacingNullsLast() {
+  @DisplayName("Should place nulls last when sorting by RELEASE_DATE ASC (firstAirDate)")
+  void shouldPlaceNullsLastWhenSortingByReleaseDateAsc() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
 
     seriesRepository.saveAndFlush(
@@ -768,8 +768,8 @@ class SeriesServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should paginate forward through RELEASE_DATE ASC with cursor")
-  void shouldPaginateForwardThroughReleaseDateAscWithCursor() {
+  @DisplayName("Should paginate forward using cursor when sorted by RELEASE_DATE ASC")
+  void shouldPaginateForwardUsingCursorWhenSortedByReleaseDateAsc() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
 
     seriesRepository.saveAndFlush(
@@ -811,8 +811,9 @@ class SeriesServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should paginate through null firstAirDate values using cursor")
-  void shouldPaginateThroughNullFirstAirDateValuesUsingCursor() {
+  @DisplayName(
+      "Should paginate through null firstAirDate values using cursor when cursor is on null row")
+  void shouldPaginateThroughNullFirstAirDateValuesUsingCursorWhenCursorIsOnNullRow() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
 
     seriesRepository.saveAndFlush(
@@ -834,29 +835,33 @@ class SeriesServiceIT extends AbstractIntegrationTest {
             .sortDirection(SortOrder.ASC)
             .build();
 
-    // Page 1: first=2 returns Dated + one Undated (nulls last)
+    // Page 1: first=2 returns Dated Show + one Undated (nulls last, secondary sort by ID)
     var page1 = seriesService.getSeriesWithFilter(2, null, 0, null, filter);
     assertThat(page1.getEdges()).hasSize(2);
     assertThat(page1.getEdges().get(0).getNode().getTitle()).isEqualTo("Dated Show");
     assertThat(page1.getPageInfo().isHasNextPage()).isTrue();
 
-    // Page 2: cursor from undated row exercises null-value branch of buildSeekCondition
+    var page1SecondTitle = page1.getEdges().get(1).getNode().getTitle();
+
+    // Page 2: cursor from null-valued row exercises IS NULL branch of buildSeekCondition
     var cursor = page1.getPageInfo().getEndCursor().getValue();
     var page2 = seriesService.getSeriesWithFilter(2, cursor, 0, null, filter);
     assertThat(page2.getEdges()).hasSize(1);
     assertThat(page2.getPageInfo().isHasNextPage()).isFalse();
 
-    // All 3 series seen without duplicates
-    var allTitles =
-        Stream.concat(page1.getEdges().stream(), page2.getEdges().stream())
-            .map(e -> e.getNode().getTitle())
-            .toList();
-    assertThat(allTitles).hasSize(3).doesNotHaveDuplicates();
+    var page2Title = page2.getEdges().get(0).getNode().getTitle();
+
+    // Page 2 must contain whichever undated series was not on page 1
+    assertThat(page2Title).isNotEqualTo(page1SecondTitle);
+    assertThat(page2Title).startsWith("Undated");
+
+    // All 3 series seen — no duplicates, no skips
+    assertThat(List.of("Dated Show", page1SecondTitle, page2Title)).doesNotHaveDuplicates();
   }
 
   @Test
-  @DisplayName("Should sort by RUNTIME ASC placing nulls last")
-  void shouldSortByRuntimeAscPlacingNullsLast() {
+  @DisplayName("Should place nulls last when sorting by RUNTIME ASC")
+  void shouldPlaceNullsLastWhenSortingByRuntimeAsc() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
 
     seriesRepository.saveAndFlush(
@@ -894,8 +899,8 @@ class SeriesServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should paginate forward through RUNTIME ASC with cursor")
-  void shouldPaginateForwardThroughRuntimeAscWithCursor() {
+  @DisplayName("Should paginate forward using cursor when sorted by RUNTIME ASC")
+  void shouldPaginateForwardUsingCursorWhenSortedByRuntimeAsc() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
 
     seriesRepository.saveAndFlush(
@@ -935,8 +940,8 @@ class SeriesServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should return only series matching genre filter")
-  void shouldReturnOnlySeriesMatchingGenreFilter() {
+  @DisplayName("Should return only matching series when genre filter applied")
+  void shouldReturnOnlyMatchingSeriesWhenGenreFilterApplied() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
 
     var genre =

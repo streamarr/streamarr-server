@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.when;
 
@@ -19,6 +21,8 @@ import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
+import com.streamarr.server.graphql.cursor.MediaFilter;
+import com.streamarr.server.graphql.cursor.OrderMediaBy;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
@@ -31,6 +35,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Stream;
+import org.jooq.SortOrder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -393,19 +398,10 @@ class LibraryResolverTest {
   }
 
   @Test
-  @DisplayName("Should pass sort options to movie service when sort input provided")
-  void shouldPassSortOptionsToMovieServiceWhenSortInputProvided() {
+  @DisplayName("Should delegate sort options to movie service when sort input provided")
+  void shouldDelegateSortOptionsToMovieServiceWhenSortInputProvided() {
     var libraryId = UUID.randomUUID();
-    var library =
-        Library.builder()
-            .name("Movies")
-            .filepathUri("file:///mpool/media/movies")
-            .status(LibraryStatus.HEALTHY)
-            .backend(LibraryBackend.LOCAL)
-            .type(MediaType.MOVIE)
-            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
-            .build();
-    library.setId(libraryId);
+    var library = buildMovieLibrary(libraryId);
 
     var movie = Movie.builder().title("Inception").build();
     movie.setId(UUID.randomUUID());
@@ -417,9 +413,18 @@ class LibraryResolverTest {
             new DefaultPageInfo(cursor, cursor, false, false));
 
     when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
+
+    // Stub only matches when sort options are correctly translated to MediaFilter
     doReturn(connection)
         .when(movieService)
-        .getMoviesWithFilter(anyInt(), any(), anyInt(), any(), any());
+        .getMoviesWithFilter(
+            anyInt(),
+            isNull(),
+            anyInt(),
+            isNull(),
+            argThat(
+                (MediaFilter f) ->
+                    f.getSortBy() == OrderMediaBy.ADDED && f.getSortDirection() == SortOrder.DESC));
 
     String title =
         dgsQueryExecutor.executeAndExtractJsonPath(
@@ -434,19 +439,10 @@ class LibraryResolverTest {
   }
 
   @Test
-  @DisplayName("Should pass filter options to movie service when filter input provided")
-  void shouldPassFilterOptionsToMovieServiceWhenFilterInputProvided() {
+  @DisplayName("Should delegate filter options to movie service when filter input provided")
+  void shouldDelegateFilterOptionsToMovieServiceWhenFilterInputProvided() {
     var libraryId = UUID.randomUUID();
-    var library =
-        Library.builder()
-            .name("Movies")
-            .filepathUri("file:///mpool/media/movies")
-            .status(LibraryStatus.HEALTHY)
-            .backend(LibraryBackend.LOCAL)
-            .type(MediaType.MOVIE)
-            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
-            .build();
-    library.setId(libraryId);
+    var library = buildMovieLibrary(libraryId);
 
     var movie = Movie.builder().title("Filtered Movie").build();
     movie.setId(UUID.randomUUID());
@@ -458,9 +454,23 @@ class LibraryResolverTest {
             new DefaultPageInfo(cursor, cursor, false, false));
 
     when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
+
+    // Stub only matches when filter options are correctly parsed and delegated
     doReturn(connection)
         .when(movieService)
-        .getMoviesWithFilter(anyInt(), any(), anyInt(), any(), any());
+        .getMoviesWithFilter(
+            anyInt(),
+            isNull(),
+            anyInt(),
+            isNull(),
+            argThat(
+                (MediaFilter f) ->
+                    f.getStartLetter() == AlphabetLetter.A
+                        && f.getYears() != null
+                        && f.getYears().contains(2024)
+                        && f.getContentRatings() != null
+                        && f.getContentRatings().contains("PG-13")
+                        && Boolean.FALSE.equals(f.getUnmatched())));
 
     String title =
         dgsQueryExecutor.executeAndExtractJsonPath(
@@ -472,6 +482,20 @@ class LibraryResolverTest {
             "data.library.items.edges[0].node.title");
 
     assertThat(title).isEqualTo("Filtered Movie");
+  }
+
+  private Library buildMovieLibrary(UUID libraryId) {
+    var library =
+        Library.builder()
+            .name("Movies")
+            .filepathUri("file:///mpool/media/movies")
+            .status(LibraryStatus.HEALTHY)
+            .backend(LibraryBackend.LOCAL)
+            .type(MediaType.MOVIE)
+            .externalAgentStrategy(ExternalAgentStrategy.TMDB)
+            .build();
+    library.setId(libraryId);
+    return library;
   }
 
   @Test

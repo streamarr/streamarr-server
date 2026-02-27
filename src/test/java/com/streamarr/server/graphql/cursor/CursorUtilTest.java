@@ -21,11 +21,15 @@ class CursorUtilTest {
   private final CursorUtil cursorUtil = new CursorUtil(new ObjectMapper());
 
   @Test
-  @DisplayName("Should round-trip encode and decode cursor preserving cursorId and filter state")
-  void shouldRoundTripEncodeAndDecodeCursorPreservingCursorIdAndFilterState() {
+  @DisplayName(
+      "Should preserve cursorId and all filter dimensions when round-tripping encode and decode")
+  void shouldPreserveCursorIdAndAllFilterDimensionsWhenRoundTrippingEncodeAndDecode() {
     var cursorId = UUID.randomUUID();
     var libraryId = UUID.randomUUID();
     var genreId = UUID.randomUUID();
+    var studioId = UUID.randomUUID();
+    var directorId = UUID.randomUUID();
+    var castMemberId = UUID.randomUUID();
 
     var filter =
         MediaFilter.builder()
@@ -35,6 +39,9 @@ class CursorUtilTest {
             .genreIds(List.of(genreId))
             .years(List.of(2024))
             .contentRatings(List.of("PG-13"))
+            .studioIds(List.of(studioId))
+            .directorIds(List.of(directorId))
+            .castMemberIds(List.of(castMemberId))
             .unmatched(true)
             .build();
 
@@ -68,6 +75,9 @@ class CursorUtilTest {
     assertThat(decoded.getMediaFilter().getGenreIds()).containsExactly(genreId);
     assertThat(decoded.getMediaFilter().getYears()).containsExactly(2024);
     assertThat(decoded.getMediaFilter().getContentRatings()).containsExactly("PG-13");
+    assertThat(decoded.getMediaFilter().getStudioIds()).containsExactly(studioId);
+    assertThat(decoded.getMediaFilter().getDirectorIds()).containsExactly(directorId);
+    assertThat(decoded.getMediaFilter().getCastMemberIds()).containsExactly(castMemberId);
     assertThat(decoded.getMediaFilter().getUnmatched()).isTrue();
   }
 
