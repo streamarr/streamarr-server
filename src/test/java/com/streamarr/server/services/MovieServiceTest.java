@@ -792,9 +792,10 @@ class MovieServiceTest {
             .build();
 
     var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
-    assertThat(titles).containsExactly("Old Movie", "Mid Movie", "New Movie");
+    assertThat(result.getEdges())
+        .extracting(e -> e.getNode().getTitle())
+        .containsExactly("Old Movie", "Mid Movie", "New Movie");
   }
 
   @Test
@@ -812,9 +813,10 @@ class MovieServiceTest {
             .build();
 
     var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
-    assertThat(titles).containsExactly("New Movie", "Old Movie");
+    assertThat(result.getEdges())
+        .extracting(e -> e.getNode().getTitle())
+        .containsExactly("New Movie", "Old Movie");
   }
 
   @Test
@@ -828,9 +830,10 @@ class MovieServiceTest {
         MediaFilter.builder().sortBy(OrderMediaBy.RUNTIME).sortDirection(SortOrder.ASC).build();
 
     var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
-    assertThat(titles).containsExactly("Short", "Medium", "Long");
+    assertThat(result.getEdges())
+        .extracting(e -> e.getNode().getTitle())
+        .containsExactly("Short", "Medium", "Long");
   }
 
   @Test
@@ -843,9 +846,10 @@ class MovieServiceTest {
         MediaFilter.builder().sortBy(OrderMediaBy.RUNTIME).sortDirection(SortOrder.DESC).build();
 
     var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
-    assertThat(titles).containsExactly("Long", "Short");
+    assertThat(result.getEdges())
+        .extracting(e -> e.getNode().getTitle())
+        .containsExactly("Long", "Short");
   }
 
   @Test
@@ -862,9 +866,10 @@ class MovieServiceTest {
             .build();
 
     var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
-    assertThat(titles).containsExactly("Dated Movie", "Undated Movie");
+    assertThat(result.getEdges())
+        .extracting(e -> e.getNode().getTitle())
+        .containsExactly("Dated Movie", "Undated Movie");
   }
 
   @Test
@@ -881,9 +886,10 @@ class MovieServiceTest {
             .build();
 
     var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
-    assertThat(titles).containsExactly("Dated Movie", "Undated Movie");
+    assertThat(result.getEdges())
+        .extracting(e -> e.getNode().getTitle())
+        .containsExactly("Dated Movie", "Undated Movie");
   }
 
   @Test
@@ -896,9 +902,10 @@ class MovieServiceTest {
         MediaFilter.builder().sortBy(OrderMediaBy.RUNTIME).sortDirection(SortOrder.ASC).build();
 
     var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
-    assertThat(titles).containsExactly("With Runtime", "No Runtime");
+    assertThat(result.getEdges())
+        .extracting(e -> e.getNode().getTitle())
+        .containsExactly("With Runtime", "No Runtime");
   }
 
   @Test

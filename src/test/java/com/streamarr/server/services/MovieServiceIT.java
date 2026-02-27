@@ -665,9 +665,10 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .build();
 
     var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
-    assertThat(titles).containsExactly("Early", "Mid", "Late", "None");
+    assertThat(result.getEdges())
+        .extracting(e -> e.getNode().getTitle())
+        .containsExactly("Early", "Mid", "Late", "None");
   }
 
   @Test
@@ -705,12 +706,15 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .build();
 
     var page1 = movieService.getMoviesWithFilter(1, null, 0, null, filter);
-    assertThat(page1.getEdges().get(0).getNode().getTitle()).isEqualTo("First");
+    assertThat(page1.getEdges()).first().extracting(e -> e.getNode().getTitle()).isEqualTo("First");
     assertThat(page1.getPageInfo().isHasNextPage()).isTrue();
 
     var cursor = page1.getPageInfo().getEndCursor().getValue();
     var page2 = movieService.getMoviesWithFilter(1, cursor, 0, null, filter);
-    assertThat(page2.getEdges().get(0).getNode().getTitle()).isEqualTo("Second");
+    assertThat(page2.getEdges())
+        .first()
+        .extracting(e -> e.getNode().getTitle())
+        .isEqualTo("Second");
     assertThat(page2.getPageInfo().isHasNextPage()).isTrue();
   }
 
@@ -749,11 +753,11 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .build();
 
     var page1 = movieService.getMoviesWithFilter(1, null, 0, null, filter);
-    assertThat(page1.getEdges().get(0).getNode().getTitle()).isEqualTo("New");
+    assertThat(page1.getEdges()).first().extracting(e -> e.getNode().getTitle()).isEqualTo("New");
 
     var cursor = page1.getPageInfo().getEndCursor().getValue();
     var page2 = movieService.getMoviesWithFilter(1, cursor, 0, null, filter);
-    assertThat(page2.getEdges().get(0).getNode().getTitle()).isEqualTo("Mid");
+    assertThat(page2.getEdges()).first().extracting(e -> e.getNode().getTitle()).isEqualTo("Mid");
   }
 
   @Test
@@ -784,7 +788,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
     // Page 1: first=2 returns Dated + one Undated (nulls last, secondary sort by ID)
     var page1 = movieService.getMoviesWithFilter(2, null, 0, null, filter);
     assertThat(page1.getEdges()).hasSize(2);
-    assertThat(page1.getEdges().get(0).getNode().getTitle()).isEqualTo("Dated");
+    assertThat(page1.getEdges()).first().extracting(e -> e.getNode().getTitle()).isEqualTo("Dated");
     assertThat(page1.getPageInfo().isHasNextPage()).isTrue();
 
     var page1SecondTitle = page1.getEdges().get(1).getNode().getTitle();
@@ -827,9 +831,10 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .build();
 
     var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
-    assertThat(titles).containsExactly("Short", "Medium", "Long", "None");
+    assertThat(result.getEdges())
+        .extracting(e -> e.getNode().getTitle())
+        .containsExactly("Short", "Medium", "Long", "None");
   }
 
   @Test
@@ -852,11 +857,14 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .build();
 
     var page1 = movieService.getMoviesWithFilter(1, null, 0, null, filter);
-    assertThat(page1.getEdges().get(0).getNode().getTitle()).isEqualTo("Short");
+    assertThat(page1.getEdges()).first().extracting(e -> e.getNode().getTitle()).isEqualTo("Short");
 
     var cursor = page1.getPageInfo().getEndCursor().getValue();
     var page2 = movieService.getMoviesWithFilter(1, cursor, 0, null, filter);
-    assertThat(page2.getEdges().get(0).getNode().getTitle()).isEqualTo("Medium");
+    assertThat(page2.getEdges())
+        .first()
+        .extracting(e -> e.getNode().getTitle())
+        .isEqualTo("Medium");
   }
 
   @Test
@@ -877,11 +885,11 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .build();
 
     var page1 = movieService.getMoviesWithFilter(1, null, 0, null, filter);
-    assertThat(page1.getEdges().get(0).getNode().getTitle()).isEqualTo("Long");
+    assertThat(page1.getEdges()).first().extracting(e -> e.getNode().getTitle()).isEqualTo("Long");
 
     var cursor = page1.getPageInfo().getEndCursor().getValue();
     var page2 = movieService.getMoviesWithFilter(1, cursor, 0, null, filter);
-    assertThat(page2.getEdges().get(0).getNode().getTitle()).isEqualTo("Short");
+    assertThat(page2.getEdges()).first().extracting(e -> e.getNode().getTitle()).isEqualTo("Short");
   }
 
   // --- 3b. Backward Pagination with Nullable Sort Fields ---
@@ -925,9 +933,10 @@ class MovieServiceIT extends AbstractIntegrationTest {
 
     var endCursor = forwardAll.getPageInfo().getEndCursor().getValue();
     var backwardPage = movieService.getMoviesWithFilter(0, null, 2, endCursor, filter);
-    var backwardTitles = backwardPage.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
-    assertThat(backwardTitles).containsExactlyElementsOf(forwardTitles.subList(0, 2));
+    assertThat(backwardPage.getEdges())
+        .extracting(e -> e.getNode().getTitle())
+        .containsExactlyElementsOf(forwardTitles.subList(0, 2));
   }
 
   @Test
@@ -954,9 +963,10 @@ class MovieServiceIT extends AbstractIntegrationTest {
 
     var endCursor = forwardAll.getPageInfo().getEndCursor().getValue();
     var backwardPage = movieService.getMoviesWithFilter(0, null, 2, endCursor, filter);
-    var backwardTitles = backwardPage.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
-    assertThat(backwardTitles).containsExactlyElementsOf(forwardTitles.subList(0, 2));
+    assertThat(backwardPage.getEdges())
+        .extracting(e -> e.getNode().getTitle())
+        .containsExactlyElementsOf(forwardTitles.subList(0, 2));
   }
 
   // --- 3c. PageInfo Correctness (Relay Spec §5) ---
@@ -969,8 +979,12 @@ class MovieServiceIT extends AbstractIntegrationTest {
 
     var result = movieService.getMoviesWithFilter(1, null, 0, null, filter);
 
-    assertThat(result.getPageInfo().isHasNextPage()).isTrue();
-    assertThat(result.getPageInfo().isHasPreviousPage()).isFalse();
+    assertThat(result.getPageInfo())
+        .satisfies(
+            pageInfo -> {
+              assertThat(pageInfo.isHasNextPage()).isTrue();
+              assertThat(pageInfo.isHasPreviousPage()).isFalse();
+            });
   }
 
   @Test
@@ -1008,8 +1022,12 @@ class MovieServiceIT extends AbstractIntegrationTest {
 
     var backwardPage = movieService.getMoviesWithFilter(0, null, 1, endCursor, filter);
 
-    assertThat(backwardPage.getPageInfo().isHasPreviousPage()).isFalse();
-    assertThat(backwardPage.getPageInfo().isHasNextPage()).isTrue();
+    assertThat(backwardPage.getPageInfo())
+        .satisfies(
+            pageInfo -> {
+              assertThat(pageInfo.isHasPreviousPage()).isFalse();
+              assertThat(pageInfo.isHasNextPage()).isTrue();
+            });
   }
 
   @Test
@@ -1021,8 +1039,12 @@ class MovieServiceIT extends AbstractIntegrationTest {
     var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
 
     assertThat(result.getEdges()).isEmpty();
-    assertThat(result.getPageInfo().getStartCursor()).isNull();
-    assertThat(result.getPageInfo().getEndCursor()).isNull();
+    assertThat(result.getPageInfo())
+        .satisfies(
+            pageInfo -> {
+              assertThat(pageInfo.getStartCursor()).isNull();
+              assertThat(pageInfo.getEndCursor()).isNull();
+            });
   }
 
   @Test
@@ -1033,9 +1055,12 @@ class MovieServiceIT extends AbstractIntegrationTest {
     var result = movieService.getMoviesWithFilter(2, null, 0, null, filter);
 
     assertThat(result.getEdges()).hasSize(2);
-    assertThat(result.getPageInfo().getStartCursor())
-        .isEqualTo(result.getEdges().get(0).getCursor());
-    assertThat(result.getPageInfo().getEndCursor()).isEqualTo(result.getEdges().get(1).getCursor());
+    assertThat(result.getPageInfo())
+        .satisfies(
+            pageInfo -> {
+              assertThat(pageInfo.getStartCursor()).isEqualTo(result.getEdges().get(0).getCursor());
+              assertThat(pageInfo.getEndCursor()).isEqualTo(result.getEdges().get(1).getCursor());
+            });
   }
 
   // --- 3d. Filter Dimension ITs (Real SQL via jOOQ → PostgreSQL) ---
@@ -1074,9 +1099,10 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .build();
 
     var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
-    assertThat(titles).containsExactly("Action Movie");
+    assertThat(result.getEdges())
+        .extracting(e -> e.getNode().getTitle())
+        .containsExactly("Action Movie");
   }
 
   @Test
@@ -1102,9 +1128,10 @@ class MovieServiceIT extends AbstractIntegrationTest {
     var filter = MediaFilter.builder().libraryId(library.getId()).years(List.of(2024)).build();
 
     var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
-    assertThat(titles).containsExactly("Year 2024");
+    assertThat(result.getEdges())
+        .extracting(e -> e.getNode().getTitle())
+        .containsExactly("Year 2024");
   }
 
   @Test
@@ -1131,9 +1158,10 @@ class MovieServiceIT extends AbstractIntegrationTest {
         MediaFilter.builder().libraryId(library.getId()).contentRatings(List.of("PG-13")).build();
 
     var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
-    assertThat(titles).containsExactly("PG-13 Movie");
+    assertThat(result.getEdges())
+        .extracting(e -> e.getNode().getTitle())
+        .containsExactly("PG-13 Movie");
   }
 
   @Test
@@ -1176,9 +1204,10 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .build();
 
     var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
-    assertThat(titles).containsExactly("Studio A Movie");
+    assertThat(result.getEdges())
+        .extracting(e -> e.getNode().getTitle())
+        .containsExactly("Studio A Movie");
   }
 
   @Test
@@ -1215,9 +1244,10 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .build();
 
     var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
-    assertThat(titles).containsExactly("Dir A Movie");
+    assertThat(result.getEdges())
+        .extracting(e -> e.getNode().getTitle())
+        .containsExactly("Dir A Movie");
   }
 
   @Test
@@ -1254,9 +1284,10 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .build();
 
     var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
-    assertThat(titles).containsExactly("Cast A Movie");
+    assertThat(result.getEdges())
+        .extracting(e -> e.getNode().getTitle())
+        .containsExactly("Cast A Movie");
   }
 
   @Test
@@ -1299,9 +1330,10 @@ class MovieServiceIT extends AbstractIntegrationTest {
     var filter = MediaFilter.builder().libraryId(library.getId()).unmatched(true).build();
 
     var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
-    assertThat(titles).containsExactly("Unmatched Movie");
+    assertThat(result.getEdges())
+        .extracting(e -> e.getNode().getTitle())
+        .containsExactly("Unmatched Movie");
   }
 
   @Test
@@ -1342,7 +1374,10 @@ class MovieServiceIT extends AbstractIntegrationTest {
     var cursor = page1.getPageInfo().getEndCursor().getValue();
     var page2 = movieService.getMoviesWithFilter(2, cursor, 0, null, filter);
     assertThat(page2.getEdges()).hasSize(1);
-    assertThat(page2.getEdges().get(0).getNode().getTitle()).isEqualTo("Undated");
+    assertThat(page2.getEdges())
+        .first()
+        .extracting(e -> e.getNode().getTitle())
+        .isEqualTo("Undated");
     assertThat(page2.getPageInfo().isHasNextPage()).isFalse();
   }
 
@@ -1372,7 +1407,10 @@ class MovieServiceIT extends AbstractIntegrationTest {
     var cursor = page1.getPageInfo().getEndCursor().getValue();
     var page2 = movieService.getMoviesWithFilter(2, cursor, 0, null, filter);
     assertThat(page2.getEdges()).hasSize(1);
-    assertThat(page2.getEdges().get(0).getNode().getTitle()).isEqualTo("Unknown");
+    assertThat(page2.getEdges())
+        .first()
+        .extracting(e -> e.getNode().getTitle())
+        .isEqualTo("Unknown");
     assertThat(page2.getPageInfo().isHasNextPage()).isFalse();
   }
 

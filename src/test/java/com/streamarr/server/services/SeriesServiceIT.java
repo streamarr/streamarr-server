@@ -762,9 +762,10 @@ class SeriesServiceIT extends AbstractIntegrationTest {
             .build();
 
     var result = seriesService.getSeriesWithFilter(10, null, 0, null, filter);
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
-    assertThat(titles).containsExactly("Early Show", "Mid Show", "Undated Show");
+    assertThat(result.getEdges())
+        .extracting(e -> e.getNode().getTitle())
+        .containsExactly("Early Show", "Mid Show", "Undated Show");
   }
 
   @Test
@@ -802,12 +803,18 @@ class SeriesServiceIT extends AbstractIntegrationTest {
             .build();
 
     var page1 = seriesService.getSeriesWithFilter(1, null, 0, null, filter);
-    assertThat(page1.getEdges().get(0).getNode().getTitle()).isEqualTo("First Show");
+    assertThat(page1.getEdges())
+        .first()
+        .extracting(e -> e.getNode().getTitle())
+        .isEqualTo("First Show");
     assertThat(page1.getPageInfo().isHasNextPage()).isTrue();
 
     var cursor = page1.getPageInfo().getEndCursor().getValue();
     var page2 = seriesService.getSeriesWithFilter(1, cursor, 0, null, filter);
-    assertThat(page2.getEdges().get(0).getNode().getTitle()).isEqualTo("Second Show");
+    assertThat(page2.getEdges())
+        .first()
+        .extracting(e -> e.getNode().getTitle())
+        .isEqualTo("Second Show");
   }
 
   @Test
@@ -838,7 +845,10 @@ class SeriesServiceIT extends AbstractIntegrationTest {
     // Page 1: first=2 returns Dated Show + one Undated (nulls last, secondary sort by ID)
     var page1 = seriesService.getSeriesWithFilter(2, null, 0, null, filter);
     assertThat(page1.getEdges()).hasSize(2);
-    assertThat(page1.getEdges().get(0).getNode().getTitle()).isEqualTo("Dated Show");
+    assertThat(page1.getEdges())
+        .first()
+        .extracting(e -> e.getNode().getTitle())
+        .isEqualTo("Dated Show");
     assertThat(page1.getPageInfo().isHasNextPage()).isTrue();
 
     var page1SecondTitle = page1.getEdges().get(1).getNode().getTitle();
@@ -893,9 +903,10 @@ class SeriesServiceIT extends AbstractIntegrationTest {
             .build();
 
     var result = seriesService.getSeriesWithFilter(10, null, 0, null, filter);
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
-    assertThat(titles).containsExactly("Short Show", "Long Show", "No Runtime Show");
+    assertThat(result.getEdges())
+        .extracting(e -> e.getNode().getTitle())
+        .containsExactly("Short Show", "Long Show", "No Runtime Show");
   }
 
   @Test
@@ -916,11 +927,11 @@ class SeriesServiceIT extends AbstractIntegrationTest {
             .build();
 
     var page1 = seriesService.getSeriesWithFilter(1, null, 0, null, filter);
-    assertThat(page1.getEdges().get(0).getNode().getTitle()).isEqualTo("Short");
+    assertThat(page1.getEdges()).first().extracting(e -> e.getNode().getTitle()).isEqualTo("Short");
 
     var cursor = page1.getPageInfo().getEndCursor().getValue();
     var page2 = seriesService.getSeriesWithFilter(1, cursor, 0, null, filter);
-    assertThat(page2.getEdges().get(0).getNode().getTitle()).isEqualTo("Long");
+    assertThat(page2.getEdges()).first().extracting(e -> e.getNode().getTitle()).isEqualTo("Long");
   }
 
   @Test
@@ -965,8 +976,9 @@ class SeriesServiceIT extends AbstractIntegrationTest {
         MediaFilter.builder().libraryId(library.getId()).genreIds(List.of(genre.getId())).build();
 
     var result = seriesService.getSeriesWithFilter(10, null, 0, null, filter);
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
 
-    assertThat(titles).containsExactly("Drama Series");
+    assertThat(result.getEdges())
+        .extracting(e -> e.getNode().getTitle())
+        .containsExactly("Drama Series");
   }
 }
