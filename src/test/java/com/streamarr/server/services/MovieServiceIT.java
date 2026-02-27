@@ -1413,6 +1413,39 @@ class MovieServiceIT extends AbstractIntegrationTest {
     assertThat(page2.getPageInfo().isHasNextPage()).isFalse();
   }
 
+  @Test
+  @DisplayName(
+      "Should paginate through null RUNTIME values using cursor when sorted by RUNTIME DESC")
+  void shouldPaginateThroughNullRuntimeValuesUsingCursorWhenSortedByRuntimeDesc() {
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+
+    movieRepository.saveAndFlush(
+        Movie.builder().title("Long").titleSort("long").runtime(180).library(library).build());
+    movieRepository.saveAndFlush(
+        Movie.builder().title("Null A").titleSort("null a").library(library).build());
+    movieRepository.saveAndFlush(
+        Movie.builder().title("Null B").titleSort("null b").library(library).build());
+
+    var filter =
+        MediaFilter.builder()
+            .libraryId(library.getId())
+            .sortBy(OrderMediaBy.RUNTIME)
+            .sortDirection(SortOrder.DESC)
+            .build();
+
+    // Page 1: first=2 returns Long + one null (NULLS LAST in DESC)
+    var page1 = movieService.getMoviesWithFilter(2, null, 0, null, filter);
+    assertThat(page1.getEdges()).hasSize(2);
+    assertThat(page1.getEdges()).first().extracting(e -> e.getNode().getTitle()).isEqualTo("Long");
+    assertThat(page1.getPageInfo().isHasNextPage()).isTrue();
+
+    // Page 2: cursor from null row exercises DESC null-seek branch (line 190)
+    var cursor = page1.getPageInfo().getEndCursor().getValue();
+    var page2 = movieService.getMoviesWithFilter(2, cursor, 0, null, filter);
+    assertThat(page2.getEdges()).hasSize(1);
+    assertThat(page2.getPageInfo().isHasNextPage()).isFalse();
+  }
+
   // --- 3e. Cursor Filter Immutability ---
 
   @Test
