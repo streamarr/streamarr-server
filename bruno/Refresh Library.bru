@@ -1,0 +1,23 @@
+meta {
+  name: Refresh Library
+  type: graphql
+  seq: 11
+}
+
+post {
+  url: {{BASE_URL}}/graphql
+  body: graphql
+  auth: none
+}
+
+body:graphql {
+  mutation RefreshLibrary($id: ID!) {
+    refreshLibrary(id: $id)
+  }
+}
+
+body:graphql:vars {
+  {
+    "id": ""
+  }
+}

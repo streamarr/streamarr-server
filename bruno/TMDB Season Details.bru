@@ -1,0 +1,16 @@
+meta {
+  name: TMDB Season Details
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{TMDB_BASE_URL}}/tv/1396/season/1
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{TMDB_TOKEN}}
+  accept: application/json
+}

@@ -1,0 +1,23 @@
+meta {
+  name: Scan Library
+  type: graphql
+  seq: 2
+}
+
+post {
+  url: {{BASE_URL}}/graphql
+  body: graphql
+  auth: none
+}
+
+body:graphql {
+  mutation ScanLibrary($id: ID!) {
+    scanLibrary(id: $id)
+  }
+}
+
+body:graphql:vars {
+  {
+    "id": ""
+  }
+}

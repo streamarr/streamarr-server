@@ -1,0 +1,79 @@
+meta {
+  name: Get Library Contents
+  type: graphql
+  seq: 3
+}
+
+post {
+  url: {{BASE_URL}}/graphql
+  body: graphql
+  auth: none
+}
+
+body:graphql {
+  query GetLibraryContents($id: ID!, $first: Int) {
+    library(id: $id) {
+      name
+      items(first: $first) {
+        edges {
+          node {
+            ... on Movie {
+              id
+              titleSort
+              title
+              studios {
+                name
+              }
+              files {
+                filename
+                filepathUri
+                size
+              }
+              images {
+                imageType
+                blurHash
+                aspectRatio
+                variants {
+                  id
+                  size
+                  width
+                  height
+                  url
+                }
+              }
+              cast {
+                name
+                images {
+                  imageType
+                  blurHash
+                  aspectRatio
+                  variants {
+                    id
+                    size
+                    width
+                    height
+                    url
+                  }
+                }
+              }
+            }
+          }
+          cursor
+        }
+        pageInfo {
+          hasNextPage
+          hasPreviousPage
+          startCursor
+          endCursor
+        }
+      }
+    }
+  }
+}
+
+body:graphql:vars {
+  {
+    "id": "",
+    "first": 10
+  }
+}

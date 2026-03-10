@@ -1,0 +1,27 @@
+meta {
+  name: Create Stream Session
+  type: graphql
+  seq: 2
+}
+
+post {
+  url: {{BASE_URL}}/graphql
+  body: graphql
+  auth: none
+}
+
+body:graphql {
+  mutation CreateStreamSession($mediaFileId: ID!) {
+    createStreamSession(mediaFileId: $mediaFileId) {
+      id
+      streamUrl
+      transcodeMode
+    }
+  }
+}
+
+body:graphql:vars {
+  {
+    "mediaFileId": ""
+  }
+}

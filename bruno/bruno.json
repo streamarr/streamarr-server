@@ -1,0 +1,9 @@
+{
+  "version": "1",
+  "name": "Streamarr",
+  "type": "collection",
+  "ignore": [
+    "node_modules",
+    ".git"
+  ]
+}

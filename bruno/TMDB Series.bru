@@ -1,0 +1,20 @@
+meta {
+  name: TMDB Series
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{TMDB_BASE_URL}}/tv/2730?append_to_response=content_ratings,credits,external_ids
+  body: none
+  auth: none
+}
+
+params:query {
+  append_to_response: content_ratings,credits,external_ids
+}
+
+headers {
+  Authorization: Bearer {{TMDB_TOKEN}}
+  accept: application/json
+}

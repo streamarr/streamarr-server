@@ -1,0 +1,27 @@
+meta {
+  name: Create Library
+  type: graphql
+  seq: 8
+}
+
+post {
+  url: {{BASE_URL}}/graphql
+  body: graphql
+  auth: none
+}
+
+body:graphql {
+  mutation {
+    addLibrary(input: {
+      name: "Movies"
+      filepath: "/mpool/media/clean/movies"
+      type: MOVIE
+      backend: LOCAL
+      externalAgentStrategy: TMDB
+    }) {
+      id
+      name
+      status
+    }
+  }
+}

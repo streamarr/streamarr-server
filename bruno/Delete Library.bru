@@ -1,0 +1,23 @@
+meta {
+  name: Delete Library
+  type: graphql
+  seq: 10
+}
+
+post {
+  url: {{BASE_URL}}/graphql
+  body: graphql
+  auth: none
+}
+
+body:graphql {
+  mutation DeleteLibrary($id: ID!) {
+    removeLibrary(id: $id)
+  }
+}
+
+body:graphql:vars {
+  {
+    "id": ""
+  }
+}

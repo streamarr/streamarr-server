@@ -1,0 +1,23 @@
+meta {
+  name: TMDB Search
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{TMDB_BASE_URL}}/search/tv?include_adult=false&language=en-US&page=1&query=Patriot
+  body: none
+  auth: none
+}
+
+params:query {
+  include_adult: false
+  language: en-US
+  page: 1
+  query: Patriot
+}
+
+headers {
+  Authorization: Bearer {{TMDB_TOKEN}}
+  accept: application/json
+}

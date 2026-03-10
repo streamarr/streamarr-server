@@ -1,0 +1,25 @@
+meta {
+  name: Get Libraries
+  type: graphql
+  seq: 4
+}
+
+post {
+  url: {{BASE_URL}}/graphql
+  body: graphql
+  auth: none
+}
+
+body:graphql {
+  query {
+    libraries {
+      id
+      name
+      alphabetIndex {
+        letter
+        count
+      }
+    }
+  }
+
+}
