@@ -15,7 +15,8 @@ type Library {
           after: String
           last: Int
           before: String
-          filter: Filter): MediaConnection!
+          sort: MediaSort
+          filter: MediaFilter): MediaConnection!
     alphabetIndex: [AlphabetIndex!]!
 }
 
@@ -40,17 +41,29 @@ enum MediaType {
 enum OrderMediaBy {
     TITLE
     ADDED
+    RELEASE_DATE
+    RUNTIME
 }
 
-enum SortOrder {
+enum SortDirection {
     ASC
     DESC
 }
 
-input Filter {
-    sortBy: OrderMediaBy
-    sortDirection: SortOrder
+input MediaSort {
+    by: OrderMediaBy = TITLE
+    direction: SortDirection = ASC
+}
+
+input MediaFilter {
     startLetter: AlphabetLetter
+    genreIds: [ID!]
+    years: [Int!]
+    contentRatings: [String!]
+    studioIds: [ID!]
+    directorIds: [ID!]
+    castMemberIds: [ID!]
+    unmatched: Boolean
 }
 
 enum AlphabetLetter {

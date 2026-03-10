@@ -3,6 +3,8 @@ package com.streamarr.server.services;
 import com.streamarr.server.domain.BaseAuditableEntity;
 import com.streamarr.server.exceptions.InvalidPaginationArgumentException;
 import com.streamarr.server.graphql.cursor.InvalidCursorException;
+import com.streamarr.server.graphql.cursor.MediaFilter;
+import com.streamarr.server.graphql.cursor.MediaPaginationOptions;
 import com.streamarr.server.graphql.cursor.PaginationDirection;
 import com.streamarr.server.graphql.cursor.PaginationOptions;
 import graphql.relay.Connection;
@@ -94,13 +96,19 @@ public class RelayPaginationService {
     var hasNextPage = false;
 
     if (cursorId.isPresent() && direction.equals(PaginationDirection.FORWARD)) {
-      hasPreviousPage = edges.getFirst().getNode().getId().equals(cursorId.get());
-      edges = edges.subList(1, edges.size());
+      var cursorFound = edges.getFirst().getNode().getId().equals(cursorId.get());
+      hasPreviousPage = cursorFound;
+      if (cursorFound) {
+        edges = edges.subList(1, edges.size());
+      }
     }
 
     if (cursorId.isPresent() && direction.equals(PaginationDirection.REVERSE)) {
-      hasNextPage = edges.getLast().getNode().getId().equals(cursorId.get());
-      edges = edges.subList(0, edges.size() - 1);
+      var cursorFound = edges.getLast().getNode().getId().equals(cursorId.get());
+      hasNextPage = cursorFound;
+      if (cursorFound) {
+        edges = edges.subList(0, edges.size() - 1);
+      }
     }
 
     if (edges.isEmpty()) {
@@ -139,13 +147,33 @@ public class RelayPaginationService {
     }
 
     if (direction.equals(PaginationDirection.REVERSE)) {
-      return list.subList(1, list.size());
+      return list.subList(list.size() - limit, list.size());
     }
 
-    return list.subList(0, list.size() - 1);
+    return list.subList(0, limit);
   }
 
-  public <T> void validateCursorField(String fieldName, T prior, T current) {
+  public void validateCursorAgainstFilter(
+      MediaPaginationOptions decodedOptions, MediaFilter filter) {
+    var previousFilter = decodedOptions.getMediaFilter();
+
+    validateCursorField("sortBy", previousFilter.getSortBy(), filter.getSortBy());
+    validateCursorField(
+        "sortDirection", previousFilter.getSortDirection(), filter.getSortDirection());
+    validateCursorField("libraryId", previousFilter.getLibraryId(), filter.getLibraryId());
+    validateCursorField("startLetter", previousFilter.getStartLetter(), filter.getStartLetter());
+    validateCursorField("genreIds", previousFilter.getGenreIds(), filter.getGenreIds());
+    validateCursorField("years", previousFilter.getYears(), filter.getYears());
+    validateCursorField(
+        "contentRatings", previousFilter.getContentRatings(), filter.getContentRatings());
+    validateCursorField("studioIds", previousFilter.getStudioIds(), filter.getStudioIds());
+    validateCursorField("directorIds", previousFilter.getDirectorIds(), filter.getDirectorIds());
+    validateCursorField(
+        "castMemberIds", previousFilter.getCastMemberIds(), filter.getCastMemberIds());
+    validateCursorField("unmatched", previousFilter.getUnmatched(), filter.getUnmatched());
+  }
+
+  <T> void validateCursorField(String fieldName, T prior, T current) {
     if (Objects.equals(prior, current)) {
       return;
     }

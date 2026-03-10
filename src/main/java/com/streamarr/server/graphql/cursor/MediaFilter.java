@@ -1,6 +1,7 @@
 package com.streamarr.server.graphql.cursor;
 
 import com.streamarr.server.domain.AlphabetLetter;
+import java.util.List;
 import java.util.UUID;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -19,6 +20,14 @@ public class MediaFilter {
 
   private UUID libraryId;
   private AlphabetLetter startLetter;
+
+  private List<UUID> genreIds;
+  private List<Integer> years;
+  private List<String> contentRatings;
+  private List<UUID> studioIds;
+  private List<UUID> directorIds;
+  private List<UUID> castMemberIds;
+  private Boolean unmatched;
 
   // Used for seek pagination
   private Object previousSortFieldValue;

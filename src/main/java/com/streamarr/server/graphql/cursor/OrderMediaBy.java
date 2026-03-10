@@ -2,5 +2,7 @@ package com.streamarr.server.graphql.cursor;
 
 public enum OrderMediaBy {
   TITLE,
-  ADDED;
+  ADDED,
+  RELEASE_DATE,
+  RUNTIME;
 }
