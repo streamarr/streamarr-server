@@ -5,7 +5,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.0.2</version>
+        <version>4.0.3</version>
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     <groupId>com.streamarr</groupId>
@@ -36,9 +36,9 @@
         <apache-commons-text.version>1.13.1</apache-commons-text.version>
         <apache-commons-io.version>2.21.0</apache-commons-io.version>
         <dgs-graphql.version>11.1.0</dgs-graphql.version>
-        <lombok.version>1.18.42</lombok.version>
+        <lombok.version>1.18.44</lombok.version>
 
-        <postgresql.version>42.7.9</postgresql.version>
+        <postgresql.version>42.7.10</postgresql.version>
         <methvin-directory-watcher.version>0.19.1</methvin-directory-watcher.version>
         <jooq.version>3.20.11</jooq.version>
         <maven-compiler-plugin.version>3.14.1</maven-compiler-plugin.version>
@@ -53,7 +53,7 @@
         <awaitility.version>4.3.0</awaitility.version>
         <jacoco.version>0.8.14</jacoco.version>
         <flyway.version>11.14.1</flyway.version>
-        <surefire-failsafe-plugin.version>3.5.4</surefire-failsafe-plugin.version>
+        <surefire-failsafe-plugin.version>3.5.5</surefire-failsafe-plugin.version>
         <surefire.excludedGroups>SmokeTest</surefire.excludedGroups>
         <failsafe.excludedGroups>SmokeTest</failsafe.excludedGroups>
         <spotless.version>3.2.1</spotless.version>
