@@ -78,6 +78,56 @@ public class PaginationService {
     return pageSize;
   }
 
+  public <T extends BaseAuditableEntity<?>> MediaPage<T> buildMediaPage(
+      List<PageItem<T>> items, PaginationOptions options, Optional<UUID> cursorId) {
+
+    if (items.isEmpty()) {
+      return emptyMediaPage();
+    }
+
+    var limit = options.getLimit();
+    var direction = options.getPaginationDirection();
+
+    var hasPreviousPage = false;
+    var hasNextPage = false;
+
+    if (cursorId.isPresent() && direction.equals(PaginationDirection.FORWARD)) {
+      var cursorFound = items.getFirst().item().getId().equals(cursorId.get());
+      hasPreviousPage = cursorFound;
+      if (cursorFound) {
+        items = items.subList(1, items.size());
+      }
+    }
+
+    if (cursorId.isPresent() && direction.equals(PaginationDirection.REVERSE)) {
+      var cursorFound = items.getLast().item().getId().equals(cursorId.get());
+      hasNextPage = cursorFound;
+      if (cursorFound) {
+        items = items.subList(0, items.size() - 1);
+      }
+    }
+
+    if (items.isEmpty()) {
+      return emptyMediaPage();
+    }
+
+    var isListLargerThanLimit = items.size() > limit;
+
+    if (direction.equals(PaginationDirection.FORWARD)) {
+      hasNextPage = isListLargerThanLimit;
+    } else {
+      hasPreviousPage = isListLargerThanLimit;
+    }
+
+    items = pruneListByLimitGivenDirection(items, limit, direction);
+
+    return new MediaPage<>(items, hasNextPage, hasPreviousPage);
+  }
+
+  private <T> MediaPage<T> emptyMediaPage() {
+    return new MediaPage<>(List.of(), false, false);
+  }
+
   public <T extends BaseAuditableEntity<?>> Connection<T> buildConnection(
       List<Edge<T>> edges, PaginationOptions options, Optional<UUID> cursorId) {
 
