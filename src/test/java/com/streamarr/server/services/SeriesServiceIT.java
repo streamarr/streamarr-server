@@ -444,6 +444,22 @@ class SeriesServiceIT extends AbstractIntegrationTest {
 
       assertThat(backwardTitles).containsExactlyElementsOf(forwardTitles.subList(0, 2));
     }
+
+    @Test
+    @DisplayName(
+        "Should return empty items with hasNextPage true when paginating backward from first item")
+    void shouldReturnEmptyItemsWithHasNextPageTrueWhenPaginatingBackwardFromFirstItem() {
+      var filter = filterForLibrary(savedLibraryB);
+
+      var firstPage = seriesService.getSeriesWithFilter(buildForwardOptions(3, filter));
+      var firstItem = firstPage.items().getFirst();
+
+      var backwardFromFirst =
+          seriesService.getSeriesWithFilter(buildBackwardContinuation(1, filter, firstItem));
+
+      assertThat(backwardFromFirst.items()).isEmpty();
+      assertThat(backwardFromFirst.hasNextPage()).isTrue();
+    }
   }
 
   @Nested

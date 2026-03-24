@@ -151,6 +151,30 @@ class MovieRestControllerIT extends AbstractIntegrationTest {
       assertThat(backwardTitles)
           .containsExactlyElementsOf(forwardTitles.subList(0, backwardTitles.size()));
     }
+
+    @Test
+    @DisplayName("Should return empty data when paginating backward from first item")
+    void shouldReturnEmptyDataWhenPaginatingBackwardFromFirstItem() throws Exception {
+      var firstPage = fetchPage(buildUrl(savedLibrary.getId(), 2));
+      var firstItemCursor = firstPage.data().getFirst().meta().page().cursor();
+
+      var result =
+          mockMvc
+              .perform(
+                  get(
+                      buildBaseUrl(savedLibrary.getId())
+                          + "?page[size]=2&page[before]="
+                          + firstItemCursor))
+              .andExpect(status().isOk())
+              .andReturn()
+              .getResponse()
+              .getContentAsString();
+
+      var emptyPage = objectMapper.readValue(result, JsonApiPageResponse.class);
+
+      assertThat(emptyPage.data()).isEmpty();
+      assertThat(emptyPage.links().first()).isNotNull();
+    }
   }
 
   @Nested
