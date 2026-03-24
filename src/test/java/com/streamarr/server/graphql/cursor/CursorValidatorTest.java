@@ -184,6 +184,18 @@ class CursorValidatorTest {
           .isInstanceOf(InvalidCursorException.class)
           .hasMessageContaining("genreIds");
     }
+
+    @Test
+    @DisplayName("Should throw when cursor has non-null genreIds but current has null")
+    void shouldThrowWhenCursorHasNonNullGenreIdsButCurrentHasNull() {
+      var cursorFilter = MediaFilter.builder().genreIds(List.of(UUID.randomUUID())).build();
+      var currentFilter = MediaFilter.builder().build();
+      var decoded = MediaPaginationOptions.builder().mediaFilter(cursorFilter).build();
+
+      assertThatThrownBy(() -> cursorValidator.validateCursorAgainstFilter(decoded, currentFilter))
+          .isInstanceOf(InvalidCursorException.class)
+          .hasMessageContaining("genreIds");
+    }
   }
 
   @Nested
