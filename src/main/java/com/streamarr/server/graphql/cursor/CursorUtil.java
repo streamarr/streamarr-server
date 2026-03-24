@@ -30,7 +30,9 @@ public class CursorUtil {
 
       String jsonStr = jacksonObjectMapper.writeValueAsString(mediaPaginationOptions);
       return new DefaultConnectionCursor(
-          Base64.getEncoder().encodeToString(jsonStr.getBytes(StandardCharsets.UTF_8)));
+          Base64.getUrlEncoder()
+              .withoutPadding()
+              .encodeToString(jsonStr.getBytes(StandardCharsets.UTF_8)));
     } catch (Exception ex) {
       throw new InvalidCursorException(ex.getMessage());
     }
@@ -47,7 +49,7 @@ public class CursorUtil {
     var cursor = optionalCursor.get();
 
     try {
-      var jsonStr = new String(Base64.getDecoder().decode(cursor));
+      var jsonStr = new String(Base64.getUrlDecoder().decode(cursor));
       return jacksonObjectMapper.readValue(jsonStr, MediaPaginationOptions.class).toBuilder()
           .paginationOptions(options)
           .build();

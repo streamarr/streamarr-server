@@ -176,6 +176,17 @@ class MovieRestControllerIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should return 400 when both page after and page before are provided")
+  void shouldReturn400WhenBothAfterAndBeforeProvided() throws Exception {
+    mockMvc
+        .perform(
+            get(
+                buildBaseUrl(savedLibrary.getId())
+                    + "?page[size]=2&page[after]=abc&page[before]=xyz"))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
   @DisplayName("Should return 400 when page size is negative")
   void shouldReturn400WhenPageSizeIsNegative() throws Exception {
     mockMvc

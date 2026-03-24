@@ -10,6 +10,7 @@ import com.streamarr.server.services.pagination.PageItem;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -29,23 +30,21 @@ public class JsonApiPageAdapter {
 
     if (page.items().isEmpty()) {
       var links = new JsonApiLinks(buildFirstLink(baseUrl, pageSize), null, null);
-      return new JsonApiPageResponse(links, java.util.List.of());
+      return new JsonApiPageResponse(links, List.of());
     }
 
     var data = page.items().stream().map(item -> toResource(item, options, resourceType)).toList();
 
-    var firstItem = page.items().getFirst();
-    var lastItem = page.items().getLast();
+    var firstCursor = data.getFirst().meta().page().cursor();
+    var lastCursor = data.getLast().meta().page().cursor();
 
     var prevLink =
         page.hasPreviousPage()
-            ? buildPageLink(baseUrl, pageSize, "page[before]", encodeCursor(options, firstItem))
+            ? buildPageLink(baseUrl, pageSize, "page[before]", firstCursor)
             : null;
 
     var nextLink =
-        page.hasNextPage()
-            ? buildPageLink(baseUrl, pageSize, "page[after]", encodeCursor(options, lastItem))
-            : null;
+        page.hasNextPage() ? buildPageLink(baseUrl, pageSize, "page[after]", lastCursor) : null;
 
     var links = new JsonApiLinks(buildFirstLink(baseUrl, pageSize), prevLink, nextLink);
 
@@ -73,11 +72,6 @@ public class JsonApiPageAdapter {
     var meta = new JsonApiResourceMeta(new JsonApiPageMeta(cursor));
 
     return new JsonApiResource(resourceType, entity.getId().toString(), attributes, meta);
-  }
-
-  private <T extends BaseAuditableEntity<?>> String encodeCursor(
-      MediaPaginationOptions options, PageItem<T> pageItem) {
-    return cursorCodec.encode(options, pageItem.item().getId(), pageItem.sortValue());
   }
 
   private String buildFirstLink(String baseUrl, int pageSize) {

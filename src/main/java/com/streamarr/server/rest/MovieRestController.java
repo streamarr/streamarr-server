@@ -12,6 +12,7 @@ import com.streamarr.server.services.pagination.PaginationService;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -39,7 +40,7 @@ public class MovieRestController {
       @RequestParam(name = "page[before]", required = false) String before,
       HttpServletRequest request) {
 
-    var isBackward = before != null;
+    var isBackward = StringUtils.isNotBlank(before);
     var paginationOptions =
         paginationService.getPaginationOptions(
             isBackward ? 0 : pageSize, after, isBackward ? pageSize : 0, before);

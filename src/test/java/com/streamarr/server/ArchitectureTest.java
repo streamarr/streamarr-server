@@ -45,6 +45,16 @@ class ArchitectureTest {
           .as("Controllers must not depend on repositories");
 
   @ArchTest
+  static final ArchRule restControllersMustNotDependOnRepositories =
+      noClasses()
+          .that()
+          .resideInAPackage("..rest..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAPackage("..repositories..")
+          .as("REST controllers must not depend on repositories");
+
+  @ArchTest
   static final ArchRule servicesMustNotDependOnGraphql =
       noClasses()
           .that()
