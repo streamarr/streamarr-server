@@ -211,6 +211,50 @@ class MovieRestControllerIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should return 400 when cursor libraryId does not match request libraryId")
+  void shouldReturn400WhenCursorLibraryIdMismatch() throws Exception {
+    var firstPage = fetchPage(buildUrl(savedLibrary.getId(), 2));
+    assertThat(firstPage.links().next()).isNotNull();
+
+    var cursorFromSavedLibrary = firstPage.data().getFirst().meta().page().cursor();
+
+    mockMvc
+        .perform(
+            get(
+                buildBaseUrl(emptyLibrary.getId())
+                    + "?page[size]=2&page[after]="
+                    + cursorFromSavedLibrary))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  @DisplayName("Should return 400 when cursor is malformed")
+  void shouldReturn400WhenCursorIsMalformed() throws Exception {
+    mockMvc
+        .perform(get(buildBaseUrl(savedLibrary.getId()) + "?page[size]=2&page[after]=not-a-cursor"))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  @DisplayName("Should return JSON:API error format when pagination argument is invalid")
+  void shouldReturnJsonApiErrorFormatWhenPaginationArgumentIsInvalid() throws Exception {
+    var result =
+        mockMvc
+            .perform(get(buildBaseUrl(savedLibrary.getId()) + "?page[size]=-1"))
+            .andExpect(status().isBadRequest())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    var errorResponse =
+        objectMapper.readValue(
+            result, com.streamarr.server.rest.pagination.JsonApiErrorResponse.class);
+    assertThat(errorResponse.errors()).hasSize(1);
+    assertThat(errorResponse.errors().getFirst().status()).isEqualTo("400");
+    assertThat(errorResponse.errors().getFirst().detail()).isNotBlank();
+  }
+
+  @Test
   @DisplayName("Should return empty data with null links when library has no movies")
   void shouldReturnEmptyDataWithNullLinksWhenLibraryHasNoMovies() throws Exception {
     var page = fetchPage(buildUrl(emptyLibrary.getId(), 10));

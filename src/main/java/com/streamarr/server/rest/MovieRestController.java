@@ -2,14 +2,16 @@ package com.streamarr.server.rest;
 
 import com.streamarr.server.exceptions.InvalidPaginationArgumentException;
 import com.streamarr.server.rest.pagination.JsonApiCursorCodec;
+import com.streamarr.server.rest.pagination.JsonApiError;
+import com.streamarr.server.rest.pagination.JsonApiErrorResponse;
 import com.streamarr.server.rest.pagination.JsonApiPageAdapter;
 import com.streamarr.server.rest.pagination.JsonApiPageResponse;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.pagination.MediaFilter;
-import com.streamarr.server.services.pagination.MediaPaginationOptions;
-import com.streamarr.server.services.pagination.PaginationOptions;
+import com.streamarr.server.services.pagination.MediaPaginationOptionsResolver;
 import com.streamarr.server.services.pagination.PaginationService;
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
@@ -46,7 +48,9 @@ public class MovieRestController {
             isBackward ? 0 : pageSize, after, isBackward ? pageSize : 0, before);
 
     var filter = MediaFilter.builder().libraryId(id).build();
-    var options = buildMediaPaginationOptions(paginationOptions, filter);
+    var options =
+        MediaPaginationOptionsResolver.resolve(
+            paginationOptions, filter, cursorCodec::decode, cursorCodec::validateCursorFilter);
 
     var page = movieService.getMoviesWithFilter(options);
     var baseUrl = request.getRequestURL().toString();
@@ -55,22 +59,11 @@ public class MovieRestController {
     return ResponseEntity.ok(response);
   }
 
-  @ExceptionHandler({InvalidPaginationArgumentException.class, IllegalArgumentException.class})
-  public ResponseEntity<String> handleBadRequest(RuntimeException ex) {
-    return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ex.getMessage());
-  }
-
-  private MediaPaginationOptions buildMediaPaginationOptions(
-      PaginationOptions paginationOptions, MediaFilter filter) {
-    if (paginationOptions.getCursor().isEmpty()) {
-      return MediaPaginationOptions.builder()
-          .paginationOptions(paginationOptions)
-          .mediaFilter(filter)
-          .build();
-    }
-
-    var decoded = cursorCodec.decode(paginationOptions);
-    cursorCodec.validateCursorFilter(decoded, filter);
-    return decoded;
+  @ExceptionHandler(InvalidPaginationArgumentException.class)
+  public ResponseEntity<JsonApiErrorResponse> handleBadRequest(
+      InvalidPaginationArgumentException ex) {
+    var error = new JsonApiError(String.valueOf(HttpStatus.BAD_REQUEST.value()), ex.getMessage());
+    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+        .body(new JsonApiErrorResponse(List.of(error)));
   }
 }

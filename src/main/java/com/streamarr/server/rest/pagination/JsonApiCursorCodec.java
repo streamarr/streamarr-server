@@ -1,5 +1,6 @@
 package com.streamarr.server.rest.pagination;
 
+import com.streamarr.server.exceptions.InvalidPaginationArgumentException;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaFilterComparator;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
@@ -39,7 +40,7 @@ public class JsonApiCursorCodec {
     var cursor = paginationOptions.getCursor();
 
     if (cursor.isEmpty()) {
-      throw new IllegalArgumentException("Cannot decode an empty cursor.");
+      throw new InvalidPaginationArgumentException("Cannot decode an empty cursor.");
     }
 
     try {
@@ -48,7 +49,7 @@ public class JsonApiCursorCodec {
           .paginationOptions(paginationOptions)
           .build();
     } catch (Exception ex) {
-      throw new IllegalArgumentException("Invalid cursor: " + cursor.get(), ex);
+      throw new InvalidPaginationArgumentException("Invalid cursor: " + cursor.get());
     }
   }
 
@@ -56,7 +57,7 @@ public class JsonApiCursorCodec {
     MediaFilterComparator.findMismatch(decoded.getMediaFilter(), currentFilter)
         .ifPresent(
             detail -> {
-              throw new IllegalArgumentException("Cursor filter mismatch: " + detail);
+              throw new InvalidPaginationArgumentException("Cursor filter mismatch: " + detail);
             });
   }
 }

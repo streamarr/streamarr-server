@@ -60,12 +60,16 @@ public class JsonApiPageAdapter {
       attributes.put("title", collectable.getTitle());
     }
 
-    if (entity instanceof Movie movie) {
-      attributes.put("releaseDate", movie.getReleaseDate());
-      attributes.put("summary", movie.getSummary());
-    } else if (entity instanceof Series series) {
-      attributes.put("firstAirDate", series.getFirstAirDate());
-      attributes.put("summary", series.getSummary());
+    switch (entity) {
+      case Movie movie -> {
+        attributes.put("releaseDate", movie.getReleaseDate());
+        attributes.put("summary", movie.getSummary());
+      }
+      case Series series -> {
+        attributes.put("firstAirDate", series.getFirstAirDate());
+        attributes.put("summary", series.getSummary());
+      }
+      default -> {}
     }
 
     var cursor = cursorCodec.encode(options, entity.getId(), pageItem.sortValue());

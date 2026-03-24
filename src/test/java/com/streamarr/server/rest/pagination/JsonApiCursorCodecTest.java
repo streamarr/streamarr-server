@@ -3,6 +3,7 @@ package com.streamarr.server.rest.pagination;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.exceptions.InvalidPaginationArgumentException;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.OrderMediaBy;
@@ -111,7 +112,8 @@ class JsonApiCursorCodecTest {
             .limit(10)
             .build();
 
-    assertThatThrownBy(() -> codec.decode(options)).isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> codec.decode(options))
+        .isInstanceOf(InvalidPaginationArgumentException.class);
   }
 
   @Test
@@ -125,7 +127,7 @@ class JsonApiCursorCodecTest {
             .build();
 
     assertThatThrownBy(() -> codec.decode(options))
-        .isInstanceOf(IllegalArgumentException.class)
+        .isInstanceOf(InvalidPaginationArgumentException.class)
         .hasMessage("Cannot decode an empty cursor.");
   }
 
@@ -145,7 +147,7 @@ class JsonApiCursorCodecTest {
             .build();
 
     assertThatThrownBy(() -> codec.validateCursorFilter(decoded, requestFilter))
-        .isInstanceOf(IllegalArgumentException.class)
+        .isInstanceOf(InvalidPaginationArgumentException.class)
         .hasMessageContaining("libraryId");
   }
 
