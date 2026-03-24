@@ -58,8 +58,8 @@ public class PaginationService {
 
   private int validateNonNegativeAndWithinMax(String fieldName, int pageSize) {
 
-    if (pageSize <= 0) {
-      throw new InvalidPaginationArgumentException(fieldName + " must be greater than zero.");
+    if (pageSize < 0) {
+      throw new InvalidPaginationArgumentException(fieldName + " must not be negative.");
     }
 
     if (pageSize > MAX_PAGE_SIZE) {

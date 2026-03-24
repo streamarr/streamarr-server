@@ -38,7 +38,7 @@ class PaginationServiceTest {
     void shouldThrowExceptionWhenPaginatingWithNegativeFirstLimit() {
       assertThatExceptionOfType(InvalidPaginationArgumentException.class)
           .isThrownBy(() -> paginationService.getPaginationOptions(-1, "cursor", 0, null))
-          .withMessageContaining("first must be greater than zero.");
+          .withMessageContaining("first must not be negative.");
     }
 
     @Test
@@ -46,7 +46,7 @@ class PaginationServiceTest {
     void shouldThrowExceptionWhenPaginatingWithNegativeLastLimit() {
       assertThatExceptionOfType(InvalidPaginationArgumentException.class)
           .isThrownBy(() -> paginationService.getPaginationOptions(0, null, -1, "cursor"))
-          .withMessageContaining("last must be greater than zero.");
+          .withMessageContaining("last must not be negative.");
     }
 
     @Test
@@ -75,11 +75,12 @@ class PaginationServiceTest {
     }
 
     @Test
-    @DisplayName("Should throw exception when paginating with no cursor and only last argument.")
-    void shouldThrowExceptionWhenPaginatingWithNoCursorAndOnlyLast() {
-      assertThatExceptionOfType(InvalidPaginationArgumentException.class)
-          .isThrownBy(() -> paginationService.getPaginationOptions(0, null, 1, null))
-          .withMessageContaining("first must be greater than zero.");
+    @DisplayName("Should paginate forward with zero limit when first is zero.")
+    void shouldPaginateForwardWithZeroLimitWhenFirstIsZero() {
+      var options = paginationService.getPaginationOptions(0, null, 1, null);
+
+      assertThat(options.getPaginationDirection()).isEqualTo(PaginationDirection.FORWARD);
+      assertThat(options.getLimit()).isZero();
     }
 
     @Test
