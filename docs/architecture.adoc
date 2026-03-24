@@ -11,7 +11,7 @@
 == Layered Architecture
 
 ----
-GraphQL Resolvers (protocol layer)
+Protocol Adapters (GraphQL Resolvers, REST Controllers)
         |
     Services (business logic)
         |
@@ -24,12 +24,12 @@ GraphQL Resolvers (protocol layer)
 
 *Dependency rule:* each layer only depends on the layer below it.
 
-* *Resolvers* delegate to services -- no business logic at the protocol layer
-* *Services* orchestrate business operations -- protocol-agnostic
+* *Protocol adapters* (GraphQL resolvers, REST controllers) delegate to services -- no business logic at the protocol layer
+* *Services* orchestrate business operations -- protocol-agnostic (no `graphql.*` imports, enforced by ArchUnit)
 * *Repositories* use JPA for CRUD and jOOQ for complex queries
 * *Domain* depends on nothing -- pure data model
 
-These rules are enforced by ArchUnit tests.
+These rules are enforced by ArchUnit tests (see link:adr/0014-protocol-agnostic-pagination.adoc[ADR 0014] for pagination-specific architecture).
 
 == Database
 
