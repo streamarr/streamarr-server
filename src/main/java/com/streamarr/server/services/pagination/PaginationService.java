@@ -64,7 +64,7 @@ public class PaginationService {
 
     if (pageSize > MAX_PAGE_SIZE) {
       throw new InvalidPaginationArgumentException(
-          fieldName + " must be less than " + MAX_PAGE_SIZE + ".");
+          fieldName + " must not exceed " + MAX_PAGE_SIZE + ".");
     }
 
     return pageSize;

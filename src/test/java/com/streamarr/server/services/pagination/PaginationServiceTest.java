@@ -54,7 +54,7 @@ class PaginationServiceTest {
     void shouldThrowExceptionWhenPaginatingWithFirstLimitTooLarge() {
       assertThatExceptionOfType(InvalidPaginationArgumentException.class)
           .isThrownBy(() -> paginationService.getPaginationOptions(501, "cursor", 0, null))
-          .withMessageContaining("first must be less than 500.");
+          .withMessageContaining("first must not exceed 500.");
     }
 
     @Test
@@ -62,7 +62,7 @@ class PaginationServiceTest {
     void shouldThrowExceptionWhenPaginatingWithLastLimitTooLarge() {
       assertThatExceptionOfType(InvalidPaginationArgumentException.class)
           .isThrownBy(() -> paginationService.getPaginationOptions(0, null, 501, "cursor"))
-          .withMessageContaining("last must be less than 500.");
+          .withMessageContaining("last must not exceed 500.");
     }
 
     @Test
@@ -71,7 +71,7 @@ class PaginationServiceTest {
     void shouldThrowExceptionWhenPaginatingWithNoCursorAndFirstLimitTooLarge() {
       assertThatExceptionOfType(InvalidPaginationArgumentException.class)
           .isThrownBy(() -> paginationService.getPaginationOptions(501, null, 0, null))
-          .withMessageContaining("first must be less than 500.");
+          .withMessageContaining("first must not exceed 500.");
     }
 
     @Test
