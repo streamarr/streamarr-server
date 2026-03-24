@@ -2,7 +2,6 @@ package com.streamarr.server.services.pagination;
 
 import com.streamarr.server.domain.BaseAuditableEntity;
 import com.streamarr.server.exceptions.InvalidPaginationArgumentException;
-import com.streamarr.server.graphql.cursor.InvalidCursorException;
 import graphql.relay.Connection;
 import graphql.relay.DefaultConnection;
 import graphql.relay.DefaultPageInfo;
@@ -10,7 +9,6 @@ import graphql.relay.Edge;
 import graphql.relay.PageInfo;
 import java.util.Collections;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import org.apache.commons.lang3.StringUtils;
@@ -220,11 +218,11 @@ public class PaginationService {
   }
 
   <T> void validateCursorField(String fieldName, T prior, T current) {
-    if (Objects.equals(prior, current)) {
+    if (java.util.Objects.equals(prior, current)) {
       return;
     }
 
-    throw new InvalidCursorException(
+    throw new com.streamarr.server.graphql.cursor.InvalidCursorException(
         "Prior query "
             + fieldName
             + " was '"
