@@ -32,7 +32,6 @@ import com.streamarr.server.services.GenreService;
 import com.streamarr.server.services.ImageService;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.PersonService;
-import com.streamarr.server.services.RelayPaginationService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.metadata.ImageVariantService;
 import com.streamarr.server.services.metadata.MetadataResult;
@@ -40,6 +39,7 @@ import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
 import com.streamarr.server.services.metadata.series.SeasonDetails;
 import com.streamarr.server.services.metadata.series.SeriesMetadataProviderResolver;
+import com.streamarr.server.services.pagination.PaginationService;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -91,7 +91,7 @@ class LibraryRefreshServiceTest {
             genreService,
             companyService,
             null,
-            new RelayPaginationService(),
+            new PaginationService(),
             eventPublisher,
             imageService,
             seasonRepository,
@@ -108,7 +108,7 @@ class LibraryRefreshServiceTest {
             genreService,
             companyService,
             null,
-            new RelayPaginationService(),
+            new PaginationService(),
             eventPublisher,
             imageService,
             null,

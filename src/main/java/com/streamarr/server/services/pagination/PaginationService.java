@@ -1,12 +1,8 @@
-package com.streamarr.server.services;
+package com.streamarr.server.services.pagination;
 
 import com.streamarr.server.domain.BaseAuditableEntity;
 import com.streamarr.server.exceptions.InvalidPaginationArgumentException;
 import com.streamarr.server.graphql.cursor.InvalidCursorException;
-import com.streamarr.server.services.pagination.MediaFilter;
-import com.streamarr.server.services.pagination.MediaPaginationOptions;
-import com.streamarr.server.services.pagination.PaginationDirection;
-import com.streamarr.server.services.pagination.PaginationOptions;
 import graphql.relay.Connection;
 import graphql.relay.DefaultConnection;
 import graphql.relay.DefaultPageInfo;
@@ -21,7 +17,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 
 @Service
-public class RelayPaginationService {
+public class PaginationService {
 
   private static final int MAX_PAGE_SIZE = 500;
 

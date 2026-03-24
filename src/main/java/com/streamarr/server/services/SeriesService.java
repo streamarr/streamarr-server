@@ -25,6 +25,7 @@ import com.streamarr.server.services.metadata.series.SeasonDetails;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PaginationOptions;
+import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
 import graphql.relay.DefaultEdge;
 import graphql.relay.Edge;
@@ -45,7 +46,7 @@ public class SeriesService {
   private final GenreService genreService;
   private final CompanyService companyService;
   private final CursorUtil cursorUtil;
-  private final RelayPaginationService relayPaginationService;
+  private final PaginationService paginationService;
   private final ApplicationEventPublisher eventPublisher;
   private final ImageService imageService;
   private final SeasonRepository seasonRepository;
@@ -298,7 +299,7 @@ public class SeriesService {
       filter = buildDefaultSeriesFilter();
     }
 
-    var paginationOptions = relayPaginationService.getPaginationOptions(first, after, last, before);
+    var paginationOptions = paginationService.getPaginationOptions(first, after, last, before);
 
     if (paginationOptions.getCursor().isEmpty()) {
       return getFirstSeriesAsConnection(paginationOptions, filter);
@@ -306,7 +307,7 @@ public class SeriesService {
 
     var mediaOptionsFromCursor = cursorUtil.decodeMediaCursor(paginationOptions);
 
-    relayPaginationService.validateCursorAgainstFilter(mediaOptionsFromCursor, filter);
+    paginationService.validateCursorAgainstFilter(mediaOptionsFromCursor, filter);
 
     return usingCursorGetSeriesAsConnection(mediaOptionsFromCursor);
   }
@@ -323,7 +324,7 @@ public class SeriesService {
     var seriesList = seriesRepository.findFirstWithFilter(mediaOptions);
     var edges = mapItemsToEdges(seriesList, mediaOptions);
 
-    return relayPaginationService.buildConnection(
+    return paginationService.buildConnection(
         edges, mediaOptions.getPaginationOptions(), mediaOptions.getCursorId());
   }
 
@@ -354,7 +355,7 @@ public class SeriesService {
     var seriesList = seriesRepository.seekWithFilter(options);
     var edges = mapItemsToEdges(seriesList, options);
 
-    return relayPaginationService.buildConnection(
+    return paginationService.buildConnection(
         edges, options.getPaginationOptions(), options.getCursorId());
   }
 }

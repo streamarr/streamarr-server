@@ -23,6 +23,7 @@ import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PaginationOptions;
+import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
 import graphql.relay.DefaultEdge;
 import graphql.relay.Edge;
@@ -46,7 +47,7 @@ public class MovieService {
   private final GenreService genreService;
   private final CompanyService companyService;
   private final CursorUtil cursorUtil;
-  private final RelayPaginationService relayPaginationService;
+  private final PaginationService paginationService;
   private final ApplicationEventPublisher eventPublisher;
   private final ImageService imageService;
   private final MediaFileRepository mediaFileRepository;
@@ -163,7 +164,7 @@ public class MovieService {
       filter = buildDefaultMovieFilter();
     }
 
-    var paginationOptions = relayPaginationService.getPaginationOptions(first, after, last, before);
+    var paginationOptions = paginationService.getPaginationOptions(first, after, last, before);
 
     if (paginationOptions.getCursor().isEmpty()) {
       return getFirstMoviesAsConnection(paginationOptions, filter);
@@ -171,7 +172,7 @@ public class MovieService {
 
     var mediaOptionsFromCursor = cursorUtil.decodeMediaCursor(paginationOptions);
 
-    relayPaginationService.validateCursorAgainstFilter(mediaOptionsFromCursor, filter);
+    paginationService.validateCursorAgainstFilter(mediaOptionsFromCursor, filter);
 
     return usingCursorGetMoviesAsConnection(mediaOptionsFromCursor);
   }
@@ -228,7 +229,7 @@ public class MovieService {
     var movies = movieRepository.findFirstWithFilter(mediaOptions);
     var edges = mapItemsToEdges(movies, mediaOptions);
 
-    return relayPaginationService.buildConnection(
+    return paginationService.buildConnection(
         edges, mediaOptions.getPaginationOptions(), mediaOptions.getCursorId());
   }
 
@@ -258,7 +259,7 @@ public class MovieService {
     var movies = movieRepository.seekWithFilter(options);
     var edges = mapItemsToEdges(movies, options);
 
-    return relayPaginationService.buildConnection(
+    return paginationService.buildConnection(
         edges, options.getPaginationOptions(), options.getCursorId());
   }
 }

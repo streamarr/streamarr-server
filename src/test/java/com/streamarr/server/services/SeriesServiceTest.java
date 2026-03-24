@@ -37,6 +37,7 @@ import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import com.streamarr.server.services.metadata.series.SeasonDetails;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.OrderMediaBy;
+import com.streamarr.server.services.pagination.PaginationService;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -74,7 +75,7 @@ class SeriesServiceTest {
     genreService = mock(GenreService.class);
     companyService = mock(CompanyService.class);
     var cursorUtil = new CursorUtil(new ObjectMapper());
-    var relayPaginationService = new RelayPaginationService();
+    var paginationService = new PaginationService();
     var fileSystem = Jimfs.newFileSystem(Configuration.unix());
     var imageService =
         new ImageService(
@@ -89,7 +90,7 @@ class SeriesServiceTest {
             genreService,
             companyService,
             cursorUtil,
-            relayPaginationService,
+            paginationService,
             eventPublisher,
             imageService,
             seasonRepository,
