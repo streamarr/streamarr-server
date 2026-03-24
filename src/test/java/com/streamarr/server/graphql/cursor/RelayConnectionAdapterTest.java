@@ -60,6 +60,61 @@ class RelayConnectionAdapterTest {
       assertThat(connection.getPageInfo().getEndCursor())
           .isEqualTo(connection.getEdges().getLast().getCursor());
     }
+
+    @Test
+    @DisplayName("Should set startCursor equal to endCursor when page has single item")
+    void shouldSetStartCursorEqualToEndCursorWhenPageHasSingleItem() {
+      var page =
+          new MediaPage<>(
+              List.of(
+                  new PageItem<>(
+                      Movie.builder().id(UUID.randomUUID()).title("Only").build(), "Only")),
+              false,
+              false);
+
+      var connection = adapter.toConnection(page, buildOptions());
+
+      assertThat(connection.getEdges()).hasSize(1);
+      assertThat(connection.getPageInfo().getStartCursor())
+          .isEqualTo(connection.getPageInfo().getEndCursor());
+      assertThat(connection.getPageInfo().getStartCursor())
+          .isEqualTo(connection.getEdges().getFirst().getCursor());
+    }
+
+    @Test
+    @DisplayName("Should set both hasNext and hasPrevious when page is middle page")
+    void shouldSetBothHasNextAndHasPreviousWhenPageIsMiddlePage() {
+      var page =
+          new MediaPage<>(
+              List.of(
+                  new PageItem<>(
+                      Movie.builder().id(UUID.randomUUID()).title("Mid").build(), "Mid")),
+              true,
+              true);
+
+      var connection = adapter.toConnection(page, buildOptions());
+
+      assertThat(connection.getPageInfo().isHasNextPage()).isTrue();
+      assertThat(connection.getPageInfo().isHasPreviousPage()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Should produce distinct cursors for each edge")
+    void shouldProduceDistinctCursorsForEachEdge() {
+      var page =
+          new MediaPage<>(
+              List.of(
+                  new PageItem<>(Movie.builder().id(UUID.randomUUID()).title("A").build(), "A"),
+                  new PageItem<>(Movie.builder().id(UUID.randomUUID()).title("B").build(), "B"),
+                  new PageItem<>(Movie.builder().id(UUID.randomUUID()).title("C").build(), "C")),
+              false,
+              false);
+
+      var connection = adapter.toConnection(page, buildOptions());
+
+      var cursors = connection.getEdges().stream().map(e -> e.getCursor().getValue()).toList();
+      assertThat(cursors).doesNotHaveDuplicates();
+    }
   }
 
   @Nested
