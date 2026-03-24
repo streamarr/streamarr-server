@@ -1,0 +1,15 @@
+meta {
+  name: REST Get Movies Next Page
+  type: http
+  seq: 13
+}
+
+get {
+  url: {{BASE_URL}}/api/libraries/{{LIBRARY_ID}}/movies?page[size]=10&page[after]={{CURSOR}}
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/vnd.api+json
+}
