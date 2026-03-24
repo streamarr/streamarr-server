@@ -225,6 +225,50 @@ class MovieRestControllerIT extends AbstractIntegrationTest {
       assertThat(errorResponse.errors().getFirst().status()).isEqualTo("400");
       assertThat(errorResponse.errors().getFirst().detail()).isNotBlank();
     }
+
+    @Test
+    @DisplayName("Should return JSON:API error format when both after and before are provided")
+    void shouldReturnJsonApiErrorFormatWhenBothAfterAndBeforeProvided() throws Exception {
+      var result =
+          mockMvc
+              .perform(
+                  get(
+                      buildBaseUrl(savedLibrary.getId())
+                          + "?page[size]=2&page[after]=abc&page[before]=xyz"))
+              .andExpect(status().isBadRequest())
+              .andReturn()
+              .getResponse()
+              .getContentAsString();
+
+      var errorResponse =
+          objectMapper.readValue(
+              result, com.streamarr.server.rest.pagination.JsonApiErrorResponse.class);
+      assertThat(errorResponse.errors()).hasSize(1);
+      assertThat(errorResponse.errors().getFirst().status()).isEqualTo("400");
+      assertThat(errorResponse.errors().getFirst().detail()).isNotBlank();
+    }
+
+    @Test
+    @DisplayName("Should return JSON:API error format when cursor is malformed")
+    void shouldReturnJsonApiErrorFormatWhenCursorIsMalformed() throws Exception {
+      var result =
+          mockMvc
+              .perform(
+                  get(
+                      buildBaseUrl(savedLibrary.getId())
+                          + "?page[size]=2&page[after]=not-a-cursor"))
+              .andExpect(status().isBadRequest())
+              .andReturn()
+              .getResponse()
+              .getContentAsString();
+
+      var errorResponse =
+          objectMapper.readValue(
+              result, com.streamarr.server.rest.pagination.JsonApiErrorResponse.class);
+      assertThat(errorResponse.errors()).hasSize(1);
+      assertThat(errorResponse.errors().getFirst().status()).isEqualTo("400");
+      assertThat(errorResponse.errors().getFirst().detail()).isNotBlank();
+    }
   }
 
   @Nested
@@ -238,6 +282,15 @@ class MovieRestControllerIT extends AbstractIntegrationTest {
           .perform(get(buildUrl(savedLibrary.getId(), 2)))
           .andExpect(status().isOk())
           .andExpect(content().contentTypeCompatibleWith("application/vnd.api+json"));
+    }
+
+    @Test
+    @DisplayName("Should use default page size when no page size provided")
+    void shouldUseDefaultPageSizeWhenNoPageSizeProvided() throws Exception {
+      var page = fetchPage(buildBaseUrl(savedLibrary.getId()));
+
+      assertThat(page.data()).isNotEmpty();
+      assertThat(page.links().first()).contains("page[size]=20");
     }
 
     @Test
