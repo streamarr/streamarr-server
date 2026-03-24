@@ -154,8 +154,8 @@ class SeriesServiceTest {
   }
 
   @Test
-  @DisplayName("Should apply default title ascending sort when given null filter")
-  void shouldApplyDefaultTitleAscSortWhenGivenNullFilter() {
+  @DisplayName("Should apply default title ASC sort when given empty filter")
+  void shouldApplyDefaultTitleAscSortWhenGivenEmptyFilter() {
     seriesRepository.save(Series.builder().title("Zebra").build());
     seriesRepository.save(Series.builder().title("Apple").build());
 

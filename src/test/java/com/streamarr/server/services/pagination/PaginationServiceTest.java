@@ -21,7 +21,7 @@ class PaginationServiceTest {
   private final PaginationService paginationService = new PaginationService();
 
   @Nested
-  @DisplayName("getPaginationOptions")
+  @DisplayName("Resolving Pagination Options")
   class GetPaginationOptions {
 
     @Test
@@ -170,7 +170,7 @@ class PaginationServiceTest {
   }
 
   @Nested
-  @DisplayName("buildMediaPage")
+  @DisplayName("Building Media Pages")
   class BuildMediaPage {
 
     @Test
