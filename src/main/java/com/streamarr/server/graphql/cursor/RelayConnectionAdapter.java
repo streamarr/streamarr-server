@@ -24,7 +24,8 @@ public class RelayConnectionAdapter {
 
     if (page.items().isEmpty()) {
       return new DefaultConnection<>(
-          Collections.emptyList(), new DefaultPageInfo(null, null, false, false));
+          Collections.emptyList(),
+          new DefaultPageInfo(null, null, page.hasPreviousPage(), page.hasNextPage()));
     }
 
     List<Edge<T>> edges =

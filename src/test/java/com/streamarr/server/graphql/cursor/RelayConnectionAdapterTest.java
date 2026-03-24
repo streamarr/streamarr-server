@@ -135,6 +135,20 @@ class RelayConnectionAdapterTest {
       assertThat(connection.getPageInfo().getStartCursor()).isNull();
       assertThat(connection.getPageInfo().getEndCursor()).isNull();
     }
+
+    @Test
+    @DisplayName("Should preserve page flags when items list is empty")
+    void shouldPreservePageFlagsWhenItemsListIsEmpty() {
+      var page = new MediaPage<Movie>(List.of(), false, true);
+
+      var connection = adapter.toConnection(page, buildOptions());
+
+      assertThat(connection.getEdges()).isEmpty();
+      assertThat(connection.getPageInfo().isHasPreviousPage()).isTrue();
+      assertThat(connection.getPageInfo().isHasNextPage()).isFalse();
+      assertThat(connection.getPageInfo().getStartCursor()).isNull();
+      assertThat(connection.getPageInfo().getEndCursor()).isNull();
+    }
   }
 
   @Nested
