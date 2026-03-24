@@ -265,6 +265,25 @@ class LibraryResolverTest {
   }
 
   @Test
+  @DisplayName("Should return GraphQL error when cursor is malformed")
+  void shouldReturnGraphQLErrorWhenCursorIsMalformed() {
+    var libraryId = UUID.randomUUID();
+    var library = buildMovieLibrary(libraryId);
+
+    when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
+
+    var result =
+        dgsQueryExecutor.execute(
+            String.format(
+                """
+                { library(id: "%s") { items(first: 10, after: "not-a-valid-cursor") { edges { node { ... on Movie { title } } } } } }
+                """,
+                libraryId));
+
+    assertThat(result.getErrors()).isNotEmpty();
+  }
+
+  @Test
   @DisplayName("Should return library when addLibrary called with valid input")
   void shouldReturnLibraryWhenAddLibraryCalledWithValidInput() {
     var library =
