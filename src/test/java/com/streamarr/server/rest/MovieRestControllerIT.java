@@ -84,8 +84,7 @@ class MovieRestControllerIT extends AbstractIntegrationTest {
     var firstPageTitles = titles(firstPage);
     var secondPageTitles = titles(secondPage);
 
-    assertThat(secondPageTitles).isNotEmpty();
-    assertThat(firstPageTitles).doesNotContainAnyElementsOf(secondPageTitles);
+    assertThat(secondPageTitles).isNotEmpty().noneMatch(firstPageTitles::contains);
   }
 
   @Test
