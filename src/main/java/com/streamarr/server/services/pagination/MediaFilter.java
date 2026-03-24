@@ -31,6 +31,5 @@ public class MediaFilter {
   private List<UUID> castMemberIds;
   private Boolean unmatched;
 
-  // Used for seek pagination
   private Object previousSortFieldValue;
 }

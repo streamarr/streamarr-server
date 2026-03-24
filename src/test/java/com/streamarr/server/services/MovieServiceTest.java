@@ -1,5 +1,7 @@
 package com.streamarr.server.services;
 
+import static com.streamarr.server.fixtures.PaginationFixture.buildCursorOptions;
+import static com.streamarr.server.fixtures.PaginationFixture.buildForwardOptions;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
@@ -29,16 +31,12 @@ import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import com.streamarr.server.services.pagination.MediaFilter;
-import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.OrderMediaBy;
-import com.streamarr.server.services.pagination.PageItem;
 import com.streamarr.server.services.pagination.PaginationDirection;
-import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.services.pagination.PaginationService;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.jooq.SortOrder;
@@ -967,32 +965,6 @@ class MovieServiceTest {
     movieService.refreshMovieMetadata(existing, metadataResult);
 
     assertThat(eventPublisher.getEventsOfType(MetadataEnrichedEvent.class)).isEmpty();
-  }
-
-  private static MediaPaginationOptions buildForwardOptions(int limit, MediaFilter filter) {
-    return MediaPaginationOptions.builder()
-        .paginationOptions(
-            PaginationOptions.builder()
-                .cursor(Optional.empty())
-                .paginationDirection(PaginationDirection.FORWARD)
-                .limit(limit)
-                .build())
-        .mediaFilter(filter)
-        .build();
-  }
-
-  private static MediaPaginationOptions buildCursorOptions(
-      int limit, PaginationDirection direction, PageItem<Movie> lastItem, MediaFilter filter) {
-    return MediaPaginationOptions.builder()
-        .cursorId(lastItem.item().getId())
-        .paginationOptions(
-            PaginationOptions.builder()
-                .cursor(Optional.of("placeholder"))
-                .paginationDirection(direction)
-                .limit(limit)
-                .build())
-        .mediaFilter(filter.toBuilder().previousSortFieldValue(lastItem.sortValue()).build())
-        .build();
   }
 
   private void seedImage(UUID entityId) {

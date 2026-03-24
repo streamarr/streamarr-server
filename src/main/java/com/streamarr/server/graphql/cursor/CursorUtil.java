@@ -14,21 +14,19 @@ import tools.jackson.databind.ObjectMapper;
 @RequiredArgsConstructor
 public class CursorUtil {
 
-  private final ObjectMapper jacksonObjectMapper;
+  private final ObjectMapper objectMapper;
 
   public DefaultConnectionCursor encodeMediaCursor(
-      MediaPaginationOptions mediaPaginationOptions, UUID cursorId, Object sortValue) {
+      MediaPaginationOptions options, UUID cursorId, Object sortValue) {
     try {
-      mediaPaginationOptions =
+      var cursorState =
           MediaPaginationOptions.builder()
               .cursorId(cursorId)
               .mediaFilter(
-                  mediaPaginationOptions.getMediaFilter().toBuilder()
-                      .previousSortFieldValue(sortValue)
-                      .build())
+                  options.getMediaFilter().toBuilder().previousSortFieldValue(sortValue).build())
               .build();
 
-      String jsonStr = jacksonObjectMapper.writeValueAsString(mediaPaginationOptions);
+      var jsonStr = objectMapper.writeValueAsString(cursorState);
       return new DefaultConnectionCursor(
           Base64.getUrlEncoder()
               .withoutPadding()
@@ -50,7 +48,7 @@ public class CursorUtil {
 
     try {
       var jsonStr = new String(Base64.getUrlDecoder().decode(cursor));
-      return jacksonObjectMapper.readValue(jsonStr, MediaPaginationOptions.class).toBuilder()
+      return objectMapper.readValue(jsonStr, MediaPaginationOptions.class).toBuilder()
           .paginationOptions(options)
           .build();
 

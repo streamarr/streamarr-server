@@ -1,5 +1,8 @@
 package com.streamarr.server.services;
 
+import static com.streamarr.server.fixtures.PaginationFixture.buildBackwardContinuation;
+import static com.streamarr.server.fixtures.PaginationFixture.buildForwardContinuation;
+import static com.streamarr.server.fixtures.PaginationFixture.buildForwardOptions;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
@@ -19,14 +22,9 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.pagination.MediaFilter;
-import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.OrderMediaBy;
-import com.streamarr.server.services.pagination.PageItem;
-import com.streamarr.server.services.pagination.PaginationDirection;
-import com.streamarr.server.services.pagination.PaginationOptions;
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Stream;
 import org.jooq.SortOrder;
@@ -133,46 +131,6 @@ class MovieServiceIT extends AbstractIntegrationTest {
 
   private MediaFilter filterForLibrary(Library library) {
     return MediaFilter.builder().libraryId(library.getId()).build();
-  }
-
-  private static MediaPaginationOptions buildForwardOptions(int limit, MediaFilter filter) {
-    return MediaPaginationOptions.builder()
-        .paginationOptions(
-            PaginationOptions.builder()
-                .cursor(Optional.empty())
-                .paginationDirection(PaginationDirection.FORWARD)
-                .limit(limit)
-                .build())
-        .mediaFilter(filter)
-        .build();
-  }
-
-  private static MediaPaginationOptions buildForwardContinuation(
-      int limit, MediaFilter filter, PageItem<Movie> lastItem) {
-    return MediaPaginationOptions.builder()
-        .cursorId(lastItem.item().getId())
-        .paginationOptions(
-            PaginationOptions.builder()
-                .cursor(Optional.of("continuation"))
-                .paginationDirection(PaginationDirection.FORWARD)
-                .limit(limit)
-                .build())
-        .mediaFilter(filter.toBuilder().previousSortFieldValue(lastItem.sortValue()).build())
-        .build();
-  }
-
-  private static MediaPaginationOptions buildBackwardContinuation(
-      int limit, MediaFilter filter, PageItem<Movie> firstItem) {
-    return MediaPaginationOptions.builder()
-        .cursorId(firstItem.item().getId())
-        .paginationOptions(
-            PaginationOptions.builder()
-                .cursor(Optional.of("continuation"))
-                .paginationDirection(PaginationDirection.REVERSE)
-                .limit(limit)
-                .build())
-        .mediaFilter(filter.toBuilder().previousSortFieldValue(firstItem.sortValue()).build())
-        .build();
   }
 
   @Test

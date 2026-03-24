@@ -25,8 +25,7 @@ import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.library.LibraryManagementService;
 import com.streamarr.server.services.pagination.MediaFilter;
-import com.streamarr.server.services.pagination.MediaPaginationOptions;
-import com.streamarr.server.services.pagination.PaginationOptions;
+import com.streamarr.server.services.pagination.MediaPaginationOptionsResolver;
 import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
@@ -122,7 +121,12 @@ public class LibraryResolver {
 
     var effectiveFilter = builder.build();
     var paginationOptions = paginationService.getPaginationOptions(first, after, last, before);
-    var options = buildMediaPaginationOptions(paginationOptions, effectiveFilter);
+    var options =
+        MediaPaginationOptionsResolver.resolve(
+            paginationOptions,
+            effectiveFilter,
+            cursorUtil::decodeMediaCursor,
+            cursorValidator::validateCursorAgainstFilter);
 
     var page =
         switch (library.getType()) {
@@ -132,19 +136,6 @@ public class LibraryResolver {
         };
 
     return relayConnectionAdapter.toConnection(page, options);
-  }
-
-  private MediaPaginationOptions buildMediaPaginationOptions(
-      PaginationOptions paginationOptions, MediaFilter filter) {
-    if (paginationOptions.getCursor().isEmpty()) {
-      return MediaPaginationOptions.builder()
-          .paginationOptions(paginationOptions)
-          .mediaFilter(filter)
-          .build();
-    }
-    var decoded = cursorUtil.decodeMediaCursor(paginationOptions);
-    cursorValidator.validateCursorAgainstFilter(decoded, filter);
-    return decoded;
   }
 
   @DgsData(parentType = "Library")
