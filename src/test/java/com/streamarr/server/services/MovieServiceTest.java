@@ -91,8 +91,8 @@ class MovieServiceTest {
   }
 
   @Test
-  @DisplayName("Should apply default title ascending sort when given null filter")
-  void shouldApplyDefaultTitleAscSortWhenGivenNullFilter() {
+  @DisplayName("Should apply default title ASC sort when given empty filter")
+  void shouldApplyDefaultTitleAscSortWhenGivenEmptyFilter() {
     movieRepository.save(Movie.builder().title("Zebra").build());
     movieRepository.save(Movie.builder().title("Apple").build());
 

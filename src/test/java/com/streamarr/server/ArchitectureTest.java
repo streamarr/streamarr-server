@@ -6,9 +6,11 @@ import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 
 @Tag("UnitTest")
+@DisplayName("Architecture Rules")
 @AnalyzeClasses(
     packages = "com.streamarr.server",
     importOptions = ImportOption.DoNotIncludeTests.class)

@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
@@ -59,210 +60,231 @@ class MovieRestControllerIT extends AbstractIntegrationTest {
     emptyLibrary = libraryRepository.saveAndFlush(emptyLib);
   }
 
-  @Test
-  @DisplayName("Should return first page with next link when given page size")
-  void shouldReturnFirstPageWithNextLinkWhenGivenPageSize() throws Exception {
-    var page = fetchPage(buildUrl(savedLibrary.getId(), 2));
+  @Nested
+  @DisplayName("Forward Pagination")
+  class ForwardPagination {
 
-    assertThat(page.data()).hasSize(2);
-    assertThat(page.links().next()).isNotNull();
-    assertThat(page.links().prev()).isNull();
-    assertThat(page.links().first()).isNotNull();
-  }
+    @Test
+    @DisplayName("Should return first page with next link when given page size")
+    void shouldReturnFirstPageWithNextLinkWhenGivenPageSize() throws Exception {
+      var page = fetchPage(buildUrl(savedLibrary.getId(), 2));
 
-  @Test
-  @DisplayName("Should return second page when following next link")
-  void shouldReturnSecondPageWhenFollowingNextLink() throws Exception {
-    var firstPage = fetchPage(buildUrl(savedLibrary.getId(), 2));
-    assertThat(firstPage.links().next()).isNotNull();
+      assertThat(page.data()).hasSize(2);
+      assertThat(page.links().next()).isNotNull();
+      assertThat(page.links().prev()).isNull();
+      assertThat(page.links().first()).isNotNull();
+    }
 
-    var secondPage = fetchPage(firstPage.links().next());
+    @Test
+    @DisplayName("Should return second page when following next link")
+    void shouldReturnSecondPageWhenFollowingNextLink() throws Exception {
+      var firstPage = fetchPage(buildUrl(savedLibrary.getId(), 2));
+      assertThat(firstPage.links().next()).isNotNull();
 
-    assertThat(secondPage.data()).hasSize(2);
-    assertThat(secondPage.links().prev()).isNotNull();
+      var secondPage = fetchPage(firstPage.links().next());
 
-    var firstPageTitles = titles(firstPage);
-    var secondPageTitles = titles(secondPage);
+      assertThat(secondPage.data()).hasSize(2);
+      assertThat(secondPage.links().prev()).isNotNull();
 
-    assertThat(secondPageTitles).isNotEmpty().noneMatch(firstPageTitles::contains);
-  }
+      var firstPageTitles = titles(firstPage);
+      var secondPageTitles = titles(secondPage);
 
-  @Test
-  @DisplayName("Should paginate backward when given page before")
-  void shouldPaginateBackwardWhenGivenPageBefore() throws Exception {
-    var firstPage = fetchPage(buildUrl(savedLibrary.getId(), 2));
-    var secondPage = fetchPage(firstPage.links().next());
-    assertThat(secondPage.links().prev()).isNotNull();
+      assertThat(secondPageTitles).isNotEmpty().noneMatch(firstPageTitles::contains);
+    }
 
-    var backPage = fetchPage(secondPage.links().prev());
+    @Test
+    @DisplayName("Should cover all items with no duplicates when paginating forward")
+    void shouldCoverAllItemsWithNoDuplicatesWhenPaginatingForward() throws Exception {
+      List<String> allTitles = new ArrayList<>();
+      var page = fetchPage(buildUrl(savedLibrary.getId(), 2));
 
-    assertThat(backPage.data()).isNotEmpty();
-    assertThat(backPage.links().next()).isNotNull();
-  }
+      while (page != null) {
+        allTitles.addAll(titles(page));
 
-  @Test
-  @DisplayName("Should cover all items with no duplicates when paginating forward")
-  void shouldCoverAllItemsWithNoDuplicatesWhenPaginatingForward() throws Exception {
-    List<String> allTitles = new ArrayList<>();
-    var page = fetchPage(buildUrl(savedLibrary.getId(), 2));
-
-    while (page != null) {
-      allTitles.addAll(titles(page));
-
-      if (page.links().next() == null) {
-        break;
+        if (page.links().next() == null) {
+          break;
+        }
+        page = fetchPage(page.links().next());
       }
-      page = fetchPage(page.links().next());
+
+      assertThat(allTitles)
+          .hasSize(4)
+          .doesNotHaveDuplicates()
+          .containsExactly("Alpha", "Beta", "Delta", "Gamma");
+    }
+  }
+
+  @Nested
+  @DisplayName("Backward Pagination")
+  class BackwardPagination {
+
+    @Test
+    @DisplayName("Should paginate backward when given page before")
+    void shouldPaginateBackwardWhenGivenPageBefore() throws Exception {
+      var firstPage = fetchPage(buildUrl(savedLibrary.getId(), 2));
+      var secondPage = fetchPage(firstPage.links().next());
+      assertThat(secondPage.links().prev()).isNotNull();
+
+      var backPage = fetchPage(secondPage.links().prev());
+
+      assertThat(backPage.data()).isNotEmpty();
+      assertThat(backPage.links().next()).isNotNull();
     }
 
-    assertThat(allTitles)
-        .hasSize(4)
-        .doesNotHaveDuplicates()
-        .containsExactly("Alpha", "Beta", "Delta", "Gamma");
+    @Test
+    @DisplayName("Should maintain canonical order when paginating backward")
+    void shouldMaintainCanonicalOrderWhenPaginatingBackward() throws Exception {
+      var allForward = fetchPage(buildUrl(savedLibrary.getId(), 10));
+      var forwardTitles = titles(allForward);
+
+      var lastPage = fetchPage(buildUrl(savedLibrary.getId(), 2));
+      while (lastPage.links().next() != null) {
+        lastPage = fetchPage(lastPage.links().next());
+      }
+
+      assertThat(lastPage.links().prev()).isNotNull();
+      var prevPage = fetchPage(lastPage.links().prev());
+      var backwardTitles = titles(prevPage);
+
+      assertThat(forwardTitles).containsAll(backwardTitles);
+    }
   }
 
-  @Test
-  @DisplayName("Should maintain canonical order when paginating backward")
-  void shouldMaintainCanonicalOrderWhenPaginatingBackward() throws Exception {
-    var allForward = fetchPage(buildUrl(savedLibrary.getId(), 10));
-    var forwardTitles = titles(allForward);
+  @Nested
+  @DisplayName("Error Responses")
+  class ErrorResponses {
 
-    var lastPage = fetchPage(buildUrl(savedLibrary.getId(), 2));
-    while (lastPage.links().next() != null) {
-      lastPage = fetchPage(lastPage.links().next());
+    @Test
+    @DisplayName("Should return 400 when both page after and page before are provided")
+    void shouldReturn400WhenBothAfterAndBeforeProvided() throws Exception {
+      mockMvc
+          .perform(
+              get(
+                  buildBaseUrl(savedLibrary.getId())
+                      + "?page[size]=2&page[after]=abc&page[before]=xyz"))
+          .andExpect(status().isBadRequest());
     }
 
-    assertThat(lastPage.links().prev()).isNotNull();
-    var prevPage = fetchPage(lastPage.links().prev());
-    var backwardTitles = titles(prevPage);
+    @Test
+    @DisplayName("Should return 400 when page size is negative")
+    void shouldReturn400WhenPageSizeIsNegative() throws Exception {
+      mockMvc
+          .perform(get(buildBaseUrl(savedLibrary.getId()) + "?page[size]=-1"))
+          .andExpect(status().isBadRequest());
+    }
 
-    assertThat(forwardTitles).containsAll(backwardTitles);
+    @Test
+    @DisplayName("Should return 400 when page size exceeds max")
+    void shouldReturn400WhenPageSizeExceedsMax() throws Exception {
+      mockMvc
+          .perform(get(buildBaseUrl(savedLibrary.getId()) + "?page[size]=501"))
+          .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("Should return 400 when cursor libraryId does not match request libraryId")
+    void shouldReturn400WhenCursorLibraryIdMismatch() throws Exception {
+      var firstPage = fetchPage(buildUrl(savedLibrary.getId(), 2));
+      assertThat(firstPage.links().next()).isNotNull();
+
+      var cursorFromSavedLibrary = firstPage.data().getFirst().meta().page().cursor();
+
+      mockMvc
+          .perform(
+              get(
+                  buildBaseUrl(emptyLibrary.getId())
+                      + "?page[size]=2&page[after]="
+                      + cursorFromSavedLibrary))
+          .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("Should return 400 when cursor is malformed")
+    void shouldReturn400WhenCursorIsMalformed() throws Exception {
+      mockMvc
+          .perform(
+              get(buildBaseUrl(savedLibrary.getId()) + "?page[size]=2&page[after]=not-a-cursor"))
+          .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("Should return JSON:API error format when pagination argument is invalid")
+    void shouldReturnJsonApiErrorFormatWhenPaginationArgumentIsInvalid() throws Exception {
+      var result =
+          mockMvc
+              .perform(get(buildBaseUrl(savedLibrary.getId()) + "?page[size]=-1"))
+              .andExpect(status().isBadRequest())
+              .andReturn()
+              .getResponse()
+              .getContentAsString();
+
+      var errorResponse =
+          objectMapper.readValue(
+              result, com.streamarr.server.rest.pagination.JsonApiErrorResponse.class);
+      assertThat(errorResponse.errors()).hasSize(1);
+      assertThat(errorResponse.errors().getFirst().status()).isEqualTo("400");
+      assertThat(errorResponse.errors().getFirst().detail()).isNotBlank();
+    }
   }
 
-  @Test
-  @DisplayName("Should return only movies from specified library")
-  void shouldReturnOnlyMoviesFromSpecifiedLibrary() throws Exception {
-    var page = fetchPage(buildUrl(savedLibrary.getId(), 10));
-    assertThat(page.data()).hasSize(4);
-  }
+  @Nested
+  @DisplayName("JSON:API Compliance")
+  class JsonApiCompliance {
 
-  @Test
-  @DisplayName("Should include per-item cursors in meta.page")
-  void shouldIncludePerItemCursorsInMetaPage() throws Exception {
-    var page = fetchPage(buildUrl(savedLibrary.getId(), 10));
+    @Test
+    @DisplayName("Should return application/vnd.api+json content type")
+    void shouldReturnApplicationVndApiJsonContentType() throws Exception {
+      mockMvc
+          .perform(get(buildUrl(savedLibrary.getId(), 2)))
+          .andExpect(status().isOk())
+          .andExpect(content().contentTypeCompatibleWith("application/vnd.api+json"));
+    }
 
-    page.data()
-        .forEach(
-            resource -> {
-              assertThat(resource.meta()).isNotNull();
-              assertThat(resource.meta().page()).isNotNull();
-              assertThat(resource.meta().page().cursor()).isNotBlank();
-            });
-  }
+    @Test
+    @DisplayName("Should return only movies from specified library")
+    void shouldReturnOnlyMoviesFromSpecifiedLibrary() throws Exception {
+      var page = fetchPage(buildUrl(savedLibrary.getId(), 10));
+      assertThat(page.data()).hasSize(4);
+    }
 
-  @Test
-  @DisplayName("Should return valid JSON:API resource objects")
-  void shouldReturnValidJsonApiResourceObjects() throws Exception {
-    var page = fetchPage(buildUrl(savedLibrary.getId(), 10));
+    @Test
+    @DisplayName("Should include per-item cursors in meta.page")
+    void shouldIncludePerItemCursorsInMetaPage() throws Exception {
+      var page = fetchPage(buildUrl(savedLibrary.getId(), 10));
 
-    page.data()
-        .forEach(
-            resource -> {
-              assertThat(resource.type()).isEqualTo("movies");
-              assertThat(resource.id()).isNotBlank();
-              assertThat(resource.attributes()).containsKey("title");
-            });
-  }
+      page.data()
+          .forEach(
+              resource -> {
+                assertThat(resource.meta()).isNotNull();
+                assertThat(resource.meta().page()).isNotNull();
+                assertThat(resource.meta().page().cursor()).isNotBlank();
+              });
+    }
 
-  @Test
-  @DisplayName("Should return 400 when both page after and page before are provided")
-  void shouldReturn400WhenBothAfterAndBeforeProvided() throws Exception {
-    mockMvc
-        .perform(
-            get(
-                buildBaseUrl(savedLibrary.getId())
-                    + "?page[size]=2&page[after]=abc&page[before]=xyz"))
-        .andExpect(status().isBadRequest());
-  }
+    @Test
+    @DisplayName("Should return valid JSON:API resource objects")
+    void shouldReturnValidJsonApiResourceObjects() throws Exception {
+      var page = fetchPage(buildUrl(savedLibrary.getId(), 10));
 
-  @Test
-  @DisplayName("Should return 400 when page size is negative")
-  void shouldReturn400WhenPageSizeIsNegative() throws Exception {
-    mockMvc
-        .perform(get(buildBaseUrl(savedLibrary.getId()) + "?page[size]=-1"))
-        .andExpect(status().isBadRequest());
-  }
+      page.data()
+          .forEach(
+              resource -> {
+                assertThat(resource.type()).isEqualTo("movies");
+                assertThat(resource.id()).isNotBlank();
+                assertThat(resource.attributes()).containsKey("title");
+              });
+    }
 
-  @Test
-  @DisplayName("Should return 400 when page size exceeds max")
-  void shouldReturn400WhenPageSizeExceedsMax() throws Exception {
-    mockMvc
-        .perform(get(buildBaseUrl(savedLibrary.getId()) + "?page[size]=501"))
-        .andExpect(status().isBadRequest());
-  }
+    @Test
+    @DisplayName("Should return empty data with null links when library has no movies")
+    void shouldReturnEmptyDataWithNullLinksWhenLibraryHasNoMovies() throws Exception {
+      var page = fetchPage(buildUrl(emptyLibrary.getId(), 10));
 
-  @Test
-  @DisplayName("Should return application/vnd.api+json content type")
-  void shouldReturnApplicationVndApiJsonContentType() throws Exception {
-    mockMvc
-        .perform(get(buildUrl(savedLibrary.getId(), 2)))
-        .andExpect(status().isOk())
-        .andExpect(content().contentTypeCompatibleWith("application/vnd.api+json"));
-  }
-
-  @Test
-  @DisplayName("Should return 400 when cursor libraryId does not match request libraryId")
-  void shouldReturn400WhenCursorLibraryIdMismatch() throws Exception {
-    var firstPage = fetchPage(buildUrl(savedLibrary.getId(), 2));
-    assertThat(firstPage.links().next()).isNotNull();
-
-    var cursorFromSavedLibrary = firstPage.data().getFirst().meta().page().cursor();
-
-    mockMvc
-        .perform(
-            get(
-                buildBaseUrl(emptyLibrary.getId())
-                    + "?page[size]=2&page[after]="
-                    + cursorFromSavedLibrary))
-        .andExpect(status().isBadRequest());
-  }
-
-  @Test
-  @DisplayName("Should return 400 when cursor is malformed")
-  void shouldReturn400WhenCursorIsMalformed() throws Exception {
-    mockMvc
-        .perform(get(buildBaseUrl(savedLibrary.getId()) + "?page[size]=2&page[after]=not-a-cursor"))
-        .andExpect(status().isBadRequest());
-  }
-
-  @Test
-  @DisplayName("Should return JSON:API error format when pagination argument is invalid")
-  void shouldReturnJsonApiErrorFormatWhenPaginationArgumentIsInvalid() throws Exception {
-    var result =
-        mockMvc
-            .perform(get(buildBaseUrl(savedLibrary.getId()) + "?page[size]=-1"))
-            .andExpect(status().isBadRequest())
-            .andReturn()
-            .getResponse()
-            .getContentAsString();
-
-    var errorResponse =
-        objectMapper.readValue(
-            result, com.streamarr.server.rest.pagination.JsonApiErrorResponse.class);
-    assertThat(errorResponse.errors()).hasSize(1);
-    assertThat(errorResponse.errors().getFirst().status()).isEqualTo("400");
-    assertThat(errorResponse.errors().getFirst().detail()).isNotBlank();
-  }
-
-  @Test
-  @DisplayName("Should return empty data with null links when library has no movies")
-  void shouldReturnEmptyDataWithNullLinksWhenLibraryHasNoMovies() throws Exception {
-    var page = fetchPage(buildUrl(emptyLibrary.getId(), 10));
-
-    assertThat(page.data()).isEmpty();
-    assertThat(page.links().next()).isNull();
-    assertThat(page.links().prev()).isNull();
-    assertThat(page.links().first()).isNotNull();
+      assertThat(page.data()).isEmpty();
+      assertThat(page.links().next()).isNull();
+      assertThat(page.links().prev()).isNull();
+      assertThat(page.links().first()).isNotNull();
+    }
   }
 
   private JsonApiPageResponse fetchPage(String url) throws Exception {

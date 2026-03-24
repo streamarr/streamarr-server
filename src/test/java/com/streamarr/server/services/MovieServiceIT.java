@@ -361,7 +361,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should return only alpha movies when start letter is A")
+  @DisplayName("Should return movies from A onward when start letter is A")
   void shouldReturnOnlyAlphaMoviesWhenStartLetterIsA() {
 
     var filter =
