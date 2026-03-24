@@ -2,12 +2,6 @@ package com.streamarr.server.services.pagination;
 
 import com.streamarr.server.domain.BaseAuditableEntity;
 import com.streamarr.server.exceptions.InvalidPaginationArgumentException;
-import graphql.relay.Connection;
-import graphql.relay.DefaultConnection;
-import graphql.relay.DefaultPageInfo;
-import graphql.relay.Edge;
-import graphql.relay.PageInfo;
-import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -126,64 +120,6 @@ public class PaginationService {
     return new MediaPage<>(List.of(), false, false);
   }
 
-  public <T extends BaseAuditableEntity<?>> Connection<T> buildConnection(
-      List<Edge<T>> edges, PaginationOptions options, Optional<UUID> cursorId) {
-
-    if (edges.isEmpty()) {
-      return emptyConnection();
-    }
-
-    var limit = options.getLimit();
-    var direction = options.getPaginationDirection();
-
-    var hasPreviousPage = false;
-    var hasNextPage = false;
-
-    if (cursorId.isPresent() && direction.equals(PaginationDirection.FORWARD)) {
-      var cursorFound = edges.getFirst().getNode().getId().equals(cursorId.get());
-      hasPreviousPage = cursorFound;
-      if (cursorFound) {
-        edges = edges.subList(1, edges.size());
-      }
-    }
-
-    if (cursorId.isPresent() && direction.equals(PaginationDirection.REVERSE)) {
-      var cursorFound = edges.getLast().getNode().getId().equals(cursorId.get());
-      hasNextPage = cursorFound;
-      if (cursorFound) {
-        edges = edges.subList(0, edges.size() - 1);
-      }
-    }
-
-    if (edges.isEmpty()) {
-      return emptyConnection();
-    }
-
-    var isListLargerThanLimit = edges.size() > limit;
-
-    if (direction.equals(PaginationDirection.FORWARD)) {
-      hasNextPage = isListLargerThanLimit;
-    } else {
-      hasPreviousPage = isListLargerThanLimit;
-    }
-
-    edges = pruneListByLimitGivenDirection(edges, limit, direction);
-
-    var firstEdge = edges.getFirst();
-    var lastEdge = edges.getLast();
-
-    var pageInfo =
-        new DefaultPageInfo(
-            firstEdge.getCursor(), lastEdge.getCursor(), hasPreviousPage, hasNextPage);
-
-    return new DefaultConnection<>(edges, pageInfo);
-  }
-
-  private <T> Connection<T> emptyConnection() {
-    PageInfo pageInfo = new DefaultPageInfo(null, null, false, false);
-    return new DefaultConnection<>(Collections.emptyList(), pageInfo);
-  }
-
   private <T> List<T> pruneListByLimitGivenDirection(
       List<T> list, int limit, PaginationDirection direction) {
     if (list.size() <= limit) {
@@ -195,43 +131,5 @@ public class PaginationService {
     }
 
     return list.subList(0, limit);
-  }
-
-  public void validateCursorAgainstFilter(
-      MediaPaginationOptions decodedOptions, MediaFilter filter) {
-    var previousFilter = decodedOptions.getMediaFilter();
-
-    validateCursorField("sortBy", previousFilter.getSortBy(), filter.getSortBy());
-    validateCursorField(
-        "sortDirection", previousFilter.getSortDirection(), filter.getSortDirection());
-    validateCursorField("libraryId", previousFilter.getLibraryId(), filter.getLibraryId());
-    validateCursorField("startLetter", previousFilter.getStartLetter(), filter.getStartLetter());
-    validateCursorField("genreIds", previousFilter.getGenreIds(), filter.getGenreIds());
-    validateCursorField("years", previousFilter.getYears(), filter.getYears());
-    validateCursorField(
-        "contentRatings", previousFilter.getContentRatings(), filter.getContentRatings());
-    validateCursorField("studioIds", previousFilter.getStudioIds(), filter.getStudioIds());
-    validateCursorField("directorIds", previousFilter.getDirectorIds(), filter.getDirectorIds());
-    validateCursorField(
-        "castMemberIds", previousFilter.getCastMemberIds(), filter.getCastMemberIds());
-    validateCursorField("unmatched", previousFilter.getUnmatched(), filter.getUnmatched());
-  }
-
-  <T> void validateCursorField(String fieldName, T prior, T current) {
-    if (java.util.Objects.equals(prior, current)) {
-      return;
-    }
-
-    throw new com.streamarr.server.graphql.cursor.InvalidCursorException(
-        "Prior query "
-            + fieldName
-            + " was '"
-            + prior
-            + "'"
-            + " but new query "
-            + fieldName
-            + " is '"
-            + current
-            + "'");
   }
 }

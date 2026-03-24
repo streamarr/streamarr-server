@@ -1,6 +1,5 @@
 package com.streamarr.server.services;
 
-import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Movie;
@@ -9,7 +8,6 @@ import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.domain.metadata.Rating;
 import com.streamarr.server.domain.metadata.Review;
-import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.repositories.CompanyRepository;
 import com.streamarr.server.repositories.GenreRepository;
 import com.streamarr.server.repositories.PersonRepository;
@@ -24,15 +22,10 @@ import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PageItem;
-import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.services.pagination.PaginationService;
-import graphql.relay.Connection;
-import graphql.relay.DefaultEdge;
-import graphql.relay.Edge;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -48,7 +41,6 @@ public class MovieService {
   private final PersonService personService;
   private final GenreService genreService;
   private final CompanyService companyService;
-  private final CursorUtil cursorUtil;
   private final PaginationService paginationService;
   private final ApplicationEventPublisher eventPublisher;
   private final ImageService imageService;
@@ -158,27 +150,6 @@ public class MovieService {
     }
   }
 
-  public Connection<? extends BaseCollectable<?>> getMoviesWithFilter(
-      int first, String after, int last, String before, MediaFilter filter) {
-
-    // TODO(#54): cross-library collection queries will use this null-libraryId path
-    if (filter == null) {
-      filter = buildDefaultMovieFilter();
-    }
-
-    var paginationOptions = paginationService.getPaginationOptions(first, after, last, before);
-
-    if (paginationOptions.getCursor().isEmpty()) {
-      return getFirstMoviesAsConnection(paginationOptions, filter);
-    }
-
-    var mediaOptionsFromCursor = cursorUtil.decodeMediaCursor(paginationOptions);
-
-    paginationService.validateCursorAgainstFilter(mediaOptionsFromCursor, filter);
-
-    return usingCursorGetMoviesAsConnection(mediaOptionsFromCursor);
-  }
-
   @Transactional(readOnly = true)
   public Optional<Movie> findById(UUID id) {
     return movieRepository.findById(id);
@@ -219,7 +190,7 @@ public class MovieService {
     return reviewRepository.findByMovie_Id(movieId);
   }
 
-  public MediaPage<Movie> getMoviesAsPage(MediaPaginationOptions options) {
+  public MediaPage<Movie> getMoviesWithFilter(MediaPaginationOptions options) {
     var movies =
         options.getCursorId().isPresent()
             ? movieRepository.seekWithFilter(options)
@@ -234,34 +205,6 @@ public class MovieService {
         pageItems, options.getPaginationOptions(), options.getCursorId());
   }
 
-  private MediaFilter buildDefaultMovieFilter() {
-    return MediaFilter.builder().build();
-  }
-
-  private Connection<? extends BaseCollectable<?>> getFirstMoviesAsConnection(
-      PaginationOptions options, MediaFilter filter) {
-    var mediaOptions =
-        MediaPaginationOptions.builder().paginationOptions(options).mediaFilter(filter).build();
-
-    var movies = movieRepository.findFirstWithFilter(mediaOptions);
-    var edges = mapItemsToEdges(movies, mediaOptions);
-
-    return paginationService.buildConnection(
-        edges, mediaOptions.getPaginationOptions(), mediaOptions.getCursorId());
-  }
-
-  private List<Edge<Movie>> mapItemsToEdges(List<Movie> movies, MediaPaginationOptions options) {
-    return movies.stream()
-        .map(
-            result -> {
-              var orderByValue = getOrderByValue(options.getMediaFilter(), result);
-              var newCursor = cursorUtil.encodeMediaCursor(options, result.getId(), orderByValue);
-
-              return new DefaultEdge<>(result, newCursor);
-            })
-        .collect(Collectors.toList());
-  }
-
   private Object getOrderByValue(MediaFilter filter, Movie movie) {
     return switch (filter.getSortBy()) {
       case TITLE -> movie.getTitleSort();
@@ -269,14 +212,5 @@ public class MovieService {
       case RELEASE_DATE -> movie.getReleaseDate();
       case RUNTIME -> movie.getRuntime();
     };
-  }
-
-  private Connection<? extends BaseCollectable<?>> usingCursorGetMoviesAsConnection(
-      MediaPaginationOptions options) {
-    var movies = movieRepository.seekWithFilter(options);
-    var edges = mapItemsToEdges(movies, options);
-
-    return paginationService.buildConnection(
-        edges, options.getPaginationOptions(), options.getCursorId());
   }
 }

@@ -26,7 +26,6 @@ import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSeriesRepository;
-import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.services.metadata.ImageVariantService;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.events.ImageSource;
@@ -51,7 +50,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import tools.jackson.databind.ObjectMapper;
 
 @Tag("UnitTest")
 @DisplayName("Series Service Tests")
@@ -77,7 +75,6 @@ class SeriesServiceTest {
     personService = mock(PersonService.class);
     genreService = mock(GenreService.class);
     companyService = mock(CompanyService.class);
-    var cursorUtil = new CursorUtil(new ObjectMapper());
     var paginationService = new PaginationService();
     var fileSystem = Jimfs.newFileSystem(Configuration.unix());
     var imageService =
@@ -92,7 +89,6 @@ class SeriesServiceTest {
             personService,
             genreService,
             companyService,
-            cursorUtil,
             paginationService,
             eventPublisher,
             imageService,
@@ -166,7 +162,7 @@ class SeriesServiceTest {
     seriesRepository.save(Series.builder().title("Apple").build());
 
     var result =
-        seriesService.getSeriesAsPage(buildForwardOptions(10, MediaFilter.builder().build()));
+        seriesService.getSeriesWithFilter(buildForwardOptions(10, MediaFilter.builder().build()));
 
     var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
@@ -182,7 +178,7 @@ class SeriesServiceTest {
     var filter =
         MediaFilter.builder().sortBy(OrderMediaBy.TITLE).sortDirection(SortOrder.DESC).build();
 
-    var result = seriesService.getSeriesAsPage(buildForwardOptions(10, filter));
+    var result = seriesService.getSeriesWithFilter(buildForwardOptions(10, filter));
 
     var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
@@ -197,7 +193,7 @@ class SeriesServiceTest {
     seriesRepository.save(Series.builder().title("Cherry").build());
 
     var filter = MediaFilter.builder().build();
-    var firstPage = seriesService.getSeriesAsPage(buildForwardOptions(1, filter));
+    var firstPage = seriesService.getSeriesWithFilter(buildForwardOptions(1, filter));
 
     assertThat(firstPage.items()).hasSize(1);
     assertThat(firstPage.items().getFirst().item().getTitle()).isEqualTo("Apple");
@@ -205,7 +201,7 @@ class SeriesServiceTest {
 
     var lastItem = firstPage.items().getLast();
     var secondPage =
-        seriesService.getSeriesAsPage(
+        seriesService.getSeriesWithFilter(
             buildCursorOptions(1, PaginationDirection.FORWARD, lastItem, filter));
 
     assertThat(secondPage.items()).hasSize(1);
@@ -221,11 +217,11 @@ class SeriesServiceTest {
     seriesRepository.save(Series.builder().title("Cherry").build());
 
     var filter = MediaFilter.builder().build();
-    var allSeries = seriesService.getSeriesAsPage(buildForwardOptions(3, filter));
+    var allSeries = seriesService.getSeriesWithFilter(buildForwardOptions(3, filter));
     var lastItem = allSeries.items().getLast();
 
     var backwardPage =
-        seriesService.getSeriesAsPage(
+        seriesService.getSeriesWithFilter(
             buildCursorOptions(1, PaginationDirection.REVERSE, lastItem, filter));
 
     assertThat(backwardPage.items()).hasSize(1);
@@ -237,7 +233,7 @@ class SeriesServiceTest {
   @DisplayName("Should return empty connection when no series exist")
   void shouldReturnEmptyConnectionWhenNoSeriesExist() {
     var result =
-        seriesService.getSeriesAsPage(buildForwardOptions(10, MediaFilter.builder().build()));
+        seriesService.getSeriesWithFilter(buildForwardOptions(10, MediaFilter.builder().build()));
 
     assertThat(result.items()).isEmpty();
     assertThat(result.hasNextPage()).isFalse();

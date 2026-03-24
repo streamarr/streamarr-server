@@ -126,8 +126,8 @@ public class LibraryResolver {
 
     var page =
         switch (library.getType()) {
-          case MOVIE -> movieService.getMoviesAsPage(options);
-          case SERIES -> seriesService.getSeriesAsPage(options);
+          case MOVIE -> movieService.getMoviesWithFilter(options);
+          case SERIES -> seriesService.getSeriesWithFilter(options);
           default -> throw new UnsupportedMediaTypeException(library.getType().name());
         };
 

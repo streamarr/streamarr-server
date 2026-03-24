@@ -154,7 +154,7 @@ class LibraryResolverTest {
     var page = new MediaPage<>(List.of(new PageItem<>(movie, "Inception")), false, false);
 
     when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
-    when(movieService.getMoviesAsPage(any(MediaPaginationOptions.class))).thenReturn(page);
+    when(movieService.getMoviesWithFilter(any(MediaPaginationOptions.class))).thenReturn(page);
 
     String title =
         dgsQueryExecutor.executeAndExtractJsonPath(
@@ -221,7 +221,7 @@ class LibraryResolverTest {
     var page = new MediaPage<>(List.of(new PageItem<>(series, "Breaking Bad")), false, false);
 
     when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
-    when(seriesService.getSeriesAsPage(any(MediaPaginationOptions.class))).thenReturn(page);
+    when(seriesService.getSeriesWithFilter(any(MediaPaginationOptions.class))).thenReturn(page);
 
     String title =
         dgsQueryExecutor.executeAndExtractJsonPath(
@@ -405,7 +405,7 @@ class LibraryResolverTest {
 
     when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
 
-    when(movieService.getMoviesAsPage(
+    when(movieService.getMoviesWithFilter(
             argThat(
                 (MediaPaginationOptions opts) -> {
                   var f = opts.getMediaFilter();
@@ -440,7 +440,7 @@ class LibraryResolverTest {
 
     when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
 
-    when(movieService.getMoviesAsPage(
+    when(movieService.getMoviesWithFilter(
             argThat(
                 (MediaPaginationOptions opts) -> {
                   var f = opts.getMediaFilter();

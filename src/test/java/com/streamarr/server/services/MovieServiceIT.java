@@ -180,7 +180,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
   void shouldLimitFirstSetOfResultsToOneWhenGivenFirstParameterAndNoCursor() {
 
     var filter = filterForLibrary(savedLibraryA);
-    var movies = movieService.getMoviesAsPage(buildForwardOptions(1, filter));
+    var movies = movieService.getMoviesWithFilter(buildForwardOptions(1, filter));
 
     assertThat(movies.items()).hasSize(1);
   }
@@ -192,13 +192,13 @@ class MovieServiceIT extends AbstractIntegrationTest {
 
     var filter = filterForLibrary(savedLibraryA);
 
-    var firstPageMovies = movieService.getMoviesAsPage(buildForwardOptions(1, filter));
+    var firstPageMovies = movieService.getMoviesWithFilter(buildForwardOptions(1, filter));
 
     assertThat(firstPageMovies.items()).hasSize(1);
 
     var lastItem = firstPageMovies.items().getLast();
     var secondPageMovies =
-        movieService.getMoviesAsPage(buildForwardContinuation(1, filter, lastItem));
+        movieService.getMoviesWithFilter(buildForwardContinuation(1, filter, lastItem));
 
     assertThat(secondPageMovies.items()).hasSize(1);
 
@@ -215,13 +215,13 @@ class MovieServiceIT extends AbstractIntegrationTest {
 
     var filter = filterForLibrary(savedLibraryA);
 
-    var firstPageMovies = movieService.getMoviesAsPage(buildForwardOptions(2, filter));
+    var firstPageMovies = movieService.getMoviesWithFilter(buildForwardOptions(2, filter));
 
     assertThat(firstPageMovies.items()).hasSize(2);
 
     var lastItem = firstPageMovies.items().getLast();
     var secondPageMovies =
-        movieService.getMoviesAsPage(buildBackwardContinuation(1, filter, lastItem));
+        movieService.getMoviesWithFilter(buildBackwardContinuation(1, filter, lastItem));
 
     assertThat(secondPageMovies.items()).hasSize(1);
 
@@ -237,11 +237,12 @@ class MovieServiceIT extends AbstractIntegrationTest {
 
     var filter = filterForLibrary(savedLibraryD);
 
-    var forwardAll = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var forwardAll = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
     var allTitles = forwardAll.items().stream().map(pi -> pi.item().getTitle()).toList();
 
     var lastItem = forwardAll.items().getLast();
-    var backwardPage = movieService.getMoviesAsPage(buildBackwardContinuation(3, filter, lastItem));
+    var backwardPage =
+        movieService.getMoviesWithFilter(buildBackwardContinuation(3, filter, lastItem));
     var backwardTitles = backwardPage.items().stream().map(pi -> pi.item().getTitle()).toList();
 
     assertThat(backwardTitles)
@@ -256,8 +257,8 @@ class MovieServiceIT extends AbstractIntegrationTest {
     var filterA = filterForLibrary(savedLibraryA);
     var filterB = filterForLibrary(savedLibraryB);
 
-    var libraryAMovies = movieService.getMoviesAsPage(buildForwardOptions(10, filterA));
-    var libraryBMovies = movieService.getMoviesAsPage(buildForwardOptions(10, filterB));
+    var libraryAMovies = movieService.getMoviesWithFilter(buildForwardOptions(10, filterA));
+    var libraryBMovies = movieService.getMoviesWithFilter(buildForwardOptions(10, filterB));
 
     assertThat(libraryAMovies.items()).hasSize(2);
     assertThat(libraryBMovies.items()).hasSize(1);
@@ -269,11 +270,12 @@ class MovieServiceIT extends AbstractIntegrationTest {
 
     var filter = filterForLibrary(savedLibraryA);
 
-    var firstPage = movieService.getMoviesAsPage(buildForwardOptions(1, filter));
+    var firstPage = movieService.getMoviesWithFilter(buildForwardOptions(1, filter));
     assertThat(firstPage.items()).hasSize(1);
 
     var lastItem = firstPage.items().getLast();
-    var secondPage = movieService.getMoviesAsPage(buildForwardContinuation(1, filter, lastItem));
+    var secondPage =
+        movieService.getMoviesWithFilter(buildForwardContinuation(1, filter, lastItem));
     assertThat(secondPage.items()).hasSize(1);
 
     var allTitles =
@@ -290,11 +292,11 @@ class MovieServiceIT extends AbstractIntegrationTest {
 
     var filter = filterForLibrary(savedLibraryA);
 
-    var allMovies = movieService.getMoviesAsPage(buildForwardOptions(2, filter));
+    var allMovies = movieService.getMoviesWithFilter(buildForwardOptions(2, filter));
     assertThat(allMovies.items()).hasSize(2);
 
     var lastItem = allMovies.items().getLast();
-    var lastOne = movieService.getMoviesAsPage(buildBackwardContinuation(1, filter, lastItem));
+    var lastOne = movieService.getMoviesWithFilter(buildBackwardContinuation(1, filter, lastItem));
     assertThat(lastOne.items()).hasSize(1);
 
     var title = lastOne.items().getFirst().item().getTitle();
@@ -312,7 +314,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .libraryId(savedLibraryC.getId())
             .build();
 
-    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
 
     var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
@@ -330,13 +332,14 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .libraryId(savedLibraryC.getId())
             .build();
 
-    var firstPage = movieService.getMoviesAsPage(buildForwardOptions(1, filter));
+    var firstPage = movieService.getMoviesWithFilter(buildForwardOptions(1, filter));
 
     assertThat(firstPage.items()).hasSize(1);
     assertThat(firstPage.items().getFirst().item().getTitle()).isEqualTo("First");
 
     var lastItem = firstPage.items().getLast();
-    var secondPage = movieService.getMoviesAsPage(buildForwardContinuation(1, filter, lastItem));
+    var secondPage =
+        movieService.getMoviesWithFilter(buildForwardContinuation(1, filter, lastItem));
 
     assertThat(secondPage.items()).hasSize(1);
     assertThat(secondPage.items().getFirst().item().getTitle()).isEqualTo("Second");
@@ -374,17 +377,19 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .libraryId(duplicateLibrary.getId())
             .build();
 
-    var firstPage = movieService.getMoviesAsPage(buildForwardOptions(1, filter));
+    var firstPage = movieService.getMoviesWithFilter(buildForwardOptions(1, filter));
     assertThat(firstPage.items()).hasSize(1);
     assertThat(firstPage.hasNextPage()).isTrue();
 
     var lastItem1 = firstPage.items().getLast();
-    var secondPage = movieService.getMoviesAsPage(buildForwardContinuation(1, filter, lastItem1));
+    var secondPage =
+        movieService.getMoviesWithFilter(buildForwardContinuation(1, filter, lastItem1));
     assertThat(secondPage.items()).hasSize(1);
     assertThat(secondPage.hasNextPage()).isTrue();
 
     var lastItem2 = secondPage.items().getLast();
-    var thirdPage = movieService.getMoviesAsPage(buildForwardContinuation(1, filter, lastItem2));
+    var thirdPage =
+        movieService.getMoviesWithFilter(buildForwardContinuation(1, filter, lastItem2));
     assertThat(thirdPage.items()).hasSize(1);
     assertThat(thirdPage.hasNextPage()).isFalse();
 
@@ -407,7 +412,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .startLetter(AlphabetLetter.A)
             .build();
 
-    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
 
     var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
@@ -424,7 +429,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .startLetter(AlphabetLetter.B)
             .build();
 
-    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
 
     var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
@@ -441,7 +446,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .startLetter(AlphabetLetter.HASH)
             .build();
 
-    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
 
     var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
@@ -459,12 +464,13 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .startLetter(AlphabetLetter.B)
             .build();
 
-    var firstPage = movieService.getMoviesAsPage(buildForwardOptions(2, filter));
+    var firstPage = movieService.getMoviesWithFilter(buildForwardOptions(2, filter));
     assertThat(firstPage.items()).hasSize(2);
     assertThat(firstPage.hasNextPage()).isTrue();
 
     var lastItem = firstPage.items().getLast();
-    var secondPage = movieService.getMoviesAsPage(buildForwardContinuation(2, filter, lastItem));
+    var secondPage =
+        movieService.getMoviesWithFilter(buildForwardContinuation(2, filter, lastItem));
     assertThat(secondPage.items()).hasSize(2);
     assertThat(secondPage.hasNextPage()).isFalse();
 
@@ -486,7 +492,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .startLetter(AlphabetLetter.Z)
             .build();
 
-    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
 
     var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
@@ -504,7 +510,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .sortDirection(SortOrder.DESC)
             .build();
 
-    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
 
     var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
@@ -522,7 +528,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .sortDirection(SortOrder.DESC)
             .build();
 
-    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
 
     var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
@@ -541,7 +547,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .sortDirection(SortOrder.DESC)
             .build();
 
-    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
 
     var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
@@ -559,12 +565,13 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .sortDirection(SortOrder.DESC)
             .build();
 
-    var firstPage = movieService.getMoviesAsPage(buildForwardOptions(3, filter));
+    var firstPage = movieService.getMoviesWithFilter(buildForwardOptions(3, filter));
     assertThat(firstPage.items()).hasSize(3);
     assertThat(firstPage.hasNextPage()).isTrue();
 
     var lastItem = firstPage.items().getLast();
-    var secondPage = movieService.getMoviesAsPage(buildForwardContinuation(3, filter, lastItem));
+    var secondPage =
+        movieService.getMoviesWithFilter(buildForwardContinuation(3, filter, lastItem));
     assertThat(secondPage.items()).hasSize(2);
     assertThat(secondPage.hasNextPage()).isFalse();
 
@@ -588,7 +595,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .startLetter(AlphabetLetter.HASH)
             .build();
 
-    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
 
     var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
@@ -607,7 +614,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .startLetter(AlphabetLetter.HASH)
             .build();
 
-    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
 
     var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
@@ -644,7 +651,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .sortDirection(SortOrder.DESC)
             .build();
 
-    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
 
     var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
@@ -689,7 +696,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .sortDirection(SortOrder.ASC)
             .build();
 
-    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
 
     assertThat(result.items())
         .extracting(pi -> pi.item().getTitle())
@@ -730,12 +737,12 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .sortDirection(SortOrder.ASC)
             .build();
 
-    var page1 = movieService.getMoviesAsPage(buildForwardOptions(1, filter));
+    var page1 = movieService.getMoviesWithFilter(buildForwardOptions(1, filter));
     assertThat(page1.items()).first().extracting(pi -> pi.item().getTitle()).isEqualTo("First");
     assertThat(page1.hasNextPage()).isTrue();
 
     var lastItem = page1.items().getLast();
-    var page2 = movieService.getMoviesAsPage(buildForwardContinuation(1, filter, lastItem));
+    var page2 = movieService.getMoviesWithFilter(buildForwardContinuation(1, filter, lastItem));
     assertThat(page2.items()).first().extracting(pi -> pi.item().getTitle()).isEqualTo("Second");
     assertThat(page2.hasNextPage()).isTrue();
   }
@@ -774,11 +781,11 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .sortDirection(SortOrder.DESC)
             .build();
 
-    var page1 = movieService.getMoviesAsPage(buildForwardOptions(1, filter));
+    var page1 = movieService.getMoviesWithFilter(buildForwardOptions(1, filter));
     assertThat(page1.items()).first().extracting(pi -> pi.item().getTitle()).isEqualTo("New");
 
     var lastItem = page1.items().getLast();
-    var page2 = movieService.getMoviesAsPage(buildForwardContinuation(1, filter, lastItem));
+    var page2 = movieService.getMoviesWithFilter(buildForwardContinuation(1, filter, lastItem));
     assertThat(page2.items()).first().extracting(pi -> pi.item().getTitle()).isEqualTo("Mid");
   }
 
@@ -808,7 +815,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .build();
 
     // Page 1: first=2 returns Dated + one Undated (nulls last, secondary sort by ID)
-    var page1 = movieService.getMoviesAsPage(buildForwardOptions(2, filter));
+    var page1 = movieService.getMoviesWithFilter(buildForwardOptions(2, filter));
     assertThat(page1.items()).hasSize(2);
     assertThat(page1.items()).first().extracting(pi -> pi.item().getTitle()).isEqualTo("Dated");
     assertThat(page1.hasNextPage()).isTrue();
@@ -817,7 +824,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
 
     // Page 2: cursor from null-valued row exercises IS NULL branch of buildSeekCondition
     var lastItem = page1.items().getLast();
-    var page2 = movieService.getMoviesAsPage(buildForwardContinuation(2, filter, lastItem));
+    var page2 = movieService.getMoviesWithFilter(buildForwardContinuation(2, filter, lastItem));
     assertThat(page2.items()).hasSize(1);
     assertThat(page2.hasNextPage()).isFalse();
 
@@ -851,7 +858,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .sortDirection(SortOrder.ASC)
             .build();
 
-    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
 
     assertThat(result.items())
         .extracting(pi -> pi.item().getTitle())
@@ -877,11 +884,11 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .sortDirection(SortOrder.ASC)
             .build();
 
-    var page1 = movieService.getMoviesAsPage(buildForwardOptions(1, filter));
+    var page1 = movieService.getMoviesWithFilter(buildForwardOptions(1, filter));
     assertThat(page1.items()).first().extracting(pi -> pi.item().getTitle()).isEqualTo("Short");
 
     var lastItem = page1.items().getLast();
-    var page2 = movieService.getMoviesAsPage(buildForwardContinuation(1, filter, lastItem));
+    var page2 = movieService.getMoviesWithFilter(buildForwardContinuation(1, filter, lastItem));
     assertThat(page2.items()).first().extracting(pi -> pi.item().getTitle()).isEqualTo("Medium");
   }
 
@@ -902,11 +909,11 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .sortDirection(SortOrder.DESC)
             .build();
 
-    var page1 = movieService.getMoviesAsPage(buildForwardOptions(1, filter));
+    var page1 = movieService.getMoviesWithFilter(buildForwardOptions(1, filter));
     assertThat(page1.items()).first().extracting(pi -> pi.item().getTitle()).isEqualTo("Long");
 
     var lastItem = page1.items().getLast();
-    var page2 = movieService.getMoviesAsPage(buildForwardContinuation(1, filter, lastItem));
+    var page2 = movieService.getMoviesWithFilter(buildForwardContinuation(1, filter, lastItem));
     assertThat(page2.items()).first().extracting(pi -> pi.item().getTitle()).isEqualTo("Short");
   }
 
@@ -946,11 +953,12 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .sortDirection(SortOrder.ASC)
             .build();
 
-    var forwardAll = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var forwardAll = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
     var forwardTitles = forwardAll.items().stream().map(pi -> pi.item().getTitle()).toList();
 
     var lastItem = forwardAll.items().getLast();
-    var backwardPage = movieService.getMoviesAsPage(buildBackwardContinuation(2, filter, lastItem));
+    var backwardPage =
+        movieService.getMoviesWithFilter(buildBackwardContinuation(2, filter, lastItem));
 
     assertThat(backwardPage.items())
         .extracting(pi -> pi.item().getTitle())
@@ -976,11 +984,12 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .sortDirection(SortOrder.DESC)
             .build();
 
-    var forwardAll = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var forwardAll = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
     var forwardTitles = forwardAll.items().stream().map(pi -> pi.item().getTitle()).toList();
 
     var lastItem = forwardAll.items().getLast();
-    var backwardPage = movieService.getMoviesAsPage(buildBackwardContinuation(2, filter, lastItem));
+    var backwardPage =
+        movieService.getMoviesWithFilter(buildBackwardContinuation(2, filter, lastItem));
 
     assertThat(backwardPage.items())
         .extracting(pi -> pi.item().getTitle())
@@ -995,7 +1004,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
   void shouldReportHasNextPageTrueAndHasPreviousPageFalseWhenOnFirstForwardPage() {
     var filter = filterForLibrary(savedLibraryA);
 
-    var result = movieService.getMoviesAsPage(buildForwardOptions(1, filter));
+    var result = movieService.getMoviesWithFilter(buildForwardOptions(1, filter));
 
     assertThat(result.hasNextPage()).isTrue();
     assertThat(result.hasPreviousPage()).isFalse();
@@ -1006,10 +1015,10 @@ class MovieServiceIT extends AbstractIntegrationTest {
   void shouldReportHasPreviousPageTrueWhenPaginatingForwardWithCursor() {
     var filter = filterForLibrary(savedLibraryA);
 
-    var page1 = movieService.getMoviesAsPage(buildForwardOptions(1, filter));
+    var page1 = movieService.getMoviesWithFilter(buildForwardOptions(1, filter));
 
     var lastItem = page1.items().getLast();
-    var page2 = movieService.getMoviesAsPage(buildForwardContinuation(1, filter, lastItem));
+    var page2 = movieService.getMoviesWithFilter(buildForwardContinuation(1, filter, lastItem));
     assertThat(page2.hasPreviousPage()).isTrue();
   }
 
@@ -1018,10 +1027,10 @@ class MovieServiceIT extends AbstractIntegrationTest {
   void shouldReportHasNextPageFalseWhenOnFinalForwardPage() {
     var filter = filterForLibrary(savedLibraryA);
 
-    var page1 = movieService.getMoviesAsPage(buildForwardOptions(1, filter));
+    var page1 = movieService.getMoviesWithFilter(buildForwardOptions(1, filter));
 
     var lastItem = page1.items().getLast();
-    var page2 = movieService.getMoviesAsPage(buildForwardContinuation(1, filter, lastItem));
+    var page2 = movieService.getMoviesWithFilter(buildForwardContinuation(1, filter, lastItem));
     assertThat(page2.hasNextPage()).isFalse();
   }
 
@@ -1031,10 +1040,11 @@ class MovieServiceIT extends AbstractIntegrationTest {
   void shouldReportHasPreviousPageFalseAndHasNextPageTrueWhenBackwardPageReachesStart() {
     var filter = filterForLibrary(savedLibraryA);
 
-    var allMovies = movieService.getMoviesAsPage(buildForwardOptions(2, filter));
+    var allMovies = movieService.getMoviesWithFilter(buildForwardOptions(2, filter));
 
     var lastItem = allMovies.items().getLast();
-    var backwardPage = movieService.getMoviesAsPage(buildBackwardContinuation(1, filter, lastItem));
+    var backwardPage =
+        movieService.getMoviesWithFilter(buildBackwardContinuation(1, filter, lastItem));
 
     assertThat(backwardPage.hasPreviousPage()).isFalse();
     assertThat(backwardPage.hasNextPage()).isTrue();
@@ -1046,7 +1056,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
     var emptyLibrary = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
 
     var filter = filterForLibrary(emptyLibrary);
-    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
 
     assertThat(result.items()).isEmpty();
   }
@@ -1086,7 +1096,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .genreIds(List.of(genreAction.getId()))
             .build();
 
-    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
 
     assertThat(result.items())
         .extracting(pi -> pi.item().getTitle())
@@ -1115,7 +1125,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
 
     var filter = MediaFilter.builder().libraryId(library.getId()).years(List.of(2024)).build();
 
-    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
 
     assertThat(result.items()).extracting(pi -> pi.item().getTitle()).containsExactly("Year 2024");
   }
@@ -1143,7 +1153,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
     var filter =
         MediaFilter.builder().libraryId(library.getId()).contentRatings(List.of("PG-13")).build();
 
-    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
 
     assertThat(result.items())
         .extracting(pi -> pi.item().getTitle())
@@ -1189,7 +1199,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .studioIds(List.of(studioA.getId()))
             .build();
 
-    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
 
     assertThat(result.items())
         .extracting(pi -> pi.item().getTitle())
@@ -1229,7 +1239,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .directorIds(List.of(directorA.getId()))
             .build();
 
-    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
 
     assertThat(result.items())
         .extracting(pi -> pi.item().getTitle())
@@ -1269,7 +1279,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .castMemberIds(List.of(actorA.getId()))
             .build();
 
-    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
 
     assertThat(result.items())
         .extracting(pi -> pi.item().getTitle())
@@ -1315,7 +1325,7 @@ class MovieServiceIT extends AbstractIntegrationTest {
 
     var filter = MediaFilter.builder().libraryId(library.getId()).unmatched(true).build();
 
-    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
 
     assertThat(result.items())
         .extracting(pi -> pi.item().getTitle())
@@ -1352,13 +1362,13 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .build();
 
     // Page 1: first=2, gets Dated A + Dated B. Cursor encodes non-null date.
-    var page1 = movieService.getMoviesAsPage(buildForwardOptions(2, filter));
+    var page1 = movieService.getMoviesWithFilter(buildForwardOptions(2, filter));
     assertThat(page1.items()).hasSize(2);
     assertThat(page1.hasNextPage()).isTrue();
 
     // Page 2: cursor from Dated B (non-null). Must bridge into null rows.
     var lastItem = page1.items().getLast();
-    var page2 = movieService.getMoviesAsPage(buildForwardContinuation(2, filter, lastItem));
+    var page2 = movieService.getMoviesWithFilter(buildForwardContinuation(2, filter, lastItem));
     assertThat(page2.items()).hasSize(1);
     assertThat(page2.items()).first().extracting(pi -> pi.item().getTitle()).isEqualTo("Undated");
     assertThat(page2.hasNextPage()).isFalse();
@@ -1383,12 +1393,12 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .sortDirection(SortOrder.ASC)
             .build();
 
-    var page1 = movieService.getMoviesAsPage(buildForwardOptions(2, filter));
+    var page1 = movieService.getMoviesWithFilter(buildForwardOptions(2, filter));
     assertThat(page1.items()).hasSize(2);
     assertThat(page1.hasNextPage()).isTrue();
 
     var lastItem = page1.items().getLast();
-    var page2 = movieService.getMoviesAsPage(buildForwardContinuation(2, filter, lastItem));
+    var page2 = movieService.getMoviesWithFilter(buildForwardContinuation(2, filter, lastItem));
     assertThat(page2.items()).hasSize(1);
     assertThat(page2.items()).first().extracting(pi -> pi.item().getTitle()).isEqualTo("Unknown");
     assertThat(page2.hasNextPage()).isFalse();
@@ -1415,14 +1425,14 @@ class MovieServiceIT extends AbstractIntegrationTest {
             .build();
 
     // Page 1: first=2 returns Long + one null (NULLS LAST in DESC)
-    var page1 = movieService.getMoviesAsPage(buildForwardOptions(2, filter));
+    var page1 = movieService.getMoviesWithFilter(buildForwardOptions(2, filter));
     assertThat(page1.items()).hasSize(2);
     assertThat(page1.items()).first().extracting(pi -> pi.item().getTitle()).isEqualTo("Long");
     assertThat(page1.hasNextPage()).isTrue();
 
     // Page 2: cursor from null row exercises DESC null-seek branch (line 190)
     var lastItem = page1.items().getLast();
-    var page2 = movieService.getMoviesAsPage(buildForwardContinuation(2, filter, lastItem));
+    var page2 = movieService.getMoviesWithFilter(buildForwardContinuation(2, filter, lastItem));
     assertThat(page2.items()).hasSize(1);
     assertThat(page2.hasNextPage()).isFalse();
   }

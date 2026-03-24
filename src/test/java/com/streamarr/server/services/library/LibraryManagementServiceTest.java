@@ -105,7 +105,6 @@ class LibraryManagementServiceTest {
           genreService,
           companyService,
           null,
-          null,
           capturingEventPublisher,
           null,
           null,
