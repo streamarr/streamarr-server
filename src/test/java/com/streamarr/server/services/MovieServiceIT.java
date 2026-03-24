@@ -1159,6 +1159,22 @@ class MovieServiceIT extends AbstractIntegrationTest {
       assertThat(backwardPage.hasPreviousPage()).isFalse();
       assertThat(backwardPage.hasNextPage()).isTrue();
     }
+
+    @Test
+    @DisplayName(
+        "Should return empty items with hasNextPage true when paginating backward from first item")
+    void shouldReturnEmptyItemsWithHasNextPageTrueWhenPaginatingBackwardFromFirstItem() {
+      var filter = filterForLibrary(savedLibraryA);
+
+      var firstPage = movieService.getMoviesWithFilter(buildForwardOptions(2, filter));
+      var firstItem = firstPage.items().getFirst();
+
+      var backwardFromFirst =
+          movieService.getMoviesWithFilter(buildBackwardContinuation(1, filter, firstItem));
+
+      assertThat(backwardFromFirst.items()).isEmpty();
+      assertThat(backwardFromFirst.hasNextPage()).isTrue();
+    }
   }
 
   @Nested

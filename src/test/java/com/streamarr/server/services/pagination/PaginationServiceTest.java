@@ -255,8 +255,9 @@ class PaginationServiceTest {
 
     @Test
     @DisplayName(
-        "Should build empty media page when paginating forward given list containing only cursorId")
-    void shouldBuildEmptyMediaPageWhenPaginatingForwardGivenListContainingCursorId() {
+        "Should build empty media page with hasPreviousPage true when paginating forward given list containing only cursorId")
+    void
+        shouldBuildEmptyMediaPageWithHasPreviousPageTrueWhenPaginatingForwardGivenListContainingOnlyCursorId() {
       var itemId = UUID.randomUUID();
 
       var items = List.of(new PageItem<>(Movie.builder().id(itemId).build(), "sortVal"));
@@ -272,13 +273,14 @@ class PaginationServiceTest {
 
       assertThat(page.items()).isEmpty();
       assertThat(page.hasNextPage()).isFalse();
-      assertThat(page.hasPreviousPage()).isFalse();
+      assertThat(page.hasPreviousPage()).isTrue();
     }
 
     @Test
     @DisplayName(
-        "Should build empty media page when paginating backward given list containing only cursorId")
-    void shouldBuildEmptyMediaPageWhenPaginatingBackwardGivenListContainingCursorId() {
+        "Should build empty media page with hasNextPage true when paginating backward given list containing only cursorId")
+    void
+        shouldBuildEmptyMediaPageWithHasNextPageTrueWhenPaginatingBackwardGivenListContainingOnlyCursorId() {
       var itemId = UUID.randomUUID();
 
       var items = List.of(new PageItem<>(Movie.builder().id(itemId).build(), "sortVal"));
@@ -293,7 +295,7 @@ class PaginationServiceTest {
       var page = paginationService.buildMediaPage(items, options, Optional.of(itemId));
 
       assertThat(page.items()).isEmpty();
-      assertThat(page.hasNextPage()).isFalse();
+      assertThat(page.hasNextPage()).isTrue();
       assertThat(page.hasPreviousPage()).isFalse();
     }
 

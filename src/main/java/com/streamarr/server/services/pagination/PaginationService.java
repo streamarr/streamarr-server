@@ -100,7 +100,7 @@ public class PaginationService {
     }
 
     if (items.isEmpty()) {
-      return emptyMediaPage();
+      return new MediaPage<>(List.of(), hasNextPage, hasPreviousPage);
     }
 
     var isListLargerThanLimit = items.size() > limit;
