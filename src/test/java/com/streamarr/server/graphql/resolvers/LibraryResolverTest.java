@@ -3,10 +3,7 @@ package com.streamarr.server.graphql.resolvers;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.argThat;
-import static org.mockito.ArgumentMatchers.isNull;
-import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.when;
 
 import com.netflix.graphql.dgs.DgsQueryExecutor;
@@ -21,16 +18,17 @@ import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
+import com.streamarr.server.graphql.cursor.CursorUtil;
+import com.streamarr.server.graphql.cursor.CursorValidator;
+import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.library.LibraryManagementService;
-import com.streamarr.server.services.pagination.MediaFilter;
-import com.streamarr.server.services.pagination.OrderMediaBy;
-import graphql.relay.DefaultConnection;
-import graphql.relay.DefaultConnectionCursor;
-import graphql.relay.DefaultEdge;
-import graphql.relay.DefaultPageInfo;
+import com.streamarr.server.services.pagination.MediaPage;
+import com.streamarr.server.services.pagination.MediaPaginationOptions;
+import com.streamarr.server.services.pagination.PageItem;
+import com.streamarr.server.services.pagination.PaginationService;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -43,12 +41,21 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @Tag("UnitTest")
 @EnableDgsTest
-@SpringBootTest(classes = {LibraryResolver.class})
+@SpringBootTest(
+    classes = {
+      LibraryResolver.class,
+      PaginationService.class,
+      CursorUtil.class,
+      CursorValidator.class,
+      RelayConnectionAdapter.class,
+      JacksonAutoConfiguration.class
+    })
 @DisplayName("Library Resolver Tests")
 class LibraryResolverTest {
 
@@ -141,19 +148,13 @@ class LibraryResolverTest {
             .build();
     library.setId(libraryId);
 
-    var movie = Movie.builder().title("Inception").build();
+    var movie = Movie.builder().title("Inception").titleSort("Inception").build();
     movie.setId(UUID.randomUUID());
 
-    var cursor = new DefaultConnectionCursor("cursor1");
-    var connection =
-        new DefaultConnection<>(
-            List.of(new DefaultEdge<>(movie, cursor)),
-            new DefaultPageInfo(cursor, cursor, false, false));
+    var page = new MediaPage<>(List.of(new PageItem<>(movie, "Inception")), false, false);
 
     when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
-    doReturn(connection)
-        .when(movieService)
-        .getMoviesWithFilter(anyInt(), any(), anyInt(), any(), any());
+    when(movieService.getMoviesAsPage(any(MediaPaginationOptions.class))).thenReturn(page);
 
     String title =
         dgsQueryExecutor.executeAndExtractJsonPath(
@@ -214,19 +215,13 @@ class LibraryResolverTest {
             .build();
     library.setId(libraryId);
 
-    var series = Series.builder().title("Breaking Bad").build();
+    var series = Series.builder().title("Breaking Bad").titleSort("Breaking Bad").build();
     series.setId(UUID.randomUUID());
 
-    var cursor = new DefaultConnectionCursor("cursor1");
-    var connection =
-        new DefaultConnection<>(
-            List.of(new DefaultEdge<>(series, cursor)),
-            new DefaultPageInfo(cursor, cursor, false, false));
+    var page = new MediaPage<>(List.of(new PageItem<>(series, "Breaking Bad")), false, false);
 
     when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
-    doReturn(connection)
-        .when(seriesService)
-        .getSeriesWithFilter(anyInt(), any(), anyInt(), any(), any());
+    when(seriesService.getSeriesAsPage(any(MediaPaginationOptions.class))).thenReturn(page);
 
     String title =
         dgsQueryExecutor.executeAndExtractJsonPath(
@@ -403,28 +398,22 @@ class LibraryResolverTest {
     var libraryId = UUID.randomUUID();
     var library = buildMovieLibrary(libraryId);
 
-    var movie = Movie.builder().title("Inception").build();
+    var movie = Movie.builder().title("Inception").titleSort("Inception").build();
     movie.setId(UUID.randomUUID());
 
-    var cursor = new DefaultConnectionCursor("cursor1");
-    var connection =
-        new DefaultConnection<>(
-            List.of(new DefaultEdge<>(movie, cursor)),
-            new DefaultPageInfo(cursor, cursor, false, false));
+    var page = new MediaPage<>(List.of(new PageItem<>(movie, "Inception")), false, false);
 
     when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
 
-    // Stub only matches when sort options are correctly translated to MediaFilter
-    doReturn(connection)
-        .when(movieService)
-        .getMoviesWithFilter(
-            anyInt(),
-            isNull(),
-            anyInt(),
-            isNull(),
+    when(movieService.getMoviesAsPage(
             argThat(
-                (MediaFilter f) ->
-                    f.getSortBy() == OrderMediaBy.ADDED && f.getSortDirection() == SortOrder.DESC));
+                (MediaPaginationOptions opts) -> {
+                  var f = opts.getMediaFilter();
+                  return f.getSortBy()
+                          == com.streamarr.server.services.pagination.OrderMediaBy.ADDED
+                      && f.getSortDirection() == SortOrder.DESC;
+                })))
+        .thenReturn(page);
 
     String title =
         dgsQueryExecutor.executeAndExtractJsonPath(
@@ -444,33 +433,25 @@ class LibraryResolverTest {
     var libraryId = UUID.randomUUID();
     var library = buildMovieLibrary(libraryId);
 
-    var movie = Movie.builder().title("Filtered Movie").build();
+    var movie = Movie.builder().title("Filtered Movie").titleSort("Filtered Movie").build();
     movie.setId(UUID.randomUUID());
 
-    var cursor = new DefaultConnectionCursor("cursor1");
-    var connection =
-        new DefaultConnection<>(
-            List.of(new DefaultEdge<>(movie, cursor)),
-            new DefaultPageInfo(cursor, cursor, false, false));
+    var page = new MediaPage<>(List.of(new PageItem<>(movie, "Filtered Movie")), false, false);
 
     when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
 
-    // Stub only matches when filter options are correctly parsed and delegated
-    doReturn(connection)
-        .when(movieService)
-        .getMoviesWithFilter(
-            anyInt(),
-            isNull(),
-            anyInt(),
-            isNull(),
+    when(movieService.getMoviesAsPage(
             argThat(
-                (MediaFilter f) ->
-                    f.getStartLetter() == AlphabetLetter.A
-                        && f.getYears() != null
-                        && f.getYears().contains(2024)
-                        && f.getContentRatings() != null
-                        && f.getContentRatings().contains("PG-13")
-                        && Boolean.FALSE.equals(f.getUnmatched())));
+                (MediaPaginationOptions opts) -> {
+                  var f = opts.getMediaFilter();
+                  return f.getStartLetter() == AlphabetLetter.A
+                      && f.getYears() != null
+                      && f.getYears().contains(2024)
+                      && f.getContentRatings() != null
+                      && f.getContentRatings().contains("PG-13")
+                      && Boolean.FALSE.equals(f.getUnmatched());
+                })))
+        .thenReturn(page);
 
     String title =
         dgsQueryExecutor.executeAndExtractJsonPath(
@@ -501,7 +482,7 @@ class LibraryResolverTest {
   @Test
   @DisplayName("Should throw with simple class name when unsupported media type in type resolver")
   void shouldThrowWithSimpleClassNameWhenUnsupportedMediaTypeInTypeResolver() {
-    var resolver = new LibraryResolver(null, null, null, null);
+    var resolver = new LibraryResolver(null, null, null, null, null, null, null, null);
 
     var unsupportedMedia = new Object();
 
