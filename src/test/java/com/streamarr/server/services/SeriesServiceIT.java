@@ -1,7 +1,6 @@
 package com.streamarr.server.services;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.AlphabetLetter;
@@ -16,7 +15,6 @@ import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
-import com.streamarr.server.graphql.cursor.InvalidCursorException;
 import com.streamarr.server.repositories.GenreRepository;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.EpisodeRepository;
@@ -24,11 +22,16 @@ import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.pagination.MediaFilter;
+import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.OrderMediaBy;
+import com.streamarr.server.services.pagination.PageItem;
+import com.streamarr.server.services.pagination.PaginationDirection;
+import com.streamarr.server.services.pagination.PaginationOptions;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Stream;
@@ -344,14 +347,54 @@ class SeriesServiceIT extends AbstractIntegrationTest {
     return MediaFilter.builder().libraryId(library.getId()).build();
   }
 
+  private static MediaPaginationOptions buildForwardOptions(int limit, MediaFilter filter) {
+    return MediaPaginationOptions.builder()
+        .paginationOptions(
+            PaginationOptions.builder()
+                .cursor(Optional.empty())
+                .paginationDirection(PaginationDirection.FORWARD)
+                .limit(limit)
+                .build())
+        .mediaFilter(filter)
+        .build();
+  }
+
+  private static MediaPaginationOptions buildForwardContinuation(
+      int limit, MediaFilter filter, PageItem<Series> lastItem) {
+    return MediaPaginationOptions.builder()
+        .cursorId(lastItem.item().getId())
+        .paginationOptions(
+            PaginationOptions.builder()
+                .cursor(Optional.of("continuation"))
+                .paginationDirection(PaginationDirection.FORWARD)
+                .limit(limit)
+                .build())
+        .mediaFilter(filter.toBuilder().previousSortFieldValue(lastItem.sortValue()).build())
+        .build();
+  }
+
+  private static MediaPaginationOptions buildBackwardContinuation(
+      int limit, MediaFilter filter, PageItem<Series> firstItem) {
+    return MediaPaginationOptions.builder()
+        .cursorId(firstItem.item().getId())
+        .paginationOptions(
+            PaginationOptions.builder()
+                .cursor(Optional.of("continuation"))
+                .paginationDirection(PaginationDirection.REVERSE)
+                .limit(limit)
+                .build())
+        .mediaFilter(filter.toBuilder().previousSortFieldValue(firstItem.sortValue()).build())
+        .build();
+  }
+
   @Test
   @DisplayName("Should return first page of series with forward pagination")
   void shouldReturnFirstPageOfSeriesForwardPagination() {
     var filter = filterForLibrary(savedLibraryB);
-    var result = seriesService.getSeriesWithFilter(2, null, 0, null, filter);
+    var result = seriesService.getSeriesAsPage(buildForwardOptions(2, filter));
 
-    assertThat(result.getEdges()).hasSize(2);
-    assertThat(result.getPageInfo().isHasNextPage()).isTrue();
+    assertThat(result.items()).hasSize(2);
+    assertThat(result.hasNextPage()).isTrue();
   }
 
   @Test
@@ -359,17 +402,17 @@ class SeriesServiceIT extends AbstractIntegrationTest {
   void shouldReturnNextPageUsingAfterCursor() {
     var filter = filterForLibrary(savedLibraryB);
 
-    var firstPage = seriesService.getSeriesWithFilter(2, null, 0, null, filter);
-    assertThat(firstPage.getEdges()).hasSize(2);
+    var firstPage = seriesService.getSeriesAsPage(buildForwardOptions(2, filter));
+    assertThat(firstPage.items()).hasSize(2);
 
-    var endCursor = firstPage.getPageInfo().getEndCursor();
-    var secondPage = seriesService.getSeriesWithFilter(2, endCursor.getValue(), 0, null, filter);
-    assertThat(secondPage.getEdges()).hasSize(1);
+    var lastItem = firstPage.items().getLast();
+    var secondPage = seriesService.getSeriesAsPage(buildForwardContinuation(2, filter, lastItem));
+    assertThat(secondPage.items()).hasSize(1);
 
-    assertThat(firstPage.getEdges())
-        .map(e -> e.getNode().getId())
+    assertThat(firstPage.items())
+        .map(pi -> pi.item().getId())
         .isNotEmpty()
-        .doesNotContain(secondPage.getEdges().get(0).getNode().getId());
+        .doesNotContain(secondPage.items().getFirst().item().getId());
   }
 
   @Test
@@ -378,20 +421,20 @@ class SeriesServiceIT extends AbstractIntegrationTest {
     var filterB = filterForLibrary(savedLibraryB);
     var filterC = filterForLibrary(savedLibraryC);
 
-    var libraryBSeries = seriesService.getSeriesWithFilter(10, null, 0, null, filterB);
-    var libraryCSeries = seriesService.getSeriesWithFilter(10, null, 0, null, filterC);
+    var libraryBSeries = seriesService.getSeriesAsPage(buildForwardOptions(10, filterB));
+    var libraryCSeries = seriesService.getSeriesAsPage(buildForwardOptions(10, filterC));
 
-    assertThat(libraryBSeries.getEdges()).hasSize(3);
-    assertThat(libraryCSeries.getEdges()).hasSize(2);
+    assertThat(libraryBSeries.items()).hasSize(3);
+    assertThat(libraryCSeries.items()).hasSize(2);
   }
 
   @Test
   @DisplayName("Should return series sorted by title")
   void shouldReturnSeriesSortedByTitle() {
     var filter = filterForLibrary(savedLibraryB);
-    var result = seriesService.getSeriesWithFilter(10, null, 0, null, filter);
+    var result = seriesService.getSeriesAsPage(buildForwardOptions(10, filter));
 
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
     assertThat(titles).containsExactly("Alpha Show", "Beta Show", "Gamma Show");
   }
@@ -406,9 +449,9 @@ class SeriesServiceIT extends AbstractIntegrationTest {
             .libraryId(savedLibraryC.getId())
             .build();
 
-    var result = seriesService.getSeriesWithFilter(10, null, 0, null, filter);
+    var result = seriesService.getSeriesAsPage(buildForwardOptions(10, filter));
 
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
     assertThat(titles).containsExactly("Second Show", "First Show");
   }
@@ -418,14 +461,15 @@ class SeriesServiceIT extends AbstractIntegrationTest {
   void shouldPaginateBackwardWhenGivenLastAndCursor() {
     var filter = filterForLibrary(savedLibraryB);
 
-    var allSeries = seriesService.getSeriesWithFilter(3, null, 0, null, filter);
-    assertThat(allSeries.getEdges()).hasSize(3);
+    var allSeries = seriesService.getSeriesAsPage(buildForwardOptions(3, filter));
+    assertThat(allSeries.items()).hasSize(3);
 
-    var endCursor = allSeries.getPageInfo().getEndCursor().getValue();
-    var backwardPage = seriesService.getSeriesWithFilter(0, null, 1, endCursor, filter);
+    var lastItem = allSeries.items().getLast();
+    var backwardPage =
+        seriesService.getSeriesAsPage(buildBackwardContinuation(1, filter, lastItem));
 
-    assertThat(backwardPage.getEdges()).hasSize(1);
-    assertThat(backwardPage.getEdges().get(0).getNode().getTitle()).isEqualTo("Beta Show");
+    assertThat(backwardPage.items()).hasSize(1);
+    assertThat(backwardPage.items().getFirst().item().getTitle()).isEqualTo("Beta Show");
   }
 
   @Test
@@ -433,28 +477,15 @@ class SeriesServiceIT extends AbstractIntegrationTest {
   void shouldMaintainCanonicalOrderWhenPaginatingBackward() {
     var filter = filterForLibrary(savedLibraryB);
 
-    var forwardAll = seriesService.getSeriesWithFilter(3, null, 0, null, filter);
-    var forwardTitles = forwardAll.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var forwardAll = seriesService.getSeriesAsPage(buildForwardOptions(3, filter));
+    var forwardTitles = forwardAll.items().stream().map(pi -> pi.item().getTitle()).toList();
 
-    var endCursor = forwardAll.getPageInfo().getEndCursor().getValue();
-    var backwardPage = seriesService.getSeriesWithFilter(0, null, 2, endCursor, filter);
-    var backwardTitles = backwardPage.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var lastItem = forwardAll.items().getLast();
+    var backwardPage =
+        seriesService.getSeriesAsPage(buildBackwardContinuation(2, filter, lastItem));
+    var backwardTitles = backwardPage.items().stream().map(pi -> pi.item().getTitle()).toList();
 
     assertThat(backwardTitles).containsExactlyElementsOf(forwardTitles.subList(0, 2));
-  }
-
-  @Test
-  @DisplayName("Should reject cursor when libraryId does not match")
-  void shouldRejectCursorWhenLibraryIdMismatch() {
-    var filterB = filterForLibrary(savedLibraryB);
-    var filterC = filterForLibrary(savedLibraryC);
-
-    var libraryBSeries = seriesService.getSeriesWithFilter(1, null, 0, null, filterB);
-    var cursorFromLibraryB = libraryBSeries.getPageInfo().getEndCursor().getValue();
-
-    assertThatThrownBy(
-            () -> seriesService.getSeriesWithFilter(1, cursorFromLibraryB, 0, null, filterC))
-        .isInstanceOf(InvalidCursorException.class);
   }
 
   @Test
@@ -490,25 +521,25 @@ class SeriesServiceIT extends AbstractIntegrationTest {
             .libraryId(duplicateLibrary.getId())
             .build();
 
-    var firstPage = seriesService.getSeriesWithFilter(1, null, 0, null, filter);
-    assertThat(firstPage.getEdges()).hasSize(1);
-    assertThat(firstPage.getPageInfo().isHasNextPage()).isTrue();
+    var firstPage = seriesService.getSeriesAsPage(buildForwardOptions(1, filter));
+    assertThat(firstPage.items()).hasSize(1);
+    assertThat(firstPage.hasNextPage()).isTrue();
 
-    var firstCursor = firstPage.getPageInfo().getEndCursor().getValue();
-    var secondPage = seriesService.getSeriesWithFilter(1, firstCursor, 0, null, filter);
-    assertThat(secondPage.getEdges()).hasSize(1);
-    assertThat(secondPage.getPageInfo().isHasNextPage()).isTrue();
+    var lastItem1 = firstPage.items().getLast();
+    var secondPage = seriesService.getSeriesAsPage(buildForwardContinuation(1, filter, lastItem1));
+    assertThat(secondPage.items()).hasSize(1);
+    assertThat(secondPage.hasNextPage()).isTrue();
 
-    var secondCursor = secondPage.getPageInfo().getEndCursor().getValue();
-    var thirdPage = seriesService.getSeriesWithFilter(1, secondCursor, 0, null, filter);
-    assertThat(thirdPage.getEdges()).hasSize(1);
-    assertThat(thirdPage.getPageInfo().isHasNextPage()).isFalse();
+    var lastItem2 = secondPage.items().getLast();
+    var thirdPage = seriesService.getSeriesAsPage(buildForwardContinuation(1, filter, lastItem2));
+    assertThat(thirdPage.items()).hasSize(1);
+    assertThat(thirdPage.hasNextPage()).isFalse();
 
     var allIds =
         List.of(
-            firstPage.getEdges().get(0).getNode().getId(),
-            secondPage.getEdges().get(0).getNode().getId(),
-            thirdPage.getEdges().get(0).getNode().getId());
+            firstPage.items().getFirst().item().getId(),
+            secondPage.items().getFirst().item().getId(),
+            thirdPage.items().getFirst().item().getId());
 
     assertThat(allIds).doesNotHaveDuplicates();
   }
@@ -522,9 +553,9 @@ class SeriesServiceIT extends AbstractIntegrationTest {
             .startLetter(AlphabetLetter.A)
             .build();
 
-    var result = seriesService.getSeriesWithFilter(10, null, 0, null, filter);
+    var result = seriesService.getSeriesAsPage(buildForwardOptions(10, filter));
 
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
     assertThat(titles)
         .containsExactly(
             "Alpha Show", "Avengers Show", "Batman Show", "Beta Show", "Gamma Show", "Zorro Show");
@@ -539,9 +570,9 @@ class SeriesServiceIT extends AbstractIntegrationTest {
             .startLetter(AlphabetLetter.B)
             .build();
 
-    var result = seriesService.getSeriesWithFilter(10, null, 0, null, filter);
+    var result = seriesService.getSeriesAsPage(buildForwardOptions(10, filter));
 
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
     assertThat(titles).containsExactly("Batman Show", "Beta Show", "Gamma Show", "Zorro Show");
   }
 
@@ -554,9 +585,9 @@ class SeriesServiceIT extends AbstractIntegrationTest {
             .startLetter(AlphabetLetter.HASH)
             .build();
 
-    var result = seriesService.getSeriesWithFilter(10, null, 0, null, filter);
+    var result = seriesService.getSeriesAsPage(buildForwardOptions(10, filter));
 
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
     assertThat(titles)
         .containsExactly(
             "123 Show",
@@ -577,18 +608,18 @@ class SeriesServiceIT extends AbstractIntegrationTest {
             .startLetter(AlphabetLetter.B)
             .build();
 
-    var firstPage = seriesService.getSeriesWithFilter(2, null, 0, null, filter);
-    assertThat(firstPage.getEdges()).hasSize(2);
-    assertThat(firstPage.getPageInfo().isHasNextPage()).isTrue();
+    var firstPage = seriesService.getSeriesAsPage(buildForwardOptions(2, filter));
+    assertThat(firstPage.items()).hasSize(2);
+    assertThat(firstPage.hasNextPage()).isTrue();
 
-    var cursor = firstPage.getPageInfo().getEndCursor().getValue();
-    var secondPage = seriesService.getSeriesWithFilter(2, cursor, 0, null, filter);
-    assertThat(secondPage.getEdges()).hasSize(2);
-    assertThat(secondPage.getPageInfo().isHasNextPage()).isFalse();
+    var lastItem = firstPage.items().getLast();
+    var secondPage = seriesService.getSeriesAsPage(buildForwardContinuation(2, filter, lastItem));
+    assertThat(secondPage.items()).hasSize(2);
+    assertThat(secondPage.hasNextPage()).isFalse();
 
     var allTitles =
-        Stream.concat(firstPage.getEdges().stream(), secondPage.getEdges().stream())
-            .map(e -> e.getNode().getTitle())
+        Stream.concat(firstPage.items().stream(), secondPage.items().stream())
+            .map(pi -> pi.item().getTitle())
             .toList();
     assertThat(allTitles).containsExactly("Batman Show", "Beta Show", "Gamma Show", "Zorro Show");
   }
@@ -602,9 +633,9 @@ class SeriesServiceIT extends AbstractIntegrationTest {
             .startLetter(AlphabetLetter.Z)
             .build();
 
-    var result = seriesService.getSeriesWithFilter(10, null, 0, null, filter);
+    var result = seriesService.getSeriesAsPage(buildForwardOptions(10, filter));
 
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
     assertThat(titles).containsExactly("Zorro Show");
   }
 
@@ -618,9 +649,9 @@ class SeriesServiceIT extends AbstractIntegrationTest {
             .sortDirection(SortOrder.DESC)
             .build();
 
-    var result = seriesService.getSeriesWithFilter(10, null, 0, null, filter);
+    var result = seriesService.getSeriesAsPage(buildForwardOptions(10, filter));
 
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
     assertThat(titles)
         .containsExactly("Beta Show", "Batman Show", "Avengers Show", "Alpha Show", "123 Show");
   }
@@ -635,9 +666,9 @@ class SeriesServiceIT extends AbstractIntegrationTest {
             .sortDirection(SortOrder.DESC)
             .build();
 
-    var result = seriesService.getSeriesWithFilter(10, null, 0, null, filter);
+    var result = seriesService.getSeriesAsPage(buildForwardOptions(10, filter));
 
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
     assertThat(titles)
         .containsExactly(
             "Zorro Show",
@@ -659,9 +690,9 @@ class SeriesServiceIT extends AbstractIntegrationTest {
             .sortDirection(SortOrder.DESC)
             .build();
 
-    var result = seriesService.getSeriesWithFilter(10, null, 0, null, filter);
+    var result = seriesService.getSeriesAsPage(buildForwardOptions(10, filter));
 
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
     assertThat(titles).containsExactly("123 Show");
   }
 
@@ -675,18 +706,18 @@ class SeriesServiceIT extends AbstractIntegrationTest {
             .sortDirection(SortOrder.DESC)
             .build();
 
-    var firstPage = seriesService.getSeriesWithFilter(3, null, 0, null, filter);
-    assertThat(firstPage.getEdges()).hasSize(3);
-    assertThat(firstPage.getPageInfo().isHasNextPage()).isTrue();
+    var firstPage = seriesService.getSeriesAsPage(buildForwardOptions(3, filter));
+    assertThat(firstPage.items()).hasSize(3);
+    assertThat(firstPage.hasNextPage()).isTrue();
 
-    var cursor = firstPage.getPageInfo().getEndCursor().getValue();
-    var secondPage = seriesService.getSeriesWithFilter(3, cursor, 0, null, filter);
-    assertThat(secondPage.getEdges()).hasSize(2);
-    assertThat(secondPage.getPageInfo().isHasNextPage()).isFalse();
+    var lastItem = firstPage.items().getLast();
+    var secondPage = seriesService.getSeriesAsPage(buildForwardContinuation(3, filter, lastItem));
+    assertThat(secondPage.items()).hasSize(2);
+    assertThat(secondPage.hasNextPage()).isFalse();
 
     var allTitles =
-        Stream.concat(firstPage.getEdges().stream(), secondPage.getEdges().stream())
-            .map(e -> e.getNode().getTitle())
+        Stream.concat(firstPage.items().stream(), secondPage.items().stream())
+            .map(pi -> pi.item().getTitle())
             .toList();
     assertThat(allTitles)
         .containsExactly("Beta Show", "Batman Show", "Avengers Show", "Alpha Show", "123 Show");
@@ -761,10 +792,10 @@ class SeriesServiceIT extends AbstractIntegrationTest {
             .sortDirection(SortOrder.ASC)
             .build();
 
-    var result = seriesService.getSeriesWithFilter(10, null, 0, null, filter);
+    var result = seriesService.getSeriesAsPage(buildForwardOptions(10, filter));
 
-    assertThat(result.getEdges())
-        .extracting(e -> e.getNode().getTitle())
+    assertThat(result.items())
+        .extracting(pi -> pi.item().getTitle())
         .containsExactly("Early Show", "Mid Show", "Undated Show");
   }
 
@@ -802,18 +833,18 @@ class SeriesServiceIT extends AbstractIntegrationTest {
             .sortDirection(SortOrder.ASC)
             .build();
 
-    var page1 = seriesService.getSeriesWithFilter(1, null, 0, null, filter);
-    assertThat(page1.getEdges())
+    var page1 = seriesService.getSeriesAsPage(buildForwardOptions(1, filter));
+    assertThat(page1.items())
         .first()
-        .extracting(e -> e.getNode().getTitle())
+        .extracting(pi -> pi.item().getTitle())
         .isEqualTo("First Show");
-    assertThat(page1.getPageInfo().isHasNextPage()).isTrue();
+    assertThat(page1.hasNextPage()).isTrue();
 
-    var cursor = page1.getPageInfo().getEndCursor().getValue();
-    var page2 = seriesService.getSeriesWithFilter(1, cursor, 0, null, filter);
-    assertThat(page2.getEdges())
+    var lastItem = page1.items().getLast();
+    var page2 = seriesService.getSeriesAsPage(buildForwardContinuation(1, filter, lastItem));
+    assertThat(page2.items())
         .first()
-        .extracting(e -> e.getNode().getTitle())
+        .extracting(pi -> pi.item().getTitle())
         .isEqualTo("Second Show");
   }
 
@@ -843,23 +874,23 @@ class SeriesServiceIT extends AbstractIntegrationTest {
             .build();
 
     // Page 1: first=2 returns Dated Show + one Undated (nulls last, secondary sort by ID)
-    var page1 = seriesService.getSeriesWithFilter(2, null, 0, null, filter);
-    assertThat(page1.getEdges()).hasSize(2);
-    assertThat(page1.getEdges())
+    var page1 = seriesService.getSeriesAsPage(buildForwardOptions(2, filter));
+    assertThat(page1.items()).hasSize(2);
+    assertThat(page1.items())
         .first()
-        .extracting(e -> e.getNode().getTitle())
+        .extracting(pi -> pi.item().getTitle())
         .isEqualTo("Dated Show");
-    assertThat(page1.getPageInfo().isHasNextPage()).isTrue();
+    assertThat(page1.hasNextPage()).isTrue();
 
-    var page1SecondTitle = page1.getEdges().get(1).getNode().getTitle();
+    var page1SecondTitle = page1.items().get(1).item().getTitle();
 
     // Page 2: cursor from null-valued row exercises IS NULL branch of buildSeekCondition
-    var cursor = page1.getPageInfo().getEndCursor().getValue();
-    var page2 = seriesService.getSeriesWithFilter(2, cursor, 0, null, filter);
-    assertThat(page2.getEdges()).hasSize(1);
-    assertThat(page2.getPageInfo().isHasNextPage()).isFalse();
+    var lastItem = page1.items().getLast();
+    var page2 = seriesService.getSeriesAsPage(buildForwardContinuation(2, filter, lastItem));
+    assertThat(page2.items()).hasSize(1);
+    assertThat(page2.hasNextPage()).isFalse();
 
-    var page2Title = page2.getEdges().get(0).getNode().getTitle();
+    var page2Title = page2.items().getFirst().item().getTitle();
 
     // Page 2 must contain whichever undated series was not on page 1
     assertThat(page2Title).isNotEqualTo(page1SecondTitle).startsWith("Undated");
@@ -901,10 +932,10 @@ class SeriesServiceIT extends AbstractIntegrationTest {
             .sortDirection(SortOrder.ASC)
             .build();
 
-    var result = seriesService.getSeriesWithFilter(10, null, 0, null, filter);
+    var result = seriesService.getSeriesAsPage(buildForwardOptions(10, filter));
 
-    assertThat(result.getEdges())
-        .extracting(e -> e.getNode().getTitle())
+    assertThat(result.items())
+        .extracting(pi -> pi.item().getTitle())
         .containsExactly("Short Show", "Long Show", "No Runtime Show");
   }
 
@@ -925,28 +956,12 @@ class SeriesServiceIT extends AbstractIntegrationTest {
             .sortDirection(SortOrder.ASC)
             .build();
 
-    var page1 = seriesService.getSeriesWithFilter(1, null, 0, null, filter);
-    assertThat(page1.getEdges()).first().extracting(e -> e.getNode().getTitle()).isEqualTo("Short");
+    var page1 = seriesService.getSeriesAsPage(buildForwardOptions(1, filter));
+    assertThat(page1.items()).first().extracting(pi -> pi.item().getTitle()).isEqualTo("Short");
 
-    var cursor = page1.getPageInfo().getEndCursor().getValue();
-    var page2 = seriesService.getSeriesWithFilter(1, cursor, 0, null, filter);
-    assertThat(page2.getEdges()).first().extracting(e -> e.getNode().getTitle()).isEqualTo("Long");
-  }
-
-  @Test
-  @DisplayName("Should reject cursor when sortBy changes between pages")
-  void shouldRejectCursorWhenSortByChangesBetweenPages() {
-    var filter1 =
-        MediaFilter.builder().libraryId(savedLibraryB.getId()).sortBy(OrderMediaBy.TITLE).build();
-
-    var page1 = seriesService.getSeriesWithFilter(1, null, 0, null, filter1);
-    var cursor = page1.getPageInfo().getEndCursor().getValue();
-
-    var filter2 =
-        MediaFilter.builder().libraryId(savedLibraryB.getId()).sortBy(OrderMediaBy.ADDED).build();
-
-    assertThatThrownBy(() -> seriesService.getSeriesWithFilter(1, cursor, 0, null, filter2))
-        .isInstanceOf(InvalidCursorException.class);
+    var lastItem = page1.items().getLast();
+    var page2 = seriesService.getSeriesAsPage(buildForwardContinuation(1, filter, lastItem));
+    assertThat(page2.items()).first().extracting(pi -> pi.item().getTitle()).isEqualTo("Long");
   }
 
   @Test
@@ -974,10 +989,10 @@ class SeriesServiceIT extends AbstractIntegrationTest {
     var filter =
         MediaFilter.builder().libraryId(library.getId()).genreIds(List.of(genre.getId())).build();
 
-    var result = seriesService.getSeriesWithFilter(10, null, 0, null, filter);
+    var result = seriesService.getSeriesAsPage(buildForwardOptions(10, filter));
 
-    assertThat(result.getEdges())
-        .extracting(e -> e.getNode().getTitle())
+    assertThat(result.items())
+        .extracting(pi -> pi.item().getTitle())
         .containsExactly("Drama Series");
   }
 }

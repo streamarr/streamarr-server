@@ -23,7 +23,9 @@ import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import com.streamarr.server.services.metadata.series.SeasonDetails;
 import com.streamarr.server.services.pagination.MediaFilter;
+import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
+import com.streamarr.server.services.pagination.PageItem;
 import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
@@ -310,6 +312,22 @@ public class SeriesService {
     paginationService.validateCursorAgainstFilter(mediaOptionsFromCursor, filter);
 
     return usingCursorGetSeriesAsConnection(mediaOptionsFromCursor);
+  }
+
+  public MediaPage<Series> getSeriesAsPage(MediaPaginationOptions options) {
+    var seriesList =
+        options.getCursorId().isPresent()
+            ? seriesRepository.seekWithFilter(options)
+            : seriesRepository.findFirstWithFilter(options);
+
+    var pageItems =
+        seriesList.stream()
+            .map(
+                series -> new PageItem<>(series, getOrderByValue(options.getMediaFilter(), series)))
+            .toList();
+
+    return paginationService.buildMediaPage(
+        pageItems, options.getPaginationOptions(), options.getCursorId());
   }
 
   private MediaFilter buildDefaultSeriesFilter() {

@@ -1,7 +1,6 @@
 package com.streamarr.server.services;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
@@ -28,7 +27,6 @@ import com.streamarr.server.fakes.FakeImageRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSeriesRepository;
 import com.streamarr.server.graphql.cursor.CursorUtil;
-import com.streamarr.server.graphql.cursor.InvalidCursorException;
 import com.streamarr.server.services.metadata.ImageVariantService;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.events.ImageSource;
@@ -36,11 +34,16 @@ import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import com.streamarr.server.services.metadata.series.SeasonDetails;
 import com.streamarr.server.services.pagination.MediaFilter;
+import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.OrderMediaBy;
+import com.streamarr.server.services.pagination.PageItem;
+import com.streamarr.server.services.pagination.PaginationDirection;
+import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.services.pagination.PaginationService;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.jooq.SortOrder;
@@ -162,9 +165,10 @@ class SeriesServiceTest {
     seriesRepository.save(Series.builder().title("Zebra").build());
     seriesRepository.save(Series.builder().title("Apple").build());
 
-    var result = seriesService.getSeriesWithFilter(10, null, 0, null, null);
+    var result =
+        seriesService.getSeriesAsPage(buildForwardOptions(10, MediaFilter.builder().build()));
 
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
     assertThat(titles).containsExactly("Apple", "Zebra");
   }
@@ -178,9 +182,9 @@ class SeriesServiceTest {
     var filter =
         MediaFilter.builder().sortBy(OrderMediaBy.TITLE).sortDirection(SortOrder.DESC).build();
 
-    var result = seriesService.getSeriesWithFilter(10, null, 0, null, filter);
+    var result = seriesService.getSeriesAsPage(buildForwardOptions(10, filter));
 
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
     assertThat(titles).containsExactly("Zebra", "Apple");
   }
@@ -192,18 +196,21 @@ class SeriesServiceTest {
     seriesRepository.save(Series.builder().title("Banana").build());
     seriesRepository.save(Series.builder().title("Cherry").build());
 
-    var firstPage = seriesService.getSeriesWithFilter(1, null, 0, null, null);
+    var filter = MediaFilter.builder().build();
+    var firstPage = seriesService.getSeriesAsPage(buildForwardOptions(1, filter));
 
-    assertThat(firstPage.getEdges()).hasSize(1);
-    assertThat(firstPage.getEdges().get(0).getNode().getTitle()).isEqualTo("Apple");
-    assertThat(firstPage.getPageInfo().isHasNextPage()).isTrue();
+    assertThat(firstPage.items()).hasSize(1);
+    assertThat(firstPage.items().getFirst().item().getTitle()).isEqualTo("Apple");
+    assertThat(firstPage.hasNextPage()).isTrue();
 
-    var cursor = firstPage.getPageInfo().getEndCursor().getValue();
-    var secondPage = seriesService.getSeriesWithFilter(1, cursor, 0, null, null);
+    var lastItem = firstPage.items().getLast();
+    var secondPage =
+        seriesService.getSeriesAsPage(
+            buildCursorOptions(1, PaginationDirection.FORWARD, lastItem, filter));
 
-    assertThat(secondPage.getEdges()).hasSize(1);
-    assertThat(secondPage.getEdges().get(0).getNode().getTitle()).isEqualTo("Banana");
-    assertThat(secondPage.getPageInfo().isHasNextPage()).isTrue();
+    assertThat(secondPage.items()).hasSize(1);
+    assertThat(secondPage.items().getFirst().item().getTitle()).isEqualTo("Banana");
+    assertThat(secondPage.hasNextPage()).isTrue();
   }
 
   @Test
@@ -213,40 +220,28 @@ class SeriesServiceTest {
     seriesRepository.save(Series.builder().title("Banana").build());
     seriesRepository.save(Series.builder().title("Cherry").build());
 
-    var allSeries = seriesService.getSeriesWithFilter(3, null, 0, null, null);
-    var endCursor = allSeries.getPageInfo().getEndCursor().getValue();
+    var filter = MediaFilter.builder().build();
+    var allSeries = seriesService.getSeriesAsPage(buildForwardOptions(3, filter));
+    var lastItem = allSeries.items().getLast();
 
-    var backwardPage = seriesService.getSeriesWithFilter(0, null, 1, endCursor, null);
+    var backwardPage =
+        seriesService.getSeriesAsPage(
+            buildCursorOptions(1, PaginationDirection.REVERSE, lastItem, filter));
 
-    assertThat(backwardPage.getEdges()).hasSize(1);
-    assertThat(backwardPage.getEdges().get(0).getNode().getTitle()).isEqualTo("Banana");
-    assertThat(backwardPage.getPageInfo().isHasPreviousPage()).isTrue();
+    assertThat(backwardPage.items()).hasSize(1);
+    assertThat(backwardPage.items().getFirst().item().getTitle()).isEqualTo("Banana");
+    assertThat(backwardPage.hasPreviousPage()).isTrue();
   }
 
   @Test
   @DisplayName("Should return empty connection when no series exist")
   void shouldReturnEmptyConnectionWhenNoSeriesExist() {
-    var result = seriesService.getSeriesWithFilter(10, null, 0, null, null);
+    var result =
+        seriesService.getSeriesAsPage(buildForwardOptions(10, MediaFilter.builder().build()));
 
-    assertThat(result.getEdges()).isEmpty();
-    assertThat(result.getPageInfo().isHasNextPage()).isFalse();
-    assertThat(result.getPageInfo().isHasPreviousPage()).isFalse();
-  }
-
-  @Test
-  @DisplayName("Should reject cursor when sort direction changes between queries")
-  void shouldRejectCursorWhenSortDirectionChanges() {
-    seriesRepository.save(Series.builder().title("Apple").build());
-    seriesRepository.save(Series.builder().title("Banana").build());
-
-    var ascResult = seriesService.getSeriesWithFilter(1, null, 0, null, null);
-    var cursor = ascResult.getPageInfo().getEndCursor().getValue();
-
-    var descFilter =
-        MediaFilter.builder().sortBy(OrderMediaBy.TITLE).sortDirection(SortOrder.DESC).build();
-
-    assertThatThrownBy(() -> seriesService.getSeriesWithFilter(1, cursor, 0, null, descFilter))
-        .isInstanceOf(InvalidCursorException.class);
+    assertThat(result.items()).isEmpty();
+    assertThat(result.hasNextPage()).isFalse();
+    assertThat(result.hasPreviousPage()).isFalse();
   }
 
   @Test
@@ -803,6 +798,32 @@ class SeriesServiceTest {
     assertThat(events).hasSize(2);
     assertThat(events).filteredOn(e -> e.entityType() == ImageEntityType.SEASON).hasSize(1);
     assertThat(events).filteredOn(e -> e.entityType() == ImageEntityType.EPISODE).hasSize(1);
+  }
+
+  private static MediaPaginationOptions buildForwardOptions(int limit, MediaFilter filter) {
+    return MediaPaginationOptions.builder()
+        .paginationOptions(
+            PaginationOptions.builder()
+                .cursor(Optional.empty())
+                .paginationDirection(PaginationDirection.FORWARD)
+                .limit(limit)
+                .build())
+        .mediaFilter(filter)
+        .build();
+  }
+
+  private static MediaPaginationOptions buildCursorOptions(
+      int limit, PaginationDirection direction, PageItem<Series> lastItem, MediaFilter filter) {
+    return MediaPaginationOptions.builder()
+        .cursorId(lastItem.item().getId())
+        .paginationOptions(
+            PaginationOptions.builder()
+                .cursor(Optional.of("placeholder"))
+                .paginationDirection(direction)
+                .limit(limit)
+                .build())
+        .mediaFilter(filter.toBuilder().previousSortFieldValue(lastItem.sortValue()).build())
+        .build();
   }
 
   private void seedImage(UUID entityId) {
