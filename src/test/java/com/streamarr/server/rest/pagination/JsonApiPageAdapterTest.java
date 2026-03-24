@@ -98,7 +98,7 @@ class JsonApiPageAdapterTest {
 
       var response = adapter.toResponse(page, buildOptions(), BASE_URL, 10, "movies");
 
-      assertThat(response.data().getFirst().attributes().get("releaseDate")).isEqualTo(releaseDate);
+      assertThat(response.data().getFirst().attributes()).containsEntry("releaseDate", releaseDate);
     }
 
     @Test
@@ -119,7 +119,7 @@ class JsonApiPageAdapterTest {
 
       var response = adapter.toResponse(page, buildOptions(), BASE_URL, 10, "movies");
 
-      assertThat(response.data().getFirst().attributes().get("summary")).isEqualTo("A great movie");
+      assertThat(response.data().getFirst().attributes()).containsEntry("summary", "A great movie");
     }
 
     @Test

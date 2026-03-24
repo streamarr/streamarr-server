@@ -20,6 +20,8 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.test.web.servlet.MockMvc;
@@ -208,56 +210,18 @@ class MovieRestControllerIT extends AbstractIntegrationTest {
           .andExpect(status().isBadRequest());
     }
 
-    @Test
-    @DisplayName("Should return JSON:API error format when pagination argument is invalid")
-    void shouldReturnJsonApiErrorFormatWhenPaginationArgumentIsInvalid() throws Exception {
+    @ParameterizedTest(name = "query: {0}")
+    @DisplayName("Should return JSON:API error format when request is invalid")
+    @ValueSource(
+        strings = {
+          "?page[size]=-1",
+          "?page[size]=2&page[after]=abc&page[before]=xyz",
+          "?page[size]=2&page[after]=not-a-cursor"
+        })
+    void shouldReturnJsonApiErrorFormatWhenRequestIsInvalid(String queryString) throws Exception {
       var result =
           mockMvc
-              .perform(get(buildBaseUrl(savedLibrary.getId()) + "?page[size]=-1"))
-              .andExpect(status().isBadRequest())
-              .andReturn()
-              .getResponse()
-              .getContentAsString();
-
-      var errorResponse =
-          objectMapper.readValue(
-              result, com.streamarr.server.rest.pagination.JsonApiErrorResponse.class);
-      assertThat(errorResponse.errors()).hasSize(1);
-      assertThat(errorResponse.errors().getFirst().status()).isEqualTo("400");
-      assertThat(errorResponse.errors().getFirst().detail()).isNotBlank();
-    }
-
-    @Test
-    @DisplayName("Should return JSON:API error format when both after and before are provided")
-    void shouldReturnJsonApiErrorFormatWhenBothAfterAndBeforeProvided() throws Exception {
-      var result =
-          mockMvc
-              .perform(
-                  get(
-                      buildBaseUrl(savedLibrary.getId())
-                          + "?page[size]=2&page[after]=abc&page[before]=xyz"))
-              .andExpect(status().isBadRequest())
-              .andReturn()
-              .getResponse()
-              .getContentAsString();
-
-      var errorResponse =
-          objectMapper.readValue(
-              result, com.streamarr.server.rest.pagination.JsonApiErrorResponse.class);
-      assertThat(errorResponse.errors()).hasSize(1);
-      assertThat(errorResponse.errors().getFirst().status()).isEqualTo("400");
-      assertThat(errorResponse.errors().getFirst().detail()).isNotBlank();
-    }
-
-    @Test
-    @DisplayName("Should return JSON:API error format when cursor is malformed")
-    void shouldReturnJsonApiErrorFormatWhenCursorIsMalformed() throws Exception {
-      var result =
-          mockMvc
-              .perform(
-                  get(
-                      buildBaseUrl(savedLibrary.getId())
-                          + "?page[size]=2&page[after]=not-a-cursor"))
+              .perform(get(buildBaseUrl(savedLibrary.getId()) + queryString))
               .andExpect(status().isBadRequest())
               .andReturn()
               .getResponse()

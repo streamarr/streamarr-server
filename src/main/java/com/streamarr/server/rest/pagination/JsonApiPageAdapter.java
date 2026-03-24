@@ -69,7 +69,7 @@ public class JsonApiPageAdapter {
         attributes.put("firstAirDate", series.getFirstAirDate());
         attributes.put("summary", series.getSummary());
       }
-      default -> {}
+      default -> {} // No additional attributes for other entity types
     }
 
     var cursor = cursorCodec.encode(options, entity.getId(), pageItem.sortValue());

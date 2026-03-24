@@ -48,7 +48,7 @@ public class JsonApiCursorCodec {
       return objectMapper.readValue(json, MediaPaginationOptions.class).toBuilder()
           .paginationOptions(paginationOptions)
           .build();
-    } catch (Exception ex) {
+    } catch (Exception _) {
       throw new InvalidPaginationArgumentException("Invalid cursor: " + cursor.get());
     }
   }
