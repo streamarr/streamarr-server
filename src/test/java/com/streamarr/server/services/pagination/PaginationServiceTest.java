@@ -151,6 +151,22 @@ class PaginationServiceTest {
 
       assertThat(options.getLimit()).isEqualTo(1);
     }
+
+    @Test
+    @DisplayName("Should accept first at max page size boundary")
+    void shouldAcceptFirstAtMaxPageSize() {
+      var options = paginationService.getPaginationOptions(500, null, 0, null);
+
+      assertThat(options.getLimit()).isEqualTo(500);
+    }
+
+    @Test
+    @DisplayName("Should accept last at max page size boundary")
+    void shouldAcceptLastAtMaxPageSize() {
+      var options = paginationService.getPaginationOptions(0, null, 500, "cursor");
+
+      assertThat(options.getLimit()).isEqualTo(500);
+    }
   }
 
   @Nested
