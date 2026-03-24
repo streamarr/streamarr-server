@@ -5,11 +5,13 @@ import java.util.List;
 import java.util.UUID;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
+import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.jooq.SortOrder;
 
 @Getter
+@EqualsAndHashCode(exclude = "previousSortFieldValue")
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder(toBuilder = true)
