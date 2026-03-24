@@ -1,6 +1,7 @@
 package com.streamarr.server.rest.pagination;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.exceptions.InvalidPaginationArgumentException;
@@ -197,7 +198,7 @@ class JsonApiCursorCodecTest {
       var decoded =
           MediaPaginationOptions.builder().cursorId(UUID.randomUUID()).mediaFilter(filter).build();
 
-      codec.validateCursorFilter(decoded, filter);
+      assertThatNoException().isThrownBy(() -> codec.validateCursorFilter(decoded, filter));
     }
   }
 }
