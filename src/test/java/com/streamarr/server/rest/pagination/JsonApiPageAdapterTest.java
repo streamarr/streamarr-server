@@ -52,8 +52,8 @@ class JsonApiPageAdapterTest {
     assertThat(response.data()).hasSize(2);
     assertThat(response.data().get(0).type()).isEqualTo("movies");
     assertThat(response.data().get(0).id()).isEqualTo(id1.toString());
-    assertThat(response.data().get(0).attributes().get("title")).isEqualTo("Alpha");
-    assertThat(response.data().get(1).attributes().get("title")).isEqualTo("Beta");
+    assertThat(response.data().get(0).attributes()).containsEntry("title", "Alpha");
+    assertThat(response.data().get(1).attributes()).containsEntry("title", "Beta");
   }
 
   @Test

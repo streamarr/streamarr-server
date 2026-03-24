@@ -42,7 +42,7 @@ class MovieRestControllerIT extends AbstractIntegrationTest {
   private Library emptyLibrary;
 
   @BeforeAll
-  public void setup() {
+  void setup() {
     var library = LibraryFixtureCreator.buildFakeLibrary();
     savedLibrary = libraryRepository.saveAndFlush(library);
 
@@ -84,6 +84,7 @@ class MovieRestControllerIT extends AbstractIntegrationTest {
     var firstPageTitles = titles(firstPage);
     var secondPageTitles = titles(secondPage);
 
+    assertThat(secondPageTitles).isNotEmpty();
     assertThat(firstPageTitles).doesNotContainAnyElementsOf(secondPageTitles);
   }
 
@@ -115,9 +116,10 @@ class MovieRestControllerIT extends AbstractIntegrationTest {
       page = fetchPage(page.links().next());
     }
 
-    assertThat(allTitles).hasSize(4);
-    assertThat(allTitles).doesNotHaveDuplicates();
-    assertThat(allTitles).containsExactly("Alpha", "Beta", "Delta", "Gamma");
+    assertThat(allTitles)
+        .hasSize(4)
+        .doesNotHaveDuplicates()
+        .containsExactly("Alpha", "Beta", "Delta", "Gamma");
   }
 
   @Test
