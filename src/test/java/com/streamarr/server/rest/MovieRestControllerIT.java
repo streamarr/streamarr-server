@@ -146,7 +146,8 @@ class MovieRestControllerIT extends AbstractIntegrationTest {
       var prevPage = fetchPage(lastPage.links().prev());
       var backwardTitles = titles(prevPage);
 
-      assertThat(forwardTitles).containsAll(backwardTitles);
+      assertThat(backwardTitles)
+          .containsExactlyElementsOf(forwardTitles.subList(0, backwardTitles.size()));
     }
   }
 

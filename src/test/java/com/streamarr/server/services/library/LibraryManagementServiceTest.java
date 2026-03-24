@@ -190,8 +190,8 @@ class LibraryManagementServiceTest {
   }
 
   @Test
-  @DisplayName("Should not allow for scanning of a library that doesn't exist.")
-  void shouldFailWhenNoLibraryFound() {
+  @DisplayName("Should throw LibraryNotFoundException when scanning non-existent library")
+  void shouldThrowLibraryNotFoundExceptionWhenScanningNonExistentLibrary() {
     var nonExistentId = UUID.randomUUID();
 
     assertThrows(
@@ -199,8 +199,9 @@ class LibraryManagementServiceTest {
   }
 
   @Test
-  @DisplayName("Should not allow for scanning of a library that is currently being scanned.")
-  void shouldFailWhenLibraryCurrentlyBeingScanned() {
+  @DisplayName(
+      "Should throw LibraryScanInProgressException when library is currently being scanned")
+  void shouldThrowLibraryScanInProgressExceptionWhenLibraryCurrentlyBeingScanned() {
     var library = fakeLibraryRepository.findById(savedLibraryId);
     library.orElseThrow().setStatus(LibraryStatus.SCANNING);
     fakeLibraryRepository.save(library.orElseThrow());
@@ -470,7 +471,7 @@ class LibraryManagementServiceTest {
 
   @Test
   @DisplayName(
-      "Should skip updating metadata when provided a media file that has already been matched.")
+      "Should skip updating metadata when provided a media file that has already been matched")
   void shouldSkipUpdatingMetadataWhenProvidedMediaFileThatHasBeenMatched() throws IOException {
     var movieFolder = "About Time";
     var movieFilename = "About Time (2013).mkv";

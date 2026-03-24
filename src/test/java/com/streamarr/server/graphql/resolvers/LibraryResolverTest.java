@@ -194,15 +194,6 @@ class LibraryResolverTest {
       assertThat(result).isTrue();
     }
 
-    @Test
-    @DisplayName("Should return error when removeLibrary called with invalid ID")
-    void shouldReturnErrorWhenRemoveLibraryCalledWithInvalidId() {
-      var result = dgsQueryExecutor.execute("mutation { removeLibrary(id: \"not-a-uuid\") }");
-
-      assertThat(result.getErrors()).isNotEmpty();
-      assertThat(result.getErrors().get(0).getMessage()).contains("Invalid ID format");
-    }
-
     @ParameterizedTest(name = "Should return error when {0} called with invalid ID")
     @MethodSource("com.streamarr.server.graphql.resolvers.LibraryResolverTest#invalidIdOperations")
     @DisplayName("Should return error when operation called with invalid ID")

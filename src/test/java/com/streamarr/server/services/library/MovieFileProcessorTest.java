@@ -153,6 +153,6 @@ class MovieFileProcessorTest {
     movieFileProcessor.process(library, mediaFile);
 
     assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
-        .isNotEqualTo(MediaFileStatus.METADATA_SEARCH_FAILED);
+        .isEqualTo(MediaFileStatus.UNMATCHED);
   }
 }
