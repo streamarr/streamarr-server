@@ -21,7 +21,9 @@ import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import com.streamarr.server.services.pagination.MediaFilter;
+import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
+import com.streamarr.server.services.pagination.PageItem;
 import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
@@ -215,6 +217,21 @@ public class MovieService {
   @Transactional(readOnly = true)
   public List<Review> findReviews(UUID movieId) {
     return reviewRepository.findByMovie_Id(movieId);
+  }
+
+  public MediaPage<Movie> getMoviesAsPage(MediaPaginationOptions options) {
+    var movies =
+        options.getCursorId().isPresent()
+            ? movieRepository.seekWithFilter(options)
+            : movieRepository.findFirstWithFilter(options);
+
+    var pageItems =
+        movies.stream()
+            .map(movie -> new PageItem<>(movie, getOrderByValue(options.getMediaFilter(), movie)))
+            .toList();
+
+    return paginationService.buildMediaPage(
+        pageItems, options.getPaginationOptions(), options.getCursorId());
   }
 
   private MediaFilter buildDefaultMovieFilter() {

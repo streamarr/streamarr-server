@@ -33,11 +33,16 @@ import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import com.streamarr.server.services.pagination.MediaFilter;
+import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.OrderMediaBy;
+import com.streamarr.server.services.pagination.PageItem;
+import com.streamarr.server.services.pagination.PaginationDirection;
+import com.streamarr.server.services.pagination.PaginationOptions;
 import com.streamarr.server.services.pagination.PaginationService;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.jooq.SortOrder;
@@ -100,9 +105,10 @@ class MovieServiceTest {
     movieRepository.save(Movie.builder().title("Zebra").build());
     movieRepository.save(Movie.builder().title("Apple").build());
 
-    var result = movieService.getMoviesWithFilter(10, null, 0, null, null);
+    var options = buildForwardOptions(10, MediaFilter.builder().build());
+    var result = movieService.getMoviesAsPage(options);
 
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
     assertThat(titles).containsExactly("Apple", "Zebra");
   }
@@ -116,9 +122,9 @@ class MovieServiceTest {
     var filter =
         MediaFilter.builder().sortBy(OrderMediaBy.TITLE).sortDirection(SortOrder.DESC).build();
 
-    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
 
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
     assertThat(titles).containsExactly("Zebra", "Apple");
   }
@@ -130,18 +136,21 @@ class MovieServiceTest {
     movieRepository.save(Movie.builder().title("Banana").build());
     movieRepository.save(Movie.builder().title("Cherry").build());
 
-    var firstPage = movieService.getMoviesWithFilter(1, null, 0, null, null);
+    var filter = MediaFilter.builder().build();
+    var firstPage = movieService.getMoviesAsPage(buildForwardOptions(1, filter));
 
-    assertThat(firstPage.getEdges()).hasSize(1);
-    assertThat(firstPage.getEdges().get(0).getNode().getTitle()).isEqualTo("Apple");
-    assertThat(firstPage.getPageInfo().isHasNextPage()).isTrue();
+    assertThat(firstPage.items()).hasSize(1);
+    assertThat(firstPage.items().getFirst().item().getTitle()).isEqualTo("Apple");
+    assertThat(firstPage.hasNextPage()).isTrue();
 
-    var cursor = firstPage.getPageInfo().getEndCursor().getValue();
-    var secondPage = movieService.getMoviesWithFilter(1, cursor, 0, null, null);
+    var lastItem = firstPage.items().getLast();
+    var secondPage =
+        movieService.getMoviesAsPage(
+            buildCursorOptions(1, PaginationDirection.FORWARD, lastItem, filter));
 
-    assertThat(secondPage.getEdges()).hasSize(1);
-    assertThat(secondPage.getEdges().get(0).getNode().getTitle()).isEqualTo("Banana");
-    assertThat(secondPage.getPageInfo().isHasNextPage()).isTrue();
+    assertThat(secondPage.items()).hasSize(1);
+    assertThat(secondPage.items().getFirst().item().getTitle()).isEqualTo("Banana");
+    assertThat(secondPage.hasNextPage()).isTrue();
   }
 
   @Test
@@ -151,14 +160,17 @@ class MovieServiceTest {
     movieRepository.save(Movie.builder().title("Banana").build());
     movieRepository.save(Movie.builder().title("Cherry").build());
 
-    var allMovies = movieService.getMoviesWithFilter(3, null, 0, null, null);
-    var endCursor = allMovies.getPageInfo().getEndCursor().getValue();
+    var filter = MediaFilter.builder().build();
+    var allMovies = movieService.getMoviesAsPage(buildForwardOptions(3, filter));
+    var lastItem = allMovies.items().getLast();
 
-    var backwardPage = movieService.getMoviesWithFilter(0, null, 1, endCursor, null);
+    var backwardPage =
+        movieService.getMoviesAsPage(
+            buildCursorOptions(1, PaginationDirection.REVERSE, lastItem, filter));
 
-    assertThat(backwardPage.getEdges()).hasSize(1);
-    assertThat(backwardPage.getEdges().get(0).getNode().getTitle()).isEqualTo("Banana");
-    assertThat(backwardPage.getPageInfo().isHasPreviousPage()).isTrue();
+    assertThat(backwardPage.items()).hasSize(1);
+    assertThat(backwardPage.items().getFirst().item().getTitle()).isEqualTo("Banana");
+    assertThat(backwardPage.hasPreviousPage()).isTrue();
   }
 
   @Test
@@ -171,14 +183,16 @@ class MovieServiceTest {
     var filter =
         MediaFilter.builder().sortBy(OrderMediaBy.TITLE).sortDirection(SortOrder.DESC).build();
 
-    var allMovies = movieService.getMoviesWithFilter(3, null, 0, null, filter);
-    assertThat(allMovies.getEdges()).hasSize(3);
+    var allMovies = movieService.getMoviesAsPage(buildForwardOptions(3, filter));
+    assertThat(allMovies.items()).hasSize(3);
 
-    var endCursor = allMovies.getPageInfo().getEndCursor().getValue();
-    var backwardPage = movieService.getMoviesWithFilter(0, null, 1, endCursor, filter);
+    var lastItem = allMovies.items().getLast();
+    var backwardPage =
+        movieService.getMoviesAsPage(
+            buildCursorOptions(1, PaginationDirection.REVERSE, lastItem, filter));
 
-    assertThat(backwardPage.getEdges()).hasSize(1);
-    assertThat(backwardPage.getEdges().get(0).getNode().getTitle()).isEqualTo("Banana");
+    assertThat(backwardPage.items()).hasSize(1);
+    assertThat(backwardPage.items().getFirst().item().getTitle()).isEqualTo("Banana");
   }
 
   @Test
@@ -189,12 +203,15 @@ class MovieServiceTest {
     movieRepository.save(Movie.builder().title("Cherry").build());
     movieRepository.save(Movie.builder().title("Date").build());
 
-    var forwardAll = movieService.getMoviesWithFilter(4, null, 0, null, null);
-    var forwardTitles = forwardAll.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var filter = MediaFilter.builder().build();
+    var forwardAll = movieService.getMoviesAsPage(buildForwardOptions(4, filter));
+    var forwardTitles = forwardAll.items().stream().map(pi -> pi.item().getTitle()).toList();
 
-    var endCursor = forwardAll.getPageInfo().getEndCursor().getValue();
-    var backwardPage = movieService.getMoviesWithFilter(0, null, 3, endCursor, null);
-    var backwardTitles = backwardPage.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var lastItem = forwardAll.items().getLast();
+    var backwardPage =
+        movieService.getMoviesAsPage(
+            buildCursorOptions(3, PaginationDirection.REVERSE, lastItem, filter));
+    var backwardTitles = backwardPage.items().stream().map(pi -> pi.item().getTitle()).toList();
 
     assertThat(backwardTitles).containsExactlyElementsOf(forwardTitles.subList(0, 3));
   }
@@ -202,11 +219,12 @@ class MovieServiceTest {
   @Test
   @DisplayName("Should return empty connection when no movies exist")
   void shouldReturnEmptyConnectionWhenNoMoviesExist() {
-    var result = movieService.getMoviesWithFilter(10, null, 0, null, null);
+    var result =
+        movieService.getMoviesAsPage(buildForwardOptions(10, MediaFilter.builder().build()));
 
-    assertThat(result.getEdges()).isEmpty();
-    assertThat(result.getPageInfo().isHasNextPage()).isFalse();
-    assertThat(result.getPageInfo().isHasPreviousPage()).isFalse();
+    assertThat(result.items()).isEmpty();
+    assertThat(result.hasNextPage()).isFalse();
+    assertThat(result.hasPreviousPage()).isFalse();
   }
 
   @Test
@@ -241,8 +259,8 @@ class MovieServiceTest {
             .startLetter(com.streamarr.server.domain.AlphabetLetter.HASH)
             .build();
 
-    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
     assertThat(titles).containsExactlyInAnyOrder("123 Numbers", "~Tilde Movie");
   }
@@ -265,8 +283,8 @@ class MovieServiceTest {
             .startLetter(com.streamarr.server.domain.AlphabetLetter.A)
             .build();
 
-    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
     assertThat(titles).containsExactlyInAnyOrder("Alpha", "Avengers");
   }
@@ -289,8 +307,8 @@ class MovieServiceTest {
             .startLetter(com.streamarr.server.domain.AlphabetLetter.A)
             .build();
 
-    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
     assertThat(titles).containsExactly("Alpha", "Avengers", "Batman", "Cherry");
   }
@@ -309,8 +327,8 @@ class MovieServiceTest {
         Movie.builder().title("Action Comedy").genres(Set.of(genreAction, genreComedy)).build());
 
     var filter = MediaFilter.builder().genreIds(List.of(genreAction.getId())).build();
-    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
     assertThat(titles).containsExactlyInAnyOrder("Action Movie", "Action Comedy");
   }
@@ -331,8 +349,8 @@ class MovieServiceTest {
 
     var filter =
         MediaFilter.builder().genreIds(List.of(genreAction.getId(), genreComedy.getId())).build();
-    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
     assertThat(titles).containsExactlyInAnyOrder("Action Movie", "Comedy Movie");
   }
@@ -344,9 +362,9 @@ class MovieServiceTest {
     movieRepository.save(Movie.builder().title("Movie B").build());
 
     var filter = MediaFilter.builder().genreIds(List.of()).build();
-    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
 
-    assertThat(result.getEdges()).hasSize(2);
+    assertThat(result.items()).hasSize(2);
   }
 
   @Test
@@ -360,8 +378,8 @@ class MovieServiceTest {
         Movie.builder().title("Mid Movie").releaseDate(LocalDate.of(2010, 11, 1)).build());
 
     var filter = MediaFilter.builder().years(List.of(2024)).build();
-    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
     assertThat(titles).containsExactly("New Movie");
   }
@@ -377,8 +395,8 @@ class MovieServiceTest {
         Movie.builder().title("Year 2020").releaseDate(LocalDate.of(2020, 12, 25)).build());
 
     var filter = MediaFilter.builder().years(List.of(2000, 2020)).build();
-    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
     assertThat(titles).containsExactlyInAnyOrder("Year 2000", "Year 2020");
   }
@@ -391,8 +409,8 @@ class MovieServiceTest {
     movieRepository.save(Movie.builder().title("Undated").build());
 
     var filter = MediaFilter.builder().years(List.of(2024)).build();
-    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
     assertThat(titles).containsExactly("Dated");
   }
@@ -412,8 +430,8 @@ class MovieServiceTest {
             .build());
 
     var filter = MediaFilter.builder().contentRatings(List.of("PG-13")).build();
-    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
     assertThat(titles).containsExactly("PG-13 Movie");
   }
@@ -438,8 +456,8 @@ class MovieServiceTest {
             .build());
 
     var filter = MediaFilter.builder().contentRatings(List.of("PG", "R")).build();
-    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
     assertThat(titles).containsExactlyInAnyOrder("PG Movie", "R Movie");
   }
@@ -456,8 +474,8 @@ class MovieServiceTest {
     movieRepository.save(Movie.builder().title("Studio B Movie").studios(Set.of(studioB)).build());
 
     var filter = MediaFilter.builder().studioIds(List.of(studioA.getId())).build();
-    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
     assertThat(titles).containsExactly("Studio A Movie");
   }
@@ -477,8 +495,8 @@ class MovieServiceTest {
     movieRepository.save(Movie.builder().title("Studio C Movie").studios(Set.of(studioC)).build());
 
     var filter = MediaFilter.builder().studioIds(List.of(studioA.getId(), studioB.getId())).build();
-    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
     assertThat(titles).containsExactlyInAnyOrder("Studio A Movie", "Studio B Movie");
   }
@@ -497,8 +515,8 @@ class MovieServiceTest {
         Movie.builder().title("Director B Movie").directors(List.of(directorB)).build());
 
     var filter = MediaFilter.builder().directorIds(List.of(directorA.getId())).build();
-    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
     assertThat(titles).containsExactly("Director A Movie");
   }
@@ -518,8 +536,8 @@ class MovieServiceTest {
     movieRepository.save(Movie.builder().title("Movie C").directors(List.of(dirC)).build());
 
     var filter = MediaFilter.builder().directorIds(List.of(dirA.getId(), dirB.getId())).build();
-    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
     assertThat(titles).containsExactlyInAnyOrder("Movie A", "Movie B");
   }
@@ -536,8 +554,8 @@ class MovieServiceTest {
     movieRepository.save(Movie.builder().title("Actor B Movie").cast(List.of(actorB)).build());
 
     var filter = MediaFilter.builder().castMemberIds(List.of(actorA.getId())).build();
-    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
     assertThat(titles).containsExactly("Actor A Movie");
   }
@@ -558,8 +576,8 @@ class MovieServiceTest {
 
     var filter =
         MediaFilter.builder().castMemberIds(List.of(actorA.getId(), actorB.getId())).build();
-    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
     assertThat(titles).containsExactlyInAnyOrder("Movie A", "Movie B");
   }
@@ -580,8 +598,8 @@ class MovieServiceTest {
             .build());
 
     var filter = MediaFilter.builder().unmatched(true).build();
-    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
-    var titles = result.getEdges().stream().map(e -> e.getNode().getTitle()).toList();
+    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
+    var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
 
     assertThat(titles).containsExactly("Unmatched Movie");
   }
@@ -593,9 +611,9 @@ class MovieServiceTest {
     movieRepository.save(Movie.builder().title("Movie B").build());
 
     var filter = MediaFilter.builder().unmatched(null).build();
-    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
 
-    assertThat(result.getEdges()).hasSize(2);
+    assertThat(result.items()).hasSize(2);
   }
 
   @Test
@@ -792,10 +810,10 @@ class MovieServiceTest {
             .sortDirection(SortOrder.ASC)
             .build();
 
-    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
 
-    assertThat(result.getEdges())
-        .extracting(e -> e.getNode().getTitle())
+    assertThat(result.items())
+        .extracting(pi -> pi.item().getTitle())
         .containsExactly("Old Movie", "Mid Movie", "New Movie");
   }
 
@@ -813,10 +831,10 @@ class MovieServiceTest {
             .sortDirection(SortOrder.DESC)
             .build();
 
-    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
 
-    assertThat(result.getEdges())
-        .extracting(e -> e.getNode().getTitle())
+    assertThat(result.items())
+        .extracting(pi -> pi.item().getTitle())
         .containsExactly("New Movie", "Old Movie");
   }
 
@@ -830,10 +848,10 @@ class MovieServiceTest {
     var filter =
         MediaFilter.builder().sortBy(OrderMediaBy.RUNTIME).sortDirection(SortOrder.ASC).build();
 
-    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
 
-    assertThat(result.getEdges())
-        .extracting(e -> e.getNode().getTitle())
+    assertThat(result.items())
+        .extracting(pi -> pi.item().getTitle())
         .containsExactly("Short", "Medium", "Long");
   }
 
@@ -846,10 +864,10 @@ class MovieServiceTest {
     var filter =
         MediaFilter.builder().sortBy(OrderMediaBy.RUNTIME).sortDirection(SortOrder.DESC).build();
 
-    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
 
-    assertThat(result.getEdges())
-        .extracting(e -> e.getNode().getTitle())
+    assertThat(result.items())
+        .extracting(pi -> pi.item().getTitle())
         .containsExactly("Long", "Short");
   }
 
@@ -866,10 +884,10 @@ class MovieServiceTest {
             .sortDirection(SortOrder.ASC)
             .build();
 
-    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
 
-    assertThat(result.getEdges())
-        .extracting(e -> e.getNode().getTitle())
+    assertThat(result.items())
+        .extracting(pi -> pi.item().getTitle())
         .containsExactly("Dated Movie", "Undated Movie");
   }
 
@@ -886,10 +904,10 @@ class MovieServiceTest {
             .sortDirection(SortOrder.DESC)
             .build();
 
-    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
 
-    assertThat(result.getEdges())
-        .extracting(e -> e.getNode().getTitle())
+    assertThat(result.items())
+        .extracting(pi -> pi.item().getTitle())
         .containsExactly("Dated Movie", "Undated Movie");
   }
 
@@ -902,10 +920,10 @@ class MovieServiceTest {
     var filter =
         MediaFilter.builder().sortBy(OrderMediaBy.RUNTIME).sortDirection(SortOrder.ASC).build();
 
-    var result = movieService.getMoviesWithFilter(10, null, 0, null, filter);
+    var result = movieService.getMoviesAsPage(buildForwardOptions(10, filter));
 
-    assertThat(result.getEdges())
-        .extracting(e -> e.getNode().getTitle())
+    assertThat(result.items())
+        .extracting(pi -> pi.item().getTitle())
         .containsExactly("With Runtime", "No Runtime");
   }
 
@@ -925,13 +943,15 @@ class MovieServiceTest {
             .sortDirection(SortOrder.ASC)
             .build();
 
-    var firstPage = movieService.getMoviesWithFilter(1, null, 0, null, filter);
-    assertThat(firstPage.getEdges().get(0).getNode().getTitle()).isEqualTo("First");
-    assertThat(firstPage.getPageInfo().isHasNextPage()).isTrue();
+    var firstPage = movieService.getMoviesAsPage(buildForwardOptions(1, filter));
+    assertThat(firstPage.items().getFirst().item().getTitle()).isEqualTo("First");
+    assertThat(firstPage.hasNextPage()).isTrue();
 
-    var cursor = firstPage.getPageInfo().getEndCursor().getValue();
-    var secondPage = movieService.getMoviesWithFilter(1, cursor, 0, null, filter);
-    assertThat(secondPage.getEdges().get(0).getNode().getTitle()).isEqualTo("Second");
+    var lastItem = firstPage.items().getLast();
+    var secondPage =
+        movieService.getMoviesAsPage(
+            buildCursorOptions(1, PaginationDirection.FORWARD, lastItem, filter));
+    assertThat(secondPage.items().getFirst().item().getTitle()).isEqualTo("Second");
   }
 
   @Test
@@ -1132,6 +1152,32 @@ class MovieServiceTest {
     movieService.refreshMovieMetadata(existing, metadataResult);
 
     assertThat(eventPublisher.getEventsOfType(MetadataEnrichedEvent.class)).isEmpty();
+  }
+
+  private static MediaPaginationOptions buildForwardOptions(int limit, MediaFilter filter) {
+    return MediaPaginationOptions.builder()
+        .paginationOptions(
+            PaginationOptions.builder()
+                .cursor(Optional.empty())
+                .paginationDirection(PaginationDirection.FORWARD)
+                .limit(limit)
+                .build())
+        .mediaFilter(filter)
+        .build();
+  }
+
+  private static MediaPaginationOptions buildCursorOptions(
+      int limit, PaginationDirection direction, PageItem<Movie> lastItem, MediaFilter filter) {
+    return MediaPaginationOptions.builder()
+        .cursorId(lastItem.item().getId())
+        .paginationOptions(
+            PaginationOptions.builder()
+                .cursor(Optional.of("placeholder"))
+                .paginationDirection(direction)
+                .limit(limit)
+                .build())
+        .mediaFilter(filter.toBuilder().previousSortFieldValue(lastItem.sortValue()).build())
+        .build();
   }
 
   private void seedImage(UUID entityId) {
