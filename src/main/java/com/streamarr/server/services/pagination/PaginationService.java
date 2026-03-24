@@ -52,11 +52,11 @@ public class PaginationService {
 
   private int getLimit(int first, int last, PaginationDirection direction) {
     return direction == PaginationDirection.REVERSE
-        ? validateGreaterThanZeroButLessThanMax("last", last)
-        : validateGreaterThanZeroButLessThanMax("first", first);
+        ? validateNonNegativeAndWithinMax("last", last)
+        : validateNonNegativeAndWithinMax("first", first);
   }
 
-  private int validateGreaterThanZeroButLessThanMax(String fieldName, int pageSize) {
+  private int validateNonNegativeAndWithinMax(String fieldName, int pageSize) {
 
     if (pageSize <= 0) {
       throw new InvalidPaginationArgumentException(fieldName + " must be greater than zero.");
