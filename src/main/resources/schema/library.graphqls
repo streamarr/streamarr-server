@@ -79,12 +79,12 @@ type AlphabetIndex {
 
 type MediaConnection {
     edges: [MediaEdge]
-    pageInfo: PageInfo
+    pageInfo: PageInfo!
 }
 
 type MediaEdge {
     node: Media
-    cursor: String
+    cursor: String!
 }
 
 type PageInfo {
