@@ -2,11 +2,11 @@ package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.ExternalSourceType;
 import com.streamarr.server.domain.media.Series;
-import com.streamarr.server.graphql.cursor.MediaFilter;
-import com.streamarr.server.graphql.cursor.MediaPaginationOptions;
-import com.streamarr.server.graphql.cursor.OrderMediaBy;
-import com.streamarr.server.graphql.cursor.PaginationDirection;
 import com.streamarr.server.repositories.media.SeriesRepository;
+import com.streamarr.server.services.pagination.MediaFilter;
+import com.streamarr.server.services.pagination.MediaPaginationOptions;
+import com.streamarr.server.services.pagination.OrderMediaBy;
+import com.streamarr.server.services.pagination.PaginationDirection;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;

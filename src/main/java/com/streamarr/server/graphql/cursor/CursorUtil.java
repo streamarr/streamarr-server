@@ -1,5 +1,7 @@
 package com.streamarr.server.graphql.cursor;
 
+import com.streamarr.server.services.pagination.MediaPaginationOptions;
+import com.streamarr.server.services.pagination.PaginationOptions;
 import graphql.relay.DefaultConnectionCursor;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;

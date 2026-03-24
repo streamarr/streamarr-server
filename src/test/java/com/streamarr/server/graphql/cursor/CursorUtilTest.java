@@ -3,6 +3,11 @@ package com.streamarr.server.graphql.cursor;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.services.pagination.MediaFilter;
+import com.streamarr.server.services.pagination.MediaPaginationOptions;
+import com.streamarr.server.services.pagination.OrderMediaBy;
+import com.streamarr.server.services.pagination.PaginationDirection;
+import com.streamarr.server.services.pagination.PaginationOptions;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;

@@ -1,4 +1,4 @@
-package com.streamarr.server.graphql.cursor;
+package com.streamarr.server.services.pagination;
 
 import com.streamarr.server.domain.AlphabetLetter;
 import java.util.List;

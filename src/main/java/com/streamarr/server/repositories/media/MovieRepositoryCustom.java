@@ -1,7 +1,7 @@
 package com.streamarr.server.repositories.media;
 
 import com.streamarr.server.domain.media.Movie;
-import com.streamarr.server.graphql.cursor.MediaPaginationOptions;
+import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import java.util.List;
 import java.util.Optional;
 
