@@ -78,6 +78,66 @@ class JsonApiPageAdapterTest {
       assertThat(response.data().getFirst().meta().page()).isNotNull();
       assertThat(response.data().getFirst().meta().page().cursor()).isNotBlank();
     }
+
+    @Test
+    @DisplayName("Should include releaseDate in attributes when movie has releaseDate")
+    void shouldIncludeReleaseDateInAttributesWhenMovieHasReleaseDate() {
+      var releaseDate = LocalDate.of(2024, 3, 15);
+      var page =
+          new MediaPage<>(
+              List.of(
+                  new PageItem<>(
+                      Movie.builder()
+                          .id(UUID.randomUUID())
+                          .title("Dated")
+                          .releaseDate(releaseDate)
+                          .build(),
+                      "Dated")),
+              false,
+              false);
+
+      var response = adapter.toResponse(page, buildOptions(), BASE_URL, 10, "movies");
+
+      assertThat(response.data().getFirst().attributes().get("releaseDate")).isEqualTo(releaseDate);
+    }
+
+    @Test
+    @DisplayName("Should include summary in attributes when movie has summary")
+    void shouldIncludeSummaryInAttributesWhenMovieHasSummary() {
+      var page =
+          new MediaPage<>(
+              List.of(
+                  new PageItem<>(
+                      Movie.builder()
+                          .id(UUID.randomUUID())
+                          .title("Movie")
+                          .summary("A great movie")
+                          .build(),
+                      "Movie")),
+              false,
+              false);
+
+      var response = adapter.toResponse(page, buildOptions(), BASE_URL, 10, "movies");
+
+      assertThat(response.data().getFirst().attributes().get("summary")).isEqualTo("A great movie");
+    }
+
+    @Test
+    @DisplayName("Should set null releaseDate in attributes when movie has no releaseDate")
+    void shouldSetNullReleaseDateInAttributesWhenMovieHasNoReleaseDate() {
+      var page =
+          new MediaPage<>(
+              List.of(
+                  new PageItem<>(
+                      Movie.builder().id(UUID.randomUUID()).title("Undated").build(), "Undated")),
+              false,
+              false);
+
+      var response = adapter.toResponse(page, buildOptions(), BASE_URL, 10, "movies");
+
+      assertThat(response.data().getFirst().attributes()).containsKey("releaseDate");
+      assertThat(response.data().getFirst().attributes().get("releaseDate")).isNull();
+    }
   }
 
   @Nested
@@ -150,6 +210,28 @@ class JsonApiPageAdapterTest {
 
       assertThat(response.links().next()).isNotNull();
       assertThat(response.links().prev()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("Should use first cursor for prev link and last cursor for next link")
+    void shouldUseFirstCursorForPrevLinkAndLastCursorForNextLink() {
+      var page =
+          new MediaPage<>(
+              List.of(
+                  new PageItem<>(
+                      Movie.builder().id(UUID.randomUUID()).title("First").build(), "First"),
+                  new PageItem<>(
+                      Movie.builder().id(UUID.randomUUID()).title("Last").build(), "Last")),
+              true,
+              true);
+
+      var response = adapter.toResponse(page, buildOptions(), BASE_URL, 2, "movies");
+
+      var firstCursor = response.data().getFirst().meta().page().cursor();
+      var lastCursor = response.data().getLast().meta().page().cursor();
+
+      assertThat(response.links().prev()).contains(firstCursor);
+      assertThat(response.links().next()).contains(lastCursor);
     }
   }
 

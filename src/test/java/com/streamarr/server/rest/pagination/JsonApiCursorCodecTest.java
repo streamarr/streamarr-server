@@ -9,6 +9,8 @@ import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import com.streamarr.server.services.pagination.PaginationOptions;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.Optional;
 import java.util.UUID;
 import org.jooq.SortOrder;
@@ -105,6 +107,7 @@ class JsonApiCursorCodecTest {
       assertThat(decoded.getMediaFilter().getYears()).containsExactly(2024);
       assertThat(decoded.getMediaFilter().getContentRatings()).containsExactly("PG-13");
       assertThat(decoded.getMediaFilter().getUnmatched()).isTrue();
+      assertThat(decoded.getMediaFilter().getPreviousSortFieldValue()).isEqualTo("2024-01-15");
     }
   }
 
@@ -139,6 +142,25 @@ class JsonApiCursorCodecTest {
       assertThatThrownBy(() -> codec.decode(options))
           .isInstanceOf(InvalidPaginationArgumentException.class)
           .hasMessage("Cannot decode an empty cursor.");
+    }
+
+    @Test
+    @DisplayName("Should throw when cursor contains valid Base64 but invalid JSON")
+    void shouldThrowWhenCursorContainsValidBase64ButInvalidJson() {
+      var invalidBase64 =
+          Base64.getUrlEncoder()
+              .withoutPadding()
+              .encodeToString("not-json".getBytes(StandardCharsets.UTF_8));
+
+      var options =
+          PaginationOptions.builder()
+              .cursor(Optional.of(invalidBase64))
+              .paginationDirection(PaginationDirection.FORWARD)
+              .limit(10)
+              .build();
+
+      assertThatThrownBy(() -> codec.decode(options))
+          .isInstanceOf(InvalidPaginationArgumentException.class);
     }
   }
 
