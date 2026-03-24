@@ -234,6 +234,15 @@ class MovieRestControllerIT extends AbstractIntegrationTest {
       assertThat(errorResponse.errors().getFirst().status()).isEqualTo("400");
       assertThat(errorResponse.errors().getFirst().detail()).isNotBlank();
     }
+
+    @Test
+    @DisplayName("Should return application/vnd.api+json content type when error response returned")
+    void shouldReturnJsonApiContentTypeWhenErrorResponseReturned() throws Exception {
+      mockMvc
+          .perform(get(buildBaseUrl(savedLibrary.getId()) + "?page[size]=-1"))
+          .andExpect(status().isBadRequest())
+          .andExpect(content().contentTypeCompatibleWith("application/vnd.api+json"));
+    }
   }
 
   @Nested
