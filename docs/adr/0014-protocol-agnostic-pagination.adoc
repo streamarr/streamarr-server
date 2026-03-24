@@ -1,0 +1,39 @@
+= ADR 0014: Protocol-Agnostic Pagination
+
+== Status
+
+Accepted
+
+== Context
+
+Services (`MovieService`, `SeriesService`, `PaginationService`) returned `graphql.relay.Connection<T>`, built `DefaultEdge`/`DefaultPageInfo`, and encoded/decoded Base64 cursors via `CursorUtil`. This coupled the service layer to the Relay Connection specification -- swapping GraphQL for REST would require rewriting the service layer, violating the protocol-agnosticism principle established in link:0005-tdd-and-behavior-testing.adoc[ADR 0005].
+
+The Relay Connection spec (https://relay.dev/graphql/connections.htm) is inherently GraphQL-specific. REST APIs use different pagination models such as JSON:API cursor pagination (https://jsonapi.org/profiles/ethanresnick/cursor-pagination/).
+
+== Decision
+
+Extract Relay-specific pagination logic from the service layer into the GraphQL adapter layer. Services return a protocol-agnostic `MediaPage<T>` containing `PageItem<T>` records (entity + sort value). Protocol adapters convert `MediaPage` into protocol-specific responses:
+
+* **GraphQL/Relay**: `RelayConnectionAdapter` maps `PageItem` to `DefaultEdge` with encoded cursors and builds `DefaultPageInfo`
+* **REST/JSON:API**: `JsonApiPageAdapter` maps `PageItem` to JSON:API resource objects with `links.next`/`links.prev`
+
+Cursor encoding, decoding, and filter validation are protocol-layer concerns handled by `CursorUtil` (Relay) and `JsonApiCursorCodec` (REST), not by services.
+
+The keyset pagination queries (jOOQ seek conditions in repositories) are completely unchanged -- the abstraction sits above the database layer.
+
+== Consequences
+
+* Services are truly protocol-agnostic -- zero `graphql.*` imports, enforced by ArchUnit
+* Adding a new protocol adapter requires zero service-layer changes
+* `MediaPage<T>` is a minimal record: items + hasNextPage + hasPreviousPage
+* `PageItem<T>` pairs each entity with its sort-field value so adapters can build cursors without knowing entity internals
+* Cursor format is protocol-specific -- Relay and JSON:API use different encodings for the same keyset state
+* Cursor filter validation (preventing mid-pagination filter changes) moves to the protocol layer boundary, consistent with "validate inputs at the API boundary" (see link:0005-tdd-and-behavior-testing.adoc[ADR 0005])
+
+== References
+
+* link:0002-graphql-over-rest.adoc[ADR 0002: GraphQL Over REST]
+* link:0003-keyset-pagination.adoc[ADR 0003: Keyset Pagination Over Offset]
+* link:0005-tdd-and-behavior-testing.adoc[ADR 0005: TDD and Behavior Testing]
+* https://relay.dev/graphql/connections.htm[Relay Connection Specification]
+* https://jsonapi.org/profiles/ethanresnick/cursor-pagination/[JSON:API Cursor Pagination Profile]
