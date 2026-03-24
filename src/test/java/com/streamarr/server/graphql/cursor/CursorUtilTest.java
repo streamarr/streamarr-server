@@ -90,6 +90,47 @@ class CursorUtilTest {
       assertThat(decoded.getMediaFilter().getCastMemberIds()).containsExactly(castMemberId);
       assertThat(decoded.getMediaFilter().getUnmatched()).isTrue();
     }
+
+    @Test
+    @DisplayName("Should handle minimal filter with only defaults when round-tripping")
+    void shouldHandleMinimalFilterWithOnlyDefaultsWhenRoundTripping() {
+      var cursorId = UUID.randomUUID();
+      var filter = MediaFilter.builder().build();
+
+      var options =
+          MediaPaginationOptions.builder()
+              .cursorId(cursorId)
+              .mediaFilter(filter)
+              .paginationOptions(
+                  PaginationOptions.builder()
+                      .cursor(Optional.empty())
+                      .paginationDirection(PaginationDirection.FORWARD)
+                      .limit(10)
+                      .build())
+              .build();
+
+      var encoded = cursorUtil.encodeMediaCursor(options, cursorId, "sortVal");
+
+      var decoded =
+          cursorUtil.decodeMediaCursor(
+              PaginationOptions.builder()
+                  .cursor(Optional.of(encoded.getValue()))
+                  .paginationDirection(PaginationDirection.FORWARD)
+                  .limit(10)
+                  .build());
+
+      assertThat(decoded.getCursorId()).contains(cursorId);
+      assertThat(decoded.getMediaFilter().getSortBy()).isEqualTo(OrderMediaBy.TITLE);
+      assertThat(decoded.getMediaFilter().getSortDirection()).isEqualTo(SortOrder.ASC);
+      assertThat(decoded.getMediaFilter().getLibraryId()).isNull();
+      assertThat(decoded.getMediaFilter().getGenreIds()).isNull();
+      assertThat(decoded.getMediaFilter().getYears()).isNull();
+      assertThat(decoded.getMediaFilter().getContentRatings()).isNull();
+      assertThat(decoded.getMediaFilter().getStudioIds()).isNull();
+      assertThat(decoded.getMediaFilter().getDirectorIds()).isNull();
+      assertThat(decoded.getMediaFilter().getCastMemberIds()).isNull();
+      assertThat(decoded.getMediaFilter().getUnmatched()).isNull();
+    }
   }
 
   @Nested
