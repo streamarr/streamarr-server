@@ -35,6 +35,37 @@ class CursorValidatorTest {
       assertThatNoException()
           .isThrownBy(() -> cursorValidator.validateCursorAgainstFilter(decoded, filter));
     }
+
+    @Test
+    @DisplayName(
+        "Should not throw when all filter dimensions match between cursor and request")
+    void shouldNotThrowWhenAllFilterDimensionsMatchBetweenCursorAndRequest() {
+      var libraryId = UUID.randomUUID();
+      var genreId = UUID.randomUUID();
+      var studioId = UUID.randomUUID();
+      var directorId = UUID.randomUUID();
+      var castMemberId = UUID.randomUUID();
+
+      var filter =
+          MediaFilter.builder()
+              .libraryId(libraryId)
+              .sortBy(OrderMediaBy.RELEASE_DATE)
+              .sortDirection(SortOrder.DESC)
+              .genreIds(List.of(genreId))
+              .years(List.of(2024))
+              .contentRatings(List.of("PG-13"))
+              .studioIds(List.of(studioId))
+              .directorIds(List.of(directorId))
+              .castMemberIds(List.of(castMemberId))
+              .unmatched(true)
+              .startLetter(AlphabetLetter.A)
+              .build();
+
+      var decoded = MediaPaginationOptions.builder().mediaFilter(filter).build();
+
+      assertThatNoException()
+          .isThrownBy(() -> cursorValidator.validateCursorAgainstFilter(decoded, filter));
+    }
   }
 
   @Nested

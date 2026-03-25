@@ -77,10 +77,30 @@ class PaginationServiceTest {
     @Test
     @DisplayName("Should paginate forward with zero limit when first is zero.")
     void shouldPaginateForwardWithZeroLimitWhenFirstIsZero() {
-      var options = paginationService.getPaginationOptions(0, null, 1, null);
+      var options = paginationService.getPaginationOptions(0, null, 0, null);
 
       assertThat(options.getPaginationDirection()).isEqualTo(PaginationDirection.FORWARD);
       assertThat(options.getLimit()).isZero();
+    }
+
+    @Test
+    @DisplayName("Should accept last of zero when before cursor is provided")
+    void shouldAcceptLastOfZeroWhenBeforeCursorProvided() {
+      var options = paginationService.getPaginationOptions(0, null, 0, "cursor");
+
+      assertThat(options.getPaginationDirection()).isEqualTo(PaginationDirection.REVERSE);
+      assertThat(options.getLimit()).isZero();
+      assertThat(options.getCursor()).contains("cursor");
+    }
+
+    @Test
+    @DisplayName("Should accept first of zero when after cursor is provided")
+    void shouldAcceptFirstOfZeroWhenAfterCursorProvided() {
+      var options = paginationService.getPaginationOptions(0, "cursor", 0, null);
+
+      assertThat(options.getPaginationDirection()).isEqualTo(PaginationDirection.FORWARD);
+      assertThat(options.getLimit()).isZero();
+      assertThat(options.getCursor()).contains("cursor");
     }
 
     @Test
@@ -478,6 +498,72 @@ class PaginationServiceTest {
       var page = paginationService.buildMediaPage(items, options, Optional.of(cursorId));
 
       assertThat(page.items()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName(
+        "Should return empty items with hasNextPage true when limit is zero forward")
+    void shouldReturnEmptyItemsWithHasNextPageTrueWhenLimitIsZeroForward() {
+      var items = List.of(new PageItem<>(Movie.builder().build(), "sortVal"));
+
+      var options =
+          PaginationOptions.builder()
+              .cursor(Optional.empty())
+              .paginationDirection(PaginationDirection.FORWARD)
+              .limit(0)
+              .build();
+
+      var page = paginationService.buildMediaPage(items, options, Optional.empty());
+
+      assertThat(page.items()).isEmpty();
+      assertThat(page.hasNextPage()).isTrue();
+      assertThat(page.hasPreviousPage()).isFalse();
+    }
+
+    @Test
+    @DisplayName(
+        "Should return empty items with hasPreviousPage true when limit is zero reverse")
+    void shouldReturnEmptyItemsWithHasPreviousPageTrueWhenLimitIsZeroReverse() {
+      var items = List.of(new PageItem<>(Movie.builder().build(), "sortVal"));
+
+      var options =
+          PaginationOptions.builder()
+              .cursor(Optional.empty())
+              .paginationDirection(PaginationDirection.REVERSE)
+              .limit(0)
+              .build();
+
+      var page = paginationService.buildMediaPage(items, options, Optional.empty());
+
+      assertThat(page.items()).isEmpty();
+      assertThat(page.hasNextPage()).isFalse();
+      assertThat(page.hasPreviousPage()).isTrue();
+    }
+
+    @Test
+    @DisplayName(
+        "Should return empty items with both page flags true when limit is zero forward with cursor")
+    void
+        shouldReturnEmptyItemsWithBothPageFlagsTrueWhenLimitIsZeroForwardWithCursor() {
+      var cursorItemId = UUID.randomUUID();
+
+      var items =
+          List.of(
+              new PageItem<>(Movie.builder().id(cursorItemId).build(), "sortVal1"),
+              new PageItem<>(Movie.builder().id(UUID.randomUUID()).build(), "sortVal2"));
+
+      var options =
+          PaginationOptions.builder()
+              .cursor(Optional.of("cursor"))
+              .paginationDirection(PaginationDirection.FORWARD)
+              .limit(0)
+              .build();
+
+      var page = paginationService.buildMediaPage(items, options, Optional.of(cursorItemId));
+
+      assertThat(page.items()).isEmpty();
+      assertThat(page.hasNextPage()).isTrue();
+      assertThat(page.hasPreviousPage()).isTrue();
     }
   }
 }

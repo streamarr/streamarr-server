@@ -114,6 +114,17 @@ class MovieRestControllerIT extends AbstractIntegrationTest {
           .doesNotHaveDuplicates()
           .containsExactly("Alpha", "Beta", "Delta", "Gamma");
     }
+
+    @Test
+    @DisplayName("Should return empty data when page size is zero")
+    void shouldReturnEmptyDataWhenPageSizeIsZero() throws Exception {
+      var page = fetchPage(buildUrl(savedLibrary.getId(), 0));
+
+      assertThat(page.data()).isEmpty();
+      assertThat(page.links().next()).isNull();
+      assertThat(page.links().prev()).isNull();
+      assertThat(page.links().first()).isNotNull();
+    }
   }
 
   @Nested
@@ -174,6 +185,8 @@ class MovieRestControllerIT extends AbstractIntegrationTest {
 
       assertThat(emptyPage.data()).isEmpty();
       assertThat(emptyPage.links().first()).isNotNull();
+      assertThat(emptyPage.links().next()).isNull();
+      assertThat(emptyPage.links().prev()).isNull();
     }
   }
 
@@ -324,6 +337,15 @@ class MovieRestControllerIT extends AbstractIntegrationTest {
                 assertThat(resource.id()).isNotBlank();
                 assertThat(resource.attributes()).containsKey("title");
               });
+    }
+
+    @Test
+    @DisplayName("Should accept page size at max boundary when page size is 500")
+    void shouldAcceptPageSizeAtMaxBoundaryWhenPageSizeIs500() throws Exception {
+      var page = fetchPage(buildUrl(savedLibrary.getId(), 500));
+
+      assertThat(page.data()).hasSize(4);
+      assertThat(page.links().first()).isNotNull();
     }
 
     @Test

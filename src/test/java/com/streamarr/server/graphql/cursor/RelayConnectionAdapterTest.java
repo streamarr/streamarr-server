@@ -137,6 +137,20 @@ class RelayConnectionAdapterTest {
     }
 
     @Test
+    @DisplayName("Should preserve page flags when items list is empty with hasNext only")
+    void shouldPreservePageFlagsWhenItemsListIsEmptyWithHasNextOnly() {
+      var page = new MediaPage<Movie>(List.of(), true, false);
+
+      var connection = adapter.toConnection(page, buildOptions());
+
+      assertThat(connection.getEdges()).isEmpty();
+      assertThat(connection.getPageInfo().isHasNextPage()).isTrue();
+      assertThat(connection.getPageInfo().isHasPreviousPage()).isFalse();
+      assertThat(connection.getPageInfo().getStartCursor()).isNull();
+      assertThat(connection.getPageInfo().getEndCursor()).isNull();
+    }
+
+    @Test
     @DisplayName("Should preserve page flags when items list is empty")
     void shouldPreservePageFlagsWhenItemsListIsEmpty() {
       var page = new MediaPage<Movie>(List.of(), false, true);
@@ -180,6 +194,8 @@ class RelayConnectionAdapterTest {
                   .build());
 
       assertThat(decoded.getCursorId()).contains(id);
+      assertThat(decoded.getMediaFilter().getPreviousSortFieldValue()).isEqualTo("Test");
+      assertThat(decoded.getMediaFilter().getSortBy()).isEqualTo(options.getMediaFilter().getSortBy());
     }
   }
 

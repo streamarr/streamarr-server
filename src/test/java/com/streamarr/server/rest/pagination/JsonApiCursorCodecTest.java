@@ -110,6 +110,33 @@ class JsonApiCursorCodecTest {
       assertThat(decoded.getMediaFilter().getUnmatched()).isTrue();
       assertThat(decoded.getMediaFilter().getPreviousSortFieldValue()).isEqualTo("2024-01-15");
     }
+
+    @Test
+    @DisplayName("Should produce URL-safe encoded cursor when filter contains complex data")
+    void shouldProduceUrlSafeEncodedCursorWhenFilterContainsComplexData() {
+      var filter =
+          MediaFilter.builder()
+              .libraryId(UUID.randomUUID())
+              .sortBy(OrderMediaBy.RELEASE_DATE)
+              .sortDirection(SortOrder.DESC)
+              .genreIds(java.util.List.of(UUID.randomUUID()))
+              .build();
+
+      var options =
+          MediaPaginationOptions.builder()
+              .mediaFilter(filter)
+              .paginationOptions(
+                  PaginationOptions.builder()
+                      .cursor(Optional.empty())
+                      .paginationDirection(PaginationDirection.FORWARD)
+                      .limit(10)
+                      .build())
+              .build();
+
+      var encoded = codec.encode(options, UUID.randomUUID(), "2024-06-15");
+
+      assertThat(encoded).matches("^[A-Za-z0-9_-]+$");
+    }
   }
 
   @Nested
