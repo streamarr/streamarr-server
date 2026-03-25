@@ -21,10 +21,6 @@
           "patterns": ["src/main/java/com/streamarr/server/graphql/**"]
         },
         {
-          "label": "REST",
-          "patterns": ["src/main/java/com/streamarr/server/rest/**"]
-        },
-        {
           "label": "Controllers",
           "patterns": ["src/main/java/com/streamarr/server/controllers/**"]
         },
@@ -36,28 +32,23 @@
       "constraints": [
         {
           "from": ["Domain"],
-          "to": ["Services", "Repositories", "GraphQL", "REST", "Controllers", "Config"],
+          "to": ["Services", "Repositories", "GraphQL", "Controllers", "Config"],
           "message": "Domain must not depend on any outer layer"
         },
         {
           "from": ["Repositories"],
-          "to": ["Services", "GraphQL", "REST", "Controllers", "Config"],
+          "to": ["Services", "GraphQL", "Controllers", "Config"],
           "message": "Repositories must not depend on services, protocol, or config layers"
         },
         {
           "from": ["Services"],
-          "to": ["GraphQL", "REST", "Controllers"],
-          "message": "Services must be protocol-agnostic — no dependency on GraphQL, REST, or controllers"
+          "to": ["GraphQL", "Controllers"],
+          "message": "Services must be protocol-agnostic — no dependency on GraphQL or controllers"
         },
         {
           "from": ["GraphQL"],
           "to": ["Repositories"],
           "message": "GraphQL resolvers must delegate to services, not access repositories directly"
-        },
-        {
-          "from": ["REST"],
-          "to": ["Repositories"],
-          "message": "REST controllers must delegate to services, not access repositories directly"
         },
         {
           "from": ["Controllers"],
@@ -66,7 +57,7 @@
         },
         {
           "from": ["Config"],
-          "to": ["Repositories", "GraphQL", "REST", "Controllers"],
+          "to": ["Repositories", "GraphQL", "Controllers"],
           "message": "Config should depend on services at most, not on repositories or protocol layers"
         }
       ]
