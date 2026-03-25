@@ -484,6 +484,39 @@ class SeriesServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("Should paginate forward with added sort order")
+    void shouldPaginateForwardWithAddedSortOrder() {
+      var filter =
+          MediaFilter.builder()
+              .sortBy(OrderMediaBy.ADDED)
+              .sortDirection(SortOrder.ASC)
+              .libraryId(savedLibraryC.getId())
+              .build();
+
+      var page1 = seriesService.getSeriesWithFilter(buildForwardOptions(1, filter));
+
+      assertThat(page1.items()).hasSize(1);
+      assertThat(page1.items().getFirst().item().getTitle()).isEqualTo("First Show");
+      assertThat(page1.hasNextPage()).isTrue();
+
+      var page2 =
+          seriesService.getSeriesWithFilter(
+              buildForwardContinuation(1, filter, page1.items().getLast()));
+
+      assertThat(page2.items()).hasSize(1);
+      assertThat(page2.items().getFirst().item().getTitle()).isEqualTo("Second Show");
+      assertThat(page2.hasNextPage()).isFalse();
+
+      var allTitles =
+          Stream.concat(
+                  page1.items().stream().map(pi -> pi.item().getTitle()),
+                  page2.items().stream().map(pi -> pi.item().getTitle()))
+              .toList();
+
+      assertThat(allTitles).doesNotHaveDuplicates();
+    }
+
+    @Test
     @DisplayName(
         "Should paginate all items with no duplicates or skips when title DESC and duplicate titles")
     void shouldPaginateAllItemsWithNoDuplicatesWhenTitleDescAndDuplicateTitles() {
@@ -730,6 +763,22 @@ class SeriesServiceIT extends AbstractIntegrationTest {
               .toList();
       assertThat(allTitles)
           .containsExactly("Beta Show", "Batman Show", "Avengers Show", "Alpha Show", "123 Show");
+    }
+
+    @Test
+    @DisplayName("Should return only B-letter series when start letter is B with added sort")
+    void shouldReturnOnlyBLetterSeriesWhenStartLetterIsBWithAddedSort() {
+      var filter =
+          MediaFilter.builder()
+              .libraryId(savedLibraryD.getId())
+              .startLetter(AlphabetLetter.B)
+              .sortBy(OrderMediaBy.ADDED)
+              .build();
+
+      var result = seriesService.getSeriesWithFilter(buildForwardOptions(10, filter));
+
+      var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
+      assertThat(titles).containsExactlyInAnyOrder("Batman Show", "Beta Show");
     }
   }
 

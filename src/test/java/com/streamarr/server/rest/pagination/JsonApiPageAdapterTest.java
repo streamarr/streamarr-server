@@ -3,6 +3,7 @@ package com.streamarr.server.rest.pagination;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
@@ -137,6 +138,73 @@ class JsonApiPageAdapterTest {
 
       assertThat(response.data().getFirst().attributes()).containsKey("releaseDate");
       assertThat(response.data().getFirst().attributes().get("releaseDate")).isNull();
+    }
+  }
+
+  @Nested
+  @DisplayName("Series Resource Serialization")
+  class SeriesResourceSerialization {
+
+    @Test
+    @DisplayName("Should include firstAirDate in attributes when series has firstAirDate")
+    void shouldIncludeFirstAirDateInAttributesWhenSeriesHasFirstAirDate() {
+      var firstAirDate = LocalDate.of(2023, 9, 20);
+      var page =
+          new MediaPage<>(
+              List.of(
+                  new PageItem<>(
+                      Series.builder()
+                          .id(UUID.randomUUID())
+                          .title("Breaking Bad")
+                          .firstAirDate(firstAirDate)
+                          .build(),
+                      "Breaking Bad")),
+              false,
+              false);
+
+      var response = adapter.toResponse(page, buildOptions(), BASE_URL, 10, "series");
+
+      assertThat(response.data().getFirst().attributes())
+          .containsEntry("firstAirDate", firstAirDate);
+    }
+
+    @Test
+    @DisplayName("Should include summary in attributes when series has summary")
+    void shouldIncludeSummaryInAttributesWhenSeriesHasSummary() {
+      var page =
+          new MediaPage<>(
+              List.of(
+                  new PageItem<>(
+                      Series.builder()
+                          .id(UUID.randomUUID())
+                          .title("The Wire")
+                          .summary("A Baltimore drug scene drama")
+                          .build(),
+                      "The Wire")),
+              false,
+              false);
+
+      var response = adapter.toResponse(page, buildOptions(), BASE_URL, 10, "series");
+
+      assertThat(response.data().getFirst().attributes())
+          .containsEntry("summary", "A Baltimore drug scene drama");
+    }
+
+    @Test
+    @DisplayName("Should set null firstAirDate in attributes when series has no firstAirDate")
+    void shouldSetNullFirstAirDateInAttributesWhenSeriesHasNoFirstAirDate() {
+      var page =
+          new MediaPage<>(
+              List.of(
+                  new PageItem<>(
+                      Series.builder().id(UUID.randomUUID()).title("Unknown").build(), "Unknown")),
+              false,
+              false);
+
+      var response = adapter.toResponse(page, buildOptions(), BASE_URL, 10, "series");
+
+      assertThat(response.data().getFirst().attributes()).containsKey("firstAirDate");
+      assertThat(response.data().getFirst().attributes().get("firstAirDate")).isNull();
     }
   }
 
