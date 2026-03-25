@@ -14,7 +14,7 @@
 ### Test Behavior, Not Implementation (Hexagonal Architecture)
 - Test at the highest public API level — this means the **service layer**, not the protocol layer
 - Service tests are protocol-agnostic: if we swap GraphQL for REST, these tests still pass
-- GraphQL resolver tests are thin wiring tests only — verify delegation, not business logic
+- Protocol-layer tests (resolvers, controllers) verify delegation **and** protocol-specific adapter logic (cursor encoding, Relay connection building, JSON:API formatting, filter validation)
 - Test observable behavior and outcomes, not internal method calls
 - NEVER use mocks to verify interactions (no ArgumentCaptor, no verify())
 - NEVER make a method public or package-private solely for testing
@@ -128,9 +128,10 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
         - **Mockito stubs** when Fakes can't reach a code path (e.g., static methods, checked exceptions from JDK/library APIs)
         - **Integration tests (TestContainers)** when the behavior depends on real database interactions (query correctness, constraints, transactions)
     - Test inputs → outputs, not internal wiring
-- **GraphQL resolver tests** are thin wiring tests only
-    - Verify resolvers delegate to services correctly
-    - Do NOT test business logic at the protocol layer
+- **Protocol-layer tests** (resolvers, controllers) verify delegation and protocol-specific adapter logic
+    - Verify resolvers/controllers delegate to services correctly
+    - Test protocol-specific adapters (cursor encoding, Relay connections, JSON:API formatting, filter validation) at the protocol layer where the logic lives
+    - Do NOT duplicate business logic testing that belongs in service-layer tests
 - **Pure logic unit tests** for parsers, validators, and stateless utilities
     - No database, no Spring context
 - **Anti-patterns to avoid:**
