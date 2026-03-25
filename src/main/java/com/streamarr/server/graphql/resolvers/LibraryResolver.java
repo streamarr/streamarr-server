@@ -13,7 +13,9 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.exceptions.InvalidIdException;
 import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
-import com.streamarr.server.graphql.cursor.MediaFilter;
+import com.streamarr.server.graphql.cursor.CursorUtil;
+import com.streamarr.server.graphql.cursor.CursorValidator;
+import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.graphql.dto.AlphabetIndexDto;
 import com.streamarr.server.graphql.inputs.AddLibraryInput;
 import com.streamarr.server.graphql.inputs.MediaFilterInput;
@@ -22,6 +24,9 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.library.LibraryManagementService;
+import com.streamarr.server.services.pagination.MediaFilter;
+import com.streamarr.server.services.pagination.MediaPaginationOptionsResolver;
+import com.streamarr.server.services.pagination.PaginationService;
 import graphql.relay.Connection;
 import graphql.schema.DataFetchingEnvironment;
 import java.util.List;
@@ -37,6 +42,10 @@ public class LibraryResolver {
   private final LibraryManagementService libraryManagementService;
   private final MovieService movieService;
   private final SeriesService seriesService;
+  private final PaginationService paginationService;
+  private final CursorUtil cursorUtil;
+  private final CursorValidator cursorValidator;
+  private final RelayConnectionAdapter relayConnectionAdapter;
 
   @DgsMutation
   public Library addLibrary(@InputArgument AddLibraryInput input) {
@@ -111,12 +120,22 @@ public class LibraryResolver {
     }
 
     var effectiveFilter = builder.build();
+    var paginationOptions = paginationService.getPaginationOptions(first, after, last, before);
+    var options =
+        MediaPaginationOptionsResolver.resolve(
+            paginationOptions,
+            effectiveFilter,
+            cursorUtil::decodeMediaCursor,
+            cursorValidator::validateCursorAgainstFilter);
 
-    return switch (library.getType()) {
-      case MOVIE -> movieService.getMoviesWithFilter(first, after, last, before, effectiveFilter);
-      case SERIES -> seriesService.getSeriesWithFilter(first, after, last, before, effectiveFilter);
-      default -> throw new UnsupportedMediaTypeException(library.getType().name());
-    };
+    var page =
+        switch (library.getType()) {
+          case MOVIE -> movieService.getMoviesWithFilter(options);
+          case SERIES -> seriesService.getSeriesWithFilter(options);
+          default -> throw new UnsupportedMediaTypeException(library.getType().name());
+        };
+
+    return relayConnectionAdapter.toConnection(page, options);
   }
 
   @DgsData(parentType = "Library")

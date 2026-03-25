@@ -1,15 +1,17 @@
-package com.streamarr.server.graphql.cursor;
+package com.streamarr.server.services.pagination;
 
 import com.streamarr.server.domain.AlphabetLetter;
 import java.util.List;
 import java.util.UUID;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
+import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.jooq.SortOrder;
 
 @Getter
+@EqualsAndHashCode(exclude = "previousSortFieldValue")
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder(toBuilder = true)
@@ -29,6 +31,5 @@ public class MediaFilter {
   private List<UUID> castMemberIds;
   private Boolean unmatched;
 
-  // Used for seek pagination
   private Object previousSortFieldValue;
 }

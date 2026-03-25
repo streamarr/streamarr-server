@@ -2,7 +2,7 @@ package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.AlphabetLetter;
 import com.streamarr.server.domain.BaseAuditableEntity;
-import com.streamarr.server.graphql.cursor.MediaFilter;
+import com.streamarr.server.services.pagination.MediaFilter;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;

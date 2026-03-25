@@ -1,5 +1,7 @@
 package com.streamarr.server.graphql.cursor;
 
+import com.streamarr.server.services.pagination.MediaPaginationOptions;
+import com.streamarr.server.services.pagination.PaginationOptions;
 import graphql.relay.DefaultConnectionCursor;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -12,23 +14,23 @@ import tools.jackson.databind.ObjectMapper;
 @RequiredArgsConstructor
 public class CursorUtil {
 
-  private final ObjectMapper jacksonObjectMapper;
+  private final ObjectMapper objectMapper;
 
   public DefaultConnectionCursor encodeMediaCursor(
-      MediaPaginationOptions mediaPaginationOptions, UUID cursorId, Object sortValue) {
+      MediaPaginationOptions options, UUID cursorId, Object sortValue) {
     try {
-      mediaPaginationOptions =
+      var cursorState =
           MediaPaginationOptions.builder()
               .cursorId(cursorId)
               .mediaFilter(
-                  mediaPaginationOptions.getMediaFilter().toBuilder()
-                      .previousSortFieldValue(sortValue)
-                      .build())
+                  options.getMediaFilter().toBuilder().previousSortFieldValue(sortValue).build())
               .build();
 
-      String jsonStr = jacksonObjectMapper.writeValueAsString(mediaPaginationOptions);
+      var jsonStr = objectMapper.writeValueAsString(cursorState);
       return new DefaultConnectionCursor(
-          Base64.getEncoder().encodeToString(jsonStr.getBytes(StandardCharsets.UTF_8)));
+          Base64.getUrlEncoder()
+              .withoutPadding()
+              .encodeToString(jsonStr.getBytes(StandardCharsets.UTF_8)));
     } catch (Exception ex) {
       throw new InvalidCursorException(ex.getMessage());
     }
@@ -45,8 +47,8 @@ public class CursorUtil {
     var cursor = optionalCursor.get();
 
     try {
-      var jsonStr = new String(Base64.getDecoder().decode(cursor));
-      return jacksonObjectMapper.readValue(jsonStr, MediaPaginationOptions.class).toBuilder()
+      var jsonStr = new String(Base64.getUrlDecoder().decode(cursor));
+      return objectMapper.readValue(jsonStr, MediaPaginationOptions.class).toBuilder()
           .paginationOptions(options)
           .build();
 

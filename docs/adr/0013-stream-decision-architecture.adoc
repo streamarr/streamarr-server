@@ -7,22 +7,21 @@ Accepted
 == Context
 
 Streaming negotiates source media (ffprobe) against client capabilities (StreamingOptions).
-Each stream type -- video, audio, subtitle -- needs an independent decision. These compose
-into a TranscodeDecision that drives FFmpeg command construction and HLS playlist generation.
+Each stream type -- video, audio, subtitle -- needs an independent decision.
+
+These independent decisions compose into a TranscodeDecision that drives FFmpeg command construction and HLS playlist generation.
 
 == Decision
 
-Model each stream type as a decision record: AudioDecision (COPY/TRANSCODE/NONE),
-SubtitleDecision (EXCLUDE/BURN_IN/SIDECAR/HLS/EMBED). Video decision is currently
-implicit (videoCodecFamily + videoCompatible boolean); becomes explicit when profile/level
-negotiation is added.
+Model each stream type as a decision record: AudioDecision (COPY/TRANSCODE/NONE), SubtitleDecision (EXCLUDE/BURN_IN/SIDECAR/HLS/EMBED).
+Video decision is currently implicit (videoCodecFamily + videoCompatible boolean); becomes explicit when profile/level negotiation is added.
 
 Stream decisions compose into TranscodeDecision -> TranscodeMode -> FfmpegCommandBuilder.
 Pipeline: probe -> decide per stream -> compose -> resolve mode -> build command.
 
 == Consequences
 
-* Decision records are pure domain objects -- no service dependencies, testable in isolation
-* Mode resolution considers all stream decisions (subtitle burn-in promotes REMUX -> FULL_TRANSCODE)
-* New stream types follow the same decision record pattern
-* TranscodeReason tracking can be added as metadata on each decision later
+* Decision records are pure domain objects.
+* Mode resolution considers all stream decisions (e.g. subtitle burn-in promotes REMUX -> FULL_TRANSCODE).
+* New stream types follow the same pattern.
+* TranscodeReason tracking can be added as metadata on each decision later.

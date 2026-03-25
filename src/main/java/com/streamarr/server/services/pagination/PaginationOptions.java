@@ -1,4 +1,4 @@
-package com.streamarr.server.graphql.cursor;
+package com.streamarr.server.services.pagination;
 
 import java.util.Optional;
 import lombok.Builder;

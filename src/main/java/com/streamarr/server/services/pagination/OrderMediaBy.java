@@ -1,4 +1,4 @@
-package com.streamarr.server.graphql.cursor;
+package com.streamarr.server.services.pagination;
 
 public enum OrderMediaBy {
   TITLE,

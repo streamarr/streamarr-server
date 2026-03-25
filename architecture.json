@@ -1,0 +1,120 @@
+{
+  "perspectives": [
+    {
+      "label": "Layers",
+      "description": "Hexagonal architecture — domain at the center, ports and adapters around it",
+      "groups": [
+        {
+          "label": "Domain",
+          "patterns": ["src/main/java/com/streamarr/server/domain/**"]
+        },
+        {
+          "label": "Repositories",
+          "patterns": ["src/main/java/com/streamarr/server/repositories/**"]
+        },
+        {
+          "label": "Services",
+          "patterns": ["src/main/java/com/streamarr/server/services/**"]
+        },
+        {
+          "label": "GraphQL",
+          "patterns": ["src/main/java/com/streamarr/server/graphql/**"]
+        },
+        {
+          "label": "Controllers",
+          "patterns": ["src/main/java/com/streamarr/server/controllers/**"]
+        },
+        {
+          "label": "Config",
+          "patterns": ["src/main/java/com/streamarr/server/config/**"]
+        }
+      ],
+      "constraints": [
+        {
+          "from": ["Domain"],
+          "to": ["Services", "Repositories", "GraphQL", "Controllers", "Config"],
+          "message": "Domain must not depend on any outer layer"
+        },
+        {
+          "from": ["Repositories"],
+          "to": ["Services", "GraphQL", "Controllers", "Config"],
+          "message": "Repositories must not depend on services, protocol, or config layers"
+        },
+        {
+          "from": ["Services"],
+          "to": ["GraphQL", "Controllers"],
+          "message": "Services must be protocol-agnostic — no dependency on GraphQL or controllers"
+        },
+        {
+          "from": ["GraphQL"],
+          "to": ["Repositories"],
+          "message": "GraphQL resolvers must delegate to services, not access repositories directly"
+        },
+        {
+          "from": ["Controllers"],
+          "to": ["Repositories"],
+          "message": "Controllers must delegate to services, not access repositories directly"
+        },
+        {
+          "from": ["Config"],
+          "to": ["Repositories", "GraphQL", "Controllers"],
+          "message": "Config should depend on services at most, not on repositories or protocol layers"
+        }
+      ]
+    },
+    {
+      "label": "Service Subdomains",
+      "description": "Bounded contexts within the service layer — communicate via events, not direct imports",
+      "groups": [
+        {
+          "label": "Library",
+          "patterns": ["src/main/java/com/streamarr/server/services/library/**"]
+        },
+        {
+          "label": "Metadata",
+          "patterns": ["src/main/java/com/streamarr/server/services/metadata/**"]
+        },
+        {
+          "label": "Streaming",
+          "patterns": ["src/main/java/com/streamarr/server/services/streaming/**"]
+        },
+        {
+          "label": "Task",
+          "patterns": ["src/main/java/com/streamarr/server/services/task/**"]
+        }
+      ],
+      "constraints": [
+        {
+          "from": ["Metadata"],
+          "to": ["Library"],
+          "message": "Metadata must not import from Library — use Spring events for cross-domain communication"
+        },
+        {
+          "from": ["Streaming"],
+          "to": ["Library", "Metadata"],
+          "message": "Streaming must not import from Library or Metadata — shared utilities belong in utils"
+        },
+        {
+          "from": ["Task"],
+          "to": ["Library", "Streaming"],
+          "message": "Task must not import from Library or Streaming — shared utilities belong in utils"
+        }
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "message": "TMDB types must stay encapsulated within the metadata package"
+    },
+    {
+      "from": ["src/main/java/**"],
+      "to": ["src/main/java/com/streamarr/server/services/metadata/tmdb/**"],
+      "relation": "deny"
+    },
+    {
+      "from": ["src/main/java/com/streamarr/server/services/metadata/**"],
+      "to": ["src/main/java/com/streamarr/server/services/metadata/tmdb/**"],
+      "relation": "exclusive-allow"
+    }
+  ]
+}

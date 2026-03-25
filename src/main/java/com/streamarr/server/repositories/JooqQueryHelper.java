@@ -10,9 +10,9 @@ import static org.jooq.impl.DSL.row;
 import static org.jooq.impl.DSL.select;
 
 import com.streamarr.server.domain.AlphabetLetter;
-import com.streamarr.server.graphql.cursor.MediaFilter;
-import com.streamarr.server.graphql.cursor.OrderMediaBy;
 import com.streamarr.server.jooq.generated.Tables;
+import com.streamarr.server.services.pagination.MediaFilter;
+import com.streamarr.server.services.pagination.OrderMediaBy;
 import jakarta.persistence.EntityManager;
 import java.time.LocalDate;
 import java.util.Arrays;

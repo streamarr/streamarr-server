@@ -1,6 +1,5 @@
 package com.streamarr.server.services;
 
-import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.ImageEntityType;
@@ -10,10 +9,6 @@ import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
-import com.streamarr.server.graphql.cursor.CursorUtil;
-import com.streamarr.server.graphql.cursor.MediaFilter;
-import com.streamarr.server.graphql.cursor.MediaPaginationOptions;
-import com.streamarr.server.graphql.cursor.PaginationOptions;
 import com.streamarr.server.repositories.CompanyRepository;
 import com.streamarr.server.repositories.GenreRepository;
 import com.streamarr.server.repositories.PersonRepository;
@@ -25,9 +20,11 @@ import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.events.ImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import com.streamarr.server.services.metadata.series.SeasonDetails;
-import graphql.relay.Connection;
-import graphql.relay.DefaultEdge;
-import graphql.relay.Edge;
+import com.streamarr.server.services.pagination.MediaFilter;
+import com.streamarr.server.services.pagination.MediaPage;
+import com.streamarr.server.services.pagination.MediaPaginationOptions;
+import com.streamarr.server.services.pagination.PageItem;
+import com.streamarr.server.services.pagination.PaginationService;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -44,8 +41,7 @@ public class SeriesService {
   private final PersonService personService;
   private final GenreService genreService;
   private final CompanyService companyService;
-  private final CursorUtil cursorUtil;
-  private final RelayPaginationService relayPaginationService;
+  private final PaginationService paginationService;
   private final ApplicationEventPublisher eventPublisher;
   private final ImageService imageService;
   private final SeasonRepository seasonRepository;
@@ -291,53 +287,20 @@ public class SeriesService {
     return genreRepository.findBySeriesId(seriesId);
   }
 
-  public Connection<? extends BaseCollectable<?>> getSeriesWithFilter(
-      int first, String after, int last, String before, MediaFilter filter) {
+  public MediaPage<Series> getSeriesWithFilter(MediaPaginationOptions options) {
+    var seriesList =
+        options.getCursorId().isPresent()
+            ? seriesRepository.seekWithFilter(options)
+            : seriesRepository.findFirstWithFilter(options);
 
-    if (filter == null) {
-      filter = buildDefaultSeriesFilter();
-    }
+    var pageItems =
+        seriesList.stream()
+            .map(
+                series -> new PageItem<>(series, getOrderByValue(options.getMediaFilter(), series)))
+            .toList();
 
-    var paginationOptions = relayPaginationService.getPaginationOptions(first, after, last, before);
-
-    if (paginationOptions.getCursor().isEmpty()) {
-      return getFirstSeriesAsConnection(paginationOptions, filter);
-    }
-
-    var mediaOptionsFromCursor = cursorUtil.decodeMediaCursor(paginationOptions);
-
-    relayPaginationService.validateCursorAgainstFilter(mediaOptionsFromCursor, filter);
-
-    return usingCursorGetSeriesAsConnection(mediaOptionsFromCursor);
-  }
-
-  private MediaFilter buildDefaultSeriesFilter() {
-    return MediaFilter.builder().build();
-  }
-
-  private Connection<? extends BaseCollectable<?>> getFirstSeriesAsConnection(
-      PaginationOptions options, MediaFilter filter) {
-    var mediaOptions =
-        MediaPaginationOptions.builder().paginationOptions(options).mediaFilter(filter).build();
-
-    var seriesList = seriesRepository.findFirstWithFilter(mediaOptions);
-    var edges = mapItemsToEdges(seriesList, mediaOptions);
-
-    return relayPaginationService.buildConnection(
-        edges, mediaOptions.getPaginationOptions(), mediaOptions.getCursorId());
-  }
-
-  private List<Edge<Series>> mapItemsToEdges(
-      List<Series> seriesList, MediaPaginationOptions options) {
-    return seriesList.stream()
-        .<Edge<Series>>map(
-            result -> {
-              var orderByValue = getOrderByValue(options.getMediaFilter(), result);
-              var newCursor = cursorUtil.encodeMediaCursor(options, result.getId(), orderByValue);
-
-              return new DefaultEdge<>(result, newCursor);
-            })
-        .toList();
+    return paginationService.buildMediaPage(
+        pageItems, options.getPaginationOptions(), options.getCursorId());
   }
 
   private Object getOrderByValue(MediaFilter filter, Series series) {
@@ -347,14 +310,5 @@ public class SeriesService {
       case RELEASE_DATE -> series.getFirstAirDate();
       case RUNTIME -> series.getRuntime();
     };
-  }
-
-  private Connection<? extends BaseCollectable<?>> usingCursorGetSeriesAsConnection(
-      MediaPaginationOptions options) {
-    var seriesList = seriesRepository.seekWithFilter(options);
-    var edges = mapItemsToEdges(seriesList, options);
-
-    return relayPaginationService.buildConnection(
-        edges, options.getPaginationOptions(), options.getCursorId());
   }
 }
