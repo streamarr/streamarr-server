@@ -28,10 +28,6 @@ Streamarr is an open-source media server that organizes your personal video libr
 
 **Status: Active development.** File scanning, metadata enrichment (for both Movies and Series), and GraphQL API are fully functional. HLS transcoding works for h.264 and I am actively adding support for other codecs.
 
-## Tech Stack
-
-Java 25, Spring Boot 4, PostgreSQL, Netflix DGS (GraphQL), jOOQ, Flyway, FFmpeg.
-
 ## Getting Started
 
 See [Developer Setup](docs/dev-setup.adoc) for prerequisites, build instructions, and local development workflow.
