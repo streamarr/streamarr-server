@@ -9,10 +9,6 @@ public final class MediaFilterComparator {
   private MediaFilterComparator() {}
 
   public static Optional<String> findMismatch(MediaFilter cursorFilter, MediaFilter currentFilter) {
-    if (cursorFilter.equals(currentFilter)) {
-      return Optional.empty();
-    }
-
     return checkField("sortBy", MediaFilter::getSortBy, cursorFilter, currentFilter)
         .or(
             () ->
