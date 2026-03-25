@@ -54,7 +54,9 @@ class PageItemTest {
     @Test
     @DisplayName("Should throw when sort value type is unsupported")
     void shouldThrowWhenSortValueTypeIsUnsupported() {
-      assertThatThrownBy(() -> new PageItem<>(STUB_ENTITY, new BigDecimal("1.0")))
+      var unsupportedValue = new BigDecimal("1.0");
+
+      assertThatThrownBy(() -> new PageItem<>(STUB_ENTITY, unsupportedValue))
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("BigDecimal");
     }
