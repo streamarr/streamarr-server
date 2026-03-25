@@ -3,7 +3,11 @@ package com.streamarr.server.graphql.cursor;
 import com.streamarr.server.domain.BaseAuditableEntity;
 import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
-import graphql.relay.*;
+import graphql.relay.Connection;
+import graphql.relay.DefaultConnection;
+import graphql.relay.DefaultEdge;
+import graphql.relay.DefaultPageInfo;
+import graphql.relay.Edge;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
