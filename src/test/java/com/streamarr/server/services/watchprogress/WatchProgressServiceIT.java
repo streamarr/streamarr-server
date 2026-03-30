@@ -131,6 +131,43 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
 
   @Test
   @Transactional
+  @DisplayName("Should cascade delete watch progress when movie removed")
+  void shouldCascadeDeleteWatchProgressWhenMovieRemoved() {
+    var fixture = createMovieWithFile();
+
+    watchProgressRepository.saveAndFlush(
+        WatchProgress.builder()
+            .userId(USER_ID)
+            .mediaFileId(fixture.mediaFileId())
+            .positionSeconds(1800)
+            .percentComplete(50.0)
+            .durationSeconds(3600)
+            .build());
+
+    assertThat(watchProgressRepository.findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId()))
+        .isPresent();
+
+    entityManager
+        .createNativeQuery("DELETE FROM base_collectable WHERE id = :id")
+        .setParameter("id", fixture.movie().getId())
+        .executeUpdate();
+    entityManager.flush();
+    entityManager.clear();
+
+    var count =
+        ((Number)
+                entityManager
+                    .createNativeQuery(
+                        "SELECT COUNT(*) FROM watch_progress WHERE user_id = :uid AND media_file_id = :mfid")
+                    .setParameter("uid", USER_ID)
+                    .setParameter("mfid", fixture.mediaFileId())
+                    .getSingleResult())
+            .longValue();
+    assertThat(count).isZero();
+  }
+
+  @Test
+  @Transactional
   @DisplayName("Should reset progress for movie via service")
   void shouldResetProgressForMovieViaService() {
     var fixture = createMovieWithFile();
