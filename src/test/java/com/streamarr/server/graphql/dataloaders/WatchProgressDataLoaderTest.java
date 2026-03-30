@@ -1,0 +1,97 @@
+package com.streamarr.server.graphql.dataloaders;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.streamarr.server.config.WatchProgressProperties;
+import com.streamarr.server.domain.streaming.WatchProgress;
+import com.streamarr.server.fakes.CapturingEventPublisher;
+import com.streamarr.server.fakes.FakeMediaFileRepository;
+import com.streamarr.server.fakes.FakeStreamSessionRepository;
+import com.streamarr.server.fakes.FakeWatchProgressRepository;
+import com.streamarr.server.services.watchprogress.WatchProgressService;
+import java.time.Instant;
+import java.util.Set;
+import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+
+@Tag("UnitTest")
+@DisplayName("Watch Progress DataLoader Tests")
+class WatchProgressDataLoaderTest {
+
+  private FakeWatchProgressRepository watchProgressRepository;
+  private WatchProgressDataLoader dataLoader;
+
+  private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+
+  @BeforeEach
+  void setUp() {
+    watchProgressRepository = new FakeWatchProgressRepository();
+    var service =
+        new WatchProgressService(
+            new FakeStreamSessionRepository(),
+            watchProgressRepository,
+            new FakeMediaFileRepository(),
+            new WatchProgressProperties(5.0, 90.0, 300),
+            new CapturingEventPublisher());
+    dataLoader = new WatchProgressDataLoader(service);
+  }
+
+  @Test
+  @DisplayName("Should return progress for each media file ID when batch loading")
+  void shouldReturnProgressForEachMediaFileIdWhenBatchLoading() throws Exception {
+    var mediaFileId1 = UUID.randomUUID();
+    var mediaFileId2 = UUID.randomUUID();
+    saveProgress(mediaFileId1, 300, 50.0, 600);
+    saveProgress(mediaFileId2, 600, 75.0, 800);
+
+    var result = dataLoader.load(Set.of(mediaFileId1, mediaFileId2)).toCompletableFuture().get();
+
+    assertThat(result.get(mediaFileId1)).isNotNull();
+    assertThat(result.get(mediaFileId1).positionSeconds()).isEqualTo(300);
+    assertThat(result.get(mediaFileId2)).isNotNull();
+    assertThat(result.get(mediaFileId2).positionSeconds()).isEqualTo(600);
+  }
+
+  @Test
+  @DisplayName("Should return null for media file with no progress")
+  void shouldReturnNullForMediaFileWithNoProgress() throws Exception {
+    var unknownId = UUID.randomUUID();
+
+    var result = dataLoader.load(Set.of(unknownId)).toCompletableFuture().get();
+
+    assertThat(result.get(unknownId)).isNull();
+  }
+
+  @Test
+  @DisplayName("Should include lastPlayedAt when item is watched")
+  void shouldIncludeLastPlayedAtWhenItemIsWatched() throws Exception {
+    var mediaFileId = UUID.randomUUID();
+    watchProgressRepository.save(
+        WatchProgress.builder()
+            .userId(USER_ID)
+            .mediaFileId(mediaFileId)
+            .positionSeconds(0)
+            .percentComplete(95.0)
+            .durationSeconds(7200)
+            .lastPlayedAt(Instant.now())
+            .build());
+
+    var result = dataLoader.load(Set.of(mediaFileId)).toCompletableFuture().get();
+
+    assertThat(result.get(mediaFileId).lastPlayedAt()).isNotNull();
+  }
+
+  private void saveProgress(UUID mediaFileId, int position, double percent, int duration) {
+    watchProgressRepository.save(
+        WatchProgress.builder()
+            .userId(USER_ID)
+            .mediaFileId(mediaFileId)
+            .positionSeconds(position)
+            .percentComplete(percent)
+            .durationSeconds(duration)
+            .build());
+  }
+}

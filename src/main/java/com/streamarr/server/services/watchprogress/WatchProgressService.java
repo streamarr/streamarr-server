@@ -94,6 +94,33 @@ public class WatchProgressService {
         .collect(Collectors.toMap(WatchProgress::getMediaFileId, wp -> wp));
   }
 
+  public WatchStatus getWatchStatusForCollectable(UUID userId, UUID collectableId) {
+    var mediaFiles = mediaFileRepository.findByMediaId(collectableId);
+    if (mediaFiles.isEmpty()) {
+      return WatchStatus.UNWATCHED;
+    }
+
+    var mediaFileIds = mediaFiles.stream().map(MediaFile::getId).toList();
+    var progressMap = getProgressForMediaFiles(userId, mediaFileIds);
+
+    var watchedCount = 0;
+    var inProgressCount = 0;
+    for (var mf : mediaFiles) {
+      var wp = progressMap.get(mf.getId());
+      if (wp == null) {
+        continue;
+      }
+
+      if (wp.isPlayed()) {
+        watchedCount++;
+      } else if (wp.getPositionSeconds() > 0) {
+        inProgressCount++;
+      }
+    }
+
+    return deriveWatchStatus(mediaFiles.size(), watchedCount, inProgressCount);
+  }
+
   public void resetProgress(UUID userId, UUID collectableId) {
     var mediaFileIds =
         mediaFileRepository.findByMediaId(collectableId).stream().map(MediaFile::getId).toList();

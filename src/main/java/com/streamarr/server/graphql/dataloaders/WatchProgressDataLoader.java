@@ -1,0 +1,49 @@
+package com.streamarr.server.graphql.dataloaders;
+
+import com.netflix.graphql.dgs.DgsDataLoader;
+import com.streamarr.server.domain.streaming.WatchProgress;
+import com.streamarr.server.graphql.dto.WatchProgressDto;
+import com.streamarr.server.services.watchprogress.WatchProgressService;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
+import lombok.RequiredArgsConstructor;
+import org.dataloader.MappedBatchLoader;
+
+@DgsDataLoader(name = "watchProgress")
+@RequiredArgsConstructor
+public class WatchProgressDataLoader implements MappedBatchLoader<UUID, WatchProgressDto> {
+
+  private final WatchProgressService watchProgressService;
+
+  @Override
+  public CompletionStage<Map<UUID, WatchProgressDto>> load(Set<UUID> mediaFileIds) {
+    return CompletableFuture.supplyAsync(
+        () -> {
+          // TODO: Replace with authenticated user ID from Spring Security
+          var userId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+
+          var progressMap = watchProgressService.getProgressForMediaFiles(userId, mediaFileIds);
+
+          var result = new HashMap<UUID, WatchProgressDto>();
+          for (var mediaFileId : mediaFileIds) {
+            var wp = progressMap.get(mediaFileId);
+            result.put(mediaFileId, wp != null ? toDto(wp) : null);
+          }
+
+          return result;
+        });
+  }
+
+  private static WatchProgressDto toDto(WatchProgress wp) {
+    return WatchProgressDto.builder()
+        .positionSeconds(wp.getPositionSeconds())
+        .percentComplete(wp.getPercentComplete())
+        .durationSeconds(wp.getDurationSeconds())
+        .lastPlayedAt(wp.getLastPlayedAt() != null ? wp.getLastPlayedAt().toString() : null)
+        .build();
+  }
+}
