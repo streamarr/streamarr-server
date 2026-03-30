@@ -52,12 +52,12 @@
         <testcontainers.version>2.0.4</testcontainers.version>
         <awaitility.version>4.3.0</awaitility.version>
         <jacoco.version>0.8.14</jacoco.version>
-        <flyway.version>12.1.1</flyway.version>
+        <flyway.version>12.2.0</flyway.version>
         <surefire-failsafe-plugin.version>3.5.5</surefire-failsafe-plugin.version>
         <surefire.excludedGroups>SmokeTest</surefire.excludedGroups>
         <failsafe.excludedGroups>SmokeTest</failsafe.excludedGroups>
         <spotless.version>3.4.0</spotless.version>
-        <checkstyle.version>13.3.0</checkstyle.version>
+        <checkstyle.version>13.4.0</checkstyle.version>
         <maven-checkstyle-plugin.version>3.6.0</maven-checkstyle-plugin.version>
         <archunit.version>1.4.1</archunit.version>
     </properties>
