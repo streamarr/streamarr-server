@@ -51,4 +51,33 @@ public final class StreamSessionFixture {
     session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
     return session;
   }
+
+  public static StreamSession buildZeroDurationSession() {
+    return StreamSession.builder()
+        .sessionId(UUID.randomUUID())
+        .mediaFileId(UUID.randomUUID())
+        .sourcePath(Path.of("/media/corrupt.mkv"))
+        .mediaProbe(
+            MediaProbe.builder()
+                .duration(Duration.ZERO)
+                .framerate(0)
+                .width(0)
+                .height(0)
+                .videoCodec("h264")
+                .audioCodec("aac")
+                .bitrate(0)
+                .build())
+        .transcodeDecision(
+            TranscodeDecision.builder()
+                .transcodeMode(TranscodeMode.REMUX)
+                .videoCodecFamily("h264")
+                .audioDecision(AudioDecision.copy("aac", 2, 0))
+                .subtitleDecision(SubtitleDecision.exclude())
+                .containerFormat(ContainerFormat.MPEGTS)
+                .needsKeyframeAlignment(true)
+                .build())
+        .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
+        .createdAt(Instant.now())
+        .build();
+  }
 }
