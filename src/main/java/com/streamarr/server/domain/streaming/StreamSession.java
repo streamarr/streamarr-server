@@ -7,9 +7,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 import lombok.Builder;
 import lombok.Getter;
-import lombok.Setter;
 
 @Getter
 @Builder
@@ -30,8 +30,36 @@ public class StreamSession {
 
   @Builder.Default private final List<QualityVariant> variants = Collections.emptyList();
 
-  @Setter private volatile int seekPosition;
-  @Setter private volatile Instant lastAccessedAt;
+  @Getter(lombok.AccessLevel.NONE)
+  @Builder.Default
+  private final AtomicReference<PlaybackSnapshot> playbackSnapshot =
+      new AtomicReference<>(new PlaybackSnapshot(0, null, Instant.now()));
+
+  public void updatePlayback(PlaybackSnapshot snapshot) {
+    playbackSnapshot.set(snapshot);
+  }
+
+  public PlaybackSnapshot getPlaybackSnapshot() {
+    return playbackSnapshot.get();
+  }
+
+  public int getSeekPosition() {
+    return playbackSnapshot.get().positionSeconds();
+  }
+
+  public void setSeekPosition(int positionSeconds) {
+    playbackSnapshot.updateAndGet(
+        current -> new PlaybackSnapshot(positionSeconds, current.state(), current.accessedAt()));
+  }
+
+  public Instant getLastAccessedAt() {
+    return playbackSnapshot.get().accessedAt();
+  }
+
+  public void setLastAccessedAt(Instant accessedAt) {
+    playbackSnapshot.updateAndGet(
+        current -> new PlaybackSnapshot(current.positionSeconds(), current.state(), accessedAt));
+  }
 
   public TranscodeHandle getHandle() {
     return variantHandles.get(DEFAULT_VARIANT);

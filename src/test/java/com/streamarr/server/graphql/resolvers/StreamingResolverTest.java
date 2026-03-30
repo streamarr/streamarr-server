@@ -74,7 +74,6 @@ class StreamingResolverTest {
                 .build())
         .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
         .createdAt(Instant.now())
-        .lastAccessedAt(Instant.now())
         .build();
   }
 

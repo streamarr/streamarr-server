@@ -222,7 +222,6 @@ class StreamControllerTest {
                 .build())
         .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
         .createdAt(Instant.now())
-        .lastAccessedAt(Instant.now())
         .build();
   }
 
@@ -252,7 +251,6 @@ class StreamControllerTest {
                 .build())
         .options(StreamingOptions.builder().supportedCodecs(List.of("av1")).build())
         .createdAt(Instant.now())
-        .lastAccessedAt(Instant.now())
         .build();
   }
 
@@ -303,7 +301,6 @@ class StreamControllerTest {
             .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
             .variants(variants)
             .createdAt(Instant.now())
-            .lastAccessedAt(Instant.now())
             .build();
 
     for (var variant : variants) {

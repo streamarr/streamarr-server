@@ -73,9 +73,7 @@ class HlsPlaylistServiceTest {
                     .needsKeyframeAlignment(mode != TranscodeMode.FULL_TRANSCODE)
                     .build())
             .options(StreamingOptions.builder().supportedCodecs(List.of("h264", "av1")).build())
-            .seekPosition(0)
             .createdAt(Instant.now())
-            .lastAccessedAt(Instant.now())
             .build();
     session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
     return session;
@@ -108,9 +106,7 @@ class HlsPlaylistServiceTest {
                     .needsKeyframeAlignment(mode != TranscodeMode.FULL_TRANSCODE)
                     .build())
             .options(StreamingOptions.builder().supportedCodecs(List.of("h264", "av1")).build())
-            .seekPosition(0)
             .createdAt(Instant.now())
-            .lastAccessedAt(Instant.now())
             .build();
     session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
     return session;
@@ -143,9 +139,7 @@ class HlsPlaylistServiceTest {
                     .needsKeyframeAlignment(true)
                     .build())
             .options(StreamingOptions.builder().supportedCodecs(List.of("h264", "av1")).build())
-            .seekPosition(0)
             .createdAt(Instant.now())
-            .lastAccessedAt(Instant.now())
             .build();
     session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
     return session;
@@ -202,9 +196,7 @@ class HlsPlaylistServiceTest {
                     .build())
             .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
             .variants(variants)
-            .seekPosition(0)
             .createdAt(Instant.now())
-            .lastAccessedAt(Instant.now())
             .build();
 
     for (var variant : variants) {
@@ -635,9 +627,7 @@ class HlsPlaylistServiceTest {
                       .build())
               .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
               .variants(List.of(variant))
-              .seekPosition(0)
               .createdAt(Instant.now())
-              .lastAccessedAt(Instant.now())
               .build();
       session.setVariantHandle("1080p", new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
 

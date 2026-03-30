@@ -65,9 +65,7 @@ public class HlsStreamingService implements StreamingService {
             .transcodeDecision(decision)
             .options(options)
             .variants(variants)
-            .seekPosition(0)
             .createdAt(now)
-            .lastAccessedAt(now)
             .build();
 
     sessionRepository.save(session);

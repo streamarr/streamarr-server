@@ -47,7 +47,6 @@ public final class StreamSessionFixture {
                     .build())
             .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
             .createdAt(Instant.now())
-            .lastAccessedAt(Instant.now())
             .build();
     session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
     return session;
