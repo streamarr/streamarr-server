@@ -23,7 +23,7 @@ public class WatchProgressDataLoader implements MappedBatchLoader<UUID, WatchPro
   public CompletionStage<Map<UUID, WatchProgressDto>> load(Set<UUID> mediaFileIds) {
     return CompletableFuture.supplyAsync(
         () -> {
-          // TODO: Replace with authenticated user ID from Spring Security
+          // TODO(#163): Replace with authenticated user ID from Spring Security
           var userId = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
           var progressMap = watchProgressService.getProgressForMediaFiles(userId, mediaFileIds);

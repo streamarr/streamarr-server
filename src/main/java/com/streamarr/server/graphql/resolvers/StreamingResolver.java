@@ -52,7 +52,7 @@ public class StreamingResolver {
       @InputArgument String sessionId,
       @InputArgument int positionSeconds,
       @InputArgument String state) {
-    // TODO: Replace with authenticated user ID from Spring Security
+    // TODO(#163): Replace with authenticated user ID from Spring Security
     var userId = resolveCurrentUserId();
     watchProgressService.reportTimeline(
         userId, parseUuid(sessionId), positionSeconds, PlaybackState.valueOf(state));
@@ -62,7 +62,7 @@ public class StreamingResolver {
 
   @DgsMutation
   public boolean resetWatchProgress(@InputArgument String id) {
-    // TODO: Replace with authenticated user ID from Spring Security
+    // TODO(#163): Replace with authenticated user ID from Spring Security
     var userId = resolveCurrentUserId();
     watchProgressService.resetProgress(userId, parseUuid(id));
 
@@ -70,7 +70,7 @@ public class StreamingResolver {
   }
 
   private static UUID resolveCurrentUserId() {
-    // TODO: Replace with authenticated user ID from Spring Security
+    // TODO(#163): Replace with authenticated user ID from Spring Security
     return UUID.fromString("00000000-0000-0000-0000-000000000001");
   }
 

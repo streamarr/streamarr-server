@@ -74,7 +74,7 @@ public class WatchProgressFieldResolver {
   }
 
   private WatchStatus resolveWatchStatus(UUID collectableId) {
-    // TODO: Replace with authenticated user ID from Spring Security
+    // TODO(#163): Replace with authenticated user ID from Spring Security
     var userId = UUID.fromString("00000000-0000-0000-0000-000000000001");
     return watchProgressService.getWatchStatusForCollectable(userId, collectableId);
   }
