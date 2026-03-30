@@ -5,11 +5,15 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 
 import com.streamarr.server.config.WatchProgressProperties;
+import com.streamarr.server.domain.media.MediaFile;
+import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.WatchProgress;
+import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
+import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeStreamSessionRepository;
 import com.streamarr.server.fakes.FakeWatchProgressRepository;
 import com.streamarr.server.fixtures.StreamSessionFixture;
@@ -28,6 +32,7 @@ class WatchProgressServiceTest {
 
   private FakeStreamSessionRepository sessionRepository;
   private FakeWatchProgressRepository watchProgressRepository;
+  private FakeMediaFileRepository mediaFileRepository;
   private CapturingEventPublisher eventPublisher;
   private WatchProgressService service;
 
@@ -37,11 +42,16 @@ class WatchProgressServiceTest {
   void setUp() {
     sessionRepository = new FakeStreamSessionRepository();
     watchProgressRepository = new FakeWatchProgressRepository();
+    mediaFileRepository = new FakeMediaFileRepository();
     eventPublisher = new CapturingEventPublisher();
     var properties = new WatchProgressProperties(5.0, 90.0, 300);
     service =
         new WatchProgressService(
-            sessionRepository, watchProgressRepository, properties, eventPublisher);
+            sessionRepository,
+            watchProgressRepository,
+            mediaFileRepository,
+            properties,
+            eventPublisher);
   }
 
   private StreamSession addSession() {
@@ -426,5 +436,69 @@ class WatchProgressServiceTest {
             .findByUserIdAndMediaFileId(USER_ID, session.getMediaFileId())
             .orElseThrow();
     assertThat(progress.getPositionSeconds()).isEqualTo(3600);
+  }
+
+  // --- resetProgress tests ---
+
+  @Test
+  @DisplayName("Should reset progress for movie")
+  void shouldResetProgressForMovie() {
+    var session = addSession();
+    var movieId = UUID.randomUUID();
+    mediaFileRepository.save(
+        MediaFile.builder()
+            .mediaId(movieId)
+            .filename("movie.mkv")
+            .filepathUri("/media/movie.mkv")
+            .size(1_000_000)
+            .status(MediaFileStatus.MATCHED)
+            .build());
+    var mediaFile = mediaFileRepository.findByMediaId(movieId).getFirst();
+
+    watchProgressRepository.save(
+        WatchProgress.builder()
+            .userId(USER_ID)
+            .mediaFileId(mediaFile.getId())
+            .positionSeconds(3600)
+            .percentComplete(50.0)
+            .durationSeconds(7200)
+            .build());
+    assertThat(watchProgressRepository.count()).isEqualTo(1);
+
+    service.resetProgress(USER_ID, movieId);
+
+    assertThat(watchProgressRepository.count()).isZero();
+  }
+
+  // --- deriveWatchStatus tests ---
+
+  @Test
+  @DisplayName("Should derive watched status when all items watched")
+  void shouldDeriveWatchedStatusWhenAllItemsWatched() {
+    assertThat(WatchProgressService.deriveWatchStatus(5, 5, 0)).isEqualTo(WatchStatus.WATCHED);
+  }
+
+  @Test
+  @DisplayName("Should derive in progress status when some items watched")
+  void shouldDeriveInProgressStatusWhenSomeItemsWatched() {
+    assertThat(WatchProgressService.deriveWatchStatus(5, 2, 1)).isEqualTo(WatchStatus.IN_PROGRESS);
+  }
+
+  @Test
+  @DisplayName("Should derive unwatched status when no progress")
+  void shouldDeriveUnwatchedStatusWhenNoProgress() {
+    assertThat(WatchProgressService.deriveWatchStatus(5, 0, 0)).isEqualTo(WatchStatus.UNWATCHED);
+  }
+
+  @Test
+  @DisplayName("Should derive in progress from partial episode progress")
+  void shouldDeriveInProgressFromPartialEpisodeProgress() {
+    assertThat(WatchProgressService.deriveWatchStatus(5, 0, 2)).isEqualTo(WatchStatus.IN_PROGRESS);
+  }
+
+  @Test
+  @DisplayName("Should derive unwatched when total items is zero")
+  void shouldDeriveUnwatchedWhenTotalItemsIsZero() {
+    assertThat(WatchProgressService.deriveWatchStatus(0, 0, 0)).isEqualTo(WatchStatus.UNWATCHED);
   }
 }

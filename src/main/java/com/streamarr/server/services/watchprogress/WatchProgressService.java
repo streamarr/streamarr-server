@@ -1,17 +1,24 @@
 package com.streamarr.server.services.watchprogress;
 
 import com.streamarr.server.config.WatchProgressProperties;
+import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.streaming.PlaybackSnapshot;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.WatchProgress;
+import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.exceptions.SessionNotFoundException;
+import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.streaming.WatchProgressRepository;
 import com.streamarr.server.services.streaming.StreamSessionRepository;
 import com.streamarr.server.services.watchprogress.events.MediaWatchedEvent;
 import com.streamarr.server.services.watchprogress.events.PlaybackStoppedEvent;
 import com.streamarr.server.services.watchprogress.events.TimelineReportedEvent;
 import java.time.Instant;
+import java.util.Collection;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 
@@ -20,6 +27,7 @@ public class WatchProgressService {
 
   private final StreamSessionRepository sessionRepository;
   private final WatchProgressRepository watchProgressRepository;
+  private final MediaFileRepository mediaFileRepository;
   private final WatchProgressProperties properties;
   private final ApplicationEventPublisher eventPublisher;
 
@@ -74,6 +82,38 @@ public class WatchProgressService {
     if (watched) {
       eventPublisher.publishEvent(new MediaWatchedEvent(userId, mediaFileId));
     }
+  }
+
+  public Optional<WatchProgress> getProgress(UUID userId, UUID mediaFileId) {
+    return watchProgressRepository.findByUserIdAndMediaFileId(userId, mediaFileId);
+  }
+
+  public Map<UUID, WatchProgress> getProgressForMediaFiles(
+      UUID userId, Collection<UUID> mediaFileIds) {
+    return watchProgressRepository.findByUserIdAndMediaFileIdIn(userId, mediaFileIds).stream()
+        .collect(Collectors.toMap(WatchProgress::getMediaFileId, wp -> wp));
+  }
+
+  public void resetProgress(UUID userId, UUID collectableId) {
+    var mediaFileIds =
+        mediaFileRepository.findByMediaId(collectableId).stream().map(MediaFile::getId).toList();
+
+    for (var mediaFileId : mediaFileIds) {
+      watchProgressRepository.deleteByUserIdAndMediaFileId(userId, mediaFileId);
+    }
+  }
+
+  public static WatchStatus deriveWatchStatus(
+      int totalItems, int watchedCount, int inProgressCount) {
+    if (totalItems > 0 && watchedCount == totalItems) {
+      return WatchStatus.WATCHED;
+    }
+
+    if (watchedCount > 0 || inProgressCount > 0) {
+      return WatchStatus.IN_PROGRESS;
+    }
+
+    return WatchStatus.UNWATCHED;
   }
 
   private void upsertProgress(
