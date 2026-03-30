@@ -35,8 +35,33 @@ public class WatchProgressService {
     }
 
     var percentComplete = Math.min(positionSeconds * 100.0 / durationSeconds, 100.0);
+    var remainingSeconds = durationSeconds - positionSeconds;
     var mediaFileId = session.getMediaFileId();
 
+    if (state == PlaybackState.STOPPED && percentComplete < properties.minResumePercent()) {
+      watchProgressRepository.deleteByUserIdAndMediaFileId(userId, mediaFileId);
+      return;
+    }
+
+    var watched =
+        state == PlaybackState.STOPPED
+            && (percentComplete >= properties.maxResumePercent()
+                || remainingSeconds <= properties.maxRemainingSeconds());
+
+    var lastPlayedAt = watched ? Instant.now() : null;
+    var effectivePosition = watched ? 0 : positionSeconds;
+
+    upsertProgress(
+        userId, mediaFileId, effectivePosition, percentComplete, durationSeconds, lastPlayedAt);
+  }
+
+  private void upsertProgress(
+      UUID userId,
+      UUID mediaFileId,
+      int positionSeconds,
+      double percentComplete,
+      int durationSeconds,
+      Instant lastPlayedAt) {
     var existing = watchProgressRepository.findByUserIdAndMediaFileId(userId, mediaFileId);
 
     if (existing.isPresent()) {
@@ -44,6 +69,7 @@ public class WatchProgressService {
       wp.setPositionSeconds(positionSeconds);
       wp.setPercentComplete(percentComplete);
       wp.setDurationSeconds(durationSeconds);
+      wp.setLastPlayedAt(lastPlayedAt);
       watchProgressRepository.save(wp);
       return;
     }
@@ -55,6 +81,7 @@ public class WatchProgressService {
             .positionSeconds(positionSeconds)
             .percentComplete(percentComplete)
             .durationSeconds(durationSeconds)
+            .lastPlayedAt(lastPlayedAt)
             .build();
     watchProgressRepository.save(wp);
   }

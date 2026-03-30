@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.within;
 import com.streamarr.server.config.WatchProgressProperties;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.server.domain.streaming.WatchProgress;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeStreamSessionRepository;
@@ -157,5 +158,121 @@ class WatchProgressServiceTest {
 
     assertThatThrownBy(() -> service.reportTimeline(USER_ID, unknownId, 300, PlaybackState.PLAYING))
         .isInstanceOf(SessionNotFoundException.class);
+  }
+
+  // --- STOPPED threshold tests ---
+
+  @Test
+  @DisplayName("Should delete progress when stopped below min threshold")
+  void shouldDeleteProgressWhenStoppedBelowMinThreshold() {
+    var session = addSession(); // 7200s duration
+    // Seed existing progress
+    service.reportTimeline(USER_ID, session.getSessionId(), 3600, PlaybackState.PLAYING);
+    assertThat(watchProgressRepository.count()).isEqualTo(1);
+
+    // Stop at 2% (144s / 7200s) — below 5% threshold
+    service.reportTimeline(USER_ID, session.getSessionId(), 144, PlaybackState.STOPPED);
+
+    assertThat(watchProgressRepository.count()).isZero();
+  }
+
+  @Test
+  @DisplayName("Should set lastPlayedAt when stopped above max percent threshold")
+  void shouldSetLastPlayedAtWhenStoppedAboveMaxPercentThreshold() {
+    var session = addSession(); // 7200s duration
+
+    // Stop at 93% (6696s / 7200s) — above 90% threshold
+    service.reportTimeline(USER_ID, session.getSessionId(), 6696, PlaybackState.STOPPED);
+
+    var progress =
+        watchProgressRepository
+            .findByUserIdAndMediaFileId(USER_ID, session.getMediaFileId())
+            .orElseThrow();
+    assertThat(progress.isPlayed()).isTrue();
+    assertThat(progress.getLastPlayedAt()).isNotNull();
+    assertThat(progress.getPositionSeconds()).isZero();
+  }
+
+  @Test
+  @DisplayName("Should set lastPlayedAt when remaining time below max remaining seconds")
+  void shouldSetLastPlayedAtWhenRemainingTimeBelowMaxRemainingSeconds() {
+    var session = addSession(); // 7200s duration, maxRemainingSeconds=300
+
+    // Stop at 6950s — 250s remaining (< 300s threshold), but only ~96.5% (also > 90%)
+    // Use a position where percent < 90% but remaining < 300s to test time threshold
+    // Actually with 7200s, 90% = 6480s. So 6901s is ~95.8%. Let me use a long movie instead.
+    // With 7200s and maxRemaining=300: the time threshold triggers at 6900s (remaining=300).
+    // 6900/7200 = 95.8% which is also > 90%. To isolate the time threshold, I need a scenario
+    // where percent < 90% but remaining < 300.
+    // That requires duration < 3000s (5min threshold / (1 - 0.9) = 3000s).
+    // With a 40-min movie (2400s): 90% = 2160s. Remaining=300s at 2100s = 87.5%.
+    // So stopping a 40-min movie at 2100s (87.5%, 300s remaining) should trigger via time.
+    var shortSession = StreamSessionFixture.buildSessionWithDuration(2400);
+    sessionRepository.save(shortSession);
+
+    service.reportTimeline(USER_ID, shortSession.getSessionId(), 2100, PlaybackState.STOPPED);
+
+    var progress =
+        watchProgressRepository
+            .findByUserIdAndMediaFileId(USER_ID, shortSession.getMediaFileId())
+            .orElseThrow();
+    assertThat(progress.isPlayed()).isTrue();
+    assertThat(progress.getLastPlayedAt()).isNotNull();
+    assertThat(progress.getPositionSeconds()).isZero();
+  }
+
+  @Test
+  @DisplayName("Should persist normally when stopped between thresholds")
+  void shouldPersistNormallyWhenStoppedBetweenThresholds() {
+    var session = addSession(); // 7200s duration
+
+    // Stop at 50% (3600s / 7200s) — between 5% and 90%
+    service.reportTimeline(USER_ID, session.getSessionId(), 3600, PlaybackState.STOPPED);
+
+    var progress =
+        watchProgressRepository
+            .findByUserIdAndMediaFileId(USER_ID, session.getMediaFileId())
+            .orElseThrow();
+    assertThat(progress.isPlayed()).isFalse();
+    assertThat(progress.getPositionSeconds()).isEqualTo(3600);
+  }
+
+  @Test
+  @DisplayName("Should not apply thresholds when playing")
+  void shouldNotApplyThresholdsWhenPlaying() {
+    var session = addSession(); // 7200s duration
+
+    // Report at 1% while PLAYING — should persist (not deleted)
+    service.reportTimeline(USER_ID, session.getSessionId(), 72, PlaybackState.PLAYING);
+
+    assertThat(watchProgressRepository.count()).isEqualTo(1);
+    var progress =
+        watchProgressRepository
+            .findByUserIdAndMediaFileId(USER_ID, session.getMediaFileId())
+            .orElseThrow();
+    assertThat(progress.getPositionSeconds()).isEqualTo(72);
+  }
+
+  @Test
+  @DisplayName("Should not apply thresholds when paused")
+  void shouldNotApplyThresholdsWhenPaused() {
+    var session = addSession(); // 7200s duration
+
+    // Report at 95% while PAUSED — should not mark as watched
+    service.reportTimeline(USER_ID, session.getSessionId(), 6840, PlaybackState.PAUSED);
+
+    var progress =
+        watchProgressRepository
+            .findByUserIdAndMediaFileId(USER_ID, session.getMediaFileId())
+            .orElseThrow();
+    assertThat(progress.isPlayed()).isFalse();
+    assertThat(progress.getPositionSeconds()).isEqualTo(6840);
+  }
+
+  private WatchProgress seedProgress(StreamSession session, int positionSeconds) {
+    service.reportTimeline(USER_ID, session.getSessionId(), positionSeconds, PlaybackState.PLAYING);
+    return watchProgressRepository
+        .findByUserIdAndMediaFileId(USER_ID, session.getMediaFileId())
+        .orElseThrow();
   }
 }

@@ -52,6 +52,35 @@ public final class StreamSessionFixture {
     return session;
   }
 
+  public static StreamSession buildSessionWithDuration(int durationSeconds) {
+    return StreamSession.builder()
+        .sessionId(UUID.randomUUID())
+        .mediaFileId(UUID.randomUUID())
+        .sourcePath(Path.of("/media/movie.mkv"))
+        .mediaProbe(
+            MediaProbe.builder()
+                .duration(Duration.ofSeconds(durationSeconds))
+                .framerate(24.0)
+                .width(1920)
+                .height(1080)
+                .videoCodec("h264")
+                .audioCodec("aac")
+                .bitrate(5_000_000)
+                .build())
+        .transcodeDecision(
+            TranscodeDecision.builder()
+                .transcodeMode(TranscodeMode.REMUX)
+                .videoCodecFamily("h264")
+                .audioDecision(AudioDecision.copy("aac", 2, 0))
+                .subtitleDecision(SubtitleDecision.exclude())
+                .containerFormat(ContainerFormat.MPEGTS)
+                .needsKeyframeAlignment(true)
+                .build())
+        .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
+        .createdAt(Instant.now())
+        .build();
+  }
+
   public static StreamSession buildZeroDurationSession() {
     return StreamSession.builder()
         .sessionId(UUID.randomUUID())
