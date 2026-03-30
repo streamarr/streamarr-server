@@ -7,6 +7,7 @@ import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
@@ -14,6 +15,7 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.services.streaming.StreamingService;
+import com.streamarr.server.services.watchprogress.WatchProgressService;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -37,12 +39,19 @@ import org.springframework.context.annotation.Bean;
 class StreamingResolverTest {
 
   private static final StubStreamingService STUB_SERVICE = new StubStreamingService();
+  private static final StubWatchProgressService STUB_WATCH_PROGRESS =
+      new StubWatchProgressService();
 
   @TestConfiguration
   static class TestConfig {
     @Bean
     StreamingService streamingService() {
       return STUB_SERVICE;
+    }
+
+    @Bean
+    WatchProgressService watchProgressService() {
+      return STUB_WATCH_PROGRESS;
     }
   }
 
@@ -310,6 +319,116 @@ class StreamingResolverTest {
     @Override
     public void resumeSessionIfNeeded(UUID sessionId, String segmentName) {
       // no-op for test fake
+    }
+  }
+
+  @Test
+  @DisplayName("Should return true when reporting timeline")
+  void shouldReturnTrueWhenReportingTimeline() {
+    var mutation =
+        String.format(
+            """
+            mutation {
+              reportTimeline(sessionId: "%s", positionSeconds: 300, state: PLAYING)
+            }
+            """,
+            UUID.randomUUID());
+
+    Boolean result = dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.reportTimeline");
+
+    assertThat(result).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should return error when report timeline session ID is invalid")
+  void shouldReturnErrorWhenReportTimelineSessionIdIsInvalid() {
+    var result =
+        dgsQueryExecutor.execute(
+            """
+            mutation {
+              reportTimeline(sessionId: "bad-id", positionSeconds: 300, state: PLAYING)
+            }
+            """);
+
+    assertThat(result.getErrors()).isNotEmpty();
+    assertThat(result.getErrors().getFirst().getMessage()).contains("Invalid ID format");
+  }
+
+  @Test
+  @DisplayName("Should delegate report timeline to watch progress service")
+  void shouldDelegateReportTimelineToWatchProgressService() {
+    var sessionId = UUID.randomUUID();
+    var mutation =
+        String.format(
+            """
+            mutation {
+              reportTimeline(sessionId: "%s", positionSeconds: 600, state: PAUSED)
+            }
+            """,
+            sessionId);
+
+    dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.reportTimeline");
+
+    assertThat(STUB_WATCH_PROGRESS.lastSessionId).isEqualTo(sessionId);
+    assertThat(STUB_WATCH_PROGRESS.lastPositionSeconds).isEqualTo(600);
+    assertThat(STUB_WATCH_PROGRESS.lastState).isEqualTo(PlaybackState.PAUSED);
+  }
+
+  @Test
+  @DisplayName("Should return true when resetting watch progress")
+  void shouldReturnTrueWhenResettingWatchProgress() {
+    var mutation =
+        String.format(
+            """
+            mutation {
+              resetWatchProgress(id: "%s")
+            }
+            """,
+            UUID.randomUUID());
+
+    Boolean result =
+        dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.resetWatchProgress");
+
+    assertThat(result).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should return error when reset watch progress ID is invalid")
+  void shouldReturnErrorWhenResetWatchProgressIdIsInvalid() {
+    var result =
+        dgsQueryExecutor.execute(
+            """
+            mutation {
+              resetWatchProgress(id: "bad-id")
+            }
+            """);
+
+    assertThat(result.getErrors()).isNotEmpty();
+    assertThat(result.getErrors().getFirst().getMessage()).contains("Invalid ID format");
+  }
+
+  private static class StubWatchProgressService extends WatchProgressService {
+
+    UUID lastSessionId;
+    int lastPositionSeconds;
+    PlaybackState lastState;
+    UUID lastResetId;
+
+    StubWatchProgressService() {
+      super(null, null, null, null, null);
+    }
+
+    @Override
+    public void reportTimeline(
+        UUID userId, UUID sessionId, int positionSeconds, PlaybackState state) {
+      this.lastSessionId = sessionId;
+      this.lastPositionSeconds = positionSeconds;
+      this.lastState = state;
+    }
+
+    @Override
+    public void resetProgress(UUID userId, UUID collectableId) {
+      this.lastResetId = collectableId;
     }
   }
 }
