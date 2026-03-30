@@ -1,13 +1,17 @@
 package com.streamarr.server.services.watchprogress;
 
 import com.streamarr.server.config.WatchProgressProperties;
+import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.MediaFile;
+import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.streaming.PlaybackSnapshot;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.WatchProgress;
 import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.exceptions.SessionNotFoundException;
+import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
+import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.streaming.WatchProgressRepository;
 import com.streamarr.server.services.streaming.StreamSessionRepository;
 import com.streamarr.server.services.watchprogress.events.MediaWatchedEvent;
@@ -15,6 +19,7 @@ import com.streamarr.server.services.watchprogress.events.PlaybackStoppedEvent;
 import com.streamarr.server.services.watchprogress.events.TimelineReportedEvent;
 import java.time.Instant;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -28,6 +33,8 @@ public class WatchProgressService {
   private final StreamSessionRepository sessionRepository;
   private final WatchProgressRepository watchProgressRepository;
   private final MediaFileRepository mediaFileRepository;
+  private final EpisodeRepository episodeRepository;
+  private final SeasonRepository seasonRepository;
   private final WatchProgressProperties properties;
   private final ApplicationEventPublisher eventPublisher;
 
@@ -95,18 +102,17 @@ public class WatchProgressService {
   }
 
   public WatchStatus getWatchStatusForCollectable(UUID userId, UUID collectableId) {
-    var mediaFiles = mediaFileRepository.findByMediaId(collectableId);
-    if (mediaFiles.isEmpty()) {
+    var mediaFileIds = resolveAllMediaFileIds(collectableId);
+    if (mediaFileIds.isEmpty()) {
       return WatchStatus.UNWATCHED;
     }
 
-    var mediaFileIds = mediaFiles.stream().map(MediaFile::getId).toList();
     var progressMap = getProgressForMediaFiles(userId, mediaFileIds);
 
     var watchedCount = 0;
     var inProgressCount = 0;
-    for (var mf : mediaFiles) {
-      var wp = progressMap.get(mf.getId());
+    for (var mediaFileId : mediaFileIds) {
+      var wp = progressMap.get(mediaFileId);
       if (wp == null) {
         continue;
       }
@@ -118,16 +124,44 @@ public class WatchProgressService {
       }
     }
 
-    return deriveWatchStatus(mediaFiles.size(), watchedCount, inProgressCount);
+    return deriveWatchStatus(mediaFileIds.size(), watchedCount, inProgressCount);
   }
 
   public void resetProgress(UUID userId, UUID collectableId) {
-    var mediaFileIds =
-        mediaFileRepository.findByMediaId(collectableId).stream().map(MediaFile::getId).toList();
+    var mediaFileIds = resolveAllMediaFileIds(collectableId);
 
     for (var mediaFileId : mediaFileIds) {
       watchProgressRepository.deleteByUserIdAndMediaFileId(userId, mediaFileId);
     }
+  }
+
+  private List<UUID> resolveAllMediaFileIds(UUID collectableId) {
+    var directFiles = mediaFileRepository.findByMediaId(collectableId);
+    if (!directFiles.isEmpty()) {
+      return directFiles.stream().map(MediaFile::getId).toList();
+    }
+
+    var episodes = episodeRepository.findBySeasonId(collectableId);
+    if (!episodes.isEmpty()) {
+      return episodes.stream()
+          .map(Episode::getId)
+          .flatMap(episodeId -> mediaFileRepository.findByMediaId(episodeId).stream())
+          .map(MediaFile::getId)
+          .toList();
+    }
+
+    var seasons = seasonRepository.findBySeriesId(collectableId);
+    if (!seasons.isEmpty()) {
+      return seasons.stream()
+          .map(Season::getId)
+          .flatMap(seasonId -> episodeRepository.findBySeasonId(seasonId).stream())
+          .map(Episode::getId)
+          .flatMap(episodeId -> mediaFileRepository.findByMediaId(episodeId).stream())
+          .map(MediaFile::getId)
+          .toList();
+    }
+
+    return List.of();
   }
 
   public static WatchStatus deriveWatchStatus(

@@ -415,7 +415,7 @@ class StreamingResolverTest {
     UUID lastResetId;
 
     StubWatchProgressService() {
-      super(null, null, null, null, null);
+      super(null, null, null, null, null, null, null);
     }
 
     @Override

@@ -5,15 +5,20 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 
 import com.streamarr.server.config.WatchProgressProperties;
+import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.domain.media.Season;
+import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.WatchProgress;
 import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
+import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
+import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeStreamSessionRepository;
 import com.streamarr.server.fakes.FakeWatchProgressRepository;
 import com.streamarr.server.fixtures.StreamSessionFixture;
@@ -33,6 +38,8 @@ class WatchProgressServiceTest {
   private FakeStreamSessionRepository sessionRepository;
   private FakeWatchProgressRepository watchProgressRepository;
   private FakeMediaFileRepository mediaFileRepository;
+  private FakeEpisodeRepository episodeRepository;
+  private FakeSeasonRepository seasonRepository;
   private CapturingEventPublisher eventPublisher;
   private WatchProgressService service;
 
@@ -43,6 +50,8 @@ class WatchProgressServiceTest {
     sessionRepository = new FakeStreamSessionRepository();
     watchProgressRepository = new FakeWatchProgressRepository();
     mediaFileRepository = new FakeMediaFileRepository();
+    episodeRepository = new FakeEpisodeRepository();
+    seasonRepository = new FakeSeasonRepository();
     eventPublisher = new CapturingEventPublisher();
     var properties = new WatchProgressProperties(5.0, 90.0, 300);
     service =
@@ -50,6 +59,8 @@ class WatchProgressServiceTest {
             sessionRepository,
             watchProgressRepository,
             mediaFileRepository,
+            episodeRepository,
+            seasonRepository,
             properties,
             eventPublisher);
   }
@@ -500,5 +511,84 @@ class WatchProgressServiceTest {
   @DisplayName("Should derive unwatched when total items is zero")
   void shouldDeriveUnwatchedWhenTotalItemsIsZero() {
     assertThat(WatchProgressService.deriveWatchStatus(0, 0, 0)).isEqualTo(WatchStatus.UNWATCHED);
+  }
+
+  // --- Season/Series reset and watchStatus tests ---
+
+  @Test
+  @DisplayName("Should reset progress for season by cascading through episodes")
+  void shouldResetProgressForSeasonByCascadingThroughEpisodes() {
+    var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
+    var ep1 = episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
+    var ep2 = episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
+
+    var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
+    var mf2 = mediaFileRepository.save(createMediaFile(ep2.getId()));
+
+    watchProgressRepository.save(buildProgress(mf1.getId(), 300));
+    watchProgressRepository.save(buildProgress(mf2.getId(), 600));
+    assertThat(watchProgressRepository.count()).isEqualTo(2);
+
+    service.resetProgress(USER_ID, season.getId());
+
+    assertThat(watchProgressRepository.count()).isZero();
+  }
+
+  @Test
+  @DisplayName("Should reset progress for series by cascading through seasons and episodes")
+  void shouldResetProgressForSeriesByCascadingThroughSeasonsAndEpisodes() {
+    var series = Series.builder().build();
+    series.setId(UUID.randomUUID());
+    var s1 = seasonRepository.save(Season.builder().seasonNumber(1).series(series).build());
+    var s2 = seasonRepository.save(Season.builder().seasonNumber(2).series(series).build());
+    var ep1 = episodeRepository.save(Episode.builder().episodeNumber(1).season(s1).build());
+    var ep2 = episodeRepository.save(Episode.builder().episodeNumber(1).season(s2).build());
+
+    var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
+    var mf2 = mediaFileRepository.save(createMediaFile(ep2.getId()));
+
+    watchProgressRepository.save(buildProgress(mf1.getId(), 300));
+    watchProgressRepository.save(buildProgress(mf2.getId(), 600));
+    assertThat(watchProgressRepository.count()).isEqualTo(2);
+
+    service.resetProgress(USER_ID, series.getId());
+
+    assertThat(watchProgressRepository.count()).isZero();
+  }
+
+  @Test
+  @DisplayName("Should derive watch status for season from episodes")
+  void shouldDeriveWatchStatusForSeasonFromEpisodes() {
+    var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
+    var ep1 = episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
+    var ep2 = episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
+
+    var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
+    mediaFileRepository.save(createMediaFile(ep2.getId()));
+
+    watchProgressRepository.save(buildProgress(mf1.getId(), 300));
+
+    assertThat(service.getWatchStatusForCollectable(USER_ID, season.getId()))
+        .isEqualTo(WatchStatus.IN_PROGRESS);
+  }
+
+  private MediaFile createMediaFile(UUID mediaId) {
+    return MediaFile.builder()
+        .mediaId(mediaId)
+        .filename("file-" + UUID.randomUUID() + ".mkv")
+        .filepathUri("/media/" + UUID.randomUUID() + ".mkv")
+        .size(1_000_000)
+        .status(MediaFileStatus.MATCHED)
+        .build();
+  }
+
+  private WatchProgress buildProgress(UUID mediaFileId, int positionSeconds) {
+    return WatchProgress.builder()
+        .userId(USER_ID)
+        .mediaFileId(mediaFileId)
+        .positionSeconds(positionSeconds)
+        .percentComplete(50.0)
+        .durationSeconds(7200)
+        .build();
   }
 }

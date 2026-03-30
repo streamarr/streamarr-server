@@ -1,6 +1,8 @@
 package com.streamarr.server.config;
 
+import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
+import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.streaming.WatchProgressRepository;
 import com.streamarr.server.services.streaming.StreamSessionRepository;
 import com.streamarr.server.services.watchprogress.WatchProgressService;
@@ -18,12 +20,16 @@ public class WatchProgressConfig {
       StreamSessionRepository sessionRepository,
       WatchProgressRepository watchProgressRepository,
       MediaFileRepository mediaFileRepository,
+      EpisodeRepository episodeRepository,
+      SeasonRepository seasonRepository,
       WatchProgressProperties properties,
       ApplicationEventPublisher eventPublisher) {
     return new WatchProgressService(
         sessionRepository,
         watchProgressRepository,
         mediaFileRepository,
+        episodeRepository,
+        seasonRepository,
         properties,
         eventPublisher);
   }
