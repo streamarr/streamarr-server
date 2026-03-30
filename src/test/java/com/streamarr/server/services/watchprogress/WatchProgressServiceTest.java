@@ -13,6 +13,9 @@ import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeStreamSessionRepository;
 import com.streamarr.server.fakes.FakeWatchProgressRepository;
 import com.streamarr.server.fixtures.StreamSessionFixture;
+import com.streamarr.server.services.watchprogress.events.MediaWatchedEvent;
+import com.streamarr.server.services.watchprogress.events.PlaybackStoppedEvent;
+import com.streamarr.server.services.watchprogress.events.TimelineReportedEvent;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -274,5 +277,154 @@ class WatchProgressServiceTest {
     return watchProgressRepository
         .findByUserIdAndMediaFileId(USER_ID, session.getMediaFileId())
         .orElseThrow();
+  }
+
+  private void markAsWatched(StreamSession session) {
+    // Stop at 95% to trigger watched threshold
+    service.reportTimeline(
+        USER_ID, session.getSessionId(), (int) (7200 * 0.95), PlaybackState.STOPPED);
+  }
+
+  // --- Stale-session guard tests ---
+
+  @Test
+  @DisplayName("Should skip write when existing progress has lastPlayedAt")
+  void shouldSkipWriteWhenExistingProgressHasLastPlayedAt() {
+    var session = addSession();
+    markAsWatched(session);
+
+    var progressBefore =
+        watchProgressRepository
+            .findByUserIdAndMediaFileId(USER_ID, session.getMediaFileId())
+            .orElseThrow();
+    assertThat(progressBefore.isPlayed()).isTrue();
+
+    // Stale session reports PLAYING at 50% — should be ignored
+    service.reportTimeline(USER_ID, session.getSessionId(), 3600, PlaybackState.PLAYING);
+
+    var progressAfter =
+        watchProgressRepository
+            .findByUserIdAndMediaFileId(USER_ID, session.getMediaFileId())
+            .orElseThrow();
+    assertThat(progressAfter.isPlayed()).isTrue();
+    assertThat(progressAfter.getPositionSeconds()).isZero();
+  }
+
+  // --- Event tests ---
+
+  @Test
+  @DisplayName("Should publish PlaybackStoppedEvent when stopped")
+  void shouldPublishPlaybackStoppedEventWhenStopped() {
+    var session = addSession();
+
+    service.reportTimeline(USER_ID, session.getSessionId(), 3600, PlaybackState.STOPPED);
+
+    var events = eventPublisher.getEventsOfType(PlaybackStoppedEvent.class);
+    assertThat(events).hasSize(1);
+    assertThat(events.getFirst().mediaFileId()).isEqualTo(session.getMediaFileId());
+    assertThat(events.getFirst().positionSeconds()).isEqualTo(3600);
+  }
+
+  @Test
+  @DisplayName("Should publish PlaybackStoppedEvent even when item already watched")
+  void shouldPublishPlaybackStoppedEventEvenWhenItemAlreadyWatched() {
+    var session = addSession();
+    markAsWatched(session);
+    eventPublisher.getEventsOfType(PlaybackStoppedEvent.class); // clear
+
+    // Stale session stops — PlaybackStoppedEvent should still fire
+    service.reportTimeline(USER_ID, session.getSessionId(), 3600, PlaybackState.STOPPED);
+
+    var events = eventPublisher.getEventsOfType(PlaybackStoppedEvent.class);
+    assertThat(events).hasSizeGreaterThanOrEqualTo(2);
+  }
+
+  @Test
+  @DisplayName("Should not publish PlaybackStoppedEvent when playing")
+  void shouldNotPublishPlaybackStoppedEventWhenPlaying() {
+    var session = addSession();
+
+    service.reportTimeline(USER_ID, session.getSessionId(), 3600, PlaybackState.PLAYING);
+
+    var events = eventPublisher.getEventsOfType(PlaybackStoppedEvent.class);
+    assertThat(events).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should publish TimelineReportedEvent")
+  void shouldPublishTimelineReportedEvent() {
+    var session = addSession();
+
+    service.reportTimeline(USER_ID, session.getSessionId(), 3600, PlaybackState.PLAYING);
+
+    var events = eventPublisher.getEventsOfType(TimelineReportedEvent.class);
+    assertThat(events).hasSize(1);
+    assertThat(events.getFirst().positionSeconds()).isEqualTo(3600);
+    assertThat(events.getFirst().state()).isEqualTo(PlaybackState.PLAYING);
+  }
+
+  @Test
+  @DisplayName("Should publish MediaWatchedEvent when lastPlayedAt transitions")
+  void shouldPublishMediaWatchedEventWhenLastPlayedAtTransitions() {
+    var session = addSession();
+
+    // Stop at 95% to trigger watched
+    service.reportTimeline(
+        USER_ID, session.getSessionId(), (int) (7200 * 0.95), PlaybackState.STOPPED);
+
+    var events = eventPublisher.getEventsOfType(MediaWatchedEvent.class);
+    assertThat(events).hasSize(1);
+    assertThat(events.getFirst().mediaFileId()).isEqualTo(session.getMediaFileId());
+  }
+
+  @Test
+  @DisplayName("Should not publish MediaWatchedEvent when already watched")
+  void shouldNotPublishMediaWatchedEventWhenAlreadyWatched() {
+    var session = addSession();
+    markAsWatched(session);
+
+    var eventsBefore = eventPublisher.getEventsOfType(MediaWatchedEvent.class);
+    assertThat(eventsBefore).hasSize(1);
+
+    // Stale session reports — guard blocks write, no new event
+    service.reportTimeline(USER_ID, session.getSessionId(), 3600, PlaybackState.PLAYING);
+
+    var eventsAfter = eventPublisher.getEventsOfType(MediaWatchedEvent.class);
+    assertThat(eventsAfter).hasSize(1); // unchanged
+  }
+
+  @Test
+  @DisplayName("Should not publish events when progress deleted below threshold")
+  void shouldNotPublishEventsWhenProgressDeletedBelowThreshold() {
+    var session = addSession();
+
+    // Stop at 1% — below min threshold, deletes progress
+    service.reportTimeline(USER_ID, session.getSessionId(), 72, PlaybackState.STOPPED);
+
+    var timelineEvents = eventPublisher.getEventsOfType(TimelineReportedEvent.class);
+    assertThat(timelineEvents).isEmpty();
+
+    // But PlaybackStoppedEvent should still fire
+    var stoppedEvents = eventPublisher.getEventsOfType(PlaybackStoppedEvent.class);
+    assertThat(stoppedEvents).hasSize(1);
+  }
+
+  @Test
+  @DisplayName("Should retain last progress when session destroyed without stopped")
+  void shouldRetainLastProgressWhenSessionDestroyedWithoutStopped() {
+    var session = addSession();
+
+    // Report PLAYING at 50%
+    service.reportTimeline(USER_ID, session.getSessionId(), 3600, PlaybackState.PLAYING);
+
+    // Session destroyed without STOPPED report (client crash)
+    sessionRepository.removeById(session.getSessionId());
+
+    // Progress should still be in DB
+    var progress =
+        watchProgressRepository
+            .findByUserIdAndMediaFileId(USER_ID, session.getMediaFileId())
+            .orElseThrow();
+    assertThat(progress.getPositionSeconds()).isEqualTo(3600);
   }
 }

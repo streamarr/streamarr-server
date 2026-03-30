@@ -7,6 +7,9 @@ import com.streamarr.server.domain.streaming.WatchProgress;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.repositories.streaming.WatchProgressRepository;
 import com.streamarr.server.services.streaming.StreamSessionRepository;
+import com.streamarr.server.services.watchprogress.events.MediaWatchedEvent;
+import com.streamarr.server.services.watchprogress.events.PlaybackStoppedEvent;
+import com.streamarr.server.services.watchprogress.events.TimelineReportedEvent;
 import java.time.Instant;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -38,6 +41,17 @@ public class WatchProgressService {
     var remainingSeconds = durationSeconds - positionSeconds;
     var mediaFileId = session.getMediaFileId();
 
+    if (state == PlaybackState.STOPPED) {
+      eventPublisher.publishEvent(
+          new PlaybackStoppedEvent(
+              userId, sessionId, mediaFileId, positionSeconds, percentComplete));
+    }
+
+    var existing = watchProgressRepository.findByUserIdAndMediaFileId(userId, mediaFileId);
+    if (existing.isPresent() && existing.get().isPlayed()) {
+      return;
+    }
+
     if (state == PlaybackState.STOPPED && percentComplete < properties.minResumePercent()) {
       watchProgressRepository.deleteByUserIdAndMediaFileId(userId, mediaFileId);
       return;
@@ -53,6 +67,13 @@ public class WatchProgressService {
 
     upsertProgress(
         userId, mediaFileId, effectivePosition, percentComplete, durationSeconds, lastPlayedAt);
+
+    eventPublisher.publishEvent(
+        new TimelineReportedEvent(userId, mediaFileId, effectivePosition, percentComplete, state));
+
+    if (watched) {
+      eventPublisher.publishEvent(new MediaWatchedEvent(userId, mediaFileId));
+    }
   }
 
   private void upsertProgress(
