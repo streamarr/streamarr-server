@@ -81,7 +81,13 @@ public class WatchProgressService {
     var effectivePosition = watched ? 0 : positionSeconds;
 
     upsertProgress(
-        userId, mediaFileId, effectivePosition, percentComplete, durationSeconds, lastPlayedAt);
+        existing,
+        userId,
+        mediaFileId,
+        effectivePosition,
+        percentComplete,
+        durationSeconds,
+        lastPlayedAt);
 
     eventPublisher.publishEvent(
         new TimelineReportedEvent(userId, mediaFileId, effectivePosition, percentComplete, state));
@@ -178,14 +184,13 @@ public class WatchProgressService {
   }
 
   private void upsertProgress(
+      Optional<WatchProgress> existing,
       UUID userId,
       UUID mediaFileId,
       int positionSeconds,
       double percentComplete,
       int durationSeconds,
       Instant lastPlayedAt) {
-    var existing = watchProgressRepository.findByUserIdAndMediaFileId(userId, mediaFileId);
-
     if (existing.isPresent()) {
       var wp = existing.get();
       wp.setPositionSeconds(positionSeconds);
