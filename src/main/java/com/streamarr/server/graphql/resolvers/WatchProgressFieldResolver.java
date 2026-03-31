@@ -11,6 +11,7 @@ import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.graphql.dto.WatchProgressDto;
 import com.streamarr.server.services.watchprogress.WatchProgressService;
 import graphql.schema.DataFetchingEnvironment;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -70,7 +71,7 @@ public class WatchProgressFieldResolver {
 
     return loader
         .loadMany(mediaFileIds)
-        .thenApply(results -> results.stream().filter(dto -> dto != null).findFirst().orElse(null));
+        .thenApply(results -> results.stream().filter(Objects::nonNull).findFirst().orElse(null));
   }
 
   private WatchStatus resolveWatchStatus(UUID collectableId) {

@@ -24,9 +24,13 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -239,22 +243,32 @@ class StreamingResolverTest {
     assertThat(result.getErrors().getFirst().getMessage()).contains("Invalid ID format");
   }
 
-  @Test
-  @DisplayName("Should return true when destroying session")
-  void shouldReturnTrueWhenDestroyingSession() {
-    var mutation =
-        String.format(
-            """
-            mutation {
-              destroyStreamSession(sessionId: "%s")
-            }
-            """,
-            UUID.randomUUID());
-
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("booleanMutations")
+  @DisplayName("Should return true when executing boolean mutation")
+  void shouldReturnTrueWhenExecutingBooleanMutation(
+      String name, String mutation, String resultPath) {
     Boolean result =
-        dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.destroyStreamSession");
+        dgsQueryExecutor.executeAndExtractJsonPath(
+            String.format(mutation, UUID.randomUUID()), resultPath);
 
     assertThat(result).isTrue();
+  }
+
+  static Stream<Arguments> booleanMutations() {
+    return Stream.of(
+        Arguments.of(
+            "destroyStreamSession",
+            "mutation { destroyStreamSession(sessionId: \"%s\") }",
+            "data.destroyStreamSession"),
+        Arguments.of(
+            "reportTimeline",
+            "mutation { reportTimeline(sessionId: \"%s\", positionSeconds: 300, state: PLAYING) }",
+            "data.reportTimeline"),
+        Arguments.of(
+            "resetWatchProgress",
+            "mutation { resetWatchProgress(id: \"%s\") }",
+            "data.resetWatchProgress"));
   }
 
   @Test
@@ -323,23 +337,6 @@ class StreamingResolverTest {
   }
 
   @Test
-  @DisplayName("Should return true when reporting timeline")
-  void shouldReturnTrueWhenReportingTimeline() {
-    var mutation =
-        String.format(
-            """
-            mutation {
-              reportTimeline(sessionId: "%s", positionSeconds: 300, state: PLAYING)
-            }
-            """,
-            UUID.randomUUID());
-
-    Boolean result = dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.reportTimeline");
-
-    assertThat(result).isTrue();
-  }
-
-  @Test
   @DisplayName("Should return error when report timeline session ID is invalid")
   void shouldReturnErrorWhenReportTimelineSessionIdIsInvalid() {
     var result =
@@ -375,8 +372,8 @@ class StreamingResolverTest {
   }
 
   @Test
-  @DisplayName("Should return true when resetting watch progress")
-  void shouldReturnTrueWhenResettingWatchProgress() {
+  @DisplayName("Should delegate to watch progress service when resetting watch progress")
+  void shouldDelegateToWatchProgressServiceWhenResettingWatchProgress() {
     var collectableId = UUID.randomUUID();
     var mutation =
         String.format(
@@ -387,10 +384,8 @@ class StreamingResolverTest {
             """,
             collectableId);
 
-    Boolean result =
-        dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.resetWatchProgress");
+    dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.resetWatchProgress");
 
-    assertThat(result).isTrue();
     assertThat(STUB_WATCH_PROGRESS.lastResetId).isEqualTo(collectableId);
   }
 
