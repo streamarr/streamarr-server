@@ -8,6 +8,7 @@ import com.streamarr.server.config.WatchProgressProperties;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.streaming.PlaybackState;
@@ -25,6 +26,7 @@ import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.services.watchprogress.events.MediaWatchedEvent;
 import com.streamarr.server.services.watchprogress.events.PlaybackStoppedEvent;
 import com.streamarr.server.services.watchprogress.events.TimelineReportedEvent;
+import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -95,6 +97,17 @@ class WatchProgressServiceTest {
         .positionSeconds(positionSeconds)
         .percentComplete(50.0)
         .durationSeconds(7200)
+        .build();
+  }
+
+  private WatchProgress buildPlayedProgress(UUID mediaFileId) {
+    return WatchProgress.builder()
+        .userId(USER_ID)
+        .mediaFileId(mediaFileId)
+        .positionSeconds(0)
+        .percentComplete(100.0)
+        .durationSeconds(7200)
+        .lastPlayedAt(Instant.now())
         .build();
   }
 
@@ -630,6 +643,76 @@ class WatchProgressServiceTest {
     @DisplayName("Should derive unwatched when total items is zero")
     void shouldDeriveUnwatchedWhenTotalItemsIsZero() {
       assertThat(WatchProgressService.deriveWatchStatus(0, 0, 0)).isEqualTo(WatchStatus.UNWATCHED);
+    }
+
+    @Test
+    @DisplayName("Should derive watched when all media files are played")
+    void shouldDeriveWatchedWhenAllMediaFilesArePlayed() {
+      var movie = Movie.builder().build();
+      movie.setId(UUID.randomUUID());
+
+      var mf1 = mediaFileRepository.save(createMediaFile(movie.getId()));
+      var mf2 = mediaFileRepository.save(createMediaFile(movie.getId()));
+
+      watchProgressRepository.save(buildPlayedProgress(mf1.getId()));
+      watchProgressRepository.save(buildPlayedProgress(mf2.getId()));
+
+      assertThat(service.getWatchStatusForCollectable(USER_ID, movie.getId()))
+          .isEqualTo(WatchStatus.WATCHED);
+    }
+
+    @Test
+    @DisplayName("Should derive in progress when some watched and some in progress")
+    void shouldDeriveInProgressWhenSomeWatchedAndSomeInProgress() {
+      var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
+      var ep1 = episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
+      var ep2 = episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
+      var ep3 = episodeRepository.save(Episode.builder().episodeNumber(3).season(season).build());
+
+      var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
+      var mf2 = mediaFileRepository.save(createMediaFile(ep2.getId()));
+      mediaFileRepository.save(createMediaFile(ep3.getId()));
+
+      watchProgressRepository.save(buildPlayedProgress(mf1.getId()));
+      watchProgressRepository.save(buildProgress(mf2.getId(), 300));
+
+      assertThat(service.getWatchStatusForCollectable(USER_ID, season.getId()))
+          .isEqualTo(WatchStatus.IN_PROGRESS);
+    }
+
+    @Test
+    @DisplayName("Should derive unwatched when no progress exists for media files")
+    void shouldDeriveUnwatchedWhenNoProgressExistsForMediaFiles() {
+      var movie = Movie.builder().build();
+      movie.setId(UUID.randomUUID());
+
+      mediaFileRepository.save(createMediaFile(movie.getId()));
+
+      assertThat(service.getWatchStatusForCollectable(USER_ID, movie.getId()))
+          .isEqualTo(WatchStatus.UNWATCHED);
+    }
+
+    @Test
+    @DisplayName("Should derive in progress when only in progress and no watched")
+    void shouldDeriveInProgressWhenOnlyInProgressAndNoWatched() {
+      var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
+      var ep1 = episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
+      var ep2 = episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
+
+      var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
+      mediaFileRepository.save(createMediaFile(ep2.getId()));
+
+      watchProgressRepository.save(buildProgress(mf1.getId(), 300));
+
+      assertThat(service.getWatchStatusForCollectable(USER_ID, season.getId()))
+          .isEqualTo(WatchStatus.IN_PROGRESS);
+    }
+
+    @Test
+    @DisplayName("Should derive unwatched when collectable has no media files")
+    void shouldDeriveUnwatchedWhenCollectableHasNoMediaFiles() {
+      assertThat(service.getWatchStatusForCollectable(USER_ID, UUID.randomUUID()))
+          .isEqualTo(WatchStatus.UNWATCHED);
     }
 
     @Test
