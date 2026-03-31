@@ -55,13 +55,17 @@ class WatchProgressDataLoaderTest {
 
     assertThat(result.get(mediaFileId1)).isNotNull();
     assertThat(result.get(mediaFileId1).positionSeconds()).isEqualTo(300);
+    assertThat(result.get(mediaFileId1).percentComplete()).isEqualTo(50.0);
+    assertThat(result.get(mediaFileId1).durationSeconds()).isEqualTo(600);
     assertThat(result.get(mediaFileId2)).isNotNull();
     assertThat(result.get(mediaFileId2).positionSeconds()).isEqualTo(600);
+    assertThat(result.get(mediaFileId2).percentComplete()).isEqualTo(75.0);
+    assertThat(result.get(mediaFileId2).durationSeconds()).isEqualTo(800);
   }
 
   @Test
-  @DisplayName("Should return null for media file with no progress")
-  void shouldReturnNullForMediaFileWithNoProgress() throws Exception {
+  @DisplayName("Should return null when media file has no progress")
+  void shouldReturnNullWhenMediaFileHasNoProgress() throws Exception {
     var unknownId = UUID.randomUUID();
 
     var result = dataLoader.load(Set.of(unknownId)).toCompletableFuture().get();

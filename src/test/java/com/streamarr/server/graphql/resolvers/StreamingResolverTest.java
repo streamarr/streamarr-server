@@ -355,8 +355,8 @@ class StreamingResolverTest {
   }
 
   @Test
-  @DisplayName("Should delegate report timeline to watch progress service")
-  void shouldDelegateReportTimelineToWatchProgressService() {
+  @DisplayName("Should delegate to watch progress service when reporting timeline")
+  void shouldDelegateToWatchProgressServiceWhenReportingTimeline() {
     var sessionId = UUID.randomUUID();
     var mutation =
         String.format(
@@ -377,6 +377,7 @@ class StreamingResolverTest {
   @Test
   @DisplayName("Should return true when resetting watch progress")
   void shouldReturnTrueWhenResettingWatchProgress() {
+    var collectableId = UUID.randomUUID();
     var mutation =
         String.format(
             """
@@ -384,12 +385,13 @@ class StreamingResolverTest {
               resetWatchProgress(id: "%s")
             }
             """,
-            UUID.randomUUID());
+            collectableId);
 
     Boolean result =
         dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.resetWatchProgress");
 
     assertThat(result).isTrue();
+    assertThat(STUB_WATCH_PROGRESS.lastResetId).isEqualTo(collectableId);
   }
 
   @Test

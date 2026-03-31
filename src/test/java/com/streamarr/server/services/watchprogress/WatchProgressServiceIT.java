@@ -68,8 +68,8 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
 
   @Test
   @Transactional
-  @DisplayName("Should persist and retrieve watch progress")
-  void shouldPersistAndRetrieveWatchProgress() {
+  @DisplayName("Should persist and retrieve watch progress when saved")
+  void shouldPersistAndRetrieveWatchProgressWhenSaved() {
     var fixture = createMovieWithFile();
 
     var saved =
@@ -147,29 +147,18 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
     assertThat(watchProgressRepository.findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId()))
         .isPresent();
 
-    entityManager
-        .createNativeQuery("DELETE FROM base_collectable WHERE id = :id")
-        .setParameter("id", fixture.movie().getId())
-        .executeUpdate();
-    entityManager.flush();
+    movieRepository.deleteById(fixture.movie().getId());
+    movieRepository.flush();
     entityManager.clear();
 
-    var count =
-        ((Number)
-                entityManager
-                    .createNativeQuery(
-                        "SELECT COUNT(*) FROM watch_progress WHERE user_id = :uid AND media_file_id = :mfid")
-                    .setParameter("uid", USER_ID)
-                    .setParameter("mfid", fixture.mediaFileId())
-                    .getSingleResult())
-            .longValue();
-    assertThat(count).isZero();
+    assertThat(watchProgressRepository.findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId()))
+        .isEmpty();
   }
 
   @Test
   @Transactional
-  @DisplayName("Should reset progress for movie via service")
-  void shouldResetProgressForMovieViaService() {
+  @DisplayName("Should delete watch progress when resetting movie through service")
+  void shouldDeleteWatchProgressWhenResettingMovieThroughService() {
     var fixture = createMovieWithFile();
 
     watchProgressRepository.saveAndFlush(
