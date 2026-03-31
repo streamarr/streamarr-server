@@ -1,33 +1,40 @@
 package com.streamarr.server.graphql.resolvers;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
+import com.streamarr.server.config.WatchProgressProperties;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.streaming.WatchProgress;
-import com.streamarr.server.domain.streaming.WatchStatus;
+import com.streamarr.server.fakes.CapturingEventPublisher;
+import com.streamarr.server.fakes.FakeEpisodeRepository;
+import com.streamarr.server.fakes.FakeMediaFileRepository;
+import com.streamarr.server.fakes.FakeSeasonRepository;
+import com.streamarr.server.fakes.FakeStreamSessionRepository;
+import com.streamarr.server.fakes.FakeWatchProgressRepository;
 import com.streamarr.server.graphql.dataloaders.WatchProgressDataLoader;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.watchprogress.WatchProgressService;
+import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @Tag("UnitTest")
@@ -39,16 +46,70 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
       MovieResolver.class,
       SeriesResolver.class,
       SeriesFieldResolver.class,
-      SeasonFieldResolver.class
+      SeasonFieldResolver.class,
+      WatchProgressFieldResolverTest.TestConfig.class
     })
 @DisplayName("Watch Progress Field Resolver Tests")
 class WatchProgressFieldResolverTest {
 
+  private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
+  @Autowired private FakeWatchProgressRepository watchProgressRepository;
+  @Autowired private FakeMediaFileRepository mediaFileRepository;
+  @Autowired private FakeEpisodeRepository episodeRepository;
+  @Autowired private FakeSeasonRepository seasonRepository;
 
   @MockitoBean private MovieService movieService;
   @MockitoBean private SeriesService seriesService;
-  @MockitoBean private WatchProgressService watchProgressService;
+
+  @TestConfiguration
+  static class TestConfig {
+
+    @Bean
+    FakeWatchProgressRepository fakeWatchProgressRepository() {
+      return new FakeWatchProgressRepository();
+    }
+
+    @Bean
+    FakeMediaFileRepository fakeMediaFileRepository() {
+      return new FakeMediaFileRepository();
+    }
+
+    @Bean
+    FakeEpisodeRepository fakeEpisodeRepository() {
+      return new FakeEpisodeRepository();
+    }
+
+    @Bean
+    FakeSeasonRepository fakeSeasonRepository() {
+      return new FakeSeasonRepository();
+    }
+
+    @Bean
+    WatchProgressService watchProgressService(
+        FakeWatchProgressRepository watchProgressRepository,
+        FakeMediaFileRepository mediaFileRepository,
+        FakeEpisodeRepository episodeRepository,
+        FakeSeasonRepository seasonRepository) {
+      return new WatchProgressService(
+          new FakeStreamSessionRepository(),
+          watchProgressRepository,
+          mediaFileRepository,
+          episodeRepository,
+          seasonRepository,
+          new WatchProgressProperties(5.0, 90.0, 300),
+          new CapturingEventPublisher());
+    }
+  }
+
+  @BeforeEach
+  void setUp() {
+    watchProgressRepository.deleteAll();
+    mediaFileRepository.deleteAll();
+    episodeRepository.deleteAll();
+    seasonRepository.deleteAll();
+  }
 
   @Nested
   @DisplayName("Movie Watch Progress")
@@ -63,16 +124,14 @@ class WatchProgressFieldResolverTest {
 
       when(movieService.findMediaFiles(movie.getId())).thenReturn(List.of(mediaFile));
 
-      var progress =
+      watchProgressRepository.save(
           WatchProgress.builder()
-              .userId(UUID.fromString("00000000-0000-0000-0000-000000000001"))
+              .userId(USER_ID)
               .mediaFileId(mediaFile.getId())
               .positionSeconds(1800)
               .percentComplete(50.0)
               .durationSeconds(3600)
-              .build();
-      when(watchProgressService.getProgressForMediaFiles(any(), any()))
-          .thenReturn(Map.of(mediaFile.getId(), progress));
+              .build());
 
       Integer positionSeconds =
           dgsQueryExecutor.executeAndExtractJsonPath(
@@ -106,7 +165,6 @@ class WatchProgressFieldResolverTest {
       movie.getFiles().add(mediaFile);
 
       when(movieService.findMediaFiles(movie.getId())).thenReturn(List.of(mediaFile));
-      when(watchProgressService.getProgressForMediaFiles(any(), any())).thenReturn(Map.of());
 
       Object watchProgress =
           dgsQueryExecutor.executeAndExtractJsonPath(
@@ -126,8 +184,19 @@ class WatchProgressFieldResolverTest {
     @DisplayName("Should return watch status when movie queried")
     void shouldReturnWatchStatusWhenMovieQueried() {
       var movie = setupMovie();
-      when(watchProgressService.getWatchStatusForCollectable(any(), eq(movie.getId())))
-          .thenReturn(WatchStatus.IN_PROGRESS);
+
+      var mediaFile = buildMediaFile();
+      mediaFile.setMediaId(movie.getId());
+      mediaFileRepository.save(mediaFile);
+
+      watchProgressRepository.save(
+          WatchProgress.builder()
+              .userId(USER_ID)
+              .mediaFileId(mediaFile.getId())
+              .positionSeconds(300)
+              .percentComplete(25.0)
+              .durationSeconds(1200)
+              .build());
 
       String status =
           dgsQueryExecutor.executeAndExtractJsonPath(
@@ -165,16 +234,14 @@ class WatchProgressFieldResolverTest {
       when(seriesService.findEpisodes(seasonId)).thenReturn(List.of(episode));
       when(seriesService.findMediaFiles(episodeId)).thenReturn(List.of(mediaFile));
 
-      var progress =
+      watchProgressRepository.save(
           WatchProgress.builder()
-              .userId(UUID.fromString("00000000-0000-0000-0000-000000000001"))
+              .userId(USER_ID)
               .mediaFileId(mediaFile.getId())
               .positionSeconds(600)
               .percentComplete(25.0)
               .durationSeconds(2400)
-              .build();
-      when(watchProgressService.getProgressForMediaFiles(any(), any()))
-          .thenReturn(Map.of(mediaFile.getId(), progress));
+              .build());
 
       Integer positionSeconds =
           dgsQueryExecutor.executeAndExtractJsonPath(
@@ -204,8 +271,20 @@ class WatchProgressFieldResolverTest {
       when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
       when(seriesService.findSeasons(seriesId)).thenReturn(List.of(season));
       when(seriesService.findEpisodes(seasonId)).thenReturn(List.of(episode));
-      when(watchProgressService.getWatchStatusForCollectable(any(), eq(episodeId)))
-          .thenReturn(WatchStatus.WATCHED);
+
+      var mediaFile = buildMediaFile();
+      mediaFile.setMediaId(episodeId);
+      mediaFileRepository.save(mediaFile);
+
+      watchProgressRepository.save(
+          WatchProgress.builder()
+              .userId(USER_ID)
+              .mediaFileId(mediaFile.getId())
+              .positionSeconds(0)
+              .percentComplete(100.0)
+              .durationSeconds(2400)
+              .lastPlayedAt(Instant.now())
+              .build());
 
       String status =
           dgsQueryExecutor.executeAndExtractJsonPath(
@@ -234,8 +313,23 @@ class WatchProgressFieldResolverTest {
 
       when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
       when(seriesService.findSeasons(seriesId)).thenReturn(List.of(season));
-      when(watchProgressService.getWatchStatusForCollectable(any(), eq(seasonId)))
-          .thenReturn(WatchStatus.IN_PROGRESS);
+
+      var episode = Episode.builder().episodeNumber(1).season(season).build();
+      episode.setId(UUID.randomUUID());
+      episodeRepository.save(episode);
+
+      var mediaFile = buildMediaFile();
+      mediaFile.setMediaId(episode.getId());
+      mediaFileRepository.save(mediaFile);
+
+      watchProgressRepository.save(
+          WatchProgress.builder()
+              .userId(USER_ID)
+              .mediaFileId(mediaFile.getId())
+              .positionSeconds(300)
+              .percentComplete(25.0)
+              .durationSeconds(1200)
+              .build());
 
       String status =
           dgsQueryExecutor.executeAndExtractJsonPath(
@@ -258,8 +352,6 @@ class WatchProgressFieldResolverTest {
       series.setId(seriesId);
 
       when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
-      when(watchProgressService.getWatchStatusForCollectable(any(), eq(seriesId)))
-          .thenReturn(WatchStatus.UNWATCHED);
 
       String status =
           dgsQueryExecutor.executeAndExtractJsonPath(
