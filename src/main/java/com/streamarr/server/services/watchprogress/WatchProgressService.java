@@ -164,7 +164,7 @@ public class WatchProgressService {
     return List.of();
   }
 
-  public static WatchStatus deriveWatchStatus(
+  private static WatchStatus deriveWatchStatus(
       int totalItems, int watchedCount, int inProgressCount) {
     if (totalItems > 0 && watchedCount == totalItems) {
       return WatchStatus.WATCHED;

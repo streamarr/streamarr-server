@@ -614,38 +614,6 @@ class WatchProgressServiceTest {
   class WatchStatusDerivation {
 
     @Test
-    @DisplayName("Should derive watched status when all items watched")
-    void shouldDeriveWatchedStatusWhenAllItemsWatched() {
-      assertThat(WatchProgressService.deriveWatchStatus(5, 5, 0)).isEqualTo(WatchStatus.WATCHED);
-    }
-
-    @Test
-    @DisplayName("Should derive in progress status when some items watched")
-    void shouldDeriveInProgressStatusWhenSomeItemsWatched() {
-      assertThat(WatchProgressService.deriveWatchStatus(5, 2, 1))
-          .isEqualTo(WatchStatus.IN_PROGRESS);
-    }
-
-    @Test
-    @DisplayName("Should derive unwatched status when no progress")
-    void shouldDeriveUnwatchedStatusWhenNoProgress() {
-      assertThat(WatchProgressService.deriveWatchStatus(5, 0, 0)).isEqualTo(WatchStatus.UNWATCHED);
-    }
-
-    @Test
-    @DisplayName("Should derive in progress when some episodes have progress")
-    void shouldDeriveInProgressWhenSomeEpisodesHaveProgress() {
-      assertThat(WatchProgressService.deriveWatchStatus(5, 0, 2))
-          .isEqualTo(WatchStatus.IN_PROGRESS);
-    }
-
-    @Test
-    @DisplayName("Should derive unwatched when total items is zero")
-    void shouldDeriveUnwatchedWhenTotalItemsIsZero() {
-      assertThat(WatchProgressService.deriveWatchStatus(0, 0, 0)).isEqualTo(WatchStatus.UNWATCHED);
-    }
-
-    @Test
     @DisplayName("Should derive watched when all media files are played")
     void shouldDeriveWatchedWhenAllMediaFilesArePlayed() {
       var movie = Movie.builder().build();
