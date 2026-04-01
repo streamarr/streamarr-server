@@ -29,6 +29,7 @@ import com.streamarr.server.jooq.generated.tables.SeriesCompany;
 import com.streamarr.server.jooq.generated.tables.SeriesDirector;
 import com.streamarr.server.jooq.generated.tables.SeriesGenre;
 import com.streamarr.server.jooq.generated.tables.SeriesPerson;
+import com.streamarr.server.jooq.generated.tables.WatchProgress;
 
 import java.util.Arrays;
 import java.util.List;
@@ -178,6 +179,11 @@ public class Public extends SchemaImpl {
     public final SeriesPerson SERIES_PERSON = SeriesPerson.SERIES_PERSON;
 
     /**
+     * The table <code>public.watch_progress</code>.
+     */
+    public final WatchProgress WATCH_PROGRESS = WatchProgress.WATCH_PROGRESS;
+
+    /**
      * No further instances allowed
      */
     private Public() {
@@ -217,7 +223,8 @@ public class Public extends SchemaImpl {
             SeriesCompany.SERIES_COMPANY,
             SeriesDirector.SERIES_DIRECTOR,
             SeriesGenre.SERIES_GENRE,
-            SeriesPerson.SERIES_PERSON
+            SeriesPerson.SERIES_PERSON,
+            WatchProgress.WATCH_PROGRESS
         );
     }
 }

@@ -29,6 +29,7 @@ import com.streamarr.server.jooq.generated.tables.SeriesCompany;
 import com.streamarr.server.jooq.generated.tables.SeriesDirector;
 import com.streamarr.server.jooq.generated.tables.SeriesGenre;
 import com.streamarr.server.jooq.generated.tables.SeriesPerson;
+import com.streamarr.server.jooq.generated.tables.WatchProgress;
 import com.streamarr.server.jooq.generated.tables.records.BaseCollectableRecord;
 import com.streamarr.server.jooq.generated.tables.records.CompanyRecord;
 import com.streamarr.server.jooq.generated.tables.records.EpisodeRecord;
@@ -54,6 +55,7 @@ import com.streamarr.server.jooq.generated.tables.records.SeriesDirectorRecord;
 import com.streamarr.server.jooq.generated.tables.records.SeriesGenreRecord;
 import com.streamarr.server.jooq.generated.tables.records.SeriesPersonRecord;
 import com.streamarr.server.jooq.generated.tables.records.SeriesRecord;
+import com.streamarr.server.jooq.generated.tables.records.WatchProgressRecord;
 
 import org.jooq.ForeignKey;
 import org.jooq.TableField;
@@ -91,7 +93,7 @@ public class Keys {
     public static final UniqueKey<MediaFileRecord> MOVIE_FILE_PKEY = Internal.createUniqueKey(MediaFile.MEDIA_FILE, DSL.name("movie_file_pkey"), new TableField[] { MediaFile.MEDIA_FILE.ID }, true);
     public static final UniqueKey<MovieRecord> MOVIE_PKEY = Internal.createUniqueKey(Movie.MOVIE, DSL.name("movie_pkey"), new TableField[] { Movie.MOVIE.ID }, true);
     public static final UniqueKey<MovieCompanyRecord> MOVIE_COMPANY_PKEY = Internal.createUniqueKey(MovieCompany.MOVIE_COMPANY, DSL.name("movie_company_pkey"), new TableField[] { MovieCompany.MOVIE_COMPANY.ID }, true);
-    public static final UniqueKey<MovieDirectorRecord> MOVIE_DIRECTOR_PKEY = Internal.createUniqueKey(MovieDirector.MOVIE_DIRECTOR, DSL.name("movie_director_pkey"), new TableField[] { MovieDirector.MOVIE_DIRECTOR.MOVIE_ID, MovieDirector.MOVIE_DIRECTOR.PERSON_ID }, true);
+    public static final UniqueKey<MovieDirectorRecord> MOVIE_DIRECTOR_PKEY = Internal.createUniqueKey(MovieDirector.MOVIE_DIRECTOR, DSL.name("movie_director_pkey"), new TableField[] { MovieDirector.MOVIE_DIRECTOR.ID }, true);
     public static final UniqueKey<MovieGenreRecord> MOVIE_GENRE_PKEY = Internal.createUniqueKey(MovieGenre.MOVIE_GENRE, DSL.name("movie_genre_pkey"), new TableField[] { MovieGenre.MOVIE_GENRE.MOVIE_ID, MovieGenre.MOVIE_GENRE.GENRE_ID }, true);
     public static final UniqueKey<MoviePersonRecord> MOVIE_PERSON_PKEY = Internal.createUniqueKey(MoviePerson.MOVIE_PERSON, DSL.name("movie_person_pkey"), new TableField[] { MoviePerson.MOVIE_PERSON.ID }, true);
     public static final UniqueKey<PersonRecord> PERSON_PKEY = Internal.createUniqueKey(Person.PERSON, DSL.name("person_pkey"), new TableField[] { Person.PERSON.ID }, true);
@@ -103,9 +105,11 @@ public class Keys {
     public static final UniqueKey<SeasonRecord> UQ_SEASON = Internal.createUniqueKey(Season.SEASON, DSL.name("uq_season"), new TableField[] { Season.SEASON.SERIES_ID, Season.SEASON.SEASON_NUMBER }, true);
     public static final UniqueKey<SeriesRecord> SERIES_PKEY = Internal.createUniqueKey(Series.SERIES, DSL.name("series_pkey"), new TableField[] { Series.SERIES.ID }, true);
     public static final UniqueKey<SeriesCompanyRecord> SERIES_COMPANY_PKEY = Internal.createUniqueKey(SeriesCompany.SERIES_COMPANY, DSL.name("series_company_pkey"), new TableField[] { SeriesCompany.SERIES_COMPANY.SERIES_ID, SeriesCompany.SERIES_COMPANY.COMPANY_ID }, true);
-    public static final UniqueKey<SeriesDirectorRecord> SERIES_DIRECTOR_PKEY = Internal.createUniqueKey(SeriesDirector.SERIES_DIRECTOR, DSL.name("series_director_pkey"), new TableField[] { SeriesDirector.SERIES_DIRECTOR.SERIES_ID, SeriesDirector.SERIES_DIRECTOR.PERSON_ID }, true);
+    public static final UniqueKey<SeriesDirectorRecord> SERIES_DIRECTOR_PKEY = Internal.createUniqueKey(SeriesDirector.SERIES_DIRECTOR, DSL.name("series_director_pkey"), new TableField[] { SeriesDirector.SERIES_DIRECTOR.ID }, true);
     public static final UniqueKey<SeriesGenreRecord> SERIES_GENRE_PKEY = Internal.createUniqueKey(SeriesGenre.SERIES_GENRE, DSL.name("series_genre_pkey"), new TableField[] { SeriesGenre.SERIES_GENRE.SERIES_ID, SeriesGenre.SERIES_GENRE.GENRE_ID }, true);
-    public static final UniqueKey<SeriesPersonRecord> SERIES_PERSON_PKEY = Internal.createUniqueKey(SeriesPerson.SERIES_PERSON, DSL.name("series_person_pkey"), new TableField[] { SeriesPerson.SERIES_PERSON.SERIES_ID, SeriesPerson.SERIES_PERSON.PERSON_ID }, true);
+    public static final UniqueKey<SeriesPersonRecord> SERIES_PERSON_PKEY = Internal.createUniqueKey(SeriesPerson.SERIES_PERSON, DSL.name("series_person_pkey"), new TableField[] { SeriesPerson.SERIES_PERSON.ID }, true);
+    public static final UniqueKey<WatchProgressRecord> UQ_WATCH_PROGRESS_USER_MEDIA_FILE = Internal.createUniqueKey(WatchProgress.WATCH_PROGRESS, DSL.name("uq_watch_progress_user_media_file"), new TableField[] { WatchProgress.WATCH_PROGRESS.USER_ID, WatchProgress.WATCH_PROGRESS.MEDIA_FILE_ID }, true);
+    public static final UniqueKey<WatchProgressRecord> WATCH_PROGRESS_PKEY = Internal.createUniqueKey(WatchProgress.WATCH_PROGRESS, DSL.name("watch_progress_pkey"), new TableField[] { WatchProgress.WATCH_PROGRESS.ID }, true);
 
     // -------------------------------------------------------------------------
     // FOREIGN KEY definitions
@@ -141,4 +145,5 @@ public class Keys {
     public static final ForeignKey<SeriesGenreRecord, SeriesRecord> SERIES_GENRE__SERIES_GENRE_SERIES_ID_FKEY = Internal.createForeignKey(SeriesGenre.SERIES_GENRE, DSL.name("series_genre_series_id_fkey"), new TableField[] { SeriesGenre.SERIES_GENRE.SERIES_ID }, Keys.SERIES_PKEY, new TableField[] { Series.SERIES.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<SeriesPersonRecord, PersonRecord> SERIES_PERSON__SERIES_PERSON_PERSON_ID_FKEY = Internal.createForeignKey(SeriesPerson.SERIES_PERSON, DSL.name("series_person_person_id_fkey"), new TableField[] { SeriesPerson.SERIES_PERSON.PERSON_ID }, Keys.PERSON_PKEY, new TableField[] { Person.PERSON.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<SeriesPersonRecord, SeriesRecord> SERIES_PERSON__SERIES_PERSON_SERIES_ID_FKEY = Internal.createForeignKey(SeriesPerson.SERIES_PERSON, DSL.name("series_person_series_id_fkey"), new TableField[] { SeriesPerson.SERIES_PERSON.SERIES_ID }, Keys.SERIES_PKEY, new TableField[] { Series.SERIES.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<WatchProgressRecord, MediaFileRecord> WATCH_PROGRESS__FK_WATCH_PROGRESS_MEDIA_FILE = Internal.createForeignKey(WatchProgress.WATCH_PROGRESS, DSL.name("fk_watch_progress_media_file"), new TableField[] { WatchProgress.WATCH_PROGRESS.MEDIA_FILE_ID }, Keys.MOVIE_FILE_PKEY, new TableField[] { MediaFile.MEDIA_FILE.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
 }

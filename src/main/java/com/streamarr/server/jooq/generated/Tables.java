@@ -29,6 +29,7 @@ import com.streamarr.server.jooq.generated.tables.SeriesCompany;
 import com.streamarr.server.jooq.generated.tables.SeriesDirector;
 import com.streamarr.server.jooq.generated.tables.SeriesGenre;
 import com.streamarr.server.jooq.generated.tables.SeriesPerson;
+import com.streamarr.server.jooq.generated.tables.WatchProgress;
 
 
 /**
@@ -161,4 +162,9 @@ public class Tables {
      * The table <code>public.series_person</code>.
      */
     public static final SeriesPerson SERIES_PERSON = SeriesPerson.SERIES_PERSON;
+
+    /**
+     * The table <code>public.watch_progress</code>.
+     */
+    public static final WatchProgress WATCH_PROGRESS = WatchProgress.WATCH_PROGRESS;
 }
