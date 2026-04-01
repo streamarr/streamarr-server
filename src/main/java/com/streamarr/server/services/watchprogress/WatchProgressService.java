@@ -62,13 +62,8 @@ public class WatchProgressService {
               userId, sessionId, mediaFileId, positionSeconds, percentComplete));
     }
 
-    var existing = watchProgressRepository.findByUserIdAndMediaFileId(userId, mediaFileId);
-    if (existing.isPresent() && existing.get().isPlayed()) {
-      return;
-    }
-
     if (state == PlaybackState.STOPPED && percentComplete < properties.minResumePercent()) {
-      watchProgressRepository.deleteByUserIdAndMediaFileId(userId, mediaFileId);
+      watchProgressRepository.deleteIfNotWatched(userId, mediaFileId);
       return;
     }
 
@@ -80,14 +75,18 @@ public class WatchProgressService {
     var lastPlayedAt = watched ? Instant.now() : null;
     var effectivePosition = watched ? 0 : positionSeconds;
 
-    upsertProgress(
-        existing,
-        userId,
-        mediaFileId,
-        effectivePosition,
-        percentComplete,
-        durationSeconds,
-        lastPlayedAt);
+    var written =
+        watchProgressRepository.upsertProgress(
+            userId,
+            mediaFileId,
+            effectivePosition,
+            percentComplete,
+            durationSeconds,
+            lastPlayedAt);
+
+    if (!written) {
+      return;
+    }
 
     eventPublisher.publishEvent(
         new TimelineReportedEvent(userId, mediaFileId, effectivePosition, percentComplete, state));
@@ -183,33 +182,4 @@ public class WatchProgressService {
     return WatchStatus.UNWATCHED;
   }
 
-  private void upsertProgress(
-      Optional<WatchProgress> existing,
-      UUID userId,
-      UUID mediaFileId,
-      int positionSeconds,
-      double percentComplete,
-      int durationSeconds,
-      Instant lastPlayedAt) {
-    if (existing.isPresent()) {
-      var wp = existing.get();
-      wp.setPositionSeconds(positionSeconds);
-      wp.setPercentComplete(percentComplete);
-      wp.setDurationSeconds(durationSeconds);
-      wp.setLastPlayedAt(lastPlayedAt);
-      watchProgressRepository.save(wp);
-      return;
-    }
-
-    var wp =
-        WatchProgress.builder()
-            .userId(userId)
-            .mediaFileId(mediaFileId)
-            .positionSeconds(positionSeconds)
-            .percentComplete(percentComplete)
-            .durationSeconds(durationSeconds)
-            .lastPlayedAt(lastPlayedAt)
-            .build();
-    watchProgressRepository.save(wp);
-  }
 }
