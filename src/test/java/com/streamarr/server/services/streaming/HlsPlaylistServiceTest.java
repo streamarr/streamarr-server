@@ -421,10 +421,24 @@ class HlsPlaylistServiceTest {
   }
 
   @Test
-  @DisplayName("Should reduce segment count when seek position is non-zero")
-  void shouldReduceSegmentCountWhenSeekPositionIsNonZero() {
+  @DisplayName("Should reduce segment count when seek origin is non-zero")
+  void shouldReduceSegmentCountWhenSeekOriginIsNonZero() {
     var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 120);
-    session.setSeekPosition(60);
+    session.setSeekOrigin(60);
+
+    var playlist = service.generateMediaPlaylist(session);
+
+    var segmentLines =
+        playlist.lines().filter(l -> l.startsWith("segment") && l.endsWith(".ts")).toList();
+    assertThat(segmentLines).hasSize(10);
+  }
+
+  @Test
+  @DisplayName("Should not change segment count when playback position advances beyond seek origin")
+  void shouldNotChangeSegmentCountWhenPlaybackPositionAdvancesBeyondSeekOrigin() {
+    var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 120);
+    session.setSeekOrigin(60);
+    session.setSeekPosition(90);
 
     var playlist = service.generateMediaPlaylist(session);
 
