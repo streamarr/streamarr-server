@@ -210,32 +210,6 @@ public class WatchProgressService {
     return result;
   }
 
-  public WatchStatus getWatchStatusForCollectable(UUID userId, UUID collectableId) {
-    var mediaFileIds = resolveAllMediaFileIds(collectableId);
-    if (mediaFileIds.isEmpty()) {
-      return WatchStatus.UNWATCHED;
-    }
-
-    var progressMap = getProgressForMediaFiles(userId, mediaFileIds);
-
-    var watchedCount = 0;
-    var inProgressCount = 0;
-    for (var mediaFileId : mediaFileIds) {
-      var wp = progressMap.get(mediaFileId);
-      if (wp == null) {
-        continue;
-      }
-
-      if (wp.isPlayed()) {
-        watchedCount++;
-      } else if (wp.getPositionSeconds() > 0) {
-        inProgressCount++;
-      }
-    }
-
-    return deriveWatchStatus(mediaFileIds.size(), watchedCount, inProgressCount);
-  }
-
   public void resetProgress(UUID userId, UUID collectableId) {
     var mediaFileIds = resolveAllMediaFileIds(collectableId);
 
