@@ -537,6 +537,31 @@ class WatchProgressServiceTest {
   }
 
   @Nested
+  @DisplayName("Get Progress")
+  class GetProgress {
+
+    @Test
+    @DisplayName("Should return progress when it exists for user and media file")
+    void shouldReturnProgressWhenItExistsForUserAndMediaFile() {
+      var mediaFileId = UUID.randomUUID();
+      watchProgressRepository.save(buildProgress(mediaFileId, 600));
+
+      var result = service.getProgress(USER_ID, mediaFileId);
+
+      assertThat(result).isPresent();
+      assertThat(result.get().getPositionSeconds()).isEqualTo(600);
+    }
+
+    @Test
+    @DisplayName("Should return empty when no progress exists")
+    void shouldReturnEmptyWhenNoProgressExists() {
+      var result = service.getProgress(USER_ID, UUID.randomUUID());
+
+      assertThat(result).isEmpty();
+    }
+  }
+
+  @Nested
   @DisplayName("Watch Progress Reset")
   class WatchProgressReset {
 
