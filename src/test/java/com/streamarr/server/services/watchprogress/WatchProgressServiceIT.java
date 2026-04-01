@@ -13,14 +13,17 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.streaming.WatchProgressRepository;
 import jakarta.persistence.EntityManager;
+import java.time.Instant;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.AuditorAware;
 import org.springframework.transaction.annotation.Transactional;
 
 @Tag("IntegrationTest")
@@ -33,6 +36,7 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private WatchProgressService watchProgressService;
   @Autowired private EntityManager entityManager;
+  @Autowired private AuditorAware<UUID> auditorAware;
 
   private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
@@ -180,5 +184,186 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
 
     assertThat(watchProgressRepository.findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId()))
         .isEmpty();
+  }
+
+  @Nested
+  @DisplayName("jOOQ Upsert Guard")
+  class JooqUpsertGuard {
+
+    @Test
+    @Transactional
+    @DisplayName("Should insert new progress when no existing row")
+    void shouldInsertNewProgressWhenNoExistingRow() {
+      var fixture = createMovieWithFile();
+
+      var result =
+          watchProgressRepository.upsertProgress(
+              USER_ID, fixture.mediaFileId(), 300, 25.0, 1200, null);
+
+      assertThat(result).isTrue();
+
+      entityManager.clear();
+
+      var progress =
+          watchProgressRepository
+              .findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId())
+              .orElseThrow();
+      assertThat(progress.getPositionSeconds()).isEqualTo(300);
+      assertThat(progress.getPercentComplete()).isEqualTo(25.0);
+      assertThat(progress.getDurationSeconds()).isEqualTo(1200);
+      assertThat(progress.getLastPlayedAt()).isNull();
+    }
+
+    @Test
+    @Transactional
+    @DisplayName("Should overwrite unwatched progress on upsert")
+    void shouldOverwriteUnwatchedProgressOnUpsert() {
+      var fixture = createMovieWithFile();
+
+      watchProgressRepository.saveAndFlush(
+          WatchProgress.builder()
+              .userId(USER_ID)
+              .mediaFileId(fixture.mediaFileId())
+              .positionSeconds(300)
+              .percentComplete(25.0)
+              .durationSeconds(1200)
+              .build());
+
+      entityManager.clear();
+
+      var result =
+          watchProgressRepository.upsertProgress(
+              USER_ID, fixture.mediaFileId(), 600, 50.0, 1200, null);
+
+      assertThat(result).isTrue();
+
+      entityManager.clear();
+
+      var progress =
+          watchProgressRepository
+              .findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId())
+              .orElseThrow();
+      assertThat(progress.getPositionSeconds()).isEqualTo(600);
+      assertThat(progress.getPercentComplete()).isEqualTo(50.0);
+    }
+
+    @Test
+    @Transactional
+    @DisplayName("Should not overwrite watched progress on upsert")
+    void shouldNotOverwriteWatchedProgressOnUpsert() {
+      var fixture = createMovieWithFile();
+      var watchedAt = Instant.now();
+
+      watchProgressRepository.saveAndFlush(
+          WatchProgress.builder()
+              .userId(USER_ID)
+              .mediaFileId(fixture.mediaFileId())
+              .positionSeconds(0)
+              .percentComplete(100.0)
+              .durationSeconds(1200)
+              .lastPlayedAt(watchedAt)
+              .build());
+
+      entityManager.clear();
+
+      var result =
+          watchProgressRepository.upsertProgress(
+              USER_ID, fixture.mediaFileId(), 300, 25.0, 1200, null);
+
+      assertThat(result).isFalse();
+
+      entityManager.clear();
+
+      var progress =
+          watchProgressRepository
+              .findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId())
+              .orElseThrow();
+      assertThat(progress.getPositionSeconds()).isZero();
+      assertThat(progress.getPercentComplete()).isEqualTo(100.0);
+      assertThat(progress.getLastPlayedAt()).isNotNull();
+    }
+
+    @Test
+    @Transactional
+    @DisplayName("Should populate audit fields on upsert")
+    void shouldPopulateAuditFieldsOnUpsert() {
+      var fixture = createMovieWithFile();
+
+      watchProgressRepository.upsertProgress(
+          USER_ID, fixture.mediaFileId(), 300, 25.0, 1200, null);
+
+      entityManager.clear();
+
+      var progress =
+          watchProgressRepository
+              .findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId())
+              .orElseThrow();
+      var expectedAuditor = auditorAware.getCurrentAuditor().orElseThrow();
+
+      assertThat(progress.getCreatedBy()).isEqualTo(expectedAuditor);
+      assertThat(progress.getLastModifiedBy()).isEqualTo(expectedAuditor);
+    }
+  }
+
+  @Nested
+  @DisplayName("jOOQ Delete Guard")
+  class JooqDeleteGuard {
+
+    @Test
+    @Transactional
+    @DisplayName("Should delete unwatched progress when deleteIfNotWatched called")
+    void shouldDeleteUnwatchedProgressWhenDeleteIfNotWatchedCalled() {
+      var fixture = createMovieWithFile();
+
+      watchProgressRepository.saveAndFlush(
+          WatchProgress.builder()
+              .userId(USER_ID)
+              .mediaFileId(fixture.mediaFileId())
+              .positionSeconds(100)
+              .percentComplete(5.0)
+              .durationSeconds(2000)
+              .build());
+
+      entityManager.clear();
+
+      var result = watchProgressRepository.deleteIfNotWatched(USER_ID, fixture.mediaFileId());
+
+      assertThat(result).isTrue();
+
+      entityManager.clear();
+
+      assertThat(
+              watchProgressRepository.findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId()))
+          .isEmpty();
+    }
+
+    @Test
+    @Transactional
+    @DisplayName("Should not delete watched progress when deleteIfNotWatched called")
+    void shouldNotDeleteWatchedProgressWhenDeleteIfNotWatchedCalled() {
+      var fixture = createMovieWithFile();
+
+      watchProgressRepository.saveAndFlush(
+          WatchProgress.builder()
+              .userId(USER_ID)
+              .mediaFileId(fixture.mediaFileId())
+              .positionSeconds(0)
+              .percentComplete(100.0)
+              .durationSeconds(2000)
+              .lastPlayedAt(Instant.now())
+              .build());
+
+      entityManager.clear();
+
+      var result = watchProgressRepository.deleteIfNotWatched(USER_ID, fixture.mediaFileId());
+
+      assertThat(result).isFalse();
+
+      entityManager.clear();
+
+      assertThat(
+              watchProgressRepository.findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId()))
+          .isPresent();
+    }
   }
 }
