@@ -19,6 +19,7 @@ import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeStreamSessionRepository;
 import com.streamarr.server.fakes.FakeWatchProgressRepository;
 import com.streamarr.server.graphql.dataloaders.WatchProgressDataLoader;
+import com.streamarr.server.graphql.dataloaders.WatchStatusDataLoader;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.watchprogress.WatchProgressService;
@@ -43,6 +44,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
     classes = {
       WatchProgressFieldResolver.class,
       WatchProgressDataLoader.class,
+      WatchStatusDataLoader.class,
       MovieResolver.class,
       SeriesResolver.class,
       SeriesFieldResolver.class,

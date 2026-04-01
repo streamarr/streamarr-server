@@ -1,0 +1,155 @@
+package com.streamarr.server.graphql.dataloaders;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.streamarr.server.config.WatchProgressProperties;
+import com.streamarr.server.domain.media.Episode;
+import com.streamarr.server.domain.media.MediaFile;
+import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.domain.media.Season;
+import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.domain.streaming.WatchProgress;
+import com.streamarr.server.domain.streaming.WatchStatus;
+import com.streamarr.server.fakes.CapturingEventPublisher;
+import com.streamarr.server.fakes.FakeEpisodeRepository;
+import com.streamarr.server.fakes.FakeMediaFileRepository;
+import com.streamarr.server.fakes.FakeSeasonRepository;
+import com.streamarr.server.fakes.FakeStreamSessionRepository;
+import com.streamarr.server.fakes.FakeWatchProgressRepository;
+import com.streamarr.server.services.watchprogress.WatchProgressService;
+import java.time.Instant;
+import java.util.Set;
+import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+
+@Tag("UnitTest")
+@DisplayName("Watch Status DataLoader Tests")
+class WatchStatusDataLoaderTest {
+
+  private FakeWatchProgressRepository watchProgressRepository;
+  private FakeMediaFileRepository mediaFileRepository;
+  private FakeEpisodeRepository episodeRepository;
+  private FakeSeasonRepository seasonRepository;
+  private WatchStatusDataLoader dataLoader;
+
+  private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+
+  @BeforeEach
+  void setUp() {
+    watchProgressRepository = new FakeWatchProgressRepository();
+    mediaFileRepository = new FakeMediaFileRepository();
+    episodeRepository = new FakeEpisodeRepository();
+    seasonRepository = new FakeSeasonRepository();
+    var service =
+        new WatchProgressService(
+            new FakeStreamSessionRepository(),
+            watchProgressRepository,
+            mediaFileRepository,
+            episodeRepository,
+            seasonRepository,
+            new WatchProgressProperties(5.0, 90.0, 300),
+            new CapturingEventPublisher());
+    dataLoader = new WatchStatusDataLoader(service);
+  }
+
+  @Test
+  @DisplayName("Should return watched for direct media when all files played")
+  void shouldReturnWatchedForDirectMediaWhenAllFilesPlayed() throws Exception {
+    var movie = Movie.builder().build();
+    movie.setId(UUID.randomUUID());
+    var mf = mediaFileRepository.save(createMediaFile(movie.getId()));
+    watchProgressRepository.save(buildPlayedProgress(mf.getId()));
+
+    var key = new WatchStatusLoaderKey(movie.getId(), WatchStatusEntityType.DIRECT_MEDIA);
+    var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
+
+    assertThat(result.get(key)).isEqualTo(WatchStatus.WATCHED);
+  }
+
+  @Test
+  @DisplayName("Should return unwatched when no progress exists")
+  void shouldReturnUnwatchedWhenNoProgressExists() throws Exception {
+    var key = new WatchStatusLoaderKey(UUID.randomUUID(), WatchStatusEntityType.DIRECT_MEDIA);
+    var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
+
+    assertThat(result.get(key)).isEqualTo(WatchStatus.UNWATCHED);
+  }
+
+  @Test
+  @DisplayName("Should batch mixed entity types in single load")
+  void shouldBatchMixedEntityTypesInSingleLoad() throws Exception {
+    var movie = Movie.builder().build();
+    movie.setId(UUID.randomUUID());
+    var movieMf = mediaFileRepository.save(createMediaFile(movie.getId()));
+    watchProgressRepository.save(buildPlayedProgress(movieMf.getId()));
+
+    var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
+    var ep = episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
+    mediaFileRepository.save(createMediaFile(ep.getId()));
+
+    var movieKey = new WatchStatusLoaderKey(movie.getId(), WatchStatusEntityType.DIRECT_MEDIA);
+    var seasonKey = new WatchStatusLoaderKey(season.getId(), WatchStatusEntityType.SEASON);
+
+    var result = dataLoader.load(Set.of(movieKey, seasonKey)).toCompletableFuture().get();
+
+    assertThat(result.get(movieKey)).isEqualTo(WatchStatus.WATCHED);
+    assertThat(result.get(seasonKey)).isEqualTo(WatchStatus.UNWATCHED);
+  }
+
+  @Test
+  @DisplayName("Should return in progress for season with partial progress")
+  void shouldReturnInProgressForSeasonWithPartialProgress() throws Exception {
+    var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
+    var ep1 = episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
+    var ep2 = episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
+    var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
+    mediaFileRepository.save(createMediaFile(ep2.getId()));
+    watchProgressRepository.save(buildPlayedProgress(mf1.getId()));
+
+    var key = new WatchStatusLoaderKey(season.getId(), WatchStatusEntityType.SEASON);
+    var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
+
+    assertThat(result.get(key)).isEqualTo(WatchStatus.IN_PROGRESS);
+  }
+
+  @Test
+  @DisplayName("Should return watched for series when all episodes played")
+  void shouldReturnWatchedForSeriesWhenAllEpisodesPlayed() throws Exception {
+    var series = Series.builder().build();
+    series.setId(UUID.randomUUID());
+    var s1 = seasonRepository.save(Season.builder().seasonNumber(1).series(series).build());
+    var ep1 = episodeRepository.save(Episode.builder().episodeNumber(1).season(s1).build());
+    var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
+    watchProgressRepository.save(buildPlayedProgress(mf1.getId()));
+
+    var key = new WatchStatusLoaderKey(series.getId(), WatchStatusEntityType.SERIES);
+    var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
+
+    assertThat(result.get(key)).isEqualTo(WatchStatus.WATCHED);
+  }
+
+  private MediaFile createMediaFile(UUID mediaId) {
+    return MediaFile.builder()
+        .mediaId(mediaId)
+        .filename("file-" + UUID.randomUUID() + ".mkv")
+        .filepathUri("/media/" + UUID.randomUUID() + ".mkv")
+        .size(1_000_000)
+        .status(MediaFileStatus.MATCHED)
+        .build();
+  }
+
+  private WatchProgress buildPlayedProgress(UUID mediaFileId) {
+    return WatchProgress.builder()
+        .userId(USER_ID)
+        .mediaFileId(mediaFileId)
+        .positionSeconds(0)
+        .percentComplete(100.0)
+        .durationSeconds(7200)
+        .lastPlayedAt(Instant.now())
+        .build();
+  }
+}
