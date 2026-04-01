@@ -32,6 +32,10 @@ public class StreamSession {
 
   @Getter(lombok.AccessLevel.NONE)
   @Builder.Default
+  private volatile int seekOrigin = 0;
+
+  @Getter(lombok.AccessLevel.NONE)
+  @Builder.Default
   private final AtomicReference<PlaybackSnapshot> playbackSnapshot =
       new AtomicReference<>(new PlaybackSnapshot(0, null, Instant.now()));
 
@@ -50,6 +54,14 @@ public class StreamSession {
   public void setSeekPosition(int positionSeconds) {
     playbackSnapshot.updateAndGet(
         current -> new PlaybackSnapshot(positionSeconds, current.state(), current.accessedAt()));
+  }
+
+  public int getSeekOrigin() {
+    return seekOrigin;
+  }
+
+  public void setSeekOrigin(int seekOrigin) {
+    this.seekOrigin = seekOrigin;
   }
 
   public Instant getLastAccessedAt() {
