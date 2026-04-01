@@ -2,6 +2,7 @@ package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.streaming.WatchProgress;
 import com.streamarr.server.repositories.streaming.WatchProgressRepository;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -28,6 +29,52 @@ public class FakeWatchProgressRepository extends FakeJpaRepository<WatchProgress
   @Override
   public void deleteByUserIdAndMediaFileId(UUID userId, UUID mediaFileId) {
     database
+        .entrySet()
+        .removeIf(
+            entry ->
+                userId.equals(entry.getValue().getUserId())
+                    && mediaFileId.equals(entry.getValue().getMediaFileId()));
+  }
+
+  @Override
+  public boolean upsertProgress(
+      UUID userId,
+      UUID mediaFileId,
+      int positionSeconds,
+      double percentComplete,
+      int durationSeconds,
+      Instant lastPlayedAt) {
+    var existing = findByUserIdAndMediaFileId(userId, mediaFileId);
+    if (existing.isPresent()) {
+      var wp = existing.get();
+      if (wp.isPlayed()) {
+        return false;
+      }
+      wp.setPositionSeconds(positionSeconds);
+      wp.setPercentComplete(percentComplete);
+      wp.setDurationSeconds(durationSeconds);
+      wp.setLastPlayedAt(lastPlayedAt);
+      return true;
+    }
+    save(
+        WatchProgress.builder()
+            .userId(userId)
+            .mediaFileId(mediaFileId)
+            .positionSeconds(positionSeconds)
+            .percentComplete(percentComplete)
+            .durationSeconds(durationSeconds)
+            .lastPlayedAt(lastPlayedAt)
+            .build());
+    return true;
+  }
+
+  @Override
+  public boolean deleteIfNotWatched(UUID userId, UUID mediaFileId) {
+    var existing = findByUserIdAndMediaFileId(userId, mediaFileId);
+    if (existing.isPresent() && existing.get().isPlayed()) {
+      return false;
+    }
+    return database
         .entrySet()
         .removeIf(
             entry ->

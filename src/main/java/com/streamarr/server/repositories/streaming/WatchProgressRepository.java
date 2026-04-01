@@ -7,7 +7,8 @@ import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-public interface WatchProgressRepository extends JpaRepository<WatchProgress, UUID> {
+public interface WatchProgressRepository
+    extends JpaRepository<WatchProgress, UUID>, WatchProgressRepositoryCustom {
 
   Optional<WatchProgress> findByUserIdAndMediaFileId(UUID userId, UUID mediaFileId);
 
