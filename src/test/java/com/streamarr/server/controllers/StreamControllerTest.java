@@ -444,8 +444,7 @@ class StreamControllerTest {
 
     var result =
         mockMvc
-            .perform(
-                get("/api/stream/{sessionId}/{variantLabel}/init.mp4", SESSION_ID, "1080p"))
+            .perform(get("/api/stream/{sessionId}/{variantLabel}/init.mp4", SESSION_ID, "1080p"))
             .andExpect(status().isOk())
             .andReturn();
 

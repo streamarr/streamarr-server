@@ -26,11 +26,9 @@ public class WatchProgressRepositoryCustomImpl implements WatchProgressRepositor
       Instant lastPlayedAt) {
     var auditUser = auditorAware.getCurrentAuditor().orElse(null);
     var now = OffsetDateTime.now(ZoneOffset.UTC);
-    var lastPlayedAtOdt =
-        lastPlayedAt != null ? lastPlayedAt.atOffset(ZoneOffset.UTC) : null;
+    var lastPlayedAtOdt = lastPlayedAt != null ? lastPlayedAt.atOffset(ZoneOffset.UTC) : null;
 
-    return dsl
-            .insertInto(WATCH_PROGRESS)
+    return dsl.insertInto(WATCH_PROGRESS)
             .set(WATCH_PROGRESS.USER_ID, userId)
             .set(WATCH_PROGRESS.MEDIA_FILE_ID, mediaFileId)
             .set(WATCH_PROGRESS.POSITION_SECONDS, positionSeconds)
@@ -54,8 +52,7 @@ public class WatchProgressRepositoryCustomImpl implements WatchProgressRepositor
 
   @Override
   public boolean deleteIfNotWatched(UUID userId, UUID mediaFileId) {
-    return dsl
-            .deleteFrom(WATCH_PROGRESS)
+    return dsl.deleteFrom(WATCH_PROGRESS)
             .where(WATCH_PROGRESS.USER_ID.eq(userId))
             .and(WATCH_PROGRESS.MEDIA_FILE_ID.eq(mediaFileId))
             .and(WATCH_PROGRESS.LAST_PLAYED_AT.isNull())

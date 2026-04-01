@@ -15,8 +15,7 @@ import org.dataloader.MappedBatchLoader;
 
 @DgsDataLoader(name = "watchStatus")
 @RequiredArgsConstructor
-public class WatchStatusDataLoader
-    implements MappedBatchLoader<WatchStatusLoaderKey, WatchStatus> {
+public class WatchStatusDataLoader implements MappedBatchLoader<WatchStatusLoaderKey, WatchStatus> {
 
   private final WatchProgressService watchProgressService;
 
@@ -37,8 +36,7 @@ public class WatchStatusDataLoader
             var statusMap = loadByType(userId, entry.getKey(), entityIds);
 
             for (var key : entry.getValue()) {
-              result.put(
-                  key, statusMap.getOrDefault(key.entityId(), WatchStatus.UNWATCHED));
+              result.put(key, statusMap.getOrDefault(key.entityId(), WatchStatus.UNWATCHED));
             }
           }
 

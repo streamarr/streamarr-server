@@ -700,8 +700,7 @@ class WatchProgressServiceTest {
       watchProgressRepository.save(buildPlayedProgress(mf1.getId()));
 
       var result =
-          service.getWatchStatusForDirectMedia(
-              USER_ID, List.of(movie1.getId(), movie2.getId()));
+          service.getWatchStatusForDirectMedia(USER_ID, List.of(movie1.getId(), movie2.getId()));
 
       assertThat(result).containsEntry(movie1.getId(), WatchStatus.WATCHED);
       assertThat(result).containsEntry(movie2.getId(), WatchStatus.UNWATCHED);
@@ -710,8 +709,7 @@ class WatchProgressServiceTest {
     @Test
     @DisplayName("Should return empty map when no media files exist")
     void shouldReturnEmptyMapWhenNoMediaFilesExist() {
-      var result =
-          service.getWatchStatusForDirectMedia(USER_ID, List.of(UUID.randomUUID()));
+      var result = service.getWatchStatusForDirectMedia(USER_ID, List.of(UUID.randomUUID()));
 
       assertThat(result).isEmpty();
     }
@@ -759,8 +757,7 @@ class WatchProgressServiceTest {
     @Test
     @DisplayName("Should return empty map when no episodes exist")
     void shouldReturnEmptyMapWhenNoEpisodesExist() {
-      var result =
-          service.getWatchStatusForSeasons(USER_ID, List.of(UUID.randomUUID()));
+      var result = service.getWatchStatusForSeasons(USER_ID, List.of(UUID.randomUUID()));
 
       assertThat(result).isEmpty();
     }
@@ -778,8 +775,7 @@ class WatchProgressServiceTest {
 
       watchProgressRepository.save(buildPlayedProgress(mf1.getId()));
 
-      var result =
-          service.getWatchStatusForSeasons(USER_ID, List.of(s1.getId(), s2.getId()));
+      var result = service.getWatchStatusForSeasons(USER_ID, List.of(s1.getId(), s2.getId()));
 
       assertThat(result).containsEntry(s1.getId(), WatchStatus.WATCHED);
       assertThat(result).containsEntry(s2.getId(), WatchStatus.UNWATCHED);
@@ -834,8 +830,7 @@ class WatchProgressServiceTest {
     @Test
     @DisplayName("Should return empty map when no seasons exist")
     void shouldReturnEmptyMapWhenNoSeasonsExist() {
-      var result =
-          service.getWatchStatusForSeries(USER_ID, List.of(UUID.randomUUID()));
+      var result = service.getWatchStatusForSeries(USER_ID, List.of(UUID.randomUUID()));
 
       assertThat(result).isEmpty();
     }
@@ -858,8 +853,7 @@ class WatchProgressServiceTest {
       watchProgressRepository.save(buildPlayedProgress(mf1.getId()));
 
       var result =
-          service.getWatchStatusForSeries(
-              USER_ID, List.of(series1.getId(), series2.getId()));
+          service.getWatchStatusForSeries(USER_ID, List.of(series1.getId(), series2.getId()));
 
       assertThat(result).containsEntry(series1.getId(), WatchStatus.WATCHED);
       assertThat(result).containsEntry(series2.getId(), WatchStatus.UNWATCHED);

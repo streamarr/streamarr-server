@@ -289,8 +289,7 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
     void shouldPopulateAuditFieldsOnUpsert() {
       var fixture = createMovieWithFile();
 
-      watchProgressRepository.upsertProgress(
-          USER_ID, fixture.mediaFileId(), 300, 25.0, 1200, null);
+      watchProgressRepository.upsertProgress(USER_ID, fixture.mediaFileId(), 300, 25.0, 1200, null);
 
       entityManager.clear();
 
@@ -332,8 +331,7 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
 
       entityManager.clear();
 
-      assertThat(
-              watchProgressRepository.findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId()))
+      assertThat(watchProgressRepository.findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId()))
           .isEmpty();
     }
 
@@ -361,8 +359,7 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
 
       entityManager.clear();
 
-      assertThat(
-              watchProgressRepository.findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId()))
+      assertThat(watchProgressRepository.findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId()))
           .isPresent();
     }
   }

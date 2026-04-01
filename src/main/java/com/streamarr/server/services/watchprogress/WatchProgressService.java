@@ -78,12 +78,7 @@ public class WatchProgressService {
 
     var written =
         watchProgressRepository.upsertProgress(
-            userId,
-            mediaFileId,
-            effectivePosition,
-            percentComplete,
-            durationSeconds,
-            lastPlayedAt);
+            userId, mediaFileId, effectivePosition, percentComplete, durationSeconds, lastPlayedAt);
 
     if (!written) {
       return;
@@ -122,8 +117,7 @@ public class WatchProgressService {
     return deriveWatchStatusMap(mediaFilesByCollectable, progressMap);
   }
 
-  public Map<UUID, WatchStatus> getWatchStatusForSeasons(
-      UUID userId, Collection<UUID> seasonIds) {
+  public Map<UUID, WatchStatus> getWatchStatusForSeasons(UUID userId, Collection<UUID> seasonIds) {
     var episodes = episodeRepository.findBySeasonIdIn(seasonIds);
     if (episodes.isEmpty()) {
       return Map.of();
@@ -151,15 +145,12 @@ public class WatchProgressService {
               .map(MediaFile::getId)
               .toList();
 
-      result.put(
-          entry.getKey(),
-          deriveWatchStatusFromFileIds(seasonMediaFileIds, progressMap));
+      result.put(entry.getKey(), deriveWatchStatusFromFileIds(seasonMediaFileIds, progressMap));
     }
     return result;
   }
 
-  public Map<UUID, WatchStatus> getWatchStatusForSeries(
-      UUID userId, Collection<UUID> seriesIds) {
+  public Map<UUID, WatchStatus> getWatchStatusForSeries(UUID userId, Collection<UUID> seriesIds) {
     var seasons = seasonRepository.findBySeriesIdIn(seriesIds);
     if (seasons.isEmpty()) {
       return Map.of();
@@ -204,8 +195,7 @@ public class WatchProgressService {
               .toList();
 
       result.put(
-          seriesEntry.getKey(),
-          deriveWatchStatusFromFileIds(seriesMediaFileIds, progressMap));
+          seriesEntry.getKey(), deriveWatchStatusFromFileIds(seriesMediaFileIds, progressMap));
     }
     return result;
   }
@@ -248,8 +238,7 @@ public class WatchProgressService {
   }
 
   private static Map<UUID, WatchStatus> deriveWatchStatusMap(
-      Map<UUID, List<MediaFile>> mediaFilesByCollectable,
-      Map<UUID, WatchProgress> progressMap) {
+      Map<UUID, List<MediaFile>> mediaFilesByCollectable, Map<UUID, WatchProgress> progressMap) {
     var result = new HashMap<UUID, WatchStatus>();
     for (var entry : mediaFilesByCollectable.entrySet()) {
       var fileIds = entry.getValue().stream().map(MediaFile::getId).toList();
@@ -288,5 +277,4 @@ public class WatchProgressService {
 
     return WatchStatus.UNWATCHED;
   }
-
 }

@@ -21,7 +21,8 @@ public class FakeEpisodeRepository extends FakeJpaRepository<Episode> implements
   public List<Episode> findBySeasonIdIn(Collection<UUID> seasonIds) {
     return database.values().stream()
         .filter(
-            episode -> episode.getSeason() != null && seasonIds.contains(episode.getSeason().getId()))
+            episode ->
+                episode.getSeason() != null && seasonIds.contains(episode.getSeason().getId()))
         .toList();
   }
 

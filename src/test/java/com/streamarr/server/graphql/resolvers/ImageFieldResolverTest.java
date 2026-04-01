@@ -59,7 +59,8 @@ class ImageFieldResolverTest {
     void shouldLoadImagesViaDataLoaderWhenResolvingMovieImages() {
       var movie = setupMovie();
       var image =
-          buildImage(movie.getId(), ImageEntityType.MOVIE, ImageType.POSTER, ImageSize.SMALL, 185, 278);
+          buildImage(
+              movie.getId(), ImageEntityType.MOVIE, ImageType.POSTER, ImageSize.SMALL, 185, 278);
       when(imageRepository.findByEntityTypeAndEntityIdIn(eq(ImageEntityType.MOVIE), any()))
           .thenReturn(List.of(image));
 
@@ -76,7 +77,8 @@ class ImageFieldResolverTest {
     void shouldFilterByImageTypeWhenTypeArgumentProvided() {
       var movie = setupMovie();
       var posterImage =
-          buildImage(movie.getId(), ImageEntityType.MOVIE, ImageType.POSTER, ImageSize.SMALL, 185, 278);
+          buildImage(
+              movie.getId(), ImageEntityType.MOVIE, ImageType.POSTER, ImageSize.SMALL, 185, 278);
       var backdropImage =
           buildImage(
               movie.getId(), ImageEntityType.MOVIE, ImageType.BACKDROP, ImageSize.SMALL, 300, 169);
@@ -97,7 +99,8 @@ class ImageFieldResolverTest {
     void shouldReturnAllImagesWhenTypeArgumentOmitted() {
       var movie = setupMovie();
       var posterImage =
-          buildImage(movie.getId(), ImageEntityType.MOVIE, ImageType.POSTER, ImageSize.SMALL, 185, 278);
+          buildImage(
+              movie.getId(), ImageEntityType.MOVIE, ImageType.POSTER, ImageSize.SMALL, 185, 278);
       var backdropImage =
           buildImage(
               movie.getId(), ImageEntityType.MOVIE, ImageType.BACKDROP, ImageSize.SMALL, 300, 169);
@@ -126,8 +129,7 @@ class ImageFieldResolverTest {
       when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
 
       var image =
-          buildImage(
-              seriesId, ImageEntityType.SERIES, ImageType.POSTER, ImageSize.SMALL, 185, 278);
+          buildImage(seriesId, ImageEntityType.SERIES, ImageType.POSTER, ImageSize.SMALL, 185, 278);
       when(imageRepository.findByEntityTypeAndEntityIdIn(eq(ImageEntityType.SERIES), any()))
           .thenReturn(List.of(image));
 
@@ -159,8 +161,7 @@ class ImageFieldResolverTest {
       when(seriesService.findSeasons(seriesId)).thenReturn(List.of(season));
 
       var image =
-          buildImage(
-              seasonId, ImageEntityType.SEASON, ImageType.POSTER, ImageSize.SMALL, 185, 278);
+          buildImage(seasonId, ImageEntityType.SEASON, ImageType.POSTER, ImageSize.SMALL, 185, 278);
       when(imageRepository.findByEntityTypeAndEntityIdIn(eq(ImageEntityType.SEASON), any()))
           .thenReturn(List.of(image));
 
