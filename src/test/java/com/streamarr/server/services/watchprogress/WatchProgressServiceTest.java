@@ -432,13 +432,13 @@ class WatchProgressServiceTest {
     void shouldPublishPlaybackStoppedEventWhenItemAlreadyWatched() {
       var session = addSession();
       markAsWatched(session);
-      eventPublisher.getEventsOfType(PlaybackStoppedEvent.class); // clear
+      eventPublisher.clear();
 
       // Stale session stops — PlaybackStoppedEvent should still fire
       service.reportTimeline(USER_ID, session.getSessionId(), 3600, PlaybackState.STOPPED);
 
       var events = eventPublisher.getEventsOfType(PlaybackStoppedEvent.class);
-      assertThat(events).hasSize(2);
+      assertThat(events).hasSize(1);
     }
 
     @Test
