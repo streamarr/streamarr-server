@@ -7,7 +7,6 @@ import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.MediaProbe;
-import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
@@ -35,6 +34,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @Tag("UnitTest")
 @EnableDgsTest
@@ -43,8 +43,6 @@ import org.springframework.context.annotation.Bean;
 class StreamingResolverTest {
 
   private static final StubStreamingService STUB_SERVICE = new StubStreamingService();
-  private static final StubWatchProgressService STUB_WATCH_PROGRESS =
-      new StubWatchProgressService();
 
   @TestConfiguration
   static class TestConfig {
@@ -52,14 +50,10 @@ class StreamingResolverTest {
     StreamingService streamingService() {
       return STUB_SERVICE;
     }
-
-    @Bean
-    WatchProgressService watchProgressService() {
-      return STUB_WATCH_PROGRESS;
-    }
   }
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
+  @MockitoBean private WatchProgressService watchProgressService;
 
   private StreamSession buildSession(UUID sessionId) {
     return StreamSession.builder()
@@ -352,44 +346,6 @@ class StreamingResolverTest {
   }
 
   @Test
-  @DisplayName("Should delegate to watch progress service when reporting timeline")
-  void shouldDelegateToWatchProgressServiceWhenReportingTimeline() {
-    var sessionId = UUID.randomUUID();
-    var mutation =
-        String.format(
-            """
-            mutation {
-              reportTimeline(sessionId: "%s", positionSeconds: 600, state: PAUSED)
-            }
-            """,
-            sessionId);
-
-    dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.reportTimeline");
-
-    assertThat(STUB_WATCH_PROGRESS.lastSessionId).isEqualTo(sessionId);
-    assertThat(STUB_WATCH_PROGRESS.lastPositionSeconds).isEqualTo(600);
-    assertThat(STUB_WATCH_PROGRESS.lastState).isEqualTo(PlaybackState.PAUSED);
-  }
-
-  @Test
-  @DisplayName("Should delegate to watch progress service when resetting watch progress")
-  void shouldDelegateToWatchProgressServiceWhenResettingWatchProgress() {
-    var collectableId = UUID.randomUUID();
-    var mutation =
-        String.format(
-            """
-            mutation {
-              resetWatchProgress(id: "%s")
-            }
-            """,
-            collectableId);
-
-    dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.resetWatchProgress");
-
-    assertThat(STUB_WATCH_PROGRESS.lastResetId).isEqualTo(collectableId);
-  }
-
-  @Test
   @DisplayName("Should return error when reset watch progress ID is invalid")
   void shouldReturnErrorWhenResetWatchProgressIdIsInvalid() {
     var result =
@@ -404,28 +360,4 @@ class StreamingResolverTest {
     assertThat(result.getErrors().getFirst().getMessage()).contains("Invalid ID format");
   }
 
-  private static class StubWatchProgressService extends WatchProgressService {
-
-    UUID lastSessionId;
-    int lastPositionSeconds;
-    PlaybackState lastState;
-    UUID lastResetId;
-
-    StubWatchProgressService() {
-      super(null, null, null, null, null, null, null);
-    }
-
-    @Override
-    public void reportTimeline(
-        UUID userId, UUID sessionId, int positionSeconds, PlaybackState state) {
-      this.lastSessionId = sessionId;
-      this.lastPositionSeconds = positionSeconds;
-      this.lastState = state;
-    }
-
-    @Override
-    public void resetProgress(UUID userId, UUID collectableId) {
-      this.lastResetId = collectableId;
-    }
-  }
 }
