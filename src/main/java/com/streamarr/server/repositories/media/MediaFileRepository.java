@@ -18,6 +18,8 @@ public interface MediaFileRepository extends JpaRepository<MediaFile, UUID> {
 
   List<MediaFile> findByMediaId(UUID mediaId);
 
+  List<MediaFile> findByMediaIdIn(Collection<UUID> mediaIds);
+
   List<MediaFile> findByLibraryId(UUID libraryId);
 
   @Query("SELECT DISTINCT m.mediaId FROM MediaFile m WHERE m.mediaId IN :mediaIds")

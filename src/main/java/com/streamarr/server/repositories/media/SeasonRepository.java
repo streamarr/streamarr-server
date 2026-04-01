@@ -1,6 +1,7 @@
 package com.streamarr.server.repositories.media;
 
 import com.streamarr.server.domain.media.Season;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -13,4 +14,6 @@ public interface SeasonRepository extends JpaRepository<Season, UUID> {
   Optional<Season> findBySeriesIdAndSeasonNumber(UUID seriesId, int seasonNumber);
 
   List<Season> findBySeriesId(UUID seriesId);
+
+  List<Season> findBySeriesIdIn(Collection<UUID> seriesIds);
 }
