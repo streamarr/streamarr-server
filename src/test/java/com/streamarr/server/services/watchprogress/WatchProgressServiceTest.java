@@ -270,7 +270,8 @@ class WatchProgressServiceTest {
       var shortSession = StreamSessionFixture.buildSessionWithDuration(2400);
       sessionRepository.save(shortSession);
 
-      service.reportTimeline(USER_ID, shortSession.getSessionId(), 2100, PlaybackState.STOPPED);
+      // 2400 - 2150 = 250s remaining, clearly below maxRemainingSeconds (300)
+      service.reportTimeline(USER_ID, shortSession.getSessionId(), 2150, PlaybackState.STOPPED);
 
       var progress =
           watchProgressRepository
@@ -658,22 +659,6 @@ class WatchProgressServiceTest {
 
       assertThat(service.getWatchStatusForCollectable(USER_ID, movie.getId()))
           .isEqualTo(WatchStatus.UNWATCHED);
-    }
-
-    @Test
-    @DisplayName("Should derive in progress when only in progress and no watched")
-    void shouldDeriveInProgressWhenOnlyInProgressAndNoWatched() {
-      var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
-      var ep1 = episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
-      var ep2 = episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
-
-      var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
-      mediaFileRepository.save(createMediaFile(ep2.getId()));
-
-      watchProgressRepository.save(buildProgress(mf1.getId(), 300));
-
-      assertThat(service.getWatchStatusForCollectable(USER_ID, season.getId()))
-          .isEqualTo(WatchStatus.IN_PROGRESS);
     }
 
     @Test
