@@ -307,6 +307,7 @@
                 <configuration>
                     <excludes>
                         <exclude>**/com/streamarr/server/jooq/generated/**</exclude>
+                        <exclude>**/com/streamarr/server/config/DevDataInitializer.class</exclude>
                     </excludes>
                 </configuration>
                 <executions>
