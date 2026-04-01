@@ -27,6 +27,7 @@ import com.streamarr.server.services.watchprogress.events.MediaWatchedEvent;
 import com.streamarr.server.services.watchprogress.events.PlaybackStoppedEvent;
 import com.streamarr.server.services.watchprogress.events.TimelineReportedEvent;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -701,6 +702,236 @@ class WatchProgressServiceTest {
 
       assertThat(service.getWatchStatusForCollectable(USER_ID, series.getId()))
           .isEqualTo(WatchStatus.IN_PROGRESS);
+    }
+  }
+
+  @Nested
+  @DisplayName("Batch Watch Status for Direct Media")
+  class BatchWatchStatusForDirectMedia {
+
+    @Test
+    @DisplayName("Should return watched when all media files are played")
+    void shouldReturnWatchedWhenAllMediaFilesArePlayed() {
+      var movie = Movie.builder().build();
+      movie.setId(UUID.randomUUID());
+
+      var mf1 = mediaFileRepository.save(createMediaFile(movie.getId()));
+      var mf2 = mediaFileRepository.save(createMediaFile(movie.getId()));
+
+      watchProgressRepository.save(buildPlayedProgress(mf1.getId()));
+      watchProgressRepository.save(buildPlayedProgress(mf2.getId()));
+
+      var result = service.getWatchStatusForDirectMedia(USER_ID, List.of(movie.getId()));
+
+      assertThat(result).containsEntry(movie.getId(), WatchStatus.WATCHED);
+    }
+
+    @Test
+    @DisplayName("Should return unwatched when no progress exists")
+    void shouldReturnUnwatchedWhenNoProgressExists() {
+      var movie = Movie.builder().build();
+      movie.setId(UUID.randomUUID());
+
+      mediaFileRepository.save(createMediaFile(movie.getId()));
+
+      var result = service.getWatchStatusForDirectMedia(USER_ID, List.of(movie.getId()));
+
+      assertThat(result).containsEntry(movie.getId(), WatchStatus.UNWATCHED);
+    }
+
+    @Test
+    @DisplayName("Should return in progress when some files have progress")
+    void shouldReturnInProgressWhenSomeFilesHaveProgress() {
+      var movie = Movie.builder().build();
+      movie.setId(UUID.randomUUID());
+
+      var mf1 = mediaFileRepository.save(createMediaFile(movie.getId()));
+      mediaFileRepository.save(createMediaFile(movie.getId()));
+
+      watchProgressRepository.save(buildProgress(mf1.getId(), 300));
+
+      var result = service.getWatchStatusForDirectMedia(USER_ID, List.of(movie.getId()));
+
+      assertThat(result).containsEntry(movie.getId(), WatchStatus.IN_PROGRESS);
+    }
+
+    @Test
+    @DisplayName("Should batch multiple collectables in single call")
+    void shouldBatchMultipleCollectablesInSingleCall() {
+      var movie1 = Movie.builder().build();
+      movie1.setId(UUID.randomUUID());
+      var movie2 = Movie.builder().build();
+      movie2.setId(UUID.randomUUID());
+
+      var mf1 = mediaFileRepository.save(createMediaFile(movie1.getId()));
+      mediaFileRepository.save(createMediaFile(movie2.getId()));
+
+      watchProgressRepository.save(buildPlayedProgress(mf1.getId()));
+
+      var result =
+          service.getWatchStatusForDirectMedia(
+              USER_ID, List.of(movie1.getId(), movie2.getId()));
+
+      assertThat(result).containsEntry(movie1.getId(), WatchStatus.WATCHED);
+      assertThat(result).containsEntry(movie2.getId(), WatchStatus.UNWATCHED);
+    }
+
+    @Test
+    @DisplayName("Should return empty map when no media files exist")
+    void shouldReturnEmptyMapWhenNoMediaFilesExist() {
+      var result =
+          service.getWatchStatusForDirectMedia(USER_ID, List.of(UUID.randomUUID()));
+
+      assertThat(result).isEmpty();
+    }
+  }
+
+  @Nested
+  @DisplayName("Batch Watch Status for Seasons")
+  class BatchWatchStatusForSeasons {
+
+    @Test
+    @DisplayName("Should return watched when all episodes are played")
+    void shouldReturnWatchedWhenAllEpisodesArePlayed() {
+      var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
+      var ep1 = episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
+      var ep2 = episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
+
+      var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
+      var mf2 = mediaFileRepository.save(createMediaFile(ep2.getId()));
+
+      watchProgressRepository.save(buildPlayedProgress(mf1.getId()));
+      watchProgressRepository.save(buildPlayedProgress(mf2.getId()));
+
+      var result = service.getWatchStatusForSeasons(USER_ID, List.of(season.getId()));
+
+      assertThat(result).containsEntry(season.getId(), WatchStatus.WATCHED);
+    }
+
+    @Test
+    @DisplayName("Should return in progress when some episodes have progress")
+    void shouldReturnInProgressWhenSomeEpisodesHaveProgress() {
+      var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
+      var ep1 = episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
+      var ep2 = episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
+
+      var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
+      mediaFileRepository.save(createMediaFile(ep2.getId()));
+
+      watchProgressRepository.save(buildProgress(mf1.getId(), 300));
+
+      var result = service.getWatchStatusForSeasons(USER_ID, List.of(season.getId()));
+
+      assertThat(result).containsEntry(season.getId(), WatchStatus.IN_PROGRESS);
+    }
+
+    @Test
+    @DisplayName("Should return empty map when no episodes exist")
+    void shouldReturnEmptyMapWhenNoEpisodesExist() {
+      var result =
+          service.getWatchStatusForSeasons(USER_ID, List.of(UUID.randomUUID()));
+
+      assertThat(result).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should batch multiple seasons in single call")
+    void shouldBatchMultipleSeasonsInSingleCall() {
+      var s1 = seasonRepository.save(Season.builder().seasonNumber(1).build());
+      var s2 = seasonRepository.save(Season.builder().seasonNumber(2).build());
+      var ep1 = episodeRepository.save(Episode.builder().episodeNumber(1).season(s1).build());
+      var ep2 = episodeRepository.save(Episode.builder().episodeNumber(1).season(s2).build());
+
+      var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
+      mediaFileRepository.save(createMediaFile(ep2.getId()));
+
+      watchProgressRepository.save(buildPlayedProgress(mf1.getId()));
+
+      var result =
+          service.getWatchStatusForSeasons(USER_ID, List.of(s1.getId(), s2.getId()));
+
+      assertThat(result).containsEntry(s1.getId(), WatchStatus.WATCHED);
+      assertThat(result).containsEntry(s2.getId(), WatchStatus.UNWATCHED);
+    }
+  }
+
+  @Nested
+  @DisplayName("Batch Watch Status for Series")
+  class BatchWatchStatusForSeries {
+
+    @Test
+    @DisplayName("Should return watched when all episodes across seasons are played")
+    void shouldReturnWatchedWhenAllEpisodesAcrossSeasonsArePlayed() {
+      var series = Series.builder().build();
+      series.setId(UUID.randomUUID());
+      var s1 = seasonRepository.save(Season.builder().seasonNumber(1).series(series).build());
+      var s2 = seasonRepository.save(Season.builder().seasonNumber(2).series(series).build());
+      var ep1 = episodeRepository.save(Episode.builder().episodeNumber(1).season(s1).build());
+      var ep2 = episodeRepository.save(Episode.builder().episodeNumber(1).season(s2).build());
+
+      var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
+      var mf2 = mediaFileRepository.save(createMediaFile(ep2.getId()));
+
+      watchProgressRepository.save(buildPlayedProgress(mf1.getId()));
+      watchProgressRepository.save(buildPlayedProgress(mf2.getId()));
+
+      var result = service.getWatchStatusForSeries(USER_ID, List.of(series.getId()));
+
+      assertThat(result).containsEntry(series.getId(), WatchStatus.WATCHED);
+    }
+
+    @Test
+    @DisplayName("Should return in progress when some episodes have progress")
+    void shouldReturnInProgressWhenSomeEpisodesHaveProgress() {
+      var series = Series.builder().build();
+      series.setId(UUID.randomUUID());
+      var s1 = seasonRepository.save(Season.builder().seasonNumber(1).series(series).build());
+      var s2 = seasonRepository.save(Season.builder().seasonNumber(2).series(series).build());
+      var ep1 = episodeRepository.save(Episode.builder().episodeNumber(1).season(s1).build());
+      var ep2 = episodeRepository.save(Episode.builder().episodeNumber(1).season(s2).build());
+
+      var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
+      mediaFileRepository.save(createMediaFile(ep2.getId()));
+
+      watchProgressRepository.save(buildProgress(mf1.getId(), 300));
+
+      var result = service.getWatchStatusForSeries(USER_ID, List.of(series.getId()));
+
+      assertThat(result).containsEntry(series.getId(), WatchStatus.IN_PROGRESS);
+    }
+
+    @Test
+    @DisplayName("Should return empty map when no seasons exist")
+    void shouldReturnEmptyMapWhenNoSeasonsExist() {
+      var result =
+          service.getWatchStatusForSeries(USER_ID, List.of(UUID.randomUUID()));
+
+      assertThat(result).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should batch multiple series in single call")
+    void shouldBatchMultipleSeriesInSingleCall() {
+      var series1 = Series.builder().build();
+      series1.setId(UUID.randomUUID());
+      var series2 = Series.builder().build();
+      series2.setId(UUID.randomUUID());
+      var s1 = seasonRepository.save(Season.builder().seasonNumber(1).series(series1).build());
+      var s2 = seasonRepository.save(Season.builder().seasonNumber(1).series(series2).build());
+      var ep1 = episodeRepository.save(Episode.builder().episodeNumber(1).season(s1).build());
+      var ep2 = episodeRepository.save(Episode.builder().episodeNumber(1).season(s2).build());
+
+      var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
+      mediaFileRepository.save(createMediaFile(ep2.getId()));
+
+      watchProgressRepository.save(buildPlayedProgress(mf1.getId()));
+
+      var result =
+          service.getWatchStatusForSeries(
+              USER_ID, List.of(series1.getId(), series2.getId()));
+
+      assertThat(result).containsEntry(series1.getId(), WatchStatus.WATCHED);
+      assertThat(result).containsEntry(series2.getId(), WatchStatus.UNWATCHED);
     }
   }
 }
