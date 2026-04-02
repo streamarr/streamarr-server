@@ -51,11 +51,10 @@ public class StreamingResolver {
   public boolean reportTimeline(
       @InputArgument String sessionId,
       @InputArgument int positionSeconds,
-      @InputArgument String state) {
+      @InputArgument PlaybackState state) {
     // TODO(#163): Replace with authenticated user ID from Spring Security
     var userId = resolveCurrentUserId();
-    watchProgressService.reportTimeline(
-        userId, parseUuid(sessionId), positionSeconds, PlaybackState.valueOf(state));
+    watchProgressService.reportTimeline(userId, parseUuid(sessionId), positionSeconds, state);
 
     return true;
   }
