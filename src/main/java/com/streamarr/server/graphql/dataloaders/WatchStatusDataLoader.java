@@ -4,6 +4,7 @@ import com.netflix.graphql.dgs.DgsDataLoader;
 import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.services.watchprogress.WatchProgressService;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -40,16 +41,12 @@ public class WatchStatusDataLoader implements MappedBatchLoader<WatchStatusLoade
             }
           }
 
-          for (var key : keys) {
-            result.putIfAbsent(key, WatchStatus.UNWATCHED);
-          }
-
           return result;
         });
   }
 
   private Map<UUID, WatchStatus> loadByType(
-      UUID userId, WatchStatusEntityType entityType, java.util.List<UUID> entityIds) {
+      UUID userId, WatchStatusEntityType entityType, List<UUID> entityIds) {
     return switch (entityType) {
       case DIRECT_MEDIA -> watchProgressService.getWatchStatusForDirectMedia(userId, entityIds);
       case SEASON -> watchProgressService.getWatchStatusForSeasons(userId, entityIds);
