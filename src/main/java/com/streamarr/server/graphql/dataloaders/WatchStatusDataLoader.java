@@ -2,7 +2,7 @@ package com.streamarr.server.graphql.dataloaders;
 
 import com.netflix.graphql.dgs.DgsDataLoader;
 import com.streamarr.server.domain.streaming.WatchStatus;
-import com.streamarr.server.services.watchprogress.WatchProgressService;
+import com.streamarr.server.services.watchprogress.WatchStatusService;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -18,7 +18,7 @@ import org.dataloader.MappedBatchLoader;
 @RequiredArgsConstructor
 public class WatchStatusDataLoader implements MappedBatchLoader<WatchStatusLoaderKey, WatchStatus> {
 
-  private final WatchProgressService watchProgressService;
+  private final WatchStatusService watchStatusService;
 
   @Override
   public CompletionStage<Map<WatchStatusLoaderKey, WatchStatus>> load(
@@ -48,9 +48,9 @@ public class WatchStatusDataLoader implements MappedBatchLoader<WatchStatusLoade
   private Map<UUID, WatchStatus> loadByType(
       UUID userId, WatchStatusEntityType entityType, List<UUID> entityIds) {
     return switch (entityType) {
-      case DIRECT_MEDIA -> watchProgressService.getWatchStatusForDirectMedia(userId, entityIds);
-      case SEASON -> watchProgressService.getWatchStatusForSeasons(userId, entityIds);
-      case SERIES -> watchProgressService.getWatchStatusForSeries(userId, entityIds);
+      case DIRECT_MEDIA -> watchStatusService.getWatchStatusForDirectMedia(userId, entityIds);
+      case SEASON -> watchStatusService.getWatchStatusForSeasons(userId, entityIds);
+      case SERIES -> watchStatusService.getWatchStatusForSeries(userId, entityIds);
     };
   }
 }

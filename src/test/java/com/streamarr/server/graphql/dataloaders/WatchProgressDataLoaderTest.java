@@ -2,15 +2,12 @@ package com.streamarr.server.graphql.dataloaders;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.config.WatchProgressProperties;
 import com.streamarr.server.domain.streaming.WatchProgress;
-import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
-import com.streamarr.server.fakes.FakeStreamSessionRepository;
 import com.streamarr.server.fakes.FakeWatchProgressRepository;
-import com.streamarr.server.services.watchprogress.WatchProgressService;
+import com.streamarr.server.services.watchprogress.WatchStatusService;
 import java.time.Instant;
 import java.util.Set;
 import java.util.UUID;
@@ -32,14 +29,11 @@ class WatchProgressDataLoaderTest {
   void setUp() {
     watchProgressRepository = new FakeWatchProgressRepository();
     var service =
-        new WatchProgressService(
-            new FakeStreamSessionRepository(),
+        new WatchStatusService(
             watchProgressRepository,
             new FakeMediaFileRepository(),
             new FakeEpisodeRepository(),
-            new FakeSeasonRepository(),
-            new WatchProgressProperties(5.0, 90.0, 300),
-            new CapturingEventPublisher());
+            new FakeSeasonRepository());
     dataLoader = new WatchProgressDataLoader(service);
   }
 

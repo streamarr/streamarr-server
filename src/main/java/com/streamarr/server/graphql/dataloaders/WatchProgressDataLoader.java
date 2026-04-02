@@ -3,7 +3,7 @@ package com.streamarr.server.graphql.dataloaders;
 import com.netflix.graphql.dgs.DgsDataLoader;
 import com.streamarr.server.domain.streaming.WatchProgress;
 import com.streamarr.server.graphql.dto.WatchProgressDto;
-import com.streamarr.server.services.watchprogress.WatchProgressService;
+import com.streamarr.server.services.watchprogress.WatchStatusService;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -17,7 +17,7 @@ import org.dataloader.MappedBatchLoader;
 @RequiredArgsConstructor
 public class WatchProgressDataLoader implements MappedBatchLoader<UUID, WatchProgressDto> {
 
-  private final WatchProgressService watchProgressService;
+  private final WatchStatusService watchStatusService;
 
   @Override
   public CompletionStage<Map<UUID, WatchProgressDto>> load(Set<UUID> mediaFileIds) {
@@ -26,7 +26,7 @@ public class WatchProgressDataLoader implements MappedBatchLoader<UUID, WatchPro
           // TODO(#163): Replace with authenticated user ID from Spring Security
           var userId = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
-          var progressMap = watchProgressService.getProgressForMediaFiles(userId, mediaFileIds);
+          var progressMap = watchStatusService.getProgressForMediaFiles(userId, mediaFileIds);
 
           var result = new HashMap<UUID, WatchProgressDto>();
           for (var mediaFileId : mediaFileIds) {

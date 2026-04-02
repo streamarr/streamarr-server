@@ -2,7 +2,6 @@ package com.streamarr.server.graphql.dataloaders;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.config.WatchProgressProperties;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
@@ -11,13 +10,11 @@ import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.streaming.WatchProgress;
 import com.streamarr.server.domain.streaming.WatchStatus;
-import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
-import com.streamarr.server.fakes.FakeStreamSessionRepository;
 import com.streamarr.server.fakes.FakeWatchProgressRepository;
-import com.streamarr.server.services.watchprogress.WatchProgressService;
+import com.streamarr.server.services.watchprogress.WatchStatusService;
 import java.time.Instant;
 import java.util.Set;
 import java.util.UUID;
@@ -45,14 +42,8 @@ class WatchStatusDataLoaderTest {
     episodeRepository = new FakeEpisodeRepository();
     seasonRepository = new FakeSeasonRepository();
     var service =
-        new WatchProgressService(
-            new FakeStreamSessionRepository(),
-            watchProgressRepository,
-            mediaFileRepository,
-            episodeRepository,
-            seasonRepository,
-            new WatchProgressProperties(5.0, 90.0, 300),
-            new CapturingEventPublisher());
+        new WatchStatusService(
+            watchProgressRepository, mediaFileRepository, episodeRepository, seasonRepository);
     dataLoader = new WatchStatusDataLoader(service);
   }
 

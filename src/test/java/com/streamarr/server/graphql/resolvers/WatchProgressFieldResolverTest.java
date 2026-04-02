@@ -5,24 +5,21 @@ import static org.mockito.Mockito.when;
 
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
-import com.streamarr.server.config.WatchProgressProperties;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.streaming.WatchProgress;
-import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
-import com.streamarr.server.fakes.FakeStreamSessionRepository;
 import com.streamarr.server.fakes.FakeWatchProgressRepository;
 import com.streamarr.server.graphql.dataloaders.WatchProgressDataLoader;
 import com.streamarr.server.graphql.dataloaders.WatchStatusDataLoader;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
-import com.streamarr.server.services.watchprogress.WatchProgressService;
+import com.streamarr.server.services.watchprogress.WatchStatusService;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -89,19 +86,13 @@ class WatchProgressFieldResolverTest {
     }
 
     @Bean
-    WatchProgressService watchProgressService(
+    WatchStatusService watchStatusService(
         FakeWatchProgressRepository watchProgressRepository,
         FakeMediaFileRepository mediaFileRepository,
         FakeEpisodeRepository episodeRepository,
         FakeSeasonRepository seasonRepository) {
-      return new WatchProgressService(
-          new FakeStreamSessionRepository(),
-          watchProgressRepository,
-          mediaFileRepository,
-          episodeRepository,
-          seasonRepository,
-          new WatchProgressProperties(5.0, 90.0, 300),
-          new CapturingEventPublisher());
+      return new WatchStatusService(
+          watchProgressRepository, mediaFileRepository, episodeRepository, seasonRepository);
     }
   }
 
