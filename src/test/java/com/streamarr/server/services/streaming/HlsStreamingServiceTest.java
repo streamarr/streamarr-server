@@ -8,7 +8,6 @@ import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.streaming.MediaProbe;
-import com.streamarr.server.domain.streaming.PlaybackSnapshot;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
@@ -828,7 +827,7 @@ class HlsStreamingServiceTest {
 
     service.seekSession(session.getSessionId(), 60);
 
-    session.updatePlayback(new PlaybackSnapshot(120, PlaybackState.PLAYING, Instant.now()));
+    session.updatePlaybackState(120, PlaybackState.PLAYING);
 
     session.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
     transcodeExecutor.markDead(session.getSessionId());

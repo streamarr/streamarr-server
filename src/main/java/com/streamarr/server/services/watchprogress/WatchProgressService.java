@@ -4,7 +4,6 @@ import com.streamarr.server.config.WatchProgressProperties;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Season;
-import com.streamarr.server.domain.streaming.PlaybackSnapshot;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.WatchProgress;
 import com.streamarr.server.domain.streaming.WatchStatus;
@@ -46,7 +45,7 @@ public class WatchProgressService {
             .findById(sessionId)
             .orElseThrow(() -> new SessionNotFoundException(sessionId));
 
-    session.updatePlayback(new PlaybackSnapshot(positionSeconds, state, Instant.now()));
+    session.updatePlaybackState(positionSeconds, state);
 
     var durationSeconds = (int) session.getMediaProbe().duration().toSeconds();
     if (durationSeconds <= 0) {

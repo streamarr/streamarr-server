@@ -32,15 +32,13 @@ public class StreamSession {
 
   @Getter(lombok.AccessLevel.NONE)
   @Builder.Default
-  private volatile int seekOrigin = 0;
-
-  @Getter(lombok.AccessLevel.NONE)
-  @Builder.Default
   private final AtomicReference<PlaybackSnapshot> playbackSnapshot =
-      new AtomicReference<>(new PlaybackSnapshot(0, null, Instant.now()));
+      new AtomicReference<>(new PlaybackSnapshot(0, null, Instant.now(), 0));
 
-  public void updatePlayback(PlaybackSnapshot snapshot) {
-    playbackSnapshot.set(snapshot);
+  public void updatePlaybackState(int positionSeconds, PlaybackState state) {
+    playbackSnapshot.updateAndGet(
+        current ->
+            new PlaybackSnapshot(positionSeconds, state, Instant.now(), current.seekOrigin()));
   }
 
   public PlaybackSnapshot getPlaybackSnapshot() {
@@ -53,15 +51,20 @@ public class StreamSession {
 
   public void setSeekPosition(int positionSeconds) {
     playbackSnapshot.updateAndGet(
-        current -> new PlaybackSnapshot(positionSeconds, current.state(), current.accessedAt()));
+        current ->
+            new PlaybackSnapshot(
+                positionSeconds, current.state(), current.accessedAt(), current.seekOrigin()));
+  }
+
+  public void seek(int positionSeconds) {
+    playbackSnapshot.updateAndGet(
+        current ->
+            new PlaybackSnapshot(
+                positionSeconds, current.state(), current.accessedAt(), positionSeconds));
   }
 
   public int getSeekOrigin() {
-    return seekOrigin;
-  }
-
-  public void setSeekOrigin(int seekOrigin) {
-    this.seekOrigin = seekOrigin;
+    return playbackSnapshot.get().seekOrigin();
   }
 
   public Instant getLastAccessedAt() {
@@ -70,7 +73,9 @@ public class StreamSession {
 
   public void setLastAccessedAt(Instant accessedAt) {
     playbackSnapshot.updateAndGet(
-        current -> new PlaybackSnapshot(current.positionSeconds(), current.state(), accessedAt));
+        current ->
+            new PlaybackSnapshot(
+                current.positionSeconds(), current.state(), accessedAt, current.seekOrigin()));
   }
 
   public TranscodeHandle getHandle() {

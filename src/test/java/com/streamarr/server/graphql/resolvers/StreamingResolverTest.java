@@ -359,5 +359,4 @@ class StreamingResolverTest {
     assertThat(result.getErrors()).isNotEmpty();
     assertThat(result.getErrors().getFirst().getMessage()).contains("Invalid ID format");
   }
-
 }

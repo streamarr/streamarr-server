@@ -101,8 +101,7 @@ public class HlsStreamingService implements StreamingService {
 
     transcodeExecutor.stop(sessionId);
     segmentStore.deleteSession(sessionId);
-    session.setSeekPosition(positionSeconds);
-    session.setSeekOrigin(positionSeconds);
+    session.seek(positionSeconds);
     startTranscodes(session, positionSeconds, 0);
 
     session.setLastAccessedAt(Instant.now());
