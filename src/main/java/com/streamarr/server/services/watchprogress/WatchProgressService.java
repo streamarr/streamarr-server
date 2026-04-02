@@ -25,8 +25,10 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 
+@Slf4j
 @RequiredArgsConstructor
 public class WatchProgressService {
 
@@ -80,6 +82,7 @@ public class WatchProgressService {
             userId, mediaFileId, effectivePosition, percentComplete, durationSeconds, lastPlayedAt);
 
     if (!written) {
+      log.debug("Ignored timeline update for media file {} — already marked as watched", mediaFileId);
       return;
     }
 
