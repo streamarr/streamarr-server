@@ -820,8 +820,9 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("Should compute resume position from seek origin and segment index")
-  void shouldComputeResumePositionFromSeekOriginAndSegmentIndex() {
+  @DisplayName(
+      "Should compute resume position from seek origin and segment index when resuming after seek")
+  void shouldComputeResumePositionFromSeekOriginAndSegmentIndexWhenResumingAfterSeek() {
     var file = seedMediaFile();
     var session = service.createSession(file.getId(), defaultOptions());
 

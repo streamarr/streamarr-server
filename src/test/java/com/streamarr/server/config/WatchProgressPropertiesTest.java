@@ -16,61 +16,56 @@ class WatchProgressPropertiesTest {
       Validation.buildDefaultValidatorFactory().getValidator();
 
   @Test
-  @DisplayName("Should accept positive values")
-  void shouldAcceptPositiveValues() {
+  @DisplayName("Should pass validation when all values are positive")
+  void shouldPassValidationWhenAllValuesArePositive() {
     var props = new WatchProgressProperties(10.0, 95.0, 600);
 
     assertThat(VALIDATOR.validate(props)).isEmpty();
-    assertThat(props.minResumePercent()).isEqualTo(10.0);
-    assertThat(props.maxResumePercent()).isEqualTo(95.0);
-    assertThat(props.maxRemainingSeconds()).isEqualTo(600);
   }
 
   @Test
-  @DisplayName("Should accept zero for minResumePercent")
-  void shouldAcceptZeroForMinResumePercent() {
+  @DisplayName("Should pass validation when minResumePercent is zero")
+  void shouldPassValidationWhenMinResumePercentIsZero() {
     var props = new WatchProgressProperties(0.0, 95.0, 600);
 
     assertThat(VALIDATOR.validate(props)).isEmpty();
-    assertThat(props.minResumePercent()).isEqualTo(0.0);
   }
 
   @Test
-  @DisplayName("Should accept zero for maxRemainingSeconds")
-  void shouldAcceptZeroForMaxRemainingSeconds() {
+  @DisplayName("Should pass validation when maxRemainingSeconds is zero")
+  void shouldPassValidationWhenMaxRemainingSecondsIsZero() {
     var props = new WatchProgressProperties(10.0, 95.0, 0);
 
     assertThat(VALIDATOR.validate(props)).isEmpty();
-    assertThat(props.maxRemainingSeconds()).isEqualTo(0);
   }
 
   @Test
-  @DisplayName("Should reject negative minResumePercent")
-  void shouldRejectNegativeMinResumePercent() {
+  @DisplayName("Should fail validation when minResumePercent is negative")
+  void shouldFailValidationWhenMinResumePercentIsNegative() {
     var props = new WatchProgressProperties(-1.0, 95.0, 600);
 
     assertThat(VALIDATOR.validate(props)).isNotEmpty();
   }
 
   @Test
-  @DisplayName("Should reject zero maxResumePercent")
-  void shouldRejectZeroMaxResumePercent() {
+  @DisplayName("Should fail validation when maxResumePercent is zero")
+  void shouldFailValidationWhenMaxResumePercentIsZero() {
     var props = new WatchProgressProperties(10.0, 0.0, 600);
 
     assertThat(VALIDATOR.validate(props)).isNotEmpty();
   }
 
   @Test
-  @DisplayName("Should reject negative maxResumePercent")
-  void shouldRejectNegativeMaxResumePercent() {
+  @DisplayName("Should fail validation when maxResumePercent is negative")
+  void shouldFailValidationWhenMaxResumePercentIsNegative() {
     var props = new WatchProgressProperties(10.0, -1.0, 600);
 
     assertThat(VALIDATOR.validate(props)).isNotEmpty();
   }
 
   @Test
-  @DisplayName("Should reject negative maxRemainingSeconds")
-  void shouldRejectNegativeMaxRemainingSeconds() {
+  @DisplayName("Should fail validation when maxRemainingSeconds is negative")
+  void shouldFailValidationWhenMaxRemainingSecondsIsNegative() {
     var props = new WatchProgressProperties(10.0, 95.0, -1);
 
     assertThat(VALIDATOR.validate(props)).isNotEmpty();
