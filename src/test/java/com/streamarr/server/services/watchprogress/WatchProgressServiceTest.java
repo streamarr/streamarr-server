@@ -24,7 +24,6 @@ import com.streamarr.server.fakes.FakeStreamSessionRepository;
 import com.streamarr.server.fakes.FakeWatchProgressRepository;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.services.watchprogress.events.WatchStatusChangedEvent;
-import com.streamarr.server.services.watchprogress.events.PlaybackStoppedEvent;
 import com.streamarr.server.services.watchprogress.events.WatchProgressChangedEvent;
 import java.time.Instant;
 import java.util.List;
@@ -450,42 +449,17 @@ class WatchProgressServiceTest {
   class WatchProgressEvents {
 
     @Test
-    @DisplayName("Should publish PlaybackStoppedEvent when stopped")
-    void shouldPublishPlaybackStoppedEventWhenStopped() {
+    @DisplayName("Should publish WatchProgressChangedEvent when stopped")
+    void shouldPublishWatchProgressChangedEventWhenStopped() {
       var session = addSession();
 
       service.reportTimeline(USER_ID, session.getSessionId(), 3600, PlaybackState.STOPPED);
 
-      var events = eventPublisher.getEventsOfType(PlaybackStoppedEvent.class);
+      var events = eventPublisher.getEventsOfType(WatchProgressChangedEvent.class);
       assertThat(events).hasSize(1);
       assertThat(events.getFirst().mediaFileId()).isEqualTo(session.getMediaFileId());
       assertThat(events.getFirst().positionSeconds()).isEqualTo(3600);
-      assertThat(events.getFirst().playedToCompletion()).isFalse();
-    }
-
-    @Test
-    @DisplayName("Should not publish PlaybackStoppedEvent when item already watched")
-    void shouldNotPublishPlaybackStoppedEventWhenItemAlreadyWatched() {
-      var session = addSession();
-      markAsWatched(session);
-      eventPublisher.clear();
-
-      // Stale session stops — upsert guard blocks write, no event for other UIs
-      service.reportTimeline(USER_ID, session.getSessionId(), 3600, PlaybackState.STOPPED);
-
-      var events = eventPublisher.getEventsOfType(PlaybackStoppedEvent.class);
-      assertThat(events).isEmpty();
-    }
-
-    @Test
-    @DisplayName("Should not publish PlaybackStoppedEvent when playing")
-    void shouldNotPublishPlaybackStoppedEventWhenPlaying() {
-      var session = addSession();
-
-      service.reportTimeline(USER_ID, session.getSessionId(), 3600, PlaybackState.PLAYING);
-
-      var events = eventPublisher.getEventsOfType(PlaybackStoppedEvent.class);
-      assertThat(events).isEmpty();
+      assertThat(events.getFirst().state()).isEqualTo(PlaybackState.STOPPED);
     }
 
     @Test
@@ -513,9 +487,6 @@ class WatchProgressServiceTest {
       var events = eventPublisher.getEventsOfType(WatchStatusChangedEvent.class);
       assertThat(events).hasSize(1);
       assertThat(events.getFirst().mediaFileId()).isEqualTo(session.getMediaFileId());
-
-      var stoppedEvents = eventPublisher.getEventsOfType(PlaybackStoppedEvent.class);
-      assertThat(stoppedEvents.getFirst().playedToCompletion()).isTrue();
     }
 
     @Test
@@ -543,7 +514,6 @@ class WatchProgressServiceTest {
       service.reportTimeline(USER_ID, session.getSessionId(), 72, PlaybackState.STOPPED);
 
       assertThat(eventPublisher.getEventsOfType(WatchProgressChangedEvent.class)).isEmpty();
-      assertThat(eventPublisher.getEventsOfType(PlaybackStoppedEvent.class)).isEmpty();
     }
   }
 

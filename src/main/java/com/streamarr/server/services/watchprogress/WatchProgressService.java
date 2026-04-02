@@ -15,7 +15,6 @@ import com.streamarr.server.repositories.streaming.SaveProgressCommand;
 import com.streamarr.server.repositories.streaming.WatchProgressRepository;
 import com.streamarr.server.services.streaming.StreamSessionRepository;
 import com.streamarr.server.services.watchprogress.events.WatchStatusChangedEvent;
-import com.streamarr.server.services.watchprogress.events.PlaybackStoppedEvent;
 import com.streamarr.server.services.watchprogress.events.WatchProgressChangedEvent;
 import java.time.Instant;
 import java.util.Collection;
@@ -62,7 +61,7 @@ public class WatchProgressService {
 
     if (state == PlaybackState.STOPPED) {
       handleStoppedPlayback(
-          userId, sessionId, mediaFileId, positionSeconds, percentComplete, durationSeconds);
+          userId, mediaFileId, positionSeconds, percentComplete, durationSeconds);
       return;
     }
 
@@ -94,7 +93,6 @@ public class WatchProgressService {
 
   private void handleStoppedPlayback(
       UUID userId,
-      UUID sessionId,
       UUID mediaFileId,
       int positionSeconds,
       double percentComplete,
@@ -132,16 +130,6 @@ public class WatchProgressService {
           "Ignored timeline update for media file {} — already marked as watched", mediaFileId);
       return;
     }
-
-    eventPublisher.publishEvent(
-        PlaybackStoppedEvent.builder()
-            .userId(userId)
-            .sessionId(sessionId)
-            .mediaFileId(mediaFileId)
-            .positionSeconds(positionSeconds)
-            .percentComplete(percentComplete)
-            .playedToCompletion(watched)
-            .build());
 
     eventPublisher.publishEvent(
         WatchProgressChangedEvent.builder()
