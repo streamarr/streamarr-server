@@ -37,6 +37,16 @@ public class FakeWatchProgressRepository extends FakeJpaRepository<WatchProgress
   }
 
   @Override
+  public void deleteByUserIdAndMediaFileIdIn(UUID userId, Collection<UUID> mediaFileIds) {
+    database
+        .entrySet()
+        .removeIf(
+            entry ->
+                userId.equals(entry.getValue().getUserId())
+                    && mediaFileIds.contains(entry.getValue().getMediaFileId()));
+  }
+
+  @Override
   public boolean upsertProgress(
       UUID userId,
       UUID mediaFileId,

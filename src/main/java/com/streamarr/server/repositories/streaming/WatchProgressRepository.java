@@ -15,4 +15,6 @@ public interface WatchProgressRepository
   List<WatchProgress> findByUserIdAndMediaFileIdIn(UUID userId, Collection<UUID> mediaFileIds);
 
   void deleteByUserIdAndMediaFileId(UUID userId, UUID mediaFileId);
+
+  void deleteByUserIdAndMediaFileIdIn(UUID userId, Collection<UUID> mediaFileIds);
 }
