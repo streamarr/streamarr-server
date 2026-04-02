@@ -187,9 +187,11 @@ public class WatchProgressService {
     if (isBelowResumeThreshold(percentComplete)) {
       return StopDecision.DISCARD;
     }
+
     if (hasReachedWatchedThreshold(percentComplete, remainingSeconds, durationSeconds)) {
       return StopDecision.MARK_WATCHED;
     }
+
     return StopDecision.PERSIST;
   }
 
