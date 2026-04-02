@@ -93,8 +93,8 @@ class WatchStatusDataLoaderTest {
   }
 
   @Test
-  @DisplayName("Should batch mixed entity types in single load")
-  void shouldBatchMixedEntityTypesInSingleLoad() throws Exception {
+  @DisplayName("Should batch mixed entity types in single load when keys span multiple types")
+  void shouldBatchMixedEntityTypesInSingleLoadWhenKeysSpanMultipleTypes() throws Exception {
     var movie = Movie.builder().build();
     movie.setId(UUID.randomUUID());
     var movieMf = mediaFileRepository.save(createMediaFile(movie.getId()));
@@ -115,8 +115,8 @@ class WatchStatusDataLoaderTest {
   }
 
   @Test
-  @DisplayName("Should return in progress for season with partial progress")
-  void shouldReturnInProgressForSeasonWithPartialProgress() throws Exception {
+  @DisplayName("Should return in progress when season has partial episode progress")
+  void shouldReturnInProgressWhenSeasonHasPartialEpisodeProgress() throws Exception {
     var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
     var ep1 = episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
     var ep2 = episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());

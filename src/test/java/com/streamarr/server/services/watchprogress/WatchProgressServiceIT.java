@@ -223,8 +223,8 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
 
     @Test
     @Transactional
-    @DisplayName("Should overwrite unwatched progress on upsert")
-    void shouldOverwriteUnwatchedProgressOnUpsert() {
+    @DisplayName("Should overwrite progress when existing row is unwatched on upsert")
+    void shouldOverwriteProgressWhenExistingRowIsUnwatchedOnUpsert() {
       var fixture = createMovieWithFile();
 
       watchProgressRepository.saveAndFlush(
@@ -262,8 +262,8 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
 
     @Test
     @Transactional
-    @DisplayName("Should not overwrite watched progress on upsert")
-    void shouldNotOverwriteWatchedProgressOnUpsert() {
+    @DisplayName("Should not overwrite progress when existing row is watched on upsert")
+    void shouldNotOverwriteProgressWhenExistingRowIsWatchedOnUpsert() {
       var fixture = createMovieWithFile();
       var watchedAt = Instant.now();
 
@@ -304,8 +304,8 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
 
     @Test
     @Transactional
-    @DisplayName("Should populate audit fields on upsert")
-    void shouldPopulateAuditFieldsOnUpsert() {
+    @DisplayName("Should populate audit fields when inserting new row on upsert")
+    void shouldPopulateAuditFieldsWhenInsertingNewRowOnUpsert() {
       var fixture = createMovieWithFile();
 
       watchProgressRepository.upsertProgress(
@@ -331,8 +331,8 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
 
     @Test
     @Transactional
-    @DisplayName("Should update audit fields on upsert conflict")
-    void shouldUpdateAuditFieldsOnUpsertConflict() {
+    @DisplayName("Should update audit fields when existing row conflicts on upsert")
+    void shouldUpdateAuditFieldsWhenExistingRowConflictsOnUpsert() {
       var fixture = createMovieWithFile();
 
       watchProgressRepository.upsertProgress(

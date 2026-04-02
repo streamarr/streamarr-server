@@ -383,8 +383,10 @@ class WatchProgressServiceTest {
     }
 
     @Test
-    @DisplayName("Should not mark short content as watched via remaining seconds threshold")
-    void shouldNotMarkShortContentAsWatchedViaRemainingSecondsThreshold() {
+    @DisplayName(
+        "Should not mark short content as watched via remaining seconds threshold when duration is below max remaining")
+    void
+        shouldNotMarkShortContentAsWatchedViaRemainingSecondsThresholdWhenDurationIsBelowMaxRemaining() {
       var shortSession = StreamSessionFixture.buildSessionWithDuration(120); // 2 min trailer
       sessionRepository.save(shortSession);
 
@@ -401,8 +403,9 @@ class WatchProgressServiceTest {
     }
 
     @Test
-    @DisplayName("Should still mark short content as watched via percent threshold")
-    void shouldStillMarkShortContentAsWatchedViaPercentThreshold() {
+    @DisplayName(
+        "Should still mark short content as watched via percent threshold when above max resume percent")
+    void shouldStillMarkShortContentAsWatchedViaPercentThresholdWhenAboveMaxResumePercent() {
       var shortSession = StreamSessionFixture.buildSessionWithDuration(120); // 2 min trailer
       sessionRepository.save(shortSession);
 
@@ -712,8 +715,8 @@ class WatchProgressServiceTest {
     }
 
     @Test
-    @DisplayName("Should batch multiple collectables in single call")
-    void shouldBatchMultipleCollectablesInSingleCall() {
+    @DisplayName("Should batch multiple collectables in single call when given multiple IDs")
+    void shouldBatchMultipleCollectablesInSingleCallWhenGivenMultipleIds() {
       var movie1 = Movie.builder().build();
       movie1.setId(UUID.randomUUID());
       var movie2 = Movie.builder().build();
@@ -788,8 +791,8 @@ class WatchProgressServiceTest {
     }
 
     @Test
-    @DisplayName("Should batch multiple seasons in single call")
-    void shouldBatchMultipleSeasonsInSingleCall() {
+    @DisplayName("Should batch multiple seasons in single call when given multiple season IDs")
+    void shouldBatchMultipleSeasonsInSingleCallWhenGivenMultipleSeasonIds() {
       var s1 = seasonRepository.save(Season.builder().seasonNumber(1).build());
       var s2 = seasonRepository.save(Season.builder().seasonNumber(2).build());
       var ep1 = episodeRepository.save(Episode.builder().episodeNumber(1).season(s1).build());
@@ -862,8 +865,8 @@ class WatchProgressServiceTest {
     }
 
     @Test
-    @DisplayName("Should batch multiple series in single call")
-    void shouldBatchMultipleSeriesInSingleCall() {
+    @DisplayName("Should batch multiple series in single call when given multiple series IDs")
+    void shouldBatchMultipleSeriesInSingleCallWhenGivenMultipleSeriesIds() {
       var series1 = Series.builder().build();
       series1.setId(UUID.randomUUID());
       var series2 = Series.builder().build();
