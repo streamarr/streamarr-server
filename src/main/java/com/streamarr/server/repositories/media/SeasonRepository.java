@@ -9,7 +9,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public interface SeasonRepository extends JpaRepository<Season, UUID> {
+public interface SeasonRepository extends JpaRepository<Season, UUID>, SeasonRepositoryCustom {
 
   Optional<Season> findBySeriesIdAndSeasonNumber(UUID seriesId, int seasonNumber);
 

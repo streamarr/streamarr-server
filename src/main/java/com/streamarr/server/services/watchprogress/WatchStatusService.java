@@ -1,8 +1,6 @@
 package com.streamarr.server.services.watchprogress;
 
-import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.MediaFile;
-import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.streaming.WatchProgress;
 import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.repositories.media.EpisodeRepository;
@@ -54,15 +52,12 @@ public class WatchStatusService {
   }
 
   public Map<UUID, WatchStatus> getWatchStatusForSeasons(UUID userId, Collection<UUID> seasonIds) {
-    var episodes = episodeRepository.findBySeasonIdIn(seasonIds);
-    if (episodes.isEmpty()) {
+    var episodeIdsBySeasonId = episodeRepository.findEpisodeIdsBySeasonIds(seasonIds);
+    if (episodeIdsBySeasonId.isEmpty()) {
       return Map.of();
     }
 
-    var episodeIdsBySeasonId =
-        episodes.stream()
-            .collect(Collectors.groupingBy(ep -> ep.getSeason().getId(), Collectors.toList()));
-    var allEpisodeIds = episodes.stream().map(Episode::getId).toList();
+    var allEpisodeIds = episodeIdsBySeasonId.values().stream().flatMap(Collection::stream).toList();
     var mediaFiles = mediaFileRepository.findByMediaIdIn(allEpisodeIds);
     if (mediaFiles.isEmpty()) {
       return Map.of();
@@ -77,34 +72,29 @@ public class WatchStatusService {
     for (var entry : episodeIdsBySeasonId.entrySet()) {
       var seasonMediaFileIds =
           entry.getValue().stream()
-              .flatMap(ep -> mediaFilesByEpisodeId.getOrDefault(ep.getId(), List.of()).stream())
+              .flatMap(epId -> mediaFilesByEpisodeId.getOrDefault(epId, List.of()).stream())
               .map(MediaFile::getId)
               .toList();
 
       result.put(entry.getKey(), deriveWatchStatusFromFileIds(seasonMediaFileIds, progressMap));
     }
+
     return result;
   }
 
   public Map<UUID, WatchStatus> getWatchStatusForSeries(UUID userId, Collection<UUID> seriesIds) {
-    var seasons = seasonRepository.findBySeriesIdIn(seriesIds);
-    if (seasons.isEmpty()) {
+    var seasonIdsBySeriesId = seasonRepository.findSeasonIdsBySeriesIds(seriesIds);
+    if (seasonIdsBySeriesId.isEmpty()) {
       return Map.of();
     }
 
-    var seasonIdsBySeriesId =
-        seasons.stream()
-            .collect(Collectors.groupingBy(s -> s.getSeries().getId(), Collectors.toList()));
-    var allSeasonIds = seasons.stream().map(Season::getId).toList();
-    var episodes = episodeRepository.findBySeasonIdIn(allSeasonIds);
-    if (episodes.isEmpty()) {
+    var allSeasonIds = seasonIdsBySeriesId.values().stream().flatMap(Collection::stream).toList();
+    var episodeIdsBySeasonId = episodeRepository.findEpisodeIdsBySeasonIds(allSeasonIds);
+    if (episodeIdsBySeasonId.isEmpty()) {
       return Map.of();
     }
 
-    var episodesBySeasonId =
-        episodes.stream()
-            .collect(Collectors.groupingBy(ep -> ep.getSeason().getId(), Collectors.toList()));
-    var allEpisodeIds = episodes.stream().map(Episode::getId).toList();
+    var allEpisodeIds = episodeIdsBySeasonId.values().stream().flatMap(Collection::stream).toList();
     var mediaFiles = mediaFileRepository.findByMediaIdIn(allEpisodeIds);
     if (mediaFiles.isEmpty()) {
       return Map.of();
@@ -118,7 +108,7 @@ public class WatchStatusService {
     var result = new HashMap<UUID, WatchStatus>();
     for (var seriesEntry : seasonIdsBySeriesId.entrySet()) {
       var seriesMediaFileIds =
-          collectMediaFileIds(seriesEntry.getValue(), episodesBySeasonId, mediaFilesByEpisodeId);
+          collectMediaFileIds(seriesEntry.getValue(), episodeIdsBySeasonId, mediaFilesByEpisodeId);
 
       result.put(
           seriesEntry.getKey(), deriveWatchStatusFromFileIds(seriesMediaFileIds, progressMap));
@@ -127,12 +117,12 @@ public class WatchStatusService {
   }
 
   private static List<UUID> collectMediaFileIds(
-      List<Season> seasons,
-      Map<UUID, List<Episode>> episodesBySeasonId,
+      List<UUID> seasonIds,
+      Map<UUID, List<UUID>> episodeIdsBySeasonId,
       Map<UUID, List<MediaFile>> mediaFilesByEpisodeId) {
-    return seasons.stream()
-        .flatMap(season -> episodesBySeasonId.getOrDefault(season.getId(), List.of()).stream())
-        .flatMap(ep -> mediaFilesByEpisodeId.getOrDefault(ep.getId(), List.of()).stream())
+    return seasonIds.stream()
+        .flatMap(seasonId -> episodeIdsBySeasonId.getOrDefault(seasonId, List.of()).stream())
+        .flatMap(epId -> mediaFilesByEpisodeId.getOrDefault(epId, List.of()).stream())
         .map(MediaFile::getId)
         .toList();
   }
@@ -144,6 +134,7 @@ public class WatchStatusService {
       var fileIds = entry.getValue().stream().map(MediaFile::getId).toList();
       result.put(entry.getKey(), deriveWatchStatusFromFileIds(fileIds, progressMap));
     }
+
     return result;
   }
 
@@ -156,6 +147,7 @@ public class WatchStatusService {
       if (wp == null) {
         continue;
       }
+
       if (wp.isPlayed()) {
         watchedCount++;
       } else if (wp.getPositionSeconds() > 0) {
