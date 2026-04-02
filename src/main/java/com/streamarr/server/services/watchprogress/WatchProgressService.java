@@ -11,6 +11,7 @@ import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
+import com.streamarr.server.repositories.streaming.SaveProgressCommand;
 import com.streamarr.server.repositories.streaming.WatchProgressRepository;
 import com.streamarr.server.services.streaming.StreamSessionRepository;
 import com.streamarr.server.services.watchprogress.events.MediaWatchedEvent;
@@ -62,8 +63,13 @@ public class WatchProgressService {
 
     if (state == PlaybackState.STOPPED) {
       eventPublisher.publishEvent(
-          new PlaybackStoppedEvent(
-              userId, sessionId, mediaFileId, positionSeconds, percentComplete));
+          PlaybackStoppedEvent.builder()
+              .userId(userId)
+              .sessionId(sessionId)
+              .mediaFileId(mediaFileId)
+              .positionSeconds(positionSeconds)
+              .percentComplete(percentComplete)
+              .build());
     }
 
     if (state == PlaybackState.STOPPED && percentComplete < properties.minResumePercent()) {
@@ -81,7 +87,14 @@ public class WatchProgressService {
 
     var written =
         watchProgressRepository.upsertProgress(
-            userId, mediaFileId, effectivePosition, percentComplete, durationSeconds, lastPlayedAt);
+            SaveProgressCommand.builder()
+                .userId(userId)
+                .mediaFileId(mediaFileId)
+                .positionSeconds(effectivePosition)
+                .percentComplete(percentComplete)
+                .durationSeconds(durationSeconds)
+                .lastPlayedAt(lastPlayedAt)
+                .build());
 
     if (!written) {
       log.debug("Ignored timeline update for media file {} — already marked as watched", mediaFileId);

@@ -11,6 +11,7 @@ import com.streamarr.server.domain.streaming.WatchProgress;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.repositories.streaming.SaveProgressCommand;
 import com.streamarr.server.repositories.streaming.WatchProgressRepository;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
@@ -198,7 +199,13 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
 
       var result =
           watchProgressRepository.upsertProgress(
-              USER_ID, fixture.mediaFileId(), 300, 25.0, 1200, null);
+              SaveProgressCommand.builder()
+                  .userId(USER_ID)
+                  .mediaFileId(fixture.mediaFileId())
+                  .positionSeconds(300)
+                  .percentComplete(25.0)
+                  .durationSeconds(1200)
+                  .build());
 
       assertThat(result).isTrue();
 
@@ -233,7 +240,13 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
 
       var result =
           watchProgressRepository.upsertProgress(
-              USER_ID, fixture.mediaFileId(), 600, 50.0, 1200, null);
+              SaveProgressCommand.builder()
+                  .userId(USER_ID)
+                  .mediaFileId(fixture.mediaFileId())
+                  .positionSeconds(600)
+                  .percentComplete(50.0)
+                  .durationSeconds(1200)
+                  .build());
 
       assertThat(result).isTrue();
 
@@ -268,7 +281,13 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
 
       var result =
           watchProgressRepository.upsertProgress(
-              USER_ID, fixture.mediaFileId(), 300, 25.0, 1200, null);
+              SaveProgressCommand.builder()
+                  .userId(USER_ID)
+                  .mediaFileId(fixture.mediaFileId())
+                  .positionSeconds(300)
+                  .percentComplete(25.0)
+                  .durationSeconds(1200)
+                  .build());
 
       assertThat(result).isFalse();
 
@@ -289,7 +308,14 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
     void shouldPopulateAuditFieldsOnUpsert() {
       var fixture = createMovieWithFile();
 
-      watchProgressRepository.upsertProgress(USER_ID, fixture.mediaFileId(), 300, 25.0, 1200, null);
+      watchProgressRepository.upsertProgress(
+          SaveProgressCommand.builder()
+              .userId(USER_ID)
+              .mediaFileId(fixture.mediaFileId())
+              .positionSeconds(300)
+              .percentComplete(25.0)
+              .durationSeconds(1200)
+              .build());
 
       entityManager.clear();
 

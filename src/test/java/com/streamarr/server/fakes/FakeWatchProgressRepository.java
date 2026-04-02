@@ -1,8 +1,8 @@
 package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.streaming.WatchProgress;
+import com.streamarr.server.repositories.streaming.SaveProgressCommand;
 import com.streamarr.server.repositories.streaming.WatchProgressRepository;
-import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -47,33 +47,27 @@ public class FakeWatchProgressRepository extends FakeJpaRepository<WatchProgress
   }
 
   @Override
-  public boolean upsertProgress(
-      UUID userId,
-      UUID mediaFileId,
-      int positionSeconds,
-      double percentComplete,
-      int durationSeconds,
-      Instant lastPlayedAt) {
-    var existing = findByUserIdAndMediaFileId(userId, mediaFileId);
+  public boolean upsertProgress(SaveProgressCommand command) {
+    var existing = findByUserIdAndMediaFileId(command.userId(), command.mediaFileId());
     if (existing.isPresent()) {
       var wp = existing.get();
       if (wp.isPlayed()) {
         return false;
       }
-      wp.setPositionSeconds(positionSeconds);
-      wp.setPercentComplete(percentComplete);
-      wp.setDurationSeconds(durationSeconds);
-      wp.setLastPlayedAt(lastPlayedAt);
+      wp.setPositionSeconds(command.positionSeconds());
+      wp.setPercentComplete(command.percentComplete());
+      wp.setDurationSeconds(command.durationSeconds());
+      wp.setLastPlayedAt(command.lastPlayedAt());
       return true;
     }
     save(
         WatchProgress.builder()
-            .userId(userId)
-            .mediaFileId(mediaFileId)
-            .positionSeconds(positionSeconds)
-            .percentComplete(percentComplete)
-            .durationSeconds(durationSeconds)
-            .lastPlayedAt(lastPlayedAt)
+            .userId(command.userId())
+            .mediaFileId(command.mediaFileId())
+            .positionSeconds(command.positionSeconds())
+            .percentComplete(command.percentComplete())
+            .durationSeconds(command.durationSeconds())
+            .lastPlayedAt(command.lastPlayedAt())
             .build());
     return true;
   }
