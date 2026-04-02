@@ -182,17 +182,7 @@ public class WatchProgressService {
     var result = new HashMap<UUID, WatchStatus>();
     for (var seriesEntry : seasonIdsBySeriesId.entrySet()) {
       var seriesMediaFileIds =
-          seriesEntry.getValue().stream()
-              .flatMap(
-                  season ->
-                      episodesBySeasonId.getOrDefault(season.getId(), List.of()).stream()
-                          .flatMap(
-                              ep ->
-                                  mediaFilesByEpisodeId
-                                      .getOrDefault(ep.getId(), List.of())
-                                      .stream()))
-              .map(MediaFile::getId)
-              .toList();
+          collectMediaFileIds(seriesEntry.getValue(), episodesBySeasonId, mediaFilesByEpisodeId);
 
       result.put(
           seriesEntry.getKey(), deriveWatchStatusFromFileIds(seriesMediaFileIds, progressMap));
@@ -235,6 +225,17 @@ public class WatchProgressService {
     }
 
     return List.of();
+  }
+
+  private static List<UUID> collectMediaFileIds(
+      List<Season> seasons,
+      Map<UUID, List<Episode>> episodesBySeasonId,
+      Map<UUID, List<MediaFile>> mediaFilesByEpisodeId) {
+    return seasons.stream()
+        .flatMap(season -> episodesBySeasonId.getOrDefault(season.getId(), List.of()).stream())
+        .flatMap(ep -> mediaFilesByEpisodeId.getOrDefault(ep.getId(), List.of()).stream())
+        .map(MediaFile::getId)
+        .toList();
   }
 
   private static Map<UUID, WatchStatus> deriveWatchStatusMap(
