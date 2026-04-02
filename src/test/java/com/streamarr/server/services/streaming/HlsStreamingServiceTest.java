@@ -334,7 +334,7 @@ class HlsStreamingServiceTest {
     var seeked = service.seekSession(originalSessionId, 300);
 
     assertThat(seeked.getSessionId()).isEqualTo(originalSessionId);
-    assertThat(seeked.getSeekPosition()).isEqualTo(300);
+    assertThat(seeked.getPlaybackSnapshot().positionSeconds()).isEqualTo(300);
   }
 
   @Test

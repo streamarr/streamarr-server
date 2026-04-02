@@ -107,7 +107,7 @@ class WatchProgressServiceTest {
 
       service.reportTimeline(USER_ID, session.getSessionId(), 300, PlaybackState.PLAYING);
 
-      assertThat(session.getSeekPosition()).isEqualTo(300);
+      assertThat(session.getPlaybackSnapshot().positionSeconds()).isEqualTo(300);
     }
 
     @Test

@@ -6,6 +6,7 @@ import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
@@ -437,10 +438,10 @@ class HlsPlaylistServiceTest {
   @Test
   @DisplayName("Should not change segment count when playback position advances beyond seek origin")
   void shouldNotChangeSegmentCountWhenPlaybackPositionAdvancesBeyondSeekOrigin() {
-    // seekOrigin stays 60 (setSeekPosition does not update it), so segments = (120-60)/6 = 10
+    // seekOrigin stays 60 (updatePlaybackState does not update it), so segments = (120-60)/6 = 10
     var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 120);
     session.seek(60);
-    session.setSeekPosition(90);
+    session.updatePlaybackState(90, PlaybackState.PLAYING);
 
     assertThat(session.getSeekOrigin()).isEqualTo(60);
 
