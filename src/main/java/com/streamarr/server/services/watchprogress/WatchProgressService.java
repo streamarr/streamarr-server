@@ -67,15 +67,6 @@ public class WatchProgressService {
 
     if (decision == StopDecision.DISCARD) {
       watchProgressRepository.deleteIfNotWatched(userId, mediaFileId);
-      eventPublisher.publishEvent(
-          PlaybackStoppedEvent.builder()
-              .userId(userId)
-              .sessionId(sessionId)
-              .mediaFileId(mediaFileId)
-              .positionSeconds(positionSeconds)
-              .percentComplete(percentComplete)
-              .playedToCompletion(false)
-              .build());
       return;
     }
 
@@ -94,18 +85,6 @@ public class WatchProgressService {
                 .durationSeconds(durationSeconds)
                 .lastPlayedAt(lastPlayedAt)
                 .build());
-
-    if (!written && stopped) {
-      eventPublisher.publishEvent(
-          PlaybackStoppedEvent.builder()
-              .userId(userId)
-              .sessionId(sessionId)
-              .mediaFileId(mediaFileId)
-              .positionSeconds(positionSeconds)
-              .percentComplete(percentComplete)
-              .playedToCompletion(false)
-              .build());
-    }
 
     if (!written) {
       log.debug("Ignored timeline update for media file {} — already marked as watched", mediaFileId);

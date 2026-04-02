@@ -464,18 +464,17 @@ class WatchProgressServiceTest {
     }
 
     @Test
-    @DisplayName("Should publish PlaybackStoppedEvent when item already watched")
-    void shouldPublishPlaybackStoppedEventWhenItemAlreadyWatched() {
+    @DisplayName("Should not publish PlaybackStoppedEvent when item already watched")
+    void shouldNotPublishPlaybackStoppedEventWhenItemAlreadyWatched() {
       var session = addSession();
       markAsWatched(session);
       eventPublisher.clear();
 
-      // Stale session stops — PlaybackStoppedEvent should still fire
+      // Stale session stops — upsert guard blocks write, no event for other UIs
       service.reportTimeline(USER_ID, session.getSessionId(), 3600, PlaybackState.STOPPED);
 
       var events = eventPublisher.getEventsOfType(PlaybackStoppedEvent.class);
-      assertThat(events).hasSize(1);
-      assertThat(events.getFirst().playedToCompletion()).isFalse();
+      assertThat(events).isEmpty();
     }
 
     @Test
@@ -536,20 +535,15 @@ class WatchProgressServiceTest {
     }
 
     @Test
-    @DisplayName("Should not publish timeline event when progress deleted below threshold")
-    void shouldNotPublishTimelineEventWhenProgressDeletedBelowThreshold() {
+    @DisplayName("Should not publish events when progress discarded below threshold")
+    void shouldNotPublishEventsWhenProgressDiscardedBelowThreshold() {
       var session = addSession();
 
-      // Stop at 1% — below min threshold, deletes progress
+      // Stop at 1% — below min threshold, deletes progress, no state change for other UIs
       service.reportTimeline(USER_ID, session.getSessionId(), 72, PlaybackState.STOPPED);
 
-      var timelineEvents = eventPublisher.getEventsOfType(TimelineReportedEvent.class);
-      assertThat(timelineEvents).isEmpty();
-
-      // But PlaybackStoppedEvent should still fire with playedToCompletion=false
-      var stoppedEvents = eventPublisher.getEventsOfType(PlaybackStoppedEvent.class);
-      assertThat(stoppedEvents).hasSize(1);
-      assertThat(stoppedEvents.getFirst().playedToCompletion()).isFalse();
+      assertThat(eventPublisher.getEventsOfType(TimelineReportedEvent.class)).isEmpty();
+      assertThat(eventPublisher.getEventsOfType(PlaybackStoppedEvent.class)).isEmpty();
     }
   }
 
