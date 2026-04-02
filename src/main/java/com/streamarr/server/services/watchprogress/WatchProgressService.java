@@ -87,11 +87,12 @@ public class WatchProgressService {
                 .lastPlayedAt(lastPlayedAt)
                 .build());
 
+    if (!written && stopped) {
+      publishPlaybackStopped(
+          userId, sessionId, mediaFileId, positionSeconds, percentComplete, false);
+    }
+
     if (!written) {
-      if (stopped) {
-        publishPlaybackStopped(
-            userId, sessionId, mediaFileId, positionSeconds, percentComplete, false);
-      }
       log.debug("Ignored timeline update for media file {} — already marked as watched", mediaFileId);
       return;
     }
