@@ -61,22 +61,13 @@ public class WatchProgressService {
     var remainingSeconds = durationSeconds - positionSeconds;
     var mediaFileId = session.getMediaFileId();
 
-    if (state == PlaybackState.STOPPED) {
-      eventPublisher.publishEvent(
-          PlaybackStoppedEvent.builder()
-              .userId(userId)
-              .sessionId(sessionId)
-              .mediaFileId(mediaFileId)
-              .positionSeconds(positionSeconds)
-              .percentComplete(percentComplete)
-              .build());
-    }
-
     var stopped = state == PlaybackState.STOPPED;
-    var decision = stopped ? evaluateStopDecision(percentComplete, remainingSeconds) : null;
+    var decision =
+        stopped ? evaluateStopDecision(percentComplete, remainingSeconds, durationSeconds) : null;
 
     if (decision == StopDecision.DISCARD) {
       watchProgressRepository.deleteIfNotWatched(userId, mediaFileId);
+      publishPlaybackStopped(userId, sessionId, mediaFileId, positionSeconds, percentComplete, false);
       return;
     }
 
@@ -97,8 +88,17 @@ public class WatchProgressService {
                 .build());
 
     if (!written) {
+      if (stopped) {
+        publishPlaybackStopped(
+            userId, sessionId, mediaFileId, positionSeconds, percentComplete, false);
+      }
       log.debug("Ignored timeline update for media file {} — already marked as watched", mediaFileId);
       return;
+    }
+
+    if (stopped) {
+      publishPlaybackStopped(
+          userId, sessionId, mediaFileId, positionSeconds, percentComplete, watched);
     }
 
     eventPublisher.publishEvent(
@@ -306,11 +306,30 @@ public class WatchProgressService {
     PERSIST
   }
 
-  private StopDecision evaluateStopDecision(double percentComplete, int remainingSeconds) {
+  private void publishPlaybackStopped(
+      UUID userId,
+      UUID sessionId,
+      UUID mediaFileId,
+      int positionSeconds,
+      double percentComplete,
+      boolean playedToCompletion) {
+    eventPublisher.publishEvent(
+        PlaybackStoppedEvent.builder()
+            .userId(userId)
+            .sessionId(sessionId)
+            .mediaFileId(mediaFileId)
+            .positionSeconds(positionSeconds)
+            .percentComplete(percentComplete)
+            .playedToCompletion(playedToCompletion)
+            .build());
+  }
+
+  private StopDecision evaluateStopDecision(
+      double percentComplete, int remainingSeconds, int durationSeconds) {
     if (isBelowResumeThreshold(percentComplete)) {
       return StopDecision.DISCARD;
     }
-    if (hasReachedWatchedThreshold(percentComplete, remainingSeconds)) {
+    if (hasReachedWatchedThreshold(percentComplete, remainingSeconds, durationSeconds)) {
       return StopDecision.MARK_WATCHED;
     }
     return StopDecision.PERSIST;
@@ -320,8 +339,10 @@ public class WatchProgressService {
     return percentComplete < properties.minResumePercent();
   }
 
-  private boolean hasReachedWatchedThreshold(double percentComplete, int remainingSeconds) {
+  private boolean hasReachedWatchedThreshold(
+      double percentComplete, int remainingSeconds, int durationSeconds) {
     return percentComplete >= properties.maxResumePercent()
-        || remainingSeconds <= properties.maxRemainingSeconds();
+        || (durationSeconds > properties.maxRemainingSeconds()
+            && remainingSeconds <= properties.maxRemainingSeconds());
   }
 }

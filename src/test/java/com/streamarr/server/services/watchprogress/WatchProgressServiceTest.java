@@ -380,6 +380,41 @@ class WatchProgressServiceTest {
       assertThat(progress.isPlayed()).isFalse();
       assertThat(progress.getPositionSeconds()).isEqualTo(6840);
     }
+
+    @Test
+    @DisplayName("Should not mark short content as watched via remaining seconds threshold")
+    void shouldNotMarkShortContentAsWatchedViaRemainingSecondsThreshold() {
+      var shortSession = StreamSessionFixture.buildSessionWithDuration(120); // 2 min trailer
+      sessionRepository.save(shortSession);
+
+      // Stop at 8.3% (10s / 120s) — above 5% min, 110s remaining < 300s maxRemaining
+      // Without the duration guard this would incorrectly trigger MARK_WATCHED
+      service.reportTimeline(USER_ID, shortSession.getSessionId(), 10, PlaybackState.STOPPED);
+
+      var progress =
+          watchProgressRepository
+              .findByUserIdAndMediaFileId(USER_ID, shortSession.getMediaFileId())
+              .orElseThrow();
+      assertThat(progress.isPlayed()).isFalse();
+      assertThat(progress.getPositionSeconds()).isEqualTo(10);
+    }
+
+    @Test
+    @DisplayName("Should still mark short content as watched via percent threshold")
+    void shouldStillMarkShortContentAsWatchedViaPercentThreshold() {
+      var shortSession = StreamSessionFixture.buildSessionWithDuration(120); // 2 min trailer
+      sessionRepository.save(shortSession);
+
+      // Stop at 91.7% (110s / 120s) — above 90% maxResumePercent
+      service.reportTimeline(USER_ID, shortSession.getSessionId(), 110, PlaybackState.STOPPED);
+
+      var progress =
+          watchProgressRepository
+              .findByUserIdAndMediaFileId(USER_ID, shortSession.getMediaFileId())
+              .orElseThrow();
+      assertThat(progress.isPlayed()).isTrue();
+      assertThat(progress.getPositionSeconds()).isZero();
+    }
   }
 
   @Nested
@@ -425,6 +460,7 @@ class WatchProgressServiceTest {
       assertThat(events).hasSize(1);
       assertThat(events.getFirst().mediaFileId()).isEqualTo(session.getMediaFileId());
       assertThat(events.getFirst().positionSeconds()).isEqualTo(3600);
+      assertThat(events.getFirst().playedToCompletion()).isFalse();
     }
 
     @Test
@@ -439,6 +475,7 @@ class WatchProgressServiceTest {
 
       var events = eventPublisher.getEventsOfType(PlaybackStoppedEvent.class);
       assertThat(events).hasSize(1);
+      assertThat(events.getFirst().playedToCompletion()).isFalse();
     }
 
     @Test
@@ -477,6 +514,9 @@ class WatchProgressServiceTest {
       var events = eventPublisher.getEventsOfType(MediaWatchedEvent.class);
       assertThat(events).hasSize(1);
       assertThat(events.getFirst().mediaFileId()).isEqualTo(session.getMediaFileId());
+
+      var stoppedEvents = eventPublisher.getEventsOfType(PlaybackStoppedEvent.class);
+      assertThat(stoppedEvents.getFirst().playedToCompletion()).isTrue();
     }
 
     @Test
@@ -496,8 +536,8 @@ class WatchProgressServiceTest {
     }
 
     @Test
-    @DisplayName("Should not publish events when progress deleted below threshold")
-    void shouldNotPublishEventsWhenProgressDeletedBelowThreshold() {
+    @DisplayName("Should not publish timeline event when progress deleted below threshold")
+    void shouldNotPublishTimelineEventWhenProgressDeletedBelowThreshold() {
       var session = addSession();
 
       // Stop at 1% — below min threshold, deletes progress
@@ -506,9 +546,10 @@ class WatchProgressServiceTest {
       var timelineEvents = eventPublisher.getEventsOfType(TimelineReportedEvent.class);
       assertThat(timelineEvents).isEmpty();
 
-      // But PlaybackStoppedEvent should still fire
+      // But PlaybackStoppedEvent should still fire with playedToCompletion=false
       var stoppedEvents = eventPublisher.getEventsOfType(PlaybackStoppedEvent.class);
       assertThat(stoppedEvents).hasSize(1);
+      assertThat(stoppedEvents.getFirst().playedToCompletion()).isFalse();
     }
   }
 
