@@ -51,7 +51,7 @@ class WatchProgressDataLoaderTest {
     assertThat(result.get(mediaFileId1).positionSeconds()).isEqualTo(300);
     assertThat(result.get(mediaFileId1).percentComplete()).isEqualTo(50.0);
     assertThat(result.get(mediaFileId1).durationSeconds()).isEqualTo(600);
-    assertThat(result.get(mediaFileId1).lastPlayedAt()).isNull();
+    assertThat(result.get(mediaFileId1).lastPlayedAt()).isEmpty();
     assertThat(result.get(mediaFileId2)).isNotNull();
     assertThat(result.get(mediaFileId2).positionSeconds()).isEqualTo(600);
     assertThat(result.get(mediaFileId2).percentComplete()).isEqualTo(75.0);
@@ -88,7 +88,7 @@ class WatchProgressDataLoaderTest {
     assertThat(result.get(mediaFileId).positionSeconds()).isZero();
     assertThat(result.get(mediaFileId).percentComplete()).isEqualTo(95.0);
     assertThat(result.get(mediaFileId).durationSeconds()).isEqualTo(7200);
-    assertThat(result.get(mediaFileId).lastPlayedAt()).isNotNull();
+    assertThat(result.get(mediaFileId).lastPlayedAt()).isPresent();
   }
 
   private void saveProgress(UUID mediaFileId, int position, double percent, int duration) {
