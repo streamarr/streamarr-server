@@ -72,15 +72,15 @@ public class WatchProgressService {
               .build());
     }
 
-    if (state == PlaybackState.STOPPED && percentComplete < properties.minResumePercent()) {
+    var stopped = state == PlaybackState.STOPPED;
+    var decision = stopped ? evaluateStopDecision(percentComplete, remainingSeconds) : null;
+
+    if (decision == StopDecision.DISCARD) {
       watchProgressRepository.deleteIfNotWatched(userId, mediaFileId);
       return;
     }
 
-    var watched =
-        state == PlaybackState.STOPPED
-            && (percentComplete >= properties.maxResumePercent()
-                || remainingSeconds <= properties.maxRemainingSeconds());
+    var watched = decision == StopDecision.MARK_WATCHED;
 
     var lastPlayedAt = watched ? Instant.now() : null;
     var effectivePosition = watched ? 0 : positionSeconds;
@@ -292,5 +292,30 @@ public class WatchProgressService {
     }
 
     return WatchStatus.UNWATCHED;
+  }
+
+  private enum StopDecision {
+    DISCARD,
+    MARK_WATCHED,
+    PERSIST
+  }
+
+  private StopDecision evaluateStopDecision(double percentComplete, int remainingSeconds) {
+    if (isBelowResumeThreshold(percentComplete)) {
+      return StopDecision.DISCARD;
+    }
+    if (hasReachedWatchedThreshold(percentComplete, remainingSeconds)) {
+      return StopDecision.MARK_WATCHED;
+    }
+    return StopDecision.PERSIST;
+  }
+
+  private boolean isBelowResumeThreshold(double percentComplete) {
+    return percentComplete < properties.minResumePercent();
+  }
+
+  private boolean hasReachedWatchedThreshold(double percentComplete, int remainingSeconds) {
+    return percentComplete >= properties.maxResumePercent()
+        || remainingSeconds <= properties.maxRemainingSeconds();
   }
 }
