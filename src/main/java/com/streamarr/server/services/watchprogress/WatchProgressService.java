@@ -102,7 +102,13 @@ public class WatchProgressService {
     }
 
     eventPublisher.publishEvent(
-        new TimelineReportedEvent(userId, mediaFileId, effectivePosition, percentComplete, state));
+        TimelineReportedEvent.builder()
+            .userId(userId)
+            .mediaFileId(mediaFileId)
+            .positionSeconds(effectivePosition)
+            .percentComplete(percentComplete)
+            .state(state)
+            .build());
 
     if (watched) {
       eventPublisher.publishEvent(new MediaWatchedEvent(userId, mediaFileId));
