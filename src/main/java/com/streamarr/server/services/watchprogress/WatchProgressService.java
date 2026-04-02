@@ -193,8 +193,8 @@ public class WatchProgressService {
   public void resetProgress(UUID userId, UUID collectableId) {
     var mediaFileIds = resolveAllMediaFileIds(collectableId);
 
-    for (var mediaFileId : mediaFileIds) {
-      watchProgressRepository.deleteByUserIdAndMediaFileId(userId, mediaFileId);
+    if (!mediaFileIds.isEmpty()) {
+      watchProgressRepository.deleteByUserIdAndMediaFileIdIn(userId, mediaFileIds);
     }
   }
 
@@ -206,20 +206,18 @@ public class WatchProgressService {
 
     var episodes = episodeRepository.findBySeasonId(collectableId);
     if (!episodes.isEmpty()) {
-      return episodes.stream()
-          .map(Episode::getId)
-          .flatMap(episodeId -> mediaFileRepository.findByMediaId(episodeId).stream())
+      var episodeIds = episodes.stream().map(Episode::getId).toList();
+      return mediaFileRepository.findByMediaIdIn(episodeIds).stream()
           .map(MediaFile::getId)
           .toList();
     }
 
     var seasons = seasonRepository.findBySeriesId(collectableId);
     if (!seasons.isEmpty()) {
-      return seasons.stream()
-          .map(Season::getId)
-          .flatMap(seasonId -> episodeRepository.findBySeasonId(seasonId).stream())
-          .map(Episode::getId)
-          .flatMap(episodeId -> mediaFileRepository.findByMediaId(episodeId).stream())
+      var seasonIds = seasons.stream().map(Season::getId).toList();
+      var seriesEpisodes = episodeRepository.findBySeasonIdIn(seasonIds);
+      var episodeIds = seriesEpisodes.stream().map(Episode::getId).toList();
+      return mediaFileRepository.findByMediaIdIn(episodeIds).stream()
           .map(MediaFile::getId)
           .toList();
     }
