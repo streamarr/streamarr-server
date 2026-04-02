@@ -67,7 +67,15 @@ public class WatchProgressService {
 
     if (decision == StopDecision.DISCARD) {
       watchProgressRepository.deleteIfNotWatched(userId, mediaFileId);
-      publishPlaybackStopped(userId, sessionId, mediaFileId, positionSeconds, percentComplete, false);
+      eventPublisher.publishEvent(
+          PlaybackStoppedEvent.builder()
+              .userId(userId)
+              .sessionId(sessionId)
+              .mediaFileId(mediaFileId)
+              .positionSeconds(positionSeconds)
+              .percentComplete(percentComplete)
+              .playedToCompletion(false)
+              .build());
       return;
     }
 
@@ -88,8 +96,15 @@ public class WatchProgressService {
                 .build());
 
     if (!written && stopped) {
-      publishPlaybackStopped(
-          userId, sessionId, mediaFileId, positionSeconds, percentComplete, false);
+      eventPublisher.publishEvent(
+          PlaybackStoppedEvent.builder()
+              .userId(userId)
+              .sessionId(sessionId)
+              .mediaFileId(mediaFileId)
+              .positionSeconds(positionSeconds)
+              .percentComplete(percentComplete)
+              .playedToCompletion(false)
+              .build());
     }
 
     if (!written) {
@@ -98,8 +113,15 @@ public class WatchProgressService {
     }
 
     if (stopped) {
-      publishPlaybackStopped(
-          userId, sessionId, mediaFileId, positionSeconds, percentComplete, watched);
+      eventPublisher.publishEvent(
+          PlaybackStoppedEvent.builder()
+              .userId(userId)
+              .sessionId(sessionId)
+              .mediaFileId(mediaFileId)
+              .positionSeconds(positionSeconds)
+              .percentComplete(percentComplete)
+              .playedToCompletion(watched)
+              .build());
     }
 
     eventPublisher.publishEvent(
@@ -305,24 +327,6 @@ public class WatchProgressService {
     DISCARD,
     MARK_WATCHED,
     PERSIST
-  }
-
-  private void publishPlaybackStopped(
-      UUID userId,
-      UUID sessionId,
-      UUID mediaFileId,
-      int positionSeconds,
-      double percentComplete,
-      boolean playedToCompletion) {
-    eventPublisher.publishEvent(
-        PlaybackStoppedEvent.builder()
-            .userId(userId)
-            .sessionId(sessionId)
-            .mediaFileId(mediaFileId)
-            .positionSeconds(positionSeconds)
-            .percentComplete(percentComplete)
-            .playedToCompletion(playedToCompletion)
-            .build());
   }
 
   private StopDecision evaluateStopDecision(
