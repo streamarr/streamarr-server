@@ -214,6 +214,29 @@ class WatchProgressServiceTest {
               () -> service.reportTimeline(USER_ID, unknownId, 300, PlaybackState.PLAYING))
           .isInstanceOf(SessionNotFoundException.class);
     }
+
+    @Test
+    @DisplayName("Should not persist progress when position seconds is negative")
+    void shouldNotPersistProgressWhenPositionSecondsIsNegative() {
+      var session = addSession();
+
+      service.reportTimeline(USER_ID, session.getSessionId(), -100, PlaybackState.PLAYING);
+
+      assertThat(watchProgressRepository.count()).isZero();
+    }
+
+    @Test
+    @DisplayName("Should not delete existing progress when stopped with negative position")
+    void shouldNotDeleteExistingProgressWhenStoppedWithNegativePosition() {
+      var session = addSession();
+      watchProgressRepository.save(buildProgress(session.getMediaFileId(), 3600));
+
+      service.reportTimeline(USER_ID, session.getSessionId(), -100, PlaybackState.STOPPED);
+
+      assertThat(
+              watchProgressRepository.findByUserIdAndMediaFileId(USER_ID, session.getMediaFileId()))
+          .isPresent();
+    }
   }
 
   @Nested

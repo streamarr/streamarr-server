@@ -37,6 +37,10 @@ public class WatchProgressService {
 
   public void reportTimeline(
       UUID userId, UUID sessionId, int positionSeconds, PlaybackState state) {
+    if (positionSeconds < 0) {
+      return;
+    }
+
     var session =
         sessionRepository
             .findById(sessionId)
