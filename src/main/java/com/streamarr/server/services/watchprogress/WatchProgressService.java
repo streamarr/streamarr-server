@@ -107,10 +107,12 @@ public class WatchProgressService {
 
     var watched = decision == StopDecision.MARK_WATCHED;
     var effectivePosition = positionSeconds;
+    var effectivePercent = percentComplete;
     Instant lastPlayedAt = null;
 
     if (watched) {
       effectivePosition = 0;
+      effectivePercent = 100.0;
       lastPlayedAt = Instant.now();
     }
 
@@ -120,7 +122,7 @@ public class WatchProgressService {
                 .userId(userId)
                 .mediaFileId(mediaFileId)
                 .positionSeconds(effectivePosition)
-                .percentComplete(percentComplete)
+                .percentComplete(effectivePercent)
                 .durationSeconds(durationSeconds)
                 .lastPlayedAt(lastPlayedAt)
                 .build());
@@ -136,7 +138,7 @@ public class WatchProgressService {
             .userId(userId)
             .mediaFileId(mediaFileId)
             .positionSeconds(effectivePosition)
-            .percentComplete(percentComplete)
+            .percentComplete(effectivePercent)
             .state(PlaybackState.STOPPED)
             .build());
 

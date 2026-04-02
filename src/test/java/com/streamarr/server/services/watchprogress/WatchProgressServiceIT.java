@@ -102,8 +102,8 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
 
   @Test
   @Transactional
-  @DisplayName("Should enforce unique constraint on user and media file")
-  void shouldEnforceUniqueConstraintOnUserAndMediaFile() {
+  @DisplayName("Should update existing progress when same user and media file")
+  void shouldUpdateExistingProgressWhenSameUserAndMediaFile() {
     var fixture = createMovieWithFile();
 
     watchProgressRepository.saveAndFlush(
@@ -327,6 +327,44 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
 
       assertThat(progress.getCreatedBy()).isEqualTo(expectedAuditor);
       assertThat(progress.getLastModifiedBy()).isEqualTo(expectedAuditor);
+    }
+
+    @Test
+    @Transactional
+    @DisplayName("Should update audit fields on upsert conflict")
+    void shouldUpdateAuditFieldsOnUpsertConflict() {
+      var fixture = createMovieWithFile();
+
+      watchProgressRepository.upsertProgress(
+          SaveProgressCommand.builder()
+              .userId(USER_ID)
+              .mediaFileId(fixture.mediaFileId())
+              .positionSeconds(300)
+              .percentComplete(25.0)
+              .durationSeconds(1200)
+              .build());
+
+      entityManager.clear();
+
+      watchProgressRepository.upsertProgress(
+          SaveProgressCommand.builder()
+              .userId(USER_ID)
+              .mediaFileId(fixture.mediaFileId())
+              .positionSeconds(600)
+              .percentComplete(50.0)
+              .durationSeconds(1200)
+              .build());
+
+      entityManager.clear();
+
+      var progress =
+          watchProgressRepository
+              .findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId())
+              .orElseThrow();
+      var expectedAuditor = auditorAware.getCurrentAuditor().orElseThrow();
+
+      assertThat(progress.getLastModifiedBy()).isEqualTo(expectedAuditor);
+      assertThat(progress.getPositionSeconds()).isEqualTo(600);
     }
   }
 

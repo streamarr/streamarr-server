@@ -449,13 +449,14 @@ class StreamControllerTest {
             .andReturn();
 
     assertThat(result.getResponse().getContentType()).isEqualTo("video/mp4");
+    assertThat(result.getResponse().getContentLength()).isEqualTo(initData.length);
     assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(initData);
   }
 
   @Test
   @DisplayName("Should return 404 for variant init segment when variant not found")
   void shouldReturn404ForVariantInitSegmentWhenVariantNotFound() throws Exception {
-    streamingService.setSession(buildAbrSession());
+    streamingService.setSession(buildAbrFmp4Session());
 
     mockMvc
         .perform(get("/api/stream/{sessionId}/{variantLabel}/init.mp4", SESSION_ID, "360p"))

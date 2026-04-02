@@ -128,17 +128,20 @@ class ImageFieldResolverTest {
       series.setId(seriesId);
       when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
 
-      var image =
+      var posterImage =
           buildImage(seriesId, ImageEntityType.SERIES, ImageType.POSTER, ImageSize.SMALL, 185, 278);
+      var backdropImage =
+          buildImage(
+              seriesId, ImageEntityType.SERIES, ImageType.BACKDROP, ImageSize.SMALL, 300, 169);
       when(imageRepository.findByEntityTypeAndEntityIdIn(eq(ImageEntityType.SERIES), any()))
-          .thenReturn(List.of(image));
+          .thenReturn(List.of(posterImage, backdropImage));
 
-      String imageType =
+      List<String> imageTypes =
           dgsQueryExecutor.executeAndExtractJsonPath(
               String.format("{ series(id: \"%s\") { images { imageType } } }", seriesId),
-              "data.series.images[0].imageType");
+              "data.series.images[*].imageType");
 
-      assertThat(imageType).isEqualTo("POSTER");
+      assertThat(imageTypes).containsExactlyInAnyOrder("POSTER", "BACKDROP");
     }
   }
 
@@ -160,18 +163,21 @@ class ImageFieldResolverTest {
       when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
       when(seriesService.findSeasons(seriesId)).thenReturn(List.of(season));
 
-      var image =
+      var posterImage =
           buildImage(seasonId, ImageEntityType.SEASON, ImageType.POSTER, ImageSize.SMALL, 185, 278);
+      var backdropImage =
+          buildImage(
+              seasonId, ImageEntityType.SEASON, ImageType.BACKDROP, ImageSize.SMALL, 300, 169);
       when(imageRepository.findByEntityTypeAndEntityIdIn(eq(ImageEntityType.SEASON), any()))
-          .thenReturn(List.of(image));
+          .thenReturn(List.of(posterImage, backdropImage));
 
-      String imageType =
+      List<String> imageTypes =
           dgsQueryExecutor.executeAndExtractJsonPath(
               String.format(
                   "{ series(id: \"%s\") { seasons { images { imageType } } } }", seriesId),
-              "data.series.seasons[0].images[0].imageType");
+              "data.series.seasons[0].images[*].imageType");
 
-      assertThat(imageType).isEqualTo("POSTER");
+      assertThat(imageTypes).containsExactlyInAnyOrder("POSTER", "BACKDROP");
     }
   }
 
@@ -198,20 +204,23 @@ class ImageFieldResolverTest {
       when(seriesService.findSeasons(seriesId)).thenReturn(List.of(season));
       when(seriesService.findEpisodes(seasonId)).thenReturn(List.of(episode));
 
-      var image =
+      var stillImage =
           buildImage(
               episodeId, ImageEntityType.EPISODE, ImageType.STILL, ImageSize.SMALL, 300, 169);
+      var backdropImage =
+          buildImage(
+              episodeId, ImageEntityType.EPISODE, ImageType.BACKDROP, ImageSize.SMALL, 300, 169);
       when(imageRepository.findByEntityTypeAndEntityIdIn(eq(ImageEntityType.EPISODE), any()))
-          .thenReturn(List.of(image));
+          .thenReturn(List.of(stillImage, backdropImage));
 
-      String imageType =
+      List<String> imageTypes =
           dgsQueryExecutor.executeAndExtractJsonPath(
               String.format(
                   "{ series(id: \"%s\") { seasons { episodes { images { imageType } } } } }",
                   seriesId),
-              "data.series.seasons[0].episodes[0].images[0].imageType");
+              "data.series.seasons[0].episodes[0].images[*].imageType");
 
-      assertThat(imageType).isEqualTo("STILL");
+      assertThat(imageTypes).containsExactlyInAnyOrder("STILL", "BACKDROP");
     }
   }
 

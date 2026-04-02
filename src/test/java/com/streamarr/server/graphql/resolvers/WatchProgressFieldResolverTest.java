@@ -135,14 +135,15 @@ class WatchProgressFieldResolverTest {
               .durationSeconds(3600)
               .build());
 
-      Integer positionSeconds =
-          dgsQueryExecutor.executeAndExtractJsonPath(
+      var context =
+          dgsQueryExecutor.executeAndGetDocumentContext(
               String.format(
                   "{ movie(id: \"%s\") { watchProgress { positionSeconds percentComplete durationSeconds } } }",
-                  movie.getId()),
-              "data.movie.watchProgress.positionSeconds");
+                  movie.getId()));
 
-      assertThat(positionSeconds).isEqualTo(1800);
+      assertThat(context.<Integer>read("data.movie.watchProgress.positionSeconds")).isEqualTo(1800);
+      assertThat(context.<Double>read("data.movie.watchProgress.percentComplete")).isEqualTo(50.0);
+      assertThat(context.<Integer>read("data.movie.watchProgress.durationSeconds")).isEqualTo(3600);
     }
 
     @Test
@@ -183,8 +184,8 @@ class WatchProgressFieldResolverTest {
   class MovieWatchStatusTests {
 
     @Test
-    @DisplayName("Should return watch status when movie queried")
-    void shouldReturnWatchStatusWhenMovieQueried() {
+    @DisplayName("Should return in progress when movie has partial progress")
+    void shouldReturnInProgressWhenMovieHasPartialProgress() {
       var movie = setupMovie();
 
       var mediaFile = buildMediaFile();
@@ -245,19 +246,29 @@ class WatchProgressFieldResolverTest {
               .durationSeconds(2400)
               .build());
 
-      Integer positionSeconds =
-          dgsQueryExecutor.executeAndExtractJsonPath(
+      var context =
+          dgsQueryExecutor.executeAndGetDocumentContext(
               String.format(
-                  "{ series(id: \"%s\") { seasons { episodes { watchProgress { positionSeconds } } } } }",
-                  seriesId),
-              "data.series.seasons[0].episodes[0].watchProgress.positionSeconds");
+                  "{ series(id: \"%s\") { seasons { episodes { watchProgress { positionSeconds percentComplete durationSeconds } } } } }",
+                  seriesId));
 
-      assertThat(positionSeconds).isEqualTo(600);
+      assertThat(
+              context.<Integer>read(
+                  "data.series.seasons[0].episodes[0].watchProgress.positionSeconds"))
+          .isEqualTo(600);
+      assertThat(
+              context.<Double>read(
+                  "data.series.seasons[0].episodes[0].watchProgress.percentComplete"))
+          .isEqualTo(25.0);
+      assertThat(
+              context.<Integer>read(
+                  "data.series.seasons[0].episodes[0].watchProgress.durationSeconds"))
+          .isEqualTo(2400);
     }
 
     @Test
-    @DisplayName("Should return watch status when episode queried")
-    void shouldReturnWatchStatusWhenEpisodeQueried() {
+    @DisplayName("Should return watched when episode fully played")
+    void shouldReturnWatchedWhenEpisodeFullyPlayed() {
       var seriesId = UUID.randomUUID();
       var series = Series.builder().title("Test Series").build();
       series.setId(seriesId);
@@ -303,8 +314,8 @@ class WatchProgressFieldResolverTest {
   class SeasonWatchStatusTests {
 
     @Test
-    @DisplayName("Should return watch status when season queried")
-    void shouldReturnWatchStatusWhenSeasonQueried() {
+    @DisplayName("Should return in progress when season has partial progress")
+    void shouldReturnInProgressWhenSeasonHasPartialProgress() {
       var seriesId = UUID.randomUUID();
       var series = Series.builder().title("Test Series").build();
       series.setId(seriesId);
@@ -347,8 +358,8 @@ class WatchProgressFieldResolverTest {
   class SeriesWatchStatusTests {
 
     @Test
-    @DisplayName("Should return watch status when series queried")
-    void shouldReturnWatchStatusWhenSeriesQueried() {
+    @DisplayName("Should return unwatched when series has no progress")
+    void shouldReturnUnwatchedWhenSeriesHasNoProgress() {
       var seriesId = UUID.randomUUID();
       var series = Series.builder().title("Test Series").build();
       series.setId(seriesId);

@@ -423,6 +423,7 @@ class HlsPlaylistServiceTest {
   @Test
   @DisplayName("Should reduce segment count when seek origin is non-zero")
   void shouldReduceSegmentCountWhenSeekOriginIsNonZero() {
+    // 120s total / 6s segments = 20; seek(60) leaves 60s / 6s = 10 segments
     var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 120);
     session.seek(60);
 
@@ -436,9 +437,12 @@ class HlsPlaylistServiceTest {
   @Test
   @DisplayName("Should not change segment count when playback position advances beyond seek origin")
   void shouldNotChangeSegmentCountWhenPlaybackPositionAdvancesBeyondSeekOrigin() {
+    // seekOrigin stays 60 (setSeekPosition does not update it), so segments = (120-60)/6 = 10
     var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 120);
     session.seek(60);
     session.setSeekPosition(90);
+
+    assertThat(session.getSeekOrigin()).isEqualTo(60);
 
     var playlist = service.generateMediaPlaylist(session);
 

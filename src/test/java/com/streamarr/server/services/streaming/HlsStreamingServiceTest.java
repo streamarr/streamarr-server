@@ -820,20 +820,22 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("Should use seek origin for resume when playback position has advanced")
-  void shouldUseSeekOriginForResumeWhenPlaybackPositionHasAdvanced() {
+  @DisplayName("Should compute resume position from seek origin and segment index")
+  void shouldComputeResumePositionFromSeekOriginAndSegmentIndex() {
     var file = seedMediaFile();
     var session = service.createSession(file.getId(), defaultOptions());
 
     service.seekSession(session.getSessionId(), 60);
 
     session.updatePlaybackState(120, PlaybackState.PLAYING);
+    assertThat(session.getSeekOrigin()).isEqualTo(60);
 
     session.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
     transcodeExecutor.markDead(session.getSessionId());
 
     service.resumeSessionIfNeeded(session.getSessionId(), "segment5.ts");
 
+    // resumeSeek = seekOrigin(60) + segmentIndex(5) * segmentDuration(6) = 60 + 30 = 90
     var lastRequest = transcodeExecutor.getStartedRequests().getLast();
     assertThat(lastRequest.seekPosition()).isEqualTo(90);
   }

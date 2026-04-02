@@ -133,6 +133,7 @@ class WatchProgressServiceTest {
       service.reportTimeline(USER_ID, session.getSessionId(), 300, PlaybackState.PAUSED);
 
       assertThat(session.getPlaybackSnapshot().state()).isEqualTo(PlaybackState.PAUSED);
+      assertThat(session.getPlaybackSnapshot().positionSeconds()).isEqualTo(300);
     }
 
     @Test
@@ -353,15 +354,16 @@ class WatchProgressServiceTest {
     void shouldNotApplyThresholdsWhenPlaying() {
       var session = addSession(); // 7200s duration
 
-      // Report at 1% while PLAYING — should persist (not deleted)
-      service.reportTimeline(USER_ID, session.getSessionId(), 72, PlaybackState.PLAYING);
+      // Report at 95% while PLAYING — should persist without marking watched
+      service.reportTimeline(USER_ID, session.getSessionId(), 6840, PlaybackState.PLAYING);
 
       assertThat(watchProgressRepository.count()).isEqualTo(1);
       var progress =
           watchProgressRepository
               .findByUserIdAndMediaFileId(USER_ID, session.getMediaFileId())
               .orElseThrow();
-      assertThat(progress.getPositionSeconds()).isEqualTo(72);
+      assertThat(progress.getPositionSeconds()).isEqualTo(6840);
+      assertThat(progress.isPlayed()).isFalse();
     }
 
     @Test
@@ -414,6 +416,21 @@ class WatchProgressServiceTest {
       assertThat(progress.isPlayed()).isTrue();
       assertThat(progress.getPositionSeconds()).isZero();
     }
+
+    @Test
+    @DisplayName("Should set percent complete to 100 when marked as watched")
+    void shouldSetPercentCompleteTo100WhenMarkedAsWatched() {
+      var session = addSession(); // 7200s duration
+
+      // Stop at 93% (6696s / 7200s) — above 90% threshold → MARK_WATCHED
+      service.reportTimeline(USER_ID, session.getSessionId(), 6696, PlaybackState.STOPPED);
+
+      var progress =
+          watchProgressRepository
+              .findByUserIdAndMediaFileId(USER_ID, session.getMediaFileId())
+              .orElseThrow();
+      assertThat(progress.getPercentComplete()).isEqualTo(100.0);
+    }
   }
 
   @Nested
@@ -463,8 +480,8 @@ class WatchProgressServiceTest {
     }
 
     @Test
-    @DisplayName("Should publish WatchProgressChangedEvent when progress persisted")
-    void shouldPublishWatchProgressChangedEventWhenProgressPersisted() {
+    @DisplayName("Should publish WatchProgressChangedEvent when playing")
+    void shouldPublishWatchProgressChangedEventWhenPlaying() {
       var session = addSession();
 
       service.reportTimeline(USER_ID, session.getSessionId(), 3600, PlaybackState.PLAYING);
@@ -555,6 +572,8 @@ class WatchProgressServiceTest {
 
       assertThat(result).isPresent();
       assertThat(result.get().getPositionSeconds()).isEqualTo(600);
+      assertThat(result.get().getPercentComplete()).isEqualTo(50.0);
+      assertThat(result.get().getDurationSeconds()).isEqualTo(7200);
     }
 
     @Test
@@ -688,6 +707,7 @@ class WatchProgressServiceTest {
 
       var result = service.getWatchStatusForDirectMedia(USER_ID, List.of(movie.getId()));
 
+      assertThat(result).hasSize(1);
       assertThat(result).containsEntry(movie.getId(), WatchStatus.IN_PROGRESS);
     }
 
@@ -829,6 +849,7 @@ class WatchProgressServiceTest {
 
       var result = service.getWatchStatusForSeries(USER_ID, List.of(series.getId()));
 
+      assertThat(result).hasSize(1);
       assertThat(result).containsEntry(series.getId(), WatchStatus.IN_PROGRESS);
     }
 

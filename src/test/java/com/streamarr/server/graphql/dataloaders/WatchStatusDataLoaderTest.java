@@ -71,9 +71,22 @@ class WatchStatusDataLoaderTest {
   }
 
   @Test
-  @DisplayName("Should return unwatched when no progress exists")
-  void shouldReturnUnwatchedWhenNoProgressExists() throws Exception {
+  @DisplayName("Should return unwatched when entity has no media files")
+  void shouldReturnUnwatchedWhenEntityHasNoMediaFiles() throws Exception {
     var key = new WatchStatusLoaderKey(UUID.randomUUID(), WatchStatusEntityType.DIRECT_MEDIA);
+    var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
+
+    assertThat(result.get(key)).isEqualTo(WatchStatus.UNWATCHED);
+  }
+
+  @Test
+  @DisplayName("Should return unwatched when media files exist but no progress")
+  void shouldReturnUnwatchedWhenMediaFilesExistButNoProgress() throws Exception {
+    var movie = Movie.builder().build();
+    movie.setId(UUID.randomUUID());
+    mediaFileRepository.save(createMediaFile(movie.getId()));
+
+    var key = new WatchStatusLoaderKey(movie.getId(), WatchStatusEntityType.DIRECT_MEDIA);
     var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
 
     assertThat(result.get(key)).isEqualTo(WatchStatus.UNWATCHED);
@@ -96,6 +109,7 @@ class WatchStatusDataLoaderTest {
 
     var result = dataLoader.load(Set.of(movieKey, seasonKey)).toCompletableFuture().get();
 
+    assertThat(result).hasSize(2);
     assertThat(result.get(movieKey)).isEqualTo(WatchStatus.WATCHED);
     assertThat(result.get(seasonKey)).isEqualTo(WatchStatus.UNWATCHED);
   }
@@ -122,9 +136,13 @@ class WatchStatusDataLoaderTest {
     var series = Series.builder().build();
     series.setId(UUID.randomUUID());
     var s1 = seasonRepository.save(Season.builder().seasonNumber(1).series(series).build());
+    var s2 = seasonRepository.save(Season.builder().seasonNumber(2).series(series).build());
     var ep1 = episodeRepository.save(Episode.builder().episodeNumber(1).season(s1).build());
+    var ep2 = episodeRepository.save(Episode.builder().episodeNumber(1).season(s2).build());
     var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
+    var mf2 = mediaFileRepository.save(createMediaFile(ep2.getId()));
     watchProgressRepository.save(buildPlayedProgress(mf1.getId()));
+    watchProgressRepository.save(buildPlayedProgress(mf2.getId()));
 
     var key = new WatchStatusLoaderKey(series.getId(), WatchStatusEntityType.SERIES);
     var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
