@@ -185,7 +185,7 @@ public class WatchProgress extends TableImpl<WatchProgressRecord> {
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_WATCH_PROGRESS_LAST_PLAYED, Indexes.IDX_WATCH_PROGRESS_MEDIA_FILE_ID, Indexes.IDX_WATCH_PROGRESS_USER_ID);
+        return Arrays.asList(Indexes.IDX_WATCH_PROGRESS_LAST_PLAYED, Indexes.IDX_WATCH_PROGRESS_MEDIA_FILE_ID);
     }
 
     @Override
