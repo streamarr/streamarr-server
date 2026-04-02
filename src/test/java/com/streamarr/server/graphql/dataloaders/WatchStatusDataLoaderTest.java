@@ -58,7 +58,7 @@ class WatchStatusDataLoaderTest {
     var key = new WatchStatusLoaderKey(movie.getId(), WatchStatusEntityType.DIRECT_MEDIA);
     var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
 
-    assertThat(result.get(key)).isEqualTo(WatchStatus.WATCHED);
+    assertThat(result).containsEntry(key, WatchStatus.WATCHED);
   }
 
   @Test
@@ -67,7 +67,7 @@ class WatchStatusDataLoaderTest {
     var key = new WatchStatusLoaderKey(UUID.randomUUID(), WatchStatusEntityType.DIRECT_MEDIA);
     var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
 
-    assertThat(result.get(key)).isEqualTo(WatchStatus.UNWATCHED);
+    assertThat(result).containsEntry(key, WatchStatus.UNWATCHED);
   }
 
   @Test
@@ -80,7 +80,7 @@ class WatchStatusDataLoaderTest {
     var key = new WatchStatusLoaderKey(movie.getId(), WatchStatusEntityType.DIRECT_MEDIA);
     var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
 
-    assertThat(result.get(key)).isEqualTo(WatchStatus.UNWATCHED);
+    assertThat(result).containsEntry(key, WatchStatus.UNWATCHED);
   }
 
   @Test
@@ -100,9 +100,10 @@ class WatchStatusDataLoaderTest {
 
     var result = dataLoader.load(Set.of(movieKey, seasonKey)).toCompletableFuture().get();
 
-    assertThat(result).hasSize(2);
-    assertThat(result.get(movieKey)).isEqualTo(WatchStatus.WATCHED);
-    assertThat(result.get(seasonKey)).isEqualTo(WatchStatus.UNWATCHED);
+    assertThat(result)
+        .hasSize(2)
+        .containsEntry(movieKey, WatchStatus.WATCHED)
+        .containsEntry(seasonKey, WatchStatus.UNWATCHED);
   }
 
   @Test
@@ -118,7 +119,7 @@ class WatchStatusDataLoaderTest {
     var key = new WatchStatusLoaderKey(season.getId(), WatchStatusEntityType.SEASON);
     var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
 
-    assertThat(result.get(key)).isEqualTo(WatchStatus.IN_PROGRESS);
+    assertThat(result).containsEntry(key, WatchStatus.IN_PROGRESS);
   }
 
   @Test
@@ -138,7 +139,7 @@ class WatchStatusDataLoaderTest {
     var key = new WatchStatusLoaderKey(series.getId(), WatchStatusEntityType.SERIES);
     var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
 
-    assertThat(result.get(key)).isEqualTo(WatchStatus.WATCHED);
+    assertThat(result).containsEntry(key, WatchStatus.WATCHED);
   }
 
   private MediaFile createMediaFile(UUID mediaId) {

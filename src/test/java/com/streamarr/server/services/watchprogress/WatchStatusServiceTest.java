@@ -151,8 +151,7 @@ class WatchStatusServiceTest {
 
       var result = service.getWatchStatusForDirectMedia(USER_ID, List.of(movie.getId()));
 
-      assertThat(result).hasSize(1);
-      assertThat(result).containsEntry(movie.getId(), WatchStatus.IN_PROGRESS);
+      assertThat(result).hasSize(1).containsEntry(movie.getId(), WatchStatus.IN_PROGRESS);
     }
 
     @Test
@@ -171,8 +170,9 @@ class WatchStatusServiceTest {
       var result =
           service.getWatchStatusForDirectMedia(USER_ID, List.of(movie1.getId(), movie2.getId()));
 
-      assertThat(result).containsEntry(movie1.getId(), WatchStatus.WATCHED);
-      assertThat(result).containsEntry(movie2.getId(), WatchStatus.UNWATCHED);
+      assertThat(result)
+          .containsEntry(movie1.getId(), WatchStatus.WATCHED)
+          .containsEntry(movie2.getId(), WatchStatus.UNWATCHED);
     }
 
     @Test
@@ -246,8 +246,9 @@ class WatchStatusServiceTest {
 
       var result = service.getWatchStatusForSeasons(USER_ID, List.of(s1.getId(), s2.getId()));
 
-      assertThat(result).containsEntry(s1.getId(), WatchStatus.WATCHED);
-      assertThat(result).containsEntry(s2.getId(), WatchStatus.UNWATCHED);
+      assertThat(result)
+          .containsEntry(s1.getId(), WatchStatus.WATCHED)
+          .containsEntry(s2.getId(), WatchStatus.UNWATCHED);
     }
   }
 
@@ -293,8 +294,7 @@ class WatchStatusServiceTest {
 
       var result = service.getWatchStatusForSeries(USER_ID, List.of(series.getId()));
 
-      assertThat(result).hasSize(1);
-      assertThat(result).containsEntry(series.getId(), WatchStatus.IN_PROGRESS);
+      assertThat(result).hasSize(1).containsEntry(series.getId(), WatchStatus.IN_PROGRESS);
     }
 
     @Test
@@ -325,8 +325,9 @@ class WatchStatusServiceTest {
       var result =
           service.getWatchStatusForSeries(USER_ID, List.of(series1.getId(), series2.getId()));
 
-      assertThat(result).containsEntry(series1.getId(), WatchStatus.WATCHED);
-      assertThat(result).containsEntry(series2.getId(), WatchStatus.UNWATCHED);
+      assertThat(result)
+          .containsEntry(series1.getId(), WatchStatus.WATCHED)
+          .containsEntry(series2.getId(), WatchStatus.UNWATCHED);
     }
   }
 }
