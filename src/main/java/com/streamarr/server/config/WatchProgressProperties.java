@@ -4,7 +4,7 @@ import lombok.Builder;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @Builder
-@ConfigurationProperties(prefix = "watch-progress")
+@ConfigurationProperties(prefix = "streaming.watch-progress")
 public record WatchProgressProperties(
     double minResumePercent, double maxResumePercent, int maxRemainingSeconds) {
 
