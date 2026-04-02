@@ -59,21 +59,29 @@ public class WatchProgressService {
     var percentComplete = Math.min(positionSeconds * 100.0 / durationSeconds, 100.0);
     var mediaFileId = session.getMediaFileId();
 
+    SaveProgressCommand command;
     if (state == PlaybackState.STOPPED) {
-      handleStoppedPlayback(
-          userId, mediaFileId, positionSeconds, percentComplete, durationSeconds);
-      return;
+      var stoppedCommand =
+          buildStoppedCommand(
+              userId, mediaFileId, positionSeconds, percentComplete, durationSeconds);
+
+      if (stoppedCommand.isEmpty()) {
+        watchProgressRepository.deleteIfNotWatched(userId, mediaFileId);
+        return;
+      }
+      command = stoppedCommand.get();
+    } else {
+      command =
+          SaveProgressCommand.builder()
+              .userId(userId)
+              .mediaFileId(mediaFileId)
+              .positionSeconds(positionSeconds)
+              .percentComplete(percentComplete)
+              .durationSeconds(durationSeconds)
+              .build();
     }
 
-    var written =
-        watchProgressRepository.upsertProgress(
-            SaveProgressCommand.builder()
-                .userId(userId)
-                .mediaFileId(mediaFileId)
-                .positionSeconds(positionSeconds)
-                .percentComplete(percentComplete)
-                .durationSeconds(durationSeconds)
-                .build());
+    var written = watchProgressRepository.upsertProgress(command);
 
     if (!written) {
       log.debug(
@@ -85,13 +93,17 @@ public class WatchProgressService {
         WatchProgressChangedEvent.builder()
             .userId(userId)
             .mediaFileId(mediaFileId)
-            .positionSeconds(positionSeconds)
+            .positionSeconds(command.positionSeconds())
             .percentComplete(percentComplete)
             .state(state)
             .build());
+
+    if (command.lastPlayedAt() != null) {
+      eventPublisher.publishEvent(new WatchStatusChangedEvent(userId, mediaFileId));
+    }
   }
 
-  private void handleStoppedPlayback(
+  private Optional<SaveProgressCommand> buildStoppedCommand(
       UUID userId,
       UUID mediaFileId,
       int positionSeconds,
@@ -101,48 +113,26 @@ public class WatchProgressService {
     var decision = evaluateStopDecision(percentComplete, remainingSeconds, durationSeconds);
 
     if (decision == StopDecision.DISCARD) {
-      watchProgressRepository.deleteIfNotWatched(userId, mediaFileId);
-      return;
+      return Optional.empty();
     }
 
-    var watched = decision == StopDecision.MARK_WATCHED;
     var effectivePosition = positionSeconds;
     Instant lastPlayedAt = null;
 
-    if (watched) {
+    if (decision == StopDecision.MARK_WATCHED) {
       effectivePosition = 0;
       lastPlayedAt = Instant.now();
     }
 
-    var written =
-        watchProgressRepository.upsertProgress(
-            SaveProgressCommand.builder()
-                .userId(userId)
-                .mediaFileId(mediaFileId)
-                .positionSeconds(effectivePosition)
-                .percentComplete(percentComplete)
-                .durationSeconds(durationSeconds)
-                .lastPlayedAt(lastPlayedAt)
-                .build());
-
-    if (!written) {
-      log.debug(
-          "Ignored timeline update for media file {} — already marked as watched", mediaFileId);
-      return;
-    }
-
-    eventPublisher.publishEvent(
-        WatchProgressChangedEvent.builder()
+    return Optional.of(
+        SaveProgressCommand.builder()
             .userId(userId)
             .mediaFileId(mediaFileId)
             .positionSeconds(effectivePosition)
             .percentComplete(percentComplete)
-            .state(PlaybackState.STOPPED)
+            .durationSeconds(durationSeconds)
+            .lastPlayedAt(lastPlayedAt)
             .build());
-
-    if (watched) {
-      eventPublisher.publishEvent(new WatchStatusChangedEvent(userId, mediaFileId));
-    }
   }
 
   public Optional<WatchProgress> getProgress(UUID userId, UUID mediaFileId) {
