@@ -23,9 +23,9 @@ import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeStreamSessionRepository;
 import com.streamarr.server.fakes.FakeWatchProgressRepository;
 import com.streamarr.server.fixtures.StreamSessionFixture;
-import com.streamarr.server.services.watchprogress.events.MediaWatchedEvent;
+import com.streamarr.server.services.watchprogress.events.WatchStatusChangedEvent;
 import com.streamarr.server.services.watchprogress.events.PlaybackStoppedEvent;
-import com.streamarr.server.services.watchprogress.events.TimelineReportedEvent;
+import com.streamarr.server.services.watchprogress.events.WatchProgressChangedEvent;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -489,28 +489,28 @@ class WatchProgressServiceTest {
     }
 
     @Test
-    @DisplayName("Should publish TimelineReportedEvent when progress persisted")
-    void shouldPublishTimelineReportedEventWhenProgressPersisted() {
+    @DisplayName("Should publish WatchProgressChangedEvent when progress persisted")
+    void shouldPublishWatchProgressChangedEventWhenProgressPersisted() {
       var session = addSession();
 
       service.reportTimeline(USER_ID, session.getSessionId(), 3600, PlaybackState.PLAYING);
 
-      var events = eventPublisher.getEventsOfType(TimelineReportedEvent.class);
+      var events = eventPublisher.getEventsOfType(WatchProgressChangedEvent.class);
       assertThat(events).hasSize(1);
       assertThat(events.getFirst().positionSeconds()).isEqualTo(3600);
       assertThat(events.getFirst().state()).isEqualTo(PlaybackState.PLAYING);
     }
 
     @Test
-    @DisplayName("Should publish MediaWatchedEvent when lastPlayedAt transitions")
-    void shouldPublishMediaWatchedEventWhenLastPlayedAtTransitions() {
+    @DisplayName("Should publish WatchStatusChangedEvent when lastPlayedAt transitions")
+    void shouldPublishWatchStatusChangedEventWhenLastPlayedAtTransitions() {
       var session = addSession();
 
       // Stop at 95% to trigger watched
       service.reportTimeline(
           USER_ID, session.getSessionId(), (int) (7200 * 0.95), PlaybackState.STOPPED);
 
-      var events = eventPublisher.getEventsOfType(MediaWatchedEvent.class);
+      var events = eventPublisher.getEventsOfType(WatchStatusChangedEvent.class);
       assertThat(events).hasSize(1);
       assertThat(events.getFirst().mediaFileId()).isEqualTo(session.getMediaFileId());
 
@@ -519,18 +519,18 @@ class WatchProgressServiceTest {
     }
 
     @Test
-    @DisplayName("Should not publish MediaWatchedEvent when already watched")
-    void shouldNotPublishMediaWatchedEventWhenAlreadyWatched() {
+    @DisplayName("Should not publish WatchStatusChangedEvent when already watched")
+    void shouldNotPublishWatchStatusChangedEventWhenAlreadyWatched() {
       var session = addSession();
       markAsWatched(session);
 
-      var eventsBefore = eventPublisher.getEventsOfType(MediaWatchedEvent.class);
+      var eventsBefore = eventPublisher.getEventsOfType(WatchStatusChangedEvent.class);
       assertThat(eventsBefore).hasSize(1);
 
       // Stale session reports — guard blocks write, no new event
       service.reportTimeline(USER_ID, session.getSessionId(), 3600, PlaybackState.PLAYING);
 
-      var eventsAfter = eventPublisher.getEventsOfType(MediaWatchedEvent.class);
+      var eventsAfter = eventPublisher.getEventsOfType(WatchStatusChangedEvent.class);
       assertThat(eventsAfter).hasSize(1); // unchanged
     }
 
@@ -542,7 +542,7 @@ class WatchProgressServiceTest {
       // Stop at 1% — below min threshold, deletes progress, no state change for other UIs
       service.reportTimeline(USER_ID, session.getSessionId(), 72, PlaybackState.STOPPED);
 
-      assertThat(eventPublisher.getEventsOfType(TimelineReportedEvent.class)).isEmpty();
+      assertThat(eventPublisher.getEventsOfType(WatchProgressChangedEvent.class)).isEmpty();
       assertThat(eventPublisher.getEventsOfType(PlaybackStoppedEvent.class)).isEmpty();
     }
   }

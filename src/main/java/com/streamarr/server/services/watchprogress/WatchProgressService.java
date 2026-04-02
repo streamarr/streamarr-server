@@ -14,9 +14,9 @@ import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.streaming.SaveProgressCommand;
 import com.streamarr.server.repositories.streaming.WatchProgressRepository;
 import com.streamarr.server.services.streaming.StreamSessionRepository;
-import com.streamarr.server.services.watchprogress.events.MediaWatchedEvent;
+import com.streamarr.server.services.watchprogress.events.WatchStatusChangedEvent;
 import com.streamarr.server.services.watchprogress.events.PlaybackStoppedEvent;
-import com.streamarr.server.services.watchprogress.events.TimelineReportedEvent;
+import com.streamarr.server.services.watchprogress.events.WatchProgressChangedEvent;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.HashMap;
@@ -83,7 +83,7 @@ public class WatchProgressService {
     }
 
     eventPublisher.publishEvent(
-        TimelineReportedEvent.builder()
+        WatchProgressChangedEvent.builder()
             .userId(userId)
             .mediaFileId(mediaFileId)
             .positionSeconds(positionSeconds)
@@ -144,7 +144,7 @@ public class WatchProgressService {
             .build());
 
     eventPublisher.publishEvent(
-        TimelineReportedEvent.builder()
+        WatchProgressChangedEvent.builder()
             .userId(userId)
             .mediaFileId(mediaFileId)
             .positionSeconds(effectivePosition)
@@ -153,7 +153,7 @@ public class WatchProgressService {
             .build());
 
     if (watched) {
-      eventPublisher.publishEvent(new MediaWatchedEvent(userId, mediaFileId));
+      eventPublisher.publishEvent(new WatchStatusChangedEvent(userId, mediaFileId));
     }
   }
 
