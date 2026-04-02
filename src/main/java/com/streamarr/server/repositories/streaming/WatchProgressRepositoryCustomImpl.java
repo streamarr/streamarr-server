@@ -20,7 +20,10 @@ public class WatchProgressRepositoryCustomImpl implements WatchProgressRepositor
     var auditUser = auditorAware.getCurrentAuditor().orElse(null);
     var now = OffsetDateTime.now(ZoneOffset.UTC);
     var lastPlayedAtOdt =
-        command.lastPlayedAt() != null ? command.lastPlayedAt().atOffset(ZoneOffset.UTC) : null;
+        switch (command) {
+          case SaveProgressCommand.MarkWatched mw -> mw.watchedAt().atOffset(ZoneOffset.UTC);
+          case SaveProgressCommand.UpdateProgress _ -> null;
+        };
 
     return dsl.insertInto(WATCH_PROGRESS)
             .set(WATCH_PROGRESS.USER_ID, command.userId())

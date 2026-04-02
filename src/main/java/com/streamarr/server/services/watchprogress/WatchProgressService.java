@@ -14,8 +14,8 @@ import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.streaming.SaveProgressCommand;
 import com.streamarr.server.repositories.streaming.WatchProgressRepository;
 import com.streamarr.server.services.streaming.StreamSessionRepository;
-import com.streamarr.server.services.watchprogress.events.WatchStatusChangedEvent;
 import com.streamarr.server.services.watchprogress.events.WatchProgressChangedEvent;
+import com.streamarr.server.services.watchprogress.events.WatchStatusChangedEvent;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.HashMap;
@@ -60,14 +60,13 @@ public class WatchProgressService {
     var mediaFileId = session.getMediaFileId();
 
     if (state == PlaybackState.STOPPED) {
-      handleStoppedPlayback(
-          userId, mediaFileId, positionSeconds, percentComplete, durationSeconds);
+      handleStoppedPlayback(userId, mediaFileId, positionSeconds, percentComplete, durationSeconds);
       return;
     }
 
     var written =
         watchProgressRepository.upsertProgress(
-            SaveProgressCommand.builder()
+            SaveProgressCommand.UpdateProgress.builder()
                 .userId(userId)
                 .mediaFileId(mediaFileId)
                 .positionSeconds(positionSeconds)
@@ -105,27 +104,29 @@ public class WatchProgressService {
       return;
     }
 
-    var watched = decision == StopDecision.MARK_WATCHED;
-    var effectivePosition = positionSeconds;
-    var effectivePercent = percentComplete;
-    Instant lastPlayedAt = null;
+    SaveProgressCommand command =
+        switch (decision) {
+          case MARK_WATCHED ->
+              SaveProgressCommand.MarkWatched.builder()
+                  .userId(userId)
+                  .mediaFileId(mediaFileId)
+                  .positionSeconds(0)
+                  .percentComplete(100.0)
+                  .durationSeconds(durationSeconds)
+                  .watchedAt(Instant.now())
+                  .build();
+          case PERSIST ->
+              SaveProgressCommand.UpdateProgress.builder()
+                  .userId(userId)
+                  .mediaFileId(mediaFileId)
+                  .positionSeconds(positionSeconds)
+                  .percentComplete(percentComplete)
+                  .durationSeconds(durationSeconds)
+                  .build();
+          case DISCARD -> throw new AssertionError("unreachable: DISCARD handled above");
+        };
 
-    if (watched) {
-      effectivePosition = 0;
-      effectivePercent = 100.0;
-      lastPlayedAt = Instant.now();
-    }
-
-    var written =
-        watchProgressRepository.upsertProgress(
-            SaveProgressCommand.builder()
-                .userId(userId)
-                .mediaFileId(mediaFileId)
-                .positionSeconds(effectivePosition)
-                .percentComplete(effectivePercent)
-                .durationSeconds(durationSeconds)
-                .lastPlayedAt(lastPlayedAt)
-                .build());
+    var written = watchProgressRepository.upsertProgress(command);
 
     if (!written) {
       log.debug(
@@ -137,12 +138,12 @@ public class WatchProgressService {
         WatchProgressChangedEvent.builder()
             .userId(userId)
             .mediaFileId(mediaFileId)
-            .positionSeconds(effectivePosition)
-            .percentComplete(effectivePercent)
+            .positionSeconds(command.positionSeconds())
+            .percentComplete(command.percentComplete())
             .state(PlaybackState.STOPPED)
             .build());
 
-    if (watched) {
+    if (command instanceof SaveProgressCommand.MarkWatched) {
       eventPublisher.publishEvent(new WatchStatusChangedEvent(userId, mediaFileId));
     }
   }

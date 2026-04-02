@@ -199,7 +199,7 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
 
       var result =
           watchProgressRepository.upsertProgress(
-              SaveProgressCommand.builder()
+              SaveProgressCommand.UpdateProgress.builder()
                   .userId(USER_ID)
                   .mediaFileId(fixture.mediaFileId())
                   .positionSeconds(300)
@@ -240,7 +240,7 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
 
       var result =
           watchProgressRepository.upsertProgress(
-              SaveProgressCommand.builder()
+              SaveProgressCommand.UpdateProgress.builder()
                   .userId(USER_ID)
                   .mediaFileId(fixture.mediaFileId())
                   .positionSeconds(600)
@@ -281,7 +281,7 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
 
       var result =
           watchProgressRepository.upsertProgress(
-              SaveProgressCommand.builder()
+              SaveProgressCommand.UpdateProgress.builder()
                   .userId(USER_ID)
                   .mediaFileId(fixture.mediaFileId())
                   .positionSeconds(300)
@@ -309,7 +309,7 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
       var fixture = createMovieWithFile();
 
       watchProgressRepository.upsertProgress(
-          SaveProgressCommand.builder()
+          SaveProgressCommand.UpdateProgress.builder()
               .userId(USER_ID)
               .mediaFileId(fixture.mediaFileId())
               .positionSeconds(300)
@@ -336,7 +336,7 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
       var fixture = createMovieWithFile();
 
       watchProgressRepository.upsertProgress(
-          SaveProgressCommand.builder()
+          SaveProgressCommand.UpdateProgress.builder()
               .userId(USER_ID)
               .mediaFileId(fixture.mediaFileId())
               .positionSeconds(300)
@@ -347,7 +347,7 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
       entityManager.clear();
 
       watchProgressRepository.upsertProgress(
-          SaveProgressCommand.builder()
+          SaveProgressCommand.UpdateProgress.builder()
               .userId(USER_ID)
               .mediaFileId(fixture.mediaFileId())
               .positionSeconds(600)

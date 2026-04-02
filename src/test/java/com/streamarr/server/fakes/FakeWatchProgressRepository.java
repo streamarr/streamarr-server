@@ -48,6 +48,11 @@ public class FakeWatchProgressRepository extends FakeJpaRepository<WatchProgress
 
   @Override
   public boolean upsertProgress(SaveProgressCommand command) {
+    var lastPlayedAt =
+        switch (command) {
+          case SaveProgressCommand.MarkWatched mw -> mw.watchedAt();
+          case SaveProgressCommand.UpdateProgress _ -> null;
+        };
     var existing = findByUserIdAndMediaFileId(command.userId(), command.mediaFileId());
     if (existing.isPresent()) {
       var wp = existing.get();
@@ -57,7 +62,7 @@ public class FakeWatchProgressRepository extends FakeJpaRepository<WatchProgress
       wp.setPositionSeconds(command.positionSeconds());
       wp.setPercentComplete(command.percentComplete());
       wp.setDurationSeconds(command.durationSeconds());
-      wp.setLastPlayedAt(command.lastPlayedAt());
+      wp.setLastPlayedAt(lastPlayedAt);
       return true;
     }
     save(
@@ -67,7 +72,7 @@ public class FakeWatchProgressRepository extends FakeJpaRepository<WatchProgress
             .positionSeconds(command.positionSeconds())
             .percentComplete(command.percentComplete())
             .durationSeconds(command.durationSeconds())
-            .lastPlayedAt(command.lastPlayedAt())
+            .lastPlayedAt(lastPlayedAt)
             .build());
     return true;
   }
