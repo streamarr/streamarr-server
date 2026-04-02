@@ -42,6 +42,11 @@ streaming:
   session-retention: ${STREAMING_SESSION_RETENTION:24h}
   segment-base-path: ${STREAMING_SEGMENT_BASE_PATH:}
 
+watch-progress:
+  min-resume-percent: ${WATCH_PROGRESS_MIN_RESUME_PERCENT:5.0}
+  max-resume-percent: ${WATCH_PROGRESS_MAX_RESUME_PERCENT:90.0}
+  max-remaining-seconds: ${WATCH_PROGRESS_MAX_REMAINING_SECONDS:300}
+
 otel:
   sdk:
     disabled: true
