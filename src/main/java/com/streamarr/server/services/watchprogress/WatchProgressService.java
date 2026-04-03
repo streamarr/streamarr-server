@@ -1,9 +1,6 @@
 package com.streamarr.server.services.watchprogress;
 
 import com.streamarr.server.config.WatchProgressProperties;
-import com.streamarr.server.domain.media.Episode;
-import com.streamarr.server.domain.media.MediaFile;
-import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.repositories.media.EpisodeRepository;
@@ -15,6 +12,7 @@ import com.streamarr.server.services.streaming.StreamSessionRepository;
 import com.streamarr.server.services.watchprogress.events.WatchProgressChangedEvent;
 import com.streamarr.server.services.watchprogress.events.WatchStatusChangedEvent;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -156,27 +154,23 @@ public class WatchProgressService {
   }
 
   private List<UUID> resolveAllMediaFileIds(UUID collectableId) {
-    var directFiles = mediaFileRepository.findByMediaId(collectableId);
-    if (!directFiles.isEmpty()) {
-      return directFiles.stream().map(MediaFile::getId).toList();
+    var directFileIds = mediaFileRepository.findMediaFileIdsByMediaIds(List.of(collectableId));
+    if (!directFileIds.isEmpty()) {
+      return directFileIds;
     }
 
-    var episodes = episodeRepository.findBySeasonId(collectableId);
-    if (!episodes.isEmpty()) {
-      var episodeIds = episodes.stream().map(Episode::getId).toList();
-      return mediaFileRepository.findByMediaIdIn(episodeIds).stream()
-          .map(MediaFile::getId)
-          .toList();
+    var episodeIdsBySeasonId = episodeRepository.findEpisodeIdsBySeasonIds(List.of(collectableId));
+    if (!episodeIdsBySeasonId.isEmpty()) {
+      var episodeIds = episodeIdsBySeasonId.values().stream().flatMap(Collection::stream).toList();
+      return mediaFileRepository.findMediaFileIdsByMediaIds(episodeIds);
     }
 
-    var seasons = seasonRepository.findBySeriesId(collectableId);
-    if (!seasons.isEmpty()) {
-      var seasonIds = seasons.stream().map(Season::getId).toList();
-      var seriesEpisodes = episodeRepository.findBySeasonIdIn(seasonIds);
-      var episodeIds = seriesEpisodes.stream().map(Episode::getId).toList();
-      return mediaFileRepository.findByMediaIdIn(episodeIds).stream()
-          .map(MediaFile::getId)
-          .toList();
+    var seasonIdsBySeriesId = seasonRepository.findSeasonIdsBySeriesIds(List.of(collectableId));
+    if (!seasonIdsBySeriesId.isEmpty()) {
+      var allSeasonIds = seasonIdsBySeriesId.values().stream().flatMap(Collection::stream).toList();
+      var episodeIdsBySeasonId2 = episodeRepository.findEpisodeIdsBySeasonIds(allSeasonIds);
+      var episodeIds = episodeIdsBySeasonId2.values().stream().flatMap(Collection::stream).toList();
+      return mediaFileRepository.findMediaFileIdsByMediaIds(episodeIds);
     }
 
     return List.of();
