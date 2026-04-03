@@ -95,6 +95,12 @@ class SessionProgressServiceTest {
     mediaFileRepository.save(mediaFile);
   }
 
+  private void markAsWatched(StreamSession session) {
+    // Stop at 95% to trigger watched threshold
+    service.reportTimeline(
+        USER_ID, session.getSessionId(), (int) (7200 * 0.95), PlaybackState.STOPPED);
+  }
+
   private MediaFile createMediaFile(UUID mediaId) {
     return MediaFile.builder()
         .mediaId(mediaId)
@@ -552,5 +558,121 @@ class SessionProgressServiceTest {
 
       assertThat(sessionProgressRepository.count()).isZero();
     }
+  }
+
+  @Nested
+  @DisplayName("Session Progress Persistence")
+  class SessionProgressPersistence {
+
+    @Test
+    @DisplayName("Should persist separate rows for two sessions on same media file")
+    void shouldPersistSeparateRowsForTwoSessionsOnSameMediaFile() {
+      var session1 = addSession();
+      var session2 = addSessionForMediaFile(session1.getMediaFileId());
+
+      service.reportTimeline(USER_ID, session1.getSessionId(), 300, PlaybackState.PLAYING);
+      service.reportTimeline(USER_ID, session2.getSessionId(), 600, PlaybackState.PLAYING);
+
+      assertThat(sessionProgressRepository.count()).isEqualTo(2);
+
+      var sp1 = sessionProgressRepository.findBySessionId(session1.getSessionId()).orElseThrow();
+      var sp2 = sessionProgressRepository.findBySessionId(session2.getSessionId()).orElseThrow();
+      assertThat(sp1.getPositionSeconds()).isEqualTo(300);
+      assertThat(sp2.getPositionSeconds()).isEqualTo(600);
+    }
+
+    @Test
+    @DisplayName("Should return most recent session progress for resume")
+    void shouldReturnMostRecentSessionProgressForResume() {
+      var session1 = addSession();
+      var session2 = addSessionForMediaFile(session1.getMediaFileId());
+
+      service.reportTimeline(USER_ID, session1.getSessionId(), 300, PlaybackState.PLAYING);
+      service.reportTimeline(USER_ID, session2.getSessionId(), 600, PlaybackState.PLAYING);
+
+      var resume =
+          sessionProgressRepository.findMostRecentByUserIdAndMediaFileId(
+              USER_ID, session1.getMediaFileId());
+
+      assertThat(resume).isPresent();
+      assertThat(resume.get().getPositionSeconds()).isEqualTo(600);
+    }
+
+    @Test
+    @DisplayName("Should delete only discarded session progress")
+    void shouldDeleteOnlyDiscardedSessionProgress() {
+      var session1 = addSession();
+      var session2 = addSessionForMediaFile(session1.getMediaFileId());
+
+      service.reportTimeline(USER_ID, session1.getSessionId(), 300, PlaybackState.PLAYING);
+      service.reportTimeline(USER_ID, session2.getSessionId(), 600, PlaybackState.PLAYING);
+
+      // Stop session1 below min threshold (< 5% of 7200s = 360s) → DISCARD
+      service.reportTimeline(USER_ID, session1.getSessionId(), 100, PlaybackState.STOPPED);
+
+      assertThat(sessionProgressRepository.count()).isEqualTo(1);
+      assertThat(sessionProgressRepository.findBySessionId(session2.getSessionId())).isPresent();
+      assertThat(sessionProgressRepository.findBySessionId(session1.getSessionId())).isEmpty();
+    }
+  }
+
+  @Nested
+  @DisplayName("Re-watch Flows")
+  class ReWatchFlows {
+
+    @Test
+    @DisplayName("Should accumulate watch history on re-watch completion")
+    void shouldAccumulateWatchHistoryOnReWatchCompletion() {
+      var session1 = addSession();
+      markAsWatched(session1);
+
+      assertThat(watchHistoryRepository.count()).isEqualTo(1);
+
+      var session2 = addSessionForMediaFile(session1.getMediaFileId());
+      markAsWatched(session2);
+
+      assertThat(watchHistoryRepository.count()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("Should dismiss history on mark unwatched without deleting rows")
+    void shouldDismissHistoryOnMarkUnwatchedWithoutDeletingRows() {
+      var session = addSession();
+      markAsWatched(session);
+
+      var collectableId =
+          mediaFileRepository.findById(session.getMediaFileId()).orElseThrow().getMediaId();
+      watchStatusService.markUnwatched(USER_ID, collectableId);
+
+      assertThat(watchHistoryRepository.count()).isEqualTo(1);
+      var history = watchHistoryRepository.findAll().getFirst();
+      assertThat(history.getDismissedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("Should show watched after re-watch completion following dismiss")
+    void shouldShowWatchedAfterReWatchCompletionFollowingDismiss() {
+      var session1 = addSession();
+      markAsWatched(session1);
+
+      var collectableId =
+          mediaFileRepository.findById(session1.getMediaFileId()).orElseThrow().getMediaId();
+      watchStatusService.markUnwatched(USER_ID, collectableId);
+
+      var session2 = addSessionForMediaFile(session1.getMediaFileId());
+      markAsWatched(session2);
+
+      var latest =
+          watchHistoryRepository.findFirstByUserIdAndCollectableIdOrderByWatchedAtDesc(
+              USER_ID, collectableId);
+      assertThat(latest).isPresent();
+      assertThat(latest.get().getDismissedAt()).isNull();
+    }
+  }
+
+  private StreamSession addSessionForMediaFile(UUID mediaFileId) {
+    var session = StreamSessionFixture.buildSessionForMediaFile(mediaFileId);
+    sessionRepository.save(session);
+    return session;
   }
 }
