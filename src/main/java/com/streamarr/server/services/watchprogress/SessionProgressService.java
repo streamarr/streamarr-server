@@ -139,7 +139,7 @@ public class SessionProgressService {
 
   private UUID resolveCollectableId(UUID mediaFileId) {
     return mediaFileRepository
-        .findMediaIdById(mediaFileId)
+        .findMediaIdByMediaFileId(mediaFileId)
         .orElseThrow(() -> new IllegalStateException("MediaFile not found for id: " + mediaFileId));
   }
 

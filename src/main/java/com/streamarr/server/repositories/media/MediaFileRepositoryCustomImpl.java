@@ -23,7 +23,7 @@ public class MediaFileRepositoryCustomImpl implements MediaFileRepositoryCustom 
   }
 
   @Override
-  public Optional<UUID> findMediaIdById(UUID mediaFileId) {
+  public Optional<UUID> findMediaIdByMediaFileId(UUID mediaFileId) {
     return dsl.select(MEDIA_FILE.MEDIA_ID)
         .from(MEDIA_FILE)
         .where(MEDIA_FILE.ID.eq(mediaFileId))

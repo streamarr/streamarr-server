@@ -75,8 +75,8 @@ public class WatchStatusService {
     var seasonIdsBySeriesId = seasonRepository.findSeasonIdsBySeriesIds(List.of(collectableId));
     if (!seasonIdsBySeriesId.isEmpty()) {
       var allSeasonIds = seasonIdsBySeriesId.values().stream().flatMap(Collection::stream).toList();
-      var episodeIdsBySeasonId2 = episodeRepository.findEpisodeIdsBySeasonIds(allSeasonIds);
-      return episodeIdsBySeasonId2.values().stream().flatMap(Collection::stream).toList();
+      var episodeIdsBySeason = episodeRepository.findEpisodeIdsBySeasonIds(allSeasonIds);
+      return episodeIdsBySeason.values().stream().flatMap(Collection::stream).toList();
     }
 
     return List.of(collectableId);

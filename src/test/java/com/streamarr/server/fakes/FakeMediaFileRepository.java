@@ -45,7 +45,7 @@ public class FakeMediaFileRepository extends FakeJpaRepository<MediaFile>
   }
 
   @Override
-  public Optional<UUID> findMediaIdById(UUID mediaFileId) {
+  public Optional<UUID> findMediaIdByMediaFileId(UUID mediaFileId) {
     return findById(mediaFileId).map(MediaFile::getMediaId);
   }
 

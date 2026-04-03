@@ -9,5 +9,5 @@ public interface MediaFileRepositoryCustom {
 
   List<UUID> findMediaFileIdsByMediaIds(Collection<UUID> mediaIds);
 
-  Optional<UUID> findMediaIdById(UUID mediaFileId);
+  Optional<UUID> findMediaIdByMediaFileId(UUID mediaFileId);
 }

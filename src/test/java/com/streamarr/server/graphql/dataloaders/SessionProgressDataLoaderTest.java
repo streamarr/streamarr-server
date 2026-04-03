@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 @Tag("UnitTest")
-@DisplayName("Watch Progress DataLoader Tests")
+@DisplayName("Session Progress DataLoader Tests")
 class SessionProgressDataLoaderTest {
 
   private FakeSessionProgressRepository sessionProgressRepository;
