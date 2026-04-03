@@ -12,6 +12,7 @@ import com.streamarr.server.graphql.dataloaders.WatchStatusEntityType;
 import com.streamarr.server.graphql.dataloaders.WatchStatusLoaderKey;
 import com.streamarr.server.graphql.dto.WatchProgressDto;
 import graphql.schema.DataFetchingEnvironment;
+import java.util.Comparator;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -68,7 +69,12 @@ public class WatchProgressFieldResolver {
 
     return loader
         .loadMany(mediaFileIds)
-        .thenApply(results -> results.stream().filter(Objects::nonNull).findFirst().orElse(null));
+        .thenApply(
+            results ->
+                results.stream()
+                    .filter(Objects::nonNull)
+                    .max(Comparator.comparing(WatchProgressDto::lastModifiedOn))
+                    .orElse(null));
   }
 
   private CompletableFuture<WatchStatus> loadWatchStatus(

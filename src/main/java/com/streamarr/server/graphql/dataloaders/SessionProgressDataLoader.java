@@ -43,6 +43,7 @@ public class SessionProgressDataLoader implements MappedBatchLoader<UUID, WatchP
         .positionSeconds(wp.getPositionSeconds())
         .percentComplete(wp.getPercentComplete())
         .durationSeconds(wp.getDurationSeconds())
+        .lastModifiedOn(wp.getLastModifiedOn())
         .build();
   }
 }
