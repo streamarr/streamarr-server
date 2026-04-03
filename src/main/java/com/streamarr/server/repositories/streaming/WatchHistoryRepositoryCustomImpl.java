@@ -9,7 +9,6 @@ import java.util.Collection;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
-import org.jooq.Query;
 import org.springframework.data.domain.AuditorAware;
 
 @RequiredArgsConstructor
@@ -23,30 +22,42 @@ public class WatchHistoryRepositoryCustomImpl implements WatchHistoryRepositoryC
       UUID userId, Collection<UUID> collectableIds, Instant watchedAt, int durationSeconds) {
     var auditUser = auditorAware.getCurrentAuditor().orElse(null);
     var watchedAtOdt = watchedAt.atOffset(ZoneOffset.UTC);
+    var now = OffsetDateTime.now(ZoneOffset.UTC);
 
-    var queries =
-        collectableIds.stream()
-            .map(
-                collectableId ->
-                    (Query)
-                        dsl.insertInto(WATCH_HISTORY)
-                            .set(WATCH_HISTORY.USER_ID, userId)
-                            .set(WATCH_HISTORY.COLLECTABLE_ID, collectableId)
-                            .set(WATCH_HISTORY.WATCHED_AT, watchedAtOdt)
-                            .set(WATCH_HISTORY.DURATION_SECONDS, durationSeconds)
-                            .set(WATCH_HISTORY.CREATED_BY, auditUser)
-                            .set(WATCH_HISTORY.LAST_MODIFIED_BY, auditUser))
-            .toArray(Query[]::new);
+    var insert =
+        dsl.insertInto(
+                WATCH_HISTORY,
+                WATCH_HISTORY.USER_ID,
+                WATCH_HISTORY.COLLECTABLE_ID,
+                WATCH_HISTORY.WATCHED_AT,
+                WATCH_HISTORY.DURATION_SECONDS,
+                WATCH_HISTORY.CREATED_ON,
+                WATCH_HISTORY.CREATED_BY,
+                WATCH_HISTORY.LAST_MODIFIED_ON,
+                WATCH_HISTORY.LAST_MODIFIED_BY)
+            .values((UUID) null, null, null, null, null, null, null, null)
+            .onConflict(
+                WATCH_HISTORY.USER_ID, WATCH_HISTORY.COLLECTABLE_ID, WATCH_HISTORY.WATCHED_AT)
+            .doNothing();
 
-    dsl.batch(queries).execute();
+    var batch = dsl.batch(insert);
+    for (var collectableId : collectableIds) {
+      batch =
+          batch.bind(
+              userId, collectableId, watchedAtOdt, durationSeconds, now, auditUser, now, auditUser);
+    }
+    batch.execute();
   }
 
   @Override
   public void dismissAll(UUID userId, Collection<UUID> collectableIds) {
+    var auditUser = auditorAware.getCurrentAuditor().orElse(null);
     var now = OffsetDateTime.now(ZoneOffset.UTC);
 
     dsl.update(WATCH_HISTORY)
         .set(WATCH_HISTORY.DISMISSED_AT, now)
+        .set(WATCH_HISTORY.LAST_MODIFIED_ON, now)
+        .set(WATCH_HISTORY.LAST_MODIFIED_BY, auditUser)
         .where(WATCH_HISTORY.USER_ID.eq(userId))
         .and(WATCH_HISTORY.COLLECTABLE_ID.in(collectableIds))
         .and(WATCH_HISTORY.DISMISSED_AT.isNull())

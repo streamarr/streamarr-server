@@ -151,6 +151,11 @@ public class WatchHistory extends TableImpl<WatchHistoryRecord> {
     }
 
     @Override
+    public List<UniqueKey<WatchHistoryRecord>> getUniqueKeys() {
+        return Arrays.asList(Keys.UQ_WATCH_HISTORY_USER_COLLECTABLE_WATCHED);
+    }
+
+    @Override
     public WatchHistory as(String alias) {
         return new WatchHistory(DSL.name(alias), this);
     }

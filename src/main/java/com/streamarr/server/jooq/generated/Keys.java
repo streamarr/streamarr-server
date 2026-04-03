@@ -112,6 +112,7 @@ public class Keys {
     public static final UniqueKey<SeriesPersonRecord> SERIES_PERSON_PKEY = Internal.createUniqueKey(SeriesPerson.SERIES_PERSON, DSL.name("series_person_pkey"), new TableField[] { SeriesPerson.SERIES_PERSON.ID }, true);
     public static final UniqueKey<SessionProgressRecord> SESSION_PROGRESS_PKEY = Internal.createUniqueKey(SessionProgress.SESSION_PROGRESS, DSL.name("session_progress_pkey"), new TableField[] { SessionProgress.SESSION_PROGRESS.ID }, true);
     public static final UniqueKey<SessionProgressRecord> UQ_SESSION_PROGRESS_SESSION = Internal.createUniqueKey(SessionProgress.SESSION_PROGRESS, DSL.name("uq_session_progress_session"), new TableField[] { SessionProgress.SESSION_PROGRESS.SESSION_ID }, true);
+    public static final UniqueKey<WatchHistoryRecord> UQ_WATCH_HISTORY_USER_COLLECTABLE_WATCHED = Internal.createUniqueKey(WatchHistory.WATCH_HISTORY, DSL.name("uq_watch_history_user_collectable_watched"), new TableField[] { WatchHistory.WATCH_HISTORY.USER_ID, WatchHistory.WATCH_HISTORY.COLLECTABLE_ID, WatchHistory.WATCH_HISTORY.WATCHED_AT }, true);
     public static final UniqueKey<WatchHistoryRecord> WATCH_HISTORY_PKEY = Internal.createUniqueKey(WatchHistory.WATCH_HISTORY, DSL.name("watch_history_pkey"), new TableField[] { WatchHistory.WATCH_HISTORY.ID }, true);
 
     // -------------------------------------------------------------------------

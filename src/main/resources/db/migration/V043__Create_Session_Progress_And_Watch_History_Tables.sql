@@ -34,7 +34,9 @@ CREATE TABLE watch_history
     watched_at       TIMESTAMP WITH TIME ZONE NOT NULL,
     duration_seconds INT                      NOT NULL,
     dismissed_at     TIMESTAMP WITH TIME ZONE,
-    CONSTRAINT watch_history_pkey PRIMARY KEY (id)
+    CONSTRAINT watch_history_pkey PRIMARY KEY (id),
+    CONSTRAINT uq_watch_history_user_collectable_watched
+        UNIQUE (user_id, collectable_id, watched_at)
 );
 
 CREATE INDEX idx_watch_history_user_collectable

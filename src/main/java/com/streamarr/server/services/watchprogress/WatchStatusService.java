@@ -58,7 +58,7 @@ public class WatchStatusService {
     var leafIds = resolveLeafCollectableIds(collectableId);
     watchHistoryRepository.dismissAll(userId, leafIds);
 
-    var mediaFileIds = resolveAllMediaFileIds(collectableId);
+    var mediaFileIds = mediaFileRepository.findMediaFileIdsByMediaIds(leafIds);
     if (!mediaFileIds.isEmpty()) {
       sessionProgressRepository.deleteByUserIdAndMediaFileIds(userId, mediaFileIds);
     }
@@ -80,29 +80,6 @@ public class WatchStatusService {
     }
 
     return List.of(collectableId);
-  }
-
-  private List<UUID> resolveAllMediaFileIds(UUID collectableId) {
-    var directFileIds = mediaFileRepository.findMediaFileIdsByMediaIds(List.of(collectableId));
-    if (!directFileIds.isEmpty()) {
-      return directFileIds;
-    }
-
-    var episodeIdsBySeasonId = episodeRepository.findEpisodeIdsBySeasonIds(List.of(collectableId));
-    if (!episodeIdsBySeasonId.isEmpty()) {
-      var episodeIds = episodeIdsBySeasonId.values().stream().flatMap(Collection::stream).toList();
-      return mediaFileRepository.findMediaFileIdsByMediaIds(episodeIds);
-    }
-
-    var seasonIdsBySeriesId = seasonRepository.findSeasonIdsBySeriesIds(List.of(collectableId));
-    if (!seasonIdsBySeriesId.isEmpty()) {
-      var allSeasonIds = seasonIdsBySeriesId.values().stream().flatMap(Collection::stream).toList();
-      var episodeIdsBySeasonId2 = episodeRepository.findEpisodeIdsBySeasonIds(allSeasonIds);
-      var episodeIds = episodeIdsBySeasonId2.values().stream().flatMap(Collection::stream).toList();
-      return mediaFileRepository.findMediaFileIdsByMediaIds(episodeIds);
-    }
-
-    return List.of();
   }
 
   public Map<UUID, WatchStatus> getWatchStatusForDirectMedia(
