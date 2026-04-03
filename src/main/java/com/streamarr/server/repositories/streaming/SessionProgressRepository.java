@@ -16,8 +16,6 @@ public interface SessionProgressRepository
 
   List<SessionProgress> findByUserIdAndMediaFileIdIn(UUID userId, Collection<UUID> mediaFileIds);
 
-  void deleteByUserIdAndMediaFileIdIn(UUID userId, Collection<UUID> mediaFileIds);
-
   @Query(
       """
       SELECT sp FROM SessionProgress sp

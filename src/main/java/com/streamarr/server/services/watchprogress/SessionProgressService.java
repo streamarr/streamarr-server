@@ -139,9 +139,8 @@ public class SessionProgressService {
 
   private UUID resolveCollectableId(UUID mediaFileId) {
     return mediaFileRepository
-        .findById(mediaFileId)
-        .orElseThrow(() -> new IllegalStateException("MediaFile not found for id: " + mediaFileId))
-        .getMediaId();
+        .findMediaIdById(mediaFileId)
+        .orElseThrow(() -> new IllegalStateException("MediaFile not found for id: " + mediaFileId));
   }
 
   private enum StopDecision {

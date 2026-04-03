@@ -26,7 +26,7 @@ public class FakeSessionProgressRepository extends FakeJpaRepository<SessionProg
   }
 
   @Override
-  public void deleteByUserIdAndMediaFileIdIn(UUID userId, Collection<UUID> mediaFileIds) {
+  public void deleteByUserIdAndMediaFileIds(UUID userId, Collection<UUID> mediaFileIds) {
     database
         .entrySet()
         .removeIf(

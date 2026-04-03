@@ -49,33 +49,18 @@ public class WatchStatusService {
 
   public void markWatched(UUID userId, UUID collectableId, Instant watchedAt, int durationSeconds) {
     var leafIds = resolveLeafCollectableIds(collectableId);
-    for (var leafId : leafIds) {
-      watchHistoryRepository.save(
-          WatchHistory.builder()
-              .userId(userId)
-              .collectableId(leafId)
-              .watchedAt(watchedAt)
-              .durationSeconds(durationSeconds)
-              .build());
-    }
+    watchHistoryRepository.batchInsert(userId, leafIds, watchedAt, durationSeconds);
 
     eventPublisher.publishEvent(new WatchStatusChangedEvent(userId, collectableId));
   }
 
   public void markUnwatched(UUID userId, UUID collectableId) {
     var leafIds = resolveLeafCollectableIds(collectableId);
-    var entries = watchHistoryRepository.findByUserIdAndCollectableIdIn(userId, leafIds);
-    var now = Instant.now();
-    for (var entry : entries) {
-      if (entry.getDismissedAt() == null) {
-        entry.setDismissedAt(now);
-        watchHistoryRepository.save(entry);
-      }
-    }
+    watchHistoryRepository.dismissAll(userId, leafIds);
 
     var mediaFileIds = resolveAllMediaFileIds(collectableId);
     if (!mediaFileIds.isEmpty()) {
-      sessionProgressRepository.deleteByUserIdAndMediaFileIdIn(userId, mediaFileIds);
+      sessionProgressRepository.deleteByUserIdAndMediaFileIds(userId, mediaFileIds);
     }
 
     eventPublisher.publishEvent(new WatchStatusChangedEvent(userId, collectableId));

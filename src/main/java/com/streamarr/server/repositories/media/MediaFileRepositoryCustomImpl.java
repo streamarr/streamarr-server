@@ -4,6 +4,7 @@ import static com.streamarr.server.jooq.generated.tables.MediaFile.MEDIA_FILE;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
@@ -19,5 +20,13 @@ public class MediaFileRepositoryCustomImpl implements MediaFileRepositoryCustom 
         .from(MEDIA_FILE)
         .where(MEDIA_FILE.MEDIA_ID.in(mediaIds))
         .fetch(MEDIA_FILE.ID);
+  }
+
+  @Override
+  public Optional<UUID> findMediaIdById(UUID mediaFileId) {
+    return dsl.select(MEDIA_FILE.MEDIA_ID)
+        .from(MEDIA_FILE)
+        .where(MEDIA_FILE.ID.eq(mediaFileId))
+        .fetchOptional(MEDIA_FILE.MEDIA_ID);
   }
 }
