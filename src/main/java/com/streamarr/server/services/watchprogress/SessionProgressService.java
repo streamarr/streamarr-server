@@ -1,11 +1,11 @@
 package com.streamarr.server.services.watchprogress;
 
-import com.streamarr.server.config.SessionProgressProperties;
+import com.streamarr.server.config.WatchProgressProperties;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
-import com.streamarr.server.repositories.streaming.SaveProgressCommand;
+import com.streamarr.server.repositories.streaming.SaveWatchProgress;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.services.streaming.StreamSessionRepository;
 import com.streamarr.server.services.watchprogress.events.SessionProgressChangedEvent;
@@ -25,7 +25,7 @@ public class SessionProgressService {
   private final StreamSessionRepository sessionRepository;
   private final SessionProgressRepository sessionProgressRepository;
   private final MediaFileRepository mediaFileRepository;
-  private final SessionProgressProperties properties;
+  private final WatchProgressProperties properties;
   private final WatchStatusService watchStatusService;
   private final ApplicationEventPublisher eventPublisher;
 
@@ -33,7 +33,7 @@ public class SessionProgressService {
     return sessionProgressRepository.findMostRecentByUserIdAndMediaFileId(userId, mediaFileId);
   }
 
-  public void reportTimeline(
+  public void reportStreamSessionTimeline(
       UUID userId, UUID sessionId, int positionSeconds, PlaybackState state) {
     if (positionSeconds < 0) {
       return;
@@ -61,7 +61,7 @@ public class SessionProgressService {
     }
 
     sessionProgressRepository.upsertProgress(
-        SaveProgressCommand.builder()
+        SaveWatchProgress.builder()
             .sessionId(sessionId)
             .userId(userId)
             .mediaFileId(mediaFileId)
@@ -117,7 +117,7 @@ public class SessionProgressService {
 
     // PERSIST — save position for resume
     sessionProgressRepository.upsertProgress(
-        SaveProgressCommand.builder()
+        SaveWatchProgress.builder()
             .sessionId(sessionId)
             .userId(userId)
             .mediaFileId(mediaFileId)
@@ -163,12 +163,12 @@ public class SessionProgressService {
   }
 
   private boolean isBelowResumeThreshold(double percentComplete) {
-    return percentComplete < properties.minResumePercent();
+    return percentComplete < properties.minPlayedPercent();
   }
 
   private boolean hasReachedWatchedThreshold(
       double percentComplete, int remainingSeconds, int durationSeconds) {
-    return percentComplete >= properties.maxResumePercent()
+    return percentComplete >= properties.maxPlayedPercent()
         || (durationSeconds > properties.maxRemainingSeconds()
             && remainingSeconds <= properties.maxRemainingSeconds());
   }

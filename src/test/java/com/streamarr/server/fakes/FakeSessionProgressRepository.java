@@ -1,7 +1,7 @@
 package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.streaming.SessionProgress;
-import com.streamarr.server.repositories.streaming.SaveProgressCommand;
+import com.streamarr.server.repositories.streaming.SaveWatchProgress;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import java.util.Collection;
 import java.util.Comparator;
@@ -46,7 +46,7 @@ public class FakeSessionProgressRepository extends FakeJpaRepository<SessionProg
   }
 
   @Override
-  public void upsertProgress(SaveProgressCommand command) {
+  public void upsertProgress(SaveWatchProgress command) {
     var existing = findBySessionId(command.sessionId());
     if (existing.isPresent()) {
       var sp = existing.get();

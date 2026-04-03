@@ -11,7 +11,7 @@ import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
-import com.streamarr.server.repositories.streaming.SaveProgressCommand;
+import com.streamarr.server.repositories.streaming.SaveWatchProgress;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import jakarta.persistence.EntityManager;
 import java.util.Set;
@@ -212,7 +212,7 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
       var sessionId = UUID.randomUUID();
 
       sessionProgressRepository.upsertProgress(
-          SaveProgressCommand.builder()
+          SaveWatchProgress.builder()
               .sessionId(sessionId)
               .userId(USER_ID)
               .mediaFileId(fixture.mediaFileId())
@@ -237,7 +237,7 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
       var sessionId = UUID.randomUUID();
 
       sessionProgressRepository.upsertProgress(
-          SaveProgressCommand.builder()
+          SaveWatchProgress.builder()
               .sessionId(sessionId)
               .userId(USER_ID)
               .mediaFileId(fixture.mediaFileId())
@@ -249,7 +249,7 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
       entityManager.clear();
 
       sessionProgressRepository.upsertProgress(
-          SaveProgressCommand.builder()
+          SaveWatchProgress.builder()
               .sessionId(sessionId)
               .userId(USER_ID)
               .mediaFileId(fixture.mediaFileId())
@@ -273,7 +273,7 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
       var sessionId = UUID.randomUUID();
 
       sessionProgressRepository.upsertProgress(
-          SaveProgressCommand.builder()
+          SaveWatchProgress.builder()
               .sessionId(sessionId)
               .userId(USER_ID)
               .mediaFileId(fixture.mediaFileId())
@@ -299,7 +299,7 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
       var sessionId = UUID.randomUUID();
 
       sessionProgressRepository.upsertProgress(
-          SaveProgressCommand.builder()
+          SaveWatchProgress.builder()
               .sessionId(sessionId)
               .userId(USER_ID)
               .mediaFileId(fixture.mediaFileId())
@@ -311,7 +311,7 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
       entityManager.clear();
 
       sessionProgressRepository.upsertProgress(
-          SaveProgressCommand.builder()
+          SaveWatchProgress.builder()
               .sessionId(sessionId)
               .userId(USER_ID)
               .mediaFileId(fixture.mediaFileId())

@@ -258,9 +258,9 @@ class StreamingResolverTest {
             "mutation { destroyStreamSession(sessionId: \"%s\") }",
             "data.destroyStreamSession"),
         Arguments.of(
-            "reportTimeline",
-            "mutation { reportTimeline(sessionId: \"%s\", positionSeconds: 300, state: PLAYING) }",
-            "data.reportTimeline"),
+            "reportStreamSessionTimeline",
+            "mutation { reportStreamSessionTimeline(sessionId: \"%s\", positionSeconds: 300, state: PLAYING) }",
+            "data.reportStreamSessionTimeline"),
         Arguments.of("markWatched", "mutation { markWatched(id: \"%s\") }", "data.markWatched"),
         Arguments.of(
             "markUnwatched", "mutation { markUnwatched(id: \"%s\") }", "data.markUnwatched"));
@@ -338,7 +338,7 @@ class StreamingResolverTest {
         dgsQueryExecutor.execute(
             """
             mutation {
-              reportTimeline(sessionId: "bad-id", positionSeconds: 300, state: PLAYING)
+              reportStreamSessionTimeline(sessionId: "bad-id", positionSeconds: 300, state: PLAYING)
             }
             """);
 

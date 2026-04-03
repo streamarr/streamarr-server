@@ -7,7 +7,7 @@ type Mutation {
     createStreamSession(mediaFileId: ID!, options: StreamingOptionsInput): StreamSession!
     destroyStreamSession(sessionId: ID!): Boolean!
     seekStreamSession(sessionId: ID!, positionSeconds: Int!): StreamSession!
-    reportTimeline(sessionId: ID!, positionSeconds: Int!, state: PlaybackState!): Boolean!
+    reportStreamSessionTimeline(sessionId: ID!, positionSeconds: Int!, state: PlaybackState!): Boolean!
     markWatched(id: ID!): Boolean!
     markUnwatched(id: ID!): Boolean!
 }

@@ -17,7 +17,7 @@ public class SessionProgressRepositoryCustomImpl implements SessionProgressRepos
   private final AuditorAware<UUID> auditorAware;
 
   @Override
-  public void upsertProgress(SaveProgressCommand command) {
+  public void upsertProgress(SaveWatchProgress command) {
     var auditUser = auditorAware.getCurrentAuditor().orElse(null);
     var now = OffsetDateTime.now(ZoneOffset.UTC);
 

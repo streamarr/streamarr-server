@@ -8,8 +8,8 @@ import org.springframework.validation.annotation.Validated;
 
 @Builder
 @Validated
-@ConfigurationProperties(prefix = "streaming.session-progress")
-public record SessionProgressProperties(
-    @Min(0) double minResumePercent,
-    @Positive double maxResumePercent,
+@ConfigurationProperties(prefix = "streaming.watch-progress")
+public record WatchProgressProperties(
+    @Min(0) double minPlayedPercent,
+    @Positive double maxPlayedPercent,
     @Min(0) int maxRemainingSeconds) {}

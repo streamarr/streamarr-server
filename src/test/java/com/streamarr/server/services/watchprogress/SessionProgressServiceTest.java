@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 
-import com.streamarr.server.config.SessionProgressProperties;
+import com.streamarr.server.config.WatchProgressProperties;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
@@ -68,7 +68,7 @@ class SessionProgressServiceTest {
             episodeRepository,
             seasonRepository,
             eventPublisher);
-    var properties = new SessionProgressProperties(5.0, 90.0, 300);
+    var properties = new WatchProgressProperties(5.0, 90.0, 300);
     service =
         new SessionProgressService(
             sessionRepository,
@@ -101,7 +101,7 @@ class SessionProgressServiceTest {
 
   private void markAsWatched(StreamSession session) {
     // Stop at 95% to trigger watched threshold
-    service.reportTimeline(
+    service.reportStreamSessionTimeline(
         USER_ID, session.getSessionId(), (int) (7200 * 0.95), PlaybackState.STOPPED);
   }
 
@@ -135,7 +135,8 @@ class SessionProgressServiceTest {
     void shouldUpdateSessionSnapshotPositionWhenTimelineReported() {
       var session = addSession();
 
-      service.reportTimeline(USER_ID, session.getSessionId(), 300, PlaybackState.PLAYING);
+      service.reportStreamSessionTimeline(
+          USER_ID, session.getSessionId(), 300, PlaybackState.PLAYING);
 
       assertThat(session.getPlaybackSnapshot().positionSeconds()).isEqualTo(300);
     }
@@ -145,7 +146,8 @@ class SessionProgressServiceTest {
     void shouldUpdateSessionSnapshotStateWhenTimelineReported() {
       var session = addSession();
 
-      service.reportTimeline(USER_ID, session.getSessionId(), 300, PlaybackState.PAUSED);
+      service.reportStreamSessionTimeline(
+          USER_ID, session.getSessionId(), 300, PlaybackState.PAUSED);
 
       assertThat(session.getPlaybackSnapshot().state()).isEqualTo(PlaybackState.PAUSED);
     }
@@ -155,7 +157,8 @@ class SessionProgressServiceTest {
     void shouldPersistWatchProgressWhenTimelineReported() {
       var session = addSession();
 
-      service.reportTimeline(USER_ID, session.getSessionId(), 300, PlaybackState.PLAYING);
+      service.reportStreamSessionTimeline(
+          USER_ID, session.getSessionId(), 300, PlaybackState.PLAYING);
 
       var progress = sessionProgressRepository.findBySessionId(session.getSessionId());
       assertThat(progress).isPresent();
@@ -169,7 +172,8 @@ class SessionProgressServiceTest {
     void shouldComputePercentCompleteWhenDurationAvailable() {
       var session = addSession(); // 120 min duration
 
-      service.reportTimeline(USER_ID, session.getSessionId(), 3600, PlaybackState.PLAYING);
+      service.reportStreamSessionTimeline(
+          USER_ID, session.getSessionId(), 3600, PlaybackState.PLAYING);
 
       var progress =
           sessionProgressRepository.findBySessionId(session.getSessionId()).orElseThrow();
@@ -181,8 +185,10 @@ class SessionProgressServiceTest {
     void shouldUpdateExistingProgressWhenReportedAgain() {
       var session = addSession();
 
-      service.reportTimeline(USER_ID, session.getSessionId(), 300, PlaybackState.PLAYING);
-      service.reportTimeline(USER_ID, session.getSessionId(), 600, PlaybackState.PLAYING);
+      service.reportStreamSessionTimeline(
+          USER_ID, session.getSessionId(), 300, PlaybackState.PLAYING);
+      service.reportStreamSessionTimeline(
+          USER_ID, session.getSessionId(), 600, PlaybackState.PLAYING);
 
       assertThat(sessionProgressRepository.findBySessionId(session.getSessionId())).isPresent();
       var progress =
@@ -195,7 +201,8 @@ class SessionProgressServiceTest {
     void shouldClampPercentCompleteWhenPositionExceedsDuration() {
       var session = addSession(); // 120 min = 7200s
 
-      service.reportTimeline(USER_ID, session.getSessionId(), 9999, PlaybackState.PLAYING);
+      service.reportStreamSessionTimeline(
+          USER_ID, session.getSessionId(), 9999, PlaybackState.PLAYING);
 
       var progress =
           sessionProgressRepository.findBySessionId(session.getSessionId()).orElseThrow();
@@ -207,7 +214,8 @@ class SessionProgressServiceTest {
     void shouldStoreDurationSecondsWhenTimelineReported() {
       var session = addSession(); // 120 min = 7200s
 
-      service.reportTimeline(USER_ID, session.getSessionId(), 300, PlaybackState.PLAYING);
+      service.reportStreamSessionTimeline(
+          USER_ID, session.getSessionId(), 300, PlaybackState.PLAYING);
 
       var progress =
           sessionProgressRepository.findBySessionId(session.getSessionId()).orElseThrow();
@@ -220,7 +228,8 @@ class SessionProgressServiceTest {
       var session = StreamSessionFixture.buildZeroDurationSession();
       sessionRepository.save(session);
 
-      service.reportTimeline(USER_ID, session.getSessionId(), 300, PlaybackState.PLAYING);
+      service.reportStreamSessionTimeline(
+          USER_ID, session.getSessionId(), 300, PlaybackState.PLAYING);
 
       assertThat(sessionProgressRepository.count()).isZero();
     }
@@ -231,7 +240,9 @@ class SessionProgressServiceTest {
       var unknownId = UUID.randomUUID();
 
       assertThatThrownBy(
-              () -> service.reportTimeline(USER_ID, unknownId, 300, PlaybackState.PLAYING))
+              () ->
+                  service.reportStreamSessionTimeline(
+                      USER_ID, unknownId, 300, PlaybackState.PLAYING))
           .isInstanceOf(SessionNotFoundException.class);
     }
 
@@ -240,7 +251,8 @@ class SessionProgressServiceTest {
     void shouldNotPersistProgressWhenPositionSecondsIsNegative() {
       var session = addSession();
 
-      service.reportTimeline(USER_ID, session.getSessionId(), -100, PlaybackState.PLAYING);
+      service.reportStreamSessionTimeline(
+          USER_ID, session.getSessionId(), -100, PlaybackState.PLAYING);
 
       assertThat(sessionProgressRepository.count()).isZero();
     }
@@ -252,7 +264,8 @@ class SessionProgressServiceTest {
       sessionProgressRepository.save(
           buildProgress(session.getSessionId(), session.getMediaFileId(), 3600));
 
-      service.reportTimeline(USER_ID, session.getSessionId(), -100, PlaybackState.STOPPED);
+      service.reportStreamSessionTimeline(
+          USER_ID, session.getSessionId(), -100, PlaybackState.STOPPED);
 
       assertThat(sessionProgressRepository.findBySessionId(session.getSessionId())).isPresent();
     }
@@ -266,11 +279,13 @@ class SessionProgressServiceTest {
     @DisplayName("Should delete progress when stopped below min threshold")
     void shouldDeleteProgressWhenStoppedBelowMinThreshold() {
       var session = addSession(); // 7200s duration
-      service.reportTimeline(USER_ID, session.getSessionId(), 3600, PlaybackState.PLAYING);
+      service.reportStreamSessionTimeline(
+          USER_ID, session.getSessionId(), 3600, PlaybackState.PLAYING);
       assertThat(sessionProgressRepository.count()).isEqualTo(1);
 
       // Stop at 2% (144s / 7200s) — below 5% threshold
-      service.reportTimeline(USER_ID, session.getSessionId(), 144, PlaybackState.STOPPED);
+      service.reportStreamSessionTimeline(
+          USER_ID, session.getSessionId(), 144, PlaybackState.STOPPED);
 
       assertThat(sessionProgressRepository.count()).isZero();
     }
@@ -281,7 +296,8 @@ class SessionProgressServiceTest {
       var session = addSession(); // 7200s duration
 
       // Stop at 93% (6696s / 7200s) — above 90% threshold
-      service.reportTimeline(USER_ID, session.getSessionId(), 6696, PlaybackState.STOPPED);
+      service.reportStreamSessionTimeline(
+          USER_ID, session.getSessionId(), 6696, PlaybackState.STOPPED);
 
       assertThat(sessionProgressRepository.findBySessionId(session.getSessionId())).isEmpty();
     }
@@ -295,7 +311,7 @@ class SessionProgressServiceTest {
       sessionRepository.save(session);
       saveMediaFileForSession(session);
 
-      service.reportTimeline(
+      service.reportStreamSessionTimeline(
           USER_ID, session.getSessionId(), positionSeconds, PlaybackState.STOPPED);
 
       assertThat(sessionProgressRepository.findBySessionId(session.getSessionId())).isEmpty();
@@ -314,7 +330,8 @@ class SessionProgressServiceTest {
       var session = addSession(); // 7200s duration
 
       // Stop at exactly 5% (360s / 7200s) — prod uses '<', so at exactly 5% progress persists
-      service.reportTimeline(USER_ID, session.getSessionId(), 360, PlaybackState.STOPPED);
+      service.reportStreamSessionTimeline(
+          USER_ID, session.getSessionId(), 360, PlaybackState.STOPPED);
 
       var progress =
           sessionProgressRepository.findBySessionId(session.getSessionId()).orElseThrow();
@@ -327,7 +344,8 @@ class SessionProgressServiceTest {
       var session = addSession(); // 7200s duration
 
       // Stop at exactly 90% (6480s / 7200s) — prod uses '>=', so at exactly 90% marks watched
-      service.reportTimeline(USER_ID, session.getSessionId(), 6480, PlaybackState.STOPPED);
+      service.reportStreamSessionTimeline(
+          USER_ID, session.getSessionId(), 6480, PlaybackState.STOPPED);
 
       assertThat(sessionProgressRepository.findBySessionId(session.getSessionId())).isEmpty();
     }
@@ -338,7 +356,8 @@ class SessionProgressServiceTest {
       var session = addSession(); // 7200s duration
 
       // Stop at 50% (3600s / 7200s) — between 5% and 90%
-      service.reportTimeline(USER_ID, session.getSessionId(), 3600, PlaybackState.STOPPED);
+      service.reportStreamSessionTimeline(
+          USER_ID, session.getSessionId(), 3600, PlaybackState.STOPPED);
 
       var progress =
           sessionProgressRepository.findBySessionId(session.getSessionId()).orElseThrow();
@@ -351,7 +370,8 @@ class SessionProgressServiceTest {
       var session = addSession(); // 7200s duration
 
       // Report at 95% while PLAYING — should persist without marking watched
-      service.reportTimeline(USER_ID, session.getSessionId(), 6840, PlaybackState.PLAYING);
+      service.reportStreamSessionTimeline(
+          USER_ID, session.getSessionId(), 6840, PlaybackState.PLAYING);
 
       assertThat(sessionProgressRepository.count()).isEqualTo(1);
       var progress =
@@ -365,7 +385,8 @@ class SessionProgressServiceTest {
       var session = addSession(); // 7200s duration
 
       // Report at 95% while PAUSED — should not mark as watched
-      service.reportTimeline(USER_ID, session.getSessionId(), 6840, PlaybackState.PAUSED);
+      service.reportStreamSessionTimeline(
+          USER_ID, session.getSessionId(), 6840, PlaybackState.PAUSED);
 
       var progress =
           sessionProgressRepository.findBySessionId(session.getSessionId()).orElseThrow();
@@ -383,7 +404,8 @@ class SessionProgressServiceTest {
 
       // Stop at 8.3% (10s / 120s) — above 5% min, 110s remaining < 300s maxRemaining
       // Without the duration guard this would incorrectly trigger MARK_WATCHED
-      service.reportTimeline(USER_ID, shortSession.getSessionId(), 10, PlaybackState.STOPPED);
+      service.reportStreamSessionTimeline(
+          USER_ID, shortSession.getSessionId(), 10, PlaybackState.STOPPED);
 
       var progress =
           sessionProgressRepository.findBySessionId(shortSession.getSessionId()).orElseThrow();
@@ -400,7 +422,8 @@ class SessionProgressServiceTest {
     void shouldPublishSessionProgressChangedEventWhenStopped() {
       var session = addSession();
 
-      service.reportTimeline(USER_ID, session.getSessionId(), 3600, PlaybackState.STOPPED);
+      service.reportStreamSessionTimeline(
+          USER_ID, session.getSessionId(), 3600, PlaybackState.STOPPED);
 
       var events = eventPublisher.getEventsOfType(SessionProgressChangedEvent.class);
       assertThat(events).hasSize(1);
@@ -414,7 +437,8 @@ class SessionProgressServiceTest {
     void shouldPublishSessionProgressChangedEventWhenPlaying() {
       var session = addSession();
 
-      service.reportTimeline(USER_ID, session.getSessionId(), 3600, PlaybackState.PLAYING);
+      service.reportStreamSessionTimeline(
+          USER_ID, session.getSessionId(), 3600, PlaybackState.PLAYING);
 
       var events = eventPublisher.getEventsOfType(SessionProgressChangedEvent.class);
       assertThat(events).hasSize(1);
@@ -429,7 +453,7 @@ class SessionProgressServiceTest {
       var mediaFile = mediaFileRepository.findById(session.getMediaFileId()).orElseThrow();
 
       // Stop at 95% to trigger watched
-      service.reportTimeline(
+      service.reportStreamSessionTimeline(
           USER_ID, session.getSessionId(), (int) (7200 * 0.95), PlaybackState.STOPPED);
 
       var events = eventPublisher.getEventsOfType(WatchStatusChangedEvent.class);
@@ -443,7 +467,8 @@ class SessionProgressServiceTest {
       var session = addSession();
 
       // Stop at 1% — below min threshold, deletes progress, no state change for other UIs
-      service.reportTimeline(USER_ID, session.getSessionId(), 72, PlaybackState.STOPPED);
+      service.reportStreamSessionTimeline(
+          USER_ID, session.getSessionId(), 72, PlaybackState.STOPPED);
 
       assertThat(eventPublisher.getEventsOfType(SessionProgressChangedEvent.class)).isEmpty();
     }
@@ -459,7 +484,8 @@ class SessionProgressServiceTest {
       var session = addSession();
 
       // Report PLAYING at 50%
-      service.reportTimeline(USER_ID, session.getSessionId(), 3600, PlaybackState.PLAYING);
+      service.reportStreamSessionTimeline(
+          USER_ID, session.getSessionId(), 3600, PlaybackState.PLAYING);
 
       // Session destroyed without STOPPED report (client crash)
       sessionRepository.removeById(session.getSessionId());
@@ -557,8 +583,10 @@ class SessionProgressServiceTest {
       var session1 = addSession();
       var session2 = addSessionForMediaFile(session1.getMediaFileId());
 
-      service.reportTimeline(USER_ID, session1.getSessionId(), 300, PlaybackState.PLAYING);
-      service.reportTimeline(USER_ID, session2.getSessionId(), 600, PlaybackState.PLAYING);
+      service.reportStreamSessionTimeline(
+          USER_ID, session1.getSessionId(), 300, PlaybackState.PLAYING);
+      service.reportStreamSessionTimeline(
+          USER_ID, session2.getSessionId(), 600, PlaybackState.PLAYING);
 
       assertThat(sessionProgressRepository.count()).isEqualTo(2);
 
@@ -574,8 +602,10 @@ class SessionProgressServiceTest {
       var session1 = addSession();
       var session2 = addSessionForMediaFile(session1.getMediaFileId());
 
-      service.reportTimeline(USER_ID, session1.getSessionId(), 300, PlaybackState.PLAYING);
-      service.reportTimeline(USER_ID, session2.getSessionId(), 600, PlaybackState.PLAYING);
+      service.reportStreamSessionTimeline(
+          USER_ID, session1.getSessionId(), 300, PlaybackState.PLAYING);
+      service.reportStreamSessionTimeline(
+          USER_ID, session2.getSessionId(), 600, PlaybackState.PLAYING);
 
       var resume =
           sessionProgressRepository.findMostRecentByUserIdAndMediaFileId(
@@ -591,11 +621,14 @@ class SessionProgressServiceTest {
       var session1 = addSession();
       var session2 = addSessionForMediaFile(session1.getMediaFileId());
 
-      service.reportTimeline(USER_ID, session1.getSessionId(), 300, PlaybackState.PLAYING);
-      service.reportTimeline(USER_ID, session2.getSessionId(), 600, PlaybackState.PLAYING);
+      service.reportStreamSessionTimeline(
+          USER_ID, session1.getSessionId(), 300, PlaybackState.PLAYING);
+      service.reportStreamSessionTimeline(
+          USER_ID, session2.getSessionId(), 600, PlaybackState.PLAYING);
 
       // Stop session1 below min threshold (< 5% of 7200s = 360s) → DISCARD
-      service.reportTimeline(USER_ID, session1.getSessionId(), 100, PlaybackState.STOPPED);
+      service.reportStreamSessionTimeline(
+          USER_ID, session1.getSessionId(), 100, PlaybackState.STOPPED);
 
       assertThat(sessionProgressRepository.count()).isEqualTo(1);
       assertThat(sessionProgressRepository.findBySessionId(session2.getSessionId())).isPresent();

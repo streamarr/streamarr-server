@@ -51,13 +51,14 @@ public class StreamingResolver {
   }
 
   @DgsMutation
-  public boolean reportTimeline(
+  public boolean reportStreamSessionTimeline(
       @InputArgument String sessionId,
       @InputArgument int positionSeconds,
       @InputArgument PlaybackState state) {
     // TODO(#163): Replace with authenticated user ID from Spring Security
     var userId = resolveCurrentUserId();
-    sessionProgressService.reportTimeline(userId, parseUuid(sessionId), positionSeconds, state);
+    sessionProgressService.reportStreamSessionTimeline(
+        userId, parseUuid(sessionId), positionSeconds, state);
 
     return true;
   }

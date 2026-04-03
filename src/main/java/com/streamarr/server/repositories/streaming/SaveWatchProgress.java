@@ -4,7 +4,7 @@ import java.util.UUID;
 import lombok.Builder;
 
 @Builder
-public record SaveProgressCommand(
+public record SaveWatchProgress(
     UUID sessionId,
     UUID userId,
     UUID mediaFileId,
