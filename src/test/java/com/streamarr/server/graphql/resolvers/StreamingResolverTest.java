@@ -15,6 +15,7 @@ import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.watchprogress.SessionProgressService;
+import com.streamarr.server.services.watchprogress.WatchStatusService;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -54,6 +55,7 @@ class StreamingResolverTest {
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
   @MockitoBean private SessionProgressService sessionProgressService;
+  @MockitoBean private WatchStatusService watchStatusService;
 
   private StreamSession buildSession(UUID sessionId) {
     return StreamSession.builder()
@@ -259,10 +261,9 @@ class StreamingResolverTest {
             "reportTimeline",
             "mutation { reportTimeline(sessionId: \"%s\", positionSeconds: 300, state: PLAYING) }",
             "data.reportTimeline"),
+        Arguments.of("markWatched", "mutation { markWatched(id: \"%s\") }", "data.markWatched"),
         Arguments.of(
-            "resetWatchProgress",
-            "mutation { resetWatchProgress(id: \"%s\") }",
-            "data.resetWatchProgress"));
+            "markUnwatched", "mutation { markUnwatched(id: \"%s\") }", "data.markUnwatched"));
   }
 
   @Test
@@ -346,13 +347,13 @@ class StreamingResolverTest {
   }
 
   @Test
-  @DisplayName("Should return error when reset watch progress ID is invalid")
-  void shouldReturnErrorWhenResetWatchProgressIdIsInvalid() {
+  @DisplayName("Should return error when mark unwatched ID is invalid")
+  void shouldReturnErrorWhenMarkUnwatchedIdIsInvalid() {
     var result =
         dgsQueryExecutor.execute(
             """
             mutation {
-              resetWatchProgress(id: "bad-id")
+              markUnwatched(id: "bad-id")
             }
             """);
 

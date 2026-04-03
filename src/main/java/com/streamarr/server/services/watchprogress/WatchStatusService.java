@@ -75,7 +75,35 @@ public class WatchStatusService {
       }
     }
 
+    var mediaFileIds = resolveAllMediaFileIds(collectableId);
+    if (!mediaFileIds.isEmpty()) {
+      sessionProgressRepository.deleteByUserIdAndMediaFileIdIn(userId, mediaFileIds);
+    }
+
     eventPublisher.publishEvent(new WatchStatusChangedEvent(userId, collectableId));
+  }
+
+  private List<UUID> resolveAllMediaFileIds(UUID collectableId) {
+    var directFileIds = mediaFileRepository.findMediaFileIdsByMediaIds(List.of(collectableId));
+    if (!directFileIds.isEmpty()) {
+      return directFileIds;
+    }
+
+    var episodeIdsBySeasonId = episodeRepository.findEpisodeIdsBySeasonIds(List.of(collectableId));
+    if (!episodeIdsBySeasonId.isEmpty()) {
+      var episodeIds = episodeIdsBySeasonId.values().stream().flatMap(Collection::stream).toList();
+      return mediaFileRepository.findMediaFileIdsByMediaIds(episodeIds);
+    }
+
+    var seasonIdsBySeriesId = seasonRepository.findSeasonIdsBySeriesIds(List.of(collectableId));
+    if (!seasonIdsBySeriesId.isEmpty()) {
+      var allSeasonIds = seasonIdsBySeriesId.values().stream().flatMap(Collection::stream).toList();
+      var episodeIdsBySeasonId2 = episodeRepository.findEpisodeIdsBySeasonIds(allSeasonIds);
+      var episodeIds = episodeIdsBySeasonId2.values().stream().flatMap(Collection::stream).toList();
+      return mediaFileRepository.findMediaFileIdsByMediaIds(episodeIds);
+    }
+
+    return List.of();
   }
 
   public Map<UUID, WatchStatus> getWatchStatusForDirectMedia(

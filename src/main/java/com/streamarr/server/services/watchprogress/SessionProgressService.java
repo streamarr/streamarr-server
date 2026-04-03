@@ -3,16 +3,12 @@ package com.streamarr.server.services.watchprogress;
 import com.streamarr.server.config.SessionProgressProperties;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.exceptions.SessionNotFoundException;
-import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
-import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.streaming.SaveProgressCommand;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.services.streaming.StreamSessionRepository;
 import com.streamarr.server.services.watchprogress.events.SessionProgressChangedEvent;
 import java.time.Instant;
-import java.util.Collection;
-import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,8 +23,6 @@ public class SessionProgressService {
   private final StreamSessionRepository sessionRepository;
   private final SessionProgressRepository sessionProgressRepository;
   private final MediaFileRepository mediaFileRepository;
-  private final EpisodeRepository episodeRepository;
-  private final SeasonRepository seasonRepository;
   private final SessionProgressProperties properties;
   private final WatchStatusService watchStatusService;
   private final ApplicationEventPublisher eventPublisher;
@@ -137,42 +131,11 @@ public class SessionProgressService {
             .build());
   }
 
-  public void resetProgress(UUID userId, UUID collectableId) {
-    var mediaFileIds = resolveAllMediaFileIds(collectableId);
-
-    if (!mediaFileIds.isEmpty()) {
-      sessionProgressRepository.deleteByUserIdAndMediaFileIdIn(userId, mediaFileIds);
-    }
-  }
-
   private UUID resolveCollectableId(UUID mediaFileId) {
     return mediaFileRepository
         .findById(mediaFileId)
         .orElseThrow(() -> new IllegalStateException("MediaFile not found for id: " + mediaFileId))
         .getMediaId();
-  }
-
-  private List<UUID> resolveAllMediaFileIds(UUID collectableId) {
-    var directFileIds = mediaFileRepository.findMediaFileIdsByMediaIds(List.of(collectableId));
-    if (!directFileIds.isEmpty()) {
-      return directFileIds;
-    }
-
-    var episodeIdsBySeasonId = episodeRepository.findEpisodeIdsBySeasonIds(List.of(collectableId));
-    if (!episodeIdsBySeasonId.isEmpty()) {
-      var episodeIds = episodeIdsBySeasonId.values().stream().flatMap(Collection::stream).toList();
-      return mediaFileRepository.findMediaFileIdsByMediaIds(episodeIds);
-    }
-
-    var seasonIdsBySeriesId = seasonRepository.findSeasonIdsBySeriesIds(List.of(collectableId));
-    if (!seasonIdsBySeriesId.isEmpty()) {
-      var allSeasonIds = seasonIdsBySeriesId.values().stream().flatMap(Collection::stream).toList();
-      var episodeIdsBySeasonId2 = episodeRepository.findEpisodeIdsBySeasonIds(allSeasonIds);
-      var episodeIds = episodeIdsBySeasonId2.values().stream().flatMap(Collection::stream).toList();
-      return mediaFileRepository.findMediaFileIdsByMediaIds(episodeIds);
-    }
-
-    return List.of();
   }
 
   private enum StopDecision {

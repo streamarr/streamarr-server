@@ -70,8 +70,6 @@ class SessionProgressServiceTest {
             sessionRepository,
             sessionProgressRepository,
             mediaFileRepository,
-            episodeRepository,
-            seasonRepository,
             properties,
             watchStatusService,
             eventPublisher);
@@ -509,7 +507,7 @@ class SessionProgressServiceTest {
               .build());
       assertThat(sessionProgressRepository.count()).isEqualTo(1);
 
-      service.resetProgress(USER_ID, movieId);
+      watchStatusService.markUnwatched(USER_ID, movieId);
 
       assertThat(sessionProgressRepository.count()).isZero();
     }
@@ -528,7 +526,7 @@ class SessionProgressServiceTest {
       sessionProgressRepository.save(buildProgress(UUID.randomUUID(), mf2.getId(), 600));
       assertThat(sessionProgressRepository.count()).isEqualTo(2);
 
-      service.resetProgress(USER_ID, season.getId());
+      watchStatusService.markUnwatched(USER_ID, season.getId());
 
       assertThat(sessionProgressRepository.count()).isZero();
     }
@@ -550,7 +548,7 @@ class SessionProgressServiceTest {
       sessionProgressRepository.save(buildProgress(UUID.randomUUID(), mf2.getId(), 600));
       assertThat(sessionProgressRepository.count()).isEqualTo(2);
 
-      service.resetProgress(USER_ID, series.getId());
+      watchStatusService.markUnwatched(USER_ID, series.getId());
 
       assertThat(sessionProgressRepository.count()).isZero();
     }

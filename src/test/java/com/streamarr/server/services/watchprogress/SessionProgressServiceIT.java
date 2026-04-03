@@ -35,6 +35,7 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
   @Autowired private MovieRepository movieRepository;
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private SessionProgressService sessionProgressService;
+  @Autowired private WatchStatusService watchStatusService;
   @Autowired private EntityManager entityManager;
   @Autowired private AuditorAware<UUID> auditorAware;
 
@@ -188,7 +189,7 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
     entityManager.flush();
     entityManager.clear();
 
-    sessionProgressService.resetProgress(USER_ID, fixture.movie().getId());
+    watchStatusService.markUnwatched(USER_ID, fixture.movie().getId());
 
     entityManager.flush();
     entityManager.clear();

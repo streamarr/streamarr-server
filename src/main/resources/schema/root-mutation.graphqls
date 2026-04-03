@@ -8,5 +8,6 @@ type Mutation {
     destroyStreamSession(sessionId: ID!): Boolean!
     seekStreamSession(sessionId: ID!, positionSeconds: Int!): StreamSession!
     reportTimeline(sessionId: ID!, positionSeconds: Int!, state: PlaybackState!): Boolean!
-    resetWatchProgress(id: ID!): Boolean!
+    markWatched(id: ID!): Boolean!
+    markUnwatched(id: ID!): Boolean!
 }

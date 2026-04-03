@@ -12,6 +12,8 @@ import com.streamarr.server.graphql.dto.StreamSessionDto;
 import com.streamarr.server.graphql.dto.StreamingOptionsInput;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.watchprogress.SessionProgressService;
+import com.streamarr.server.services.watchprogress.WatchStatusService;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +24,7 @@ public class StreamingResolver {
 
   private final StreamingService streamingService;
   private final SessionProgressService sessionProgressService;
+  private final WatchStatusService watchStatusService;
 
   @DgsMutation
   public StreamSessionDto createStreamSession(
@@ -60,10 +63,19 @@ public class StreamingResolver {
   }
 
   @DgsMutation
-  public boolean resetWatchProgress(@InputArgument String id) {
+  public boolean markWatched(@InputArgument String id) {
     // TODO(#163): Replace with authenticated user ID from Spring Security
     var userId = resolveCurrentUserId();
-    sessionProgressService.resetProgress(userId, parseUuid(id));
+    watchStatusService.markWatched(userId, parseUuid(id), Instant.now(), 0);
+
+    return true;
+  }
+
+  @DgsMutation
+  public boolean markUnwatched(@InputArgument String id) {
+    // TODO(#163): Replace with authenticated user ID from Spring Security
+    var userId = resolveCurrentUserId();
+    watchStatusService.markUnwatched(userId, parseUuid(id));
 
     return true;
   }
