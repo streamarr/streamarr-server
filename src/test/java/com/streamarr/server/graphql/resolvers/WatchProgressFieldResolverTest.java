@@ -20,7 +20,6 @@ import com.streamarr.server.graphql.dataloaders.WatchStatusDataLoader;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
-import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -119,6 +118,7 @@ class WatchProgressFieldResolverTest {
 
       sessionProgressRepository.save(
           SessionProgress.builder()
+              .sessionId(UUID.randomUUID())
               .userId(USER_ID)
               .mediaFileId(mediaFile.getId())
               .positionSeconds(1800)
@@ -185,6 +185,7 @@ class WatchProgressFieldResolverTest {
 
       sessionProgressRepository.save(
           SessionProgress.builder()
+              .sessionId(UUID.randomUUID())
               .userId(USER_ID)
               .mediaFileId(mediaFile.getId())
               .positionSeconds(300)
@@ -230,6 +231,7 @@ class WatchProgressFieldResolverTest {
 
       sessionProgressRepository.save(
           SessionProgress.builder()
+              .sessionId(UUID.randomUUID())
               .userId(USER_ID)
               .mediaFileId(mediaFile.getId())
               .positionSeconds(600)
@@ -258,8 +260,8 @@ class WatchProgressFieldResolverTest {
     }
 
     @Test
-    @DisplayName("Should return watched when episode fully played")
-    void shouldReturnWatchedWhenEpisodeFullyPlayed() {
+    @DisplayName("Should return in progress when episode has active progress")
+    void shouldReturnInProgressWhenEpisodeHasActiveProgress() {
       var seriesId = UUID.randomUUID();
       var series = Series.builder().title("Test Series").build();
       series.setId(seriesId);
@@ -282,12 +284,12 @@ class WatchProgressFieldResolverTest {
 
       sessionProgressRepository.save(
           SessionProgress.builder()
+              .sessionId(UUID.randomUUID())
               .userId(USER_ID)
               .mediaFileId(mediaFile.getId())
-              .positionSeconds(0)
-              .percentComplete(100.0)
+              .positionSeconds(1200)
+              .percentComplete(50.0)
               .durationSeconds(2400)
-              .lastPlayedAt(Instant.now())
               .build());
 
       String status =
@@ -296,7 +298,7 @@ class WatchProgressFieldResolverTest {
                   "{ series(id: \"%s\") { seasons { episodes { watchStatus } } } }", seriesId),
               "data.series.seasons[0].episodes[0].watchStatus");
 
-      assertThat(status).isEqualTo("WATCHED");
+      assertThat(status).isEqualTo("IN_PROGRESS");
     }
   }
 
@@ -328,6 +330,7 @@ class WatchProgressFieldResolverTest {
 
       sessionProgressRepository.save(
           SessionProgress.builder()
+              .sessionId(UUID.randomUUID())
               .userId(USER_ID)
               .mediaFileId(mediaFile.getId())
               .positionSeconds(300)

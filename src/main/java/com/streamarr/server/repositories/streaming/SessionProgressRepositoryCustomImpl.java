@@ -1,6 +1,6 @@
 package com.streamarr.server.repositories.streaming;
 
-import static com.streamarr.server.jooq.generated.tables.WatchProgress.WATCH_PROGRESS;
+import static com.streamarr.server.jooq.generated.tables.SessionProgress.SESSION_PROGRESS;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -16,44 +16,37 @@ public class SessionProgressRepositoryCustomImpl implements SessionProgressRepos
   private final AuditorAware<UUID> auditorAware;
 
   @Override
-  public boolean upsertProgress(SaveProgressCommand command) {
+  public void upsertProgress(SaveProgressCommand command) {
     var auditUser = auditorAware.getCurrentAuditor().orElse(null);
     var now = OffsetDateTime.now(ZoneOffset.UTC);
-    var lastPlayedAtOdt =
-        switch (command) {
-          case SaveProgressCommand.MarkWatched mw -> mw.watchedAt().atOffset(ZoneOffset.UTC);
-          case SaveProgressCommand.UpdateProgress _ -> null;
-        };
 
-    return dsl.insertInto(WATCH_PROGRESS)
-            .set(WATCH_PROGRESS.USER_ID, command.userId())
-            .set(WATCH_PROGRESS.MEDIA_FILE_ID, command.mediaFileId())
-            .set(WATCH_PROGRESS.POSITION_SECONDS, command.positionSeconds())
-            .set(WATCH_PROGRESS.PERCENT_COMPLETE, command.percentComplete())
-            .set(WATCH_PROGRESS.DURATION_SECONDS, command.durationSeconds())
-            .set(WATCH_PROGRESS.LAST_PLAYED_AT, lastPlayedAtOdt)
-            .set(WATCH_PROGRESS.CREATED_BY, auditUser)
-            .set(WATCH_PROGRESS.LAST_MODIFIED_BY, auditUser)
-            .onConflict(WATCH_PROGRESS.USER_ID, WATCH_PROGRESS.MEDIA_FILE_ID)
-            .doUpdate()
-            .set(WATCH_PROGRESS.POSITION_SECONDS, command.positionSeconds())
-            .set(WATCH_PROGRESS.PERCENT_COMPLETE, command.percentComplete())
-            .set(WATCH_PROGRESS.DURATION_SECONDS, command.durationSeconds())
-            .set(WATCH_PROGRESS.LAST_PLAYED_AT, lastPlayedAtOdt)
-            .set(WATCH_PROGRESS.LAST_MODIFIED_BY, auditUser)
-            .set(WATCH_PROGRESS.LAST_MODIFIED_ON, now)
-            .where(WATCH_PROGRESS.LAST_PLAYED_AT.isNull())
-            .execute()
-        > 0;
+    // insertIfAbsent — create row if no row for this session yet
+    dsl.insertInto(SESSION_PROGRESS)
+        .set(SESSION_PROGRESS.SESSION_ID, command.sessionId())
+        .set(SESSION_PROGRESS.USER_ID, command.userId())
+        .set(SESSION_PROGRESS.MEDIA_FILE_ID, command.mediaFileId())
+        .set(SESSION_PROGRESS.POSITION_SECONDS, command.positionSeconds())
+        .set(SESSION_PROGRESS.PERCENT_COMPLETE, command.percentComplete())
+        .set(SESSION_PROGRESS.DURATION_SECONDS, command.durationSeconds())
+        .set(SESSION_PROGRESS.CREATED_BY, auditUser)
+        .set(SESSION_PROGRESS.LAST_MODIFIED_BY, auditUser)
+        .onConflict(SESSION_PROGRESS.SESSION_ID)
+        .doNothing()
+        .execute();
+
+    // Update the existing row with latest position
+    dsl.update(SESSION_PROGRESS)
+        .set(SESSION_PROGRESS.POSITION_SECONDS, command.positionSeconds())
+        .set(SESSION_PROGRESS.PERCENT_COMPLETE, command.percentComplete())
+        .set(SESSION_PROGRESS.DURATION_SECONDS, command.durationSeconds())
+        .set(SESSION_PROGRESS.LAST_MODIFIED_BY, auditUser)
+        .set(SESSION_PROGRESS.LAST_MODIFIED_ON, now)
+        .where(SESSION_PROGRESS.SESSION_ID.eq(command.sessionId()))
+        .execute();
   }
 
   @Override
-  public boolean deleteIfNotWatched(UUID userId, UUID mediaFileId) {
-    return dsl.deleteFrom(WATCH_PROGRESS)
-            .where(WATCH_PROGRESS.USER_ID.eq(userId))
-            .and(WATCH_PROGRESS.MEDIA_FILE_ID.eq(mediaFileId))
-            .and(WATCH_PROGRESS.LAST_PLAYED_AT.isNull())
-            .execute()
-        > 0;
+  public void deleteBySessionId(UUID sessionId) {
+    dsl.deleteFrom(SESSION_PROGRESS).where(SESSION_PROGRESS.SESSION_ID.eq(sessionId)).execute();
   }
 }

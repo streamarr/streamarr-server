@@ -4,7 +4,7 @@ import java.util.UUID;
 
 public interface SessionProgressRepositoryCustom {
 
-  boolean upsertProgress(SaveProgressCommand command);
+  void upsertProgress(SaveProgressCommand command);
 
-  boolean deleteIfNotWatched(UUID userId, UUID mediaFileId);
+  void deleteBySessionId(UUID sessionId);
 }

@@ -27,13 +27,21 @@ public class WatchStatusService {
   private final SeasonRepository seasonRepository;
 
   public Optional<SessionProgress> getProgress(UUID userId, UUID mediaFileId) {
-    return sessionProgressRepository.findByUserIdAndMediaFileId(userId, mediaFileId);
+    return sessionProgressRepository.findMostRecentByUserIdAndMediaFileId(userId, mediaFileId);
   }
 
   public Map<UUID, SessionProgress> getProgressForMediaFiles(
       UUID userId, Collection<UUID> mediaFileIds) {
     return sessionProgressRepository.findByUserIdAndMediaFileIdIn(userId, mediaFileIds).stream()
-        .collect(Collectors.toMap(SessionProgress::getMediaFileId, wp -> wp));
+        .collect(
+            Collectors.toMap(
+                SessionProgress::getMediaFileId,
+                sp -> sp,
+                (a, b) -> {
+                  if (a.getLastModifiedOn() == null) return b;
+                  if (b.getLastModifiedOn() == null) return a;
+                  return a.getLastModifiedOn().isAfter(b.getLastModifiedOn()) ? a : b;
+                }));
   }
 
   public Map<UUID, WatchStatus> getWatchStatusForDirectMedia(
@@ -138,32 +146,25 @@ public class WatchStatusService {
     return result;
   }
 
+  // TODO: Rewrite to derive WATCHED from watch_history instead of session_progress
   private static WatchStatus deriveWatchStatusFromFileIds(
       List<UUID> mediaFileIds, Map<UUID, SessionProgress> progressMap) {
-    var watchedCount = 0;
     var inProgressCount = 0;
     for (var mediaFileId : mediaFileIds) {
-      var wp = progressMap.get(mediaFileId);
-      if (wp == null) {
+      var sp = progressMap.get(mediaFileId);
+      if (sp == null) {
         continue;
       }
 
-      if (wp.isPlayed()) {
-        watchedCount++;
-      } else if (wp.getPositionSeconds() > 0) {
+      if (sp.getPositionSeconds() > 0) {
         inProgressCount++;
       }
     }
-    return deriveWatchStatus(mediaFileIds.size(), watchedCount, inProgressCount);
+    return deriveWatchStatus(mediaFileIds.size(), inProgressCount);
   }
 
-  private static WatchStatus deriveWatchStatus(
-      int totalItems, int watchedCount, int inProgressCount) {
-    if (totalItems > 0 && watchedCount == totalItems) {
-      return WatchStatus.WATCHED;
-    }
-
-    if (watchedCount > 0 || inProgressCount > 0) {
+  private static WatchStatus deriveWatchStatus(int totalItems, int inProgressCount) {
+    if (inProgressCount > 0) {
       return WatchStatus.IN_PROGRESS;
     }
 

@@ -14,7 +14,6 @@ import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSessionProgressRepository;
-import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -58,22 +57,12 @@ class WatchStatusServiceTest {
 
   private SessionProgress buildProgress(UUID mediaFileId, int positionSeconds) {
     return SessionProgress.builder()
+        .sessionId(UUID.randomUUID())
         .userId(USER_ID)
         .mediaFileId(mediaFileId)
         .positionSeconds(positionSeconds)
         .percentComplete(50.0)
         .durationSeconds(7200)
-        .build();
-  }
-
-  private SessionProgress buildPlayedProgress(UUID mediaFileId) {
-    return SessionProgress.builder()
-        .userId(USER_ID)
-        .mediaFileId(mediaFileId)
-        .positionSeconds(0)
-        .percentComplete(100.0)
-        .durationSeconds(7200)
-        .lastPlayedAt(Instant.now())
         .build();
   }
 
@@ -109,20 +98,20 @@ class WatchStatusServiceTest {
   class BatchWatchStatusForDirectMedia {
 
     @Test
-    @DisplayName("Should return watched when all media files are played")
-    void shouldReturnWatchedWhenAllMediaFilesArePlayed() {
+    @DisplayName("Should return in progress when media files have progress")
+    void shouldReturnInProgressWhenMediaFilesHaveProgress() {
       var movie = Movie.builder().build();
       movie.setId(UUID.randomUUID());
 
       var mf1 = mediaFileRepository.save(createMediaFile(movie.getId()));
       var mf2 = mediaFileRepository.save(createMediaFile(movie.getId()));
 
-      sessionProgressRepository.save(buildPlayedProgress(mf1.getId()));
-      sessionProgressRepository.save(buildPlayedProgress(mf2.getId()));
+      sessionProgressRepository.save(buildProgress(mf1.getId(), 300));
+      sessionProgressRepository.save(buildProgress(mf2.getId(), 600));
 
       var result = service.getWatchStatusForDirectMedia(USER_ID, List.of(movie.getId()));
 
-      assertThat(result).containsEntry(movie.getId(), WatchStatus.WATCHED);
+      assertThat(result).containsEntry(movie.getId(), WatchStatus.IN_PROGRESS);
     }
 
     @Test
@@ -165,13 +154,13 @@ class WatchStatusServiceTest {
       var mf1 = mediaFileRepository.save(createMediaFile(movie1.getId()));
       mediaFileRepository.save(createMediaFile(movie2.getId()));
 
-      sessionProgressRepository.save(buildPlayedProgress(mf1.getId()));
+      sessionProgressRepository.save(buildProgress(mf1.getId(), 300));
 
       var result =
           service.getWatchStatusForDirectMedia(USER_ID, List.of(movie1.getId(), movie2.getId()));
 
       assertThat(result)
-          .containsEntry(movie1.getId(), WatchStatus.WATCHED)
+          .containsEntry(movie1.getId(), WatchStatus.IN_PROGRESS)
           .containsEntry(movie2.getId(), WatchStatus.UNWATCHED);
     }
 
@@ -189,8 +178,8 @@ class WatchStatusServiceTest {
   class BatchWatchStatusForSeasons {
 
     @Test
-    @DisplayName("Should return watched when all episodes are played")
-    void shouldReturnWatchedWhenAllEpisodesArePlayed() {
+    @DisplayName("Should return in progress when all episodes have progress")
+    void shouldReturnInProgressWhenAllEpisodesHaveProgress() {
       var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
       var ep1 = episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
       var ep2 = episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
@@ -198,12 +187,12 @@ class WatchStatusServiceTest {
       var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
       var mf2 = mediaFileRepository.save(createMediaFile(ep2.getId()));
 
-      sessionProgressRepository.save(buildPlayedProgress(mf1.getId()));
-      sessionProgressRepository.save(buildPlayedProgress(mf2.getId()));
+      sessionProgressRepository.save(buildProgress(mf1.getId(), 300));
+      sessionProgressRepository.save(buildProgress(mf2.getId(), 600));
 
       var result = service.getWatchStatusForSeasons(USER_ID, List.of(season.getId()));
 
-      assertThat(result).containsEntry(season.getId(), WatchStatus.WATCHED);
+      assertThat(result).containsEntry(season.getId(), WatchStatus.IN_PROGRESS);
     }
 
     @Test
@@ -242,12 +231,12 @@ class WatchStatusServiceTest {
       var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
       mediaFileRepository.save(createMediaFile(ep2.getId()));
 
-      sessionProgressRepository.save(buildPlayedProgress(mf1.getId()));
+      sessionProgressRepository.save(buildProgress(mf1.getId(), 300));
 
       var result = service.getWatchStatusForSeasons(USER_ID, List.of(s1.getId(), s2.getId()));
 
       assertThat(result)
-          .containsEntry(s1.getId(), WatchStatus.WATCHED)
+          .containsEntry(s1.getId(), WatchStatus.IN_PROGRESS)
           .containsEntry(s2.getId(), WatchStatus.UNWATCHED);
     }
   }
@@ -257,8 +246,8 @@ class WatchStatusServiceTest {
   class BatchWatchStatusForSeries {
 
     @Test
-    @DisplayName("Should return watched when all episodes across seasons are played")
-    void shouldReturnWatchedWhenAllEpisodesAcrossSeasonsArePlayed() {
+    @DisplayName("Should return in progress when all episodes across seasons have progress")
+    void shouldReturnInProgressWhenAllEpisodesAcrossSeasonsHaveProgress() {
       var series = Series.builder().build();
       series.setId(UUID.randomUUID());
       var s1 = seasonRepository.save(Season.builder().seasonNumber(1).series(series).build());
@@ -269,12 +258,12 @@ class WatchStatusServiceTest {
       var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
       var mf2 = mediaFileRepository.save(createMediaFile(ep2.getId()));
 
-      sessionProgressRepository.save(buildPlayedProgress(mf1.getId()));
-      sessionProgressRepository.save(buildPlayedProgress(mf2.getId()));
+      sessionProgressRepository.save(buildProgress(mf1.getId(), 300));
+      sessionProgressRepository.save(buildProgress(mf2.getId(), 600));
 
       var result = service.getWatchStatusForSeries(USER_ID, List.of(series.getId()));
 
-      assertThat(result).containsEntry(series.getId(), WatchStatus.WATCHED);
+      assertThat(result).containsEntry(series.getId(), WatchStatus.IN_PROGRESS);
     }
 
     @Test
@@ -320,13 +309,13 @@ class WatchStatusServiceTest {
       var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
       mediaFileRepository.save(createMediaFile(ep2.getId()));
 
-      sessionProgressRepository.save(buildPlayedProgress(mf1.getId()));
+      sessionProgressRepository.save(buildProgress(mf1.getId(), 300));
 
       var result =
           service.getWatchStatusForSeries(USER_ID, List.of(series1.getId(), series2.getId()));
 
       assertThat(result)
-          .containsEntry(series1.getId(), WatchStatus.WATCHED)
+          .containsEntry(series1.getId(), WatchStatus.IN_PROGRESS)
           .containsEntry(series2.getId(), WatchStatus.UNWATCHED);
     }
   }

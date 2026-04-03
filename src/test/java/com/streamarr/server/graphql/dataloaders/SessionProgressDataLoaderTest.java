@@ -8,7 +8,6 @@ import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSessionProgressRepository;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
-import java.time.Instant;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -51,7 +50,6 @@ class SessionProgressDataLoaderTest {
     assertThat(result.get(mediaFileId1).positionSeconds()).isEqualTo(300);
     assertThat(result.get(mediaFileId1).percentComplete()).isEqualTo(50.0);
     assertThat(result.get(mediaFileId1).durationSeconds()).isEqualTo(600);
-    assertThat(result.get(mediaFileId1).lastPlayedAt()).isEmpty();
     assertThat(result.get(mediaFileId2)).isNotNull();
     assertThat(result.get(mediaFileId2).positionSeconds()).isEqualTo(600);
     assertThat(result.get(mediaFileId2).percentComplete()).isEqualTo(75.0);
@@ -69,31 +67,10 @@ class SessionProgressDataLoaderTest {
     assertThat(result.get(unknownId)).isNull();
   }
 
-  @Test
-  @DisplayName("Should include lastPlayedAt when item is watched")
-  void shouldIncludeLastPlayedAtWhenItemIsWatched() throws Exception {
-    var mediaFileId = UUID.randomUUID();
-    sessionProgressRepository.save(
-        SessionProgress.builder()
-            .userId(USER_ID)
-            .mediaFileId(mediaFileId)
-            .positionSeconds(0)
-            .percentComplete(95.0)
-            .durationSeconds(7200)
-            .lastPlayedAt(Instant.now())
-            .build());
-
-    var result = dataLoader.load(Set.of(mediaFileId)).toCompletableFuture().get();
-
-    assertThat(result.get(mediaFileId).positionSeconds()).isZero();
-    assertThat(result.get(mediaFileId).percentComplete()).isEqualTo(95.0);
-    assertThat(result.get(mediaFileId).durationSeconds()).isEqualTo(7200);
-    assertThat(result.get(mediaFileId).lastPlayedAt()).isPresent();
-  }
-
   private void saveProgress(UUID mediaFileId, int position, double percent, int duration) {
     sessionProgressRepository.save(
         SessionProgress.builder()
+            .sessionId(UUID.randomUUID())
             .userId(USER_ID)
             .mediaFileId(mediaFileId)
             .positionSeconds(position)

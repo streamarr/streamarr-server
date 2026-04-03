@@ -4,10 +4,8 @@ import com.netflix.graphql.dgs.DgsDataLoader;
 import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.graphql.dto.WatchProgressDto;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
-import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -45,7 +43,6 @@ public class SessionProgressDataLoader implements MappedBatchLoader<UUID, WatchP
         .positionSeconds(wp.getPositionSeconds())
         .percentComplete(wp.getPercentComplete())
         .durationSeconds(wp.getDurationSeconds())
-        .lastPlayedAt(Optional.ofNullable(wp.getLastPlayedAt()).map(Instant::toString))
         .build();
   }
 }

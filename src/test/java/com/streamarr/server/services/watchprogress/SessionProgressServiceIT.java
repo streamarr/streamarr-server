@@ -14,7 +14,6 @@ import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.streaming.SaveProgressCommand;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import jakarta.persistence.EntityManager;
-import java.time.Instant;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeAll;
@@ -76,10 +75,12 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
   @DisplayName("Should persist and retrieve watch progress when saved")
   void shouldPersistAndRetrieveWatchProgressWhenSaved() {
     var fixture = createMovieWithFile();
+    var sessionId = UUID.randomUUID();
 
     var saved =
         sessionProgressRepository.save(
             SessionProgress.builder()
+                .sessionId(sessionId)
                 .userId(USER_ID)
                 .mediaFileId(fixture.mediaFileId())
                 .positionSeconds(3600)
@@ -90,8 +91,7 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
     entityManager.flush();
     entityManager.clear();
 
-    var retrieved =
-        sessionProgressRepository.findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId());
+    var retrieved = sessionProgressRepository.findBySessionId(sessionId);
 
     assertThat(retrieved).isPresent();
     assertThat(retrieved.get().getPositionSeconds()).isEqualTo(3600);
@@ -102,12 +102,14 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
 
   @Test
   @Transactional
-  @DisplayName("Should update existing progress when same user and media file")
-  void shouldUpdateExistingProgressWhenSameUserAndMediaFile() {
+  @DisplayName(
+      "Should find most recent progress when multiple rows exist for same user and media file")
+  void shouldFindMostRecentProgressWhenMultipleRowsExistForSameUserAndMediaFile() {
     var fixture = createMovieWithFile();
 
     sessionProgressRepository.saveAndFlush(
         SessionProgress.builder()
+            .sessionId(UUID.randomUUID())
             .userId(USER_ID)
             .mediaFileId(fixture.mediaFileId())
             .positionSeconds(300)
@@ -117,21 +119,23 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
 
     entityManager.clear();
 
-    var existing =
-        sessionProgressRepository
-            .findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId())
-            .orElseThrow();
-    existing.setPositionSeconds(600);
-    existing.setPercentComplete(20.0);
-    sessionProgressRepository.saveAndFlush(existing);
+    sessionProgressRepository.saveAndFlush(
+        SessionProgress.builder()
+            .sessionId(UUID.randomUUID())
+            .userId(USER_ID)
+            .mediaFileId(fixture.mediaFileId())
+            .positionSeconds(600)
+            .percentComplete(20.0)
+            .durationSeconds(3000)
+            .build());
 
     entityManager.clear();
 
-    var all =
-        sessionProgressRepository.findByUserIdAndMediaFileIdIn(
-            USER_ID, Set.of(fixture.mediaFileId()));
-    assertThat(all).hasSize(1);
-    assertThat(all.getFirst().getPositionSeconds()).isEqualTo(600);
+    var mostRecent =
+        sessionProgressRepository.findMostRecentByUserIdAndMediaFileId(
+            USER_ID, fixture.mediaFileId());
+    assertThat(mostRecent).isPresent();
+    assertThat(mostRecent.get().getPositionSeconds()).isEqualTo(600);
   }
 
   @Test
@@ -142,6 +146,7 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
 
     sessionProgressRepository.saveAndFlush(
         SessionProgress.builder()
+            .sessionId(UUID.randomUUID())
             .userId(USER_ID)
             .mediaFileId(fixture.mediaFileId())
             .positionSeconds(1800)
@@ -149,14 +154,18 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
             .durationSeconds(3600)
             .build());
 
-    assertThat(sessionProgressRepository.findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId()))
+    assertThat(
+            sessionProgressRepository.findMostRecentByUserIdAndMediaFileId(
+                USER_ID, fixture.mediaFileId()))
         .isPresent();
 
     movieRepository.deleteById(fixture.movie().getId());
     movieRepository.flush();
     entityManager.clear();
 
-    assertThat(sessionProgressRepository.findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId()))
+    assertThat(
+            sessionProgressRepository.findMostRecentByUserIdAndMediaFileId(
+                USER_ID, fixture.mediaFileId()))
         .isEmpty();
   }
 
@@ -168,6 +177,7 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
 
     sessionProgressRepository.saveAndFlush(
         SessionProgress.builder()
+            .sessionId(UUID.randomUUID())
             .userId(USER_ID)
             .mediaFileId(fixture.mediaFileId())
             .positionSeconds(2400)
@@ -183,52 +193,26 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
     entityManager.flush();
     entityManager.clear();
 
-    assertThat(sessionProgressRepository.findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId()))
+    assertThat(
+            sessionProgressRepository.findMostRecentByUserIdAndMediaFileId(
+                USER_ID, fixture.mediaFileId()))
         .isEmpty();
   }
 
   @Nested
-  @DisplayName("jOOQ Upsert Guard")
-  class JooqUpsertGuard {
+  @DisplayName("jOOQ Upsert")
+  class JooqUpsert {
 
     @Test
     @Transactional
     @DisplayName("Should insert new progress when no existing row")
     void shouldInsertNewProgressWhenNoExistingRow() {
       var fixture = createMovieWithFile();
+      var sessionId = UUID.randomUUID();
 
-      var result =
-          sessionProgressRepository.upsertProgress(
-              SaveProgressCommand.UpdateProgress.builder()
-                  .userId(USER_ID)
-                  .mediaFileId(fixture.mediaFileId())
-                  .positionSeconds(300)
-                  .percentComplete(25.0)
-                  .durationSeconds(1200)
-                  .build());
-
-      assertThat(result).isTrue();
-
-      entityManager.clear();
-
-      var progress =
-          sessionProgressRepository
-              .findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId())
-              .orElseThrow();
-      assertThat(progress.getPositionSeconds()).isEqualTo(300);
-      assertThat(progress.getPercentComplete()).isEqualTo(25.0);
-      assertThat(progress.getDurationSeconds()).isEqualTo(1200);
-      assertThat(progress.getLastPlayedAt()).isNull();
-    }
-
-    @Test
-    @Transactional
-    @DisplayName("Should overwrite progress when existing row is unwatched on upsert")
-    void shouldOverwriteProgressWhenExistingRowIsUnwatchedOnUpsert() {
-      var fixture = createMovieWithFile();
-
-      sessionProgressRepository.saveAndFlush(
-          SessionProgress.builder()
+      sessionProgressRepository.upsertProgress(
+          SaveProgressCommand.builder()
+              .sessionId(sessionId)
               .userId(USER_ID)
               .mediaFileId(fixture.mediaFileId())
               .positionSeconds(300)
@@ -238,68 +222,46 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
 
       entityManager.clear();
 
-      var result =
-          sessionProgressRepository.upsertProgress(
-              SaveProgressCommand.UpdateProgress.builder()
-                  .userId(USER_ID)
-                  .mediaFileId(fixture.mediaFileId())
-                  .positionSeconds(600)
-                  .percentComplete(50.0)
-                  .durationSeconds(1200)
-                  .build());
-
-      assertThat(result).isTrue();
-
-      entityManager.clear();
-
-      var progress =
-          sessionProgressRepository
-              .findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId())
-              .orElseThrow();
-      assertThat(progress.getPositionSeconds()).isEqualTo(600);
-      assertThat(progress.getPercentComplete()).isEqualTo(50.0);
+      var progress = sessionProgressRepository.findBySessionId(sessionId).orElseThrow();
+      assertThat(progress.getPositionSeconds()).isEqualTo(300);
+      assertThat(progress.getPercentComplete()).isEqualTo(25.0);
+      assertThat(progress.getDurationSeconds()).isEqualTo(1200);
     }
 
     @Test
     @Transactional
-    @DisplayName("Should not overwrite progress when existing row is watched on upsert")
-    void shouldNotOverwriteProgressWhenExistingRowIsWatchedOnUpsert() {
+    @DisplayName("Should overwrite progress when existing row exists for same session on upsert")
+    void shouldOverwriteProgressWhenExistingRowExistsForSameSessionOnUpsert() {
       var fixture = createMovieWithFile();
-      var watchedAt = Instant.now();
+      var sessionId = UUID.randomUUID();
 
-      sessionProgressRepository.saveAndFlush(
-          SessionProgress.builder()
+      sessionProgressRepository.upsertProgress(
+          SaveProgressCommand.builder()
+              .sessionId(sessionId)
               .userId(USER_ID)
               .mediaFileId(fixture.mediaFileId())
-              .positionSeconds(0)
-              .percentComplete(100.0)
+              .positionSeconds(300)
+              .percentComplete(25.0)
               .durationSeconds(1200)
-              .lastPlayedAt(watchedAt)
               .build());
 
       entityManager.clear();
 
-      var result =
-          sessionProgressRepository.upsertProgress(
-              SaveProgressCommand.UpdateProgress.builder()
-                  .userId(USER_ID)
-                  .mediaFileId(fixture.mediaFileId())
-                  .positionSeconds(300)
-                  .percentComplete(25.0)
-                  .durationSeconds(1200)
-                  .build());
-
-      assertThat(result).isFalse();
+      sessionProgressRepository.upsertProgress(
+          SaveProgressCommand.builder()
+              .sessionId(sessionId)
+              .userId(USER_ID)
+              .mediaFileId(fixture.mediaFileId())
+              .positionSeconds(600)
+              .percentComplete(50.0)
+              .durationSeconds(1200)
+              .build());
 
       entityManager.clear();
 
-      var progress =
-          sessionProgressRepository
-              .findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId())
-              .orElseThrow();
-      assertThat(progress.getPositionSeconds()).isZero();
-      assertThat(progress.getPercentComplete()).isEqualTo(100.0);
-      assertThat(progress.getLastPlayedAt()).isNotNull();
+      var progress = sessionProgressRepository.findBySessionId(sessionId).orElseThrow();
+      assertThat(progress.getPositionSeconds()).isEqualTo(600);
+      assertThat(progress.getPercentComplete()).isEqualTo(50.0);
     }
 
     @Test
@@ -307,9 +269,11 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
     @DisplayName("Should populate audit fields when inserting new row on upsert")
     void shouldPopulateAuditFieldsWhenInsertingNewRowOnUpsert() {
       var fixture = createMovieWithFile();
+      var sessionId = UUID.randomUUID();
 
       sessionProgressRepository.upsertProgress(
-          SaveProgressCommand.UpdateProgress.builder()
+          SaveProgressCommand.builder()
+              .sessionId(sessionId)
               .userId(USER_ID)
               .mediaFileId(fixture.mediaFileId())
               .positionSeconds(300)
@@ -319,10 +283,7 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
 
       entityManager.clear();
 
-      var progress =
-          sessionProgressRepository
-              .findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId())
-              .orElseThrow();
+      var progress = sessionProgressRepository.findBySessionId(sessionId).orElseThrow();
       var expectedAuditor = auditorAware.getCurrentAuditor().orElseThrow();
 
       assertThat(progress.getCreatedBy()).isEqualTo(expectedAuditor);
@@ -334,9 +295,11 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
     @DisplayName("Should update audit fields when existing row conflicts on upsert")
     void shouldUpdateAuditFieldsWhenExistingRowConflictsOnUpsert() {
       var fixture = createMovieWithFile();
+      var sessionId = UUID.randomUUID();
 
       sessionProgressRepository.upsertProgress(
-          SaveProgressCommand.UpdateProgress.builder()
+          SaveProgressCommand.builder()
+              .sessionId(sessionId)
               .userId(USER_ID)
               .mediaFileId(fixture.mediaFileId())
               .positionSeconds(300)
@@ -347,7 +310,8 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
       entityManager.clear();
 
       sessionProgressRepository.upsertProgress(
-          SaveProgressCommand.UpdateProgress.builder()
+          SaveProgressCommand.builder()
+              .sessionId(sessionId)
               .userId(USER_ID)
               .mediaFileId(fixture.mediaFileId())
               .positionSeconds(600)
@@ -357,10 +321,7 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
 
       entityManager.clear();
 
-      var progress =
-          sessionProgressRepository
-              .findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId())
-              .orElseThrow();
+      var progress = sessionProgressRepository.findBySessionId(sessionId).orElseThrow();
       var expectedAuditor = auditorAware.getCurrentAuditor().orElseThrow();
 
       assertThat(progress.getLastModifiedBy()).isEqualTo(expectedAuditor);
@@ -369,17 +330,19 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
   }
 
   @Nested
-  @DisplayName("jOOQ Delete Guard")
-  class JooqDeleteGuard {
+  @DisplayName("jOOQ Delete")
+  class JooqDelete {
 
     @Test
     @Transactional
-    @DisplayName("Should delete unwatched progress when deleteIfNotWatched called")
-    void shouldDeleteUnwatchedProgressWhenDeleteIfNotWatchedCalled() {
+    @DisplayName("Should delete progress when deleteBySessionId called")
+    void shouldDeleteProgressWhenDeleteBySessionIdCalled() {
       var fixture = createMovieWithFile();
+      var sessionId = UUID.randomUUID();
 
       sessionProgressRepository.saveAndFlush(
           SessionProgress.builder()
+              .sessionId(sessionId)
               .userId(USER_ID)
               .mediaFileId(fixture.mediaFileId())
               .positionSeconds(100)
@@ -389,44 +352,11 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
 
       entityManager.clear();
 
-      var result = sessionProgressRepository.deleteIfNotWatched(USER_ID, fixture.mediaFileId());
-
-      assertThat(result).isTrue();
+      sessionProgressRepository.deleteBySessionId(sessionId);
 
       entityManager.clear();
 
-      assertThat(
-              sessionProgressRepository.findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId()))
-          .isEmpty();
-    }
-
-    @Test
-    @Transactional
-    @DisplayName("Should not delete watched progress when deleteIfNotWatched called")
-    void shouldNotDeleteWatchedProgressWhenDeleteIfNotWatchedCalled() {
-      var fixture = createMovieWithFile();
-
-      sessionProgressRepository.saveAndFlush(
-          SessionProgress.builder()
-              .userId(USER_ID)
-              .mediaFileId(fixture.mediaFileId())
-              .positionSeconds(0)
-              .percentComplete(100.0)
-              .durationSeconds(2000)
-              .lastPlayedAt(Instant.now())
-              .build());
-
-      entityManager.clear();
-
-      var result = sessionProgressRepository.deleteIfNotWatched(USER_ID, fixture.mediaFileId());
-
-      assertThat(result).isFalse();
-
-      entityManager.clear();
-
-      assertThat(
-              sessionProgressRepository.findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId()))
-          .isPresent();
+      assertThat(sessionProgressRepository.findBySessionId(sessionId)).isEmpty();
     }
   }
 }

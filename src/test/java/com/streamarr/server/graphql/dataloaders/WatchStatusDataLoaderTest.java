@@ -15,7 +15,6 @@ import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSessionProgressRepository;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
-import java.time.Instant;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -48,17 +47,17 @@ class WatchStatusDataLoaderTest {
   }
 
   @Test
-  @DisplayName("Should return watched for direct media when all files played")
-  void shouldReturnWatchedForDirectMediaWhenAllFilesPlayed() throws Exception {
+  @DisplayName("Should return in progress for direct media when files have progress")
+  void shouldReturnInProgressForDirectMediaWhenFilesHaveProgress() throws Exception {
     var movie = Movie.builder().build();
     movie.setId(UUID.randomUUID());
     var mf = mediaFileRepository.save(createMediaFile(movie.getId()));
-    sessionProgressRepository.save(buildPlayedProgress(mf.getId()));
+    sessionProgressRepository.save(buildProgressWithPosition(mf.getId(), 300));
 
     var key = new WatchStatusLoaderKey(movie.getId(), WatchStatusEntityType.DIRECT_MEDIA);
     var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
 
-    assertThat(result).containsEntry(key, WatchStatus.WATCHED);
+    assertThat(result).containsEntry(key, WatchStatus.IN_PROGRESS);
   }
 
   @Test
@@ -89,7 +88,7 @@ class WatchStatusDataLoaderTest {
     var movie = Movie.builder().build();
     movie.setId(UUID.randomUUID());
     var movieMf = mediaFileRepository.save(createMediaFile(movie.getId()));
-    sessionProgressRepository.save(buildPlayedProgress(movieMf.getId()));
+    sessionProgressRepository.save(buildProgressWithPosition(movieMf.getId(), 300));
 
     var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
     var ep = episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
@@ -102,7 +101,7 @@ class WatchStatusDataLoaderTest {
 
     assertThat(result)
         .hasSize(2)
-        .containsEntry(movieKey, WatchStatus.WATCHED)
+        .containsEntry(movieKey, WatchStatus.IN_PROGRESS)
         .containsEntry(seasonKey, WatchStatus.UNWATCHED);
   }
 
@@ -114,7 +113,7 @@ class WatchStatusDataLoaderTest {
     var ep2 = episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
     var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
     mediaFileRepository.save(createMediaFile(ep2.getId()));
-    sessionProgressRepository.save(buildPlayedProgress(mf1.getId()));
+    sessionProgressRepository.save(buildProgressWithPosition(mf1.getId(), 300));
 
     var key = new WatchStatusLoaderKey(season.getId(), WatchStatusEntityType.SEASON);
     var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
@@ -123,8 +122,8 @@ class WatchStatusDataLoaderTest {
   }
 
   @Test
-  @DisplayName("Should return watched for series when all episodes played")
-  void shouldReturnWatchedForSeriesWhenAllEpisodesPlayed() throws Exception {
+  @DisplayName("Should return in progress for series when all episodes have progress")
+  void shouldReturnInProgressForSeriesWhenAllEpisodesHaveProgress() throws Exception {
     var series = Series.builder().build();
     series.setId(UUID.randomUUID());
     var s1 = seasonRepository.save(Season.builder().seasonNumber(1).series(series).build());
@@ -133,13 +132,13 @@ class WatchStatusDataLoaderTest {
     var ep2 = episodeRepository.save(Episode.builder().episodeNumber(1).season(s2).build());
     var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
     var mf2 = mediaFileRepository.save(createMediaFile(ep2.getId()));
-    sessionProgressRepository.save(buildPlayedProgress(mf1.getId()));
-    sessionProgressRepository.save(buildPlayedProgress(mf2.getId()));
+    sessionProgressRepository.save(buildProgressWithPosition(mf1.getId(), 300));
+    sessionProgressRepository.save(buildProgressWithPosition(mf2.getId(), 600));
 
     var key = new WatchStatusLoaderKey(series.getId(), WatchStatusEntityType.SERIES);
     var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
 
-    assertThat(result).containsEntry(key, WatchStatus.WATCHED);
+    assertThat(result).containsEntry(key, WatchStatus.IN_PROGRESS);
   }
 
   private MediaFile createMediaFile(UUID mediaId) {
@@ -152,14 +151,14 @@ class WatchStatusDataLoaderTest {
         .build();
   }
 
-  private SessionProgress buildPlayedProgress(UUID mediaFileId) {
+  private SessionProgress buildProgressWithPosition(UUID mediaFileId, int positionSeconds) {
     return SessionProgress.builder()
+        .sessionId(UUID.randomUUID())
         .userId(USER_ID)
         .mediaFileId(mediaFileId)
-        .positionSeconds(0)
-        .percentComplete(100.0)
+        .positionSeconds(positionSeconds)
+        .percentComplete(50.0)
         .durationSeconds(7200)
-        .lastPlayedAt(Instant.now())
         .build();
   }
 }

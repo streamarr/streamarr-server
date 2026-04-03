@@ -4,6 +4,7 @@ import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.repositories.streaming.SaveProgressCommand;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -12,28 +13,16 @@ public class FakeSessionProgressRepository extends FakeJpaRepository<SessionProg
     implements SessionProgressRepository {
 
   @Override
-  public Optional<SessionProgress> findByUserIdAndMediaFileId(UUID userId, UUID mediaFileId) {
-    return database.values().stream()
-        .filter(wp -> userId.equals(wp.getUserId()) && mediaFileId.equals(wp.getMediaFileId()))
-        .findFirst();
+  public Optional<SessionProgress> findBySessionId(UUID sessionId) {
+    return database.values().stream().filter(sp -> sessionId.equals(sp.getSessionId())).findFirst();
   }
 
   @Override
   public List<SessionProgress> findByUserIdAndMediaFileIdIn(
       UUID userId, Collection<UUID> mediaFileIds) {
     return database.values().stream()
-        .filter(wp -> userId.equals(wp.getUserId()) && mediaFileIds.contains(wp.getMediaFileId()))
+        .filter(sp -> userId.equals(sp.getUserId()) && mediaFileIds.contains(sp.getMediaFileId()))
         .toList();
-  }
-
-  @Override
-  public void deleteByUserIdAndMediaFileId(UUID userId, UUID mediaFileId) {
-    database
-        .entrySet()
-        .removeIf(
-            entry ->
-                userId.equals(entry.getValue().getUserId())
-                    && mediaFileId.equals(entry.getValue().getMediaFileId()));
   }
 
   @Override
@@ -47,47 +36,38 @@ public class FakeSessionProgressRepository extends FakeJpaRepository<SessionProg
   }
 
   @Override
-  public boolean upsertProgress(SaveProgressCommand command) {
-    var lastPlayedAt =
-        switch (command) {
-          case SaveProgressCommand.MarkWatched mw -> mw.watchedAt();
-          case SaveProgressCommand.UpdateProgress _ -> null;
-        };
-    var existing = findByUserIdAndMediaFileId(command.userId(), command.mediaFileId());
+  public Optional<SessionProgress> findMostRecentByUserIdAndMediaFileId(
+      UUID userId, UUID mediaFileId) {
+    return database.values().stream()
+        .filter(sp -> userId.equals(sp.getUserId()) && mediaFileId.equals(sp.getMediaFileId()))
+        .max(
+            Comparator.comparing(
+                sp -> sp.getLastModifiedOn() != null ? sp.getLastModifiedOn() : sp.getCreatedOn()));
+  }
+
+  @Override
+  public void upsertProgress(SaveProgressCommand command) {
+    var existing = findBySessionId(command.sessionId());
     if (existing.isPresent()) {
-      var wp = existing.get();
-      if (wp.isPlayed()) {
-        return false;
-      }
-      wp.setPositionSeconds(command.positionSeconds());
-      wp.setPercentComplete(command.percentComplete());
-      wp.setDurationSeconds(command.durationSeconds());
-      wp.setLastPlayedAt(lastPlayedAt);
-      return true;
+      var sp = existing.get();
+      sp.setPositionSeconds(command.positionSeconds());
+      sp.setPercentComplete(command.percentComplete());
+      sp.setDurationSeconds(command.durationSeconds());
+      return;
     }
     save(
         SessionProgress.builder()
+            .sessionId(command.sessionId())
             .userId(command.userId())
             .mediaFileId(command.mediaFileId())
             .positionSeconds(command.positionSeconds())
             .percentComplete(command.percentComplete())
             .durationSeconds(command.durationSeconds())
-            .lastPlayedAt(lastPlayedAt)
             .build());
-    return true;
   }
 
   @Override
-  public boolean deleteIfNotWatched(UUID userId, UUID mediaFileId) {
-    var existing = findByUserIdAndMediaFileId(userId, mediaFileId);
-    if (existing.isPresent() && existing.get().isPlayed()) {
-      return false;
-    }
-    return database
-        .entrySet()
-        .removeIf(
-            entry ->
-                userId.equals(entry.getValue().getUserId())
-                    && mediaFileId.equals(entry.getValue().getMediaFileId()));
+  public void deleteBySessionId(UUID sessionId) {
+    database.entrySet().removeIf(entry -> sessionId.equals(entry.getValue().getSessionId()));
   }
 }

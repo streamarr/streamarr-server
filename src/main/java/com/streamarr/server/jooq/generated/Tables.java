@@ -29,7 +29,8 @@ import com.streamarr.server.jooq.generated.tables.SeriesCompany;
 import com.streamarr.server.jooq.generated.tables.SeriesDirector;
 import com.streamarr.server.jooq.generated.tables.SeriesGenre;
 import com.streamarr.server.jooq.generated.tables.SeriesPerson;
-import com.streamarr.server.jooq.generated.tables.WatchProgress;
+import com.streamarr.server.jooq.generated.tables.SessionProgress;
+import com.streamarr.server.jooq.generated.tables.WatchHistory;
 
 
 /**
@@ -164,7 +165,12 @@ public class Tables {
     public static final SeriesPerson SERIES_PERSON = SeriesPerson.SERIES_PERSON;
 
     /**
-     * The table <code>public.watch_progress</code>.
+     * The table <code>public.session_progress</code>.
      */
-    public static final WatchProgress WATCH_PROGRESS = WatchProgress.WATCH_PROGRESS;
+    public static final SessionProgress SESSION_PROGRESS = SessionProgress.SESSION_PROGRESS;
+
+    /**
+     * The table <code>public.watch_history</code>.
+     */
+    public static final WatchHistory WATCH_HISTORY = WatchHistory.WATCH_HISTORY;
 }

@@ -11,7 +11,6 @@ import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.services.streaming.StreamSessionRepository;
 import com.streamarr.server.services.watchprogress.events.SessionProgressChangedEvent;
 import com.streamarr.server.services.watchprogress.events.WatchStatusChangedEvent;
-import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
@@ -55,28 +54,24 @@ public class SessionProgressService {
     var mediaFileId = session.getMediaFileId();
 
     if (state == PlaybackState.STOPPED) {
-      handleStoppedPlayback(userId, mediaFileId, positionSeconds, percentComplete, durationSeconds);
+      handleStoppedPlayback(
+          userId, sessionId, mediaFileId, positionSeconds, percentComplete, durationSeconds);
       return;
     }
 
-    var written =
-        sessionProgressRepository.upsertProgress(
-            SaveProgressCommand.UpdateProgress.builder()
-                .userId(userId)
-                .mediaFileId(mediaFileId)
-                .positionSeconds(positionSeconds)
-                .percentComplete(percentComplete)
-                .durationSeconds(durationSeconds)
-                .build());
-
-    if (!written) {
-      log.debug(
-          "Ignored timeline update for media file {} — already marked as watched", mediaFileId);
-      return;
-    }
+    sessionProgressRepository.upsertProgress(
+        SaveProgressCommand.builder()
+            .sessionId(sessionId)
+            .userId(userId)
+            .mediaFileId(mediaFileId)
+            .positionSeconds(positionSeconds)
+            .percentComplete(percentComplete)
+            .durationSeconds(durationSeconds)
+            .build());
 
     eventPublisher.publishEvent(
         SessionProgressChangedEvent.builder()
+            .sessionId(sessionId)
             .userId(userId)
             .mediaFileId(mediaFileId)
             .positionSeconds(positionSeconds)
@@ -87,6 +82,7 @@ public class SessionProgressService {
 
   private void handleStoppedPlayback(
       UUID userId,
+      UUID sessionId,
       UUID mediaFileId,
       int positionSeconds,
       double percentComplete,
@@ -95,54 +91,49 @@ public class SessionProgressService {
     var decision = evaluateStopDecision(percentComplete, remainingSeconds, durationSeconds);
 
     if (decision == StopDecision.DISCARD) {
-      sessionProgressRepository.deleteIfNotWatched(userId, mediaFileId);
+      sessionProgressRepository.deleteBySessionId(sessionId);
       return;
     }
 
-    SaveProgressCommand command =
-        switch (decision) {
-          case MARK_WATCHED ->
-              SaveProgressCommand.MarkWatched.builder()
-                  .userId(userId)
-                  .mediaFileId(mediaFileId)
-                  .positionSeconds(0)
-                  .percentComplete(100.0)
-                  .durationSeconds(durationSeconds)
-                  .watchedAt(Instant.now())
-                  .build();
-          case PERSIST ->
-              SaveProgressCommand.UpdateProgress.builder()
-                  .userId(userId)
-                  .mediaFileId(mediaFileId)
-                  .positionSeconds(positionSeconds)
-                  .percentComplete(percentComplete)
-                  .durationSeconds(durationSeconds)
-                  .build();
-          case DISCARD -> throw new AssertionError("unreachable: DISCARD handled above");
-        };
+    if (decision == StopDecision.MARK_WATCHED) {
+      sessionProgressRepository.deleteBySessionId(sessionId);
 
-    var written = sessionProgressRepository.upsertProgress(command);
+      var collectableId = resolveCollectableId(mediaFileId);
+      eventPublisher.publishEvent(new WatchStatusChangedEvent(userId, collectableId));
 
-    if (!written) {
-      log.debug(
-          "Ignored timeline update for media file {} — already marked as watched", mediaFileId);
+      eventPublisher.publishEvent(
+          SessionProgressChangedEvent.builder()
+              .sessionId(sessionId)
+              .userId(userId)
+              .mediaFileId(mediaFileId)
+              .collectableId(collectableId)
+              .positionSeconds(0)
+              .percentComplete(100.0)
+              .state(PlaybackState.STOPPED)
+              .build());
       return;
     }
+
+    // PERSIST — save position for resume
+    sessionProgressRepository.upsertProgress(
+        SaveProgressCommand.builder()
+            .sessionId(sessionId)
+            .userId(userId)
+            .mediaFileId(mediaFileId)
+            .positionSeconds(positionSeconds)
+            .percentComplete(percentComplete)
+            .durationSeconds(durationSeconds)
+            .build());
 
     eventPublisher.publishEvent(
         SessionProgressChangedEvent.builder()
+            .sessionId(sessionId)
             .userId(userId)
             .mediaFileId(mediaFileId)
-            .positionSeconds(command.positionSeconds())
-            .percentComplete(command.percentComplete())
+            .positionSeconds(positionSeconds)
+            .percentComplete(percentComplete)
             .state(PlaybackState.STOPPED)
             .build());
-
-    switch (command) {
-      case SaveProgressCommand.MarkWatched _ ->
-          eventPublisher.publishEvent(new WatchStatusChangedEvent(userId, mediaFileId));
-      case SaveProgressCommand.UpdateProgress _ -> {}
-    }
   }
 
   public void resetProgress(UUID userId, UUID collectableId) {
@@ -151,6 +142,13 @@ public class SessionProgressService {
     if (!mediaFileIds.isEmpty()) {
       sessionProgressRepository.deleteByUserIdAndMediaFileIdIn(userId, mediaFileIds);
     }
+  }
+
+  private UUID resolveCollectableId(UUID mediaFileId) {
+    return mediaFileRepository
+        .findById(mediaFileId)
+        .orElseThrow(() -> new IllegalStateException("MediaFile not found for id: " + mediaFileId))
+        .getMediaId();
   }
 
   private List<UUID> resolveAllMediaFileIds(UUID collectableId) {

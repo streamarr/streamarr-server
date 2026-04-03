@@ -25,7 +25,8 @@ import com.streamarr.server.jooq.generated.tables.SeriesCompany;
 import com.streamarr.server.jooq.generated.tables.SeriesDirector;
 import com.streamarr.server.jooq.generated.tables.SeriesGenre;
 import com.streamarr.server.jooq.generated.tables.SeriesPerson;
-import com.streamarr.server.jooq.generated.tables.WatchProgress;
+import com.streamarr.server.jooq.generated.tables.SessionProgress;
+import com.streamarr.server.jooq.generated.tables.WatchHistory;
 
 import org.jooq.Index;
 import org.jooq.OrderField;
@@ -81,8 +82,10 @@ public class Indexes {
     public static final Index IDX_SERIES_PERSON_SERIES_ID = Internal.createIndex(DSL.name("idx_series_person_series_id"), SeriesPerson.SERIES_PERSON, new OrderField[] { SeriesPerson.SERIES_PERSON.SERIES_ID }, false);
     public static final Index IDX_SERIES_RUNTIME_DESC_ID = Internal.createIndex(DSL.name("idx_series_runtime_desc_id"), Series.SERIES, new OrderField[] { Series.SERIES.RUNTIME.desc(), Series.SERIES.ID.desc() }, false);
     public static final Index IDX_SERIES_RUNTIME_ID = Internal.createIndex(DSL.name("idx_series_runtime_id"), Series.SERIES, new OrderField[] { Series.SERIES.RUNTIME, Series.SERIES.ID }, false);
-    public static final Index IDX_WATCH_PROGRESS_LAST_PLAYED = Internal.createIndex(DSL.name("idx_watch_progress_last_played"), WatchProgress.WATCH_PROGRESS, new OrderField[] { WatchProgress.WATCH_PROGRESS.USER_ID, WatchProgress.WATCH_PROGRESS.LAST_PLAYED_AT }, false);
-    public static final Index IDX_WATCH_PROGRESS_MEDIA_FILE_ID = Internal.createIndex(DSL.name("idx_watch_progress_media_file_id"), WatchProgress.WATCH_PROGRESS, new OrderField[] { WatchProgress.WATCH_PROGRESS.MEDIA_FILE_ID }, false);
+    public static final Index IDX_SESSION_PROGRESS_MEDIA_FILE_ID = Internal.createIndex(DSL.name("idx_session_progress_media_file_id"), SessionProgress.SESSION_PROGRESS, new OrderField[] { SessionProgress.SESSION_PROGRESS.MEDIA_FILE_ID }, false);
+    public static final Index IDX_SESSION_PROGRESS_RESUME = Internal.createIndex(DSL.name("idx_session_progress_resume"), SessionProgress.SESSION_PROGRESS, new OrderField[] { SessionProgress.SESSION_PROGRESS.USER_ID, SessionProgress.SESSION_PROGRESS.MEDIA_FILE_ID, SessionProgress.SESSION_PROGRESS.LAST_MODIFIED_ON.desc() }, false);
+    public static final Index IDX_SESSION_PROGRESS_USER_ID = Internal.createIndex(DSL.name("idx_session_progress_user_id"), SessionProgress.SESSION_PROGRESS, new OrderField[] { SessionProgress.SESSION_PROGRESS.USER_ID }, false);
+    public static final Index IDX_WATCH_HISTORY_USER_COLLECTABLE = Internal.createIndex(DSL.name("idx_watch_history_user_collectable"), WatchHistory.WATCH_HISTORY, new OrderField[] { WatchHistory.WATCH_HISTORY.USER_ID, WatchHistory.WATCH_HISTORY.COLLECTABLE_ID, WatchHistory.WATCH_HISTORY.WATCHED_AT.desc() }, false);
     public static final Index IMAGE_ENTITY_ID_IMAGE_TYPE_VARIANT_IDX = Internal.createIndex(DSL.name("image_entity_id_image_type_variant_idx"), Image.IMAGE, new OrderField[] { Image.IMAGE.ENTITY_ID, Image.IMAGE.IMAGE_TYPE, Image.IMAGE.VARIANT }, true);
     public static final Index IMAGE_ENTITY_TYPE_ENTITY_ID_IDX = Internal.createIndex(DSL.name("image_entity_type_entity_id_idx"), Image.IMAGE, new OrderField[] { Image.IMAGE.ENTITY_TYPE, Image.IMAGE.ENTITY_ID }, false);
     public static final Index LIBRARY_FILEPATH_URI_IDX = Internal.createIndex(DSL.name("library_filepath_uri_idx"), Library.LIBRARY, new OrderField[] { Library.LIBRARY.FILEPATH_URI }, true);
