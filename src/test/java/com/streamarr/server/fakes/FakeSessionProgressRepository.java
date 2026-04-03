@@ -1,25 +1,25 @@
 package com.streamarr.server.fakes;
 
-import com.streamarr.server.domain.streaming.WatchProgress;
+import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.repositories.streaming.SaveProgressCommand;
-import com.streamarr.server.repositories.streaming.WatchProgressRepository;
+import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-public class FakeWatchProgressRepository extends FakeJpaRepository<WatchProgress>
-    implements WatchProgressRepository {
+public class FakeSessionProgressRepository extends FakeJpaRepository<SessionProgress>
+    implements SessionProgressRepository {
 
   @Override
-  public Optional<WatchProgress> findByUserIdAndMediaFileId(UUID userId, UUID mediaFileId) {
+  public Optional<SessionProgress> findByUserIdAndMediaFileId(UUID userId, UUID mediaFileId) {
     return database.values().stream()
         .filter(wp -> userId.equals(wp.getUserId()) && mediaFileId.equals(wp.getMediaFileId()))
         .findFirst();
   }
 
   @Override
-  public List<WatchProgress> findByUserIdAndMediaFileIdIn(
+  public List<SessionProgress> findByUserIdAndMediaFileIdIn(
       UUID userId, Collection<UUID> mediaFileIds) {
     return database.values().stream()
         .filter(wp -> userId.equals(wp.getUserId()) && mediaFileIds.contains(wp.getMediaFileId()))
@@ -66,7 +66,7 @@ public class FakeWatchProgressRepository extends FakeJpaRepository<WatchProgress
       return true;
     }
     save(
-        WatchProgress.builder()
+        SessionProgress.builder()
             .userId(command.userId())
             .mediaFileId(command.mediaFileId())
             .positionSeconds(command.positionSeconds())

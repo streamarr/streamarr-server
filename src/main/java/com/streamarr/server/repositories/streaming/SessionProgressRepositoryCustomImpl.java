@@ -10,7 +10,7 @@ import org.jooq.DSLContext;
 import org.springframework.data.domain.AuditorAware;
 
 @RequiredArgsConstructor
-public class WatchProgressRepositoryCustomImpl implements WatchProgressRepositoryCustom {
+public class SessionProgressRepositoryCustomImpl implements SessionProgressRepositoryCustom {
 
   private final DSLContext dsl;
   private final AuditorAware<UUID> auditorAware;

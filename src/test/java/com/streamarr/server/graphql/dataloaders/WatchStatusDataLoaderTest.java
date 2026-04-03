@@ -8,12 +8,12 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
-import com.streamarr.server.domain.streaming.WatchProgress;
+import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
-import com.streamarr.server.fakes.FakeWatchProgressRepository;
+import com.streamarr.server.fakes.FakeSessionProgressRepository;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
 import java.time.Instant;
 import java.util.Set;
@@ -27,7 +27,7 @@ import org.junit.jupiter.api.Test;
 @DisplayName("Watch Status DataLoader Tests")
 class WatchStatusDataLoaderTest {
 
-  private FakeWatchProgressRepository watchProgressRepository;
+  private FakeSessionProgressRepository sessionProgressRepository;
   private FakeMediaFileRepository mediaFileRepository;
   private FakeEpisodeRepository episodeRepository;
   private FakeSeasonRepository seasonRepository;
@@ -37,13 +37,13 @@ class WatchStatusDataLoaderTest {
 
   @BeforeEach
   void setUp() {
-    watchProgressRepository = new FakeWatchProgressRepository();
+    sessionProgressRepository = new FakeSessionProgressRepository();
     mediaFileRepository = new FakeMediaFileRepository();
     episodeRepository = new FakeEpisodeRepository();
     seasonRepository = new FakeSeasonRepository();
     var service =
         new WatchStatusService(
-            watchProgressRepository, mediaFileRepository, episodeRepository, seasonRepository);
+            sessionProgressRepository, mediaFileRepository, episodeRepository, seasonRepository);
     dataLoader = new WatchStatusDataLoader(service);
   }
 
@@ -53,7 +53,7 @@ class WatchStatusDataLoaderTest {
     var movie = Movie.builder().build();
     movie.setId(UUID.randomUUID());
     var mf = mediaFileRepository.save(createMediaFile(movie.getId()));
-    watchProgressRepository.save(buildPlayedProgress(mf.getId()));
+    sessionProgressRepository.save(buildPlayedProgress(mf.getId()));
 
     var key = new WatchStatusLoaderKey(movie.getId(), WatchStatusEntityType.DIRECT_MEDIA);
     var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
@@ -89,7 +89,7 @@ class WatchStatusDataLoaderTest {
     var movie = Movie.builder().build();
     movie.setId(UUID.randomUUID());
     var movieMf = mediaFileRepository.save(createMediaFile(movie.getId()));
-    watchProgressRepository.save(buildPlayedProgress(movieMf.getId()));
+    sessionProgressRepository.save(buildPlayedProgress(movieMf.getId()));
 
     var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
     var ep = episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
@@ -114,7 +114,7 @@ class WatchStatusDataLoaderTest {
     var ep2 = episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
     var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
     mediaFileRepository.save(createMediaFile(ep2.getId()));
-    watchProgressRepository.save(buildPlayedProgress(mf1.getId()));
+    sessionProgressRepository.save(buildPlayedProgress(mf1.getId()));
 
     var key = new WatchStatusLoaderKey(season.getId(), WatchStatusEntityType.SEASON);
     var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
@@ -133,8 +133,8 @@ class WatchStatusDataLoaderTest {
     var ep2 = episodeRepository.save(Episode.builder().episodeNumber(1).season(s2).build());
     var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
     var mf2 = mediaFileRepository.save(createMediaFile(ep2.getId()));
-    watchProgressRepository.save(buildPlayedProgress(mf1.getId()));
-    watchProgressRepository.save(buildPlayedProgress(mf2.getId()));
+    sessionProgressRepository.save(buildPlayedProgress(mf1.getId()));
+    sessionProgressRepository.save(buildPlayedProgress(mf2.getId()));
 
     var key = new WatchStatusLoaderKey(series.getId(), WatchStatusEntityType.SERIES);
     var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
@@ -152,8 +152,8 @@ class WatchStatusDataLoaderTest {
         .build();
   }
 
-  private WatchProgress buildPlayedProgress(UUID mediaFileId) {
-    return WatchProgress.builder()
+  private SessionProgress buildPlayedProgress(UUID mediaFileId) {
+    return SessionProgress.builder()
         .userId(USER_ID)
         .mediaFileId(mediaFileId)
         .positionSeconds(0)

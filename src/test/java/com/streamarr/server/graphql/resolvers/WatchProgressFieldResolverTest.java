@@ -10,11 +10,11 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
-import com.streamarr.server.domain.streaming.WatchProgress;
+import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
-import com.streamarr.server.fakes.FakeWatchProgressRepository;
+import com.streamarr.server.fakes.FakeSessionProgressRepository;
 import com.streamarr.server.graphql.dataloaders.WatchProgressDataLoader;
 import com.streamarr.server.graphql.dataloaders.WatchStatusDataLoader;
 import com.streamarr.server.services.MovieService;
@@ -54,7 +54,7 @@ class WatchProgressFieldResolverTest {
   private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
-  @Autowired private FakeWatchProgressRepository watchProgressRepository;
+  @Autowired private FakeSessionProgressRepository sessionProgressRepository;
   @Autowired private FakeMediaFileRepository mediaFileRepository;
   @Autowired private FakeEpisodeRepository episodeRepository;
   @Autowired private FakeSeasonRepository seasonRepository;
@@ -66,8 +66,8 @@ class WatchProgressFieldResolverTest {
   static class TestConfig {
 
     @Bean
-    FakeWatchProgressRepository fakeWatchProgressRepository() {
-      return new FakeWatchProgressRepository();
+    FakeSessionProgressRepository fakeSessionProgressRepository() {
+      return new FakeSessionProgressRepository();
     }
 
     @Bean
@@ -87,18 +87,18 @@ class WatchProgressFieldResolverTest {
 
     @Bean
     WatchStatusService watchStatusService(
-        FakeWatchProgressRepository watchProgressRepository,
+        FakeSessionProgressRepository sessionProgressRepository,
         FakeMediaFileRepository mediaFileRepository,
         FakeEpisodeRepository episodeRepository,
         FakeSeasonRepository seasonRepository) {
       return new WatchStatusService(
-          watchProgressRepository, mediaFileRepository, episodeRepository, seasonRepository);
+          sessionProgressRepository, mediaFileRepository, episodeRepository, seasonRepository);
     }
   }
 
   @BeforeEach
   void setUp() {
-    watchProgressRepository.deleteAll();
+    sessionProgressRepository.deleteAll();
     mediaFileRepository.deleteAll();
     episodeRepository.deleteAll();
     seasonRepository.deleteAll();
@@ -117,8 +117,8 @@ class WatchProgressFieldResolverTest {
 
       when(movieService.findMediaFiles(movie.getId())).thenReturn(List.of(mediaFile));
 
-      watchProgressRepository.save(
-          WatchProgress.builder()
+      sessionProgressRepository.save(
+          SessionProgress.builder()
               .userId(USER_ID)
               .mediaFileId(mediaFile.getId())
               .positionSeconds(1800)
@@ -183,8 +183,8 @@ class WatchProgressFieldResolverTest {
       mediaFile.setMediaId(movie.getId());
       mediaFileRepository.save(mediaFile);
 
-      watchProgressRepository.save(
-          WatchProgress.builder()
+      sessionProgressRepository.save(
+          SessionProgress.builder()
               .userId(USER_ID)
               .mediaFileId(mediaFile.getId())
               .positionSeconds(300)
@@ -228,8 +228,8 @@ class WatchProgressFieldResolverTest {
       when(seriesService.findEpisodes(seasonId)).thenReturn(List.of(episode));
       when(seriesService.findMediaFiles(episodeId)).thenReturn(List.of(mediaFile));
 
-      watchProgressRepository.save(
-          WatchProgress.builder()
+      sessionProgressRepository.save(
+          SessionProgress.builder()
               .userId(USER_ID)
               .mediaFileId(mediaFile.getId())
               .positionSeconds(600)
@@ -280,8 +280,8 @@ class WatchProgressFieldResolverTest {
       mediaFile.setMediaId(episodeId);
       mediaFileRepository.save(mediaFile);
 
-      watchProgressRepository.save(
-          WatchProgress.builder()
+      sessionProgressRepository.save(
+          SessionProgress.builder()
               .userId(USER_ID)
               .mediaFileId(mediaFile.getId())
               .positionSeconds(0)
@@ -326,8 +326,8 @@ class WatchProgressFieldResolverTest {
       mediaFile.setMediaId(episode.getId());
       mediaFileRepository.save(mediaFile);
 
-      watchProgressRepository.save(
-          WatchProgress.builder()
+      sessionProgressRepository.save(
+          SessionProgress.builder()
               .userId(USER_ID)
               .mediaFileId(mediaFile.getId())
               .positionSeconds(300)

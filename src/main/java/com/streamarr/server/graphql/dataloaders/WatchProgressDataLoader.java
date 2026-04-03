@@ -1,7 +1,7 @@
 package com.streamarr.server.graphql.dataloaders;
 
 import com.netflix.graphql.dgs.DgsDataLoader;
-import com.streamarr.server.domain.streaming.WatchProgress;
+import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.graphql.dto.WatchProgressDto;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
 import java.time.Instant;
@@ -40,7 +40,7 @@ public class WatchProgressDataLoader implements MappedBatchLoader<UUID, WatchPro
         });
   }
 
-  private static WatchProgressDto toDto(WatchProgress wp) {
+  private static WatchProgressDto toDto(SessionProgress wp) {
     return WatchProgressDto.builder()
         .positionSeconds(wp.getPositionSeconds())
         .percentComplete(wp.getPercentComplete())

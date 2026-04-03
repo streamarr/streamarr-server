@@ -7,7 +7,7 @@ import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.streaming.SaveProgressCommand;
-import com.streamarr.server.repositories.streaming.WatchProgressRepository;
+import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.services.streaming.StreamSessionRepository;
 import com.streamarr.server.services.watchprogress.events.WatchProgressChangedEvent;
 import com.streamarr.server.services.watchprogress.events.WatchStatusChangedEvent;
@@ -26,7 +26,7 @@ import org.springframework.stereotype.Service;
 public class WatchProgressService {
 
   private final StreamSessionRepository sessionRepository;
-  private final WatchProgressRepository watchProgressRepository;
+  private final SessionProgressRepository sessionProgressRepository;
   private final MediaFileRepository mediaFileRepository;
   private final EpisodeRepository episodeRepository;
   private final SeasonRepository seasonRepository;
@@ -60,7 +60,7 @@ public class WatchProgressService {
     }
 
     var written =
-        watchProgressRepository.upsertProgress(
+        sessionProgressRepository.upsertProgress(
             SaveProgressCommand.UpdateProgress.builder()
                 .userId(userId)
                 .mediaFileId(mediaFileId)
@@ -95,7 +95,7 @@ public class WatchProgressService {
     var decision = evaluateStopDecision(percentComplete, remainingSeconds, durationSeconds);
 
     if (decision == StopDecision.DISCARD) {
-      watchProgressRepository.deleteIfNotWatched(userId, mediaFileId);
+      sessionProgressRepository.deleteIfNotWatched(userId, mediaFileId);
       return;
     }
 
@@ -121,7 +121,7 @@ public class WatchProgressService {
           case DISCARD -> throw new AssertionError("unreachable: DISCARD handled above");
         };
 
-    var written = watchProgressRepository.upsertProgress(command);
+    var written = sessionProgressRepository.upsertProgress(command);
 
     if (!written) {
       log.debug(
@@ -149,7 +149,7 @@ public class WatchProgressService {
     var mediaFileIds = resolveAllMediaFileIds(collectableId);
 
     if (!mediaFileIds.isEmpty()) {
-      watchProgressRepository.deleteByUserIdAndMediaFileIdIn(userId, mediaFileIds);
+      sessionProgressRepository.deleteByUserIdAndMediaFileIdIn(userId, mediaFileIds);
     }
   }
 

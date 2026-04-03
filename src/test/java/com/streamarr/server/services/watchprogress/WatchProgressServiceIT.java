@@ -7,12 +7,12 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
-import com.streamarr.server.domain.streaming.WatchProgress;
+import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.streaming.SaveProgressCommand;
-import com.streamarr.server.repositories.streaming.WatchProgressRepository;
+import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.util.Set;
@@ -32,7 +32,7 @@ import org.springframework.transaction.annotation.Transactional;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class WatchProgressServiceIT extends AbstractIntegrationTest {
 
-  @Autowired private WatchProgressRepository watchProgressRepository;
+  @Autowired private SessionProgressRepository sessionProgressRepository;
   @Autowired private MovieRepository movieRepository;
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private WatchProgressService watchProgressService;
@@ -78,8 +78,8 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
     var fixture = createMovieWithFile();
 
     var saved =
-        watchProgressRepository.save(
-            WatchProgress.builder()
+        sessionProgressRepository.save(
+            SessionProgress.builder()
                 .userId(USER_ID)
                 .mediaFileId(fixture.mediaFileId())
                 .positionSeconds(3600)
@@ -91,7 +91,7 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
     entityManager.clear();
 
     var retrieved =
-        watchProgressRepository.findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId());
+        sessionProgressRepository.findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId());
 
     assertThat(retrieved).isPresent();
     assertThat(retrieved.get().getPositionSeconds()).isEqualTo(3600);
@@ -106,8 +106,8 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
   void shouldUpdateExistingProgressWhenSameUserAndMediaFile() {
     var fixture = createMovieWithFile();
 
-    watchProgressRepository.saveAndFlush(
-        WatchProgress.builder()
+    sessionProgressRepository.saveAndFlush(
+        SessionProgress.builder()
             .userId(USER_ID)
             .mediaFileId(fixture.mediaFileId())
             .positionSeconds(300)
@@ -118,17 +118,17 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
     entityManager.clear();
 
     var existing =
-        watchProgressRepository
+        sessionProgressRepository
             .findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId())
             .orElseThrow();
     existing.setPositionSeconds(600);
     existing.setPercentComplete(20.0);
-    watchProgressRepository.saveAndFlush(existing);
+    sessionProgressRepository.saveAndFlush(existing);
 
     entityManager.clear();
 
     var all =
-        watchProgressRepository.findByUserIdAndMediaFileIdIn(
+        sessionProgressRepository.findByUserIdAndMediaFileIdIn(
             USER_ID, Set.of(fixture.mediaFileId()));
     assertThat(all).hasSize(1);
     assertThat(all.getFirst().getPositionSeconds()).isEqualTo(600);
@@ -140,8 +140,8 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
   void shouldCascadeDeleteWatchProgressWhenMovieRemoved() {
     var fixture = createMovieWithFile();
 
-    watchProgressRepository.saveAndFlush(
-        WatchProgress.builder()
+    sessionProgressRepository.saveAndFlush(
+        SessionProgress.builder()
             .userId(USER_ID)
             .mediaFileId(fixture.mediaFileId())
             .positionSeconds(1800)
@@ -149,14 +149,14 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
             .durationSeconds(3600)
             .build());
 
-    assertThat(watchProgressRepository.findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId()))
+    assertThat(sessionProgressRepository.findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId()))
         .isPresent();
 
     movieRepository.deleteById(fixture.movie().getId());
     movieRepository.flush();
     entityManager.clear();
 
-    assertThat(watchProgressRepository.findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId()))
+    assertThat(sessionProgressRepository.findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId()))
         .isEmpty();
   }
 
@@ -166,8 +166,8 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
   void shouldDeleteWatchProgressWhenResettingMovieThroughService() {
     var fixture = createMovieWithFile();
 
-    watchProgressRepository.saveAndFlush(
-        WatchProgress.builder()
+    sessionProgressRepository.saveAndFlush(
+        SessionProgress.builder()
             .userId(USER_ID)
             .mediaFileId(fixture.mediaFileId())
             .positionSeconds(2400)
@@ -183,7 +183,7 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
     entityManager.flush();
     entityManager.clear();
 
-    assertThat(watchProgressRepository.findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId()))
+    assertThat(sessionProgressRepository.findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId()))
         .isEmpty();
   }
 
@@ -198,7 +198,7 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
       var fixture = createMovieWithFile();
 
       var result =
-          watchProgressRepository.upsertProgress(
+          sessionProgressRepository.upsertProgress(
               SaveProgressCommand.UpdateProgress.builder()
                   .userId(USER_ID)
                   .mediaFileId(fixture.mediaFileId())
@@ -212,7 +212,7 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
       entityManager.clear();
 
       var progress =
-          watchProgressRepository
+          sessionProgressRepository
               .findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId())
               .orElseThrow();
       assertThat(progress.getPositionSeconds()).isEqualTo(300);
@@ -227,8 +227,8 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
     void shouldOverwriteProgressWhenExistingRowIsUnwatchedOnUpsert() {
       var fixture = createMovieWithFile();
 
-      watchProgressRepository.saveAndFlush(
-          WatchProgress.builder()
+      sessionProgressRepository.saveAndFlush(
+          SessionProgress.builder()
               .userId(USER_ID)
               .mediaFileId(fixture.mediaFileId())
               .positionSeconds(300)
@@ -239,7 +239,7 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
       entityManager.clear();
 
       var result =
-          watchProgressRepository.upsertProgress(
+          sessionProgressRepository.upsertProgress(
               SaveProgressCommand.UpdateProgress.builder()
                   .userId(USER_ID)
                   .mediaFileId(fixture.mediaFileId())
@@ -253,7 +253,7 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
       entityManager.clear();
 
       var progress =
-          watchProgressRepository
+          sessionProgressRepository
               .findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId())
               .orElseThrow();
       assertThat(progress.getPositionSeconds()).isEqualTo(600);
@@ -267,8 +267,8 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
       var fixture = createMovieWithFile();
       var watchedAt = Instant.now();
 
-      watchProgressRepository.saveAndFlush(
-          WatchProgress.builder()
+      sessionProgressRepository.saveAndFlush(
+          SessionProgress.builder()
               .userId(USER_ID)
               .mediaFileId(fixture.mediaFileId())
               .positionSeconds(0)
@@ -280,7 +280,7 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
       entityManager.clear();
 
       var result =
-          watchProgressRepository.upsertProgress(
+          sessionProgressRepository.upsertProgress(
               SaveProgressCommand.UpdateProgress.builder()
                   .userId(USER_ID)
                   .mediaFileId(fixture.mediaFileId())
@@ -294,7 +294,7 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
       entityManager.clear();
 
       var progress =
-          watchProgressRepository
+          sessionProgressRepository
               .findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId())
               .orElseThrow();
       assertThat(progress.getPositionSeconds()).isZero();
@@ -308,7 +308,7 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
     void shouldPopulateAuditFieldsWhenInsertingNewRowOnUpsert() {
       var fixture = createMovieWithFile();
 
-      watchProgressRepository.upsertProgress(
+      sessionProgressRepository.upsertProgress(
           SaveProgressCommand.UpdateProgress.builder()
               .userId(USER_ID)
               .mediaFileId(fixture.mediaFileId())
@@ -320,7 +320,7 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
       entityManager.clear();
 
       var progress =
-          watchProgressRepository
+          sessionProgressRepository
               .findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId())
               .orElseThrow();
       var expectedAuditor = auditorAware.getCurrentAuditor().orElseThrow();
@@ -335,7 +335,7 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
     void shouldUpdateAuditFieldsWhenExistingRowConflictsOnUpsert() {
       var fixture = createMovieWithFile();
 
-      watchProgressRepository.upsertProgress(
+      sessionProgressRepository.upsertProgress(
           SaveProgressCommand.UpdateProgress.builder()
               .userId(USER_ID)
               .mediaFileId(fixture.mediaFileId())
@@ -346,7 +346,7 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
 
       entityManager.clear();
 
-      watchProgressRepository.upsertProgress(
+      sessionProgressRepository.upsertProgress(
           SaveProgressCommand.UpdateProgress.builder()
               .userId(USER_ID)
               .mediaFileId(fixture.mediaFileId())
@@ -358,7 +358,7 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
       entityManager.clear();
 
       var progress =
-          watchProgressRepository
+          sessionProgressRepository
               .findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId())
               .orElseThrow();
       var expectedAuditor = auditorAware.getCurrentAuditor().orElseThrow();
@@ -378,8 +378,8 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
     void shouldDeleteUnwatchedProgressWhenDeleteIfNotWatchedCalled() {
       var fixture = createMovieWithFile();
 
-      watchProgressRepository.saveAndFlush(
-          WatchProgress.builder()
+      sessionProgressRepository.saveAndFlush(
+          SessionProgress.builder()
               .userId(USER_ID)
               .mediaFileId(fixture.mediaFileId())
               .positionSeconds(100)
@@ -389,13 +389,13 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
 
       entityManager.clear();
 
-      var result = watchProgressRepository.deleteIfNotWatched(USER_ID, fixture.mediaFileId());
+      var result = sessionProgressRepository.deleteIfNotWatched(USER_ID, fixture.mediaFileId());
 
       assertThat(result).isTrue();
 
       entityManager.clear();
 
-      assertThat(watchProgressRepository.findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId()))
+      assertThat(sessionProgressRepository.findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId()))
           .isEmpty();
     }
 
@@ -405,8 +405,8 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
     void shouldNotDeleteWatchedProgressWhenDeleteIfNotWatchedCalled() {
       var fixture = createMovieWithFile();
 
-      watchProgressRepository.saveAndFlush(
-          WatchProgress.builder()
+      sessionProgressRepository.saveAndFlush(
+          SessionProgress.builder()
               .userId(USER_ID)
               .mediaFileId(fixture.mediaFileId())
               .positionSeconds(0)
@@ -417,13 +417,13 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
 
       entityManager.clear();
 
-      var result = watchProgressRepository.deleteIfNotWatched(USER_ID, fixture.mediaFileId());
+      var result = sessionProgressRepository.deleteIfNotWatched(USER_ID, fixture.mediaFileId());
 
       assertThat(result).isFalse();
 
       entityManager.clear();
 
-      assertThat(watchProgressRepository.findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId()))
+      assertThat(sessionProgressRepository.findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId()))
           .isPresent();
     }
   }

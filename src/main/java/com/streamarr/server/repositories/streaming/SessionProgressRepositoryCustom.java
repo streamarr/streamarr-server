@@ -2,7 +2,7 @@ package com.streamarr.server.repositories.streaming;
 
 import java.util.UUID;
 
-public interface WatchProgressRepositoryCustom {
+public interface SessionProgressRepositoryCustom {
 
   boolean upsertProgress(SaveProgressCommand command);
 

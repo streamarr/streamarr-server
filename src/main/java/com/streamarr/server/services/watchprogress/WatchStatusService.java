@@ -1,12 +1,12 @@
 package com.streamarr.server.services.watchprogress;
 
 import com.streamarr.server.domain.media.MediaFile;
-import com.streamarr.server.domain.streaming.WatchProgress;
+import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
-import com.streamarr.server.repositories.streaming.WatchProgressRepository;
+import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -21,19 +21,19 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class WatchStatusService {
 
-  private final WatchProgressRepository watchProgressRepository;
+  private final SessionProgressRepository sessionProgressRepository;
   private final MediaFileRepository mediaFileRepository;
   private final EpisodeRepository episodeRepository;
   private final SeasonRepository seasonRepository;
 
-  public Optional<WatchProgress> getProgress(UUID userId, UUID mediaFileId) {
-    return watchProgressRepository.findByUserIdAndMediaFileId(userId, mediaFileId);
+  public Optional<SessionProgress> getProgress(UUID userId, UUID mediaFileId) {
+    return sessionProgressRepository.findByUserIdAndMediaFileId(userId, mediaFileId);
   }
 
-  public Map<UUID, WatchProgress> getProgressForMediaFiles(
+  public Map<UUID, SessionProgress> getProgressForMediaFiles(
       UUID userId, Collection<UUID> mediaFileIds) {
-    return watchProgressRepository.findByUserIdAndMediaFileIdIn(userId, mediaFileIds).stream()
-        .collect(Collectors.toMap(WatchProgress::getMediaFileId, wp -> wp));
+    return sessionProgressRepository.findByUserIdAndMediaFileIdIn(userId, mediaFileIds).stream()
+        .collect(Collectors.toMap(SessionProgress::getMediaFileId, wp -> wp));
   }
 
   public Map<UUID, WatchStatus> getWatchStatusForDirectMedia(
@@ -128,7 +128,7 @@ public class WatchStatusService {
   }
 
   private static Map<UUID, WatchStatus> deriveWatchStatusMap(
-      Map<UUID, List<MediaFile>> mediaFilesByCollectable, Map<UUID, WatchProgress> progressMap) {
+      Map<UUID, List<MediaFile>> mediaFilesByCollectable, Map<UUID, SessionProgress> progressMap) {
     var result = new HashMap<UUID, WatchStatus>();
     for (var entry : mediaFilesByCollectable.entrySet()) {
       var fileIds = entry.getValue().stream().map(MediaFile::getId).toList();
@@ -139,7 +139,7 @@ public class WatchStatusService {
   }
 
   private static WatchStatus deriveWatchStatusFromFileIds(
-      List<UUID> mediaFileIds, Map<UUID, WatchProgress> progressMap) {
+      List<UUID> mediaFileIds, Map<UUID, SessionProgress> progressMap) {
     var watchedCount = 0;
     var inProgressCount = 0;
     for (var mediaFileId : mediaFileIds) {

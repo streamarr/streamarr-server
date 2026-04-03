@@ -12,14 +12,14 @@ import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.StreamSession;
-import com.streamarr.server.domain.streaming.WatchProgress;
+import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeStreamSessionRepository;
-import com.streamarr.server.fakes.FakeWatchProgressRepository;
+import com.streamarr.server.fakes.FakeSessionProgressRepository;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.services.watchprogress.events.WatchProgressChangedEvent;
 import com.streamarr.server.services.watchprogress.events.WatchStatusChangedEvent;
@@ -35,7 +35,7 @@ import org.junit.jupiter.api.Test;
 class WatchProgressServiceTest {
 
   private FakeStreamSessionRepository sessionRepository;
-  private FakeWatchProgressRepository watchProgressRepository;
+  private FakeSessionProgressRepository sessionProgressRepository;
   private FakeMediaFileRepository mediaFileRepository;
   private FakeEpisodeRepository episodeRepository;
   private FakeSeasonRepository seasonRepository;
@@ -47,7 +47,7 @@ class WatchProgressServiceTest {
   @BeforeEach
   void setUp() {
     sessionRepository = new FakeStreamSessionRepository();
-    watchProgressRepository = new FakeWatchProgressRepository();
+    sessionProgressRepository = new FakeSessionProgressRepository();
     mediaFileRepository = new FakeMediaFileRepository();
     episodeRepository = new FakeEpisodeRepository();
     seasonRepository = new FakeSeasonRepository();
@@ -56,7 +56,7 @@ class WatchProgressServiceTest {
     service =
         new WatchProgressService(
             sessionRepository,
-            watchProgressRepository,
+            sessionProgressRepository,
             mediaFileRepository,
             episodeRepository,
             seasonRepository,
@@ -86,8 +86,8 @@ class WatchProgressServiceTest {
         .build();
   }
 
-  private WatchProgress buildProgress(UUID mediaFileId, int positionSeconds) {
-    return WatchProgress.builder()
+  private SessionProgress buildProgress(UUID mediaFileId, int positionSeconds) {
+    return SessionProgress.builder()
         .userId(USER_ID)
         .mediaFileId(mediaFileId)
         .positionSeconds(positionSeconds)
@@ -128,7 +128,7 @@ class WatchProgressServiceTest {
       service.reportTimeline(USER_ID, session.getSessionId(), 300, PlaybackState.PLAYING);
 
       var progress =
-          watchProgressRepository.findByUserIdAndMediaFileId(USER_ID, session.getMediaFileId());
+          sessionProgressRepository.findByUserIdAndMediaFileId(USER_ID, session.getMediaFileId());
       assertThat(progress).isPresent();
       assertThat(progress.get().getPositionSeconds()).isEqualTo(300);
       assertThat(progress.get().getUserId()).isEqualTo(USER_ID);
@@ -143,7 +143,7 @@ class WatchProgressServiceTest {
       service.reportTimeline(USER_ID, session.getSessionId(), 3600, PlaybackState.PLAYING);
 
       var progress =
-          watchProgressRepository
+          sessionProgressRepository
               .findByUserIdAndMediaFileId(USER_ID, session.getMediaFileId())
               .orElseThrow();
       assertThat(progress.getPercentComplete()).isCloseTo(50.0, within(0.1));
@@ -157,9 +157,9 @@ class WatchProgressServiceTest {
       service.reportTimeline(USER_ID, session.getSessionId(), 300, PlaybackState.PLAYING);
       service.reportTimeline(USER_ID, session.getSessionId(), 600, PlaybackState.PLAYING);
 
-      assertThat(watchProgressRepository.count()).isEqualTo(1);
+      assertThat(sessionProgressRepository.count()).isEqualTo(1);
       var progress =
-          watchProgressRepository
+          sessionProgressRepository
               .findByUserIdAndMediaFileId(USER_ID, session.getMediaFileId())
               .orElseThrow();
       assertThat(progress.getPositionSeconds()).isEqualTo(600);
@@ -173,7 +173,7 @@ class WatchProgressServiceTest {
       service.reportTimeline(USER_ID, session.getSessionId(), 9999, PlaybackState.PLAYING);
 
       var progress =
-          watchProgressRepository
+          sessionProgressRepository
               .findByUserIdAndMediaFileId(USER_ID, session.getMediaFileId())
               .orElseThrow();
       assertThat(progress.getPercentComplete()).isEqualTo(100.0);
@@ -187,7 +187,7 @@ class WatchProgressServiceTest {
       service.reportTimeline(USER_ID, session.getSessionId(), 300, PlaybackState.PLAYING);
 
       var progress =
-          watchProgressRepository
+          sessionProgressRepository
               .findByUserIdAndMediaFileId(USER_ID, session.getMediaFileId())
               .orElseThrow();
       assertThat(progress.getDurationSeconds()).isEqualTo(7200);
@@ -201,7 +201,7 @@ class WatchProgressServiceTest {
 
       service.reportTimeline(USER_ID, session.getSessionId(), 300, PlaybackState.PLAYING);
 
-      assertThat(watchProgressRepository.count()).isZero();
+      assertThat(sessionProgressRepository.count()).isZero();
     }
 
     @Test
@@ -221,19 +221,19 @@ class WatchProgressServiceTest {
 
       service.reportTimeline(USER_ID, session.getSessionId(), -100, PlaybackState.PLAYING);
 
-      assertThat(watchProgressRepository.count()).isZero();
+      assertThat(sessionProgressRepository.count()).isZero();
     }
 
     @Test
     @DisplayName("Should not delete existing progress when stopped with negative position")
     void shouldNotDeleteExistingProgressWhenStoppedWithNegativePosition() {
       var session = addSession();
-      watchProgressRepository.save(buildProgress(session.getMediaFileId(), 3600));
+      sessionProgressRepository.save(buildProgress(session.getMediaFileId(), 3600));
 
       service.reportTimeline(USER_ID, session.getSessionId(), -100, PlaybackState.STOPPED);
 
       assertThat(
-              watchProgressRepository.findByUserIdAndMediaFileId(USER_ID, session.getMediaFileId()))
+              sessionProgressRepository.findByUserIdAndMediaFileId(USER_ID, session.getMediaFileId()))
           .isPresent();
     }
   }
@@ -247,12 +247,12 @@ class WatchProgressServiceTest {
     void shouldDeleteProgressWhenStoppedBelowMinThreshold() {
       var session = addSession(); // 7200s duration
       service.reportTimeline(USER_ID, session.getSessionId(), 3600, PlaybackState.PLAYING);
-      assertThat(watchProgressRepository.count()).isEqualTo(1);
+      assertThat(sessionProgressRepository.count()).isEqualTo(1);
 
       // Stop at 2% (144s / 7200s) — below 5% threshold
       service.reportTimeline(USER_ID, session.getSessionId(), 144, PlaybackState.STOPPED);
 
-      assertThat(watchProgressRepository.count()).isZero();
+      assertThat(sessionProgressRepository.count()).isZero();
     }
 
     @Test
@@ -264,7 +264,7 @@ class WatchProgressServiceTest {
       service.reportTimeline(USER_ID, session.getSessionId(), 6696, PlaybackState.STOPPED);
 
       var progress =
-          watchProgressRepository
+          sessionProgressRepository
               .findByUserIdAndMediaFileId(USER_ID, session.getMediaFileId())
               .orElseThrow();
       assertThat(progress.isPlayed()).isTrue();
@@ -282,7 +282,7 @@ class WatchProgressServiceTest {
       service.reportTimeline(USER_ID, shortSession.getSessionId(), 2150, PlaybackState.STOPPED);
 
       var progress =
-          watchProgressRepository
+          sessionProgressRepository
               .findByUserIdAndMediaFileId(USER_ID, shortSession.getMediaFileId())
               .orElseThrow();
       assertThat(progress.isPlayed()).isTrue();
@@ -299,7 +299,7 @@ class WatchProgressServiceTest {
       service.reportTimeline(USER_ID, session.getSessionId(), 360, PlaybackState.STOPPED);
 
       var progress =
-          watchProgressRepository
+          sessionProgressRepository
               .findByUserIdAndMediaFileId(USER_ID, session.getMediaFileId())
               .orElseThrow();
       assertThat(progress.isPlayed()).isFalse();
@@ -315,7 +315,7 @@ class WatchProgressServiceTest {
       service.reportTimeline(USER_ID, session.getSessionId(), 6480, PlaybackState.STOPPED);
 
       var progress =
-          watchProgressRepository
+          sessionProgressRepository
               .findByUserIdAndMediaFileId(USER_ID, session.getMediaFileId())
               .orElseThrow();
       assertThat(progress.isPlayed()).isTrue();
@@ -332,7 +332,7 @@ class WatchProgressServiceTest {
       service.reportTimeline(USER_ID, shortSession.getSessionId(), 2100, PlaybackState.STOPPED);
 
       var progress =
-          watchProgressRepository
+          sessionProgressRepository
               .findByUserIdAndMediaFileId(USER_ID, shortSession.getMediaFileId())
               .orElseThrow();
       assertThat(progress.isPlayed()).isTrue();
@@ -349,7 +349,7 @@ class WatchProgressServiceTest {
       service.reportTimeline(USER_ID, session.getSessionId(), 3600, PlaybackState.STOPPED);
 
       var progress =
-          watchProgressRepository
+          sessionProgressRepository
               .findByUserIdAndMediaFileId(USER_ID, session.getMediaFileId())
               .orElseThrow();
       assertThat(progress.isPlayed()).isFalse();
@@ -364,9 +364,9 @@ class WatchProgressServiceTest {
       // Report at 95% while PLAYING — should persist without marking watched
       service.reportTimeline(USER_ID, session.getSessionId(), 6840, PlaybackState.PLAYING);
 
-      assertThat(watchProgressRepository.count()).isEqualTo(1);
+      assertThat(sessionProgressRepository.count()).isEqualTo(1);
       var progress =
-          watchProgressRepository
+          sessionProgressRepository
               .findByUserIdAndMediaFileId(USER_ID, session.getMediaFileId())
               .orElseThrow();
       assertThat(progress.getPositionSeconds()).isEqualTo(6840);
@@ -382,7 +382,7 @@ class WatchProgressServiceTest {
       service.reportTimeline(USER_ID, session.getSessionId(), 6840, PlaybackState.PAUSED);
 
       var progress =
-          watchProgressRepository
+          sessionProgressRepository
               .findByUserIdAndMediaFileId(USER_ID, session.getMediaFileId())
               .orElseThrow();
       assertThat(progress.isPlayed()).isFalse();
@@ -402,7 +402,7 @@ class WatchProgressServiceTest {
       service.reportTimeline(USER_ID, shortSession.getSessionId(), 10, PlaybackState.STOPPED);
 
       var progress =
-          watchProgressRepository
+          sessionProgressRepository
               .findByUserIdAndMediaFileId(USER_ID, shortSession.getMediaFileId())
               .orElseThrow();
       assertThat(progress.isPlayed()).isFalse();
@@ -420,7 +420,7 @@ class WatchProgressServiceTest {
       service.reportTimeline(USER_ID, shortSession.getSessionId(), 110, PlaybackState.STOPPED);
 
       var progress =
-          watchProgressRepository
+          sessionProgressRepository
               .findByUserIdAndMediaFileId(USER_ID, shortSession.getMediaFileId())
               .orElseThrow();
       assertThat(progress.isPlayed()).isTrue();
@@ -436,7 +436,7 @@ class WatchProgressServiceTest {
       service.reportTimeline(USER_ID, session.getSessionId(), 6696, PlaybackState.STOPPED);
 
       var progress =
-          watchProgressRepository
+          sessionProgressRepository
               .findByUserIdAndMediaFileId(USER_ID, session.getMediaFileId())
               .orElseThrow();
       assertThat(progress.getPercentComplete()).isEqualTo(100.0);
@@ -454,7 +454,7 @@ class WatchProgressServiceTest {
       markAsWatched(session);
 
       var progressBefore =
-          watchProgressRepository
+          sessionProgressRepository
               .findByUserIdAndMediaFileId(USER_ID, session.getMediaFileId())
               .orElseThrow();
       assertThat(progressBefore.isPlayed()).isTrue();
@@ -463,7 +463,7 @@ class WatchProgressServiceTest {
       service.reportTimeline(USER_ID, session.getSessionId(), 3600, PlaybackState.PLAYING);
 
       var progressAfter =
-          watchProgressRepository
+          sessionProgressRepository
               .findByUserIdAndMediaFileId(USER_ID, session.getMediaFileId())
               .orElseThrow();
       assertThat(progressAfter.isPlayed()).isTrue();
@@ -561,7 +561,7 @@ class WatchProgressServiceTest {
 
       // Progress should still be in DB
       var progress =
-          watchProgressRepository
+          sessionProgressRepository
               .findByUserIdAndMediaFileId(USER_ID, session.getMediaFileId())
               .orElseThrow();
       assertThat(progress.getPositionSeconds()).isEqualTo(3600);
@@ -586,19 +586,19 @@ class WatchProgressServiceTest {
               .build());
       var mediaFile = mediaFileRepository.findByMediaId(movieId).getFirst();
 
-      watchProgressRepository.save(
-          WatchProgress.builder()
+      sessionProgressRepository.save(
+          SessionProgress.builder()
               .userId(USER_ID)
               .mediaFileId(mediaFile.getId())
               .positionSeconds(3600)
               .percentComplete(50.0)
               .durationSeconds(7200)
               .build());
-      assertThat(watchProgressRepository.count()).isEqualTo(1);
+      assertThat(sessionProgressRepository.count()).isEqualTo(1);
 
       service.resetProgress(USER_ID, movieId);
 
-      assertThat(watchProgressRepository.count()).isZero();
+      assertThat(sessionProgressRepository.count()).isZero();
     }
 
     @Test
@@ -611,13 +611,13 @@ class WatchProgressServiceTest {
       var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
       var mf2 = mediaFileRepository.save(createMediaFile(ep2.getId()));
 
-      watchProgressRepository.save(buildProgress(mf1.getId(), 300));
-      watchProgressRepository.save(buildProgress(mf2.getId(), 600));
-      assertThat(watchProgressRepository.count()).isEqualTo(2);
+      sessionProgressRepository.save(buildProgress(mf1.getId(), 300));
+      sessionProgressRepository.save(buildProgress(mf2.getId(), 600));
+      assertThat(sessionProgressRepository.count()).isEqualTo(2);
 
       service.resetProgress(USER_ID, season.getId());
 
-      assertThat(watchProgressRepository.count()).isZero();
+      assertThat(sessionProgressRepository.count()).isZero();
     }
 
     @Test
@@ -633,13 +633,13 @@ class WatchProgressServiceTest {
       var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
       var mf2 = mediaFileRepository.save(createMediaFile(ep2.getId()));
 
-      watchProgressRepository.save(buildProgress(mf1.getId(), 300));
-      watchProgressRepository.save(buildProgress(mf2.getId(), 600));
-      assertThat(watchProgressRepository.count()).isEqualTo(2);
+      sessionProgressRepository.save(buildProgress(mf1.getId(), 300));
+      sessionProgressRepository.save(buildProgress(mf2.getId(), 600));
+      assertThat(sessionProgressRepository.count()).isEqualTo(2);
 
       service.resetProgress(USER_ID, series.getId());
 
-      assertThat(watchProgressRepository.count()).isZero();
+      assertThat(sessionProgressRepository.count()).isZero();
     }
   }
 }

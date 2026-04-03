@@ -8,12 +8,12 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
-import com.streamarr.server.domain.streaming.WatchProgress;
+import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
-import com.streamarr.server.fakes.FakeWatchProgressRepository;
+import com.streamarr.server.fakes.FakeSessionProgressRepository;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -27,7 +27,7 @@ import org.junit.jupiter.api.Test;
 @DisplayName("Watch Status Service Tests")
 class WatchStatusServiceTest {
 
-  private FakeWatchProgressRepository watchProgressRepository;
+  private FakeSessionProgressRepository sessionProgressRepository;
   private FakeMediaFileRepository mediaFileRepository;
   private FakeEpisodeRepository episodeRepository;
   private FakeSeasonRepository seasonRepository;
@@ -37,13 +37,13 @@ class WatchStatusServiceTest {
 
   @BeforeEach
   void setUp() {
-    watchProgressRepository = new FakeWatchProgressRepository();
+    sessionProgressRepository = new FakeSessionProgressRepository();
     mediaFileRepository = new FakeMediaFileRepository();
     episodeRepository = new FakeEpisodeRepository();
     seasonRepository = new FakeSeasonRepository();
     service =
         new WatchStatusService(
-            watchProgressRepository, mediaFileRepository, episodeRepository, seasonRepository);
+            sessionProgressRepository, mediaFileRepository, episodeRepository, seasonRepository);
   }
 
   private MediaFile createMediaFile(UUID mediaId) {
@@ -56,8 +56,8 @@ class WatchStatusServiceTest {
         .build();
   }
 
-  private WatchProgress buildProgress(UUID mediaFileId, int positionSeconds) {
-    return WatchProgress.builder()
+  private SessionProgress buildProgress(UUID mediaFileId, int positionSeconds) {
+    return SessionProgress.builder()
         .userId(USER_ID)
         .mediaFileId(mediaFileId)
         .positionSeconds(positionSeconds)
@@ -66,8 +66,8 @@ class WatchStatusServiceTest {
         .build();
   }
 
-  private WatchProgress buildPlayedProgress(UUID mediaFileId) {
-    return WatchProgress.builder()
+  private SessionProgress buildPlayedProgress(UUID mediaFileId) {
+    return SessionProgress.builder()
         .userId(USER_ID)
         .mediaFileId(mediaFileId)
         .positionSeconds(0)
@@ -85,7 +85,7 @@ class WatchStatusServiceTest {
     @DisplayName("Should return progress when it exists for user and media file")
     void shouldReturnProgressWhenItExistsForUserAndMediaFile() {
       var mediaFileId = UUID.randomUUID();
-      watchProgressRepository.save(buildProgress(mediaFileId, 600));
+      sessionProgressRepository.save(buildProgress(mediaFileId, 600));
 
       var result = service.getProgress(USER_ID, mediaFileId);
 
@@ -117,8 +117,8 @@ class WatchStatusServiceTest {
       var mf1 = mediaFileRepository.save(createMediaFile(movie.getId()));
       var mf2 = mediaFileRepository.save(createMediaFile(movie.getId()));
 
-      watchProgressRepository.save(buildPlayedProgress(mf1.getId()));
-      watchProgressRepository.save(buildPlayedProgress(mf2.getId()));
+      sessionProgressRepository.save(buildPlayedProgress(mf1.getId()));
+      sessionProgressRepository.save(buildPlayedProgress(mf2.getId()));
 
       var result = service.getWatchStatusForDirectMedia(USER_ID, List.of(movie.getId()));
 
@@ -147,7 +147,7 @@ class WatchStatusServiceTest {
       var mf1 = mediaFileRepository.save(createMediaFile(movie.getId()));
       mediaFileRepository.save(createMediaFile(movie.getId()));
 
-      watchProgressRepository.save(buildProgress(mf1.getId(), 300));
+      sessionProgressRepository.save(buildProgress(mf1.getId(), 300));
 
       var result = service.getWatchStatusForDirectMedia(USER_ID, List.of(movie.getId()));
 
@@ -165,7 +165,7 @@ class WatchStatusServiceTest {
       var mf1 = mediaFileRepository.save(createMediaFile(movie1.getId()));
       mediaFileRepository.save(createMediaFile(movie2.getId()));
 
-      watchProgressRepository.save(buildPlayedProgress(mf1.getId()));
+      sessionProgressRepository.save(buildPlayedProgress(mf1.getId()));
 
       var result =
           service.getWatchStatusForDirectMedia(USER_ID, List.of(movie1.getId(), movie2.getId()));
@@ -198,8 +198,8 @@ class WatchStatusServiceTest {
       var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
       var mf2 = mediaFileRepository.save(createMediaFile(ep2.getId()));
 
-      watchProgressRepository.save(buildPlayedProgress(mf1.getId()));
-      watchProgressRepository.save(buildPlayedProgress(mf2.getId()));
+      sessionProgressRepository.save(buildPlayedProgress(mf1.getId()));
+      sessionProgressRepository.save(buildPlayedProgress(mf2.getId()));
 
       var result = service.getWatchStatusForSeasons(USER_ID, List.of(season.getId()));
 
@@ -216,7 +216,7 @@ class WatchStatusServiceTest {
       var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
       mediaFileRepository.save(createMediaFile(ep2.getId()));
 
-      watchProgressRepository.save(buildProgress(mf1.getId(), 300));
+      sessionProgressRepository.save(buildProgress(mf1.getId(), 300));
 
       var result = service.getWatchStatusForSeasons(USER_ID, List.of(season.getId()));
 
@@ -242,7 +242,7 @@ class WatchStatusServiceTest {
       var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
       mediaFileRepository.save(createMediaFile(ep2.getId()));
 
-      watchProgressRepository.save(buildPlayedProgress(mf1.getId()));
+      sessionProgressRepository.save(buildPlayedProgress(mf1.getId()));
 
       var result = service.getWatchStatusForSeasons(USER_ID, List.of(s1.getId(), s2.getId()));
 
@@ -269,8 +269,8 @@ class WatchStatusServiceTest {
       var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
       var mf2 = mediaFileRepository.save(createMediaFile(ep2.getId()));
 
-      watchProgressRepository.save(buildPlayedProgress(mf1.getId()));
-      watchProgressRepository.save(buildPlayedProgress(mf2.getId()));
+      sessionProgressRepository.save(buildPlayedProgress(mf1.getId()));
+      sessionProgressRepository.save(buildPlayedProgress(mf2.getId()));
 
       var result = service.getWatchStatusForSeries(USER_ID, List.of(series.getId()));
 
@@ -290,7 +290,7 @@ class WatchStatusServiceTest {
       var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
       mediaFileRepository.save(createMediaFile(ep2.getId()));
 
-      watchProgressRepository.save(buildProgress(mf1.getId(), 300));
+      sessionProgressRepository.save(buildProgress(mf1.getId(), 300));
 
       var result = service.getWatchStatusForSeries(USER_ID, List.of(series.getId()));
 
@@ -320,7 +320,7 @@ class WatchStatusServiceTest {
       var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
       mediaFileRepository.save(createMediaFile(ep2.getId()));
 
-      watchProgressRepository.save(buildPlayedProgress(mf1.getId()));
+      sessionProgressRepository.save(buildPlayedProgress(mf1.getId()));
 
       var result =
           service.getWatchStatusForSeries(USER_ID, List.of(series1.getId(), series2.getId()));

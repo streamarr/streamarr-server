@@ -2,11 +2,11 @@ package com.streamarr.server.graphql.dataloaders;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.domain.streaming.WatchProgress;
+import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
-import com.streamarr.server.fakes.FakeWatchProgressRepository;
+import com.streamarr.server.fakes.FakeSessionProgressRepository;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
 import java.time.Instant;
 import java.util.Set;
@@ -20,17 +20,17 @@ import org.junit.jupiter.api.Test;
 @DisplayName("Watch Progress DataLoader Tests")
 class WatchProgressDataLoaderTest {
 
-  private FakeWatchProgressRepository watchProgressRepository;
+  private FakeSessionProgressRepository sessionProgressRepository;
   private WatchProgressDataLoader dataLoader;
 
   private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
   @BeforeEach
   void setUp() {
-    watchProgressRepository = new FakeWatchProgressRepository();
+    sessionProgressRepository = new FakeSessionProgressRepository();
     var service =
         new WatchStatusService(
-            watchProgressRepository,
+            sessionProgressRepository,
             new FakeMediaFileRepository(),
             new FakeEpisodeRepository(),
             new FakeSeasonRepository());
@@ -73,8 +73,8 @@ class WatchProgressDataLoaderTest {
   @DisplayName("Should include lastPlayedAt when item is watched")
   void shouldIncludeLastPlayedAtWhenItemIsWatched() throws Exception {
     var mediaFileId = UUID.randomUUID();
-    watchProgressRepository.save(
-        WatchProgress.builder()
+    sessionProgressRepository.save(
+        SessionProgress.builder()
             .userId(USER_ID)
             .mediaFileId(mediaFileId)
             .positionSeconds(0)
@@ -92,8 +92,8 @@ class WatchProgressDataLoaderTest {
   }
 
   private void saveProgress(UUID mediaFileId, int position, double percent, int duration) {
-    watchProgressRepository.save(
-        WatchProgress.builder()
+    sessionProgressRepository.save(
+        SessionProgress.builder()
             .userId(USER_ID)
             .mediaFileId(mediaFileId)
             .positionSeconds(position)
