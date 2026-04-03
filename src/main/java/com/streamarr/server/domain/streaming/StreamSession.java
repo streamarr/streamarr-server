@@ -33,7 +33,7 @@ public class StreamSession {
   @Getter(lombok.AccessLevel.NONE)
   @Builder.Default
   private final AtomicReference<PlaybackSnapshot> playbackSnapshot =
-      new AtomicReference<>(new PlaybackSnapshot(0, null, Instant.now(), 0));
+      new AtomicReference<>(new PlaybackSnapshot(0, PlaybackState.STOPPED, Instant.now(), 0));
 
   public void updatePlaybackState(int positionSeconds, PlaybackState state) {
     playbackSnapshot.updateAndGet(
