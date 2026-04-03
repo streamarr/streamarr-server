@@ -5,7 +5,7 @@ import java.util.UUID;
 
 public interface SessionProgressRepositoryCustom {
 
-  void upsertProgress(SaveWatchProgress command);
+  void upsertProgress(SaveWatchProgress progress);
 
   void deleteBySessionId(UUID sessionId);
 

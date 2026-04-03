@@ -46,23 +46,23 @@ public class FakeSessionProgressRepository extends FakeJpaRepository<SessionProg
   }
 
   @Override
-  public void upsertProgress(SaveWatchProgress command) {
-    var existing = findBySessionId(command.sessionId());
+  public void upsertProgress(SaveWatchProgress progress) {
+    var existing = findBySessionId(progress.sessionId());
     if (existing.isPresent()) {
       var sp = existing.get();
-      sp.setPositionSeconds(command.positionSeconds());
-      sp.setPercentComplete(command.percentComplete());
-      sp.setDurationSeconds(command.durationSeconds());
+      sp.setPositionSeconds(progress.positionSeconds());
+      sp.setPercentComplete(progress.percentComplete());
+      sp.setDurationSeconds(progress.durationSeconds());
       return;
     }
     save(
         SessionProgress.builder()
-            .sessionId(command.sessionId())
-            .userId(command.userId())
-            .mediaFileId(command.mediaFileId())
-            .positionSeconds(command.positionSeconds())
-            .percentComplete(command.percentComplete())
-            .durationSeconds(command.durationSeconds())
+            .sessionId(progress.sessionId())
+            .userId(progress.userId())
+            .mediaFileId(progress.mediaFileId())
+            .positionSeconds(progress.positionSeconds())
+            .percentComplete(progress.percentComplete())
+            .durationSeconds(progress.durationSeconds())
             .build());
   }
 

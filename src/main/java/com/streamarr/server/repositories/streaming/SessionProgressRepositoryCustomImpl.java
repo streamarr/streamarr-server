@@ -17,26 +17,26 @@ public class SessionProgressRepositoryCustomImpl implements SessionProgressRepos
   private final AuditorAware<UUID> auditorAware;
 
   @Override
-  public void upsertProgress(SaveWatchProgress command) {
+  public void upsertProgress(SaveWatchProgress progress) {
     var auditUser = auditorAware.getCurrentAuditor().orElse(null);
     var now = OffsetDateTime.now(ZoneOffset.UTC);
 
     dsl.insertInto(SESSION_PROGRESS)
-        .set(SESSION_PROGRESS.SESSION_ID, command.sessionId())
-        .set(SESSION_PROGRESS.USER_ID, command.userId())
-        .set(SESSION_PROGRESS.MEDIA_FILE_ID, command.mediaFileId())
-        .set(SESSION_PROGRESS.POSITION_SECONDS, command.positionSeconds())
-        .set(SESSION_PROGRESS.PERCENT_COMPLETE, command.percentComplete())
-        .set(SESSION_PROGRESS.DURATION_SECONDS, command.durationSeconds())
+        .set(SESSION_PROGRESS.SESSION_ID, progress.sessionId())
+        .set(SESSION_PROGRESS.USER_ID, progress.userId())
+        .set(SESSION_PROGRESS.MEDIA_FILE_ID, progress.mediaFileId())
+        .set(SESSION_PROGRESS.POSITION_SECONDS, progress.positionSeconds())
+        .set(SESSION_PROGRESS.PERCENT_COMPLETE, progress.percentComplete())
+        .set(SESSION_PROGRESS.DURATION_SECONDS, progress.durationSeconds())
         .set(SESSION_PROGRESS.CREATED_ON, now)
         .set(SESSION_PROGRESS.CREATED_BY, auditUser)
         .set(SESSION_PROGRESS.LAST_MODIFIED_ON, now)
         .set(SESSION_PROGRESS.LAST_MODIFIED_BY, auditUser)
         .onConflict(SESSION_PROGRESS.SESSION_ID)
         .doUpdate()
-        .set(SESSION_PROGRESS.POSITION_SECONDS, command.positionSeconds())
-        .set(SESSION_PROGRESS.PERCENT_COMPLETE, command.percentComplete())
-        .set(SESSION_PROGRESS.DURATION_SECONDS, command.durationSeconds())
+        .set(SESSION_PROGRESS.POSITION_SECONDS, progress.positionSeconds())
+        .set(SESSION_PROGRESS.PERCENT_COMPLETE, progress.percentComplete())
+        .set(SESSION_PROGRESS.DURATION_SECONDS, progress.durationSeconds())
         .set(SESSION_PROGRESS.LAST_MODIFIED_BY, auditUser)
         .set(SESSION_PROGRESS.LAST_MODIFIED_ON, now)
         .execute();
