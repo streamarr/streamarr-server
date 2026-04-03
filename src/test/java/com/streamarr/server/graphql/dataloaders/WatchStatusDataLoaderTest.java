@@ -10,10 +10,12 @@ import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.domain.streaming.WatchStatus;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSessionProgressRepository;
+import com.streamarr.server.fakes.FakeWatchHistoryRepository;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
 import java.util.Set;
 import java.util.UUID;
@@ -42,7 +44,12 @@ class WatchStatusDataLoaderTest {
     seasonRepository = new FakeSeasonRepository();
     var service =
         new WatchStatusService(
-            sessionProgressRepository, mediaFileRepository, episodeRepository, seasonRepository);
+            sessionProgressRepository,
+            new FakeWatchHistoryRepository(),
+            mediaFileRepository,
+            episodeRepository,
+            seasonRepository,
+            new CapturingEventPublisher());
     dataLoader = new WatchStatusDataLoader(service);
   }
 

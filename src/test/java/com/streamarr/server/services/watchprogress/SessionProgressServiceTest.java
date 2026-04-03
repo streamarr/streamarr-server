@@ -20,6 +20,7 @@ import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSessionProgressRepository;
 import com.streamarr.server.fakes.FakeStreamSessionRepository;
+import com.streamarr.server.fakes.FakeWatchHistoryRepository;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.services.watchprogress.events.SessionProgressChangedEvent;
 import com.streamarr.server.services.watchprogress.events.WatchStatusChangedEvent;
@@ -36,10 +37,12 @@ class SessionProgressServiceTest {
 
   private FakeStreamSessionRepository sessionRepository;
   private FakeSessionProgressRepository sessionProgressRepository;
+  private FakeWatchHistoryRepository watchHistoryRepository;
   private FakeMediaFileRepository mediaFileRepository;
   private FakeEpisodeRepository episodeRepository;
   private FakeSeasonRepository seasonRepository;
   private CapturingEventPublisher eventPublisher;
+  private WatchStatusService watchStatusService;
   private SessionProgressService service;
 
   private static final UUID USER_ID = UUID.randomUUID();
@@ -48,10 +51,19 @@ class SessionProgressServiceTest {
   void setUp() {
     sessionRepository = new FakeStreamSessionRepository();
     sessionProgressRepository = new FakeSessionProgressRepository();
+    watchHistoryRepository = new FakeWatchHistoryRepository();
     mediaFileRepository = new FakeMediaFileRepository();
     episodeRepository = new FakeEpisodeRepository();
     seasonRepository = new FakeSeasonRepository();
     eventPublisher = new CapturingEventPublisher();
+    watchStatusService =
+        new WatchStatusService(
+            sessionProgressRepository,
+            watchHistoryRepository,
+            mediaFileRepository,
+            episodeRepository,
+            seasonRepository,
+            eventPublisher);
     var properties = new SessionProgressProperties(5.0, 90.0, 300);
     service =
         new SessionProgressService(
@@ -61,6 +73,7 @@ class SessionProgressServiceTest {
             episodeRepository,
             seasonRepository,
             properties,
+            watchStatusService,
             eventPublisher);
   }
 

@@ -10,10 +10,12 @@ import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.domain.streaming.WatchStatus;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSessionProgressRepository;
+import com.streamarr.server.fakes.FakeWatchHistoryRepository;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,9 +29,11 @@ import org.junit.jupiter.api.Test;
 class WatchStatusServiceTest {
 
   private FakeSessionProgressRepository sessionProgressRepository;
+  private FakeWatchHistoryRepository watchHistoryRepository;
   private FakeMediaFileRepository mediaFileRepository;
   private FakeEpisodeRepository episodeRepository;
   private FakeSeasonRepository seasonRepository;
+  private CapturingEventPublisher eventPublisher;
   private WatchStatusService service;
 
   private static final UUID USER_ID = UUID.randomUUID();
@@ -37,12 +41,19 @@ class WatchStatusServiceTest {
   @BeforeEach
   void setUp() {
     sessionProgressRepository = new FakeSessionProgressRepository();
+    watchHistoryRepository = new FakeWatchHistoryRepository();
     mediaFileRepository = new FakeMediaFileRepository();
     episodeRepository = new FakeEpisodeRepository();
     seasonRepository = new FakeSeasonRepository();
+    eventPublisher = new CapturingEventPublisher();
     service =
         new WatchStatusService(
-            sessionProgressRepository, mediaFileRepository, episodeRepository, seasonRepository);
+            sessionProgressRepository,
+            watchHistoryRepository,
+            mediaFileRepository,
+            episodeRepository,
+            seasonRepository,
+            eventPublisher);
   }
 
   private MediaFile createMediaFile(UUID mediaId) {
@@ -165,11 +176,12 @@ class WatchStatusServiceTest {
     }
 
     @Test
-    @DisplayName("Should return empty map when no media files exist")
-    void shouldReturnEmptyMapWhenNoMediaFilesExist() {
-      var result = service.getWatchStatusForDirectMedia(USER_ID, List.of(UUID.randomUUID()));
+    @DisplayName("Should return unwatched when no media files exist")
+    void shouldReturnUnwatchedWhenNoMediaFilesExist() {
+      var unknownId = UUID.randomUUID();
+      var result = service.getWatchStatusForDirectMedia(USER_ID, List.of(unknownId));
 
-      assertThat(result).isEmpty();
+      assertThat(result).containsEntry(unknownId, WatchStatus.UNWATCHED);
     }
   }
 

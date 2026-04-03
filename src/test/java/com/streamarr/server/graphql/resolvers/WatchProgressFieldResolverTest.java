@@ -11,10 +11,12 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.streaming.SessionProgress;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSessionProgressRepository;
+import com.streamarr.server.fakes.FakeWatchHistoryRepository;
 import com.streamarr.server.graphql.dataloaders.SessionProgressDataLoader;
 import com.streamarr.server.graphql.dataloaders.WatchStatusDataLoader;
 import com.streamarr.server.services.MovieService;
@@ -85,13 +87,30 @@ class WatchProgressFieldResolverTest {
     }
 
     @Bean
+    FakeWatchHistoryRepository fakeWatchHistoryRepository() {
+      return new FakeWatchHistoryRepository();
+    }
+
+    @Bean
+    CapturingEventPublisher capturingEventPublisher() {
+      return new CapturingEventPublisher();
+    }
+
+    @Bean
     WatchStatusService watchStatusService(
         FakeSessionProgressRepository sessionProgressRepository,
+        FakeWatchHistoryRepository watchHistoryRepository,
         FakeMediaFileRepository mediaFileRepository,
         FakeEpisodeRepository episodeRepository,
-        FakeSeasonRepository seasonRepository) {
+        FakeSeasonRepository seasonRepository,
+        CapturingEventPublisher eventPublisher) {
       return new WatchStatusService(
-          sessionProgressRepository, mediaFileRepository, episodeRepository, seasonRepository);
+          sessionProgressRepository,
+          watchHistoryRepository,
+          mediaFileRepository,
+          episodeRepository,
+          seasonRepository,
+          eventPublisher);
     }
   }
 

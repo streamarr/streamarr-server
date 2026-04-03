@@ -3,10 +3,12 @@ package com.streamarr.server.graphql.dataloaders;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.streaming.SessionProgress;
+import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSessionProgressRepository;
+import com.streamarr.server.fakes.FakeWatchHistoryRepository;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
 import java.util.Set;
 import java.util.UUID;
@@ -30,9 +32,11 @@ class SessionProgressDataLoaderTest {
     var service =
         new WatchStatusService(
             sessionProgressRepository,
+            new FakeWatchHistoryRepository(),
             new FakeMediaFileRepository(),
             new FakeEpisodeRepository(),
-            new FakeSeasonRepository());
+            new FakeSeasonRepository(),
+            new CapturingEventPublisher());
     dataLoader = new SessionProgressDataLoader(service);
   }
 

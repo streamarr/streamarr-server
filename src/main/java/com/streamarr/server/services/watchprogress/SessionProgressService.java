@@ -10,7 +10,7 @@ import com.streamarr.server.repositories.streaming.SaveProgressCommand;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.services.streaming.StreamSessionRepository;
 import com.streamarr.server.services.watchprogress.events.SessionProgressChangedEvent;
-import com.streamarr.server.services.watchprogress.events.WatchStatusChangedEvent;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
@@ -30,6 +30,7 @@ public class SessionProgressService {
   private final EpisodeRepository episodeRepository;
   private final SeasonRepository seasonRepository;
   private final SessionProgressProperties properties;
+  private final WatchStatusService watchStatusService;
   private final ApplicationEventPublisher eventPublisher;
 
   public void reportTimeline(
@@ -99,7 +100,7 @@ public class SessionProgressService {
       sessionProgressRepository.deleteBySessionId(sessionId);
 
       var collectableId = resolveCollectableId(mediaFileId);
-      eventPublisher.publishEvent(new WatchStatusChangedEvent(userId, collectableId));
+      watchStatusService.markWatched(userId, collectableId, Instant.now(), durationSeconds);
 
       eventPublisher.publishEvent(
           SessionProgressChangedEvent.builder()
