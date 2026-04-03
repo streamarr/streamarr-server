@@ -140,8 +140,10 @@ public class WatchProgressService {
             .state(PlaybackState.STOPPED)
             .build());
 
-    if (command instanceof SaveProgressCommand.MarkWatched) {
-      eventPublisher.publishEvent(new WatchStatusChangedEvent(userId, mediaFileId));
+    switch (command) {
+      case SaveProgressCommand.MarkWatched _ ->
+          eventPublisher.publishEvent(new WatchStatusChangedEvent(userId, mediaFileId));
+      case SaveProgressCommand.UpdateProgress _ -> {}
     }
   }
 
