@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 @Tag("UnitTest")
-@DisplayName("Watch Progress Properties Tests")
+@DisplayName("Session Progress Properties Tests")
 class SessionProgressPropertiesTest {
 
   private static final Validator VALIDATOR =

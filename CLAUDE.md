@@ -67,7 +67,7 @@ Choose the simplest mechanism that fits the operation:
   count to drive post-write logic (event publishing, etc.). When using `DO UPDATE` on tables
   with audit columns, set `LAST_MODIFIED_ON` and `LAST_MODIFIED_BY` explicitly — jOOQ bypasses
   JPA's `AuditingEntityListener`.
-  See `GenreRepositoryCustomImpl`, `WatchProgressRepositoryCustomImpl`.
+  See `GenreRepositoryCustomImpl`, `SessionProgressRepositoryCustomImpl`.
 - **In-memory mutex** (`MutexFactory`): guard multi-step check-then-act sequences that can't
   be expressed as a single SQL statement — e.g., read DB → call external API → conditionally
   create multiple entities. Single-JVM only — ineffective across multiple instances.
