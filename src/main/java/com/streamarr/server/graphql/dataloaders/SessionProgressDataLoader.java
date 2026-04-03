@@ -17,7 +17,7 @@ import org.dataloader.MappedBatchLoader;
 
 @DgsDataLoader(name = "watchProgress")
 @RequiredArgsConstructor
-public class WatchProgressDataLoader implements MappedBatchLoader<UUID, WatchProgressDto> {
+public class SessionProgressDataLoader implements MappedBatchLoader<UUID, WatchProgressDto> {
 
   private final WatchStatusService watchStatusService;
 

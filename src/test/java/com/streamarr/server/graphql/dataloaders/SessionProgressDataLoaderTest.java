@@ -18,10 +18,10 @@ import org.junit.jupiter.api.Test;
 
 @Tag("UnitTest")
 @DisplayName("Watch Progress DataLoader Tests")
-class WatchProgressDataLoaderTest {
+class SessionProgressDataLoaderTest {
 
   private FakeSessionProgressRepository sessionProgressRepository;
-  private WatchProgressDataLoader dataLoader;
+  private SessionProgressDataLoader dataLoader;
 
   private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
@@ -34,7 +34,7 @@ class WatchProgressDataLoaderTest {
             new FakeMediaFileRepository(),
             new FakeEpisodeRepository(),
             new FakeSeasonRepository());
-    dataLoader = new WatchProgressDataLoader(service);
+    dataLoader = new SessionProgressDataLoader(service);
   }
 
   @Test

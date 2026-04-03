@@ -30,12 +30,12 @@ import org.springframework.transaction.annotation.Transactional;
 @Tag("IntegrationTest")
 @DisplayName("Watch Progress Integration Tests")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-class WatchProgressServiceIT extends AbstractIntegrationTest {
+class SessionProgressServiceIT extends AbstractIntegrationTest {
 
   @Autowired private SessionProgressRepository sessionProgressRepository;
   @Autowired private MovieRepository movieRepository;
   @Autowired private LibraryRepository libraryRepository;
-  @Autowired private WatchProgressService watchProgressService;
+  @Autowired private SessionProgressService sessionProgressService;
   @Autowired private EntityManager entityManager;
   @Autowired private AuditorAware<UUID> auditorAware;
 
@@ -178,7 +178,7 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
     entityManager.flush();
     entityManager.clear();
 
-    watchProgressService.resetProgress(USER_ID, fixture.movie().getId());
+    sessionProgressService.resetProgress(USER_ID, fixture.movie().getId());
 
     entityManager.flush();
     entityManager.clear();
@@ -395,7 +395,8 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
 
       entityManager.clear();
 
-      assertThat(sessionProgressRepository.findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId()))
+      assertThat(
+              sessionProgressRepository.findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId()))
           .isEmpty();
     }
 
@@ -423,7 +424,8 @@ class WatchProgressServiceIT extends AbstractIntegrationTest {
 
       entityManager.clear();
 
-      assertThat(sessionProgressRepository.findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId()))
+      assertThat(
+              sessionProgressRepository.findByUserIdAndMediaFileId(USER_ID, fixture.mediaFileId()))
           .isPresent();
     }
   }

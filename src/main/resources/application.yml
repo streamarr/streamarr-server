@@ -41,7 +41,7 @@ streaming:
   session-timeout: ${STREAMING_SESSION_TIMEOUT:60s}
   session-retention: ${STREAMING_SESSION_RETENTION:24h}
   segment-base-path: ${STREAMING_SEGMENT_BASE_PATH:}
-  watch-progress:
+  session-progress:
     min-resume-percent: ${STREAMING_WATCH_PROGRESS_MIN_RESUME_PERCENT:5.0}
     max-resume-percent: ${STREAMING_WATCH_PROGRESS_MAX_RESUME_PERCENT:90.0}
     max-remaining-seconds: ${STREAMING_WATCH_PROGRESS_MAX_REMAINING_SECONDS:300}

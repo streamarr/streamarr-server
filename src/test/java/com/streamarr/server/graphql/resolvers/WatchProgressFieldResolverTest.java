@@ -15,7 +15,7 @@ import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSessionProgressRepository;
-import com.streamarr.server.graphql.dataloaders.WatchProgressDataLoader;
+import com.streamarr.server.graphql.dataloaders.SessionProgressDataLoader;
 import com.streamarr.server.graphql.dataloaders.WatchStatusDataLoader;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
@@ -40,7 +40,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 @SpringBootTest(
     classes = {
       WatchProgressFieldResolver.class,
-      WatchProgressDataLoader.class,
+      SessionProgressDataLoader.class,
       WatchStatusDataLoader.class,
       MovieResolver.class,
       SeriesResolver.class,

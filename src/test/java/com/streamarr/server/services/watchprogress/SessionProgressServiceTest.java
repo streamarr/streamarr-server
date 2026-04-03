@@ -4,24 +4,24 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 
-import com.streamarr.server.config.WatchProgressProperties;
+import com.streamarr.server.config.SessionProgressProperties;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.streaming.PlaybackState;
-import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.SessionProgress;
+import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
-import com.streamarr.server.fakes.FakeStreamSessionRepository;
 import com.streamarr.server.fakes.FakeSessionProgressRepository;
+import com.streamarr.server.fakes.FakeStreamSessionRepository;
 import com.streamarr.server.fixtures.StreamSessionFixture;
-import com.streamarr.server.services.watchprogress.events.WatchProgressChangedEvent;
+import com.streamarr.server.services.watchprogress.events.SessionProgressChangedEvent;
 import com.streamarr.server.services.watchprogress.events.WatchStatusChangedEvent;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,7 +32,7 @@ import org.junit.jupiter.api.Test;
 
 @Tag("UnitTest")
 @DisplayName("Watch Progress Service Tests")
-class WatchProgressServiceTest {
+class SessionProgressServiceTest {
 
   private FakeStreamSessionRepository sessionRepository;
   private FakeSessionProgressRepository sessionProgressRepository;
@@ -40,7 +40,7 @@ class WatchProgressServiceTest {
   private FakeEpisodeRepository episodeRepository;
   private FakeSeasonRepository seasonRepository;
   private CapturingEventPublisher eventPublisher;
-  private WatchProgressService service;
+  private SessionProgressService service;
 
   private static final UUID USER_ID = UUID.randomUUID();
 
@@ -52,9 +52,9 @@ class WatchProgressServiceTest {
     episodeRepository = new FakeEpisodeRepository();
     seasonRepository = new FakeSeasonRepository();
     eventPublisher = new CapturingEventPublisher();
-    var properties = new WatchProgressProperties(5.0, 90.0, 300);
+    var properties = new SessionProgressProperties(5.0, 90.0, 300);
     service =
-        new WatchProgressService(
+        new SessionProgressService(
             sessionRepository,
             sessionProgressRepository,
             mediaFileRepository,
@@ -233,7 +233,8 @@ class WatchProgressServiceTest {
       service.reportTimeline(USER_ID, session.getSessionId(), -100, PlaybackState.STOPPED);
 
       assertThat(
-              sessionProgressRepository.findByUserIdAndMediaFileId(USER_ID, session.getMediaFileId()))
+              sessionProgressRepository.findByUserIdAndMediaFileId(
+                  USER_ID, session.getMediaFileId()))
           .isPresent();
     }
   }
@@ -476,13 +477,13 @@ class WatchProgressServiceTest {
   class WatchProgressEvents {
 
     @Test
-    @DisplayName("Should publish WatchProgressChangedEvent when stopped")
-    void shouldPublishWatchProgressChangedEventWhenStopped() {
+    @DisplayName("Should publish SessionProgressChangedEvent when stopped")
+    void shouldPublishSessionProgressChangedEventWhenStopped() {
       var session = addSession();
 
       service.reportTimeline(USER_ID, session.getSessionId(), 3600, PlaybackState.STOPPED);
 
-      var events = eventPublisher.getEventsOfType(WatchProgressChangedEvent.class);
+      var events = eventPublisher.getEventsOfType(SessionProgressChangedEvent.class);
       assertThat(events).hasSize(1);
       assertThat(events.getFirst().mediaFileId()).isEqualTo(session.getMediaFileId());
       assertThat(events.getFirst().positionSeconds()).isEqualTo(3600);
@@ -490,13 +491,13 @@ class WatchProgressServiceTest {
     }
 
     @Test
-    @DisplayName("Should publish WatchProgressChangedEvent when playing")
-    void shouldPublishWatchProgressChangedEventWhenPlaying() {
+    @DisplayName("Should publish SessionProgressChangedEvent when playing")
+    void shouldPublishSessionProgressChangedEventWhenPlaying() {
       var session = addSession();
 
       service.reportTimeline(USER_ID, session.getSessionId(), 3600, PlaybackState.PLAYING);
 
-      var events = eventPublisher.getEventsOfType(WatchProgressChangedEvent.class);
+      var events = eventPublisher.getEventsOfType(SessionProgressChangedEvent.class);
       assertThat(events).hasSize(1);
       assertThat(events.getFirst().positionSeconds()).isEqualTo(3600);
       assertThat(events.getFirst().state()).isEqualTo(PlaybackState.PLAYING);
@@ -540,7 +541,7 @@ class WatchProgressServiceTest {
       // Stop at 1% — below min threshold, deletes progress, no state change for other UIs
       service.reportTimeline(USER_ID, session.getSessionId(), 72, PlaybackState.STOPPED);
 
-      assertThat(eventPublisher.getEventsOfType(WatchProgressChangedEvent.class)).isEmpty();
+      assertThat(eventPublisher.getEventsOfType(SessionProgressChangedEvent.class)).isEmpty();
     }
   }
 

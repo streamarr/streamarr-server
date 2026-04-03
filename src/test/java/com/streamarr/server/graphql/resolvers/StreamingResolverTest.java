@@ -14,7 +14,7 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.services.streaming.StreamingService;
-import com.streamarr.server.services.watchprogress.WatchProgressService;
+import com.streamarr.server.services.watchprogress.SessionProgressService;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -53,7 +53,7 @@ class StreamingResolverTest {
   }
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
-  @MockitoBean private WatchProgressService watchProgressService;
+  @MockitoBean private SessionProgressService sessionProgressService;
 
   private StreamSession buildSession(UUID sessionId) {
     return StreamSession.builder()

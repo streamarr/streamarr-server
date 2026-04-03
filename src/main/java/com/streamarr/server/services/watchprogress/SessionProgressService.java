@@ -1,6 +1,6 @@
 package com.streamarr.server.services.watchprogress;
 
-import com.streamarr.server.config.WatchProgressProperties;
+import com.streamarr.server.config.SessionProgressProperties;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.repositories.media.EpisodeRepository;
@@ -9,7 +9,7 @@ import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.streaming.SaveProgressCommand;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.services.streaming.StreamSessionRepository;
-import com.streamarr.server.services.watchprogress.events.WatchProgressChangedEvent;
+import com.streamarr.server.services.watchprogress.events.SessionProgressChangedEvent;
 import com.streamarr.server.services.watchprogress.events.WatchStatusChangedEvent;
 import java.time.Instant;
 import java.util.Collection;
@@ -23,14 +23,14 @@ import org.springframework.stereotype.Service;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class WatchProgressService {
+public class SessionProgressService {
 
   private final StreamSessionRepository sessionRepository;
   private final SessionProgressRepository sessionProgressRepository;
   private final MediaFileRepository mediaFileRepository;
   private final EpisodeRepository episodeRepository;
   private final SeasonRepository seasonRepository;
-  private final WatchProgressProperties properties;
+  private final SessionProgressProperties properties;
   private final ApplicationEventPublisher eventPublisher;
 
   public void reportTimeline(
@@ -76,7 +76,7 @@ public class WatchProgressService {
     }
 
     eventPublisher.publishEvent(
-        WatchProgressChangedEvent.builder()
+        SessionProgressChangedEvent.builder()
             .userId(userId)
             .mediaFileId(mediaFileId)
             .positionSeconds(positionSeconds)
@@ -130,7 +130,7 @@ public class WatchProgressService {
     }
 
     eventPublisher.publishEvent(
-        WatchProgressChangedEvent.builder()
+        SessionProgressChangedEvent.builder()
             .userId(userId)
             .mediaFileId(mediaFileId)
             .positionSeconds(command.positionSeconds())

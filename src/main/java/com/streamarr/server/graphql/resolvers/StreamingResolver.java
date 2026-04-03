@@ -11,7 +11,7 @@ import com.streamarr.server.exceptions.InvalidIdException;
 import com.streamarr.server.graphql.dto.StreamSessionDto;
 import com.streamarr.server.graphql.dto.StreamingOptionsInput;
 import com.streamarr.server.services.streaming.StreamingService;
-import com.streamarr.server.services.watchprogress.WatchProgressService;
+import com.streamarr.server.services.watchprogress.SessionProgressService;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -21,7 +21,7 @@ import lombok.RequiredArgsConstructor;
 public class StreamingResolver {
 
   private final StreamingService streamingService;
-  private final WatchProgressService watchProgressService;
+  private final SessionProgressService sessionProgressService;
 
   @DgsMutation
   public StreamSessionDto createStreamSession(
@@ -54,7 +54,7 @@ public class StreamingResolver {
       @InputArgument PlaybackState state) {
     // TODO(#163): Replace with authenticated user ID from Spring Security
     var userId = resolveCurrentUserId();
-    watchProgressService.reportTimeline(userId, parseUuid(sessionId), positionSeconds, state);
+    sessionProgressService.reportTimeline(userId, parseUuid(sessionId), positionSeconds, state);
 
     return true;
   }
@@ -63,7 +63,7 @@ public class StreamingResolver {
   public boolean resetWatchProgress(@InputArgument String id) {
     // TODO(#163): Replace with authenticated user ID from Spring Security
     var userId = resolveCurrentUserId();
-    watchProgressService.resetProgress(userId, parseUuid(id));
+    sessionProgressService.resetProgress(userId, parseUuid(id));
 
     return true;
   }

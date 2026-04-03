@@ -5,7 +5,7 @@ import java.util.UUID;
 import lombok.Builder;
 
 @Builder
-public record WatchProgressChangedEvent(
+public record SessionProgressChangedEvent(
     UUID userId,
     UUID mediaFileId,
     int positionSeconds,
