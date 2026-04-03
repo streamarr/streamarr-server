@@ -49,7 +49,7 @@ public class StreamSession {
     playbackSnapshot.updateAndGet(
         current ->
             new PlaybackSnapshot(
-                positionSeconds, current.state(), current.accessedAt(), positionSeconds));
+                positionSeconds, current.state(), Instant.now(), positionSeconds));
   }
 
   public int getSeekOrigin() {
