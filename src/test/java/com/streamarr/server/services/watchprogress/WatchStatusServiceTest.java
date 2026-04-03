@@ -16,6 +16,7 @@ import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSessionProgressRepository;
 import com.streamarr.server.fakes.FakeWatchHistoryRepository;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -78,29 +79,77 @@ class WatchStatusServiceTest {
   }
 
   @Nested
-  @DisplayName("Get Progress")
-  class GetProgress {
+  @DisplayName("Watch History")
+  class WatchHistoryTests {
 
     @Test
-    @DisplayName("Should return progress when it exists for user and media file")
-    void shouldReturnProgressWhenItExistsForUserAndMediaFile() {
-      var mediaFileId = UUID.randomUUID();
-      sessionProgressRepository.save(buildProgress(mediaFileId, 600));
+    @DisplayName("Should create watch history entry when marking watched explicitly")
+    void shouldCreateWatchHistoryEntryWhenMarkingWatchedExplicitly() {
+      var movieId = UUID.randomUUID();
 
-      var result = service.getProgress(USER_ID, mediaFileId);
+      service.markWatched(USER_ID, movieId, Instant.now(), 7200);
 
-      assertThat(result).isPresent();
-      assertThat(result.get().getPositionSeconds()).isEqualTo(600);
-      assertThat(result.get().getPercentComplete()).isEqualTo(50.0);
-      assertThat(result.get().getDurationSeconds()).isEqualTo(7200);
+      var history =
+          watchHistoryRepository.findFirstByUserIdAndCollectableIdOrderByWatchedAtDesc(
+              USER_ID, movieId);
+      assertThat(history).isPresent();
+      assertThat(history.get().getDurationSeconds()).isEqualTo(7200);
+      assertThat(history.get().getDismissedAt()).isNull();
     }
 
     @Test
-    @DisplayName("Should return empty when no progress exists")
-    void shouldReturnEmptyWhenNoProgressExists() {
-      var result = service.getProgress(USER_ID, UUID.randomUUID());
+    @DisplayName("Should mark all episodes when marking season as watched")
+    void shouldMarkAllEpisodesWhenMarkingSeasonAsWatched() {
+      var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
+      episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
+      episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
 
-      assertThat(result).isEmpty();
+      service.markWatched(USER_ID, season.getId(), Instant.now(), 3600);
+
+      assertThat(watchHistoryRepository.count()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("Should derive watched status from watch history")
+    void shouldDeriveWatchedStatusFromWatchHistory() {
+      var movie = Movie.builder().build();
+      movie.setId(UUID.randomUUID());
+      mediaFileRepository.save(createMediaFile(movie.getId()));
+
+      service.markWatched(USER_ID, movie.getId(), Instant.now(), 7200);
+
+      var result = service.getWatchStatusForDirectMedia(USER_ID, List.of(movie.getId()));
+      assertThat(result).containsEntry(movie.getId(), WatchStatus.WATCHED);
+    }
+
+    @Test
+    @DisplayName("Should derive unwatched when latest history entry is dismissed")
+    void shouldDeriveUnwatchedWhenLatestHistoryEntryIsDismissed() {
+      var movie = Movie.builder().build();
+      movie.setId(UUID.randomUUID());
+      mediaFileRepository.save(createMediaFile(movie.getId()));
+
+      service.markWatched(USER_ID, movie.getId(), Instant.now(), 7200);
+      service.markUnwatched(USER_ID, movie.getId());
+
+      var result = service.getWatchStatusForDirectMedia(USER_ID, List.of(movie.getId()));
+      assertThat(result).containsEntry(movie.getId(), WatchStatus.UNWATCHED);
+    }
+
+    @Test
+    @DisplayName("Should keep watched status during re-watch with active session progress")
+    void shouldKeepWatchedStatusDuringReWatchWithActiveSessionProgress() {
+      var movie = Movie.builder().build();
+      movie.setId(UUID.randomUUID());
+      var mf = mediaFileRepository.save(createMediaFile(movie.getId()));
+
+      service.markWatched(USER_ID, movie.getId(), Instant.now(), 7200);
+
+      // Simulate active re-watch session
+      sessionProgressRepository.save(buildProgress(mf.getId(), 1800));
+
+      var result = service.getWatchStatusForDirectMedia(USER_ID, List.of(movie.getId()));
+      assertThat(result).containsEntry(movie.getId(), WatchStatus.WATCHED);
     }
   }
 

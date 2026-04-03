@@ -15,7 +15,6 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -34,10 +33,6 @@ public class WatchStatusService {
   private final SeasonRepository seasonRepository;
   private final ApplicationEventPublisher eventPublisher;
 
-  public Optional<SessionProgress> getProgress(UUID userId, UUID mediaFileId) {
-    return sessionProgressRepository.findMostRecentByUserIdAndMediaFileId(userId, mediaFileId);
-  }
-
   public Map<UUID, SessionProgress> getProgressForMediaFiles(
       UUID userId, Collection<UUID> mediaFileIds) {
     return sessionProgressRepository.findByUserIdAndMediaFileIdIn(userId, mediaFileIds).stream()
@@ -53,20 +48,23 @@ public class WatchStatusService {
   }
 
   public void markWatched(UUID userId, UUID collectableId, Instant watchedAt, int durationSeconds) {
-    watchHistoryRepository.save(
-        WatchHistory.builder()
-            .userId(userId)
-            .collectableId(collectableId)
-            .watchedAt(watchedAt)
-            .durationSeconds(durationSeconds)
-            .build());
+    var leafIds = resolveLeafCollectableIds(collectableId);
+    for (var leafId : leafIds) {
+      watchHistoryRepository.save(
+          WatchHistory.builder()
+              .userId(userId)
+              .collectableId(leafId)
+              .watchedAt(watchedAt)
+              .durationSeconds(durationSeconds)
+              .build());
+    }
 
     eventPublisher.publishEvent(new WatchStatusChangedEvent(userId, collectableId));
   }
 
   public void markUnwatched(UUID userId, UUID collectableId) {
-    var entries =
-        watchHistoryRepository.findByUserIdAndCollectableIdIn(userId, List.of(collectableId));
+    var leafIds = resolveLeafCollectableIds(collectableId);
+    var entries = watchHistoryRepository.findByUserIdAndCollectableIdIn(userId, leafIds);
     var now = Instant.now();
     for (var entry : entries) {
       if (entry.getDismissedAt() == null) {
@@ -81,6 +79,22 @@ public class WatchStatusService {
     }
 
     eventPublisher.publishEvent(new WatchStatusChangedEvent(userId, collectableId));
+  }
+
+  private List<UUID> resolveLeafCollectableIds(UUID collectableId) {
+    var episodeIdsBySeasonId = episodeRepository.findEpisodeIdsBySeasonIds(List.of(collectableId));
+    if (!episodeIdsBySeasonId.isEmpty()) {
+      return episodeIdsBySeasonId.values().stream().flatMap(Collection::stream).toList();
+    }
+
+    var seasonIdsBySeriesId = seasonRepository.findSeasonIdsBySeriesIds(List.of(collectableId));
+    if (!seasonIdsBySeriesId.isEmpty()) {
+      var allSeasonIds = seasonIdsBySeriesId.values().stream().flatMap(Collection::stream).toList();
+      var episodeIdsBySeasonId2 = episodeRepository.findEpisodeIdsBySeasonIds(allSeasonIds);
+      return episodeIdsBySeasonId2.values().stream().flatMap(Collection::stream).toList();
+    }
+
+    return List.of(collectableId);
   }
 
   private List<UUID> resolveAllMediaFileIds(UUID collectableId) {
