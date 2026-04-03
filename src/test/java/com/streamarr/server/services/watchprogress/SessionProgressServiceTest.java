@@ -25,11 +25,15 @@ import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.services.watchprogress.events.SessionProgressChangedEvent;
 import com.streamarr.server.services.watchprogress.events.WatchStatusChangedEvent;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
 @DisplayName("Session Progress Service Tests")
@@ -282,17 +286,26 @@ class SessionProgressServiceTest {
       assertThat(sessionProgressRepository.findBySessionId(session.getSessionId())).isEmpty();
     }
 
-    @Test
-    @DisplayName("Should delete session progress when remaining time below max remaining seconds")
-    void shouldDeleteSessionProgressWhenRemainingTimeBelowMaxRemainingSeconds() {
-      var shortSession = StreamSessionFixture.buildSessionWithDuration(2400);
-      sessionRepository.save(shortSession);
-      saveMediaFileForSession(shortSession);
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("markWatchedThresholdCases")
+    @DisplayName("Should delete session progress when stopped and watched threshold is met")
+    void shouldDeleteSessionProgressWhenWatchedThresholdMet(
+        String description, int durationSeconds, int positionSeconds) {
+      var session = StreamSessionFixture.buildSessionWithDuration(durationSeconds);
+      sessionRepository.save(session);
+      saveMediaFileForSession(session);
 
-      // 2400 - 2150 = 250s remaining, clearly below maxRemainingSeconds (300)
-      service.reportTimeline(USER_ID, shortSession.getSessionId(), 2150, PlaybackState.STOPPED);
+      service.reportTimeline(
+          USER_ID, session.getSessionId(), positionSeconds, PlaybackState.STOPPED);
 
-      assertThat(sessionProgressRepository.findBySessionId(shortSession.getSessionId())).isEmpty();
+      assertThat(sessionProgressRepository.findBySessionId(session.getSessionId())).isEmpty();
+    }
+
+    static Stream<Arguments> markWatchedThresholdCases() {
+      return Stream.of(
+          Arguments.of("remaining time below max remaining seconds", 2400, 2150),
+          Arguments.of("exact max remaining seconds boundary", 2400, 2100),
+          Arguments.of("short content above max resume percent", 120, 110));
     }
 
     @Test
@@ -317,18 +330,6 @@ class SessionProgressServiceTest {
       service.reportTimeline(USER_ID, session.getSessionId(), 6480, PlaybackState.STOPPED);
 
       assertThat(sessionProgressRepository.findBySessionId(session.getSessionId())).isEmpty();
-    }
-
-    @Test
-    @DisplayName("Should delete session progress when stopped with exact max remaining seconds")
-    void shouldDeleteSessionProgressWhenStoppedWithExactMaxRemainingSeconds() {
-      var shortSession = StreamSessionFixture.buildSessionWithDuration(2400);
-      sessionRepository.save(shortSession);
-      saveMediaFileForSession(shortSession);
-
-      service.reportTimeline(USER_ID, shortSession.getSessionId(), 2100, PlaybackState.STOPPED);
-
-      assertThat(sessionProgressRepository.findBySessionId(shortSession.getSessionId())).isEmpty();
     }
 
     @Test
@@ -387,20 +388,6 @@ class SessionProgressServiceTest {
       var progress =
           sessionProgressRepository.findBySessionId(shortSession.getSessionId()).orElseThrow();
       assertThat(progress.getPositionSeconds()).isEqualTo(10);
-    }
-
-    @Test
-    @DisplayName(
-        "Should still mark short content as watched via percent threshold when above max resume percent")
-    void shouldStillMarkShortContentAsWatchedViaPercentThresholdWhenAboveMaxResumePercent() {
-      var shortSession = StreamSessionFixture.buildSessionWithDuration(120); // 2 min trailer
-      sessionRepository.save(shortSession);
-      saveMediaFileForSession(shortSession);
-
-      // Stop at 91.7% (110s / 120s) — above 90% maxResumePercent
-      service.reportTimeline(USER_ID, shortSession.getSessionId(), 110, PlaybackState.STOPPED);
-
-      assertThat(sessionProgressRepository.findBySessionId(shortSession.getSessionId())).isEmpty();
     }
   }
 
