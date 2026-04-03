@@ -3,6 +3,7 @@ package com.streamarr.server.services.watchprogress;
 import com.streamarr.server.config.WatchProgressProperties;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.SessionProgress;
+import com.streamarr.server.exceptions.MediaFileNotFoundException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.streaming.SaveWatchProgress;
@@ -140,7 +141,7 @@ public class SessionProgressService {
   private UUID resolveCollectableId(UUID mediaFileId) {
     return mediaFileRepository
         .findMediaIdByMediaFileId(mediaFileId)
-        .orElseThrow(() -> new IllegalStateException("MediaFile not found for id: " + mediaFileId));
+        .orElseThrow(() -> new MediaFileNotFoundException(mediaFileId));
   }
 
   private enum StopDecision {
