@@ -40,11 +40,8 @@ public class WatchStatusService {
             Collectors.toMap(
                 SessionProgress::getMediaFileId,
                 sp -> sp,
-                (a, b) -> {
-                  if (a.getLastModifiedOn() == null) return b;
-                  if (b.getLastModifiedOn() == null) return a;
-                  return a.getLastModifiedOn().isAfter(b.getLastModifiedOn()) ? a : b;
-                }));
+                (a, b) ->
+                    a.getLastModifiedOn().isAfter(b.getLastModifiedOn()) ? a : b));
   }
 
   public void markWatched(UUID userId, UUID collectableId, Instant watchedAt, int durationSeconds) {
