@@ -1,6 +1,7 @@
 package com.streamarr.server.services.watchprogress;
 
 import com.streamarr.server.domain.media.MediaFile;
+import com.streamarr.server.domain.streaming.CollectableScope;
 import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.domain.streaming.WatchHistory;
 import com.streamarr.server.domain.streaming.WatchStatus;
@@ -44,8 +45,20 @@ public class WatchStatusService {
                 (a, b) -> a.getLastModifiedOn().isAfter(b.getLastModifiedOn()) ? a : b));
   }
 
-  public void markWatched(UUID userId, UUID collectableId, Instant watchedAt, int durationSeconds) {
-    var leafIds = resolveLeafCollectableIds(collectableId);
+  @Transactional
+  public void markWatched(UUID userId, UUID collectableId) {
+    var scope = resolveCollectableScope(collectableId);
+    markWatched(userId, collectableId, scope, Instant.now(), 0);
+  }
+
+  @Transactional
+  public void markWatched(
+      UUID userId,
+      UUID collectableId,
+      CollectableScope scope,
+      Instant watchedAt,
+      int durationSeconds) {
+    var leafIds = resolveLeafCollectableIds(collectableId, scope);
     watchHistoryRepository.batchInsert(userId, leafIds, watchedAt, durationSeconds);
 
     eventPublisher.publishEvent(new WatchStatusChangedEvent(userId, collectableId));
@@ -53,7 +66,13 @@ public class WatchStatusService {
 
   @Transactional
   public void markUnwatched(UUID userId, UUID collectableId) {
-    var leafIds = resolveLeafCollectableIds(collectableId);
+    var scope = resolveCollectableScope(collectableId);
+    markUnwatched(userId, collectableId, scope);
+  }
+
+  @Transactional
+  public void markUnwatched(UUID userId, UUID collectableId, CollectableScope scope) {
+    var leafIds = resolveLeafCollectableIds(collectableId, scope);
     watchHistoryRepository.dismissAll(userId, leafIds);
 
     var mediaFileIds = mediaFileRepository.findMediaFileIdsByMediaIds(leafIds);
@@ -64,20 +83,30 @@ public class WatchStatusService {
     eventPublisher.publishEvent(new WatchStatusChangedEvent(userId, collectableId));
   }
 
-  private List<UUID> resolveLeafCollectableIds(UUID collectableId) {
-    var episodeIdsBySeasonId = episodeRepository.findEpisodeIdsBySeasonIds(List.of(collectableId));
-    if (!episodeIdsBySeasonId.isEmpty()) {
-      return episodeIdsBySeasonId.values().stream().flatMap(Collection::stream).toList();
+  private CollectableScope resolveCollectableScope(UUID collectableId) {
+    if (!episodeRepository.findEpisodeIdsBySeasonIds(List.of(collectableId)).isEmpty()) {
+      return CollectableScope.SEASON;
     }
-
-    var seasonIdsBySeriesId = seasonRepository.findSeasonIdsBySeriesIds(List.of(collectableId));
-    if (!seasonIdsBySeriesId.isEmpty()) {
-      var allSeasonIds = seasonIdsBySeriesId.values().stream().flatMap(Collection::stream).toList();
-      var episodeIdsBySeason = episodeRepository.findEpisodeIdsBySeasonIds(allSeasonIds);
-      return episodeIdsBySeason.values().stream().flatMap(Collection::stream).toList();
+    if (!seasonRepository.findSeasonIdsBySeriesIds(List.of(collectableId)).isEmpty()) {
+      return CollectableScope.SERIES;
     }
+    return CollectableScope.DIRECT_MEDIA;
+  }
 
-    return List.of(collectableId);
+  private List<UUID> resolveLeafCollectableIds(UUID collectableId, CollectableScope scope) {
+    return switch (scope) {
+      case DIRECT_MEDIA -> List.of(collectableId);
+      case SEASON -> {
+        var episodeIds = episodeRepository.findEpisodeIdsBySeasonIds(List.of(collectableId));
+        yield episodeIds.values().stream().flatMap(Collection::stream).toList();
+      }
+      case SERIES -> {
+        var seasonIds = seasonRepository.findSeasonIdsBySeriesIds(List.of(collectableId));
+        var allSeasonIds = seasonIds.values().stream().flatMap(Collection::stream).toList();
+        var episodeIds = episodeRepository.findEpisodeIdsBySeasonIds(allSeasonIds);
+        yield episodeIds.values().stream().flatMap(Collection::stream).toList();
+      }
+    };
   }
 
   public Map<UUID, WatchStatus> getWatchStatusForDirectMedia(

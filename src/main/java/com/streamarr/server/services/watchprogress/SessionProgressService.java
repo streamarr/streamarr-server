@@ -1,6 +1,7 @@
 package com.streamarr.server.services.watchprogress;
 
 import com.streamarr.server.config.WatchProgressProperties;
+import com.streamarr.server.domain.streaming.CollectableScope;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.exceptions.MediaFileNotFoundException;
@@ -108,7 +109,12 @@ public class SessionProgressService {
       sessionProgressRepository.deleteBySessionId(ctx.sessionId());
 
       var collectableId = resolveCollectableId(ctx.mediaFileId());
-      watchStatusService.markWatched(userId, collectableId, Instant.now(), ctx.durationSeconds());
+      watchStatusService.markWatched(
+          userId,
+          collectableId,
+          CollectableScope.DIRECT_MEDIA,
+          Instant.now(),
+          ctx.durationSeconds());
 
       eventPublisher.publishEvent(
           ItemWatchedEvent.builder()

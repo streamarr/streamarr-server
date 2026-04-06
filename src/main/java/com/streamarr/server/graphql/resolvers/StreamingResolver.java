@@ -13,7 +13,6 @@ import com.streamarr.server.graphql.dto.StreamingOptionsInput;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.watchprogress.SessionProgressService;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
-import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -67,7 +66,7 @@ public class StreamingResolver {
   public boolean markWatched(@InputArgument String id) {
     // TODO(#163): Replace with authenticated user ID from Spring Security
     var userId = resolveCurrentUserId();
-    watchStatusService.markWatched(userId, parseUuid(id), Instant.now(), 0);
+    watchStatusService.markWatched(userId, parseUuid(id));
 
     return true;
   }

@@ -8,6 +8,7 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.domain.streaming.CollectableScope;
 import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.fakes.CapturingEventPublisher;
@@ -87,7 +88,7 @@ class WatchStatusServiceTest {
     void shouldCreateWatchHistoryEntryWhenMarkingWatchedExplicitly() {
       var movieId = UUID.randomUUID();
 
-      service.markWatched(USER_ID, movieId, Instant.now(), 7200);
+      service.markWatched(USER_ID, movieId, CollectableScope.DIRECT_MEDIA, Instant.now(), 7200);
 
       var history =
           watchHistoryRepository.findFirstByUserIdAndCollectableIdOrderByWatchedAtDesc(
@@ -104,7 +105,7 @@ class WatchStatusServiceTest {
       episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
       episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
 
-      service.markWatched(USER_ID, season.getId(), Instant.now(), 3600);
+      service.markWatched(USER_ID, season.getId(), CollectableScope.SEASON, Instant.now(), 3600);
 
       assertThat(watchHistoryRepository.count()).isEqualTo(2);
     }
@@ -116,7 +117,8 @@ class WatchStatusServiceTest {
       movie.setId(UUID.randomUUID());
       mediaFileRepository.save(createMediaFile(movie.getId()));
 
-      service.markWatched(USER_ID, movie.getId(), Instant.now(), 7200);
+      service.markWatched(
+          USER_ID, movie.getId(), CollectableScope.DIRECT_MEDIA, Instant.now(), 7200);
 
       var result = service.getWatchStatusForDirectMedia(USER_ID, List.of(movie.getId()));
       assertThat(result).containsEntry(movie.getId(), WatchStatus.WATCHED);
@@ -129,7 +131,8 @@ class WatchStatusServiceTest {
       movie.setId(UUID.randomUUID());
       mediaFileRepository.save(createMediaFile(movie.getId()));
 
-      service.markWatched(USER_ID, movie.getId(), Instant.now(), 7200);
+      service.markWatched(
+          USER_ID, movie.getId(), CollectableScope.DIRECT_MEDIA, Instant.now(), 7200);
       service.markUnwatched(USER_ID, movie.getId());
 
       var result = service.getWatchStatusForDirectMedia(USER_ID, List.of(movie.getId()));
@@ -143,7 +146,8 @@ class WatchStatusServiceTest {
       movie.setId(UUID.randomUUID());
       var mf = mediaFileRepository.save(createMediaFile(movie.getId()));
 
-      service.markWatched(USER_ID, movie.getId(), Instant.now(), 7200);
+      service.markWatched(
+          USER_ID, movie.getId(), CollectableScope.DIRECT_MEDIA, Instant.now(), 7200);
 
       // Simulate active re-watch session
       sessionProgressRepository.save(buildProgress(mf.getId(), 1800));
