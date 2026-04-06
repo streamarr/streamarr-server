@@ -18,6 +18,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Slf4j
 @Service
@@ -35,6 +36,7 @@ public class SessionProgressService {
     return sessionProgressRepository.findMostRecentByUserIdAndMediaFileId(userId, mediaFileId);
   }
 
+  @Transactional
   public void reportStreamSessionTimeline(
       UUID userId, UUID sessionId, int positionSeconds, PlaybackState state) {
     if (positionSeconds < 0) {

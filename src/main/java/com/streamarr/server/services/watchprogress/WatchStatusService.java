@@ -21,6 +21,7 @@ import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -50,6 +51,7 @@ public class WatchStatusService {
     eventPublisher.publishEvent(new WatchStatusChangedEvent(userId, collectableId));
   }
 
+  @Transactional
   public void markUnwatched(UUID userId, UUID collectableId) {
     var leafIds = resolveLeafCollectableIds(collectableId);
     watchHistoryRepository.dismissAll(userId, leafIds);
