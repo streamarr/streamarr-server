@@ -22,6 +22,7 @@ import com.streamarr.server.fakes.FakeSessionProgressRepository;
 import com.streamarr.server.fakes.FakeStreamSessionRepository;
 import com.streamarr.server.fakes.FakeWatchHistoryRepository;
 import com.streamarr.server.fixtures.StreamSessionFixture;
+import com.streamarr.server.services.watchprogress.events.ItemWatchedEvent;
 import com.streamarr.server.services.watchprogress.events.SessionProgressChangedEvent;
 import com.streamarr.server.services.watchprogress.events.WatchStatusChangedEvent;
 import java.util.UUID;
@@ -447,8 +448,25 @@ class SessionProgressServiceTest {
     }
 
     @Test
-    @DisplayName("Should publish WatchStatusChangedEvent with collectableId when marked watched")
-    void shouldPublishWatchStatusChangedEventWithCollectableIdWhenMarkedWatched() {
+    @DisplayName("Should publish ItemWatchedEvent when marked watched")
+    void shouldPublishItemWatchedEventWhenMarkedWatched() {
+      var session = addSession();
+      var mediaFile = mediaFileRepository.findById(session.getMediaFileId()).orElseThrow();
+
+      // Stop at 95% to trigger watched
+      service.reportStreamSessionTimeline(
+          USER_ID, session.getSessionId(), (int) (7200 * 0.95), PlaybackState.STOPPED);
+
+      var events = eventPublisher.getEventsOfType(ItemWatchedEvent.class);
+      assertThat(events).hasSize(1);
+      assertThat(events.getFirst().collectableId()).isEqualTo(mediaFile.getMediaId());
+      assertThat(events.getFirst().sessionId()).isEqualTo(session.getSessionId());
+      assertThat(events.getFirst().mediaFileId()).isEqualTo(session.getMediaFileId());
+    }
+
+    @Test
+    @DisplayName("Should publish WatchStatusChangedEvent when marked watched")
+    void shouldPublishWatchStatusChangedEventWhenMarkedWatched() {
       var session = addSession();
       var mediaFile = mediaFileRepository.findById(session.getMediaFileId()).orElseThrow();
 
@@ -471,6 +489,7 @@ class SessionProgressServiceTest {
           USER_ID, session.getSessionId(), 72, PlaybackState.STOPPED);
 
       assertThat(eventPublisher.getEventsOfType(SessionProgressChangedEvent.class)).isEmpty();
+      assertThat(eventPublisher.getEventsOfType(ItemWatchedEvent.class)).isEmpty();
     }
   }
 

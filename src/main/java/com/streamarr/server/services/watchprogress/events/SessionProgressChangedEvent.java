@@ -9,7 +9,6 @@ public record SessionProgressChangedEvent(
     UUID sessionId,
     UUID userId,
     UUID mediaFileId,
-    UUID collectableId,
     int positionSeconds,
     double percentComplete,
     PlaybackState state) {}

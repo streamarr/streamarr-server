@@ -9,6 +9,7 @@ import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.streaming.SaveWatchProgress;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.services.streaming.StreamSessionRepository;
+import com.streamarr.server.services.watchprogress.events.ItemWatchedEvent;
 import com.streamarr.server.services.watchprogress.events.SessionProgressChangedEvent;
 import java.time.Instant;
 import java.util.Optional;
@@ -104,14 +105,11 @@ public class SessionProgressService {
       watchStatusService.markWatched(userId, collectableId, Instant.now(), durationSeconds);
 
       eventPublisher.publishEvent(
-          SessionProgressChangedEvent.builder()
+          ItemWatchedEvent.builder()
               .sessionId(sessionId)
               .userId(userId)
               .mediaFileId(mediaFileId)
               .collectableId(collectableId)
-              .positionSeconds(0)
-              .percentComplete(100.0)
-              .state(PlaybackState.STOPPED)
               .build());
       return;
     }
