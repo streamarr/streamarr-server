@@ -57,8 +57,10 @@ public class SessionProgressService {
     var mediaFileId = session.getMediaFileId();
 
     if (state == PlaybackState.STOPPED) {
-      handleStoppedPlayback(
-          userId, sessionId, mediaFileId, positionSeconds, percentComplete, durationSeconds);
+      var context =
+          new PlaybackContext(
+              sessionId, mediaFileId, positionSeconds, percentComplete, durationSeconds);
+      handleStoppedPlayback(userId, context);
       return;
     }
 
@@ -83,55 +85,56 @@ public class SessionProgressService {
             .build());
   }
 
-  private void handleStoppedPlayback(
-      UUID userId,
+  private record PlaybackContext(
       UUID sessionId,
       UUID mediaFileId,
       int positionSeconds,
       double percentComplete,
-      int durationSeconds) {
-    var remainingSeconds = durationSeconds - positionSeconds;
-    var decision = evaluateStopDecision(percentComplete, remainingSeconds, durationSeconds);
+      int durationSeconds) {}
+
+  private void handleStoppedPlayback(UUID userId, PlaybackContext ctx) {
+    var remainingSeconds = ctx.durationSeconds() - ctx.positionSeconds();
+    var decision =
+        evaluateStopDecision(ctx.percentComplete(), remainingSeconds, ctx.durationSeconds());
 
     if (decision == StopDecision.DISCARD) {
-      sessionProgressRepository.deleteBySessionId(sessionId);
+      sessionProgressRepository.deleteBySessionId(ctx.sessionId());
       return;
     }
 
     if (decision == StopDecision.MARK_WATCHED) {
-      sessionProgressRepository.deleteBySessionId(sessionId);
+      sessionProgressRepository.deleteBySessionId(ctx.sessionId());
 
-      var collectableId = resolveCollectableId(mediaFileId);
-      watchStatusService.markWatched(userId, collectableId, Instant.now(), durationSeconds);
+      var collectableId = resolveCollectableId(ctx.mediaFileId());
+      watchStatusService.markWatched(userId, collectableId, Instant.now(), ctx.durationSeconds());
 
       eventPublisher.publishEvent(
           ItemWatchedEvent.builder()
-              .sessionId(sessionId)
+              .sessionId(ctx.sessionId())
               .userId(userId)
-              .mediaFileId(mediaFileId)
+              .mediaFileId(ctx.mediaFileId())
               .collectableId(collectableId)
               .build());
       return;
     }
 
-    // PERSIST — save position for resume
     sessionProgressRepository.upsertProgress(
         SaveWatchProgress.builder()
-            .sessionId(sessionId)
+            .sessionId(ctx.sessionId())
             .userId(userId)
-            .mediaFileId(mediaFileId)
-            .positionSeconds(positionSeconds)
-            .percentComplete(percentComplete)
-            .durationSeconds(durationSeconds)
+            .mediaFileId(ctx.mediaFileId())
+            .positionSeconds(ctx.positionSeconds())
+            .percentComplete(ctx.percentComplete())
+            .durationSeconds(ctx.durationSeconds())
             .build());
 
     eventPublisher.publishEvent(
         SessionProgressChangedEvent.builder()
-            .sessionId(sessionId)
+            .sessionId(ctx.sessionId())
             .userId(userId)
-            .mediaFileId(mediaFileId)
-            .positionSeconds(positionSeconds)
-            .percentComplete(percentComplete)
+            .mediaFileId(ctx.mediaFileId())
+            .positionSeconds(ctx.positionSeconds())
+            .percentComplete(ctx.percentComplete())
             .state(PlaybackState.STOPPED)
             .build());
   }
