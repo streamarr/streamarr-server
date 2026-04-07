@@ -25,6 +25,7 @@ import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PageItem;
 import com.streamarr.server.services.pagination.PaginationService;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -255,6 +256,23 @@ public class SeriesService {
   @Transactional(readOnly = true)
   public List<MediaFile> findMediaFiles(UUID entityId) {
     return mediaFileRepository.findByMediaId(entityId);
+  }
+
+  @Transactional(readOnly = true)
+  public List<MediaFile> findAllEpisodeMediaFiles(UUID seriesId) {
+    var seasonIds = seasonRepository.findSeasonIdsBySeriesIds(List.of(seriesId));
+    var allSeasonIds = seasonIds.values().stream().flatMap(Collection::stream).toList();
+    if (allSeasonIds.isEmpty()) {
+      return List.of();
+    }
+
+    var episodeIds = episodeRepository.findEpisodeIdsBySeasonIds(allSeasonIds);
+    var allEpisodeIds = episodeIds.values().stream().flatMap(Collection::stream).toList();
+    if (allEpisodeIds.isEmpty()) {
+      return List.of();
+    }
+
+    return mediaFileRepository.findByMediaIdIn(allEpisodeIds);
   }
 
   @Transactional(readOnly = true)

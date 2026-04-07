@@ -387,6 +387,65 @@ class WatchProgressFieldResolverTest {
   }
 
   @Nested
+  @DisplayName("Series Watch Progress")
+  class SeriesWatchProgressTests {
+
+    @Test
+    @DisplayName("Should return most recent episode progress for series")
+    void shouldReturnMostRecentEpisodeProgressForSeries() {
+      var seriesId = UUID.randomUUID();
+      var series = Series.builder().title("Test Series").build();
+      series.setId(seriesId);
+
+      var episodeId = UUID.randomUUID();
+      var mediaFile = buildMediaFile();
+      mediaFile.setMediaId(episodeId);
+      mediaFileRepository.save(mediaFile);
+
+      when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
+      when(seriesService.findAllEpisodeMediaFiles(seriesId)).thenReturn(List.of(mediaFile));
+
+      sessionProgressRepository.save(
+          SessionProgress.builder()
+              .sessionId(UUID.randomUUID())
+              .userId(USER_ID)
+              .mediaFileId(mediaFile.getId())
+              .positionSeconds(900)
+              .percentComplete(25.0)
+              .durationSeconds(3600)
+              .build());
+
+      var context =
+          dgsQueryExecutor.executeAndGetDocumentContext(
+              String.format(
+                  "{ series(id: \"%s\") { watchProgress { positionSeconds percentComplete durationSeconds } } }",
+                  seriesId));
+
+      assertThat(context.<Integer>read("data.series.watchProgress.positionSeconds")).isEqualTo(900);
+      assertThat(context.<Double>read("data.series.watchProgress.percentComplete")).isEqualTo(25.0);
+    }
+
+    @Test
+    @DisplayName("Should return null watch progress when series has no episode progress")
+    void shouldReturnNullWatchProgressWhenSeriesHasNoEpisodeProgress() {
+      var seriesId = UUID.randomUUID();
+      var series = Series.builder().title("Test Series").build();
+      series.setId(seriesId);
+
+      when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
+      when(seriesService.findAllEpisodeMediaFiles(seriesId)).thenReturn(List.of());
+
+      Object watchProgress =
+          dgsQueryExecutor.executeAndExtractJsonPath(
+              String.format(
+                  "{ series(id: \"%s\") { watchProgress { positionSeconds } } }", seriesId),
+              "data.series.watchProgress");
+
+      assertThat(watchProgress).isNull();
+    }
+  }
+
+  @Nested
   @DisplayName("Season-Series Navigation")
   class SeasonSeriesNavigationTests {
 

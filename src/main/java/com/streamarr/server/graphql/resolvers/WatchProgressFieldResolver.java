@@ -12,6 +12,7 @@ import com.streamarr.server.graphql.dataloaders.WatchStatusEntityType;
 import com.streamarr.server.graphql.dataloaders.WatchStatusLoaderKey;
 import com.streamarr.server.graphql.dto.WatchProgressDto;
 import com.streamarr.server.repositories.media.MediaFileRepository;
+import com.streamarr.server.services.SeriesService;
 import graphql.schema.DataFetchingEnvironment;
 import java.util.Comparator;
 import java.util.Objects;
@@ -25,6 +26,7 @@ import org.dataloader.DataLoader;
 public class WatchProgressFieldResolver {
 
   private final MediaFileRepository mediaFileRepository;
+  private final SeriesService seriesService;
 
   @DgsData(parentType = "Movie", field = "watchProgress")
   public CompletableFuture<WatchProgressDto> movieWatchProgress(DataFetchingEnvironment dfe) {
@@ -36,6 +38,27 @@ public class WatchProgressFieldResolver {
   public CompletableFuture<WatchProgressDto> episodeWatchProgress(DataFetchingEnvironment dfe) {
     Episode episode = dfe.getSource();
     return loadProgress(dfe, episode.getId());
+  }
+
+  @DgsData(parentType = "Series", field = "watchProgress")
+  public CompletableFuture<WatchProgressDto> seriesWatchProgress(DataFetchingEnvironment dfe) {
+    Series series = dfe.getSource();
+    var files = seriesService.findAllEpisodeMediaFiles(series.getId());
+    if (files.isEmpty()) {
+      return CompletableFuture.completedFuture(null);
+    }
+
+    DataLoader<UUID, WatchProgressDto> loader = dfe.getDataLoader("watchProgress");
+    var mediaFileIds = files.stream().map(MediaFile::getId).toList();
+
+    return loader
+        .loadMany(mediaFileIds)
+        .thenApply(
+            results ->
+                results.stream()
+                    .filter(Objects::nonNull)
+                    .max(Comparator.comparing(WatchProgressDto::lastModifiedOn))
+                    .orElse(null));
   }
 
   @DgsData(parentType = "Movie", field = "watchStatus")
