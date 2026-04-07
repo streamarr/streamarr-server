@@ -11,27 +11,31 @@ import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.graphql.dataloaders.WatchStatusEntityType;
 import com.streamarr.server.graphql.dataloaders.WatchStatusLoaderKey;
 import com.streamarr.server.graphql.dto.WatchProgressDto;
+import com.streamarr.server.repositories.media.MediaFileRepository;
 import graphql.schema.DataFetchingEnvironment;
 import java.util.Comparator;
 import java.util.Objects;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import lombok.RequiredArgsConstructor;
 import org.dataloader.DataLoader;
 
 @DgsComponent
+@RequiredArgsConstructor
 public class WatchProgressFieldResolver {
+
+  private final MediaFileRepository mediaFileRepository;
 
   @DgsData(parentType = "Movie", field = "watchProgress")
   public CompletableFuture<WatchProgressDto> movieWatchProgress(DataFetchingEnvironment dfe) {
     Movie movie = dfe.getSource();
-    return loadProgress(dfe, movie.getFiles());
+    return loadProgress(dfe, movie.getId());
   }
 
   @DgsData(parentType = "Episode", field = "watchProgress")
   public CompletableFuture<WatchProgressDto> episodeWatchProgress(DataFetchingEnvironment dfe) {
     Episode episode = dfe.getSource();
-    return loadProgress(dfe, episode.getFiles());
+    return loadProgress(dfe, episode.getId());
   }
 
   @DgsData(parentType = "Movie", field = "watchStatus")
@@ -59,8 +63,9 @@ public class WatchProgressFieldResolver {
   }
 
   private CompletableFuture<WatchProgressDto> loadProgress(
-      DataFetchingEnvironment dfe, Set<MediaFile> files) {
-    if (files == null || files.isEmpty()) {
+      DataFetchingEnvironment dfe, UUID entityId) {
+    var files = mediaFileRepository.findByMediaId(entityId);
+    if (files.isEmpty()) {
       return CompletableFuture.completedFuture(null);
     }
 
