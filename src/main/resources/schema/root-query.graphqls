@@ -1,6 +1,7 @@
 type Query {
     movie(id: ID!): Movie
     series(id: ID!): Series
+    episode(id: ID!): Episode
     rating(id: ID!): Rating!
     library(id: ID!): Library!
     libraries: [Library!]!
