@@ -309,6 +309,8 @@ public class SeriesService {
       case ADDED -> series.getCreatedOn();
       case RELEASE_DATE -> series.getFirstAirDate();
       case RUNTIME -> series.getRuntime();
+      case LAST_WATCHED ->
+          throw new UnsupportedOperationException("LAST_WATCHED not yet implemented");
     };
   }
 }

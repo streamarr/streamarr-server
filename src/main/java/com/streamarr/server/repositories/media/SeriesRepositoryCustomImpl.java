@@ -183,6 +183,8 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
       case ADDED -> Tables.BASE_COLLECTABLE.CREATED_ON;
       case RELEASE_DATE -> Tables.SERIES.FIRST_AIR_DATE;
       case RUNTIME -> Tables.SERIES.RUNTIME;
+      case LAST_WATCHED ->
+          throw new UnsupportedOperationException("LAST_WATCHED not yet implemented");
     };
   }
 
@@ -194,6 +196,8 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
       case ADDED -> Tables.BASE_COLLECTABLE.CREATED_ON.sort(direction);
       case RELEASE_DATE -> Tables.SERIES.FIRST_AIR_DATE.sort(direction).nullsLast();
       case RUNTIME -> Tables.SERIES.RUNTIME.sort(direction).nullsLast();
+      case LAST_WATCHED ->
+          throw new UnsupportedOperationException("LAST_WATCHED not yet implemented");
     };
   }
 }

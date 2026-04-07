@@ -182,6 +182,8 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
       case ADDED -> Tables.BASE_COLLECTABLE.CREATED_ON;
       case RELEASE_DATE -> Tables.MOVIE.RELEASE_DATE;
       case RUNTIME -> Tables.MOVIE.RUNTIME;
+      case LAST_WATCHED ->
+          throw new UnsupportedOperationException("LAST_WATCHED not yet implemented");
     };
   }
 
@@ -193,6 +195,8 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
       case ADDED -> Tables.BASE_COLLECTABLE.CREATED_ON.sort(direction);
       case RELEASE_DATE -> Tables.MOVIE.RELEASE_DATE.sort(direction).nullsLast();
       case RUNTIME -> Tables.MOVIE.RUNTIME.sort(direction).nullsLast();
+      case LAST_WATCHED ->
+          throw new UnsupportedOperationException("LAST_WATCHED not yet implemented");
     };
   }
 }

@@ -116,7 +116,8 @@ public class LibraryResolver {
           .studioIds(parseUuidList(filter.studioIds()))
           .directorIds(parseUuidList(filter.directorIds()))
           .castMemberIds(parseUuidList(filter.castMemberIds()))
-          .unmatched(filter.unmatched());
+          .unmatched(filter.unmatched())
+          .watchStatus(filter.watchStatus());
     }
 
     var effectiveFilter = builder.build();
