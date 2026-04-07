@@ -1,9 +1,13 @@
 package com.streamarr.server.repositories.media;
 
+import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.noCondition;
+import static org.jooq.impl.DSL.not;
+import static org.jooq.impl.DSL.select;
 
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.jooq.generated.Tables;
 import com.streamarr.server.jooq.generated.enums.ExternalSourceType;
 import com.streamarr.server.repositories.JooqQueryHelper;
@@ -15,6 +19,7 @@ import jakarta.persistence.PersistenceContext;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
@@ -173,8 +178,95 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
                 filter.getCastMemberIds()));
 
     condition = condition.and(JooqQueryHelper.unmatchedCondition(filter.getUnmatched()));
+    condition = condition.and(watchStatusCondition(filter.getWatchStatus()));
 
     return condition;
+  }
+
+  private Condition watchStatusCondition(WatchStatus watchStatus) {
+    if (watchStatus == null) {
+      return noCondition();
+    }
+
+    // TODO(#163): Replace with authenticated user ID from Spring Security
+    var userId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+
+    // Subquery: series has at least one episode
+    var hasEpisodes =
+        exists(
+            select(Tables.EPISODE.ID)
+                .from(Tables.EPISODE)
+                .innerJoin(Tables.SEASON)
+                .on(Tables.EPISODE.SEASON_ID.eq(Tables.SEASON.ID))
+                .where(Tables.SEASON.SERIES_ID.eq(Tables.BASE_COLLECTABLE.ID)));
+
+    // Subquery: all episodes are watched (no unwatched episode exists)
+    var allEpisodesWatched =
+        not(
+            exists(
+                select(Tables.EPISODE.ID)
+                    .from(Tables.EPISODE)
+                    .innerJoin(Tables.SEASON)
+                    .on(Tables.EPISODE.SEASON_ID.eq(Tables.SEASON.ID))
+                    .where(
+                        Tables.SEASON
+                            .SERIES_ID
+                            .eq(Tables.BASE_COLLECTABLE.ID)
+                            .and(
+                                not(
+                                    exists(
+                                        select(Tables.WATCH_HISTORY.ID)
+                                            .from(Tables.WATCH_HISTORY)
+                                            .where(
+                                                Tables.WATCH_HISTORY
+                                                    .COLLECTABLE_ID
+                                                    .eq(Tables.EPISODE.ID)
+                                                    .and(Tables.WATCH_HISTORY.USER_ID.eq(userId))
+                                                    .and(
+                                                        Tables.WATCH_HISTORY.DISMISSED_AT
+                                                            .isNull()))))))));
+
+    // Subquery: any episode is watched
+    var anyEpisodeWatched =
+        exists(
+            select(Tables.WATCH_HISTORY.ID)
+                .from(Tables.WATCH_HISTORY)
+                .innerJoin(Tables.EPISODE)
+                .on(Tables.WATCH_HISTORY.COLLECTABLE_ID.eq(Tables.EPISODE.ID))
+                .innerJoin(Tables.SEASON)
+                .on(Tables.EPISODE.SEASON_ID.eq(Tables.SEASON.ID))
+                .where(
+                    Tables.SEASON
+                        .SERIES_ID
+                        .eq(Tables.BASE_COLLECTABLE.ID)
+                        .and(Tables.WATCH_HISTORY.USER_ID.eq(userId))
+                        .and(Tables.WATCH_HISTORY.DISMISSED_AT.isNull())));
+
+    // Subquery: any episode has progress
+    var anyEpisodeHasProgress =
+        exists(
+            select(Tables.SESSION_PROGRESS.ID)
+                .from(Tables.SESSION_PROGRESS)
+                .innerJoin(Tables.MEDIA_FILE)
+                .on(Tables.SESSION_PROGRESS.MEDIA_FILE_ID.eq(Tables.MEDIA_FILE.ID))
+                .innerJoin(Tables.EPISODE)
+                .on(Tables.MEDIA_FILE.MEDIA_ID.eq(Tables.EPISODE.ID))
+                .innerJoin(Tables.SEASON)
+                .on(Tables.EPISODE.SEASON_ID.eq(Tables.SEASON.ID))
+                .where(
+                    Tables.SEASON
+                        .SERIES_ID
+                        .eq(Tables.BASE_COLLECTABLE.ID)
+                        .and(Tables.SESSION_PROGRESS.USER_ID.eq(userId))
+                        .and(Tables.SESSION_PROGRESS.POSITION_SECONDS.greaterThan(0))));
+
+    var hasAnyWatchActivity = anyEpisodeWatched.or(anyEpisodeHasProgress);
+
+    return switch (watchStatus) {
+      case WATCHED -> hasEpisodes.and(allEpisodesWatched);
+      case IN_PROGRESS -> hasAnyWatchActivity.and(not(hasEpisodes.and(allEpisodesWatched)));
+      case UNWATCHED -> not(hasAnyWatchActivity);
+    };
   }
 
   private Field<?> sortField(MediaFilter filter) {
