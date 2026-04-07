@@ -3,6 +3,7 @@ package com.streamarr.server.graphql.resolvers;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.DgsQuery;
+import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.exceptions.InvalidIdException;
@@ -22,6 +23,11 @@ public class SeriesResolver {
   @DgsQuery
   public Optional<Series> series(String id) {
     return seriesService.findById(parseUuid(id));
+  }
+
+  @DgsQuery
+  public Optional<Episode> episode(String id) {
+    return seriesService.findEpisodeById(parseUuid(id));
   }
 
   @DgsData(parentType = "Series", field = "files")
