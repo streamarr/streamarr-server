@@ -171,6 +171,8 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
               isDesc
                   ? Comparator.comparing(Series::getTitle, Comparator.reverseOrder())
                   : Comparator.comparing(Series::getTitle);
+          case LAST_WATCHED ->
+              throw new UnsupportedOperationException("LAST_WATCHED not yet implemented in fake");
         };
 
     Comparator<Series> idComparator = Comparator.comparing(Series::getId);

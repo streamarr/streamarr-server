@@ -158,6 +158,8 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
               isDesc
                   ? Comparator.comparing(Movie::getTitle, Comparator.reverseOrder())
                   : Comparator.comparing(Movie::getTitle);
+          case LAST_WATCHED ->
+              throw new UnsupportedOperationException("LAST_WATCHED not yet implemented in fake");
         };
 
     Comparator<Movie> idComparator = Comparator.comparing(Movie::getId);
