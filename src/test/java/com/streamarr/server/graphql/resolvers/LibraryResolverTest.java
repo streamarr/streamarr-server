@@ -17,6 +17,7 @@ import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
 import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.CursorValidator;
@@ -396,6 +397,39 @@ class LibraryResolverTest {
               "data.library.items.edges[0].node.title");
 
       assertThat(title).isEqualTo("Filtered Movie");
+    }
+
+    @Test
+    @DisplayName("Should delegate watch status filter to movie service when watchStatus provided")
+    void shouldDelegateWatchStatusFilterToMovieServiceWhenWatchStatusProvided() {
+      var libraryId = UUID.randomUUID();
+      var library = buildMovieLibrary(libraryId);
+
+      var movie = Movie.builder().title("In Progress Movie").titleSort("In Progress Movie").build();
+      movie.setId(UUID.randomUUID());
+
+      var page = new MediaPage<>(List.of(new PageItem<>(movie, "In Progress Movie")), false, false);
+
+      when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
+
+      when(movieService.getMoviesWithFilter(
+              argThat(
+                  (MediaPaginationOptions opts) -> {
+                    var f = opts.getMediaFilter();
+                    return f.getWatchStatus() == WatchStatus.IN_PROGRESS;
+                  })))
+          .thenReturn(page);
+
+      String title =
+          dgsQueryExecutor.executeAndExtractJsonPath(
+              String.format(
+                  """
+                  { library(id: "%s") { items(first: 10, filter: {watchStatus: IN_PROGRESS}) { edges { node { ... on Movie { title } } } } } }
+                  """,
+                  libraryId),
+              "data.library.items.edges[0].node.title");
+
+      assertThat(title).isEqualTo("In Progress Movie");
     }
 
     @Test

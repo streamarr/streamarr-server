@@ -1,9 +1,13 @@
 package com.streamarr.server.repositories.media;
 
+import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.noCondition;
+import static org.jooq.impl.DSL.not;
+import static org.jooq.impl.DSL.select;
 
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.jooq.generated.Tables;
 import com.streamarr.server.jooq.generated.enums.ExternalSourceType;
 import com.streamarr.server.repositories.JooqQueryHelper;
@@ -15,6 +19,7 @@ import jakarta.persistence.PersistenceContext;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
@@ -172,8 +177,48 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
                 filter.getCastMemberIds()));
 
     condition = condition.and(JooqQueryHelper.unmatchedCondition(filter.getUnmatched()));
+    condition = condition.and(watchStatusCondition(filter.getWatchStatus()));
 
     return condition;
+  }
+
+  private Condition watchStatusCondition(WatchStatus watchStatus) {
+    if (watchStatus == null) {
+      return noCondition();
+    }
+
+    // TODO(#163): Replace with authenticated user ID from Spring Security
+    var userId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+
+    var isWatched =
+        exists(
+            select(Tables.WATCH_HISTORY.ID)
+                .from(Tables.WATCH_HISTORY)
+                .where(
+                    Tables.WATCH_HISTORY
+                        .COLLECTABLE_ID
+                        .eq(Tables.BASE_COLLECTABLE.ID)
+                        .and(Tables.WATCH_HISTORY.USER_ID.eq(userId))
+                        .and(Tables.WATCH_HISTORY.DISMISSED_AT.isNull())));
+
+    var hasProgress =
+        exists(
+            select(Tables.SESSION_PROGRESS.ID)
+                .from(Tables.SESSION_PROGRESS)
+                .innerJoin(Tables.MEDIA_FILE)
+                .on(Tables.SESSION_PROGRESS.MEDIA_FILE_ID.eq(Tables.MEDIA_FILE.ID))
+                .where(
+                    Tables.MEDIA_FILE
+                        .MEDIA_ID
+                        .eq(Tables.BASE_COLLECTABLE.ID)
+                        .and(Tables.SESSION_PROGRESS.USER_ID.eq(userId))
+                        .and(Tables.SESSION_PROGRESS.POSITION_SECONDS.greaterThan(0))));
+
+    return switch (watchStatus) {
+      case WATCHED -> isWatched;
+      case IN_PROGRESS -> not(isWatched).and(hasProgress);
+      case UNWATCHED -> not(isWatched).and(not(hasProgress));
+    };
   }
 
   private Field<?> sortField(MediaFilter filter) {
