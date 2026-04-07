@@ -2,6 +2,7 @@ package com.streamarr.server.repositories.media;
 
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.inline;
+import static org.jooq.impl.DSL.max;
 import static org.jooq.impl.DSL.noCondition;
 import static org.jooq.impl.DSL.not;
 import static org.jooq.impl.DSL.select;
@@ -269,14 +270,33 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
     };
   }
 
+  private Field<?> lastWatchedField() {
+    // TODO(#163): Replace with authenticated user ID from Spring Security
+    var userId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+
+    return select(max(Tables.SESSION_PROGRESS.LAST_MODIFIED_ON))
+        .from(Tables.SESSION_PROGRESS)
+        .innerJoin(Tables.MEDIA_FILE)
+        .on(Tables.SESSION_PROGRESS.MEDIA_FILE_ID.eq(Tables.MEDIA_FILE.ID))
+        .innerJoin(Tables.EPISODE)
+        .on(Tables.MEDIA_FILE.MEDIA_ID.eq(Tables.EPISODE.ID))
+        .innerJoin(Tables.SEASON)
+        .on(Tables.EPISODE.SEASON_ID.eq(Tables.SEASON.ID))
+        .where(
+            Tables.SEASON
+                .SERIES_ID
+                .eq(Tables.BASE_COLLECTABLE.ID)
+                .and(Tables.SESSION_PROGRESS.USER_ID.eq(userId)))
+        .asField();
+  }
+
   private Field<?> sortField(MediaFilter filter) {
     return switch (filter.getSortBy()) {
       case TITLE -> Tables.BASE_COLLECTABLE.TITLE_SORT;
       case ADDED -> Tables.BASE_COLLECTABLE.CREATED_ON;
       case RELEASE_DATE -> Tables.SERIES.FIRST_AIR_DATE;
       case RUNTIME -> Tables.SERIES.RUNTIME;
-      case LAST_WATCHED ->
-          throw new UnsupportedOperationException("LAST_WATCHED not yet implemented");
+      case LAST_WATCHED -> lastWatchedField();
     };
   }
 
@@ -288,8 +308,7 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
       case ADDED -> Tables.BASE_COLLECTABLE.CREATED_ON.sort(direction);
       case RELEASE_DATE -> Tables.SERIES.FIRST_AIR_DATE.sort(direction).nullsLast();
       case RUNTIME -> Tables.SERIES.RUNTIME.sort(direction).nullsLast();
-      case LAST_WATCHED ->
-          throw new UnsupportedOperationException("LAST_WATCHED not yet implemented");
+      case LAST_WATCHED -> lastWatchedField().sort(direction).nullsLast();
     };
   }
 }

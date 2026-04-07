@@ -211,8 +211,7 @@ public class MovieService {
       case ADDED -> movie.getCreatedOn();
       case RELEASE_DATE -> movie.getReleaseDate();
       case RUNTIME -> movie.getRuntime();
-      case LAST_WATCHED ->
-          throw new UnsupportedOperationException("LAST_WATCHED not yet implemented");
+      case LAST_WATCHED -> null;
     };
   }
 }
