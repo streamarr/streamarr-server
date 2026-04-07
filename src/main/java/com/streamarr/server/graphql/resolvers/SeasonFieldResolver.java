@@ -22,6 +22,12 @@ public class SeasonFieldResolver {
     return seriesService.findEpisodes(season.getId());
   }
 
+  @DgsData(parentType = "Episode", field = "season")
+  public Season episodeSeason(DataFetchingEnvironment dfe) {
+    Episode episode = dfe.getSource();
+    return seriesService.findSeason(episode.getSeason().getId());
+  }
+
   @DgsData(parentType = "Episode", field = "files")
   public List<MediaFile> episodeFiles(DataFetchingEnvironment dfe) {
     Episode episode = dfe.getSource();

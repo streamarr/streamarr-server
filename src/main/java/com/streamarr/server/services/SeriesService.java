@@ -263,6 +263,11 @@ public class SeriesService {
   }
 
   @Transactional(readOnly = true)
+  public Season findSeason(UUID seasonId) {
+    return seasonRepository.findById(seasonId).orElseThrow();
+  }
+
+  @Transactional(readOnly = true)
   public List<Episode> findEpisodes(UUID seasonId) {
     return episodeRepository.findBySeasonId(seasonId);
   }
