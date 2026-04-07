@@ -386,6 +386,63 @@ class WatchProgressFieldResolverTest {
     }
   }
 
+  @Nested
+  @DisplayName("Season-Series Navigation")
+  class SeasonSeriesNavigationTests {
+
+    @Test
+    @DisplayName("Should resolve series from season")
+    void shouldResolveSeriesFromSeason() {
+      var seriesId = UUID.randomUUID();
+      var series = Series.builder().title("Parent Series").build();
+      series.setId(seriesId);
+
+      var seasonId = UUID.randomUUID();
+      var season = Season.builder().title("Season 1").seasonNumber(1).series(series).build();
+      season.setId(seasonId);
+
+      when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
+      when(seriesService.findSeasons(seriesId)).thenReturn(List.of(season));
+
+      String seriesTitle =
+          dgsQueryExecutor.executeAndExtractJsonPath(
+              String.format("{ series(id: \"%s\") { seasons { series { title } } } }", seriesId),
+              "data.series.seasons[0].series.title");
+
+      assertThat(seriesTitle).isEqualTo("Parent Series");
+    }
+
+    @Test
+    @DisplayName("Should resolve season from episode")
+    void shouldResolveSeasonFromEpisode() {
+      var seriesId = UUID.randomUUID();
+      var series = Series.builder().title("Test Series").build();
+      series.setId(seriesId);
+
+      var seasonId = UUID.randomUUID();
+      var season = Season.builder().title("Season 1").seasonNumber(1).series(series).build();
+      season.setId(seasonId);
+
+      var episodeId = UUID.randomUUID();
+      var episode = Episode.builder().title("Pilot").episodeNumber(1).season(season).build();
+      episode.setId(episodeId);
+
+      when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
+      when(seriesService.findSeasons(seriesId)).thenReturn(List.of(season));
+      when(seriesService.findEpisodes(seasonId)).thenReturn(List.of(episode));
+      when(seriesService.findSeason(seasonId)).thenReturn(season);
+
+      Integer seasonNumber =
+          dgsQueryExecutor.executeAndExtractJsonPath(
+              String.format(
+                  "{ series(id: \"%s\") { seasons { episodes { season { seasonNumber } } } } }",
+                  seriesId),
+              "data.series.seasons[0].episodes[0].season.seasonNumber");
+
+      assertThat(seasonNumber).isEqualTo(1);
+    }
+  }
+
   private Movie setupMovie() {
     var movieId = UUID.randomUUID();
     var movie = Movie.builder().title("Test Movie").build();
