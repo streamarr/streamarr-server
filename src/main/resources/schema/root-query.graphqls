@@ -4,4 +4,5 @@ type Query {
     rating(id: ID!): Rating!
     library(id: ID!): Library!
     libraries: [Library!]!
+    continueWatching(first: Int): [ContinueWatchingMedia!]!
 }
