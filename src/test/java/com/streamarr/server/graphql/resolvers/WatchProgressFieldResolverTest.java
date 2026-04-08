@@ -365,6 +365,77 @@ class WatchProgressFieldResolverTest {
   }
 
   @Nested
+  @DisplayName("Season Watch Progress")
+  class SeasonWatchProgressTests {
+
+    @Test
+    @DisplayName("Should return most recent episode progress for season")
+    void shouldReturnMostRecentEpisodeProgressForSeason() {
+      var seriesId = UUID.randomUUID();
+      var series = Series.builder().title("Test Series").build();
+      series.setId(seriesId);
+
+      var seasonId = UUID.randomUUID();
+      var season = Season.builder().title("Season 1").seasonNumber(1).build();
+      season.setId(seasonId);
+
+      var mediaFile = buildMediaFile();
+      mediaFile.setMediaId(UUID.randomUUID());
+      mediaFileRepository.save(mediaFile);
+
+      when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
+      when(seriesService.findSeasons(seriesId)).thenReturn(List.of(season));
+      when(seriesService.findSeasonEpisodeMediaFiles(seasonId)).thenReturn(List.of(mediaFile));
+
+      sessionProgressRepository.save(
+          SessionProgress.builder()
+              .sessionId(UUID.randomUUID())
+              .userId(USER_ID)
+              .mediaFileId(mediaFile.getId())
+              .positionSeconds(600)
+              .percentComplete(50.0)
+              .durationSeconds(1200)
+              .build());
+
+      var context =
+          dgsQueryExecutor.executeAndGetDocumentContext(
+              String.format(
+                  "{ series(id: \"%s\") { seasons { watchProgress { positionSeconds percentComplete } } } }",
+                  seriesId));
+
+      assertThat(context.<Integer>read("data.series.seasons[0].watchProgress.positionSeconds"))
+          .isEqualTo(600);
+      assertThat(context.<Double>read("data.series.seasons[0].watchProgress.percentComplete"))
+          .isEqualTo(50.0);
+    }
+
+    @Test
+    @DisplayName("Should return null watch progress when season has no episode progress")
+    void shouldReturnNullWatchProgressWhenSeasonHasNoEpisodeProgress() {
+      var seriesId = UUID.randomUUID();
+      var series = Series.builder().title("Test Series").build();
+      series.setId(seriesId);
+
+      var seasonId = UUID.randomUUID();
+      var season = Season.builder().title("Season 1").seasonNumber(1).build();
+      season.setId(seasonId);
+
+      when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
+      when(seriesService.findSeasons(seriesId)).thenReturn(List.of(season));
+      when(seriesService.findSeasonEpisodeMediaFiles(seasonId)).thenReturn(List.of());
+
+      Object watchProgress =
+          dgsQueryExecutor.executeAndExtractJsonPath(
+              String.format(
+                  "{ series(id: \"%s\") { seasons { watchProgress { positionSeconds } } } }",
+                  seriesId),
+              "data.series.seasons[0].watchProgress");
+
+      assertThat(watchProgress).isNull();
+    }
+  }
+
+  @Nested
   @DisplayName("Series Watch Status")
   class SeriesWatchStatusTests {
 

@@ -61,6 +61,27 @@ public class WatchProgressFieldResolver {
                     .orElse(null));
   }
 
+  @DgsData(parentType = "Season", field = "watchProgress")
+  public CompletableFuture<WatchProgressDto> seasonWatchProgress(DataFetchingEnvironment dfe) {
+    Season season = dfe.getSource();
+    var files = seriesService.findSeasonEpisodeMediaFiles(season.getId());
+    if (files.isEmpty()) {
+      return CompletableFuture.completedFuture(null);
+    }
+
+    DataLoader<UUID, WatchProgressDto> loader = dfe.getDataLoader("watchProgress");
+    var mediaFileIds = files.stream().map(MediaFile::getId).toList();
+
+    return loader
+        .loadMany(mediaFileIds)
+        .thenApply(
+            results ->
+                results.stream()
+                    .filter(Objects::nonNull)
+                    .max(Comparator.comparing(WatchProgressDto::lastModifiedOn))
+                    .orElse(null));
+  }
+
   @DgsData(parentType = "Movie", field = "watchStatus")
   public CompletableFuture<WatchStatus> movieWatchStatus(DataFetchingEnvironment dfe) {
     Movie movie = dfe.getSource();

@@ -276,6 +276,17 @@ public class SeriesService {
   }
 
   @Transactional(readOnly = true)
+  public List<MediaFile> findSeasonEpisodeMediaFiles(UUID seasonId) {
+    var episodeIds = episodeRepository.findEpisodeIdsBySeasonIds(List.of(seasonId));
+    var allEpisodeIds = episodeIds.values().stream().flatMap(Collection::stream).toList();
+    if (allEpisodeIds.isEmpty()) {
+      return List.of();
+    }
+
+    return mediaFileRepository.findByMediaIdIn(allEpisodeIds);
+  }
+
+  @Transactional(readOnly = true)
   public List<Season> findSeasons(UUID seriesId) {
     return seasonRepository.findBySeriesId(seriesId);
   }
