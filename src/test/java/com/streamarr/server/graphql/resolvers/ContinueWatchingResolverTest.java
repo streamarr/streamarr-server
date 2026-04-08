@@ -2,7 +2,6 @@ package com.streamarr.server.graphql.resolvers;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 import com.netflix.graphql.dgs.DgsQueryExecutor;
@@ -37,7 +36,7 @@ class ContinueWatchingResolverTest {
       var movie = Movie.builder().title("Test Movie").titleSort("Test Movie").build();
       movie.setId(UUID.randomUUID());
 
-      when(continueWatchingService.getContinueWatching(eq(10))).thenReturn(List.of(movie));
+      when(continueWatchingService.getContinueWatching(10)).thenReturn(List.of(movie));
 
       List<String> titles =
           dgsQueryExecutor.executeAndExtractJsonPath(
@@ -50,7 +49,7 @@ class ContinueWatchingResolverTest {
     @Test
     @DisplayName("Should return empty list when no items in progress")
     void shouldReturnEmptyListWhenNoItemsInProgress() {
-      when(continueWatchingService.getContinueWatching(eq(20))).thenReturn(List.of());
+      when(continueWatchingService.getContinueWatching(20)).thenReturn(List.of());
 
       List<Object> results =
           dgsQueryExecutor.executeAndExtractJsonPath(
@@ -66,7 +65,7 @@ class ContinueWatchingResolverTest {
       var movie = Movie.builder().title("Movie Item").titleSort("Movie Item").build();
       movie.setId(UUID.randomUUID());
 
-      when(continueWatchingService.getContinueWatching(eq(20))).thenReturn(List.of(movie));
+      when(continueWatchingService.getContinueWatching(20)).thenReturn(List.of(movie));
 
       String typename =
           dgsQueryExecutor.executeAndExtractJsonPath(
@@ -82,7 +81,7 @@ class ContinueWatchingResolverTest {
       var episode = Episode.builder().title("Episode Item").episodeNumber(1).build();
       episode.setId(UUID.randomUUID());
 
-      when(continueWatchingService.getContinueWatching(eq(20))).thenReturn(List.of(episode));
+      when(continueWatchingService.getContinueWatching(20)).thenReturn(List.of(episode));
 
       String typename =
           dgsQueryExecutor.executeAndExtractJsonPath(
@@ -101,8 +100,9 @@ class ContinueWatchingResolverTest {
     @DisplayName("Should throw for unsupported media type")
     void shouldThrowForUnsupportedMediaType() {
       var resolver = new ContinueWatchingResolver(null);
+      var unsupported = new Object();
 
-      assertThatThrownBy(() -> resolver.resolveContinueWatchingMedia(new Object()))
+      assertThatThrownBy(() -> resolver.resolveContinueWatchingMedia(unsupported))
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("Unknown continue watching media type");
     }

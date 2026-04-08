@@ -25,6 +25,8 @@ import org.dataloader.DataLoader;
 @RequiredArgsConstructor
 public class WatchProgressFieldResolver {
 
+  private static final String WATCH_PROGRESS_LOADER = "watchProgress";
+
   private final MediaFileRepository mediaFileRepository;
   private final SeriesService seriesService;
 
@@ -48,7 +50,7 @@ public class WatchProgressFieldResolver {
       return CompletableFuture.completedFuture(null);
     }
 
-    DataLoader<UUID, WatchProgressDto> loader = dfe.getDataLoader("watchProgress");
+    DataLoader<UUID, WatchProgressDto> loader = dfe.getDataLoader(WATCH_PROGRESS_LOADER);
     var mediaFileIds = files.stream().map(MediaFile::getId).toList();
 
     return loader
@@ -69,7 +71,7 @@ public class WatchProgressFieldResolver {
       return CompletableFuture.completedFuture(null);
     }
 
-    DataLoader<UUID, WatchProgressDto> loader = dfe.getDataLoader("watchProgress");
+    DataLoader<UUID, WatchProgressDto> loader = dfe.getDataLoader(WATCH_PROGRESS_LOADER);
     var mediaFileIds = files.stream().map(MediaFile::getId).toList();
 
     return loader
@@ -113,7 +115,7 @@ public class WatchProgressFieldResolver {
       return CompletableFuture.completedFuture(null);
     }
 
-    DataLoader<UUID, WatchProgressDto> loader = dfe.getDataLoader("watchProgress");
+    DataLoader<UUID, WatchProgressDto> loader = dfe.getDataLoader(WATCH_PROGRESS_LOADER);
     var mediaFileIds = files.stream().map(MediaFile::getId).toList();
 
     return loader

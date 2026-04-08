@@ -18,7 +18,7 @@ public class ContinueWatchingResolver {
   private final ContinueWatchingService continueWatchingService;
 
   @DgsQuery
-  public List<? extends BaseCollectable<?>> continueWatching(DataFetchingEnvironment dfe) {
+  public List<BaseCollectable<?>> continueWatching(DataFetchingEnvironment dfe) {
     int first = dfe.getArgumentOrDefault("first", 20);
     return continueWatchingService.getContinueWatching(first);
   }

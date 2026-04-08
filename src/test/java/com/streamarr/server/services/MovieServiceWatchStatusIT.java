@@ -46,7 +46,6 @@ class MovieServiceWatchStatusIT extends AbstractIntegrationTest {
   private Library library;
   private Movie watchedMovie;
   private Movie inProgressMovie;
-  private Movie unwatchedMovie;
 
   @BeforeAll
   void setup() {
@@ -54,7 +53,7 @@ class MovieServiceWatchStatusIT extends AbstractIntegrationTest {
 
     watchedMovie = createMovieWithFile("Watched Movie");
     inProgressMovie = createMovieWithFile("In Progress Movie");
-    unwatchedMovie = createMovieWithFile("Unwatched Movie");
+    createMovieWithFile("Unwatched Movie");
 
     // Mark watchedMovie as WATCHED via watch_history
     watchHistoryRepository.saveAndFlush(

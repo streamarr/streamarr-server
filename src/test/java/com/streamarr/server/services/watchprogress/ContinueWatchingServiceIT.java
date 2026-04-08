@@ -190,6 +190,7 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
                   })
               .toList();
 
+      assertThat(titles).isNotEmpty();
       assertThat(titles).doesNotContain("Watched Movie");
     }
 
@@ -208,6 +209,7 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
                   })
               .toList();
 
+      assertThat(titles).isNotEmpty();
       assertThat(titles).doesNotContain("Unwatched Movie");
     }
 
