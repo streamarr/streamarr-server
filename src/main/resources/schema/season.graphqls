@@ -7,5 +7,6 @@ type Season {
     series: Series!
     episodes: [Episode]!
     images(type: ImageType): [Image]!
+    watchProgress: WatchProgress
     watchStatus: WatchStatus!
 }
