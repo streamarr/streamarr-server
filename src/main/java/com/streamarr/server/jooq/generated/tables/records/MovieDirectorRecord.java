@@ -8,7 +8,7 @@ import com.streamarr.server.jooq.generated.tables.MovieDirector;
 
 import java.util.UUID;
 
-import org.jooq.Record2;
+import org.jooq.Record1;
 import org.jooq.impl.UpdatableRecordImpl;
 
 
@@ -62,13 +62,27 @@ public class MovieDirectorRecord extends UpdatableRecordImpl<MovieDirectorRecord
         return (Integer) get(2);
     }
 
+    /**
+     * Setter for <code>public.movie_director.id</code>.
+     */
+    public void setId(UUID value) {
+        set(3, value);
+    }
+
+    /**
+     * Getter for <code>public.movie_director.id</code>.
+     */
+    public UUID getId() {
+        return (UUID) get(3);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
 
     @Override
-    public Record2<UUID, UUID> key() {
-        return (Record2) super.key();
+    public Record1<UUID> key() {
+        return (Record1) super.key();
     }
 
     // -------------------------------------------------------------------------
@@ -85,12 +99,13 @@ public class MovieDirectorRecord extends UpdatableRecordImpl<MovieDirectorRecord
     /**
      * Create a detached, initialised MovieDirectorRecord
      */
-    public MovieDirectorRecord(UUID movieId, UUID personId, Integer ordinal) {
+    public MovieDirectorRecord(UUID movieId, UUID personId, Integer ordinal, UUID id) {
         super(MovieDirector.MOVIE_DIRECTOR);
 
         setMovieId(movieId);
         setPersonId(personId);
         setOrdinal(ordinal);
+        setId(id);
         resetTouchedOnNotNull();
     }
 }

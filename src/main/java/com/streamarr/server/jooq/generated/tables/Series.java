@@ -4,12 +4,12 @@
 package com.streamarr.server.jooq.generated.tables;
 
 
+import com.streamarr.server.jooq.generated.Indexes;
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable.BaseCollectablePath;
 import com.streamarr.server.jooq.generated.tables.Company.CompanyPath;
 import com.streamarr.server.jooq.generated.tables.Genre.GenrePath;
-import com.streamarr.server.jooq.generated.tables.Person.PersonPath;
 import com.streamarr.server.jooq.generated.tables.Season.SeasonPath;
 import com.streamarr.server.jooq.generated.tables.SeriesCompany.SeriesCompanyPath;
 import com.streamarr.server.jooq.generated.tables.SeriesDirector.SeriesDirectorPath;
@@ -26,6 +26,7 @@ import java.util.UUID;
 import org.jooq.Condition;
 import org.jooq.Field;
 import org.jooq.ForeignKey;
+import org.jooq.Index;
 import org.jooq.InverseForeignKey;
 import org.jooq.Name;
 import org.jooq.Path;
@@ -34,13 +35,14 @@ import org.jooq.QueryPart;
 import org.jooq.Record;
 import org.jooq.SQL;
 import org.jooq.Schema;
-import org.jooq.Select;
 import org.jooq.Stringly;
 import org.jooq.Table;
 import org.jooq.TableField;
+import org.jooq.TableLike;
 import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
+import org.jooq.impl.Internal;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -174,6 +176,11 @@ public class Series extends TableImpl<SeriesRecord> {
     }
 
     @Override
+    public List<Index> getIndexes() {
+        return Arrays.asList(Indexes.IDX_SERIES_FIRSTAIRDATE_DESC_ID, Indexes.IDX_SERIES_FIRSTAIRDATE_ID, Indexes.IDX_SERIES_RUNTIME_DESC_ID, Indexes.IDX_SERIES_RUNTIME_ID);
+    }
+
+    @Override
     public UniqueKey<SeriesRecord> getPrimaryKey() {
         return Keys.SERIES_PKEY;
     }
@@ -270,27 +277,11 @@ public class Series extends TableImpl<SeriesRecord> {
     }
 
     /**
-     * Get the implicit many-to-many join path to the <code>public.person</code>
-     * table, via the <code>series_director_person_id_fkey</code> key
-     */
-    public PersonPath seriesDirectorPersonIdFkey() {
-        return seriesDirector().person();
-    }
-
-    /**
      * Get the implicit many-to-many join path to the <code>public.genre</code>
      * table
      */
     public GenrePath genre() {
         return seriesGenre().genre();
-    }
-
-    /**
-     * Get the implicit many-to-many join path to the <code>public.person</code>
-     * table, via the <code>series_person_person_id_fkey</code> key
-     */
-    public PersonPath seriesPersonPersonIdFkey() {
-        return seriesPerson().person();
     }
 
     @Override
@@ -337,7 +328,7 @@ public class Series extends TableImpl<SeriesRecord> {
      */
     @Override
     public Series where(Condition condition) {
-        return new Series(getQualifiedName(), aliased() ? this : null, null, condition);
+        return new Series(getQualifiedName(), aliased() ? this : null, null, Internal.condition(this, condition));
     }
 
     /**
@@ -404,7 +395,7 @@ public class Series extends TableImpl<SeriesRecord> {
      * Create an inline derived table from this table
      */
     @Override
-    public Series whereExists(Select<?> select) {
+    public Series whereExists(TableLike<?> select) {
         return where(DSL.exists(select));
     }
 
@@ -412,7 +403,7 @@ public class Series extends TableImpl<SeriesRecord> {
      * Create an inline derived table from this table
      */
     @Override
-    public Series whereNotExists(Select<?> select) {
+    public Series whereNotExists(TableLike<?> select) {
         return where(DSL.notExists(select));
     }
 }

@@ -57,8 +57,27 @@ All PRs must pass these conditions on new code:
 - One level of indentation inside methods is ideal; two is acceptable; three means refactor
 
 ### Concurrency Coordination
-- **In-memory mutex** (`MutexFactory`): guard brief check-then-act on DB state within a single JVM (e.g., prevent duplicate inserts). Not distributed — ineffective across multiple instances.
-- **Database locks** (`SELECT FOR UPDATE … skipLocked`): coordinate across multiple application instances. Pair with lease-based heartbeats for crash recovery.
+
+Choose the simplest mechanism that fits the operation:
+
+- **Database-level upsert** (jOOQ `ON CONFLICT`): preferred when conflict resolution can be
+  expressed as a single SQL statement. Push atomicity to the database — no JVM coordination
+  needed. Use `ON CONFLICT ... DO NOTHING` for idempotent inserts, `DO UPDATE ... WHERE` when
+  the update must be conditional (e.g., guard against regressing state). Return affected-row
+  count to drive post-write logic (event publishing, etc.). When using `DO UPDATE` on tables
+  with audit columns, set `LAST_MODIFIED_ON` and `LAST_MODIFIED_BY` explicitly — jOOQ bypasses
+  JPA's `AuditingEntityListener`.
+  See `GenreRepositoryCustomImpl`, `SessionProgressRepositoryCustomImpl`.
+- **In-memory mutex** (`MutexFactory`): guard multi-step check-then-act sequences that can't
+  be expressed as a single SQL statement — e.g., read DB → call external API → conditionally
+  create multiple entities. Single-JVM only — ineffective across multiple instances.
+  See `MovieFileProcessor.enrichMovieMetadata()`.
+- **Database locks** (`SELECT FOR UPDATE … skipLocked`): coordinate across multiple application
+  instances. Pair with lease-based heartbeats for crash recovery.
+
+**Anti-pattern:** reading a row, checking a condition in Java, then writing back is a
+check-then-act race unless the read-check-write is inside a mutex or expressed as a single
+atomic SQL statement. Prefer pushing the condition into a `WHERE` clause on the upsert/delete.
 
 ### Spring Application Events
 Use Spring's `ApplicationEventPublisher` to decouple side effects from core operations. See [ADR 0010](docs/adr/0010-spring-application-events.adoc) for full rationale.
@@ -110,6 +129,11 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 - Services must NEVER import from the graphql package
 - External API types (TMDB DTOs) must NEVER leak into the service/domain layer
 - These rules are enforced by ArchUnit tests
+- For complex or conflict-handling queries, use jOOQ via the Spring Data fragment convention:
+  `{Repository}Custom` interface + `{Repository}CustomImpl` class with `DSLContext`. The JPA
+  repository extends both `JpaRepository` and the custom interface. Spring Data auto-discovers
+  the impl by naming convention. Keep `DSLContext` in the repository layer — services never
+  import jOOQ directly.
 
 ## Testing Conventions
 - Integration tests: `*IT.java` suffix, `@Tag("IntegrationTest")`

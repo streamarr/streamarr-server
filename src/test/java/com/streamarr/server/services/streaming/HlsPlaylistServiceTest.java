@@ -6,6 +6,7 @@ import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
@@ -73,9 +74,7 @@ class HlsPlaylistServiceTest {
                     .needsKeyframeAlignment(mode != TranscodeMode.FULL_TRANSCODE)
                     .build())
             .options(StreamingOptions.builder().supportedCodecs(List.of("h264", "av1")).build())
-            .seekPosition(0)
             .createdAt(Instant.now())
-            .lastAccessedAt(Instant.now())
             .build();
     session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
     return session;
@@ -108,9 +107,7 @@ class HlsPlaylistServiceTest {
                     .needsKeyframeAlignment(mode != TranscodeMode.FULL_TRANSCODE)
                     .build())
             .options(StreamingOptions.builder().supportedCodecs(List.of("h264", "av1")).build())
-            .seekPosition(0)
             .createdAt(Instant.now())
-            .lastAccessedAt(Instant.now())
             .build();
     session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
     return session;
@@ -143,9 +140,7 @@ class HlsPlaylistServiceTest {
                     .needsKeyframeAlignment(true)
                     .build())
             .options(StreamingOptions.builder().supportedCodecs(List.of("h264", "av1")).build())
-            .seekPosition(0)
             .createdAt(Instant.now())
-            .lastAccessedAt(Instant.now())
             .build();
     session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
     return session;
@@ -202,9 +197,7 @@ class HlsPlaylistServiceTest {
                     .build())
             .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
             .variants(variants)
-            .seekPosition(0)
             .createdAt(Instant.now())
-            .lastAccessedAt(Instant.now())
             .build();
 
     for (var variant : variants) {
@@ -429,10 +422,28 @@ class HlsPlaylistServiceTest {
   }
 
   @Test
-  @DisplayName("Should reduce segment count when seek position is non-zero")
-  void shouldReduceSegmentCountWhenSeekPositionIsNonZero() {
+  @DisplayName("Should reduce segment count when seek origin is non-zero")
+  void shouldReduceSegmentCountWhenSeekOriginIsNonZero() {
+    // 120s total / 6s segments = 20; seek(60) leaves 60s / 6s = 10 segments
     var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 120);
-    session.setSeekPosition(60);
+    session.seek(60);
+
+    var playlist = service.generateMediaPlaylist(session);
+
+    var segmentLines =
+        playlist.lines().filter(l -> l.startsWith("segment") && l.endsWith(".ts")).toList();
+    assertThat(segmentLines).hasSize(10);
+  }
+
+  @Test
+  @DisplayName("Should not change segment count when playback position advances beyond seek origin")
+  void shouldNotChangeSegmentCountWhenPlaybackPositionAdvancesBeyondSeekOrigin() {
+    // seekOrigin stays 60 (updatePlaybackState does not update it), so segments = (120-60)/6 = 10
+    var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 120);
+    session.seek(60);
+    session.updatePlaybackState(90, PlaybackState.PLAYING);
+
+    assertThat(session.getSeekOrigin()).isEqualTo(60);
 
     var playlist = service.generateMediaPlaylist(session);
 
@@ -635,9 +646,7 @@ class HlsPlaylistServiceTest {
                       .build())
               .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
               .variants(List.of(variant))
-              .seekPosition(0)
               .createdAt(Instant.now())
-              .lastAccessedAt(Instant.now())
               .build();
       session.setVariantHandle("1080p", new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
 

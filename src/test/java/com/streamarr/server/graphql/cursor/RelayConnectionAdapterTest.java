@@ -195,7 +195,8 @@ class RelayConnectionAdapterTest {
 
       assertThat(decoded.getCursorId()).contains(id);
       assertThat(decoded.getMediaFilter().getPreviousSortFieldValue()).isEqualTo("Test");
-      assertThat(decoded.getMediaFilter().getSortBy()).isEqualTo(options.getMediaFilter().getSortBy());
+      assertThat(decoded.getMediaFilter().getSortBy())
+          .isEqualTo(options.getMediaFilter().getSortBy());
     }
   }
 

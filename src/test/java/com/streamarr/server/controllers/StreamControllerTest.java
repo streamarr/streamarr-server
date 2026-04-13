@@ -222,7 +222,6 @@ class StreamControllerTest {
                 .build())
         .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
         .createdAt(Instant.now())
-        .lastAccessedAt(Instant.now())
         .build();
   }
 
@@ -252,11 +251,56 @@ class StreamControllerTest {
                 .build())
         .options(StreamingOptions.builder().supportedCodecs(List.of("av1")).build())
         .createdAt(Instant.now())
-        .lastAccessedAt(Instant.now())
         .build();
   }
 
   // --- Variant routing tests ---
+
+  private StreamSession buildAbrFmp4Session() {
+    var variants =
+        List.of(
+            QualityVariant.builder()
+                .width(1920)
+                .height(1080)
+                .videoBitrate(5_000_000L)
+                .audioBitrate(128_000L)
+                .label("1080p")
+                .build());
+
+    var session =
+        StreamSession.builder()
+            .sessionId(SESSION_ID)
+            .mediaFileId(UUID.randomUUID())
+            .sourcePath(Path.of("/media/movie.mkv"))
+            .mediaProbe(
+                MediaProbe.builder()
+                    .duration(Duration.ofMinutes(120))
+                    .framerate(24.0)
+                    .width(1920)
+                    .height(1080)
+                    .videoCodec("hevc")
+                    .audioCodec("aac")
+                    .bitrate(8_000_000)
+                    .build())
+            .transcodeDecision(
+                TranscodeDecision.builder()
+                    .transcodeMode(TranscodeMode.FULL_TRANSCODE)
+                    .videoCodecFamily("av1")
+                    .audioDecision(AudioDecision.stereoAac())
+                    .subtitleDecision(SubtitleDecision.exclude())
+                    .containerFormat(ContainerFormat.FMP4)
+                    .needsKeyframeAlignment(false)
+                    .build())
+            .options(StreamingOptions.builder().supportedCodecs(List.of("av1")).build())
+            .variants(variants)
+            .createdAt(Instant.now())
+            .build();
+
+    for (var variant : variants) {
+      session.setVariantHandle(variant.label(), new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
+    }
+    return session;
+  }
 
   private StreamSession buildAbrSession() {
     var variants =
@@ -303,7 +347,6 @@ class StreamControllerTest {
             .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
             .variants(variants)
             .createdAt(Instant.now())
-            .lastAccessedAt(Instant.now())
             .build();
 
     for (var variant : variants) {
@@ -389,6 +432,35 @@ class StreamControllerTest {
     mockMvc
         .perform(get("/api/stream/{sessionId}/{segmentName}", SESSION_ID, "..segment0.ts"))
         .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  @DisplayName("Should serve variant init segment when variant uses fMP4")
+  void shouldServeVariantInitSegmentWhenVariantUsesFmp4() throws Exception {
+    var session = buildAbrFmp4Session();
+    streamingService.setSession(session);
+    var initData = new byte[] {0x00, 0x00, 0x00, 0x20};
+    segmentStore.addSegment(SESSION_ID, "1080p/init.mp4", initData);
+
+    var result =
+        mockMvc
+            .perform(get("/api/stream/{sessionId}/{variantLabel}/init.mp4", SESSION_ID, "1080p"))
+            .andExpect(status().isOk())
+            .andReturn();
+
+    assertThat(result.getResponse().getContentType()).isEqualTo("video/mp4");
+    assertThat(result.getResponse().getContentLength()).isEqualTo(initData.length);
+    assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(initData);
+  }
+
+  @Test
+  @DisplayName("Should return 404 for variant init segment when variant not found")
+  void shouldReturn404ForVariantInitSegmentWhenVariantNotFound() throws Exception {
+    streamingService.setSession(buildAbrFmp4Session());
+
+    mockMvc
+        .perform(get("/api/stream/{sessionId}/{variantLabel}/init.mp4", SESSION_ID, "360p"))
+        .andExpect(status().isNotFound());
   }
 
   @Test

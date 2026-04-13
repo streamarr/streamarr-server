@@ -47,9 +47,95 @@ public final class StreamSessionFixture {
                     .build())
             .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
             .createdAt(Instant.now())
-            .lastAccessedAt(Instant.now())
             .build();
     session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
     return session;
+  }
+
+  public static StreamSession buildSessionWithDuration(int durationSeconds) {
+    return StreamSession.builder()
+        .sessionId(UUID.randomUUID())
+        .mediaFileId(UUID.randomUUID())
+        .sourcePath(Path.of("/media/movie.mkv"))
+        .mediaProbe(
+            MediaProbe.builder()
+                .duration(Duration.ofSeconds(durationSeconds))
+                .framerate(24.0)
+                .width(1920)
+                .height(1080)
+                .videoCodec("h264")
+                .audioCodec("aac")
+                .bitrate(5_000_000)
+                .build())
+        .transcodeDecision(
+            TranscodeDecision.builder()
+                .transcodeMode(TranscodeMode.REMUX)
+                .videoCodecFamily("h264")
+                .audioDecision(AudioDecision.copy("aac", 2, 0))
+                .subtitleDecision(SubtitleDecision.exclude())
+                .containerFormat(ContainerFormat.MPEGTS)
+                .needsKeyframeAlignment(true)
+                .build())
+        .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
+        .createdAt(Instant.now())
+        .build();
+  }
+
+  public static StreamSession buildSessionForMediaFile(UUID mediaFileId) {
+    return StreamSession.builder()
+        .sessionId(UUID.randomUUID())
+        .mediaFileId(mediaFileId)
+        .sourcePath(Path.of("/media/movie.mkv"))
+        .mediaProbe(
+            MediaProbe.builder()
+                .duration(Duration.ofMinutes(120))
+                .framerate(24.0)
+                .width(1920)
+                .height(1080)
+                .videoCodec("h264")
+                .audioCodec("aac")
+                .bitrate(5_000_000)
+                .build())
+        .transcodeDecision(
+            TranscodeDecision.builder()
+                .transcodeMode(TranscodeMode.REMUX)
+                .videoCodecFamily("h264")
+                .audioDecision(AudioDecision.copy("aac", 2, 0))
+                .subtitleDecision(SubtitleDecision.exclude())
+                .containerFormat(ContainerFormat.MPEGTS)
+                .needsKeyframeAlignment(true)
+                .build())
+        .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
+        .createdAt(Instant.now())
+        .build();
+  }
+
+  public static StreamSession buildZeroDurationSession() {
+    return StreamSession.builder()
+        .sessionId(UUID.randomUUID())
+        .mediaFileId(UUID.randomUUID())
+        .sourcePath(Path.of("/media/corrupt.mkv"))
+        .mediaProbe(
+            MediaProbe.builder()
+                .duration(Duration.ZERO)
+                .framerate(0)
+                .width(0)
+                .height(0)
+                .videoCodec("h264")
+                .audioCodec("aac")
+                .bitrate(0)
+                .build())
+        .transcodeDecision(
+            TranscodeDecision.builder()
+                .transcodeMode(TranscodeMode.REMUX)
+                .videoCodecFamily("h264")
+                .audioDecision(AudioDecision.copy("aac", 2, 0))
+                .subtitleDecision(SubtitleDecision.exclude())
+                .containerFormat(ContainerFormat.MPEGTS)
+                .needsKeyframeAlignment(true)
+                .build())
+        .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
+        .createdAt(Instant.now())
+        .build();
   }
 }

@@ -7,9 +7,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 import lombok.Builder;
 import lombok.Getter;
-import lombok.Setter;
 
 @Getter
 @Builder
@@ -30,8 +30,41 @@ public class StreamSession {
 
   @Builder.Default private final List<QualityVariant> variants = Collections.emptyList();
 
-  @Setter private volatile int seekPosition;
-  @Setter private volatile Instant lastAccessedAt;
+  @Getter(lombok.AccessLevel.NONE)
+  @Builder.Default
+  private final AtomicReference<PlaybackSnapshot> playbackSnapshot =
+      new AtomicReference<>(new PlaybackSnapshot(0, PlaybackState.STOPPED, Instant.now(), 0));
+
+  public void updatePlaybackState(int positionSeconds, PlaybackState state) {
+    playbackSnapshot.updateAndGet(
+        current ->
+            new PlaybackSnapshot(positionSeconds, state, Instant.now(), current.seekOrigin()));
+  }
+
+  public PlaybackSnapshot getPlaybackSnapshot() {
+    return playbackSnapshot.get();
+  }
+
+  public void seek(int positionSeconds) {
+    playbackSnapshot.updateAndGet(
+        current ->
+            new PlaybackSnapshot(positionSeconds, current.state(), Instant.now(), positionSeconds));
+  }
+
+  public int getSeekOrigin() {
+    return playbackSnapshot.get().seekOrigin();
+  }
+
+  public Instant getLastAccessedAt() {
+    return playbackSnapshot.get().accessedAt();
+  }
+
+  public void setLastAccessedAt(Instant accessedAt) {
+    playbackSnapshot.updateAndGet(
+        current ->
+            new PlaybackSnapshot(
+                current.positionSeconds(), current.state(), accessedAt, current.seekOrigin()));
+  }
 
   public TranscodeHandle getHandle() {
     return variantHandles.get(DEFAULT_VARIANT);
