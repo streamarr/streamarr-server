@@ -2,6 +2,7 @@ package com.streamarr.server.graphql.resolvers;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.netflix.graphql.dgs.DgsQueryExecutor;
@@ -99,7 +100,7 @@ class ContinueWatchingResolverTest {
     @Test
     @DisplayName("Should throw for unsupported media type")
     void shouldThrowForUnsupportedMediaType() {
-      var resolver = new ContinueWatchingResolver(null);
+      var resolver = new ContinueWatchingResolver(mock(ContinueWatchingService.class));
       var unsupported = new Object();
 
       assertThatThrownBy(() -> resolver.resolveContinueWatchingMedia(unsupported))

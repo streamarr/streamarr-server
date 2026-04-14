@@ -22,6 +22,8 @@ public class ContinueWatchingRepositoryImpl implements ContinueWatchingRepositor
 
   @Override
   public List<UUID> findCollectableIds(UUID userId, int limit) {
+    var lastActivity = max(SESSION_PROGRESS.LAST_MODIFIED_ON);
+
     var isWatched =
         exists(
             select(Tables.WATCH_HISTORY.ID)
@@ -33,8 +35,7 @@ public class ContinueWatchingRepositoryImpl implements ContinueWatchingRepositor
                         .and(Tables.WATCH_HISTORY.USER_ID.eq(userId))
                         .and(Tables.WATCH_HISTORY.DISMISSED_AT.isNull())));
 
-    return dsl.select(
-            Tables.MEDIA_FILE.MEDIA_ID, max(SESSION_PROGRESS.LAST_MODIFIED_ON).as("last_activity"))
+    return dsl.select(Tables.MEDIA_FILE.MEDIA_ID, lastActivity)
         .from(SESSION_PROGRESS)
         .innerJoin(Tables.MEDIA_FILE)
         .on(SESSION_PROGRESS.MEDIA_FILE_ID.eq(Tables.MEDIA_FILE.ID))
@@ -45,7 +46,7 @@ public class ContinueWatchingRepositoryImpl implements ContinueWatchingRepositor
                 .and(SESSION_PROGRESS.POSITION_SECONDS.greaterThan(0))
                 .and(not(isWatched)))
         .groupBy(Tables.MEDIA_FILE.MEDIA_ID)
-        .orderBy(max(SESSION_PROGRESS.LAST_MODIFIED_ON).sort(SortOrder.DESC))
+        .orderBy(lastActivity.sort(SortOrder.DESC))
         .limit(limit)
         .fetch(Tables.MEDIA_FILE.MEDIA_ID);
   }

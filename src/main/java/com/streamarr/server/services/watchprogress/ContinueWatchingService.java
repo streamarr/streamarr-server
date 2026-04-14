@@ -4,10 +4,10 @@ import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.streaming.ContinueWatchingRepository;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -32,19 +32,12 @@ public class ContinueWatchingService {
       return List.of();
     }
 
-    Map<UUID, BaseCollectable<?>> lookup = new HashMap<>();
-    movieRepository.findAllById(collectableIds).forEach(movie -> lookup.put(movie.getId(), movie));
+    Map<UUID, BaseCollectable<?>> byId = new HashMap<>();
+    movieRepository.findAllById(collectableIds).forEach(movie -> byId.put(movie.getId(), movie));
     episodeRepository
         .findAllById(collectableIds)
-        .forEach(episode -> lookup.put(episode.getId(), episode));
+        .forEach(episode -> byId.put(episode.getId(), episode));
 
-    var result = new ArrayList<BaseCollectable<?>>(collectableIds.size());
-    for (var id : collectableIds) {
-      var item = lookup.get(id);
-      if (item != null) {
-        result.add(item);
-      }
-    }
-    return result;
+    return collectableIds.stream().map(byId::get).filter(Objects::nonNull).toList();
   }
 }

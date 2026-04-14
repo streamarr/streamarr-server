@@ -214,9 +214,8 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("Should return empty list when no in-progress items exist")
-    void shouldReturnEmptyListWhenNoInProgressItemsExist() {
-      // Use limit 0 to simulate no results
+    @DisplayName("Should return empty list when limit is zero")
+    void shouldReturnEmptyListWhenLimitIsZero() {
       var results = continueWatchingService.getContinueWatching(0);
 
       assertThat(results).isEmpty();

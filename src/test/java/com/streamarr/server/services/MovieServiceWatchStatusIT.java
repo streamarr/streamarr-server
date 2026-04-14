@@ -13,6 +13,7 @@ import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.domain.streaming.WatchHistory;
 import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.jooq.generated.Tables;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
@@ -20,9 +21,11 @@ import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.OrderMediaBy;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Stream;
+import org.jooq.DSLContext;
 import org.jooq.SortOrder;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -42,6 +45,7 @@ class MovieServiceWatchStatusIT extends AbstractIntegrationTest {
   @Autowired private SessionProgressRepository sessionProgressRepository;
   @Autowired private WatchHistoryRepository watchHistoryRepository;
   @Autowired private MovieService movieService;
+  @Autowired private DSLContext dsl;
 
   private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
@@ -170,31 +174,30 @@ class MovieServiceWatchStatusIT extends AbstractIntegrationTest {
 
       var page = movieService.getMoviesWithFilter(buildForwardOptions(20, filter));
 
-      // inProgressMovie has session_progress (most recent activity),
-      // watchedMovie has no session_progress (only watch_history — not used for sort),
-      // unwatchedMovie has no activity at all (null, sorts last)
-      assertThat(page.items())
-          .extracting(item -> item.item().getTitle())
-          .startsWith("In Progress Movie");
-      assertThat(page.items())
-          .extracting(item -> item.item().getTitle())
-          .last()
-          .satisfies(title -> assertThat(title).isIn("Watched Movie", "Unwatched Movie"));
+      // inProgressMovie has session_progress (most recent activity).
+      // watchedMovie has no session_progress (only watch_history — not used for sort).
+      // unwatchedMovie has no activity at all.
+      // Both nulls sort last under nullsLast; order between them is not guaranteed.
+      var titles = page.items().stream().map(item -> item.item().getTitle()).toList();
+      assertThat(titles).hasSize(3);
+      assertThat(titles.getFirst()).isEqualTo("In Progress Movie");
+      assertThat(titles.subList(1, 3))
+          .containsExactlyInAnyOrder("Watched Movie", "Unwatched Movie");
     }
 
     @Test
     @DisplayName("Should paginate forward using cursor when sorted by LAST_WATCHED DESC")
-    void shouldPaginateForwardUsingCursorWhenSortedByLastWatchedDesc() throws InterruptedException {
+    void shouldPaginateForwardUsingCursorWhenSortedByLastWatchedDesc() {
       var paginationLibrary =
           libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
 
-      // Create three movies with distinct session_progress timestamps.
-      // Small sleeps ensure Postgres assigns strictly increasing last_modified_on values.
+      var baseline = Instant.parse("2026-01-01T00:00:00Z");
       var first = createMovieWithSessionProgress(paginationLibrary, "First");
-      Thread.sleep(5);
       var second = createMovieWithSessionProgress(paginationLibrary, "Second");
-      Thread.sleep(5);
       var third = createMovieWithSessionProgress(paginationLibrary, "Third");
+      pinSessionProgressTimestamp(first, baseline);
+      pinSessionProgressTimestamp(second, baseline.plusSeconds(1));
+      pinSessionProgressTimestamp(third, baseline.plusSeconds(2));
 
       var filter =
           MediaFilter.builder()
@@ -228,6 +231,14 @@ class MovieServiceWatchStatusIT extends AbstractIntegrationTest {
               .map(pi -> pi.item().getId())
               .toList();
       assertThat(allIds).doesNotHaveDuplicates();
+    }
+
+    private void pinSessionProgressTimestamp(Movie movie, Instant timestamp) {
+      var mediaFileId = movie.getFiles().iterator().next().getId();
+      dsl.update(Tables.SESSION_PROGRESS)
+          .set(Tables.SESSION_PROGRESS.LAST_MODIFIED_ON, timestamp.atOffset(ZoneOffset.UTC))
+          .where(Tables.SESSION_PROGRESS.MEDIA_FILE_ID.eq(mediaFileId))
+          .execute();
     }
 
     private Movie createMovieWithSessionProgress(Library lib, String title) {
