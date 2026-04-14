@@ -196,82 +196,82 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
     // TODO(#163): Replace with authenticated user ID from Spring Security
     var userId = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
-    // Subquery: series has at least one episode
-    var hasEpisodes =
-        exists(
-            select(Tables.EPISODE.ID)
-                .from(Tables.EPISODE)
-                .innerJoin(Tables.SEASON)
-                .on(Tables.EPISODE.SEASON_ID.eq(Tables.SEASON.ID))
-                .where(Tables.SEASON.SERIES_ID.eq(Tables.BASE_COLLECTABLE.ID)));
-
-    // Subquery: all episodes are watched (no unwatched episode exists)
-    var allEpisodesWatched =
-        not(
-            exists(
-                select(Tables.EPISODE.ID)
-                    .from(Tables.EPISODE)
-                    .innerJoin(Tables.SEASON)
-                    .on(Tables.EPISODE.SEASON_ID.eq(Tables.SEASON.ID))
-                    .where(
-                        Tables.SEASON
-                            .SERIES_ID
-                            .eq(Tables.BASE_COLLECTABLE.ID)
-                            .and(
-                                not(
-                                    exists(
-                                        select(Tables.WATCH_HISTORY.ID)
-                                            .from(Tables.WATCH_HISTORY)
-                                            .where(
-                                                Tables.WATCH_HISTORY
-                                                    .COLLECTABLE_ID
-                                                    .eq(Tables.EPISODE.ID)
-                                                    .and(Tables.WATCH_HISTORY.USER_ID.eq(userId))
-                                                    .and(
-                                                        Tables.WATCH_HISTORY.DISMISSED_AT
-                                                            .isNull()))))))));
-
-    // Subquery: any episode is watched
-    var anyEpisodeWatched =
-        exists(
-            select(Tables.WATCH_HISTORY.ID)
-                .from(Tables.WATCH_HISTORY)
-                .innerJoin(Tables.EPISODE)
-                .on(Tables.WATCH_HISTORY.COLLECTABLE_ID.eq(Tables.EPISODE.ID))
-                .innerJoin(Tables.SEASON)
-                .on(Tables.EPISODE.SEASON_ID.eq(Tables.SEASON.ID))
-                .where(
-                    Tables.SEASON
-                        .SERIES_ID
-                        .eq(Tables.BASE_COLLECTABLE.ID)
-                        .and(Tables.WATCH_HISTORY.USER_ID.eq(userId))
-                        .and(Tables.WATCH_HISTORY.DISMISSED_AT.isNull())));
-
-    // Subquery: any episode has progress
-    var anyEpisodeHasProgress =
-        exists(
-            select(Tables.SESSION_PROGRESS.ID)
-                .from(Tables.SESSION_PROGRESS)
-                .innerJoin(Tables.MEDIA_FILE)
-                .on(Tables.SESSION_PROGRESS.MEDIA_FILE_ID.eq(Tables.MEDIA_FILE.ID))
-                .innerJoin(Tables.EPISODE)
-                .on(Tables.MEDIA_FILE.MEDIA_ID.eq(Tables.EPISODE.ID))
-                .innerJoin(Tables.SEASON)
-                .on(Tables.EPISODE.SEASON_ID.eq(Tables.SEASON.ID))
-                .where(
-                    Tables.SEASON
-                        .SERIES_ID
-                        .eq(Tables.BASE_COLLECTABLE.ID)
-                        .and(Tables.SESSION_PROGRESS.USER_ID.eq(userId))
-                        .and(Tables.SESSION_PROGRESS.POSITION_SECONDS.greaterThan(0))));
-
-    var hasAnyWatchActivity = anyEpisodeWatched.or(anyEpisodeHasProgress);
+    var fullyWatched = seriesHasEpisodes().and(not(seriesHasUnwatchedEpisode(userId)));
+    var hasAnyWatchActivity = anyEpisodeWatched(userId).or(anyEpisodeHasProgress(userId));
 
     return switch (watchStatus) {
-      case WATCHED -> hasEpisodes.and(allEpisodesWatched);
-      case IN_PROGRESS -> hasAnyWatchActivity.and(not(hasEpisodes.and(allEpisodesWatched)));
+      case WATCHED -> fullyWatched;
+      case IN_PROGRESS -> hasAnyWatchActivity.and(not(fullyWatched));
       case UNWATCHED -> not(hasAnyWatchActivity);
     };
+  }
+
+  private static Condition seriesHasEpisodes() {
+    return exists(
+        select(Tables.EPISODE.ID)
+            .from(Tables.EPISODE)
+            .innerJoin(Tables.SEASON)
+            .on(Tables.EPISODE.SEASON_ID.eq(Tables.SEASON.ID))
+            .where(Tables.SEASON.SERIES_ID.eq(Tables.BASE_COLLECTABLE.ID)));
+  }
+
+  private static Condition seriesHasUnwatchedEpisode(UUID userId) {
+    return exists(
+        select(Tables.EPISODE.ID)
+            .from(Tables.EPISODE)
+            .innerJoin(Tables.SEASON)
+            .on(Tables.EPISODE.SEASON_ID.eq(Tables.SEASON.ID))
+            .where(
+                Tables.SEASON
+                    .SERIES_ID
+                    .eq(Tables.BASE_COLLECTABLE.ID)
+                    .and(not(episodeIsWatched(userId)))));
+  }
+
+  private static Condition episodeIsWatched(UUID userId) {
+    return exists(
+        select(Tables.WATCH_HISTORY.ID)
+            .from(Tables.WATCH_HISTORY)
+            .where(
+                Tables.WATCH_HISTORY
+                    .COLLECTABLE_ID
+                    .eq(Tables.EPISODE.ID)
+                    .and(Tables.WATCH_HISTORY.USER_ID.eq(userId))
+                    .and(Tables.WATCH_HISTORY.DISMISSED_AT.isNull())));
+  }
+
+  private static Condition anyEpisodeWatched(UUID userId) {
+    return exists(
+        select(Tables.WATCH_HISTORY.ID)
+            .from(Tables.WATCH_HISTORY)
+            .innerJoin(Tables.EPISODE)
+            .on(Tables.WATCH_HISTORY.COLLECTABLE_ID.eq(Tables.EPISODE.ID))
+            .innerJoin(Tables.SEASON)
+            .on(Tables.EPISODE.SEASON_ID.eq(Tables.SEASON.ID))
+            .where(
+                Tables.SEASON
+                    .SERIES_ID
+                    .eq(Tables.BASE_COLLECTABLE.ID)
+                    .and(Tables.WATCH_HISTORY.USER_ID.eq(userId))
+                    .and(Tables.WATCH_HISTORY.DISMISSED_AT.isNull())));
+  }
+
+  private static Condition anyEpisodeHasProgress(UUID userId) {
+    return exists(
+        select(Tables.SESSION_PROGRESS.ID)
+            .from(Tables.SESSION_PROGRESS)
+            .innerJoin(Tables.MEDIA_FILE)
+            .on(Tables.SESSION_PROGRESS.MEDIA_FILE_ID.eq(Tables.MEDIA_FILE.ID))
+            .innerJoin(Tables.EPISODE)
+            .on(Tables.MEDIA_FILE.MEDIA_ID.eq(Tables.EPISODE.ID))
+            .innerJoin(Tables.SEASON)
+            .on(Tables.EPISODE.SEASON_ID.eq(Tables.SEASON.ID))
+            .where(
+                Tables.SEASON
+                    .SERIES_ID
+                    .eq(Tables.BASE_COLLECTABLE.ID)
+                    .and(Tables.SESSION_PROGRESS.USER_ID.eq(userId))
+                    .and(Tables.SESSION_PROGRESS.POSITION_SECONDS.greaterThan(0))));
   }
 
   private Field<?> lastWatchedField() {
