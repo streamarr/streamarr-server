@@ -3,6 +3,7 @@ package com.streamarr.server.services.watchprogress;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.MediaFile;
@@ -13,6 +14,7 @@ import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.domain.streaming.WatchHistory;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.jooq.generated.Tables;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
@@ -21,8 +23,10 @@ import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.Set;
 import java.util.UUID;
+import org.jooq.DSLContext;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -44,24 +48,40 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private SessionProgressRepository sessionProgressRepository;
   @Autowired private WatchHistoryRepository watchHistoryRepository;
+  @Autowired private DSLContext dsl;
 
   private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+  private static final Instant MOVIE_ACTIVITY_AT = Instant.parse("2026-01-01T00:00:00Z");
+  private static final Instant EPISODE_ACTIVITY_AT = Instant.parse("2026-02-01T00:00:00Z");
 
   private Library movieLibrary;
   private Library seriesLibrary;
   private Movie inProgressMovie;
+  private UUID inProgressMovieFileId;
+  private Movie watchedMovie;
+  private Movie unwatchedMovie;
   private Episode inProgressEpisode;
+  private UUID inProgressEpisodeFileId;
 
   @BeforeAll
   void setup() {
+    // TODO(#163): replace this pre-delete with a per-class user ID once auth lands.
+    dsl.deleteFrom(Tables.SESSION_PROGRESS)
+        .where(Tables.SESSION_PROGRESS.USER_ID.eq(USER_ID))
+        .execute();
+    dsl.deleteFrom(Tables.WATCH_HISTORY)
+        .where(Tables.WATCH_HISTORY.USER_ID.eq(USER_ID))
+        .execute();
+
     movieLibrary = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     seriesLibrary = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
 
     // In-progress movie: has session progress
     inProgressMovie = createMovieWithProgress("In Progress Movie", 1800, 25.0, 7200);
+    inProgressMovieFileId = inProgressMovie.getFiles().iterator().next().getId();
 
     // Watched movie: has watch_history (should be excluded)
-    var watchedMovie = createMovieWithFile("Watched Movie");
+    watchedMovie = createMovieWithFile("Watched Movie");
     watchHistoryRepository.saveAndFlush(
         WatchHistory.builder()
             .userId(USER_ID)
@@ -71,10 +91,22 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
             .build());
 
     // Unwatched movie: no activity (should be excluded)
-    createMovieWithFile("Unwatched Movie");
+    unwatchedMovie = createMovieWithFile("Unwatched Movie");
 
     // In-progress episode: has session progress
     inProgressEpisode = createEpisodeWithProgress("In Progress Episode", 900, 15.0, 3600);
+    inProgressEpisodeFileId = inProgressEpisode.getFiles().iterator().next().getId();
+
+    // Pin LAST_MODIFIED_ON explicitly so ordering is deterministic regardless of clock resolution.
+    pinSessionProgressTimestamp(inProgressMovieFileId, MOVIE_ACTIVITY_AT);
+    pinSessionProgressTimestamp(inProgressEpisodeFileId, EPISODE_ACTIVITY_AT);
+  }
+
+  private void pinSessionProgressTimestamp(UUID mediaFileId, Instant timestamp) {
+    dsl.update(Tables.SESSION_PROGRESS)
+        .set(Tables.SESSION_PROGRESS.LAST_MODIFIED_ON, timestamp.atOffset(ZoneOffset.UTC))
+        .where(Tables.SESSION_PROGRESS.MEDIA_FILE_ID.eq(mediaFileId))
+        .execute();
   }
 
   private Movie createMovieWithFile(String title) {
@@ -165,79 +197,60 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
   class GetContinueWatchingTests {
 
     @Test
-    @DisplayName("Should return in-progress movies and episodes")
-    void shouldReturnInProgressMoviesAndEpisodes() {
+    @DisplayName("Should return exactly the in-progress movie and episode when querying")
+    void shouldReturnExactlyTheInProgressMovieAndEpisodeWhenQuerying() {
       var results = continueWatchingService.getContinueWatching(20);
 
-      assertThat(results).hasSizeGreaterThanOrEqualTo(2);
-
-      var ids = results.stream().map(item -> item.getId()).toList();
-      assertThat(ids).contains(inProgressMovie.getId(), inProgressEpisode.getId());
+      assertThat(results)
+          .extracting(BaseCollectable::getId)
+          .containsExactlyInAnyOrder(inProgressMovie.getId(), inProgressEpisode.getId());
     }
 
     @Test
-    @DisplayName("Should exclude watched items from results")
-    void shouldExcludeWatchedItemsFromResults() {
+    @DisplayName("Should not include the watched movie when querying")
+    void shouldNotIncludeTheWatchedMovieWhenQuerying() {
       var results = continueWatchingService.getContinueWatching(20);
 
-      var titles =
-          results.stream()
-              .map(
-                  item -> {
-                    if (item instanceof Movie m) return m.getTitle();
-                    if (item instanceof Episode e) return e.getTitle();
-                    return null;
-                  })
-              .toList();
-
-      assertThat(titles).isNotEmpty();
-      assertThat(titles).doesNotContain("Watched Movie");
+      assertThat(results).extracting(BaseCollectable::getId).doesNotContain(watchedMovie.getId());
     }
 
     @Test
-    @DisplayName("Should exclude unwatched items with no progress")
-    void shouldExcludeUnwatchedItemsWithNoProgress() {
+    @DisplayName("Should not include the unwatched movie with no session progress when querying")
+    void shouldNotIncludeTheUnwatchedMovieWithNoSessionProgressWhenQuerying() {
       var results = continueWatchingService.getContinueWatching(20);
 
-      var titles =
-          results.stream()
-              .map(
-                  item -> {
-                    if (item instanceof Movie m) return m.getTitle();
-                    if (item instanceof Episode e) return e.getTitle();
-                    return null;
-                  })
-              .toList();
-
-      assertThat(titles).isNotEmpty();
-      assertThat(titles).doesNotContain("Unwatched Movie");
+      assertThat(results).extracting(BaseCollectable::getId).doesNotContain(unwatchedMovie.getId());
     }
 
     @Test
-    @DisplayName("Should return empty list when limit is zero")
-    void shouldReturnEmptyListWhenLimitIsZero() {
+    @DisplayName("Should return empty list when called with limit zero")
+    void shouldReturnEmptyListWhenCalledWithLimitZero() {
       var results = continueWatchingService.getContinueWatching(0);
 
       assertThat(results).isEmpty();
     }
 
     @Test
-    @DisplayName("Should respect limit parameter")
-    void shouldRespectLimitParameter() {
+    @DisplayName("Should return only the most recent item when called with limit one")
+    void shouldReturnOnlyTheMostRecentItemWhenCalledWithLimitOne() {
       var results = continueWatchingService.getContinueWatching(1);
 
-      assertThat(results).hasSize(1);
+      assertThat(results)
+          .extracting(BaseCollectable::getId)
+          .containsExactly(inProgressEpisode.getId());
     }
 
     @Test
-    @DisplayName("Should order by most recent activity descending")
-    void shouldOrderByMostRecentActivityDescending() {
+    @DisplayName(
+        "Should order items by session progress last modified descending when querying"
+            + " with pinned timestamps")
+    void shouldOrderItemsBySessionProgressLastModifiedDescendingWhenQueryingWithPinnedTimestamps() {
       var results = continueWatchingService.getContinueWatching(20);
 
-      // The most recently created session progress should come first
-      // inProgressEpisode was created after inProgressMovie in setup
-      assertThat(results).hasSizeGreaterThanOrEqualTo(2);
-      assertThat(results.getFirst().getId()).isEqualTo(inProgressEpisode.getId());
+      // EPISODE_ACTIVITY_AT (Feb) > MOVIE_ACTIVITY_AT (Jan) — episode must come first.
+      assertThat(results)
+          .extracting(BaseCollectable::getId)
+          .containsExactly(inProgressEpisode.getId(), inProgressMovie.getId());
     }
   }
 }

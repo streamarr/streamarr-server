@@ -54,7 +54,7 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
   void setup() {
     library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
 
-    // Watched Series: all episodes watched
+    // Watched Series: all episodes in watch_history
     var watched = createSeriesWithEpisodes("Watched Series", 2);
     for (var episodeId : watched.episodeIds()) {
       watchHistoryRepository.saveAndFlush(
@@ -66,19 +66,52 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
               .build());
     }
 
-    // In-Progress Series: one episode has session progress
-    var inProgress = createSeriesWithEpisodes("In Progress Series", 2);
+    // Watched-With-Residual-Progress Series: all episodes watched AND one has session_progress.
+    // Exercises the WATCHED rule precedence over IN_PROGRESS.
+    var watchedWithProgress = createSeriesWithEpisodes("Watched With Residual Progress", 2);
+    for (var episodeId : watchedWithProgress.episodeIds()) {
+      watchHistoryRepository.saveAndFlush(
+          WatchHistory.builder()
+              .userId(USER_ID)
+              .collectableId(episodeId)
+              .watchedAt(Instant.now())
+              .durationSeconds(3600)
+              .build());
+    }
     sessionProgressRepository.saveAndFlush(
         SessionProgress.builder()
             .sessionId(UUID.randomUUID())
             .userId(USER_ID)
-            .mediaFileId(inProgress.firstEpisodeFileId())
+            .mediaFileId(watchedWithProgress.firstEpisodeFileId())
+            .positionSeconds(60)
+            .percentComplete(2.0)
+            .durationSeconds(3600)
+            .build());
+
+    // In-Progress Series (via session_progress): one episode has progress, none in watch_history
+    var sessionInProgress = createSeriesWithEpisodes("Session In Progress Series", 2);
+    sessionProgressRepository.saveAndFlush(
+        SessionProgress.builder()
+            .sessionId(UUID.randomUUID())
+            .userId(USER_ID)
+            .mediaFileId(sessionInProgress.firstEpisodeFileId())
             .positionSeconds(900)
             .percentComplete(25.0)
             .durationSeconds(3600)
             .build());
 
-    // Unwatched Series: no watch activity
+    // Partially-Watched Series: one episode watched via watch_history, one untouched.
+    // The critical boundary: partial watch_history must NOT count as WATCHED.
+    var partiallyWatched = createSeriesWithEpisodes("Partially Watched Series", 2);
+    watchHistoryRepository.saveAndFlush(
+        WatchHistory.builder()
+            .userId(USER_ID)
+            .collectableId(partiallyWatched.episodeIds().getFirst())
+            .watchedAt(Instant.now())
+            .durationSeconds(3600)
+            .build());
+
+    // Unwatched Series: no watch activity at all
     createSeriesWithEpisodes("Unwatched Series", 2);
   }
 
@@ -128,8 +161,11 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
   class WatchStatusFilterTests {
 
     @Test
-    @DisplayName("Should return only watched series when filtering by WATCHED status")
-    void shouldReturnOnlyWatchedSeriesWhenFilteringByWatchedStatus() {
+    @DisplayName(
+        "Should return only fully-watched series and exclude partially-watched"
+            + " when filtering by WATCHED status")
+    void
+        shouldReturnOnlyFullyWatchedSeriesAndExcludePartiallyWatchedWhenFilteringByWatchedStatus() {
       var filter =
           MediaFilter.builder().libraryId(library.getId()).watchStatus(WatchStatus.WATCHED).build();
 
@@ -137,12 +173,14 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
 
       assertThat(page.items())
           .extracting(item -> item.item().getTitle())
-          .containsExactly("Watched Series");
+          .containsExactlyInAnyOrder("Watched Series", "Watched With Residual Progress");
     }
 
     @Test
-    @DisplayName("Should return only in-progress series when filtering by IN_PROGRESS status")
-    void shouldReturnOnlyInProgressSeriesWhenFilteringByInProgressStatus() {
+    @DisplayName(
+        "Should return partially-watched and session-in-progress series"
+            + " when filtering by IN_PROGRESS status")
+    void shouldReturnPartiallyWatchedAndSessionInProgressSeriesWhenFilteringByInProgressStatus() {
       var filter =
           MediaFilter.builder()
               .libraryId(library.getId())
@@ -153,12 +191,12 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
 
       assertThat(page.items())
           .extracting(item -> item.item().getTitle())
-          .containsExactly("In Progress Series");
+          .containsExactlyInAnyOrder("Session In Progress Series", "Partially Watched Series");
     }
 
     @Test
-    @DisplayName("Should return only unwatched series when filtering by UNWATCHED status")
-    void shouldReturnOnlyUnwatchedSeriesWhenFilteringByUnwatchedStatus() {
+    @DisplayName("Should return only series with no watch activity when filtering by UNWATCHED")
+    void shouldReturnOnlySeriesWithNoWatchActivityWhenFilteringByUnwatched() {
       var filter =
           MediaFilter.builder()
               .libraryId(library.getId())
@@ -170,6 +208,23 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
       assertThat(page.items())
           .extracting(item -> item.item().getTitle())
           .containsExactly("Unwatched Series");
+    }
+
+    @Test
+    @DisplayName("Should return all seeded series when no watch status filter is applied")
+    void shouldReturnAllSeededSeriesWhenNoWatchStatusFilterIsApplied() {
+      var filter = MediaFilter.builder().libraryId(library.getId()).build();
+
+      var page = seriesService.getSeriesWithFilter(buildForwardOptions(20, filter));
+
+      assertThat(page.items())
+          .extracting(item -> item.item().getTitle())
+          .containsExactlyInAnyOrder(
+              "Watched Series",
+              "Watched With Residual Progress",
+              "Session In Progress Series",
+              "Partially Watched Series",
+              "Unwatched Series");
     }
   }
 }

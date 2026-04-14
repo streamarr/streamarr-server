@@ -5,6 +5,7 @@ import static org.mockito.Mockito.when;
 
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
+import com.streamarr.server.domain.AuditFieldSetter;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Movie;
@@ -23,6 +24,7 @@ import com.streamarr.server.graphql.dataloaders.WatchStatusDataLoader;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -377,8 +379,10 @@ class WatchProgressFieldResolverTest {
   class SeasonWatchProgressTests {
 
     @Test
-    @DisplayName("Should return most recent episode progress for season")
-    void shouldReturnMostRecentEpisodeProgressForSeason() {
+    @DisplayName(
+        "Should return progress from most recently modified episode when season has multiple"
+            + " progresses")
+    void shouldReturnProgressFromMostRecentlyModifiedEpisodeWhenSeasonHasMultipleProgresses() {
       var seriesId = UUID.randomUUID();
       var series = Series.builder().title("Test Series").build();
       series.setId(seriesId);
@@ -386,37 +390,61 @@ class WatchProgressFieldResolverTest {
       var season = Season.builder().title("Season 1").seasonNumber(1).build();
       season.setId(UUID.randomUUID());
 
-      var episode = Episode.builder().episodeNumber(1).season(season).build();
-      episode.setId(UUID.randomUUID());
-      episodeRepository.save(episode);
+      var olderEpisode = Episode.builder().episodeNumber(1).season(season).build();
+      olderEpisode.setId(UUID.randomUUID());
+      episodeRepository.save(olderEpisode);
 
-      var mediaFile = buildMediaFile();
-      mediaFile.setMediaId(episode.getId());
-      mediaFileRepository.save(mediaFile);
+      var newerEpisode = Episode.builder().episodeNumber(2).season(season).build();
+      newerEpisode.setId(UUID.randomUUID());
+      episodeRepository.save(newerEpisode);
+
+      var olderFile = buildMediaFile();
+      olderFile.setMediaId(olderEpisode.getId());
+      mediaFileRepository.save(olderFile);
+
+      var newerFile = buildMediaFile();
+      newerFile.setMediaId(newerEpisode.getId());
+      mediaFileRepository.save(newerFile);
 
       when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
       when(seriesService.findSeasons(seriesId)).thenReturn(List.of(season));
 
-      sessionProgressRepository.save(
-          SessionProgress.builder()
-              .sessionId(UUID.randomUUID())
-              .userId(USER_ID)
-              .mediaFileId(mediaFile.getId())
-              .positionSeconds(600)
-              .percentComplete(50.0)
-              .durationSeconds(1200)
-              .build());
+      var olderProgress =
+          sessionProgressRepository.save(
+              SessionProgress.builder()
+                  .sessionId(UUID.randomUUID())
+                  .userId(USER_ID)
+                  .mediaFileId(olderFile.getId())
+                  .positionSeconds(300)
+                  .percentComplete(10.0)
+                  .durationSeconds(3000)
+                  .build());
+      AuditFieldSetter.setLastModifiedOn(olderProgress, Instant.parse("2026-01-01T00:00:00Z"));
+
+      var newerProgress =
+          sessionProgressRepository.save(
+              SessionProgress.builder()
+                  .sessionId(UUID.randomUUID())
+                  .userId(USER_ID)
+                  .mediaFileId(newerFile.getId())
+                  .positionSeconds(900)
+                  .percentComplete(75.0)
+                  .durationSeconds(1200)
+                  .build());
+      AuditFieldSetter.setLastModifiedOn(newerProgress, Instant.parse("2026-02-01T00:00:00Z"));
 
       var context =
           dgsQueryExecutor.executeAndGetDocumentContext(
               String.format(
-                  "{ series(id: \"%s\") { seasons { watchProgress { positionSeconds percentComplete } } } }",
+                  "{ series(id: \"%s\") { seasons { watchProgress { positionSeconds percentComplete durationSeconds } } } }",
                   seriesId));
 
       assertThat(context.<Integer>read("data.series.seasons[0].watchProgress.positionSeconds"))
-          .isEqualTo(600);
+          .isEqualTo(900);
       assertThat(context.<Double>read("data.series.seasons[0].watchProgress.percentComplete"))
-          .isEqualTo(50.0);
+          .isEqualTo(75.0);
+      assertThat(context.<Integer>read("data.series.seasons[0].watchProgress.durationSeconds"))
+          .isEqualTo(1200);
     }
 
     @Test
@@ -470,34 +498,62 @@ class WatchProgressFieldResolverTest {
   class SeriesWatchProgressTests {
 
     @Test
-    @DisplayName("Should return most recent episode progress for series")
-    void shouldReturnMostRecentEpisodeProgressForSeries() {
+    @DisplayName(
+        "Should return progress from most recently modified episode when series spans multiple"
+            + " seasons")
+    void shouldReturnProgressFromMostRecentlyModifiedEpisodeWhenSeriesSpansMultipleSeasons() {
       var series = Series.builder().title("Test Series").build();
       series.setId(UUID.randomUUID());
 
-      var season = Season.builder().seasonNumber(1).series(series).build();
-      season.setId(UUID.randomUUID());
-      seasonRepository.save(season);
+      var seasonOne = Season.builder().seasonNumber(1).series(series).build();
+      seasonOne.setId(UUID.randomUUID());
+      seasonRepository.save(seasonOne);
 
-      var episode = Episode.builder().episodeNumber(1).season(season).build();
-      episode.setId(UUID.randomUUID());
-      episodeRepository.save(episode);
+      var seasonTwo = Season.builder().seasonNumber(2).series(series).build();
+      seasonTwo.setId(UUID.randomUUID());
+      seasonRepository.save(seasonTwo);
 
-      var mediaFile = buildMediaFile();
-      mediaFile.setMediaId(episode.getId());
-      mediaFileRepository.save(mediaFile);
+      var olderEpisode = Episode.builder().episodeNumber(1).season(seasonOne).build();
+      olderEpisode.setId(UUID.randomUUID());
+      episodeRepository.save(olderEpisode);
+
+      var newerEpisode = Episode.builder().episodeNumber(1).season(seasonTwo).build();
+      newerEpisode.setId(UUID.randomUUID());
+      episodeRepository.save(newerEpisode);
+
+      var olderFile = buildMediaFile();
+      olderFile.setMediaId(olderEpisode.getId());
+      mediaFileRepository.save(olderFile);
+
+      var newerFile = buildMediaFile();
+      newerFile.setMediaId(newerEpisode.getId());
+      mediaFileRepository.save(newerFile);
 
       when(seriesService.findById(series.getId())).thenReturn(Optional.of(series));
 
-      sessionProgressRepository.save(
-          SessionProgress.builder()
-              .sessionId(UUID.randomUUID())
-              .userId(USER_ID)
-              .mediaFileId(mediaFile.getId())
-              .positionSeconds(900)
-              .percentComplete(25.0)
-              .durationSeconds(3600)
-              .build());
+      var olderProgress =
+          sessionProgressRepository.save(
+              SessionProgress.builder()
+                  .sessionId(UUID.randomUUID())
+                  .userId(USER_ID)
+                  .mediaFileId(olderFile.getId())
+                  .positionSeconds(300)
+                  .percentComplete(10.0)
+                  .durationSeconds(3000)
+                  .build());
+      AuditFieldSetter.setLastModifiedOn(olderProgress, Instant.parse("2026-01-01T00:00:00Z"));
+
+      var newerProgress =
+          sessionProgressRepository.save(
+              SessionProgress.builder()
+                  .sessionId(UUID.randomUUID())
+                  .userId(USER_ID)
+                  .mediaFileId(newerFile.getId())
+                  .positionSeconds(900)
+                  .percentComplete(25.0)
+                  .durationSeconds(3600)
+                  .build());
+      AuditFieldSetter.setLastModifiedOn(newerProgress, Instant.parse("2026-02-01T00:00:00Z"));
 
       var context =
           dgsQueryExecutor.executeAndGetDocumentContext(
@@ -507,6 +563,8 @@ class WatchProgressFieldResolverTest {
 
       assertThat(context.<Integer>read("data.series.watchProgress.positionSeconds")).isEqualTo(900);
       assertThat(context.<Double>read("data.series.watchProgress.percentComplete")).isEqualTo(25.0);
+      assertThat(context.<Integer>read("data.series.watchProgress.durationSeconds"))
+          .isEqualTo(3600);
     }
 
     @Test
