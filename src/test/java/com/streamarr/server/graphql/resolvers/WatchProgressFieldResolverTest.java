@@ -133,6 +133,7 @@ class WatchProgressFieldResolverTest {
       var mediaFile = buildMediaFile();
       mediaFile.setMediaId(movie.getId());
       mediaFileRepository.save(mediaFile);
+      when(movieService.findMediaFiles(movie.getId())).thenReturn(List.of(mediaFile));
 
       sessionProgressRepository.save(
           SessionProgress.builder()
@@ -159,6 +160,7 @@ class WatchProgressFieldResolverTest {
     @DisplayName("Should return null watch progress when movie has no files")
     void shouldReturnNullWatchProgressWhenMovieHasNoFiles() {
       var movie = setupMovie();
+      when(movieService.findMediaFiles(movie.getId())).thenReturn(List.of());
 
       Object watchProgress =
           dgsQueryExecutor.executeAndExtractJsonPath(
@@ -176,6 +178,7 @@ class WatchProgressFieldResolverTest {
       var mediaFile = buildMediaFile();
       mediaFile.setMediaId(movie.getId());
       mediaFileRepository.save(mediaFile);
+      when(movieService.findMediaFiles(movie.getId())).thenReturn(List.of(mediaFile));
 
       Object watchProgress =
           dgsQueryExecutor.executeAndExtractJsonPath(
@@ -199,6 +202,7 @@ class WatchProgressFieldResolverTest {
       var mediaFile = buildMediaFile();
       mediaFile.setMediaId(movie.getId());
       mediaFileRepository.save(mediaFile);
+      when(movieService.findMediaFiles(movie.getId())).thenReturn(List.of(mediaFile));
 
       sessionProgressRepository.save(
           SessionProgress.builder()
@@ -245,6 +249,7 @@ class WatchProgressFieldResolverTest {
       when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
       when(seriesService.findSeasons(seriesId)).thenReturn(List.of(season));
       when(seriesService.findEpisodes(seasonId)).thenReturn(List.of(episode));
+      when(seriesService.findMediaFiles(episodeId)).thenReturn(List.of(mediaFile));
 
       sessionProgressRepository.save(
           SessionProgress.builder()

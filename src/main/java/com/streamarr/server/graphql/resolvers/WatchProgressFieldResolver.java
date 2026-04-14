@@ -11,10 +11,11 @@ import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.graphql.dataloaders.WatchStatusEntityType;
 import com.streamarr.server.graphql.dataloaders.WatchStatusLoaderKey;
 import com.streamarr.server.graphql.dto.WatchProgressDto;
-import com.streamarr.server.repositories.media.MediaFileRepository;
+import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
 import graphql.schema.DataFetchingEnvironment;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -27,61 +28,31 @@ public class WatchProgressFieldResolver {
 
   private static final String WATCH_PROGRESS_LOADER = "watchProgress";
 
-  private final MediaFileRepository mediaFileRepository;
+  private final MovieService movieService;
   private final SeriesService seriesService;
 
   @DgsData(parentType = "Movie", field = "watchProgress")
   public CompletableFuture<WatchProgressDto> movieWatchProgress(DataFetchingEnvironment dfe) {
     Movie movie = dfe.getSource();
-    return loadProgress(dfe, movie.getId());
+    return loadProgress(dfe, movieService.findMediaFiles(movie.getId()));
   }
 
   @DgsData(parentType = "Episode", field = "watchProgress")
   public CompletableFuture<WatchProgressDto> episodeWatchProgress(DataFetchingEnvironment dfe) {
     Episode episode = dfe.getSource();
-    return loadProgress(dfe, episode.getId());
+    return loadProgress(dfe, seriesService.findMediaFiles(episode.getId()));
   }
 
   @DgsData(parentType = "Series", field = "watchProgress")
   public CompletableFuture<WatchProgressDto> seriesWatchProgress(DataFetchingEnvironment dfe) {
     Series series = dfe.getSource();
-    var files = seriesService.findAllEpisodeMediaFiles(series.getId());
-    if (files.isEmpty()) {
-      return CompletableFuture.completedFuture(null);
-    }
-
-    DataLoader<UUID, WatchProgressDto> loader = dfe.getDataLoader(WATCH_PROGRESS_LOADER);
-    var mediaFileIds = files.stream().map(MediaFile::getId).toList();
-
-    return loader
-        .loadMany(mediaFileIds)
-        .thenApply(
-            results ->
-                results.stream()
-                    .filter(Objects::nonNull)
-                    .max(Comparator.comparing(WatchProgressDto::lastModifiedOn))
-                    .orElse(null));
+    return loadProgress(dfe, seriesService.findAllEpisodeMediaFiles(series.getId()));
   }
 
   @DgsData(parentType = "Season", field = "watchProgress")
   public CompletableFuture<WatchProgressDto> seasonWatchProgress(DataFetchingEnvironment dfe) {
     Season season = dfe.getSource();
-    var files = seriesService.findSeasonEpisodeMediaFiles(season.getId());
-    if (files.isEmpty()) {
-      return CompletableFuture.completedFuture(null);
-    }
-
-    DataLoader<UUID, WatchProgressDto> loader = dfe.getDataLoader(WATCH_PROGRESS_LOADER);
-    var mediaFileIds = files.stream().map(MediaFile::getId).toList();
-
-    return loader
-        .loadMany(mediaFileIds)
-        .thenApply(
-            results ->
-                results.stream()
-                    .filter(Objects::nonNull)
-                    .max(Comparator.comparing(WatchProgressDto::lastModifiedOn))
-                    .orElse(null));
+    return loadProgress(dfe, seriesService.findSeasonEpisodeMediaFiles(season.getId()));
   }
 
   @DgsData(parentType = "Movie", field = "watchStatus")
@@ -109,8 +80,7 @@ public class WatchProgressFieldResolver {
   }
 
   private CompletableFuture<WatchProgressDto> loadProgress(
-      DataFetchingEnvironment dfe, UUID entityId) {
-    var files = mediaFileRepository.findByMediaId(entityId);
+      DataFetchingEnvironment dfe, List<MediaFile> files) {
     if (files.isEmpty()) {
       return CompletableFuture.completedFuture(null);
     }
