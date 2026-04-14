@@ -19,5 +19,6 @@ type Series implements BaseCollectable {
     seasons: [Season]!
     files: [MediaFile]!
     images(type: ImageType): [Image]!
+    watchProgress: WatchProgress
     watchStatus: WatchStatus!
 }

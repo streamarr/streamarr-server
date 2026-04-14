@@ -6,6 +6,7 @@ import static org.mockito.Mockito.when;
 
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
+import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.services.SeriesService;
@@ -91,5 +92,34 @@ class SeriesResolverTest {
             "data.series.files[0].filepathUri");
 
     assertThat(filepathUri).isEqualTo("/media/shows/Breaking Bad/Season 1/breaking.bad.s01e01.mkv");
+  }
+
+  @Test
+  @DisplayName("Should return episode when valid ID provided")
+  void shouldReturnEpisodeWhenValidIdProvided() {
+    var episodeId = UUID.randomUUID();
+    var episode = Episode.builder().title("Pilot").episodeNumber(1).build();
+    episode.setId(episodeId);
+
+    when(seriesService.findEpisodeById(episodeId)).thenReturn(Optional.of(episode));
+
+    String title =
+        dgsQueryExecutor.executeAndExtractJsonPath(
+            String.format("{ episode(id: \"%s\") { title episodeNumber } }", episodeId),
+            "data.episode.title");
+
+    assertThat(title).isEqualTo("Pilot");
+  }
+
+  @Test
+  @DisplayName("Should return null when episode not found")
+  void shouldReturnNullWhenEpisodeNotFound() {
+    when(seriesService.findEpisodeById(any(UUID.class))).thenReturn(Optional.empty());
+
+    Object result =
+        dgsQueryExecutor.executeAndExtractJsonPath(
+            String.format("{ episode(id: \"%s\") { title } }", UUID.randomUUID()), "data.episode");
+
+    assertThat(result).isNull();
   }
 }

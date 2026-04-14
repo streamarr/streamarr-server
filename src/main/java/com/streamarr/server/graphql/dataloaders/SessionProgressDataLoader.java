@@ -1,8 +1,7 @@
 package com.streamarr.server.graphql.dataloaders;
 
 import com.netflix.graphql.dgs.DgsDataLoader;
-import com.streamarr.server.domain.streaming.SessionProgress;
-import com.streamarr.server.graphql.dto.WatchProgressDto;
+import com.streamarr.server.services.watchprogress.WatchProgressDto;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
 import java.util.HashMap;
 import java.util.Map;
@@ -31,19 +30,10 @@ public class SessionProgressDataLoader implements MappedBatchLoader<UUID, WatchP
           var result = new HashMap<UUID, WatchProgressDto>();
           for (var mediaFileId : mediaFileIds) {
             var wp = progressMap.get(mediaFileId);
-            result.put(mediaFileId, wp != null ? toDto(wp) : null);
+            result.put(mediaFileId, wp != null ? WatchProgressDto.from(wp) : null);
           }
 
           return result;
         });
-  }
-
-  private static WatchProgressDto toDto(SessionProgress wp) {
-    return WatchProgressDto.builder()
-        .positionSeconds(wp.getPositionSeconds())
-        .percentComplete(wp.getPercentComplete())
-        .durationSeconds(wp.getDurationSeconds())
-        .lastModifiedOn(wp.getLastModifiedOn())
-        .build();
   }
 }

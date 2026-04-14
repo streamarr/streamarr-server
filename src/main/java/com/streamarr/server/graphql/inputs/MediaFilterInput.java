@@ -1,6 +1,7 @@
 package com.streamarr.server.graphql.inputs;
 
 import com.streamarr.server.domain.AlphabetLetter;
+import com.streamarr.server.domain.streaming.WatchStatus;
 import java.util.List;
 
 public record MediaFilterInput(
@@ -11,4 +12,5 @@ public record MediaFilterInput(
     List<String> studioIds,
     List<String> directorIds,
     List<String> castMemberIds,
-    Boolean unmatched) {}
+    Boolean unmatched,
+    WatchStatus watchStatus) {}

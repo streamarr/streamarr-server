@@ -1,9 +1,14 @@
 package com.streamarr.server.repositories.media;
 
+import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.inline;
+import static org.jooq.impl.DSL.max;
 import static org.jooq.impl.DSL.noCondition;
+import static org.jooq.impl.DSL.not;
+import static org.jooq.impl.DSL.select;
 
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.jooq.generated.Tables;
 import com.streamarr.server.jooq.generated.enums.ExternalSourceType;
 import com.streamarr.server.repositories.JooqQueryHelper;
@@ -12,9 +17,14 @@ import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
@@ -173,8 +183,145 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
                 filter.getCastMemberIds()));
 
     condition = condition.and(JooqQueryHelper.unmatchedCondition(filter.getUnmatched()));
+    condition = condition.and(watchStatusCondition(filter.getWatchStatus()));
 
     return condition;
+  }
+
+  private Condition watchStatusCondition(WatchStatus watchStatus) {
+    if (watchStatus == null) {
+      return noCondition();
+    }
+
+    // TODO(#163): Replace with authenticated user ID from Spring Security
+    var userId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+
+    var fullyWatched = seriesHasEpisodes().and(not(seriesHasUnwatchedEpisode(userId)));
+    var hasAnyWatchActivity = anyEpisodeWatched(userId).or(anyEpisodeHasProgress(userId));
+
+    return switch (watchStatus) {
+      case WATCHED -> fullyWatched;
+      case IN_PROGRESS -> hasAnyWatchActivity.and(not(fullyWatched));
+      case UNWATCHED -> not(hasAnyWatchActivity);
+    };
+  }
+
+  private static Condition seriesHasEpisodes() {
+    return exists(
+        select(Tables.EPISODE.ID)
+            .from(Tables.EPISODE)
+            .innerJoin(Tables.SEASON)
+            .on(Tables.EPISODE.SEASON_ID.eq(Tables.SEASON.ID))
+            .where(Tables.SEASON.SERIES_ID.eq(Tables.BASE_COLLECTABLE.ID)));
+  }
+
+  private static Condition seriesHasUnwatchedEpisode(UUID userId) {
+    return exists(
+        select(Tables.EPISODE.ID)
+            .from(Tables.EPISODE)
+            .innerJoin(Tables.SEASON)
+            .on(Tables.EPISODE.SEASON_ID.eq(Tables.SEASON.ID))
+            .where(
+                Tables.SEASON
+                    .SERIES_ID
+                    .eq(Tables.BASE_COLLECTABLE.ID)
+                    .and(not(episodeIsWatched(userId)))));
+  }
+
+  private static Condition episodeIsWatched(UUID userId) {
+    return exists(
+        select(Tables.WATCH_HISTORY.ID)
+            .from(Tables.WATCH_HISTORY)
+            .where(
+                Tables.WATCH_HISTORY
+                    .COLLECTABLE_ID
+                    .eq(Tables.EPISODE.ID)
+                    .and(Tables.WATCH_HISTORY.USER_ID.eq(userId))
+                    .and(Tables.WATCH_HISTORY.DISMISSED_AT.isNull())));
+  }
+
+  private static Condition anyEpisodeWatched(UUID userId) {
+    return exists(
+        select(Tables.WATCH_HISTORY.ID)
+            .from(Tables.WATCH_HISTORY)
+            .innerJoin(Tables.EPISODE)
+            .on(Tables.WATCH_HISTORY.COLLECTABLE_ID.eq(Tables.EPISODE.ID))
+            .innerJoin(Tables.SEASON)
+            .on(Tables.EPISODE.SEASON_ID.eq(Tables.SEASON.ID))
+            .where(
+                Tables.SEASON
+                    .SERIES_ID
+                    .eq(Tables.BASE_COLLECTABLE.ID)
+                    .and(Tables.WATCH_HISTORY.USER_ID.eq(userId))
+                    .and(Tables.WATCH_HISTORY.DISMISSED_AT.isNull())));
+  }
+
+  private static Condition anyEpisodeHasProgress(UUID userId) {
+    return exists(
+        select(Tables.SESSION_PROGRESS.ID)
+            .from(Tables.SESSION_PROGRESS)
+            .innerJoin(Tables.MEDIA_FILE)
+            .on(Tables.SESSION_PROGRESS.MEDIA_FILE_ID.eq(Tables.MEDIA_FILE.ID))
+            .innerJoin(Tables.EPISODE)
+            .on(Tables.MEDIA_FILE.MEDIA_ID.eq(Tables.EPISODE.ID))
+            .innerJoin(Tables.SEASON)
+            .on(Tables.EPISODE.SEASON_ID.eq(Tables.SEASON.ID))
+            .where(
+                Tables.SEASON
+                    .SERIES_ID
+                    .eq(Tables.BASE_COLLECTABLE.ID)
+                    .and(Tables.SESSION_PROGRESS.USER_ID.eq(userId))
+                    .and(Tables.SESSION_PROGRESS.POSITION_SECONDS.greaterThan(0))));
+  }
+
+  private Field<?> lastWatchedField() {
+    // TODO(#163): Replace with authenticated user ID from Spring Security
+    var userId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+
+    return select(max(Tables.SESSION_PROGRESS.LAST_MODIFIED_ON))
+        .from(Tables.SESSION_PROGRESS)
+        .innerJoin(Tables.MEDIA_FILE)
+        .on(Tables.SESSION_PROGRESS.MEDIA_FILE_ID.eq(Tables.MEDIA_FILE.ID))
+        .innerJoin(Tables.EPISODE)
+        .on(Tables.MEDIA_FILE.MEDIA_ID.eq(Tables.EPISODE.ID))
+        .innerJoin(Tables.SEASON)
+        .on(Tables.EPISODE.SEASON_ID.eq(Tables.SEASON.ID))
+        .where(
+            Tables.SEASON
+                .SERIES_ID
+                .eq(Tables.BASE_COLLECTABLE.ID)
+                .and(Tables.SESSION_PROGRESS.USER_ID.eq(userId)))
+        .asField();
+  }
+
+  @Override
+  public Map<UUID, Instant> findLastWatchedBySeriesIds(Collection<UUID> seriesIds) {
+    if (seriesIds == null || seriesIds.isEmpty()) {
+      return Map.of();
+    }
+
+    // TODO(#163): Replace with authenticated user ID from Spring Security
+    var userId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+
+    var maxField = max(Tables.SESSION_PROGRESS.LAST_MODIFIED_ON);
+
+    return context
+        .select(Tables.SEASON.SERIES_ID, maxField)
+        .from(Tables.SESSION_PROGRESS)
+        .innerJoin(Tables.MEDIA_FILE)
+        .on(Tables.SESSION_PROGRESS.MEDIA_FILE_ID.eq(Tables.MEDIA_FILE.ID))
+        .innerJoin(Tables.EPISODE)
+        .on(Tables.MEDIA_FILE.MEDIA_ID.eq(Tables.EPISODE.ID))
+        .innerJoin(Tables.SEASON)
+        .on(Tables.EPISODE.SEASON_ID.eq(Tables.SEASON.ID))
+        .where(
+            Tables.SEASON.SERIES_ID.in(seriesIds).and(Tables.SESSION_PROGRESS.USER_ID.eq(userId)))
+        .groupBy(Tables.SEASON.SERIES_ID)
+        .fetchMap(Tables.SEASON.SERIES_ID, r -> toInstant(r.get(maxField)));
+  }
+
+  private static Instant toInstant(OffsetDateTime value) {
+    return value == null ? null : value.toInstant();
   }
 
   private Field<?> sortField(MediaFilter filter) {
@@ -183,6 +330,7 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
       case ADDED -> Tables.BASE_COLLECTABLE.CREATED_ON;
       case RELEASE_DATE -> Tables.SERIES.FIRST_AIR_DATE;
       case RUNTIME -> Tables.SERIES.RUNTIME;
+      case LAST_WATCHED -> lastWatchedField();
     };
   }
 
@@ -194,6 +342,7 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
       case ADDED -> Tables.BASE_COLLECTABLE.CREATED_ON.sort(direction);
       case RELEASE_DATE -> Tables.SERIES.FIRST_AIR_DATE.sort(direction).nullsLast();
       case RUNTIME -> Tables.SERIES.RUNTIME.sort(direction).nullsLast();
+      case LAST_WATCHED -> lastWatchedField().sort(direction).nullsLast();
     };
   }
 }

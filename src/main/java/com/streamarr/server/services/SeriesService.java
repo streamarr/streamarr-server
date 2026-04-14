@@ -23,9 +23,12 @@ import com.streamarr.server.services.metadata.series.SeasonDetails;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
+import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.PageItem;
 import com.streamarr.server.services.pagination.PaginationService;
+import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -263,6 +266,11 @@ public class SeriesService {
   }
 
   @Transactional(readOnly = true)
+  public Optional<Episode> findEpisodeById(UUID episodeId) {
+    return episodeRepository.findById(episodeId);
+  }
+
+  @Transactional(readOnly = true)
   public List<Episode> findEpisodes(UUID seasonId) {
     return episodeRepository.findBySeasonId(seasonId);
   }
@@ -293,22 +301,37 @@ public class SeriesService {
             ? seriesRepository.seekWithFilter(options)
             : seriesRepository.findFirstWithFilter(options);
 
+    var lastWatchedBySeriesId = lastWatchedFor(options.getMediaFilter(), seriesList);
+
     var pageItems =
         seriesList.stream()
             .map(
-                series -> new PageItem<>(series, getOrderByValue(options.getMediaFilter(), series)))
+                series ->
+                    new PageItem<>(
+                        series,
+                        getOrderByValue(options.getMediaFilter(), series, lastWatchedBySeriesId)))
             .toList();
 
     return paginationService.buildMediaPage(
         pageItems, options.getPaginationOptions(), options.getCursorId());
   }
 
-  private Object getOrderByValue(MediaFilter filter, Series series) {
+  private Map<UUID, Instant> lastWatchedFor(MediaFilter filter, List<Series> seriesList) {
+    if (filter.getSortBy() != OrderMediaBy.LAST_WATCHED || seriesList.isEmpty()) {
+      return Map.of();
+    }
+    return seriesRepository.findLastWatchedBySeriesIds(
+        seriesList.stream().map(Series::getId).toList());
+  }
+
+  private Object getOrderByValue(
+      MediaFilter filter, Series series, Map<UUID, Instant> lastWatchedBySeriesId) {
     return switch (filter.getSortBy()) {
       case TITLE -> series.getTitleSort();
       case ADDED -> series.getCreatedOn();
       case RELEASE_DATE -> series.getFirstAirDate();
       case RUNTIME -> series.getRuntime();
+      case LAST_WATCHED -> lastWatchedBySeriesId.get(series.getId());
     };
   }
 }

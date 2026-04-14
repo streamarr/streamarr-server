@@ -4,5 +4,6 @@ public enum OrderMediaBy {
   TITLE,
   ADDED,
   RELEASE_DATE,
-  RUNTIME;
+  RUNTIME,
+  LAST_WATCHED;
 }
