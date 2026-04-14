@@ -27,7 +27,6 @@ import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.PageItem;
 import com.streamarr.server.services.pagination.PaginationService;
 import java.time.Instant;
-import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -262,34 +261,6 @@ public class SeriesService {
   }
 
   @Transactional(readOnly = true)
-  public List<MediaFile> findAllEpisodeMediaFiles(UUID seriesId) {
-    var seasonIds = seasonRepository.findSeasonIdsBySeriesIds(List.of(seriesId));
-    var allSeasonIds = seasonIds.values().stream().flatMap(Collection::stream).toList();
-    if (allSeasonIds.isEmpty()) {
-      return List.of();
-    }
-
-    var episodeIds = episodeRepository.findEpisodeIdsBySeasonIds(allSeasonIds);
-    var allEpisodeIds = episodeIds.values().stream().flatMap(Collection::stream).toList();
-    if (allEpisodeIds.isEmpty()) {
-      return List.of();
-    }
-
-    return mediaFileRepository.findByMediaIdIn(allEpisodeIds);
-  }
-
-  @Transactional(readOnly = true)
-  public List<MediaFile> findSeasonEpisodeMediaFiles(UUID seasonId) {
-    var episodeIds = episodeRepository.findEpisodeIdsBySeasonIds(List.of(seasonId));
-    var allEpisodeIds = episodeIds.values().stream().flatMap(Collection::stream).toList();
-    if (allEpisodeIds.isEmpty()) {
-      return List.of();
-    }
-
-    return mediaFileRepository.findByMediaIdIn(allEpisodeIds);
-  }
-
-  @Transactional(readOnly = true)
   public List<Season> findSeasons(UUID seriesId) {
     return seasonRepository.findBySeriesId(seriesId);
   }
@@ -297,11 +268,6 @@ public class SeriesService {
   @Transactional(readOnly = true)
   public Optional<Episode> findEpisodeById(UUID episodeId) {
     return episodeRepository.findById(episodeId);
-  }
-
-  @Transactional(readOnly = true)
-  public Season findSeason(UUID seasonId) {
-    return seasonRepository.findById(seasonId).orElseThrow();
   }
 
   @Transactional(readOnly = true)

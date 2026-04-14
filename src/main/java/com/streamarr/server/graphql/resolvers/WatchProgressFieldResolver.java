@@ -8,11 +8,12 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.streaming.WatchStatus;
+import com.streamarr.server.graphql.dataloaders.WatchProgressLoaderKey;
 import com.streamarr.server.graphql.dataloaders.WatchStatusEntityType;
 import com.streamarr.server.graphql.dataloaders.WatchStatusLoaderKey;
-import com.streamarr.server.graphql.dto.WatchProgressDto;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
+import com.streamarr.server.services.watchprogress.WatchProgressDto;
 import graphql.schema.DataFetchingEnvironment;
 import java.util.Comparator;
 import java.util.List;
@@ -27,6 +28,8 @@ import org.dataloader.DataLoader;
 public class WatchProgressFieldResolver {
 
   private static final String WATCH_PROGRESS_LOADER = "watchProgress";
+  private static final String AGGREGATE_WATCH_PROGRESS_LOADER = "aggregateWatchProgress";
+  private static final String WATCH_STATUS_LOADER = "watchStatus";
 
   private final MovieService movieService;
   private final SeriesService seriesService;
@@ -46,13 +49,13 @@ public class WatchProgressFieldResolver {
   @DgsData(parentType = "Series", field = "watchProgress")
   public CompletableFuture<WatchProgressDto> seriesWatchProgress(DataFetchingEnvironment dfe) {
     Series series = dfe.getSource();
-    return loadProgress(dfe, seriesService.findAllEpisodeMediaFiles(series.getId()));
+    return loadAggregateProgress(dfe, series.getId(), WatchStatusEntityType.SERIES);
   }
 
   @DgsData(parentType = "Season", field = "watchProgress")
   public CompletableFuture<WatchProgressDto> seasonWatchProgress(DataFetchingEnvironment dfe) {
     Season season = dfe.getSource();
-    return loadProgress(dfe, seriesService.findSeasonEpisodeMediaFiles(season.getId()));
+    return loadAggregateProgress(dfe, season.getId(), WatchStatusEntityType.SEASON);
   }
 
   @DgsData(parentType = "Movie", field = "watchStatus")
@@ -98,9 +101,16 @@ public class WatchProgressFieldResolver {
                     .orElse(null));
   }
 
+  private CompletableFuture<WatchProgressDto> loadAggregateProgress(
+      DataFetchingEnvironment dfe, UUID entityId, WatchStatusEntityType entityType) {
+    DataLoader<WatchProgressLoaderKey, WatchProgressDto> loader =
+        dfe.getDataLoader(AGGREGATE_WATCH_PROGRESS_LOADER);
+    return loader.load(new WatchProgressLoaderKey(entityId, entityType));
+  }
+
   private CompletableFuture<WatchStatus> loadWatchStatus(
       DataFetchingEnvironment dfe, UUID entityId, WatchStatusEntityType entityType) {
-    DataLoader<WatchStatusLoaderKey, WatchStatus> loader = dfe.getDataLoader("watchStatus");
+    DataLoader<WatchStatusLoaderKey, WatchStatus> loader = dfe.getDataLoader(WATCH_STATUS_LOADER);
     return loader.load(new WatchStatusLoaderKey(entityId, entityType));
   }
 }

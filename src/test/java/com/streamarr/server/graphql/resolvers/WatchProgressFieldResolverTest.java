@@ -17,6 +17,7 @@ import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSessionProgressRepository;
 import com.streamarr.server.fakes.FakeWatchHistoryRepository;
+import com.streamarr.server.graphql.dataloaders.AggregateWatchProgressDataLoader;
 import com.streamarr.server.graphql.dataloaders.SessionProgressDataLoader;
 import com.streamarr.server.graphql.dataloaders.WatchStatusDataLoader;
 import com.streamarr.server.services.MovieService;
@@ -42,11 +43,13 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
     classes = {
       WatchProgressFieldResolver.class,
       SessionProgressDataLoader.class,
+      AggregateWatchProgressDataLoader.class,
       WatchStatusDataLoader.class,
       MovieResolver.class,
       SeriesResolver.class,
       SeriesFieldResolver.class,
       SeasonFieldResolver.class,
+      EpisodeFieldResolver.class,
       WatchProgressFieldResolverTest.TestConfig.class
     })
 @DisplayName("Watch Progress Field Resolver Tests")
@@ -380,17 +383,19 @@ class WatchProgressFieldResolverTest {
       var series = Series.builder().title("Test Series").build();
       series.setId(seriesId);
 
-      var seasonId = UUID.randomUUID();
       var season = Season.builder().title("Season 1").seasonNumber(1).build();
-      season.setId(seasonId);
+      season.setId(UUID.randomUUID());
+
+      var episode = Episode.builder().episodeNumber(1).season(season).build();
+      episode.setId(UUID.randomUUID());
+      episodeRepository.save(episode);
 
       var mediaFile = buildMediaFile();
-      mediaFile.setMediaId(UUID.randomUUID());
+      mediaFile.setMediaId(episode.getId());
       mediaFileRepository.save(mediaFile);
 
       when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
       when(seriesService.findSeasons(seriesId)).thenReturn(List.of(season));
-      when(seriesService.findSeasonEpisodeMediaFiles(seasonId)).thenReturn(List.of(mediaFile));
 
       sessionProgressRepository.save(
           SessionProgress.builder()
@@ -421,13 +426,11 @@ class WatchProgressFieldResolverTest {
       var series = Series.builder().title("Test Series").build();
       series.setId(seriesId);
 
-      var seasonId = UUID.randomUUID();
       var season = Season.builder().title("Season 1").seasonNumber(1).build();
-      season.setId(seasonId);
+      season.setId(UUID.randomUUID());
 
       when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
       when(seriesService.findSeasons(seriesId)).thenReturn(List.of(season));
-      when(seriesService.findSeasonEpisodeMediaFiles(seasonId)).thenReturn(List.of());
 
       Object watchProgress =
           dgsQueryExecutor.executeAndExtractJsonPath(
@@ -469,17 +472,22 @@ class WatchProgressFieldResolverTest {
     @Test
     @DisplayName("Should return most recent episode progress for series")
     void shouldReturnMostRecentEpisodeProgressForSeries() {
-      var seriesId = UUID.randomUUID();
       var series = Series.builder().title("Test Series").build();
-      series.setId(seriesId);
+      series.setId(UUID.randomUUID());
 
-      var episodeId = UUID.randomUUID();
+      var season = Season.builder().seasonNumber(1).series(series).build();
+      season.setId(UUID.randomUUID());
+      seasonRepository.save(season);
+
+      var episode = Episode.builder().episodeNumber(1).season(season).build();
+      episode.setId(UUID.randomUUID());
+      episodeRepository.save(episode);
+
       var mediaFile = buildMediaFile();
-      mediaFile.setMediaId(episodeId);
+      mediaFile.setMediaId(episode.getId());
       mediaFileRepository.save(mediaFile);
 
-      when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
-      when(seriesService.findAllEpisodeMediaFiles(seriesId)).thenReturn(List.of(mediaFile));
+      when(seriesService.findById(series.getId())).thenReturn(Optional.of(series));
 
       sessionProgressRepository.save(
           SessionProgress.builder()
@@ -495,7 +503,7 @@ class WatchProgressFieldResolverTest {
           dgsQueryExecutor.executeAndGetDocumentContext(
               String.format(
                   "{ series(id: \"%s\") { watchProgress { positionSeconds percentComplete durationSeconds } } }",
-                  seriesId));
+                  series.getId()));
 
       assertThat(context.<Integer>read("data.series.watchProgress.positionSeconds")).isEqualTo(900);
       assertThat(context.<Double>read("data.series.watchProgress.percentComplete")).isEqualTo(25.0);
@@ -509,7 +517,6 @@ class WatchProgressFieldResolverTest {
       series.setId(seriesId);
 
       when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
-      when(seriesService.findAllEpisodeMediaFiles(seriesId)).thenReturn(List.of());
 
       Object watchProgress =
           dgsQueryExecutor.executeAndExtractJsonPath(
@@ -565,7 +572,6 @@ class WatchProgressFieldResolverTest {
       when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
       when(seriesService.findSeasons(seriesId)).thenReturn(List.of(season));
       when(seriesService.findEpisodes(seasonId)).thenReturn(List.of(episode));
-      when(seriesService.findSeason(seasonId)).thenReturn(season);
 
       Integer seasonNumber =
           dgsQueryExecutor.executeAndExtractJsonPath(
