@@ -17,8 +17,12 @@ import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PaginationDirection;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -236,6 +240,32 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
                 .eq(Tables.BASE_COLLECTABLE.ID)
                 .and(Tables.SESSION_PROGRESS.USER_ID.eq(userId)))
         .asField();
+  }
+
+  @Override
+  public Map<UUID, Instant> findLastWatchedByMovieIds(Collection<UUID> movieIds) {
+    if (movieIds == null || movieIds.isEmpty()) {
+      return Map.of();
+    }
+
+    // TODO(#163): Replace with authenticated user ID from Spring Security
+    var userId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+
+    var maxField = max(Tables.SESSION_PROGRESS.LAST_MODIFIED_ON);
+
+    return context
+        .select(Tables.MEDIA_FILE.MEDIA_ID, maxField)
+        .from(Tables.SESSION_PROGRESS)
+        .innerJoin(Tables.MEDIA_FILE)
+        .on(Tables.SESSION_PROGRESS.MEDIA_FILE_ID.eq(Tables.MEDIA_FILE.ID))
+        .where(
+            Tables.MEDIA_FILE.MEDIA_ID.in(movieIds).and(Tables.SESSION_PROGRESS.USER_ID.eq(userId)))
+        .groupBy(Tables.MEDIA_FILE.MEDIA_ID)
+        .fetchMap(Tables.MEDIA_FILE.MEDIA_ID, r -> toInstant(r.get(maxField)));
+  }
+
+  private static Instant toInstant(OffsetDateTime value) {
+    return value == null ? null : value.toInstant();
   }
 
   private Field<?> sortField(MediaFilter filter) {

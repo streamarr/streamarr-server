@@ -21,9 +21,12 @@ import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
+import com.streamarr.server.services.pagination.OrderMediaBy;
 import com.streamarr.server.services.pagination.PageItem;
 import com.streamarr.server.services.pagination.PaginationService;
+import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -196,22 +199,36 @@ public class MovieService {
             ? movieRepository.seekWithFilter(options)
             : movieRepository.findFirstWithFilter(options);
 
+    var lastWatchedByMovieId = lastWatchedFor(options.getMediaFilter(), movies);
+
     var pageItems =
         movies.stream()
-            .map(movie -> new PageItem<>(movie, getOrderByValue(options.getMediaFilter(), movie)))
+            .map(
+                movie ->
+                    new PageItem<>(
+                        movie,
+                        getOrderByValue(options.getMediaFilter(), movie, lastWatchedByMovieId)))
             .toList();
 
     return paginationService.buildMediaPage(
         pageItems, options.getPaginationOptions(), options.getCursorId());
   }
 
-  private Object getOrderByValue(MediaFilter filter, Movie movie) {
+  private Map<UUID, Instant> lastWatchedFor(MediaFilter filter, List<Movie> movies) {
+    if (filter.getSortBy() != OrderMediaBy.LAST_WATCHED || movies.isEmpty()) {
+      return Map.of();
+    }
+    return movieRepository.findLastWatchedByMovieIds(movies.stream().map(Movie::getId).toList());
+  }
+
+  private Object getOrderByValue(
+      MediaFilter filter, Movie movie, Map<UUID, Instant> lastWatchedByMovieId) {
     return switch (filter.getSortBy()) {
       case TITLE -> movie.getTitleSort();
       case ADDED -> movie.getCreatedOn();
       case RELEASE_DATE -> movie.getReleaseDate();
       case RUNTIME -> movie.getRuntime();
-      case LAST_WATCHED -> null;
+      case LAST_WATCHED -> lastWatchedByMovieId.get(movie.getId());
     };
   }
 }

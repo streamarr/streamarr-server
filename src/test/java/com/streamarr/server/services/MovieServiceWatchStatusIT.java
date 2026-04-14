@@ -1,5 +1,6 @@
 package com.streamarr.server.services;
 
+import static com.streamarr.server.fixtures.PaginationFixture.buildForwardContinuation;
 import static com.streamarr.server.fixtures.PaginationFixture.buildForwardOptions;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -21,6 +22,7 @@ import com.streamarr.server.services.pagination.OrderMediaBy;
 import java.time.Instant;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.jooq.SortOrder;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -178,6 +180,85 @@ class MovieServiceWatchStatusIT extends AbstractIntegrationTest {
           .extracting(item -> item.item().getTitle())
           .last()
           .satisfies(title -> assertThat(title).isIn("Watched Movie", "Unwatched Movie"));
+    }
+
+    @Test
+    @DisplayName("Should paginate forward using cursor when sorted by LAST_WATCHED DESC")
+    void shouldPaginateForwardUsingCursorWhenSortedByLastWatchedDesc() throws InterruptedException {
+      var paginationLibrary =
+          libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+
+      // Create three movies with distinct session_progress timestamps.
+      // Small sleeps ensure Postgres assigns strictly increasing last_modified_on values.
+      var first = createMovieWithSessionProgress(paginationLibrary, "First");
+      Thread.sleep(5);
+      var second = createMovieWithSessionProgress(paginationLibrary, "Second");
+      Thread.sleep(5);
+      var third = createMovieWithSessionProgress(paginationLibrary, "Third");
+
+      var filter =
+          MediaFilter.builder()
+              .libraryId(paginationLibrary.getId())
+              .sortBy(OrderMediaBy.LAST_WATCHED)
+              .sortDirection(SortOrder.DESC)
+              .build();
+
+      var page1 = movieService.getMoviesWithFilter(buildForwardOptions(1, filter));
+      assertThat(page1.items()).hasSize(1);
+      assertThat(page1.items().getFirst().item().getId()).isEqualTo(third.getId());
+      assertThat(page1.hasNextPage()).isTrue();
+
+      var page2 =
+          movieService.getMoviesWithFilter(
+              buildForwardContinuation(1, filter, page1.items().getLast()));
+      assertThat(page2.items()).hasSize(1);
+      assertThat(page2.items().getFirst().item().getId()).isEqualTo(second.getId());
+      assertThat(page2.hasNextPage()).isTrue();
+
+      var page3 =
+          movieService.getMoviesWithFilter(
+              buildForwardContinuation(1, filter, page2.items().getLast()));
+      assertThat(page3.items()).hasSize(1);
+      assertThat(page3.items().getFirst().item().getId()).isEqualTo(first.getId());
+      assertThat(page3.hasNextPage()).isFalse();
+
+      var allIds =
+          Stream.of(page1, page2, page3)
+              .flatMap(p -> p.items().stream())
+              .map(pi -> pi.item().getId())
+              .toList();
+      assertThat(allIds).doesNotHaveDuplicates();
+    }
+
+    private Movie createMovieWithSessionProgress(Library lib, String title) {
+      var file =
+          MediaFile.builder()
+              .libraryId(lib.getId())
+              .status(MediaFileStatus.MATCHED)
+              .filename(title.toLowerCase() + ".mkv")
+              .filepathUri("/media/" + UUID.randomUUID() + ".mkv")
+              .build();
+
+      var movie =
+          movieRepository.saveAndFlush(
+              Movie.builder()
+                  .title(title)
+                  .titleSort(title)
+                  .files(Set.of(file))
+                  .library(lib)
+                  .build());
+
+      sessionProgressRepository.saveAndFlush(
+          SessionProgress.builder()
+              .sessionId(UUID.randomUUID())
+              .userId(USER_ID)
+              .mediaFileId(movie.getFiles().iterator().next().getId())
+              .positionSeconds(600)
+              .percentComplete(25.0)
+              .durationSeconds(2400)
+              .build());
+
+      return movie;
     }
   }
 }
