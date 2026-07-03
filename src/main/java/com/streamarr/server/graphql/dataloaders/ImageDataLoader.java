@@ -24,32 +24,33 @@ public class ImageDataLoader implements MappedBatchLoader<ImageLoaderKey, List<I
 
   @Override
   public CompletionStage<Map<ImageLoaderKey, List<ImageDto>>> load(Set<ImageLoaderKey> keys) {
-    return CompletableFuture.supplyAsync(
-        () -> {
-          var result = new HashMap<ImageLoaderKey, List<ImageDto>>();
+    return CompletableFuture.completedFuture(loadImages(keys));
+  }
 
-          var keysByType = keys.stream().collect(Collectors.groupingBy(ImageLoaderKey::entityType));
+  private Map<ImageLoaderKey, List<ImageDto>> loadImages(Set<ImageLoaderKey> keys) {
+    var result = new HashMap<ImageLoaderKey, List<ImageDto>>();
 
-          for (var entry : keysByType.entrySet()) {
-            var entityType = entry.getKey();
-            var entityIds = entry.getValue().stream().map(ImageLoaderKey::entityId).toList();
+    var keysByType = keys.stream().collect(Collectors.groupingBy(ImageLoaderKey::entityType));
 
-            var images = imageRepository.findByEntityTypeAndEntityIdIn(entityType, entityIds);
+    for (var entry : keysByType.entrySet()) {
+      var entityType = entry.getKey();
+      var entityIds = entry.getValue().stream().map(ImageLoaderKey::entityId).toList();
 
-            var imagesByEntity = images.stream().collect(Collectors.groupingBy(Image::getEntityId));
+      var images = imageRepository.findByEntityTypeAndEntityIdIn(entityType, entityIds);
 
-            for (var key : entry.getValue()) {
-              var entityImages = imagesByEntity.getOrDefault(key.entityId(), List.of());
-              result.put(key, buildImageDtos(entityImages));
-            }
-          }
+      var imagesByEntity = images.stream().collect(Collectors.groupingBy(Image::getEntityId));
 
-          for (var key : keys) {
-            result.putIfAbsent(key, List.of());
-          }
+      for (var key : entry.getValue()) {
+        var entityImages = imagesByEntity.getOrDefault(key.entityId(), List.of());
+        result.put(key, buildImageDtos(entityImages));
+      }
+    }
 
-          return result;
-        });
+    for (var key : keys) {
+      result.putIfAbsent(key, List.of());
+    }
+
+    return result;
   }
 
   private static List<ImageDto> buildImageDtos(List<Image> images) {
