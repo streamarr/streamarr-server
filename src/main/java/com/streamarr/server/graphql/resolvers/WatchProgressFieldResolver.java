@@ -7,8 +7,8 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.domain.streaming.CollectableScope;
 import com.streamarr.server.domain.streaming.WatchStatus;
-import com.streamarr.server.graphql.dataloaders.WatchStatusEntityType;
 import com.streamarr.server.graphql.dataloaders.WatchStatusLoaderKey;
 import com.streamarr.server.graphql.dto.WatchProgressDto;
 import graphql.schema.DataFetchingEnvironment;
@@ -37,25 +37,25 @@ public class WatchProgressFieldResolver {
   @DgsData(parentType = "Movie", field = "watchStatus")
   public CompletableFuture<WatchStatus> movieWatchStatus(DataFetchingEnvironment dfe) {
     Movie movie = dfe.getSource();
-    return loadWatchStatus(dfe, movie.getId(), WatchStatusEntityType.DIRECT_MEDIA);
+    return loadWatchStatus(dfe, movie.getId(), CollectableScope.DIRECT_MEDIA);
   }
 
   @DgsData(parentType = "Episode", field = "watchStatus")
   public CompletableFuture<WatchStatus> episodeWatchStatus(DataFetchingEnvironment dfe) {
     Episode episode = dfe.getSource();
-    return loadWatchStatus(dfe, episode.getId(), WatchStatusEntityType.DIRECT_MEDIA);
+    return loadWatchStatus(dfe, episode.getId(), CollectableScope.DIRECT_MEDIA);
   }
 
   @DgsData(parentType = "Season", field = "watchStatus")
   public CompletableFuture<WatchStatus> seasonWatchStatus(DataFetchingEnvironment dfe) {
     Season season = dfe.getSource();
-    return loadWatchStatus(dfe, season.getId(), WatchStatusEntityType.SEASON);
+    return loadWatchStatus(dfe, season.getId(), CollectableScope.SEASON);
   }
 
   @DgsData(parentType = "Series", field = "watchStatus")
   public CompletableFuture<WatchStatus> seriesWatchStatus(DataFetchingEnvironment dfe) {
     Series series = dfe.getSource();
-    return loadWatchStatus(dfe, series.getId(), WatchStatusEntityType.SERIES);
+    return loadWatchStatus(dfe, series.getId(), CollectableScope.SERIES);
   }
 
   private CompletableFuture<WatchProgressDto> loadProgress(
@@ -78,8 +78,8 @@ public class WatchProgressFieldResolver {
   }
 
   private CompletableFuture<WatchStatus> loadWatchStatus(
-      DataFetchingEnvironment dfe, UUID entityId, WatchStatusEntityType entityType) {
+      DataFetchingEnvironment dfe, UUID entityId, CollectableScope scope) {
     DataLoader<WatchStatusLoaderKey, WatchStatus> loader = dfe.getDataLoader("watchStatus");
-    return loader.load(new WatchStatusLoaderKey(entityId, entityType));
+    return loader.load(new WatchStatusLoaderKey(entityId, scope));
   }
 }

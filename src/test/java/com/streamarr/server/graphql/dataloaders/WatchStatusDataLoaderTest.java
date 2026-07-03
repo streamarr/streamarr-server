@@ -8,6 +8,7 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.domain.streaming.CollectableScope;
 import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.fakes.CapturingEventPublisher;
@@ -61,7 +62,7 @@ class WatchStatusDataLoaderTest {
     var mf = mediaFileRepository.save(createMediaFile(movie.getId()));
     sessionProgressRepository.save(buildProgressWithPosition(mf.getId(), 300));
 
-    var key = new WatchStatusLoaderKey(movie.getId(), WatchStatusEntityType.DIRECT_MEDIA);
+    var key = new WatchStatusLoaderKey(movie.getId(), CollectableScope.DIRECT_MEDIA);
     var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
 
     assertThat(result).containsEntry(key, WatchStatus.IN_PROGRESS);
@@ -70,7 +71,7 @@ class WatchStatusDataLoaderTest {
   @Test
   @DisplayName("Should return unwatched when entity has no media files")
   void shouldReturnUnwatchedWhenEntityHasNoMediaFiles() throws Exception {
-    var key = new WatchStatusLoaderKey(UUID.randomUUID(), WatchStatusEntityType.DIRECT_MEDIA);
+    var key = new WatchStatusLoaderKey(UUID.randomUUID(), CollectableScope.DIRECT_MEDIA);
     var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
 
     assertThat(result).containsEntry(key, WatchStatus.UNWATCHED);
@@ -83,7 +84,7 @@ class WatchStatusDataLoaderTest {
     movie.setId(UUID.randomUUID());
     mediaFileRepository.save(createMediaFile(movie.getId()));
 
-    var key = new WatchStatusLoaderKey(movie.getId(), WatchStatusEntityType.DIRECT_MEDIA);
+    var key = new WatchStatusLoaderKey(movie.getId(), CollectableScope.DIRECT_MEDIA);
     var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
 
     assertThat(result).containsEntry(key, WatchStatus.UNWATCHED);
@@ -101,8 +102,8 @@ class WatchStatusDataLoaderTest {
     var ep = episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
     mediaFileRepository.save(createMediaFile(ep.getId()));
 
-    var movieKey = new WatchStatusLoaderKey(movie.getId(), WatchStatusEntityType.DIRECT_MEDIA);
-    var seasonKey = new WatchStatusLoaderKey(season.getId(), WatchStatusEntityType.SEASON);
+    var movieKey = new WatchStatusLoaderKey(movie.getId(), CollectableScope.DIRECT_MEDIA);
+    var seasonKey = new WatchStatusLoaderKey(season.getId(), CollectableScope.SEASON);
 
     var result = dataLoader.load(Set.of(movieKey, seasonKey)).toCompletableFuture().get();
 
@@ -122,7 +123,7 @@ class WatchStatusDataLoaderTest {
     mediaFileRepository.save(createMediaFile(ep2.getId()));
     sessionProgressRepository.save(buildProgressWithPosition(mf1.getId(), 300));
 
-    var key = new WatchStatusLoaderKey(season.getId(), WatchStatusEntityType.SEASON);
+    var key = new WatchStatusLoaderKey(season.getId(), CollectableScope.SEASON);
     var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
 
     assertThat(result).containsEntry(key, WatchStatus.IN_PROGRESS);
@@ -142,7 +143,7 @@ class WatchStatusDataLoaderTest {
     sessionProgressRepository.save(buildProgressWithPosition(mf1.getId(), 300));
     sessionProgressRepository.save(buildProgressWithPosition(mf2.getId(), 600));
 
-    var key = new WatchStatusLoaderKey(series.getId(), WatchStatusEntityType.SERIES);
+    var key = new WatchStatusLoaderKey(series.getId(), CollectableScope.SERIES);
     var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
 
     assertThat(result).containsEntry(key, WatchStatus.IN_PROGRESS);
