@@ -24,24 +24,24 @@ public class WatchStatusDataLoader implements MappedBatchLoader<WatchStatusLoade
   @Override
   public CompletionStage<Map<WatchStatusLoaderKey, WatchStatus>> load(
       Set<WatchStatusLoaderKey> keys) {
-    return CompletableFuture.supplyAsync(
-        () -> {
-          var result = new HashMap<WatchStatusLoaderKey, WatchStatus>();
-          var keysByBatch =
-              keys.stream()
-                  .collect(Collectors.groupingBy(key -> new Batch(key.userId(), key.scope())));
+    return CompletableFuture.completedFuture(loadStatuses(keys));
+  }
 
-          for (var entry : keysByBatch.entrySet()) {
-            var entityIds = entry.getValue().stream().map(WatchStatusLoaderKey::entityId).toList();
-            var statusMap = loadByScope(entry.getKey().userId(), entry.getKey().scope(), entityIds);
+  private Map<WatchStatusLoaderKey, WatchStatus> loadStatuses(Set<WatchStatusLoaderKey> keys) {
+    var result = new HashMap<WatchStatusLoaderKey, WatchStatus>();
+    var keysByBatch =
+        keys.stream().collect(Collectors.groupingBy(key -> new Batch(key.userId(), key.scope())));
 
-            for (var key : entry.getValue()) {
-              result.put(key, statusMap.getOrDefault(key.entityId(), WatchStatus.UNWATCHED));
-            }
-          }
+    for (var entry : keysByBatch.entrySet()) {
+      var entityIds = entry.getValue().stream().map(WatchStatusLoaderKey::entityId).toList();
+      var statusMap = loadByScope(entry.getKey().userId(), entry.getKey().scope(), entityIds);
 
-          return result;
-        });
+      for (var key : entry.getValue()) {
+        result.put(key, statusMap.getOrDefault(key.entityId(), WatchStatus.UNWATCHED));
+      }
+    }
+
+    return result;
   }
 
   private record Batch(UUID userId, CollectableScope scope) {}

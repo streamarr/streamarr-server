@@ -23,28 +23,29 @@ public class SessionProgressDataLoader
   @Override
   public CompletionStage<Map<SessionProgressLoaderKey, WatchProgressDto>> load(
       Set<SessionProgressLoaderKey> keys) {
-    return CompletableFuture.supplyAsync(
-        () -> {
-          var result = new HashMap<SessionProgressLoaderKey, WatchProgressDto>();
-          var keysByUser =
-              keys.stream().collect(Collectors.groupingBy(SessionProgressLoaderKey::userId));
+    return CompletableFuture.completedFuture(loadProgress(keys));
+  }
 
-          for (var entry : keysByUser.entrySet()) {
-            var mediaFileIds =
-                entry.getValue().stream().map(SessionProgressLoaderKey::mediaFileId).toList();
-            var progressMap =
-                watchStatusService.getProgressForMediaFiles(entry.getKey(), mediaFileIds);
+  private Map<SessionProgressLoaderKey, WatchProgressDto> loadProgress(
+      Set<SessionProgressLoaderKey> keys) {
+    var result = new HashMap<SessionProgressLoaderKey, WatchProgressDto>();
+    var keysByUser =
+        keys.stream().collect(Collectors.groupingBy(SessionProgressLoaderKey::userId));
 
-            for (var key : entry.getValue()) {
-              var progress = progressMap.get(key.mediaFileId());
-              if (progress != null) {
-                result.put(key, toDto(progress));
-              }
-            }
-          }
+    for (var entry : keysByUser.entrySet()) {
+      var mediaFileIds =
+          entry.getValue().stream().map(SessionProgressLoaderKey::mediaFileId).toList();
+      var progressMap = watchStatusService.getProgressForMediaFiles(entry.getKey(), mediaFileIds);
 
-          return result;
-        });
+      for (var key : entry.getValue()) {
+        var progress = progressMap.get(key.mediaFileId());
+        if (progress != null) {
+          result.put(key, toDto(progress));
+        }
+      }
+    }
+
+    return result;
   }
 
   private static WatchProgressDto toDto(SessionProgress wp) {
