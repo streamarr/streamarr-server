@@ -21,6 +21,7 @@ import com.streamarr.server.graphql.dataloaders.SessionProgressDataLoader;
 import com.streamarr.server.graphql.dataloaders.WatchStatusDataLoader;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
+import com.streamarr.server.services.user.CurrentUserService;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
 import java.util.List;
 import java.util.Optional;
@@ -94,6 +95,11 @@ class WatchProgressFieldResolverTest {
     @Bean
     CapturingEventPublisher capturingEventPublisher() {
       return new CapturingEventPublisher();
+    }
+
+    @Bean
+    CurrentUserService currentUserService() {
+      return new CurrentUserService();
     }
 
     @Bean

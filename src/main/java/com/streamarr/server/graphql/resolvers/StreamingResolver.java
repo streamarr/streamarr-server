@@ -11,6 +11,7 @@ import com.streamarr.server.exceptions.InvalidIdException;
 import com.streamarr.server.graphql.dto.StreamSessionDto;
 import com.streamarr.server.graphql.dto.StreamingOptionsInput;
 import com.streamarr.server.services.streaming.StreamingService;
+import com.streamarr.server.services.user.CurrentUserService;
 import com.streamarr.server.services.watchprogress.SessionProgressService;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
 import java.util.Optional;
@@ -24,6 +25,7 @@ public class StreamingResolver {
   private final StreamingService streamingService;
   private final SessionProgressService sessionProgressService;
   private final WatchStatusService watchStatusService;
+  private final CurrentUserService currentUserService;
 
   @DgsMutation
   public StreamSessionDto createStreamSession(
@@ -54,8 +56,7 @@ public class StreamingResolver {
       @InputArgument String sessionId,
       @InputArgument int positionSeconds,
       @InputArgument PlaybackState state) {
-    // TODO(#163): Replace with authenticated user ID from Spring Security
-    var userId = resolveCurrentUserId();
+    var userId = currentUserService.currentUserId();
     sessionProgressService.reportStreamSessionTimeline(
         userId, parseUuid(sessionId), positionSeconds, state);
 
@@ -64,8 +65,7 @@ public class StreamingResolver {
 
   @DgsMutation
   public boolean markWatched(@InputArgument String id) {
-    // TODO(#163): Replace with authenticated user ID from Spring Security
-    var userId = resolveCurrentUserId();
+    var userId = currentUserService.currentUserId();
     watchStatusService.markWatched(userId, parseUuid(id));
 
     return true;
@@ -73,16 +73,10 @@ public class StreamingResolver {
 
   @DgsMutation
   public boolean markUnwatched(@InputArgument String id) {
-    // TODO(#163): Replace with authenticated user ID from Spring Security
-    var userId = resolveCurrentUserId();
+    var userId = currentUserService.currentUserId();
     watchStatusService.markUnwatched(userId, parseUuid(id));
 
     return true;
-  }
-
-  private static UUID resolveCurrentUserId() {
-    // TODO(#163): Replace with authenticated user ID from Spring Security
-    return UUID.fromString("00000000-0000-0000-0000-000000000001");
   }
 
   private StreamingOptions mapOptions(StreamingOptionsInput input) {

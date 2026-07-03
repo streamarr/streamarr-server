@@ -3,6 +3,7 @@ package com.streamarr.server.graphql.dataloaders;
 import com.netflix.graphql.dgs.DgsDataLoader;
 import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.graphql.dto.WatchProgressDto;
+import com.streamarr.server.services.user.CurrentUserService;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
 import java.util.HashMap;
 import java.util.Map;
@@ -18,14 +19,13 @@ import org.dataloader.MappedBatchLoader;
 public class SessionProgressDataLoader implements MappedBatchLoader<UUID, WatchProgressDto> {
 
   private final WatchStatusService watchStatusService;
+  private final CurrentUserService currentUserService;
 
   @Override
   public CompletionStage<Map<UUID, WatchProgressDto>> load(Set<UUID> mediaFileIds) {
     return CompletableFuture.supplyAsync(
         () -> {
-          // TODO(#163): Replace with authenticated user ID from Spring Security
-          var userId = UUID.fromString("00000000-0000-0000-0000-000000000001");
-
+          var userId = currentUserService.currentUserId();
           var progressMap = watchStatusService.getProgressForMediaFiles(userId, mediaFileIds);
 
           var result = new HashMap<UUID, WatchProgressDto>();
