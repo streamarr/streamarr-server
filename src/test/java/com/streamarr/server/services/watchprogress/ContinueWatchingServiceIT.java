@@ -65,7 +65,7 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
 
   @BeforeAll
   void setup() {
-    // TODO(#163): replace this pre-delete with a per-class user ID once auth lands.
+    // Clean existing placeholder-user records before seeding per-class fixtures.
     dsl.deleteFrom(Tables.SESSION_PROGRESS)
         .where(Tables.SESSION_PROGRESS.USER_ID.eq(USER_ID))
         .execute();
@@ -209,7 +209,10 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
     void shouldNotIncludeTheWatchedMovieWhenQuerying() {
       var results = continueWatchingService.getContinueWatching(USER_ID, 20);
 
-      assertThat(results).extracting(BaseCollectable::getId).doesNotContain(watchedMovie.getId());
+      assertThat(results)
+          .isNotEmpty()
+          .extracting(BaseCollectable::getId)
+          .doesNotContain(watchedMovie.getId());
     }
 
     @Test
@@ -217,7 +220,10 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
     void shouldNotIncludeTheUnwatchedMovieWithNoSessionProgressWhenQuerying() {
       var results = continueWatchingService.getContinueWatching(USER_ID, 20);
 
-      assertThat(results).extracting(BaseCollectable::getId).doesNotContain(unwatchedMovie.getId());
+      assertThat(results)
+          .isNotEmpty()
+          .extracting(BaseCollectable::getId)
+          .doesNotContain(unwatchedMovie.getId());
     }
 
     @Test
