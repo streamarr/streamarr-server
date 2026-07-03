@@ -10,6 +10,7 @@ import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.enums.MediaFileStatus;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable.BaseCollectablePath;
 import com.streamarr.server.jooq.generated.tables.Library.LibraryPath;
+import com.streamarr.server.jooq.generated.tables.SessionProgress.SessionProgressPath;
 import com.streamarr.server.jooq.generated.tables.records.MediaFileRecord;
 
 import java.time.OffsetDateTime;
@@ -30,13 +31,14 @@ import org.jooq.QueryPart;
 import org.jooq.Record;
 import org.jooq.SQL;
 import org.jooq.Schema;
-import org.jooq.Select;
 import org.jooq.Stringly;
 import org.jooq.Table;
 import org.jooq.TableField;
+import org.jooq.TableLike;
 import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
+import org.jooq.impl.Internal;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -224,6 +226,19 @@ public class MediaFile extends TableImpl<MediaFileRecord> {
         return _library;
     }
 
+    private transient SessionProgressPath _sessionProgress;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.session_progress</code> table
+     */
+    public SessionProgressPath sessionProgress() {
+        if (_sessionProgress == null)
+            _sessionProgress = new SessionProgressPath(this, null, Keys.SESSION_PROGRESS__FK_SESSION_PROGRESS_MEDIA_FILE.getInverseKey());
+
+        return _sessionProgress;
+    }
+
     @Override
     public MediaFile as(String alias) {
         return new MediaFile(DSL.name(alias), this);
@@ -268,7 +283,7 @@ public class MediaFile extends TableImpl<MediaFileRecord> {
      */
     @Override
     public MediaFile where(Condition condition) {
-        return new MediaFile(getQualifiedName(), aliased() ? this : null, null, condition);
+        return new MediaFile(getQualifiedName(), aliased() ? this : null, null, Internal.condition(this, condition));
     }
 
     /**
@@ -335,7 +350,7 @@ public class MediaFile extends TableImpl<MediaFileRecord> {
      * Create an inline derived table from this table
      */
     @Override
-    public MediaFile whereExists(Select<?> select) {
+    public MediaFile whereExists(TableLike<?> select) {
         return where(DSL.exists(select));
     }
 
@@ -343,7 +358,7 @@ public class MediaFile extends TableImpl<MediaFileRecord> {
      * Create an inline derived table from this table
      */
     @Override
-    public MediaFile whereNotExists(Select<?> select) {
+    public MediaFile whereNotExists(TableLike<?> select) {
         return where(DSL.notExists(select));
     }
 }

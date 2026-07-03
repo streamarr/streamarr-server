@@ -8,7 +8,7 @@ import com.streamarr.server.jooq.generated.tables.SeriesDirector;
 
 import java.util.UUID;
 
-import org.jooq.Record2;
+import org.jooq.Record1;
 import org.jooq.impl.UpdatableRecordImpl;
 
 
@@ -62,13 +62,27 @@ public class SeriesDirectorRecord extends UpdatableRecordImpl<SeriesDirectorReco
         return (Integer) get(2);
     }
 
+    /**
+     * Setter for <code>public.series_director.id</code>.
+     */
+    public void setId(UUID value) {
+        set(3, value);
+    }
+
+    /**
+     * Getter for <code>public.series_director.id</code>.
+     */
+    public UUID getId() {
+        return (UUID) get(3);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
 
     @Override
-    public Record2<UUID, UUID> key() {
-        return (Record2) super.key();
+    public Record1<UUID> key() {
+        return (Record1) super.key();
     }
 
     // -------------------------------------------------------------------------
@@ -85,12 +99,13 @@ public class SeriesDirectorRecord extends UpdatableRecordImpl<SeriesDirectorReco
     /**
      * Create a detached, initialised SeriesDirectorRecord
      */
-    public SeriesDirectorRecord(UUID seriesId, UUID personId, Integer ordinal) {
+    public SeriesDirectorRecord(UUID seriesId, UUID personId, Integer ordinal, UUID id) {
         super(SeriesDirector.SERIES_DIRECTOR);
 
         setSeriesId(seriesId);
         setPersonId(personId);
         setOrdinal(ordinal);
+        setId(id);
         resetTouchedOnNotNull();
     }
 }

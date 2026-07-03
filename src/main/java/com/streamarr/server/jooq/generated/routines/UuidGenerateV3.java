@@ -27,17 +27,17 @@ public class UuidGenerateV3 extends AbstractRoutine<UUID> {
     /**
      * The parameter <code>public.uuid_generate_v3.RETURN_VALUE</code>.
      */
-    public static final Parameter<UUID> RETURN_VALUE = Internal.createParameter("RETURN_VALUE", SQLDataType.UUID, false, false);
+    public static final Parameter<UUID> RETURN_VALUE = Internal.createParameter("RETURN_VALUE", SQLDataType.UUID, false);
 
     /**
      * The parameter <code>public.uuid_generate_v3.namespace</code>.
      */
-    public static final Parameter<UUID> NAMESPACE = Internal.createParameter("namespace", SQLDataType.UUID, false, false);
+    public static final Parameter<UUID> NAMESPACE = Internal.createParameter("namespace", SQLDataType.UUID, false);
 
     /**
      * The parameter <code>public.uuid_generate_v3.name</code>.
      */
-    public static final Parameter<String> NAME = Internal.createParameter("name", SQLDataType.CLOB, false, false);
+    public static final Parameter<String> NAME = Internal.createParameter("name", SQLDataType.CLOB, false);
 
     /**
      * Create a new routine call instance

@@ -37,8 +37,7 @@ class CursorValidatorTest {
     }
 
     @Test
-    @DisplayName(
-        "Should not throw when all filter dimensions match between cursor and request")
+    @DisplayName("Should not throw when all filter dimensions match between cursor and request")
     void shouldNotThrowWhenAllFilterDimensionsMatchBetweenCursorAndRequest() {
       var libraryId = UUID.randomUUID();
       var genreId = UUID.randomUUID();

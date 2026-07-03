@@ -65,9 +65,7 @@ public class HlsStreamingService implements StreamingService {
             .transcodeDecision(decision)
             .options(options)
             .variants(variants)
-            .seekPosition(0)
             .createdAt(now)
-            .lastAccessedAt(now)
             .build();
 
     sessionRepository.save(session);
@@ -103,10 +101,8 @@ public class HlsStreamingService implements StreamingService {
 
     transcodeExecutor.stop(sessionId);
     segmentStore.deleteSession(sessionId);
-    session.setSeekPosition(positionSeconds);
+    session.seek(positionSeconds);
     startTranscodes(session, positionSeconds, 0);
-
-    session.setLastAccessedAt(Instant.now());
     sessionRepository.save(session);
 
     log.info("Seek-ed session {} to position {}s", sessionId, positionSeconds);
@@ -168,7 +164,7 @@ public class HlsStreamingService implements StreamingService {
 
     var segmentIndex = parseSegmentIndex(segmentName);
     var resumeSeek =
-        session.getSeekPosition() + (segmentIndex * (int) properties.segmentDuration().toSeconds());
+        session.getSeekOrigin() + (segmentIndex * (int) properties.segmentDuration().toSeconds());
 
     startTranscodes(session, resumeSeek, segmentIndex);
     session.setLastAccessedAt(Instant.now());

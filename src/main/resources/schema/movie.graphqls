@@ -20,6 +20,8 @@ type Movie implements BaseCollectable {
     ratings: [Rating]!
     reviews: [Review]!
     images(type: ImageType): [Image]!
+    watchProgress: WatchProgress
+    watchStatus: WatchStatus!
 }
 
 type ContentRating {

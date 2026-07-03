@@ -501,8 +501,7 @@ class PaginationServiceTest {
     }
 
     @Test
-    @DisplayName(
-        "Should return empty items with hasNextPage true when limit is zero forward")
+    @DisplayName("Should return empty items with hasNextPage true when limit is zero forward")
     void shouldReturnEmptyItemsWithHasNextPageTrueWhenLimitIsZeroForward() {
       var items = List.of(new PageItem<>(Movie.builder().build(), "sortVal"));
 
@@ -521,8 +520,7 @@ class PaginationServiceTest {
     }
 
     @Test
-    @DisplayName(
-        "Should return empty items with hasPreviousPage true when limit is zero reverse")
+    @DisplayName("Should return empty items with hasPreviousPage true when limit is zero reverse")
     void shouldReturnEmptyItemsWithHasPreviousPageTrueWhenLimitIsZeroReverse() {
       var items = List.of(new PageItem<>(Movie.builder().build(), "sortVal"));
 
@@ -543,8 +541,7 @@ class PaginationServiceTest {
     @Test
     @DisplayName(
         "Should return empty items with both page flags true when limit is zero forward with cursor")
-    void
-        shouldReturnEmptyItemsWithBothPageFlagsTrueWhenLimitIsZeroForwardWithCursor() {
+    void shouldReturnEmptyItemsWithBothPageFlagsTrueWhenLimitIsZeroForwardWithCursor() {
       var cursorItemId = UUID.randomUUID();
 
       var items =

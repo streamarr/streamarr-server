@@ -130,7 +130,7 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
 
     var seeked = streamingService.seekSession(session.getSessionId(), 300);
 
-    assertThat(seeked.getSeekPosition()).isEqualTo(300);
+    assertThat(seeked.getPlaybackSnapshot().positionSeconds()).isEqualTo(300);
     assertThat(seeked.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
   }
 

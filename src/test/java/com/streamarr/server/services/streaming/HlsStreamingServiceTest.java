@@ -8,6 +8,7 @@ import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
@@ -333,7 +334,7 @@ class HlsStreamingServiceTest {
     var seeked = service.seekSession(originalSessionId, 300);
 
     assertThat(seeked.getSessionId()).isEqualTo(originalSessionId);
-    assertThat(seeked.getSeekPosition()).isEqualTo(300);
+    assertThat(seeked.getPlaybackSnapshot().positionSeconds()).isEqualTo(300);
   }
 
   @Test
@@ -816,5 +817,27 @@ class HlsStreamingServiceTest {
     for (var label : variantLabels) {
       assertThat(session.getVariantHandle(label).status()).isEqualTo(TranscodeStatus.ACTIVE);
     }
+  }
+
+  @Test
+  @DisplayName(
+      "Should compute resume position from seek origin and segment index when resuming after seek")
+  void shouldComputeResumePositionFromSeekOriginAndSegmentIndexWhenResumingAfterSeek() {
+    var file = seedMediaFile();
+    var session = service.createSession(file.getId(), defaultOptions());
+
+    service.seekSession(session.getSessionId(), 60);
+
+    session.updatePlaybackState(120, PlaybackState.PLAYING);
+    assertThat(session.getSeekOrigin()).isEqualTo(60);
+
+    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
+    transcodeExecutor.markDead(session.getSessionId());
+
+    service.resumeSessionIfNeeded(session.getSessionId(), "segment5.ts");
+
+    // resumeSeek = seekOrigin(60) + segmentIndex(5) * segmentDuration(6) = 60 + 30 = 90
+    var lastRequest = transcodeExecutor.getStartedRequests().getLast();
+    assertThat(lastRequest.seekPosition()).isEqualTo(90);
   }
 }

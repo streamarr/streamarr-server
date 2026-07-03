@@ -41,7 +41,7 @@ public abstract class BaseCollectable<T extends BaseCollectable<T>> extends Base
 
   @Builder.Default
   @OneToMany(
-      cascade = {CascadeType.PERSIST, CascadeType.MERGE},
+      cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REMOVE},
       fetch = FetchType.LAZY)
   @JoinColumn(name = "mediaId")
   @Setter(AccessLevel.NONE)
@@ -49,7 +49,7 @@ public abstract class BaseCollectable<T extends BaseCollectable<T>> extends Base
 
   @Builder.Default
   @OneToMany(
-      cascade = {CascadeType.PERSIST, CascadeType.MERGE},
+      cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REMOVE},
       fetch = FetchType.LAZY)
   @JoinColumn(name = "entityId")
   @Setter(AccessLevel.NONE)

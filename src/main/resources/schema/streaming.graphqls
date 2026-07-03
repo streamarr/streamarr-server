@@ -31,3 +31,21 @@ enum VideoQuality {
     FULL_HD_1080P
     UHD_4K
 }
+
+enum PlaybackState {
+    PLAYING
+    PAUSED
+    STOPPED
+}
+
+enum WatchStatus {
+    UNWATCHED
+    IN_PROGRESS
+    WATCHED
+}
+
+type WatchProgress {
+    positionSeconds: Int!
+    percentComplete: Float!
+    durationSeconds: Int!
+}

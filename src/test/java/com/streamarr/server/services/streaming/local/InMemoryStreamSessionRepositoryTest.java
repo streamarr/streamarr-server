@@ -95,12 +95,12 @@ class InMemoryStreamSessionRepositoryTest {
     var session = StreamSessionFixture.buildMpegtsSession();
     repository.save(session);
 
-    session.setSeekPosition(300);
+    session.seek(300);
     repository.save(session);
 
     assertThat(repository.count()).isEqualTo(1);
     var found = repository.findById(session.getSessionId());
     assertThat(found).isPresent();
-    assertThat(found.get().getSeekPosition()).isEqualTo(300);
+    assertThat(found.get().getPlaybackSnapshot().positionSeconds()).isEqualTo(300);
   }
 }

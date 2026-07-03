@@ -26,7 +26,7 @@ public class UuidNsOid extends AbstractRoutine<UUID> {
     /**
      * The parameter <code>public.uuid_ns_oid.RETURN_VALUE</code>.
      */
-    public static final Parameter<UUID> RETURN_VALUE = Internal.createParameter("RETURN_VALUE", SQLDataType.UUID, false, false);
+    public static final Parameter<UUID> RETURN_VALUE = Internal.createParameter("RETURN_VALUE", SQLDataType.UUID, false);
 
     /**
      * Create a new routine call instance

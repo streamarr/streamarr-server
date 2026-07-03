@@ -14,6 +14,8 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.services.streaming.StreamingService;
+import com.streamarr.server.services.watchprogress.SessionProgressService;
+import com.streamarr.server.services.watchprogress.WatchStatusService;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -22,13 +24,18 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @Tag("UnitTest")
 @EnableDgsTest
@@ -47,6 +54,8 @@ class StreamingResolverTest {
   }
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
+  @MockitoBean private SessionProgressService sessionProgressService;
+  @MockitoBean private WatchStatusService watchStatusService;
 
   private StreamSession buildSession(UUID sessionId) {
     return StreamSession.builder()
@@ -74,7 +83,6 @@ class StreamingResolverTest {
                 .build())
         .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
         .createdAt(Instant.now())
-        .lastAccessedAt(Instant.now())
         .build();
   }
 
@@ -231,22 +239,31 @@ class StreamingResolverTest {
     assertThat(result.getErrors().getFirst().getMessage()).contains("Invalid ID format");
   }
 
-  @Test
-  @DisplayName("Should return true when destroying session")
-  void shouldReturnTrueWhenDestroyingSession() {
-    var mutation =
-        String.format(
-            """
-            mutation {
-              destroyStreamSession(sessionId: "%s")
-            }
-            """,
-            UUID.randomUUID());
-
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("booleanMutations")
+  @DisplayName("Should return true when executing boolean mutation")
+  void shouldReturnTrueWhenExecutingBooleanMutation(
+      String name, String mutation, String resultPath) {
     Boolean result =
-        dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.destroyStreamSession");
+        dgsQueryExecutor.executeAndExtractJsonPath(
+            String.format(mutation, UUID.randomUUID()), resultPath);
 
     assertThat(result).isTrue();
+  }
+
+  static Stream<Arguments> booleanMutations() {
+    return Stream.of(
+        Arguments.of(
+            "destroyStreamSession",
+            "mutation { destroyStreamSession(sessionId: \"%s\") }",
+            "data.destroyStreamSession"),
+        Arguments.of(
+            "reportStreamSessionTimeline",
+            "mutation { reportStreamSessionTimeline(sessionId: \"%s\", positionSeconds: 300, state: PLAYING) }",
+            "data.reportStreamSessionTimeline"),
+        Arguments.of("markWatched", "mutation { markWatched(id: \"%s\") }", "data.markWatched"),
+        Arguments.of(
+            "markUnwatched", "mutation { markUnwatched(id: \"%s\") }", "data.markUnwatched"));
   }
 
   @Test
@@ -312,5 +329,35 @@ class StreamingResolverTest {
     public void resumeSessionIfNeeded(UUID sessionId, String segmentName) {
       // no-op for test fake
     }
+  }
+
+  @Test
+  @DisplayName("Should return error when report timeline session ID is invalid")
+  void shouldReturnErrorWhenReportTimelineSessionIdIsInvalid() {
+    var result =
+        dgsQueryExecutor.execute(
+            """
+            mutation {
+              reportStreamSessionTimeline(sessionId: "bad-id", positionSeconds: 300, state: PLAYING)
+            }
+            """);
+
+    assertThat(result.getErrors()).isNotEmpty();
+    assertThat(result.getErrors().getFirst().getMessage()).contains("Invalid ID format");
+  }
+
+  @Test
+  @DisplayName("Should return error when mark unwatched ID is invalid")
+  void shouldReturnErrorWhenMarkUnwatchedIdIsInvalid() {
+    var result =
+        dgsQueryExecutor.execute(
+            """
+            mutation {
+              markUnwatched(id: "bad-id")
+            }
+            """);
+
+    assertThat(result.getErrors()).isNotEmpty();
+    assertThat(result.getErrors().getFirst().getMessage()).contains("Invalid ID format");
   }
 }

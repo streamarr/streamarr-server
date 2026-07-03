@@ -16,4 +16,8 @@ public class CapturingEventPublisher implements ApplicationEventPublisher {
   public <T> List<T> getEventsOfType(Class<T> type) {
     return publishedEvents.stream().filter(type::isInstance).map(type::cast).toList();
   }
+
+  public void clear() {
+    publishedEvents.clear();
+  }
 }

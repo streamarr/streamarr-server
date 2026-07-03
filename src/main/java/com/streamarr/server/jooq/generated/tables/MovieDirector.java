@@ -28,13 +28,14 @@ import org.jooq.QueryPart;
 import org.jooq.Record;
 import org.jooq.SQL;
 import org.jooq.Schema;
-import org.jooq.Select;
 import org.jooq.Stringly;
 import org.jooq.Table;
 import org.jooq.TableField;
+import org.jooq.TableLike;
 import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
+import org.jooq.impl.Internal;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -74,6 +75,11 @@ public class MovieDirector extends TableImpl<MovieDirectorRecord> {
      * The column <code>public.movie_director.ordinal</code>.
      */
     public final TableField<MovieDirectorRecord, Integer> ORDINAL = createField(DSL.name("ordinal"), SQLDataType.INTEGER.nullable(false).defaultValue(DSL.field(DSL.raw("0"), SQLDataType.INTEGER)), this, "");
+
+    /**
+     * The column <code>public.movie_director.id</code>.
+     */
+    public final TableField<MovieDirectorRecord, UUID> ID = createField(DSL.name("id"), SQLDataType.UUID.nullable(false).defaultValue(DSL.field(DSL.raw("gen_random_uuid()"), SQLDataType.UUID)), this, "");
 
     private MovieDirector(Name alias, Table<MovieDirectorRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
@@ -225,7 +231,7 @@ public class MovieDirector extends TableImpl<MovieDirectorRecord> {
      */
     @Override
     public MovieDirector where(Condition condition) {
-        return new MovieDirector(getQualifiedName(), aliased() ? this : null, null, condition);
+        return new MovieDirector(getQualifiedName(), aliased() ? this : null, null, Internal.condition(this, condition));
     }
 
     /**
@@ -292,7 +298,7 @@ public class MovieDirector extends TableImpl<MovieDirectorRecord> {
      * Create an inline derived table from this table
      */
     @Override
-    public MovieDirector whereExists(Select<?> select) {
+    public MovieDirector whereExists(TableLike<?> select) {
         return where(DSL.exists(select));
     }
 
@@ -300,7 +306,7 @@ public class MovieDirector extends TableImpl<MovieDirectorRecord> {
      * Create an inline derived table from this table
      */
     @Override
-    public MovieDirector whereNotExists(Select<?> select) {
+    public MovieDirector whereNotExists(TableLike<?> select) {
         return where(DSL.notExists(select));
     }
 }

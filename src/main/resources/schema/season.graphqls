@@ -6,4 +6,5 @@ type Season {
     airDate: String
     episodes: [Episode]!
     images(type: ImageType): [Image]!
+    watchStatus: WatchStatus!
 }

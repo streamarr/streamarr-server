@@ -83,7 +83,7 @@ public class HlsPlaylistService {
     var probe = session.getMediaProbe();
     var segmentDuration = (int) properties.segmentDuration().toSeconds();
     var totalDurationMs = probe.duration().toMillis();
-    var seekOffsetMs = session.getSeekPosition() * 1000L;
+    var seekOffsetMs = session.getSeekOrigin() * 1000L;
     var remainingDurationMs = Math.max(0, totalDurationMs - seekOffsetMs);
     var segmentDurationMs = segmentDuration * 1000L;
     var segmentCount = (int) Math.ceil((double) remainingDurationMs / segmentDurationMs);

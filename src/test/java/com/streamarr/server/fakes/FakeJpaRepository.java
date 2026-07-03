@@ -90,9 +90,12 @@ public class FakeJpaRepository<L extends BaseAuditableEntity> implements JpaRepo
 
     entity.setId(id);
 
+    var now = Instant.now();
+
     if (entity.getCreatedOn() == null) {
-      AuditFieldSetter.setCreatedOn(entity, Instant.now());
+      AuditFieldSetter.setCreatedOn(entity, now);
     }
+    AuditFieldSetter.setLastModifiedOn(entity, now);
 
     database.put(id, entity);
 

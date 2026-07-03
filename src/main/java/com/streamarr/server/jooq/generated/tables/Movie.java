@@ -4,6 +4,7 @@
 package com.streamarr.server.jooq.generated.tables;
 
 
+import com.streamarr.server.jooq.generated.Indexes;
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable.BaseCollectablePath;
@@ -12,7 +13,6 @@ import com.streamarr.server.jooq.generated.tables.MovieCompany.MovieCompanyPath;
 import com.streamarr.server.jooq.generated.tables.MovieDirector.MovieDirectorPath;
 import com.streamarr.server.jooq.generated.tables.MovieGenre.MovieGenrePath;
 import com.streamarr.server.jooq.generated.tables.MoviePerson.MoviePersonPath;
-import com.streamarr.server.jooq.generated.tables.Person.PersonPath;
 import com.streamarr.server.jooq.generated.tables.Rating.RatingPath;
 import com.streamarr.server.jooq.generated.tables.Review.ReviewPath;
 import com.streamarr.server.jooq.generated.tables.records.MovieRecord;
@@ -26,6 +26,7 @@ import java.util.UUID;
 import org.jooq.Condition;
 import org.jooq.Field;
 import org.jooq.ForeignKey;
+import org.jooq.Index;
 import org.jooq.InverseForeignKey;
 import org.jooq.Name;
 import org.jooq.Path;
@@ -34,13 +35,14 @@ import org.jooq.QueryPart;
 import org.jooq.Record;
 import org.jooq.SQL;
 import org.jooq.Schema;
-import org.jooq.Select;
 import org.jooq.Stringly;
 import org.jooq.Table;
 import org.jooq.TableField;
+import org.jooq.TableLike;
 import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
+import org.jooq.impl.Internal;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -174,6 +176,11 @@ public class Movie extends TableImpl<MovieRecord> {
     }
 
     @Override
+    public List<Index> getIndexes() {
+        return Arrays.asList(Indexes.IDX_MOVIE_RELEASEDATE_DESC_ID, Indexes.IDX_MOVIE_RELEASEDATE_ID, Indexes.IDX_MOVIE_RUNTIME_DESC_ID, Indexes.IDX_MOVIE_RUNTIME_ID);
+    }
+
+    @Override
     public UniqueKey<MovieRecord> getPrimaryKey() {
         return Keys.MOVIE_PKEY;
     }
@@ -275,14 +282,6 @@ public class Movie extends TableImpl<MovieRecord> {
     }
 
     /**
-     * Get the implicit many-to-many join path to the <code>public.person</code>
-     * table
-     */
-    public PersonPath person() {
-        return movieDirector().person();
-    }
-
-    /**
      * Get the implicit many-to-many join path to the <code>public.genre</code>
      * table
      */
@@ -334,7 +333,7 @@ public class Movie extends TableImpl<MovieRecord> {
      */
     @Override
     public Movie where(Condition condition) {
-        return new Movie(getQualifiedName(), aliased() ? this : null, null, condition);
+        return new Movie(getQualifiedName(), aliased() ? this : null, null, Internal.condition(this, condition));
     }
 
     /**
@@ -401,7 +400,7 @@ public class Movie extends TableImpl<MovieRecord> {
      * Create an inline derived table from this table
      */
     @Override
-    public Movie whereExists(Select<?> select) {
+    public Movie whereExists(TableLike<?> select) {
         return where(DSL.exists(select));
     }
 
@@ -409,7 +408,7 @@ public class Movie extends TableImpl<MovieRecord> {
      * Create an inline derived table from this table
      */
     @Override
-    public Movie whereNotExists(Select<?> select) {
+    public Movie whereNotExists(TableLike<?> select) {
         return where(DSL.notExists(select));
     }
 }
