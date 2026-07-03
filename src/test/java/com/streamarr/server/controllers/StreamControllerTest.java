@@ -2,8 +2,8 @@ package com.streamarr.server.controllers;
 
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
+import static com.streamarr.server.fixtures.StreamSessionFixture.defaultVariantBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.fullTranscodeDecision;
-import static com.streamarr.server.fixtures.StreamSessionFixture.qualityVariant;
 import static com.streamarr.server.fixtures.StreamSessionFixture.withActiveVariantHandles;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -213,7 +213,14 @@ class StreamControllerTest {
             .mediaProbe(defaultProbeBuilder().videoCodec("hevc").bitrate(8_000_000).build())
             .transcodeDecision(fullTranscodeDecision("av1", ContainerFormat.FMP4))
             .options(StreamingOptions.builder().supportedCodecs(List.of("av1")).build())
-            .variants(List.of(qualityVariant(1920, 1080, 5_000_000L, "1080p")))
+            .variants(
+                List.of(
+                    defaultVariantBuilder()
+                        .width(1920)
+                        .height(1080)
+                        .videoBitrate(5_000_000L)
+                        .label("1080p")
+                        .build()))
             .build();
     return withActiveVariantHandles(session);
   }
@@ -226,8 +233,18 @@ class StreamControllerTest {
             .transcodeDecision(fullTranscodeDecision("h264", ContainerFormat.MPEGTS))
             .variants(
                 List.of(
-                    qualityVariant(1920, 1080, 5_000_000L, "1080p"),
-                    qualityVariant(1280, 720, 3_000_000L, "720p")))
+                    defaultVariantBuilder()
+                        .width(1920)
+                        .height(1080)
+                        .videoBitrate(5_000_000L)
+                        .label("1080p")
+                        .build(),
+                    defaultVariantBuilder()
+                        .width(1280)
+                        .height(720)
+                        .videoBitrate(3_000_000L)
+                        .label("720p")
+                        .build()))
             .build();
     return withActiveVariantHandles(session);
   }
