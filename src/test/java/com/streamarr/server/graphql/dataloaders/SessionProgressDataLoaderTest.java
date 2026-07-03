@@ -9,7 +9,6 @@ import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSessionProgressRepository;
 import com.streamarr.server.fakes.FakeWatchHistoryRepository;
-import com.streamarr.server.services.user.CurrentUserService;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
 import java.util.Set;
 import java.util.UUID;
@@ -38,7 +37,7 @@ class SessionProgressDataLoaderTest {
             new FakeEpisodeRepository(),
             new FakeSeasonRepository(),
             new CapturingEventPublisher());
-    dataLoader = new SessionProgressDataLoader(service, new CurrentUserService());
+    dataLoader = new SessionProgressDataLoader(service);
   }
 
   @Test

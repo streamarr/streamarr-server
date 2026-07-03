@@ -14,7 +14,6 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.services.streaming.StreamingService;
-import com.streamarr.server.services.user.CurrentUserService;
 import com.streamarr.server.services.watchprogress.SessionProgressService;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
 import java.nio.file.Path;
@@ -51,11 +50,6 @@ class StreamingResolverTest {
     @Bean
     StreamingService streamingService() {
       return STUB_SERVICE;
-    }
-
-    @Bean
-    CurrentUserService currentUserService() {
-      return new CurrentUserService();
     }
   }
 
