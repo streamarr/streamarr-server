@@ -12,6 +12,7 @@ import com.streamarr.server.fakes.FakeWatchHistoryRepository;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
 import java.util.Set;
 import java.util.UUID;
+import org.dataloader.DataLoaderFactory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -61,14 +62,14 @@ class SessionProgressDataLoaderTest {
   }
 
   @Test
-  @DisplayName("Should return null when media file has no progress")
-  void shouldReturnNullWhenMediaFileHasNoProgress() throws Exception {
-    var unknownId = UUID.randomUUID();
+  @DisplayName("Should resolve null when media file has no progress")
+  void shouldResolveNullWhenMediaFileHasNoProgress() throws Exception {
+    var loader = DataLoaderFactory.newMappedDataLoader(dataLoader);
 
-    var result = dataLoader.load(Set.of(unknownId)).toCompletableFuture().get();
+    var future = loader.load(UUID.randomUUID());
+    loader.dispatch();
 
-    assertThat(result).containsKey(unknownId);
-    assertThat(result.get(unknownId)).isNull();
+    assertThat(future.get()).isNull();
   }
 
   private void saveProgress(UUID mediaFileId, int position, double percent, int duration) {
