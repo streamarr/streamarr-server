@@ -116,6 +116,7 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 ### Java Language
 - Leverage Lombok: `@Slf4j`, `@Builder`, `@Getter`, `@RequiredArgsConstructor`, etc.
 - Prefer Builders over passing args to constructors — use `@Builder` for domain objects, DTOs, and any class with more than 2-3 fields
+- The builder preference applies to methods too: no method, factory, or test helper should take more than 2-3 positional arguments. Accept a builder-built object instead, or (for fixtures/helpers) return a pre-populated builder the caller customizes with named setters — e.g. `StreamSessionFixture.defaultSessionBuilder().sessionId(id).build()`, never `buildSession(id, 3600, 50.0, 7200)`
 - Prefer `var` for local variables unless the type isn't obvious or would lead to misinterpretation
 - Use records for immutable data carriers (DTOs, value objects, embeddables)
 - Use sealed interfaces/classes when the set of subtypes is known and fixed
