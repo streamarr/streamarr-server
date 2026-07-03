@@ -96,63 +96,32 @@ public class WatchStatusService {
   private List<UUID> resolveLeafCollectableIds(UUID collectableId, CollectableScope scope) {
     return switch (scope) {
       case DIRECT_MEDIA -> List.of(collectableId);
-      case SEASON -> {
-        var episodeIds = episodeRepository.findEpisodeIdsBySeasonIds(List.of(collectableId));
-        yield episodeIds.values().stream().flatMap(Collection::stream).toList();
-      }
+      case SEASON -> flatten(episodeRepository.findEpisodeIdsBySeasonIds(List.of(collectableId)));
       case SERIES -> {
-        var seasonIds = seasonRepository.findSeasonIdsBySeriesIds(List.of(collectableId));
-        var allSeasonIds = seasonIds.values().stream().flatMap(Collection::stream).toList();
-        var episodeIds = episodeRepository.findEpisodeIdsBySeasonIds(allSeasonIds);
-        yield episodeIds.values().stream().flatMap(Collection::stream).toList();
+        var seasonIds = flatten(seasonRepository.findSeasonIdsBySeriesIds(List.of(collectableId)));
+        yield flatten(episodeRepository.findEpisodeIdsBySeasonIds(seasonIds));
       }
     };
   }
 
   public Map<UUID, WatchStatus> getWatchStatusForDirectMedia(
       UUID userId, Collection<UUID> collectableIds) {
-    var watchedIds = findWatchedCollectableIds(userId, collectableIds);
-
-    var mediaFiles = mediaFileRepository.findByMediaIdIn(collectableIds);
-    var mediaFilesByCollectable =
-        mediaFiles.stream().collect(Collectors.groupingBy(MediaFile::getMediaId));
-    var allMediaFileIds = mediaFiles.stream().map(MediaFile::getId).toList();
-    var progressMap = getProgressForMediaFiles(userId, allMediaFileIds);
+    var data = fetchCollectableMediaData(userId, collectableIds);
 
     var result = new HashMap<UUID, WatchStatus>();
     for (var collectableId : collectableIds) {
-      if (watchedIds.contains(collectableId)) {
+      if (data.watchedIds().contains(collectableId)) {
         result.put(collectableId, WatchStatus.WATCHED);
         continue;
       }
-      var fileIds =
-          mediaFilesByCollectable.getOrDefault(collectableId, List.of()).stream()
-              .map(MediaFile::getId)
-              .toList();
-      result.put(collectableId, deriveProgressStatus(fileIds, progressMap));
+      var fileIds = collectMediaFileIds(List.of(collectableId), data);
+      result.put(collectableId, deriveProgressStatus(fileIds, data.progressMap()));
     }
     return result;
   }
 
   public Map<UUID, WatchStatus> getWatchStatusForSeasons(UUID userId, Collection<UUID> seasonIds) {
-    var episodeIdsBySeasonId = episodeRepository.findEpisodeIdsBySeasonIds(seasonIds);
-    if (episodeIdsBySeasonId.isEmpty()) {
-      return Map.of();
-    }
-
-    var allEpisodeIds = episodeIdsBySeasonId.values().stream().flatMap(Collection::stream).toList();
-    var data = fetchEpisodeMediaData(userId, allEpisodeIds);
-
-    var result = new HashMap<UUID, WatchStatus>();
-    for (var entry : episodeIdsBySeasonId.entrySet()) {
-      var episodeIds = entry.getValue();
-      var mediaFileIds = collectMediaFileIds(episodeIds, data);
-      result.put(
-          entry.getKey(),
-          deriveAggregateStatus(
-              episodeIds, data.watchedEpisodeIds(), mediaFileIds, data.progressMap()));
-    }
-    return result;
+    return aggregateStatusByGroup(userId, episodeRepository.findEpisodeIdsBySeasonIds(seasonIds));
   }
 
   public Map<UUID, WatchStatus> getWatchStatusForSeries(UUID userId, Collection<UUID> seriesIds) {
@@ -161,50 +130,68 @@ public class WatchStatusService {
       return Map.of();
     }
 
-    var allSeasonIds = seasonIdsBySeriesId.values().stream().flatMap(Collection::stream).toList();
-    var episodeIdsBySeasonId = episodeRepository.findEpisodeIdsBySeasonIds(allSeasonIds);
+    var episodeIdsBySeasonId =
+        episodeRepository.findEpisodeIdsBySeasonIds(flatten(seasonIdsBySeriesId));
     if (episodeIdsBySeasonId.isEmpty()) {
       return Map.of();
     }
 
-    var allEpisodeIds = episodeIdsBySeasonId.values().stream().flatMap(Collection::stream).toList();
-    var data = fetchEpisodeMediaData(userId, allEpisodeIds);
+    var episodeIdsBySeriesId = new HashMap<UUID, List<UUID>>();
+    for (var entry : seasonIdsBySeriesId.entrySet()) {
+      episodeIdsBySeriesId.put(
+          entry.getKey(),
+          entry.getValue().stream()
+              .flatMap(seasonId -> episodeIdsBySeasonId.getOrDefault(seasonId, List.of()).stream())
+              .toList());
+    }
+    return aggregateStatusByGroup(userId, episodeIdsBySeriesId);
+  }
+
+  private Map<UUID, WatchStatus> aggregateStatusByGroup(
+      UUID userId, Map<UUID, List<UUID>> episodeIdsByGroup) {
+    if (episodeIdsByGroup.isEmpty()) {
+      return Map.of();
+    }
+
+    var data = fetchCollectableMediaData(userId, flatten(episodeIdsByGroup));
 
     var result = new HashMap<UUID, WatchStatus>();
-    for (var seriesEntry : seasonIdsBySeriesId.entrySet()) {
-      var seriesEpisodeIds =
-          seriesEntry.getValue().stream()
-              .flatMap(seasonId -> episodeIdsBySeasonId.getOrDefault(seasonId, List.of()).stream())
-              .toList();
-      var mediaFileIds = collectMediaFileIds(seriesEpisodeIds, data);
+    for (var entry : episodeIdsByGroup.entrySet()) {
+      var episodeIds = entry.getValue();
+      var mediaFileIds = collectMediaFileIds(episodeIds, data);
       result.put(
-          seriesEntry.getKey(),
-          deriveAggregateStatus(
-              seriesEpisodeIds, data.watchedEpisodeIds(), mediaFileIds, data.progressMap()));
+          entry.getKey(),
+          deriveAggregateStatus(episodeIds, data.watchedIds(), mediaFileIds, data.progressMap()));
     }
     return result;
   }
 
-  private record EpisodeMediaData(
-      Set<UUID> watchedEpisodeIds,
-      Map<UUID, List<MediaFile>> mediaFilesByEpisodeId,
+  private record CollectableMediaData(
+      Set<UUID> watchedIds,
+      Map<UUID, List<MediaFile>> mediaFilesByCollectableId,
       Map<UUID, SessionProgress> progressMap) {}
 
-  private EpisodeMediaData fetchEpisodeMediaData(UUID userId, List<UUID> allEpisodeIds) {
-    var watchedEpisodeIds = findWatchedCollectableIds(userId, allEpisodeIds);
-    var mediaFiles = mediaFileRepository.findByMediaIdIn(allEpisodeIds);
-    var mediaFilesByEpisodeId =
+  private CollectableMediaData fetchCollectableMediaData(
+      UUID userId, Collection<UUID> collectableIds) {
+    var watchedIds = findWatchedCollectableIds(userId, collectableIds);
+    var mediaFiles = mediaFileRepository.findByMediaIdIn(collectableIds);
+    var mediaFilesByCollectableId =
         mediaFiles.stream().collect(Collectors.groupingBy(MediaFile::getMediaId));
-    var allMediaFileIds = mediaFiles.stream().map(MediaFile::getId).toList();
-    var progressMap = getProgressForMediaFiles(userId, allMediaFileIds);
-    return new EpisodeMediaData(watchedEpisodeIds, mediaFilesByEpisodeId, progressMap);
+    var progressMap =
+        getProgressForMediaFiles(userId, mediaFiles.stream().map(MediaFile::getId).toList());
+    return new CollectableMediaData(watchedIds, mediaFilesByCollectableId, progressMap);
   }
 
-  private static List<UUID> collectMediaFileIds(List<UUID> episodeIds, EpisodeMediaData data) {
-    return episodeIds.stream()
-        .flatMap(epId -> data.mediaFilesByEpisodeId().getOrDefault(epId, List.of()).stream())
+  private static List<UUID> collectMediaFileIds(
+      List<UUID> collectableIds, CollectableMediaData data) {
+    return collectableIds.stream()
+        .flatMap(id -> data.mediaFilesByCollectableId().getOrDefault(id, List.of()).stream())
         .map(MediaFile::getId)
         .toList();
+  }
+
+  private static List<UUID> flatten(Map<UUID, List<UUID>> idsByGroup) {
+    return idsByGroup.values().stream().flatMap(Collection::stream).toList();
   }
 
   private Set<UUID> findWatchedCollectableIds(UUID userId, Collection<UUID> collectableIds) {
@@ -237,21 +224,17 @@ public class WatchStatusService {
 
   private static WatchStatus deriveProgressStatus(
       List<UUID> mediaFileIds, Map<UUID, SessionProgress> progressMap) {
-    if (countInProgress(mediaFileIds, progressMap) > 0) {
-      return WatchStatus.IN_PROGRESS;
-    }
-    return WatchStatus.UNWATCHED;
+    return countInProgress(mediaFileIds, progressMap) > 0
+        ? WatchStatus.IN_PROGRESS
+        : WatchStatus.UNWATCHED;
   }
 
   private static int countInProgress(
       List<UUID> mediaFileIds, Map<UUID, SessionProgress> progressMap) {
-    var count = 0;
-    for (var mediaFileId : mediaFileIds) {
-      var sp = progressMap.get(mediaFileId);
-      if (sp != null && sp.getPositionSeconds() > 0) {
-        count++;
-      }
-    }
-    return count;
+    return (int)
+        mediaFileIds.stream()
+            .map(progressMap::get)
+            .filter(sp -> sp != null && sp.getPositionSeconds() > 0)
+            .count();
   }
 }
