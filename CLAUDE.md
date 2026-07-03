@@ -1,5 +1,13 @@
 # Streamarr Server - Project Guidelines
 
+## Commands
+- `./mvnw verify` — full build: unit tests (Surefire, `*Test`) + integration tests (Failsafe, `*IT`) + Checkstyle + Spotless
+- `./mvnw test` — unit tests only
+- `./mvnw spotless:apply` — format before committing
+- `./mvnw generate-sources -Pgenerate-jooq-code` — regenerate jOOQ classes after adding a migration. Requires the local Postgres from `docker compose up -d`; migrates it, then generates into `src/main/java/com/streamarr/server/jooq/generated` (checked in — commit regenerated files with the migration)
+- Smoke tests (`@Tag("SmokeTest")`, e.g. `HlsStreamingSmokeTest`) are excluded from all normal builds; run with `./mvnw test -Dsurefire.excludedGroups=`
+- Local run: `docker compose up -d` (PostgreSQL), then `./mvnw spring-boot:run`. Every config value has an env-var default except `TMDB_API_TOKEN` (required for metadata enrichment); `IMAGE_STORAGE_PATH` and `STREAMING_SEGMENT_BASE_PATH` default to empty
+
 ## Engineering Philosophy
 
 ### TDD: Red-Green-Refactor
@@ -10,17 +18,6 @@
 - When fixing a defect: first write an API-level failing test, then write the smallest test that replicates the problem, then get both to pass
 - Refactor only when tests are green — never refactor while red
 - Use the simplest solution that could possibly work
-
-### Test Behavior, Not Implementation (Hexagonal Architecture)
-- Test at the highest public API level — this means the **service layer**, not the protocol layer
-- Service tests are protocol-agnostic: if we swap GraphQL for REST, these tests still pass
-- Protocol-layer tests (resolvers, controllers) verify delegation **and** protocol-specific adapter logic (cursor encoding, Relay connection building, JSON:API formatting, filter validation)
-- Test observable behavior and outcomes, not internal method calls
-- NEVER use mocks to verify interactions (no ArgumentCaptor, no verify())
-- NEVER make a method public or package-private solely for testing
-- NEVER break encapsulation for testability (no reflection like FieldUtils.writeField)
-- Unit test pure logic in isolation only when it has meaningful complexity (parsers, pagination math)
-- Integration tests with TestContainers + real PostgreSQL are the default for service-layer tests
 
 ### Tidy First (Kent Beck)
 - Separate all changes into two types:
@@ -73,7 +70,10 @@ Choose the simplest mechanism that fits the operation:
   create multiple entities. Single-JVM only — ineffective across multiple instances.
   See `MovieFileProcessor.enrichMovieMetadata()`.
 - **Database locks** (`SELECT FOR UPDATE … skipLocked`): coordinate across multiple application
-  instances. Pair with lease-based heartbeats for crash recovery.
+  instances. Pair with lease-based heartbeats for crash recovery (see `FileProcessingTaskCoordinator`).
+- **Outbound HTTP throttling/retry**: use the client's native interceptors (Methanol `RetryInterceptor` + `RateLimitingInterceptor`) — never a hand-rolled `Semaphore` + sleep loop. Never hold a permit, lock, or DB connection across a retry backoff sleep; that pattern caused cascading Hikari pool exhaustion (four fix PRs in ten days).
+- **Virtual threads are the async model**: `Executors.newVirtualThreadPerTaskExecutor()` in try-with-resources, plus `spring.threads.virtual.enabled: true`. No `@Async`, no reactive/actor frameworks.
+- **Async boundary policy**: library-mutating GraphQL mutations (scan/refresh) are async and return immediately. Apply this uniformly — don't flip individual mutations between sync and async.
 
 **Anti-pattern:** reading a row, checking a condition in Java, then writing back is a
 check-then-act race unless the read-check-write is inside a mutex or expressed as a single
@@ -108,6 +108,7 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 
 ### Code Style
 - Google Java Format enforced via Spotless (runs on build)
+- Checkstyle also runs at `validate` and fails the build (`checkstyle.xml`)
 - No manual formatting debates — the formatter is always right
 - Concise over verbose — don't add comments for self-evident code
 - Don't add javadoc/comments to code you didn't change
@@ -121,48 +122,67 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 - Use sealed interfaces/classes when the set of subtypes is known and fixed
 - Prefer `Optional` over nullable returns — never return null from a public method
 - Use `switch` expressions (not statements) with exhaustive pattern matching
+- Use record deconstruction patterns when switching over sealed types (see `PollingFileStabilityChecker.PollResult`)
+- Use `_` (unnamed variable) for unused caught exceptions and lambda parameters — `catch (IOException _)`
 - Prefer `Stream.toList()` over `Collectors.toList()` when an unmodifiable list is acceptable
-- Use text blocks (`"""`) for multi-line strings (SQL, JSON, GraphQL)
+- Use text blocks (`"""`) for multi-line strings in tests (GraphQL queries, JSON fixtures); production code has no string SQL (jOOQ DSL) or inline GraphQL (schema-first)
 
 ## Architecture Rules
 - Resolvers depend on Services; Services depend on Repositories; Domain depends on nothing
 - Domain entities must NEVER import from services, repositories, or graphql packages
 - Services must NEVER import from the graphql package
+- Services never import jOOQ — `DSLContext` stays in the repository layer
 - External API types (TMDB DTOs) must NEVER leak into the service/domain layer
-- These rules are enforced by ArchUnit tests
-- For complex or conflict-handling queries, use jOOQ via the Spring Data fragment convention:
-  `{Repository}Custom` interface + `{Repository}CustomImpl` class with `DSLContext`. The JPA
-  repository extends both `JpaRepository` and the custom interface. Spring Data auto-discovers
-  the impl by naming convention. Keep `DSLContext` in the repository layer — services never
-  import jOOQ directly.
+- These rules are enforced by ArchUnit tests (`ArchitectureTest`)
 
-## Testing Conventions
-- Integration tests: `*IT.java` suffix, `@Tag("IntegrationTest")`
-- Unit tests: `*Test.java` suffix
-- Always use `@DisplayName` on test methods — human-readable (not camelCase) and follows the same `Should ... when ...` pattern as the method name
-- Use TestContainers for all database tests — no H2
-- Prefer "Fake" implementations (e.g., `FakeMovieRepository`) over Mockito for collaborators
-- Mockito **stubs** are acceptable when Fakes can't reach a code path (e.g., `mockStatic` for `ImageIO` IOException). Stubs provide canned answers — see [Mocks Aren't Stubs](https://martinfowler.com/articles/mocksArentStubs.html)
-- Mockito **mocks for verification** are banned — no `verify()`, no `ArgumentCaptor`
-- Test naming: `shouldExpectedBehaviorWhenCondition()`
+## Settled Decisions (do not revisit without an ADR)
+- Architectural decisions are recorded in `docs/adr/` — read the relevant ADR before revisiting a decision, and record newly settled ones as ADRs
+- **Concurrency runtime**: virtual threads (Loom). Akka and Vert.x were each adopted and removed in 2022 — don't reintroduce reactive/actor frameworks.
+- **Outbound HTTP**: Methanol over JDK `HttpClient` with interceptors (retry, rate limit, cache). Don't introduce `RestTemplate`/`RestClient`/`WebClient`.
+- **Delivery protocol**: GraphQL only. A complete REST/JSON:API layer was built and deleted within 24 hours — keep transport experiments on spike branches; extract protocol-agnostic services (`MediaPage`/`PageItem` pattern) but don't merge speculative protocol surfaces.
+- **Sonar config** lives in `pom.xml` properties, not a `sonar-project.properties` file (tried and reverted).
+- **`LibraryManagementService` is a thin orchestrator** — it's the repo's #1 churn file. New scanning/refresh/watching/cleanup behavior goes in dedicated collaborators (`*FileProcessor`, event listeners) wired via events, not more injected dependencies.
 
-## Test Strategy (Hexagonal)
-- **Service-layer tests** are the primary test type — test business behavior at the service API, protocol-agnostic
-    - Use the lightest test that proves the behavior:
-        - **Unit tests with Fakes** for business logic, orchestration, and behavioral contracts — fast, no Spring context
-        - **Mockito stubs** when Fakes can't reach a code path (e.g., static methods, checked exceptions from JDK/library APIs)
-        - **Integration tests (TestContainers)** when the behavior depends on real database interactions (query correctness, constraints, transactions)
-    - Test inputs → outputs, not internal wiring
-- **Protocol-layer tests** (resolvers, controllers) verify delegation and protocol-specific adapter logic
-    - Verify resolvers/controllers delegate to services correctly
-    - Test protocol-specific adapters (cursor encoding, Relay connections, JSON:API formatting, filter validation) at the protocol layer where the logic lives
-    - Do NOT duplicate business logic testing that belongs in service-layer tests
-- **Pure logic unit tests** for parsers, validators, and stateless utilities
-    - No database, no Spring context
-- **Anti-patterns to avoid:**
-    - Using Mockito to verify interactions (no ArgumentCaptor, no verify()) — use Fakes instead
-    - Using reflection to set private fields (FieldUtils.writeField)
-    - Testing implementation details that would break on refactoring
+## Persistence (JPA + jOOQ Hybrid)
+- Spring Data JPA repositories own CRUD; complex or conflict-handling queries use jOOQ via the Spring Data fragment convention: `{Repository}Custom` interface + `{Repository}CustomImpl` class with an injected `DSLContext` — Spring Data auto-discovers the impl by naming convention
+- **Reads**: jOOQ builds the SQL, but execute through `JooqQueryHelper.nativeQuery(…)` (JPA `EntityManager` native query) so results map to JPA entities — don't `context.fetch*()` for entity reads
+- **Writes**: execute jOOQ DSL directly (`context.update(…).returning()`, `INSERT … ON CONFLICT`) and map records to entities manually
+- **Pagination**: keyset/seek (`row(fields)` comparisons, NULLS LAST) fetching `limit + 2` to detect adjacent pages — no OFFSET pagination
+- No optimistic locking (`@Version`); entity equality is id-based with `hashCode() = getClass().hashCode()` (Hibernate-proxy-safe)
+
+### Flyway
+- **NEVER edit a migration that exists on `main`** — in-place edits break checksum validation on every existing database; write a new incremental migration instead
+- **Before merging, re-check your `V###` number against `main`** — parallel branches have collided (two V039s); renumber yours if taken
+- SQL migrations in `src/main/resources/db/migration`; Java migrations (data transforms) in `src/main/java/db/migration`
+- When changing a stored value's representation (e.g. path → URI), define the encode/decode contract in one codec class with a round-trip test first, then migrate call sites
+
+## GraphQL (Netflix DGS)
+- Schema-first: `.graphqls` files in `src/main/resources/schema/`; GraphiQL and introspection disabled
+- Association fields resolve via `@DgsData(parentType = …)` field resolvers
+- Batch list-valued association fields with a `@DgsDataLoader` (`MappedBatchLoader`, as done for images) — per-parent queries in field resolvers are an N+1
+- Relay connections are built via `RelayConnectionAdapter` over the protocol-agnostic `MediaPage`/`PageItem` types in `services.pagination`
+
+## Testing
+
+### Strategy (Hexagonal)
+- Test behavior at the highest public API — the **service layer**, protocol-agnostic (swap GraphQL for REST and these tests still pass); test inputs → outputs, not internal wiring
+- Use the lightest test that proves the behavior:
+    - **Unit tests with Fakes** for business logic, orchestration, and behavioral contracts — fast, no Spring context
+    - **Mockito stubs** when Fakes can't reach a code path (e.g., `mockStatic` for `ImageIO` IOException) — stubs provide canned answers ([Mocks Aren't Stubs](https://martinfowler.com/articles/mocksArentStubs.html))
+    - **Integration tests** (TestContainers + real PostgreSQL) when behavior depends on real database interactions (query correctness, constraints, transactions)
+- **Protocol-layer tests** (resolvers, controllers) verify delegation to services plus protocol-specific adapter logic (cursor encoding, Relay connection building, filter validation) — don't duplicate business-logic tests there
+- **Pure logic unit tests** (no database, no Spring) for parsers, validators, and stateless utilities with meaningful complexity (e.g., pagination math)
+
+### Hard Rules
+- Mockito **mocks for verification** are banned — no `verify()`, no `ArgumentCaptor`. Observe outcomes through Fakes (e.g., `FakeMovieRepository`) instead
+- NEVER make a method public or package-private solely for testing, break encapsulation via reflection (`FieldUtils.writeField`), or test implementation details that would break on refactoring
+- All database tests use TestContainers — no H2
+
+### Conventions
+- Integration tests: `*IT.java`, `@Tag("IntegrationTest")`; extend `AbstractIntegrationTest` — singleton reusable `postgres:18-alpine` container wired via `@ServiceConnection`
+- Unit tests: `*Test.java`, `@Tag("UnitTest")`
+- Resolver tests use a narrowed `@SpringBootTest(classes = {…})` — no test slices (`@DataJpaTest`, `@WebMvcTest`, etc.)
+- Test naming: `shouldExpectedBehaviorWhenCondition()` + `@DisplayName` in the same human-readable `Should ... when ...` phrasing
 
 ## Twelve-Factor Principles ([12factor.net](https://12factor.net))
 We follow these factors from the Twelve-Factor App methodology:
@@ -175,7 +195,7 @@ We follow these factors from the Twelve-Factor App methodology:
 - **XI. Logs** — Treat logs as event streams. No file-based logging. Structured output via OTel, consumed by the collector. Human-readable console output in dev.
 
 ## Tech Stack
-- Java 25 (LTS), Spring Boot 4.0.2, PostgreSQL 17
-- GraphQL via Netflix DGS 11.1.0
-- jOOQ for complex queries, Flyway for migrations
+- Java 25 (LTS), Spring Boot 4.x, PostgreSQL 18 — exact versions live in `pom.xml` (Renovate keeps them current; don't pin patch versions here)
+- GraphQL via Netflix DGS, jOOQ for complex queries, Flyway for migrations
+- Methanol (JDK `HttpClient`) for outbound HTTP; virtual threads for concurrency
 - FFmpeg via ProcessBuilder for HLS transcoding

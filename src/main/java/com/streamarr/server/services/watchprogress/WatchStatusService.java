@@ -48,11 +48,20 @@ public class WatchStatusService {
   @Transactional
   public void markWatched(UUID userId, UUID collectableId) {
     var scope = resolveCollectableScope(collectableId);
-    markWatched(userId, collectableId, scope, Instant.now(), 0);
+    markWatchedInternal(userId, collectableId, scope, Instant.now(), 0);
   }
 
   @Transactional
   public void markWatched(
+      UUID userId,
+      UUID collectableId,
+      CollectableScope scope,
+      Instant watchedAt,
+      int durationSeconds) {
+    markWatchedInternal(userId, collectableId, scope, watchedAt, durationSeconds);
+  }
+
+  private void markWatchedInternal(
       UUID userId,
       UUID collectableId,
       CollectableScope scope,
@@ -67,11 +76,15 @@ public class WatchStatusService {
   @Transactional
   public void markUnwatched(UUID userId, UUID collectableId) {
     var scope = resolveCollectableScope(collectableId);
-    markUnwatched(userId, collectableId, scope);
+    markUnwatchedInternal(userId, collectableId, scope);
   }
 
   @Transactional
   public void markUnwatched(UUID userId, UUID collectableId, CollectableScope scope) {
+    markUnwatchedInternal(userId, collectableId, scope);
+  }
+
+  private void markUnwatchedInternal(UUID userId, UUID collectableId, CollectableScope scope) {
     var leafIds = resolveLeafCollectableIds(collectableId, scope);
     watchHistoryRepository.dismissAll(userId, leafIds);
 

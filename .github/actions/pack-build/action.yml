@@ -19,13 +19,13 @@ runs:
   using: composite
   steps:
     - name: Login to Docker Hub
-      uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4
+      uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
       with:
         username: ${{ inputs.dockerhub-username }}
         password: ${{ inputs.dockerhub-token }}
 
     - name: Install pack CLI
-      uses: buildpacks/github-actions/setup-pack@06e250da5bb4ccb9a2103719a21d2a7f2252fe83 # v5.11.0
+      uses: buildpacks/github-actions/setup-pack@e3b14c6e906f91da358e01dc2849ce068188107f # v5.12.5
 
     - name: Build with pack CLI
       shell: bash
