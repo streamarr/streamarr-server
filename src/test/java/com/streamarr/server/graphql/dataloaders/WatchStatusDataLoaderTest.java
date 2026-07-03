@@ -56,10 +56,29 @@ class WatchStatusDataLoaderTest {
   @Test
   @DisplayName("Should return unwatched when entity has no media files")
   void shouldReturnUnwatchedWhenEntityHasNoMediaFiles() throws Exception {
-    var key = new WatchStatusLoaderKey(UUID.randomUUID(), CollectableScope.DIRECT_MEDIA);
+    var key = new WatchStatusLoaderKey(USER_ID, UUID.randomUUID(), CollectableScope.DIRECT_MEDIA);
     var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
 
     assertThat(result).containsEntry(key, WatchStatus.UNWATCHED);
+  }
+
+  @Test
+  @DisplayName("Should scope status to each user when keys span multiple users")
+  void shouldScopeStatusToEachUserWhenKeysSpanMultipleUsers() throws Exception {
+    var movie = buildMovie();
+    var mediaFile = mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
+    sessionProgressRepository.save(
+        progressBuilder(USER_ID, mediaFile.getId()).positionSeconds(300).build());
+
+    var mine = new WatchStatusLoaderKey(USER_ID, movie.getId(), CollectableScope.DIRECT_MEDIA);
+    var theirs =
+        new WatchStatusLoaderKey(UUID.randomUUID(), movie.getId(), CollectableScope.DIRECT_MEDIA);
+
+    var result = dataLoader.load(Set.of(mine, theirs)).toCompletableFuture().get();
+
+    assertThat(result)
+        .containsEntry(mine, WatchStatus.IN_PROGRESS)
+        .containsEntry(theirs, WatchStatus.UNWATCHED);
   }
 
   @Test
@@ -86,9 +105,9 @@ class WatchStatusDataLoaderTest {
     sessionProgressRepository.save(
         progressBuilder(USER_ID, seriesFile.getId()).positionSeconds(300).build());
 
-    var movieKey = new WatchStatusLoaderKey(movie.getId(), CollectableScope.DIRECT_MEDIA);
-    var seasonKey = new WatchStatusLoaderKey(season.getId(), CollectableScope.SEASON);
-    var seriesKey = new WatchStatusLoaderKey(series.getId(), CollectableScope.SERIES);
+    var movieKey = new WatchStatusLoaderKey(USER_ID, movie.getId(), CollectableScope.DIRECT_MEDIA);
+    var seasonKey = new WatchStatusLoaderKey(USER_ID, season.getId(), CollectableScope.SEASON);
+    var seriesKey = new WatchStatusLoaderKey(USER_ID, series.getId(), CollectableScope.SERIES);
 
     var result =
         dataLoader.load(Set.of(movieKey, seasonKey, seriesKey)).toCompletableFuture().get();

@@ -3,7 +3,6 @@ package com.streamarr.server.graphql.dataloaders;
 import com.netflix.graphql.dgs.DgsDataLoader;
 import com.streamarr.server.domain.streaming.CollectableScope;
 import com.streamarr.server.domain.streaming.WatchStatus;
-import com.streamarr.server.graphql.CurrentUser;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
 import java.util.HashMap;
 import java.util.List;
@@ -27,15 +26,14 @@ public class WatchStatusDataLoader implements MappedBatchLoader<WatchStatusLoade
       Set<WatchStatusLoaderKey> keys) {
     return CompletableFuture.supplyAsync(
         () -> {
-          var userId = CurrentUser.id();
-
           var result = new HashMap<WatchStatusLoaderKey, WatchStatus>();
-          var keysByScope =
-              keys.stream().collect(Collectors.groupingBy(WatchStatusLoaderKey::scope));
+          var keysByBatch =
+              keys.stream()
+                  .collect(Collectors.groupingBy(key -> new Batch(key.userId(), key.scope())));
 
-          for (var entry : keysByScope.entrySet()) {
+          for (var entry : keysByBatch.entrySet()) {
             var entityIds = entry.getValue().stream().map(WatchStatusLoaderKey::entityId).toList();
-            var statusMap = loadByScope(userId, entry.getKey(), entityIds);
+            var statusMap = loadByScope(entry.getKey().userId(), entry.getKey().scope(), entityIds);
 
             for (var key : entry.getValue()) {
               result.put(key, statusMap.getOrDefault(key.entityId(), WatchStatus.UNWATCHED));
@@ -45,6 +43,8 @@ public class WatchStatusDataLoader implements MappedBatchLoader<WatchStatusLoade
           return result;
         });
   }
+
+  private record Batch(UUID userId, CollectableScope scope) {}
 
   private Map<UUID, WatchStatus> loadByScope(
       UUID userId, CollectableScope scope, List<UUID> entityIds) {

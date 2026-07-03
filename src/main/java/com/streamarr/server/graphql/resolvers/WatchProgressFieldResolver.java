@@ -9,6 +9,8 @@ import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.streaming.CollectableScope;
 import com.streamarr.server.domain.streaming.WatchStatus;
+import com.streamarr.server.graphql.CurrentUser;
+import com.streamarr.server.graphql.dataloaders.SessionProgressLoaderKey;
 import com.streamarr.server.graphql.dataloaders.WatchStatusLoaderKey;
 import com.streamarr.server.graphql.dto.WatchProgressDto;
 import graphql.schema.DataFetchingEnvironment;
@@ -64,11 +66,14 @@ public class WatchProgressFieldResolver {
       return CompletableFuture.completedFuture(null);
     }
 
-    DataLoader<UUID, WatchProgressDto> loader = dfe.getDataLoader("watchProgress");
-    var mediaFileIds = files.stream().map(MediaFile::getId).toList();
+    DataLoader<SessionProgressLoaderKey, WatchProgressDto> loader =
+        dfe.getDataLoader("watchProgress");
+    var userId = CurrentUser.id();
+    var keys =
+        files.stream().map(file -> new SessionProgressLoaderKey(userId, file.getId())).toList();
 
     return loader
-        .loadMany(mediaFileIds)
+        .loadMany(keys)
         .thenApply(
             results ->
                 results.stream()
@@ -80,6 +85,6 @@ public class WatchProgressFieldResolver {
   private CompletableFuture<WatchStatus> loadWatchStatus(
       DataFetchingEnvironment dfe, UUID entityId, CollectableScope scope) {
     DataLoader<WatchStatusLoaderKey, WatchStatus> loader = dfe.getDataLoader("watchStatus");
-    return loader.load(new WatchStatusLoaderKey(entityId, scope));
+    return loader.load(new WatchStatusLoaderKey(CurrentUser.id(), entityId, scope));
   }
 }
