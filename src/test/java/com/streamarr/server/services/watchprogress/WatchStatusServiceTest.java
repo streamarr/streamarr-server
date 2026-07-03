@@ -1,15 +1,14 @@
 package com.streamarr.server.services.watchprogress;
 
+import static com.streamarr.server.fixtures.MediaEntityFixture.buildMatchedMediaFile;
+import static com.streamarr.server.fixtures.MediaEntityFixture.buildMovie;
+import static com.streamarr.server.fixtures.MediaEntityFixture.buildSeries;
+import static com.streamarr.server.fixtures.SessionProgressFixture.progressBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.media.Episode;
-import com.streamarr.server.domain.media.MediaFile;
-import com.streamarr.server.domain.media.MediaFileStatus;
-import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Season;
-import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.streaming.CollectableScope;
-import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
@@ -58,27 +57,6 @@ class WatchStatusServiceTest {
             eventPublisher);
   }
 
-  private MediaFile createMediaFile(UUID mediaId) {
-    return MediaFile.builder()
-        .mediaId(mediaId)
-        .filename("file-" + UUID.randomUUID() + ".mkv")
-        .filepathUri("/media/" + UUID.randomUUID() + ".mkv")
-        .size(1_000_000)
-        .status(MediaFileStatus.MATCHED)
-        .build();
-  }
-
-  private SessionProgress buildProgress(UUID mediaFileId, int positionSeconds) {
-    return SessionProgress.builder()
-        .sessionId(UUID.randomUUID())
-        .userId(USER_ID)
-        .mediaFileId(mediaFileId)
-        .positionSeconds(positionSeconds)
-        .percentComplete(50.0)
-        .durationSeconds(7200)
-        .build();
-  }
-
   @Nested
   @DisplayName("Watch History")
   class WatchHistoryTests {
@@ -113,9 +91,8 @@ class WatchStatusServiceTest {
     @Test
     @DisplayName("Should derive watched status from watch history")
     void shouldDeriveWatchedStatusFromWatchHistory() {
-      var movie = Movie.builder().build();
-      movie.setId(UUID.randomUUID());
-      mediaFileRepository.save(createMediaFile(movie.getId()));
+      var movie = buildMovie();
+      mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
 
       service.markWatched(
           USER_ID, movie.getId(), CollectableScope.DIRECT_MEDIA, Instant.now(), 7200);
@@ -127,9 +104,8 @@ class WatchStatusServiceTest {
     @Test
     @DisplayName("Should derive unwatched when latest history entry is dismissed")
     void shouldDeriveUnwatchedWhenLatestHistoryEntryIsDismissed() {
-      var movie = Movie.builder().build();
-      movie.setId(UUID.randomUUID());
-      mediaFileRepository.save(createMediaFile(movie.getId()));
+      var movie = buildMovie();
+      mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
 
       service.markWatched(
           USER_ID, movie.getId(), CollectableScope.DIRECT_MEDIA, Instant.now(), 7200);
@@ -142,15 +118,15 @@ class WatchStatusServiceTest {
     @Test
     @DisplayName("Should keep watched status during re-watch with active session progress")
     void shouldKeepWatchedStatusDuringReWatchWithActiveSessionProgress() {
-      var movie = Movie.builder().build();
-      movie.setId(UUID.randomUUID());
-      var mf = mediaFileRepository.save(createMediaFile(movie.getId()));
+      var movie = buildMovie();
+      var mf = mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
 
       service.markWatched(
           USER_ID, movie.getId(), CollectableScope.DIRECT_MEDIA, Instant.now(), 7200);
 
       // Simulate active re-watch session
-      sessionProgressRepository.save(buildProgress(mf.getId(), 1800));
+      sessionProgressRepository.save(
+          progressBuilder(USER_ID, mf.getId()).positionSeconds(1800).build());
 
       var result = service.getWatchStatusForDirectMedia(USER_ID, List.of(movie.getId()));
       assertThat(result).containsEntry(movie.getId(), WatchStatus.WATCHED);
@@ -164,14 +140,15 @@ class WatchStatusServiceTest {
     @Test
     @DisplayName("Should return in progress when media files have progress")
     void shouldReturnInProgressWhenMediaFilesHaveProgress() {
-      var movie = Movie.builder().build();
-      movie.setId(UUID.randomUUID());
+      var movie = buildMovie();
 
-      var mf1 = mediaFileRepository.save(createMediaFile(movie.getId()));
-      var mf2 = mediaFileRepository.save(createMediaFile(movie.getId()));
+      var mf1 = mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
+      var mf2 = mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
 
-      sessionProgressRepository.save(buildProgress(mf1.getId(), 300));
-      sessionProgressRepository.save(buildProgress(mf2.getId(), 600));
+      sessionProgressRepository.save(
+          progressBuilder(USER_ID, mf1.getId()).positionSeconds(300).build());
+      sessionProgressRepository.save(
+          progressBuilder(USER_ID, mf2.getId()).positionSeconds(600).build());
 
       var result = service.getWatchStatusForDirectMedia(USER_ID, List.of(movie.getId()));
 
@@ -181,10 +158,9 @@ class WatchStatusServiceTest {
     @Test
     @DisplayName("Should return unwatched when no progress exists")
     void shouldReturnUnwatchedWhenNoProgressExists() {
-      var movie = Movie.builder().build();
-      movie.setId(UUID.randomUUID());
+      var movie = buildMovie();
 
-      mediaFileRepository.save(createMediaFile(movie.getId()));
+      mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
 
       var result = service.getWatchStatusForDirectMedia(USER_ID, List.of(movie.getId()));
 
@@ -194,13 +170,13 @@ class WatchStatusServiceTest {
     @Test
     @DisplayName("Should return in progress when some files have progress")
     void shouldReturnInProgressWhenSomeFilesHaveProgress() {
-      var movie = Movie.builder().build();
-      movie.setId(UUID.randomUUID());
+      var movie = buildMovie();
 
-      var mf1 = mediaFileRepository.save(createMediaFile(movie.getId()));
-      mediaFileRepository.save(createMediaFile(movie.getId()));
+      var mf1 = mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
+      mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
 
-      sessionProgressRepository.save(buildProgress(mf1.getId(), 300));
+      sessionProgressRepository.save(
+          progressBuilder(USER_ID, mf1.getId()).positionSeconds(300).build());
 
       var result = service.getWatchStatusForDirectMedia(USER_ID, List.of(movie.getId()));
 
@@ -210,15 +186,14 @@ class WatchStatusServiceTest {
     @Test
     @DisplayName("Should batch multiple collectables in single call when given multiple IDs")
     void shouldBatchMultipleCollectablesInSingleCallWhenGivenMultipleIds() {
-      var movie1 = Movie.builder().build();
-      movie1.setId(UUID.randomUUID());
-      var movie2 = Movie.builder().build();
-      movie2.setId(UUID.randomUUID());
+      var movie1 = buildMovie();
+      var movie2 = buildMovie();
 
-      var mf1 = mediaFileRepository.save(createMediaFile(movie1.getId()));
-      mediaFileRepository.save(createMediaFile(movie2.getId()));
+      var mf1 = mediaFileRepository.save(buildMatchedMediaFile(movie1.getId()));
+      mediaFileRepository.save(buildMatchedMediaFile(movie2.getId()));
 
-      sessionProgressRepository.save(buildProgress(mf1.getId(), 300));
+      sessionProgressRepository.save(
+          progressBuilder(USER_ID, mf1.getId()).positionSeconds(300).build());
 
       var result =
           service.getWatchStatusForDirectMedia(USER_ID, List.of(movie1.getId(), movie2.getId()));
@@ -249,11 +224,13 @@ class WatchStatusServiceTest {
       var ep1 = episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
       var ep2 = episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
 
-      var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
-      var mf2 = mediaFileRepository.save(createMediaFile(ep2.getId()));
+      var mf1 = mediaFileRepository.save(buildMatchedMediaFile(ep1.getId()));
+      var mf2 = mediaFileRepository.save(buildMatchedMediaFile(ep2.getId()));
 
-      sessionProgressRepository.save(buildProgress(mf1.getId(), 300));
-      sessionProgressRepository.save(buildProgress(mf2.getId(), 600));
+      sessionProgressRepository.save(
+          progressBuilder(USER_ID, mf1.getId()).positionSeconds(300).build());
+      sessionProgressRepository.save(
+          progressBuilder(USER_ID, mf2.getId()).positionSeconds(600).build());
 
       var result = service.getWatchStatusForSeasons(USER_ID, List.of(season.getId()));
 
@@ -267,10 +244,11 @@ class WatchStatusServiceTest {
       var ep1 = episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
       var ep2 = episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
 
-      var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
-      mediaFileRepository.save(createMediaFile(ep2.getId()));
+      var mf1 = mediaFileRepository.save(buildMatchedMediaFile(ep1.getId()));
+      mediaFileRepository.save(buildMatchedMediaFile(ep2.getId()));
 
-      sessionProgressRepository.save(buildProgress(mf1.getId(), 300));
+      sessionProgressRepository.save(
+          progressBuilder(USER_ID, mf1.getId()).positionSeconds(300).build());
 
       var result = service.getWatchStatusForSeasons(USER_ID, List.of(season.getId()));
 
@@ -293,10 +271,11 @@ class WatchStatusServiceTest {
       var ep1 = episodeRepository.save(Episode.builder().episodeNumber(1).season(s1).build());
       var ep2 = episodeRepository.save(Episode.builder().episodeNumber(1).season(s2).build());
 
-      var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
-      mediaFileRepository.save(createMediaFile(ep2.getId()));
+      var mf1 = mediaFileRepository.save(buildMatchedMediaFile(ep1.getId()));
+      mediaFileRepository.save(buildMatchedMediaFile(ep2.getId()));
 
-      sessionProgressRepository.save(buildProgress(mf1.getId(), 300));
+      sessionProgressRepository.save(
+          progressBuilder(USER_ID, mf1.getId()).positionSeconds(300).build());
 
       var result = service.getWatchStatusForSeasons(USER_ID, List.of(s1.getId(), s2.getId()));
 
@@ -313,18 +292,19 @@ class WatchStatusServiceTest {
     @Test
     @DisplayName("Should return in progress when all episodes across seasons have progress")
     void shouldReturnInProgressWhenAllEpisodesAcrossSeasonsHaveProgress() {
-      var series = Series.builder().build();
-      series.setId(UUID.randomUUID());
+      var series = buildSeries();
       var s1 = seasonRepository.save(Season.builder().seasonNumber(1).series(series).build());
       var s2 = seasonRepository.save(Season.builder().seasonNumber(2).series(series).build());
       var ep1 = episodeRepository.save(Episode.builder().episodeNumber(1).season(s1).build());
       var ep2 = episodeRepository.save(Episode.builder().episodeNumber(1).season(s2).build());
 
-      var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
-      var mf2 = mediaFileRepository.save(createMediaFile(ep2.getId()));
+      var mf1 = mediaFileRepository.save(buildMatchedMediaFile(ep1.getId()));
+      var mf2 = mediaFileRepository.save(buildMatchedMediaFile(ep2.getId()));
 
-      sessionProgressRepository.save(buildProgress(mf1.getId(), 300));
-      sessionProgressRepository.save(buildProgress(mf2.getId(), 600));
+      sessionProgressRepository.save(
+          progressBuilder(USER_ID, mf1.getId()).positionSeconds(300).build());
+      sessionProgressRepository.save(
+          progressBuilder(USER_ID, mf2.getId()).positionSeconds(600).build());
 
       var result = service.getWatchStatusForSeries(USER_ID, List.of(series.getId()));
 
@@ -334,17 +314,17 @@ class WatchStatusServiceTest {
     @Test
     @DisplayName("Should return in progress when some episodes have progress")
     void shouldReturnInProgressWhenSomeEpisodesHaveProgress() {
-      var series = Series.builder().build();
-      series.setId(UUID.randomUUID());
+      var series = buildSeries();
       var s1 = seasonRepository.save(Season.builder().seasonNumber(1).series(series).build());
       var s2 = seasonRepository.save(Season.builder().seasonNumber(2).series(series).build());
       var ep1 = episodeRepository.save(Episode.builder().episodeNumber(1).season(s1).build());
       var ep2 = episodeRepository.save(Episode.builder().episodeNumber(1).season(s2).build());
 
-      var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
-      mediaFileRepository.save(createMediaFile(ep2.getId()));
+      var mf1 = mediaFileRepository.save(buildMatchedMediaFile(ep1.getId()));
+      mediaFileRepository.save(buildMatchedMediaFile(ep2.getId()));
 
-      sessionProgressRepository.save(buildProgress(mf1.getId(), 300));
+      sessionProgressRepository.save(
+          progressBuilder(USER_ID, mf1.getId()).positionSeconds(300).build());
 
       var result = service.getWatchStatusForSeries(USER_ID, List.of(series.getId()));
 
@@ -362,19 +342,18 @@ class WatchStatusServiceTest {
     @Test
     @DisplayName("Should batch multiple series in single call when given multiple series IDs")
     void shouldBatchMultipleSeriesInSingleCallWhenGivenMultipleSeriesIds() {
-      var series1 = Series.builder().build();
-      series1.setId(UUID.randomUUID());
-      var series2 = Series.builder().build();
-      series2.setId(UUID.randomUUID());
+      var series1 = buildSeries();
+      var series2 = buildSeries();
       var s1 = seasonRepository.save(Season.builder().seasonNumber(1).series(series1).build());
       var s2 = seasonRepository.save(Season.builder().seasonNumber(1).series(series2).build());
       var ep1 = episodeRepository.save(Episode.builder().episodeNumber(1).season(s1).build());
       var ep2 = episodeRepository.save(Episode.builder().episodeNumber(1).season(s2).build());
 
-      var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
-      mediaFileRepository.save(createMediaFile(ep2.getId()));
+      var mf1 = mediaFileRepository.save(buildMatchedMediaFile(ep1.getId()));
+      mediaFileRepository.save(buildMatchedMediaFile(ep2.getId()));
 
-      sessionProgressRepository.save(buildProgress(mf1.getId(), 300));
+      sessionProgressRepository.save(
+          progressBuilder(USER_ID, mf1.getId()).positionSeconds(300).build());
 
       var result =
           service.getWatchStatusForSeries(USER_ID, List.of(series1.getId(), series2.getId()));

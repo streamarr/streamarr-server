@@ -1,8 +1,8 @@
 package com.streamarr.server.graphql.dataloaders;
 
+import static com.streamarr.server.fixtures.SessionProgressFixture.progressBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
@@ -46,8 +46,18 @@ class SessionProgressDataLoaderTest {
   void shouldReturnProgressForEachMediaFileIdWhenBatchLoading() throws Exception {
     var mediaFileId1 = UUID.randomUUID();
     var mediaFileId2 = UUID.randomUUID();
-    saveProgress(mediaFileId1, 300, 50.0, 600);
-    saveProgress(mediaFileId2, 600, 75.0, 800);
+    sessionProgressRepository.save(
+        progressBuilder(USER_ID, mediaFileId1)
+            .positionSeconds(300)
+            .percentComplete(50.0)
+            .durationSeconds(600)
+            .build());
+    sessionProgressRepository.save(
+        progressBuilder(USER_ID, mediaFileId2)
+            .positionSeconds(600)
+            .percentComplete(75.0)
+            .durationSeconds(800)
+            .build());
 
     var result = dataLoader.load(Set.of(mediaFileId1, mediaFileId2)).toCompletableFuture().get();
 
@@ -70,17 +80,5 @@ class SessionProgressDataLoaderTest {
     loader.dispatch();
 
     assertThat(future.get()).isNull();
-  }
-
-  private void saveProgress(UUID mediaFileId, int position, double percent, int duration) {
-    sessionProgressRepository.save(
-        SessionProgress.builder()
-            .sessionId(UUID.randomUUID())
-            .userId(USER_ID)
-            .mediaFileId(mediaFileId)
-            .positionSeconds(position)
-            .percentComplete(percent)
-            .durationSeconds(duration)
-            .build());
   }
 }
