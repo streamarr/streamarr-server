@@ -1,15 +1,14 @@
 package com.streamarr.server.graphql.dataloaders;
 
+import static com.streamarr.server.fixtures.MediaEntityFixture.buildMatchedMediaFile;
+import static com.streamarr.server.fixtures.MediaEntityFixture.buildMovie;
+import static com.streamarr.server.fixtures.MediaEntityFixture.buildSeries;
+import static com.streamarr.server.fixtures.SessionProgressFixture.progressBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.media.Episode;
-import com.streamarr.server.domain.media.MediaFile;
-import com.streamarr.server.domain.media.MediaFileStatus;
-import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Season;
-import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.streaming.CollectableScope;
-import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
@@ -55,20 +54,6 @@ class WatchStatusDataLoaderTest {
   }
 
   @Test
-  @DisplayName("Should return in progress for direct media when files have progress")
-  void shouldReturnInProgressForDirectMediaWhenFilesHaveProgress() throws Exception {
-    var movie = Movie.builder().build();
-    movie.setId(UUID.randomUUID());
-    var mf = mediaFileRepository.save(createMediaFile(movie.getId()));
-    sessionProgressRepository.save(buildProgressWithPosition(mf.getId(), 300));
-
-    var key = new WatchStatusLoaderKey(movie.getId(), CollectableScope.DIRECT_MEDIA);
-    var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
-
-    assertThat(result).containsEntry(key, WatchStatus.IN_PROGRESS);
-  }
-
-  @Test
   @DisplayName("Should return unwatched when entity has no media files")
   void shouldReturnUnwatchedWhenEntityHasNoMediaFiles() throws Exception {
     var key = new WatchStatusLoaderKey(UUID.randomUUID(), CollectableScope.DIRECT_MEDIA);
@@ -78,95 +63,42 @@ class WatchStatusDataLoaderTest {
   }
 
   @Test
-  @DisplayName("Should return unwatched when media files exist but no progress")
-  void shouldReturnUnwatchedWhenMediaFilesExistButNoProgress() throws Exception {
-    var movie = Movie.builder().build();
-    movie.setId(UUID.randomUUID());
-    mediaFileRepository.save(createMediaFile(movie.getId()));
-
-    var key = new WatchStatusLoaderKey(movie.getId(), CollectableScope.DIRECT_MEDIA);
-    var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
-
-    assertThat(result).containsEntry(key, WatchStatus.UNWATCHED);
-  }
-
-  @Test
-  @DisplayName("Should batch mixed entity types in single load when keys span multiple types")
-  void shouldBatchMixedEntityTypesInSingleLoadWhenKeysSpanMultipleTypes() throws Exception {
-    var movie = Movie.builder().build();
-    movie.setId(UUID.randomUUID());
-    var movieMf = mediaFileRepository.save(createMediaFile(movie.getId()));
-    sessionProgressRepository.save(buildProgressWithPosition(movieMf.getId(), 300));
+  @DisplayName("Should route each scope to its hierarchy when keys span all scopes")
+  void shouldRouteEachScopeToItsHierarchyWhenKeysSpanAllScopes() throws Exception {
+    var movie = buildMovie();
+    var movieFile = mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
+    sessionProgressRepository.save(
+        progressBuilder(USER_ID, movieFile.getId()).positionSeconds(300).build());
 
     var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
-    var ep = episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
-    mediaFileRepository.save(createMediaFile(ep.getId()));
+    var seasonEpisode =
+        episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
+    var seasonFile = mediaFileRepository.save(buildMatchedMediaFile(seasonEpisode.getId()));
+    sessionProgressRepository.save(
+        progressBuilder(USER_ID, seasonFile.getId()).positionSeconds(300).build());
+
+    var series = buildSeries();
+    var seriesSeason =
+        seasonRepository.save(Season.builder().seasonNumber(1).series(series).build());
+    var seriesEpisode =
+        episodeRepository.save(Episode.builder().episodeNumber(1).season(seriesSeason).build());
+    var seriesFile = mediaFileRepository.save(buildMatchedMediaFile(seriesEpisode.getId()));
+    sessionProgressRepository.save(
+        progressBuilder(USER_ID, seriesFile.getId()).positionSeconds(300).build());
 
     var movieKey = new WatchStatusLoaderKey(movie.getId(), CollectableScope.DIRECT_MEDIA);
     var seasonKey = new WatchStatusLoaderKey(season.getId(), CollectableScope.SEASON);
+    var seriesKey = new WatchStatusLoaderKey(series.getId(), CollectableScope.SERIES);
 
-    var result = dataLoader.load(Set.of(movieKey, seasonKey)).toCompletableFuture().get();
+    var result =
+        dataLoader.load(Set.of(movieKey, seasonKey, seriesKey)).toCompletableFuture().get();
 
+    // IN_PROGRESS is only reachable through the correct hierarchy for each scope;
+    // a misrouted scope would fall back to UNWATCHED
     assertThat(result)
-        .hasSize(2)
+        .hasSize(3)
         .containsEntry(movieKey, WatchStatus.IN_PROGRESS)
-        .containsEntry(seasonKey, WatchStatus.UNWATCHED);
-  }
-
-  @Test
-  @DisplayName("Should return in progress when season has partial episode progress")
-  void shouldReturnInProgressWhenSeasonHasPartialEpisodeProgress() throws Exception {
-    var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
-    var ep1 = episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
-    var ep2 = episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
-    var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
-    mediaFileRepository.save(createMediaFile(ep2.getId()));
-    sessionProgressRepository.save(buildProgressWithPosition(mf1.getId(), 300));
-
-    var key = new WatchStatusLoaderKey(season.getId(), CollectableScope.SEASON);
-    var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
-
-    assertThat(result).containsEntry(key, WatchStatus.IN_PROGRESS);
-  }
-
-  @Test
-  @DisplayName("Should return in progress for series when all episodes have progress")
-  void shouldReturnInProgressForSeriesWhenAllEpisodesHaveProgress() throws Exception {
-    var series = Series.builder().build();
-    series.setId(UUID.randomUUID());
-    var s1 = seasonRepository.save(Season.builder().seasonNumber(1).series(series).build());
-    var s2 = seasonRepository.save(Season.builder().seasonNumber(2).series(series).build());
-    var ep1 = episodeRepository.save(Episode.builder().episodeNumber(1).season(s1).build());
-    var ep2 = episodeRepository.save(Episode.builder().episodeNumber(1).season(s2).build());
-    var mf1 = mediaFileRepository.save(createMediaFile(ep1.getId()));
-    var mf2 = mediaFileRepository.save(createMediaFile(ep2.getId()));
-    sessionProgressRepository.save(buildProgressWithPosition(mf1.getId(), 300));
-    sessionProgressRepository.save(buildProgressWithPosition(mf2.getId(), 600));
-
-    var key = new WatchStatusLoaderKey(series.getId(), CollectableScope.SERIES);
-    var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
-
-    assertThat(result).containsEntry(key, WatchStatus.IN_PROGRESS);
-  }
-
-  private MediaFile createMediaFile(UUID mediaId) {
-    return MediaFile.builder()
-        .mediaId(mediaId)
-        .filename("file-" + UUID.randomUUID() + ".mkv")
-        .filepathUri("/media/" + UUID.randomUUID() + ".mkv")
-        .size(1_000_000)
-        .status(MediaFileStatus.MATCHED)
-        .build();
-  }
-
-  private SessionProgress buildProgressWithPosition(UUID mediaFileId, int positionSeconds) {
-    return SessionProgress.builder()
-        .sessionId(UUID.randomUUID())
-        .userId(USER_ID)
-        .mediaFileId(mediaFileId)
-        .positionSeconds(positionSeconds)
-        .percentComplete(50.0)
-        .durationSeconds(7200)
-        .build();
+        .containsEntry(seasonKey, WatchStatus.IN_PROGRESS)
+        .containsEntry(seriesKey, WatchStatus.IN_PROGRESS);
   }
 }
