@@ -29,15 +29,12 @@ public class ContinueWatchingResolver {
 
   @DgsTypeResolver(name = "ContinueWatchingMedia")
   public String resolveContinueWatchingMedia(Object media) {
-    if (media instanceof Movie) {
-      return "Movie";
-    }
-
-    if (media instanceof Episode) {
-      return "Episode";
-    }
-
-    throw new IllegalArgumentException(
-        "Unknown continue watching media type: " + media.getClass().getSimpleName());
+    return switch (media) {
+      case Movie _ -> "Movie";
+      case Episode _ -> "Episode";
+      default ->
+          throw new IllegalArgumentException(
+              "Unknown continue watching media type: " + media.getClass().getSimpleName());
+    };
   }
 }

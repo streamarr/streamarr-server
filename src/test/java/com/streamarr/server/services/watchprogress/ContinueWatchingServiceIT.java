@@ -65,7 +65,7 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
 
   @BeforeAll
   void setup() {
-    // Clean existing placeholder-user records before seeding per-class fixtures.
+    // TODO(#163): replace this cleanup with per-class user IDs once auth lands.
     dsl.deleteFrom(Tables.SESSION_PROGRESS)
         .where(Tables.SESSION_PROGRESS.USER_ID.eq(USER_ID))
         .execute();
