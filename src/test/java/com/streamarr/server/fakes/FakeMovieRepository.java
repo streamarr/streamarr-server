@@ -191,7 +191,7 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
   }
 
   @Override
-  public Map<UUID, Instant> findLastWatchedByMovieIds(Collection<UUID> movieIds) {
+  public Map<UUID, Instant> findLastWatchedByMovieIds(UUID userId, Collection<UUID> movieIds) {
     throw new UnsupportedOperationException("LAST_WATCHED not yet implemented in fake");
   }
 }

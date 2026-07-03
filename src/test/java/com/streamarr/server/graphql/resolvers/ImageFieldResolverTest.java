@@ -1,5 +1,9 @@
 package com.streamarr.server.graphql.resolvers;
 
+import static com.streamarr.server.fixtures.MediaEntityFixture.buildEpisode;
+import static com.streamarr.server.fixtures.MediaEntityFixture.buildMovie;
+import static com.streamarr.server.fixtures.MediaEntityFixture.buildSeason;
+import static com.streamarr.server.fixtures.MediaEntityFixture.buildSeries;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -7,14 +11,11 @@ import static org.mockito.Mockito.when;
 
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
-import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.Image;
 import com.streamarr.server.domain.media.ImageEntityType;
 import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.Movie;
-import com.streamarr.server.domain.media.Season;
-import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.graphql.dataloaders.ImageDataLoader;
 import com.streamarr.server.repositories.media.ImageRepository;
 import com.streamarr.server.services.MovieService;
@@ -58,9 +59,7 @@ class ImageFieldResolverTest {
     @DisplayName("Should load images via DataLoader when resolving movie images")
     void shouldLoadImagesViaDataLoaderWhenResolvingMovieImages() {
       var movie = setupMovie();
-      var image =
-          buildImage(
-              movie.getId(), ImageEntityType.MOVIE, ImageType.POSTER, ImageSize.SMALL, 185, 278);
+      var image = buildImage(movie.getId(), ImageEntityType.MOVIE, ImageType.POSTER);
       when(imageRepository.findByEntityTypeAndEntityIdIn(eq(ImageEntityType.MOVIE), any()))
           .thenReturn(List.of(image));
 
@@ -76,12 +75,8 @@ class ImageFieldResolverTest {
     @DisplayName("Should filter by image type when type argument provided")
     void shouldFilterByImageTypeWhenTypeArgumentProvided() {
       var movie = setupMovie();
-      var posterImage =
-          buildImage(
-              movie.getId(), ImageEntityType.MOVIE, ImageType.POSTER, ImageSize.SMALL, 185, 278);
-      var backdropImage =
-          buildImage(
-              movie.getId(), ImageEntityType.MOVIE, ImageType.BACKDROP, ImageSize.SMALL, 300, 169);
+      var posterImage = buildImage(movie.getId(), ImageEntityType.MOVIE, ImageType.POSTER);
+      var backdropImage = buildImage(movie.getId(), ImageEntityType.MOVIE, ImageType.BACKDROP);
       when(imageRepository.findByEntityTypeAndEntityIdIn(eq(ImageEntityType.MOVIE), any()))
           .thenReturn(List.of(posterImage, backdropImage));
 
@@ -98,12 +93,8 @@ class ImageFieldResolverTest {
     @DisplayName("Should return all images when type argument omitted")
     void shouldReturnAllImagesWhenTypeArgumentOmitted() {
       var movie = setupMovie();
-      var posterImage =
-          buildImage(
-              movie.getId(), ImageEntityType.MOVIE, ImageType.POSTER, ImageSize.SMALL, 185, 278);
-      var backdropImage =
-          buildImage(
-              movie.getId(), ImageEntityType.MOVIE, ImageType.BACKDROP, ImageSize.SMALL, 300, 169);
+      var posterImage = buildImage(movie.getId(), ImageEntityType.MOVIE, ImageType.POSTER);
+      var backdropImage = buildImage(movie.getId(), ImageEntityType.MOVIE, ImageType.BACKDROP);
       when(imageRepository.findByEntityTypeAndEntityIdIn(eq(ImageEntityType.MOVIE), any()))
           .thenReturn(List.of(posterImage, backdropImage));
 
@@ -123,22 +114,17 @@ class ImageFieldResolverTest {
     @Test
     @DisplayName("Should load images when resolving series images")
     void shouldLoadImagesWhenResolvingSeriesImages() {
-      var seriesId = UUID.randomUUID();
-      var series = Series.builder().title("Breaking Bad").build();
-      series.setId(seriesId);
-      when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
+      var series = buildSeries("Breaking Bad");
+      when(seriesService.findById(series.getId())).thenReturn(Optional.of(series));
 
-      var posterImage =
-          buildImage(seriesId, ImageEntityType.SERIES, ImageType.POSTER, ImageSize.SMALL, 185, 278);
-      var backdropImage =
-          buildImage(
-              seriesId, ImageEntityType.SERIES, ImageType.BACKDROP, ImageSize.SMALL, 300, 169);
+      var posterImage = buildImage(series.getId(), ImageEntityType.SERIES, ImageType.POSTER);
+      var backdropImage = buildImage(series.getId(), ImageEntityType.SERIES, ImageType.BACKDROP);
       when(imageRepository.findByEntityTypeAndEntityIdIn(eq(ImageEntityType.SERIES), any()))
           .thenReturn(List.of(posterImage, backdropImage));
 
       List<String> imageTypes =
           dgsQueryExecutor.executeAndExtractJsonPath(
-              String.format("{ series(id: \"%s\") { images { imageType } } }", seriesId),
+              String.format("{ series(id: \"%s\") { images { imageType } } }", series.getId()),
               "data.series.images[*].imageType");
 
       assertThat(imageTypes).containsExactlyInAnyOrder("POSTER", "BACKDROP");
@@ -152,29 +138,22 @@ class ImageFieldResolverTest {
     @Test
     @DisplayName("Should load images when resolving season images")
     void shouldLoadImagesWhenResolvingSeasonImages() {
-      var seriesId = UUID.randomUUID();
-      var series = Series.builder().title("Breaking Bad").build();
-      series.setId(seriesId);
+      var series = buildSeries("Breaking Bad");
 
-      var seasonId = UUID.randomUUID();
-      var season = Season.builder().title("Season 1").seasonNumber(1).build();
-      season.setId(seasonId);
+      var season = buildSeason("Season 1", 1);
 
-      when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
-      when(seriesService.findSeasons(seriesId)).thenReturn(List.of(season));
+      when(seriesService.findById(series.getId())).thenReturn(Optional.of(series));
+      when(seriesService.findSeasons(series.getId())).thenReturn(List.of(season));
 
-      var posterImage =
-          buildImage(seasonId, ImageEntityType.SEASON, ImageType.POSTER, ImageSize.SMALL, 185, 278);
-      var backdropImage =
-          buildImage(
-              seasonId, ImageEntityType.SEASON, ImageType.BACKDROP, ImageSize.SMALL, 300, 169);
+      var posterImage = buildImage(season.getId(), ImageEntityType.SEASON, ImageType.POSTER);
+      var backdropImage = buildImage(season.getId(), ImageEntityType.SEASON, ImageType.BACKDROP);
       when(imageRepository.findByEntityTypeAndEntityIdIn(eq(ImageEntityType.SEASON), any()))
           .thenReturn(List.of(posterImage, backdropImage));
 
       List<String> imageTypes =
           dgsQueryExecutor.executeAndExtractJsonPath(
               String.format(
-                  "{ series(id: \"%s\") { seasons { images { imageType } } } }", seriesId),
+                  "{ series(id: \"%s\") { seasons { images { imageType } } } }", series.getId()),
               "data.series.seasons[0].images[*].imageType");
 
       assertThat(imageTypes).containsExactlyInAnyOrder("POSTER", "BACKDROP");
@@ -188,28 +167,18 @@ class ImageFieldResolverTest {
     @Test
     @DisplayName("Should load images when resolving episode images")
     void shouldLoadImagesWhenResolvingEpisodeImages() {
-      var seriesId = UUID.randomUUID();
-      var series = Series.builder().title("Breaking Bad").build();
-      series.setId(seriesId);
+      var series = buildSeries("Breaking Bad");
 
-      var seasonId = UUID.randomUUID();
-      var season = Season.builder().title("Season 1").seasonNumber(1).build();
-      season.setId(seasonId);
+      var season = buildSeason("Season 1", 1);
 
-      var episodeId = UUID.randomUUID();
-      var episode = Episode.builder().title("Pilot").episodeNumber(1).build();
-      episode.setId(episodeId);
+      var episode = buildEpisode("Pilot", 1);
 
-      when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
-      when(seriesService.findSeasons(seriesId)).thenReturn(List.of(season));
-      when(seriesService.findEpisodes(seasonId)).thenReturn(List.of(episode));
+      when(seriesService.findById(series.getId())).thenReturn(Optional.of(series));
+      when(seriesService.findSeasons(series.getId())).thenReturn(List.of(season));
+      when(seriesService.findEpisodes(season.getId())).thenReturn(List.of(episode));
 
-      var stillImage =
-          buildImage(
-              episodeId, ImageEntityType.EPISODE, ImageType.STILL, ImageSize.SMALL, 300, 169);
-      var backdropImage =
-          buildImage(
-              episodeId, ImageEntityType.EPISODE, ImageType.BACKDROP, ImageSize.SMALL, 300, 169);
+      var stillImage = buildImage(episode.getId(), ImageEntityType.EPISODE, ImageType.STILL);
+      var backdropImage = buildImage(episode.getId(), ImageEntityType.EPISODE, ImageType.BACKDROP);
       when(imageRepository.findByEntityTypeAndEntityIdIn(eq(ImageEntityType.EPISODE), any()))
           .thenReturn(List.of(stillImage, backdropImage));
 
@@ -217,7 +186,7 @@ class ImageFieldResolverTest {
           dgsQueryExecutor.executeAndExtractJsonPath(
               String.format(
                   "{ series(id: \"%s\") { seasons { episodes { images { imageType } } } } }",
-                  seriesId),
+                  series.getId()),
               "data.series.seasons[0].episodes[0].images[*].imageType");
 
       assertThat(imageTypes).containsExactlyInAnyOrder("STILL", "BACKDROP");
@@ -225,28 +194,20 @@ class ImageFieldResolverTest {
   }
 
   private Movie setupMovie() {
-    var movieId = UUID.randomUUID();
-    var movie = Movie.builder().title("Inception").build();
-    movie.setId(movieId);
-    when(movieService.findById(movieId)).thenReturn(Optional.of(movie));
+    var movie = buildMovie("Inception");
+    when(movieService.findById(movie.getId())).thenReturn(Optional.of(movie));
     return movie;
   }
 
-  private Image buildImage(
-      UUID entityId,
-      ImageEntityType entityType,
-      ImageType imageType,
-      ImageSize variant,
-      int width,
-      int height) {
+  private Image buildImage(UUID entityId, ImageEntityType entityType, ImageType imageType) {
     var image =
         Image.builder()
             .entityId(entityId)
             .entityType(entityType)
             .imageType(imageType)
-            .variant(variant)
-            .width(width)
-            .height(height)
+            .variant(ImageSize.SMALL)
+            .width(185)
+            .height(278)
             .path("test/path.jpg")
             .build();
     image.setId(UUID.randomUUID());

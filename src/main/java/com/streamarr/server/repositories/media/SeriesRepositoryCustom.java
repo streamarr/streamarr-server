@@ -17,5 +17,5 @@ public interface SeriesRepositoryCustom {
 
   List<Series> findFirstWithFilter(MediaPaginationOptions options);
 
-  Map<UUID, Instant> findLastWatchedBySeriesIds(Collection<UUID> seriesIds);
+  Map<UUID, Instant> findLastWatchedBySeriesIds(UUID userId, Collection<UUID> seriesIds);
 }

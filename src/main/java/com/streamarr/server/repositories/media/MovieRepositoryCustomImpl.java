@@ -8,7 +8,6 @@ import static org.jooq.impl.DSL.not;
 import static org.jooq.impl.DSL.select;
 
 import com.streamarr.server.domain.media.Movie;
-import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.jooq.generated.Tables;
 import com.streamarr.server.jooq.generated.enums.ExternalSourceType;
 import com.streamarr.server.repositories.JooqQueryHelper;
@@ -23,6 +22,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -182,18 +182,18 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
                 filter.getCastMemberIds()));
 
     condition = condition.and(JooqQueryHelper.unmatchedCondition(filter.getUnmatched()));
-    condition = condition.and(watchStatusCondition(filter.getWatchStatus()));
+    condition = condition.and(watchStatusCondition(filter));
 
     return condition;
   }
 
-  private Condition watchStatusCondition(WatchStatus watchStatus) {
+  private Condition watchStatusCondition(MediaFilter filter) {
+    var watchStatus = filter.getWatchStatus();
     if (watchStatus == null) {
       return noCondition();
     }
 
-    // TODO(#163): Replace with authenticated user ID from Spring Security
-    var userId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+    var userId = requireUserId(filter.getUserId());
 
     var isWatched =
         exists(
@@ -226,10 +226,8 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
     };
   }
 
-  private Field<?> lastWatchedField() {
-    // TODO(#163): Replace with authenticated user ID from Spring Security
-    var userId = UUID.fromString("00000000-0000-0000-0000-000000000001");
-
+  private Field<?> lastWatchedField(MediaFilter filter) {
+    var userId = requireUserId(filter.getUserId());
     return select(max(Tables.SESSION_PROGRESS.LAST_MODIFIED_ON))
         .from(Tables.SESSION_PROGRESS)
         .innerJoin(Tables.MEDIA_FILE)
@@ -243,14 +241,12 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
   }
 
   @Override
-  public Map<UUID, Instant> findLastWatchedByMovieIds(Collection<UUID> movieIds) {
+  public Map<UUID, Instant> findLastWatchedByMovieIds(UUID userId, Collection<UUID> movieIds) {
     if (movieIds == null || movieIds.isEmpty()) {
       return Map.of();
     }
 
-    // TODO(#163): Replace with authenticated user ID from Spring Security
-    var userId = UUID.fromString("00000000-0000-0000-0000-000000000001");
-
+    var resolvedUserId = requireUserId(userId);
     var maxField = max(Tables.SESSION_PROGRESS.LAST_MODIFIED_ON);
 
     return context
@@ -259,9 +255,16 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
         .innerJoin(Tables.MEDIA_FILE)
         .on(Tables.SESSION_PROGRESS.MEDIA_FILE_ID.eq(Tables.MEDIA_FILE.ID))
         .where(
-            Tables.MEDIA_FILE.MEDIA_ID.in(movieIds).and(Tables.SESSION_PROGRESS.USER_ID.eq(userId)))
+            Tables.MEDIA_FILE
+                .MEDIA_ID
+                .in(movieIds)
+                .and(Tables.SESSION_PROGRESS.USER_ID.eq(resolvedUserId)))
         .groupBy(Tables.MEDIA_FILE.MEDIA_ID)
         .fetchMap(Tables.MEDIA_FILE.MEDIA_ID, r -> toInstant(r.get(maxField)));
+  }
+
+  private static UUID requireUserId(UUID userId) {
+    return Objects.requireNonNull(userId, "userId is required for user-scoped watch queries");
   }
 
   private static Instant toInstant(OffsetDateTime value) {
@@ -274,7 +277,7 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
       case ADDED -> Tables.BASE_COLLECTABLE.CREATED_ON;
       case RELEASE_DATE -> Tables.MOVIE.RELEASE_DATE;
       case RUNTIME -> Tables.MOVIE.RUNTIME;
-      case LAST_WATCHED -> lastWatchedField();
+      case LAST_WATCHED -> lastWatchedField(filter);
     };
   }
 
@@ -286,7 +289,7 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
       case ADDED -> Tables.BASE_COLLECTABLE.CREATED_ON.sort(direction);
       case RELEASE_DATE -> Tables.MOVIE.RELEASE_DATE.sort(direction).nullsLast();
       case RUNTIME -> Tables.MOVIE.RUNTIME.sort(direction).nullsLast();
-      case LAST_WATCHED -> lastWatchedField().sort(direction).nullsLast();
+      case LAST_WATCHED -> lastWatchedField(filter).sort(direction).nullsLast();
     };
   }
 }

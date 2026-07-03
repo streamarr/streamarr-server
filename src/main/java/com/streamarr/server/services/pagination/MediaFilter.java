@@ -22,6 +22,7 @@ public class MediaFilter {
   @Builder.Default private final SortOrder sortDirection = SortOrder.ASC;
 
   private UUID libraryId;
+  private UUID userId;
   private AlphabetLetter startLetter;
 
   private List<UUID> genreIds;

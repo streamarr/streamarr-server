@@ -1,9 +1,11 @@
 package com.streamarr.server.graphql.dataloaders;
 
 import com.netflix.graphql.dgs.DgsDataLoader;
+import com.streamarr.server.domain.streaming.CollectableScope;
 import com.streamarr.server.services.watchprogress.WatchProgressDto;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -23,32 +25,33 @@ public class AggregateWatchProgressDataLoader
   @Override
   public CompletionStage<Map<WatchProgressLoaderKey, WatchProgressDto>> load(
       Set<WatchProgressLoaderKey> keys) {
-    return CompletableFuture.supplyAsync(
-        () -> {
-          // TODO(#163): Replace with authenticated user ID from Spring Security
-          var userId = UUID.fromString("00000000-0000-0000-0000-000000000001");
-
-          var result = new HashMap<WatchProgressLoaderKey, WatchProgressDto>();
-          var keysByType =
-              keys.stream().collect(Collectors.groupingBy(WatchProgressLoaderKey::entityType));
-
-          for (var entry : keysByType.entrySet()) {
-            var entityIds =
-                entry.getValue().stream().map(WatchProgressLoaderKey::entityId).toList();
-            var progressByEntityId = loadByType(userId, entry.getKey(), entityIds);
-
-            for (var key : entry.getValue()) {
-              result.put(key, progressByEntityId.get(key.entityId()));
-            }
-          }
-
-          return result;
-        });
+    return CompletableFuture.completedFuture(loadProgress(keys));
   }
 
-  private Map<UUID, WatchProgressDto> loadByType(
-      UUID userId, WatchStatusEntityType entityType, java.util.List<UUID> entityIds) {
-    return switch (entityType) {
+  private Map<WatchProgressLoaderKey, WatchProgressDto> loadProgress(
+      Set<WatchProgressLoaderKey> keys) {
+    var result = new HashMap<WatchProgressLoaderKey, WatchProgressDto>();
+    var keysByBatch =
+        keys.stream().collect(Collectors.groupingBy(key -> new Batch(key.userId(), key.scope())));
+
+    for (var entry : keysByBatch.entrySet()) {
+      var entityIds = entry.getValue().stream().map(WatchProgressLoaderKey::entityId).toList();
+      var progressByEntityId =
+          loadByScope(entry.getKey().userId(), entry.getKey().scope(), entityIds);
+
+      for (var key : entry.getValue()) {
+        result.put(key, progressByEntityId.get(key.entityId()));
+      }
+    }
+
+    return result;
+  }
+
+  private record Batch(UUID userId, CollectableScope scope) {}
+
+  private Map<UUID, WatchProgressDto> loadByScope(
+      UUID userId, CollectableScope scope, List<UUID> entityIds) {
+    return switch (scope) {
       case SEASON -> watchStatusService.getAggregateProgressForSeasons(userId, entityIds);
       case SERIES -> watchStatusService.getAggregateProgressForSeries(userId, entityIds);
       case DIRECT_MEDIA ->

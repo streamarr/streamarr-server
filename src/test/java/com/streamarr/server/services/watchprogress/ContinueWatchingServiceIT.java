@@ -69,9 +69,7 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
     dsl.deleteFrom(Tables.SESSION_PROGRESS)
         .where(Tables.SESSION_PROGRESS.USER_ID.eq(USER_ID))
         .execute();
-    dsl.deleteFrom(Tables.WATCH_HISTORY)
-        .where(Tables.WATCH_HISTORY.USER_ID.eq(USER_ID))
-        .execute();
+    dsl.deleteFrom(Tables.WATCH_HISTORY).where(Tables.WATCH_HISTORY.USER_ID.eq(USER_ID)).execute();
 
     movieLibrary = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     seriesLibrary = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
@@ -199,7 +197,7 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("Should return exactly the in-progress movie and episode when querying")
     void shouldReturnExactlyTheInProgressMovieAndEpisodeWhenQuerying() {
-      var results = continueWatchingService.getContinueWatching(20);
+      var results = continueWatchingService.getContinueWatching(USER_ID, 20);
 
       assertThat(results)
           .extracting(BaseCollectable::getId)
@@ -209,7 +207,7 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("Should not include the watched movie when querying")
     void shouldNotIncludeTheWatchedMovieWhenQuerying() {
-      var results = continueWatchingService.getContinueWatching(20);
+      var results = continueWatchingService.getContinueWatching(USER_ID, 20);
 
       assertThat(results).extracting(BaseCollectable::getId).doesNotContain(watchedMovie.getId());
     }
@@ -217,7 +215,7 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("Should not include the unwatched movie with no session progress when querying")
     void shouldNotIncludeTheUnwatchedMovieWithNoSessionProgressWhenQuerying() {
-      var results = continueWatchingService.getContinueWatching(20);
+      var results = continueWatchingService.getContinueWatching(USER_ID, 20);
 
       assertThat(results).extracting(BaseCollectable::getId).doesNotContain(unwatchedMovie.getId());
     }
@@ -225,7 +223,7 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("Should return empty list when called with limit zero")
     void shouldReturnEmptyListWhenCalledWithLimitZero() {
-      var results = continueWatchingService.getContinueWatching(0);
+      var results = continueWatchingService.getContinueWatching(USER_ID, 0);
 
       assertThat(results).isEmpty();
     }
@@ -233,7 +231,7 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("Should return only the most recent item when called with limit one")
     void shouldReturnOnlyTheMostRecentItemWhenCalledWithLimitOne() {
-      var results = continueWatchingService.getContinueWatching(1);
+      var results = continueWatchingService.getContinueWatching(USER_ID, 1);
 
       assertThat(results)
           .extracting(BaseCollectable::getId)
@@ -245,7 +243,7 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
         "Should order items by session progress last modified descending when querying"
             + " with pinned timestamps")
     void shouldOrderItemsBySessionProgressLastModifiedDescendingWhenQueryingWithPinnedTimestamps() {
-      var results = continueWatchingService.getContinueWatching(20);
+      var results = continueWatchingService.getContinueWatching(USER_ID, 20);
 
       // EPISODE_ACTIVITY_AT (Feb) > MOVIE_ACTIVITY_AT (Jan) — episode must come first.
       assertThat(results)

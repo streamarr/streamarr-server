@@ -1,8 +1,8 @@
 package com.streamarr.server.graphql.dataloaders;
 
+import static com.streamarr.server.fixtures.SessionProgressFixture.progressBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
@@ -12,6 +12,7 @@ import com.streamarr.server.fakes.FakeWatchHistoryRepository;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
 import java.util.Set;
 import java.util.UUID;
+import org.dataloader.DataLoaderFactory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -43,43 +44,58 @@ class SessionProgressDataLoaderTest {
   @Test
   @DisplayName("Should return progress for each media file ID when batch loading")
   void shouldReturnProgressForEachMediaFileIdWhenBatchLoading() throws Exception {
-    var mediaFileId1 = UUID.randomUUID();
-    var mediaFileId2 = UUID.randomUUID();
-    saveProgress(mediaFileId1, 300, 50.0, 600);
-    saveProgress(mediaFileId2, 600, 75.0, 800);
+    var key1 = new SessionProgressLoaderKey(USER_ID, UUID.randomUUID());
+    var key2 = new SessionProgressLoaderKey(USER_ID, UUID.randomUUID());
+    sessionProgressRepository.save(
+        progressBuilder(USER_ID, key1.mediaFileId())
+            .positionSeconds(300)
+            .percentComplete(50.0)
+            .durationSeconds(600)
+            .build());
+    sessionProgressRepository.save(
+        progressBuilder(USER_ID, key2.mediaFileId())
+            .positionSeconds(600)
+            .percentComplete(75.0)
+            .durationSeconds(800)
+            .build());
 
-    var result = dataLoader.load(Set.of(mediaFileId1, mediaFileId2)).toCompletableFuture().get();
+    var result = dataLoader.load(Set.of(key1, key2)).toCompletableFuture().get();
 
-    assertThat(result.get(mediaFileId1)).isNotNull();
-    assertThat(result.get(mediaFileId1).positionSeconds()).isEqualTo(300);
-    assertThat(result.get(mediaFileId1).percentComplete()).isEqualTo(50.0);
-    assertThat(result.get(mediaFileId1).durationSeconds()).isEqualTo(600);
-    assertThat(result.get(mediaFileId2)).isNotNull();
-    assertThat(result.get(mediaFileId2).positionSeconds()).isEqualTo(600);
-    assertThat(result.get(mediaFileId2).percentComplete()).isEqualTo(75.0);
-    assertThat(result.get(mediaFileId2).durationSeconds()).isEqualTo(800);
+    assertThat(result.get(key1)).isNotNull();
+    assertThat(result.get(key1).positionSeconds()).isEqualTo(300);
+    assertThat(result.get(key1).percentComplete()).isEqualTo(50.0);
+    assertThat(result.get(key1).durationSeconds()).isEqualTo(600);
+    assertThat(result.get(key2)).isNotNull();
+    assertThat(result.get(key2).positionSeconds()).isEqualTo(600);
+    assertThat(result.get(key2).percentComplete()).isEqualTo(75.0);
+    assertThat(result.get(key2).durationSeconds()).isEqualTo(800);
   }
 
   @Test
-  @DisplayName("Should return null when media file has no progress")
-  void shouldReturnNullWhenMediaFileHasNoProgress() throws Exception {
-    var unknownId = UUID.randomUUID();
+  @DisplayName("Should scope progress to each user when keys span multiple users")
+  void shouldScopeProgressToEachUserWhenKeysSpanMultipleUsers() throws Exception {
+    var mediaFileId = UUID.randomUUID();
+    sessionProgressRepository.save(
+        progressBuilder(USER_ID, mediaFileId).positionSeconds(300).build());
 
-    var result = dataLoader.load(Set.of(unknownId)).toCompletableFuture().get();
+    var mine = new SessionProgressLoaderKey(USER_ID, mediaFileId);
+    var theirs = new SessionProgressLoaderKey(UUID.randomUUID(), mediaFileId);
 
-    assertThat(result).containsKey(unknownId);
-    assertThat(result.get(unknownId)).isNull();
+    var result = dataLoader.load(Set.of(mine, theirs)).toCompletableFuture().get();
+
+    assertThat(result.get(mine)).isNotNull();
+    assertThat(result.get(mine).positionSeconds()).isEqualTo(300);
+    assertThat(result.get(theirs)).isNull();
   }
 
-  private void saveProgress(UUID mediaFileId, int position, double percent, int duration) {
-    sessionProgressRepository.save(
-        SessionProgress.builder()
-            .sessionId(UUID.randomUUID())
-            .userId(USER_ID)
-            .mediaFileId(mediaFileId)
-            .positionSeconds(position)
-            .percentComplete(percent)
-            .durationSeconds(duration)
-            .build());
+  @Test
+  @DisplayName("Should resolve null when media file has no progress")
+  void shouldResolveNullWhenMediaFileHasNoProgress() throws Exception {
+    var loader = DataLoaderFactory.newMappedDataLoader(dataLoader);
+
+    var future = loader.load(new SessionProgressLoaderKey(USER_ID, UUID.randomUUID()));
+    loader.dispatch();
+
+    assertThat(future.get()).isNull();
   }
 }

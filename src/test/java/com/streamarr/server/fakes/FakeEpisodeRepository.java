@@ -11,29 +11,24 @@ import java.util.stream.Collectors;
 
 public class FakeEpisodeRepository extends FakeJpaRepository<Episode> implements EpisodeRepository {
 
+  private static boolean inSeasons(Episode episode, Collection<UUID> seasonIds) {
+    return episode.getSeason() != null && seasonIds.contains(episode.getSeason().getId());
+  }
+
   @Override
   public List<Episode> findBySeasonId(UUID seasonId) {
-    return database.values().stream()
-        .filter(
-            episode -> episode.getSeason() != null && seasonId.equals(episode.getSeason().getId()))
-        .toList();
+    return findBySeasonIdIn(List.of(seasonId));
   }
 
   @Override
   public List<Episode> findBySeasonIdIn(Collection<UUID> seasonIds) {
-    return database.values().stream()
-        .filter(
-            episode ->
-                episode.getSeason() != null && seasonIds.contains(episode.getSeason().getId()))
-        .toList();
+    return database.values().stream().filter(episode -> inSeasons(episode, seasonIds)).toList();
   }
 
   @Override
   public Map<UUID, List<UUID>> findEpisodeIdsBySeasonIds(Collection<UUID> seasonIds) {
     return database.values().stream()
-        .filter(
-            episode ->
-                episode.getSeason() != null && seasonIds.contains(episode.getSeason().getId()))
+        .filter(episode -> inSeasons(episode, seasonIds))
         .collect(
             Collectors.groupingBy(
                 ep -> ep.getSeason().getId(),
@@ -45,8 +40,7 @@ public class FakeEpisodeRepository extends FakeJpaRepository<Episode> implements
     return database.values().stream()
         .filter(
             episode ->
-                episode.getSeason() != null
-                    && seasonId.equals(episode.getSeason().getId())
+                inSeasons(episode, List.of(seasonId))
                     && episode.getEpisodeNumber() == episodeNumber)
         .findFirst();
   }

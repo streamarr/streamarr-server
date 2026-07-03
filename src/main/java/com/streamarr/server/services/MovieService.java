@@ -218,7 +218,8 @@ public class MovieService {
     if (filter.getSortBy() != OrderMediaBy.LAST_WATCHED || movies.isEmpty()) {
       return Map.of();
     }
-    return movieRepository.findLastWatchedByMovieIds(movies.stream().map(Movie::getId).toList());
+    return movieRepository.findLastWatchedByMovieIds(
+        filter.getUserId(), movies.stream().map(Movie::getId).toList());
   }
 
   private Object getOrderByValue(

@@ -1,5 +1,10 @@
 package com.streamarr.server.graphql.resolvers;
 
+import static com.streamarr.server.fixtures.MediaEntityFixture.buildEpisode;
+import static com.streamarr.server.fixtures.MediaEntityFixture.buildMovie;
+import static com.streamarr.server.fixtures.MediaEntityFixture.buildSeason;
+import static com.streamarr.server.fixtures.MediaEntityFixture.buildSeries;
+import static com.streamarr.server.fixtures.SessionProgressFixture.progressBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
@@ -11,7 +16,6 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
-import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
@@ -141,10 +145,7 @@ class WatchProgressFieldResolverTest {
       when(movieService.findMediaFiles(movie.getId())).thenReturn(List.of(mediaFile));
 
       sessionProgressRepository.save(
-          SessionProgress.builder()
-              .sessionId(UUID.randomUUID())
-              .userId(USER_ID)
-              .mediaFileId(mediaFile.getId())
+          progressBuilder(USER_ID, mediaFile.getId())
               .positionSeconds(1800)
               .percentComplete(50.0)
               .durationSeconds(3600)
@@ -210,14 +211,7 @@ class WatchProgressFieldResolverTest {
       when(movieService.findMediaFiles(movie.getId())).thenReturn(List.of(mediaFile));
 
       sessionProgressRepository.save(
-          SessionProgress.builder()
-              .sessionId(UUID.randomUUID())
-              .userId(USER_ID)
-              .mediaFileId(mediaFile.getId())
-              .positionSeconds(300)
-              .percentComplete(25.0)
-              .durationSeconds(1200)
-              .build());
+          progressBuilder(USER_ID, mediaFile.getId()).positionSeconds(300).build());
 
       String status =
           dgsQueryExecutor.executeAndExtractJsonPath(
@@ -235,32 +229,14 @@ class WatchProgressFieldResolverTest {
     @Test
     @DisplayName("Should return watch progress when episode has media files")
     void shouldReturnWatchProgressWhenEpisodeHasMediaFiles() {
-      var seriesId = UUID.randomUUID();
-      var series = Series.builder().title("Test Series").build();
-      series.setId(seriesId);
-
-      var seasonId = UUID.randomUUID();
-      var season = Season.builder().title("Season 1").seasonNumber(1).build();
-      season.setId(seasonId);
-
-      var episodeId = UUID.randomUUID();
-      var episode = Episode.builder().title("Pilot").episodeNumber(1).build();
-      episode.setId(episodeId);
-
+      var graph = setupSeriesGraph();
       var mediaFile = buildMediaFile();
-      mediaFile.setMediaId(episodeId);
+      mediaFile.setMediaId(graph.episode().getId());
       mediaFileRepository.save(mediaFile);
-
-      when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
-      when(seriesService.findSeasons(seriesId)).thenReturn(List.of(season));
-      when(seriesService.findEpisodes(seasonId)).thenReturn(List.of(episode));
-      when(seriesService.findMediaFiles(episodeId)).thenReturn(List.of(mediaFile));
+      when(seriesService.findMediaFiles(graph.episode().getId())).thenReturn(List.of(mediaFile));
 
       sessionProgressRepository.save(
-          SessionProgress.builder()
-              .sessionId(UUID.randomUUID())
-              .userId(USER_ID)
-              .mediaFileId(mediaFile.getId())
+          progressBuilder(USER_ID, mediaFile.getId())
               .positionSeconds(600)
               .percentComplete(25.0)
               .durationSeconds(2400)
@@ -270,7 +246,7 @@ class WatchProgressFieldResolverTest {
           dgsQueryExecutor.executeAndGetDocumentContext(
               String.format(
                   "{ series(id: \"%s\") { seasons { episodes { watchProgress { positionSeconds percentComplete durationSeconds } } } } }",
-                  seriesId));
+                  graph.series().getId()));
 
       assertThat(
               context.<Integer>read(
@@ -289,40 +265,20 @@ class WatchProgressFieldResolverTest {
     @Test
     @DisplayName("Should return in progress when episode has active progress")
     void shouldReturnInProgressWhenEpisodeHasActiveProgress() {
-      var seriesId = UUID.randomUUID();
-      var series = Series.builder().title("Test Series").build();
-      series.setId(seriesId);
-
-      var seasonId = UUID.randomUUID();
-      var season = Season.builder().title("Season 1").seasonNumber(1).build();
-      season.setId(seasonId);
-
-      var episodeId = UUID.randomUUID();
-      var episode = Episode.builder().title("Pilot").episodeNumber(1).build();
-      episode.setId(episodeId);
-
-      when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
-      when(seriesService.findSeasons(seriesId)).thenReturn(List.of(season));
-      when(seriesService.findEpisodes(seasonId)).thenReturn(List.of(episode));
+      var graph = setupSeriesGraph();
 
       var mediaFile = buildMediaFile();
-      mediaFile.setMediaId(episodeId);
+      mediaFile.setMediaId(graph.episode().getId());
       mediaFileRepository.save(mediaFile);
 
       sessionProgressRepository.save(
-          SessionProgress.builder()
-              .sessionId(UUID.randomUUID())
-              .userId(USER_ID)
-              .mediaFileId(mediaFile.getId())
-              .positionSeconds(1200)
-              .percentComplete(50.0)
-              .durationSeconds(2400)
-              .build());
+          progressBuilder(USER_ID, mediaFile.getId()).positionSeconds(1200).build());
 
       String status =
           dgsQueryExecutor.executeAndExtractJsonPath(
               String.format(
-                  "{ series(id: \"%s\") { seasons { episodes { watchStatus } } } }", seriesId),
+                  "{ series(id: \"%s\") { seasons { episodes { watchStatus } } } }",
+                  graph.series().getId()),
               "data.series.seasons[0].episodes[0].watchStatus");
 
       assertThat(status).isEqualTo("IN_PROGRESS");
@@ -336,38 +292,22 @@ class WatchProgressFieldResolverTest {
     @Test
     @DisplayName("Should return in progress when season has partial progress")
     void shouldReturnInProgressWhenSeasonHasPartialProgress() {
-      var seriesId = UUID.randomUUID();
-      var series = Series.builder().title("Test Series").build();
-      series.setId(seriesId);
+      var graph = setupSeriesGraph();
 
-      var seasonId = UUID.randomUUID();
-      var season = Season.builder().title("Season 1").seasonNumber(1).build();
-      season.setId(seasonId);
-
-      when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
-      when(seriesService.findSeasons(seriesId)).thenReturn(List.of(season));
-
-      var episode = Episode.builder().episodeNumber(1).season(season).build();
-      episode.setId(UUID.randomUUID());
-      episodeRepository.save(episode);
+      var episode =
+          episodeRepository.save(Episode.builder().episodeNumber(1).season(graph.season()).build());
 
       var mediaFile = buildMediaFile();
       mediaFile.setMediaId(episode.getId());
       mediaFileRepository.save(mediaFile);
 
       sessionProgressRepository.save(
-          SessionProgress.builder()
-              .sessionId(UUID.randomUUID())
-              .userId(USER_ID)
-              .mediaFileId(mediaFile.getId())
-              .positionSeconds(300)
-              .percentComplete(25.0)
-              .durationSeconds(1200)
-              .build());
+          progressBuilder(USER_ID, mediaFile.getId()).positionSeconds(300).build());
 
       String status =
           dgsQueryExecutor.executeAndExtractJsonPath(
-              String.format("{ series(id: \"%s\") { seasons { watchStatus } } }", seriesId),
+              String.format(
+                  "{ series(id: \"%s\") { seasons { watchStatus } } }", graph.series().getId()),
               "data.series.seasons[0].watchStatus");
 
       assertThat(status).isEqualTo("IN_PROGRESS");
@@ -411,10 +351,7 @@ class WatchProgressFieldResolverTest {
 
       var olderProgress =
           sessionProgressRepository.save(
-              SessionProgress.builder()
-                  .sessionId(UUID.randomUUID())
-                  .userId(USER_ID)
-                  .mediaFileId(olderFile.getId())
+              progressBuilder(USER_ID, olderFile.getId())
                   .positionSeconds(300)
                   .percentComplete(10.0)
                   .durationSeconds(3000)
@@ -423,10 +360,7 @@ class WatchProgressFieldResolverTest {
 
       var newerProgress =
           sessionProgressRepository.save(
-              SessionProgress.builder()
-                  .sessionId(UUID.randomUUID())
-                  .userId(USER_ID)
-                  .mediaFileId(newerFile.getId())
+              progressBuilder(USER_ID, newerFile.getId())
                   .positionSeconds(900)
                   .percentComplete(75.0)
                   .durationSeconds(1200)
@@ -476,20 +410,30 @@ class WatchProgressFieldResolverTest {
   class SeriesWatchStatusTests {
 
     @Test
-    @DisplayName("Should return unwatched when series has no progress")
-    void shouldReturnUnwatchedWhenSeriesHasNoProgress() {
-      var seriesId = UUID.randomUUID();
-      var series = Series.builder().title("Test Series").build();
-      series.setId(seriesId);
+    @DisplayName("Should return in progress when series episode has active progress")
+    void shouldReturnInProgressWhenSeriesEpisodeHasActiveProgress() {
+      var series = buildSeries("Test Series");
+      when(seriesService.findById(series.getId())).thenReturn(Optional.of(series));
 
-      when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
+      var season = seasonRepository.save(Season.builder().seasonNumber(1).series(series).build());
+      var episode =
+          episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
 
+      var mediaFile = buildMediaFile();
+      mediaFile.setMediaId(episode.getId());
+      mediaFileRepository.save(mediaFile);
+
+      sessionProgressRepository.save(
+          progressBuilder(USER_ID, mediaFile.getId()).positionSeconds(300).build());
+
+      // IN_PROGRESS requires the resolver to wire SERIES scope; a misrouted scope
+      // would fall back to UNWATCHED
       String status =
           dgsQueryExecutor.executeAndExtractJsonPath(
-              String.format("{ series(id: \"%s\") { watchStatus } }", seriesId),
+              String.format("{ series(id: \"%s\") { watchStatus } }", series.getId()),
               "data.series.watchStatus");
 
-      assertThat(status).isEqualTo("UNWATCHED");
+      assertThat(status).isEqualTo("IN_PROGRESS");
     }
   }
 
@@ -533,10 +477,7 @@ class WatchProgressFieldResolverTest {
 
       var olderProgress =
           sessionProgressRepository.save(
-              SessionProgress.builder()
-                  .sessionId(UUID.randomUUID())
-                  .userId(USER_ID)
-                  .mediaFileId(olderFile.getId())
+              progressBuilder(USER_ID, olderFile.getId())
                   .positionSeconds(300)
                   .percentComplete(10.0)
                   .durationSeconds(3000)
@@ -545,10 +486,7 @@ class WatchProgressFieldResolverTest {
 
       var newerProgress =
           sessionProgressRepository.save(
-              SessionProgress.builder()
-                  .sessionId(UUID.randomUUID())
-                  .userId(USER_ID)
-                  .mediaFileId(newerFile.getId())
+              progressBuilder(USER_ID, newerFile.getId())
                   .positionSeconds(900)
                   .percentComplete(25.0)
                   .durationSeconds(3600)
@@ -643,12 +581,22 @@ class WatchProgressFieldResolverTest {
   }
 
   private Movie setupMovie() {
-    var movieId = UUID.randomUUID();
-    var movie = Movie.builder().title("Test Movie").build();
-    movie.setId(movieId);
-    when(movieService.findById(movieId)).thenReturn(Optional.of(movie));
+    var movie = buildMovie("Test Movie");
+    when(movieService.findById(movie.getId())).thenReturn(Optional.of(movie));
     return movie;
   }
+
+  private SeriesGraph setupSeriesGraph() {
+    var series = buildSeries("Test Series");
+    var season = buildSeason("Season 1", 1);
+    var episode = buildEpisode("Pilot", 1);
+    when(seriesService.findById(series.getId())).thenReturn(Optional.of(series));
+    when(seriesService.findSeasons(series.getId())).thenReturn(List.of(season));
+    when(seriesService.findEpisodes(season.getId())).thenReturn(List.of(episode));
+    return new SeriesGraph(series, season, episode);
+  }
+
+  private record SeriesGraph(Series series, Season season, Episode episode) {}
 
   private MediaFile buildMediaFile() {
     var mediaFile =

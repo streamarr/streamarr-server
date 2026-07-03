@@ -13,6 +13,7 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.exceptions.InvalidIdException;
 import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
+import com.streamarr.server.graphql.CurrentUser;
 import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.CursorValidator;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
@@ -103,7 +104,7 @@ public class LibraryResolver {
     int last = dfe.getArgumentOrDefault("last", 0);
     String before = dfe.getArgument("before");
 
-    var builder = MediaFilter.builder().libraryId(library.getId());
+    var builder = MediaFilter.builder().libraryId(library.getId()).userId(CurrentUser.id());
 
     applySortOptions(builder, sort);
 

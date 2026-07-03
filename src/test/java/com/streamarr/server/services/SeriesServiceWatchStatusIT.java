@@ -167,7 +167,11 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
     void
         shouldReturnOnlyFullyWatchedSeriesAndExcludePartiallyWatchedWhenFilteringByWatchedStatus() {
       var filter =
-          MediaFilter.builder().libraryId(library.getId()).watchStatus(WatchStatus.WATCHED).build();
+          MediaFilter.builder()
+              .libraryId(library.getId())
+              .userId(USER_ID)
+              .watchStatus(WatchStatus.WATCHED)
+              .build();
 
       var page = seriesService.getSeriesWithFilter(buildForwardOptions(20, filter));
 
@@ -184,6 +188,7 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
       var filter =
           MediaFilter.builder()
               .libraryId(library.getId())
+              .userId(USER_ID)
               .watchStatus(WatchStatus.IN_PROGRESS)
               .build();
 
@@ -200,6 +205,7 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
       var filter =
           MediaFilter.builder()
               .libraryId(library.getId())
+              .userId(USER_ID)
               .watchStatus(WatchStatus.UNWATCHED)
               .build();
 

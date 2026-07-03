@@ -22,10 +22,7 @@ public class ContinueWatchingService {
   private final EpisodeRepository episodeRepository;
 
   @Transactional(readOnly = true)
-  public List<BaseCollectable<?>> getContinueWatching(int limit) {
-    // TODO(#163): Replace with authenticated user ID from Spring Security
-    var userId = UUID.fromString("00000000-0000-0000-0000-000000000001");
-
+  public List<BaseCollectable<?>> getContinueWatching(UUID userId, int limit) {
     var collectableIds = continueWatchingRepository.findCollectableIds(userId, limit);
 
     if (collectableIds.isEmpty()) {

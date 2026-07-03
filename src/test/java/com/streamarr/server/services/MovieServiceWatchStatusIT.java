@@ -106,7 +106,11 @@ class MovieServiceWatchStatusIT extends AbstractIntegrationTest {
     @DisplayName("Should return only watched movies when filtering by WATCHED status")
     void shouldReturnOnlyWatchedMoviesWhenFilteringByWatchedStatus() {
       var filter =
-          MediaFilter.builder().libraryId(library.getId()).watchStatus(WatchStatus.WATCHED).build();
+          MediaFilter.builder()
+              .libraryId(library.getId())
+              .userId(USER_ID)
+              .watchStatus(WatchStatus.WATCHED)
+              .build();
 
       var page = movieService.getMoviesWithFilter(buildForwardOptions(20, filter));
 
@@ -121,6 +125,7 @@ class MovieServiceWatchStatusIT extends AbstractIntegrationTest {
       var filter =
           MediaFilter.builder()
               .libraryId(library.getId())
+              .userId(USER_ID)
               .watchStatus(WatchStatus.IN_PROGRESS)
               .build();
 
@@ -137,6 +142,7 @@ class MovieServiceWatchStatusIT extends AbstractIntegrationTest {
       var filter =
           MediaFilter.builder()
               .libraryId(library.getId())
+              .userId(USER_ID)
               .watchStatus(WatchStatus.UNWATCHED)
               .build();
 
@@ -168,6 +174,7 @@ class MovieServiceWatchStatusIT extends AbstractIntegrationTest {
       var filter =
           MediaFilter.builder()
               .libraryId(library.getId())
+              .userId(USER_ID)
               .sortBy(OrderMediaBy.LAST_WATCHED)
               .sortDirection(SortOrder.DESC)
               .build();
@@ -202,6 +209,7 @@ class MovieServiceWatchStatusIT extends AbstractIntegrationTest {
       var filter =
           MediaFilter.builder()
               .libraryId(paginationLibrary.getId())
+              .userId(USER_ID)
               .sortBy(OrderMediaBy.LAST_WATCHED)
               .sortDirection(SortOrder.DESC)
               .build();

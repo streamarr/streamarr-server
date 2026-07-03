@@ -8,7 +8,6 @@ import static org.jooq.impl.DSL.not;
 import static org.jooq.impl.DSL.select;
 
 import com.streamarr.server.domain.media.Series;
-import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.jooq.generated.Tables;
 import com.streamarr.server.jooq.generated.enums.ExternalSourceType;
 import com.streamarr.server.repositories.JooqQueryHelper;
@@ -23,6 +22,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -183,18 +183,18 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
                 filter.getCastMemberIds()));
 
     condition = condition.and(JooqQueryHelper.unmatchedCondition(filter.getUnmatched()));
-    condition = condition.and(watchStatusCondition(filter.getWatchStatus()));
+    condition = condition.and(watchStatusCondition(filter));
 
     return condition;
   }
 
-  private Condition watchStatusCondition(WatchStatus watchStatus) {
+  private Condition watchStatusCondition(MediaFilter filter) {
+    var watchStatus = filter.getWatchStatus();
     if (watchStatus == null) {
       return noCondition();
     }
 
-    // TODO(#163): Replace with authenticated user ID from Spring Security
-    var userId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+    var userId = requireUserId(filter.getUserId());
 
     var fullyWatched = seriesHasEpisodes().and(not(seriesHasUnwatchedEpisode(userId)));
     var hasAnyWatchActivity = anyEpisodeWatched(userId).or(anyEpisodeHasProgress(userId));
@@ -274,10 +274,8 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
                     .and(Tables.SESSION_PROGRESS.POSITION_SECONDS.greaterThan(0))));
   }
 
-  private Field<?> lastWatchedField() {
-    // TODO(#163): Replace with authenticated user ID from Spring Security
-    var userId = UUID.fromString("00000000-0000-0000-0000-000000000001");
-
+  private Field<?> lastWatchedField(MediaFilter filter) {
+    var userId = requireUserId(filter.getUserId());
     return select(max(Tables.SESSION_PROGRESS.LAST_MODIFIED_ON))
         .from(Tables.SESSION_PROGRESS)
         .innerJoin(Tables.MEDIA_FILE)
@@ -295,14 +293,12 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
   }
 
   @Override
-  public Map<UUID, Instant> findLastWatchedBySeriesIds(Collection<UUID> seriesIds) {
+  public Map<UUID, Instant> findLastWatchedBySeriesIds(UUID userId, Collection<UUID> seriesIds) {
     if (seriesIds == null || seriesIds.isEmpty()) {
       return Map.of();
     }
 
-    // TODO(#163): Replace with authenticated user ID from Spring Security
-    var userId = UUID.fromString("00000000-0000-0000-0000-000000000001");
-
+    var resolvedUserId = requireUserId(userId);
     var maxField = max(Tables.SESSION_PROGRESS.LAST_MODIFIED_ON);
 
     return context
@@ -315,9 +311,16 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
         .innerJoin(Tables.SEASON)
         .on(Tables.EPISODE.SEASON_ID.eq(Tables.SEASON.ID))
         .where(
-            Tables.SEASON.SERIES_ID.in(seriesIds).and(Tables.SESSION_PROGRESS.USER_ID.eq(userId)))
+            Tables.SEASON
+                .SERIES_ID
+                .in(seriesIds)
+                .and(Tables.SESSION_PROGRESS.USER_ID.eq(resolvedUserId)))
         .groupBy(Tables.SEASON.SERIES_ID)
         .fetchMap(Tables.SEASON.SERIES_ID, r -> toInstant(r.get(maxField)));
+  }
+
+  private static UUID requireUserId(UUID userId) {
+    return Objects.requireNonNull(userId, "userId is required for user-scoped watch queries");
   }
 
   private static Instant toInstant(OffsetDateTime value) {
@@ -330,7 +333,7 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
       case ADDED -> Tables.BASE_COLLECTABLE.CREATED_ON;
       case RELEASE_DATE -> Tables.SERIES.FIRST_AIR_DATE;
       case RUNTIME -> Tables.SERIES.RUNTIME;
-      case LAST_WATCHED -> lastWatchedField();
+      case LAST_WATCHED -> lastWatchedField(filter);
     };
   }
 
@@ -342,7 +345,7 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
       case ADDED -> Tables.BASE_COLLECTABLE.CREATED_ON.sort(direction);
       case RELEASE_DATE -> Tables.SERIES.FIRST_AIR_DATE.sort(direction).nullsLast();
       case RUNTIME -> Tables.SERIES.RUNTIME.sort(direction).nullsLast();
-      case LAST_WATCHED -> lastWatchedField().sort(direction).nullsLast();
+      case LAST_WATCHED -> lastWatchedField(filter).sort(direction).nullsLast();
     };
   }
 }

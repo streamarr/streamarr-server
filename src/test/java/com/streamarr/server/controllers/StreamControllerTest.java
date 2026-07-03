@@ -1,27 +1,22 @@
 package com.streamarr.server.controllers;
 
+import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
+import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
+import static com.streamarr.server.fixtures.StreamSessionFixture.defaultVariantBuilder;
+import static com.streamarr.server.fixtures.StreamSessionFixture.fullTranscodeDecision;
+import static com.streamarr.server.fixtures.StreamSessionFixture.withActiveVariantHandles;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.config.StreamingProperties;
-import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.ContainerFormat;
-import com.streamarr.server.domain.streaming.MediaProbe;
-import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
-import com.streamarr.server.domain.streaming.SubtitleDecision;
-import com.streamarr.server.domain.streaming.TranscodeDecision;
-import com.streamarr.server.domain.streaming.TranscodeHandle;
-import com.streamarr.server.domain.streaming.TranscodeMode;
-import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
 import com.streamarr.server.services.streaming.StreamingService;
-import java.nio.file.Path;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -197,162 +192,61 @@ class StreamControllerTest {
   }
 
   private StreamSession buildMpegtsSession() {
-    return StreamSession.builder()
-        .sessionId(SESSION_ID)
-        .mediaFileId(UUID.randomUUID())
-        .sourcePath(Path.of("/media/movie.mkv"))
-        .mediaProbe(
-            MediaProbe.builder()
-                .duration(Duration.ofMinutes(120))
-                .framerate(24.0)
-                .width(1920)
-                .height(1080)
-                .videoCodec("h264")
-                .audioCodec("aac")
-                .bitrate(5_000_000)
-                .build())
-        .transcodeDecision(
-            TranscodeDecision.builder()
-                .transcodeMode(TranscodeMode.REMUX)
-                .videoCodecFamily("h264")
-                .audioDecision(AudioDecision.copy("aac", 2, 0))
-                .subtitleDecision(SubtitleDecision.exclude())
-                .containerFormat(ContainerFormat.MPEGTS)
-                .needsKeyframeAlignment(true)
-                .build())
-        .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
-        .createdAt(Instant.now())
-        .build();
+    return defaultSessionBuilder().sessionId(SESSION_ID).build();
   }
 
   private StreamSession buildFmp4Session() {
-    return StreamSession.builder()
+    return defaultSessionBuilder()
         .sessionId(SESSION_ID)
-        .mediaFileId(UUID.randomUUID())
-        .sourcePath(Path.of("/media/movie.mkv"))
-        .mediaProbe(
-            MediaProbe.builder()
-                .duration(Duration.ofMinutes(120))
-                .framerate(24.0)
-                .width(1920)
-                .height(1080)
-                .videoCodec("hevc")
-                .audioCodec("aac")
-                .bitrate(5_000_000)
-                .build())
-        .transcodeDecision(
-            TranscodeDecision.builder()
-                .transcodeMode(TranscodeMode.FULL_TRANSCODE)
-                .videoCodecFamily("av1")
-                .audioDecision(AudioDecision.stereoAac())
-                .subtitleDecision(SubtitleDecision.exclude())
-                .containerFormat(ContainerFormat.FMP4)
-                .needsKeyframeAlignment(false)
-                .build())
+        .mediaProbe(defaultProbeBuilder().videoCodec("hevc").build())
+        .transcodeDecision(fullTranscodeDecision("av1", ContainerFormat.FMP4))
         .options(StreamingOptions.builder().supportedCodecs(List.of("av1")).build())
-        .createdAt(Instant.now())
         .build();
   }
 
   // --- Variant routing tests ---
 
   private StreamSession buildAbrFmp4Session() {
-    var variants =
-        List.of(
-            QualityVariant.builder()
-                .width(1920)
-                .height(1080)
-                .videoBitrate(5_000_000L)
-                .audioBitrate(128_000L)
-                .label("1080p")
-                .build());
-
     var session =
-        StreamSession.builder()
+        defaultSessionBuilder()
             .sessionId(SESSION_ID)
-            .mediaFileId(UUID.randomUUID())
-            .sourcePath(Path.of("/media/movie.mkv"))
-            .mediaProbe(
-                MediaProbe.builder()
-                    .duration(Duration.ofMinutes(120))
-                    .framerate(24.0)
-                    .width(1920)
-                    .height(1080)
-                    .videoCodec("hevc")
-                    .audioCodec("aac")
-                    .bitrate(8_000_000)
-                    .build())
-            .transcodeDecision(
-                TranscodeDecision.builder()
-                    .transcodeMode(TranscodeMode.FULL_TRANSCODE)
-                    .videoCodecFamily("av1")
-                    .audioDecision(AudioDecision.stereoAac())
-                    .subtitleDecision(SubtitleDecision.exclude())
-                    .containerFormat(ContainerFormat.FMP4)
-                    .needsKeyframeAlignment(false)
-                    .build())
+            .mediaProbe(defaultProbeBuilder().videoCodec("hevc").bitrate(8_000_000).build())
+            .transcodeDecision(fullTranscodeDecision("av1", ContainerFormat.FMP4))
             .options(StreamingOptions.builder().supportedCodecs(List.of("av1")).build())
-            .variants(variants)
-            .createdAt(Instant.now())
+            .variants(
+                List.of(
+                    defaultVariantBuilder()
+                        .width(1920)
+                        .height(1080)
+                        .videoBitrate(5_000_000L)
+                        .label("1080p")
+                        .build()))
             .build();
-
-    for (var variant : variants) {
-      session.setVariantHandle(variant.label(), new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
-    }
-    return session;
+    return withActiveVariantHandles(session);
   }
 
   private StreamSession buildAbrSession() {
-    var variants =
-        List.of(
-            QualityVariant.builder()
-                .width(1920)
-                .height(1080)
-                .videoBitrate(5_000_000L)
-                .audioBitrate(128_000L)
-                .label("1080p")
-                .build(),
-            QualityVariant.builder()
-                .width(1280)
-                .height(720)
-                .videoBitrate(3_000_000L)
-                .audioBitrate(128_000L)
-                .label("720p")
-                .build());
-
     var session =
-        StreamSession.builder()
+        defaultSessionBuilder()
             .sessionId(SESSION_ID)
-            .mediaFileId(UUID.randomUUID())
-            .sourcePath(Path.of("/media/movie.mkv"))
-            .mediaProbe(
-                MediaProbe.builder()
-                    .duration(Duration.ofMinutes(120))
-                    .framerate(24.0)
-                    .width(1920)
-                    .height(1080)
-                    .videoCodec("hevc")
-                    .audioCodec("aac")
-                    .bitrate(8_000_000)
-                    .build())
-            .transcodeDecision(
-                TranscodeDecision.builder()
-                    .transcodeMode(TranscodeMode.FULL_TRANSCODE)
-                    .videoCodecFamily("h264")
-                    .audioDecision(AudioDecision.stereoAac())
-                    .subtitleDecision(SubtitleDecision.exclude())
-                    .containerFormat(ContainerFormat.MPEGTS)
-                    .needsKeyframeAlignment(false)
-                    .build())
-            .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
-            .variants(variants)
-            .createdAt(Instant.now())
+            .mediaProbe(defaultProbeBuilder().videoCodec("hevc").bitrate(8_000_000).build())
+            .transcodeDecision(fullTranscodeDecision("h264", ContainerFormat.MPEGTS))
+            .variants(
+                List.of(
+                    defaultVariantBuilder()
+                        .width(1920)
+                        .height(1080)
+                        .videoBitrate(5_000_000L)
+                        .label("1080p")
+                        .build(),
+                    defaultVariantBuilder()
+                        .width(1280)
+                        .height(720)
+                        .videoBitrate(3_000_000L)
+                        .label("720p")
+                        .build()))
             .build();
-
-    for (var variant : variants) {
-      session.setVariantHandle(variant.label(), new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
-    }
-    return session;
+    return withActiveVariantHandles(session);
   }
 
   @Test

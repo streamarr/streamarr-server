@@ -17,5 +17,5 @@ public interface MovieRepositoryCustom {
 
   Optional<Movie> findByTmdbId(String tmdbId);
 
-  Map<UUID, Instant> findLastWatchedByMovieIds(Collection<UUID> movieIds);
+  Map<UUID, Instant> findLastWatchedByMovieIds(UUID userId, Collection<UUID> movieIds);
 }

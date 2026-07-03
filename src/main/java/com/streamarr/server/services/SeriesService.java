@@ -321,7 +321,7 @@ public class SeriesService {
       return Map.of();
     }
     return seriesRepository.findLastWatchedBySeriesIds(
-        seriesList.stream().map(Series::getId).toList());
+        filter.getUserId(), seriesList.stream().map(Series::getId).toList());
   }
 
   private Object getOrderByValue(
