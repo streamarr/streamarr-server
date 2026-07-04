@@ -4,7 +4,9 @@ type Season {
     seasonNumber: Int!
     overview: String
     airDate: String
+    series: Series!
     episodes: [Episode]!
     images(type: ImageType): [Image]!
+    watchProgress: WatchProgress
     watchStatus: WatchStatus!
 }

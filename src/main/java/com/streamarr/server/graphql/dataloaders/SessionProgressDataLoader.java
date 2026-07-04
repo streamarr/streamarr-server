@@ -1,8 +1,7 @@
 package com.streamarr.server.graphql.dataloaders;
 
 import com.netflix.graphql.dgs.DgsDataLoader;
-import com.streamarr.server.domain.streaming.SessionProgress;
-import com.streamarr.server.graphql.dto.WatchProgressDto;
+import com.streamarr.server.services.watchprogress.WatchProgressDto;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
 import java.util.HashMap;
 import java.util.Map;
@@ -29,8 +28,7 @@ public class SessionProgressDataLoader
   private Map<SessionProgressLoaderKey, WatchProgressDto> loadProgress(
       Set<SessionProgressLoaderKey> keys) {
     var result = new HashMap<SessionProgressLoaderKey, WatchProgressDto>();
-    var keysByUser =
-        keys.stream().collect(Collectors.groupingBy(SessionProgressLoaderKey::userId));
+    var keysByUser = keys.stream().collect(Collectors.groupingBy(SessionProgressLoaderKey::userId));
 
     for (var entry : keysByUser.entrySet()) {
       var mediaFileIds =
@@ -40,20 +38,11 @@ public class SessionProgressDataLoader
       for (var key : entry.getValue()) {
         var progress = progressMap.get(key.mediaFileId());
         if (progress != null) {
-          result.put(key, toDto(progress));
+          result.put(key, WatchProgressDto.from(progress));
         }
       }
     }
 
     return result;
-  }
-
-  private static WatchProgressDto toDto(SessionProgress wp) {
-    return WatchProgressDto.builder()
-        .positionSeconds(wp.getPositionSeconds())
-        .percentComplete(wp.getPercentComplete())
-        .durationSeconds(wp.getDurationSeconds())
-        .lastModifiedOn(wp.getLastModifiedOn())
-        .build();
   }
 }

@@ -5,6 +5,7 @@ type Episode {
     overview: String
     airDate: String
     runtime: Int
+    season: Season!
     files: [MediaFile]!
     images(type: ImageType): [Image]!
     watchProgress: WatchProgress

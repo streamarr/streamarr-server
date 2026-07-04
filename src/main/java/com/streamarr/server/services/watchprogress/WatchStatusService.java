@@ -13,9 +13,11 @@ import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
 import com.streamarr.server.services.watchprogress.events.WatchStatusChangedEvent;
 import java.time.Instant;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -177,6 +179,61 @@ public class WatchStatusService {
           deriveAggregateStatus(episodeIds, data.watchedIds(), mediaFileIds, data.progressMap()));
     }
     return result;
+  }
+
+  public Map<UUID, WatchProgressDto> getAggregateProgressForSeasons(
+      UUID userId, Collection<UUID> seasonIds) {
+    return aggregateProgressByGroup(userId, episodeRepository.findEpisodeIdsBySeasonIds(seasonIds));
+  }
+
+  public Map<UUID, WatchProgressDto> getAggregateProgressForSeries(
+      UUID userId, Collection<UUID> seriesIds) {
+    var seasonIdsBySeriesId = seasonRepository.findSeasonIdsBySeriesIds(seriesIds);
+    if (seasonIdsBySeriesId.isEmpty()) {
+      return Map.of();
+    }
+
+    var episodeIdsBySeasonId =
+        episodeRepository.findEpisodeIdsBySeasonIds(flatten(seasonIdsBySeriesId));
+    if (episodeIdsBySeasonId.isEmpty()) {
+      return Map.of();
+    }
+
+    var episodeIdsBySeriesId = new HashMap<UUID, List<UUID>>();
+    for (var entry : seasonIdsBySeriesId.entrySet()) {
+      episodeIdsBySeriesId.put(
+          entry.getKey(),
+          entry.getValue().stream()
+              .flatMap(seasonId -> episodeIdsBySeasonId.getOrDefault(seasonId, List.of()).stream())
+              .toList());
+    }
+    return aggregateProgressByGroup(userId, episodeIdsBySeriesId);
+  }
+
+  private Map<UUID, WatchProgressDto> aggregateProgressByGroup(
+      UUID userId, Map<UUID, List<UUID>> episodeIdsByGroup) {
+    if (episodeIdsByGroup.isEmpty()) {
+      return Map.of();
+    }
+
+    var data = fetchCollectableMediaData(userId, flatten(episodeIdsByGroup));
+
+    var result = new HashMap<UUID, WatchProgressDto>();
+    for (var entry : episodeIdsByGroup.entrySet()) {
+      var mediaFileIds = collectMediaFileIds(entry.getValue(), data);
+      result.put(entry.getKey(), pickLatestProgress(mediaFileIds, data.progressMap()));
+    }
+    return result;
+  }
+
+  private static WatchProgressDto pickLatestProgress(
+      List<UUID> mediaFileIds, Map<UUID, SessionProgress> progressMap) {
+    return mediaFileIds.stream()
+        .map(progressMap::get)
+        .filter(Objects::nonNull)
+        .max(Comparator.comparing(SessionProgress::getLastModifiedOn))
+        .map(WatchProgressDto::from)
+        .orElse(null);
   }
 
   private record CollectableMediaData(
