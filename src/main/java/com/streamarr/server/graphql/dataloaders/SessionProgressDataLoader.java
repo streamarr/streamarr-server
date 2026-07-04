@@ -1,49 +1,48 @@
 package com.streamarr.server.graphql.dataloaders;
 
 import com.netflix.graphql.dgs.DgsDataLoader;
-import com.streamarr.server.domain.streaming.SessionProgress;
-import com.streamarr.server.graphql.dto.WatchProgressDto;
+import com.streamarr.server.services.watchprogress.WatchProgressDto;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.dataloader.MappedBatchLoader;
 
 @DgsDataLoader(name = "watchProgress")
 @RequiredArgsConstructor
-public class SessionProgressDataLoader implements MappedBatchLoader<UUID, WatchProgressDto> {
+public class SessionProgressDataLoader
+    implements MappedBatchLoader<SessionProgressLoaderKey, WatchProgressDto> {
 
   private final WatchStatusService watchStatusService;
 
   @Override
-  public CompletionStage<Map<UUID, WatchProgressDto>> load(Set<UUID> mediaFileIds) {
-    return CompletableFuture.supplyAsync(
-        () -> {
-          // TODO(#163): Replace with authenticated user ID from Spring Security
-          var userId = UUID.fromString("00000000-0000-0000-0000-000000000001");
-
-          var progressMap = watchStatusService.getProgressForMediaFiles(userId, mediaFileIds);
-
-          var result = new HashMap<UUID, WatchProgressDto>();
-          for (var mediaFileId : mediaFileIds) {
-            var wp = progressMap.get(mediaFileId);
-            result.put(mediaFileId, wp != null ? toDto(wp) : null);
-          }
-
-          return result;
-        });
+  public CompletionStage<Map<SessionProgressLoaderKey, WatchProgressDto>> load(
+      Set<SessionProgressLoaderKey> keys) {
+    return CompletableFuture.completedFuture(loadProgress(keys));
   }
 
-  private static WatchProgressDto toDto(SessionProgress wp) {
-    return WatchProgressDto.builder()
-        .positionSeconds(wp.getPositionSeconds())
-        .percentComplete(wp.getPercentComplete())
-        .durationSeconds(wp.getDurationSeconds())
-        .lastModifiedOn(wp.getLastModifiedOn())
-        .build();
+  private Map<SessionProgressLoaderKey, WatchProgressDto> loadProgress(
+      Set<SessionProgressLoaderKey> keys) {
+    var result = new HashMap<SessionProgressLoaderKey, WatchProgressDto>();
+    var keysByUser = keys.stream().collect(Collectors.groupingBy(SessionProgressLoaderKey::userId));
+
+    for (var entry : keysByUser.entrySet()) {
+      var mediaFileIds =
+          entry.getValue().stream().map(SessionProgressLoaderKey::mediaFileId).toList();
+      var progressMap = watchStatusService.getProgressForMediaFiles(entry.getKey(), mediaFileIds);
+
+      for (var key : entry.getValue()) {
+        var progress = progressMap.get(key.mediaFileId());
+        if (progress != null) {
+          result.put(key, WatchProgressDto.from(progress));
+        }
+      }
+    }
+
+    return result;
   }
 }

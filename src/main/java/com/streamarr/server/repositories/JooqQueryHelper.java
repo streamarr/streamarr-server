@@ -14,6 +14,7 @@ import com.streamarr.server.jooq.generated.Tables;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.OrderMediaBy;
 import jakarta.persistence.EntityManager;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.Collection;
@@ -145,7 +146,9 @@ public class JooqQueryHelper {
   }
 
   public boolean isNullableSortField(OrderMediaBy sortBy) {
-    return sortBy == OrderMediaBy.RELEASE_DATE || sortBy == OrderMediaBy.RUNTIME;
+    return sortBy == OrderMediaBy.RELEASE_DATE
+        || sortBy == OrderMediaBy.RUNTIME
+        || sortBy == OrderMediaBy.LAST_WATCHED;
   }
 
   public Object coerceSortValue(MediaFilter filter) {
@@ -156,6 +159,7 @@ public class JooqQueryHelper {
     return switch (filter.getSortBy()) {
       case RELEASE_DATE -> value instanceof LocalDate d ? d : LocalDate.parse(value.toString());
       case RUNTIME -> value instanceof Integer i ? i : Integer.parseInt(value.toString());
+      case LAST_WATCHED -> value instanceof Instant i ? i : Instant.parse(value.toString());
       default -> value;
     };
   }

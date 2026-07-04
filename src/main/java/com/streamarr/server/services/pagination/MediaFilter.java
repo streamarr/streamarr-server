@@ -1,6 +1,7 @@
 package com.streamarr.server.services.pagination;
 
 import com.streamarr.server.domain.AlphabetLetter;
+import com.streamarr.server.domain.streaming.WatchStatus;
 import java.util.List;
 import java.util.UUID;
 import lombok.AllArgsConstructor;
@@ -21,6 +22,7 @@ public class MediaFilter {
   @Builder.Default private final SortOrder sortDirection = SortOrder.ASC;
 
   private UUID libraryId;
+  private UUID userId;
   private AlphabetLetter startLetter;
 
   private List<UUID> genreIds;
@@ -30,6 +32,7 @@ public class MediaFilter {
   private List<UUID> directorIds;
   private List<UUID> castMemberIds;
   private Boolean unmatched;
+  private WatchStatus watchStatus;
 
   private Object previousSortFieldValue;
 }

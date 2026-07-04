@@ -15,6 +15,7 @@ public final class MediaFilterComparator {
                 checkField(
                     "sortDirection", MediaFilter::getSortDirection, cursorFilter, currentFilter))
         .or(() -> checkField("libraryId", MediaFilter::getLibraryId, cursorFilter, currentFilter))
+        .or(() -> checkField("userId", MediaFilter::getUserId, cursorFilter, currentFilter))
         .or(
             () ->
                 checkField("startLetter", MediaFilter::getStartLetter, cursorFilter, currentFilter))
@@ -32,7 +33,11 @@ public final class MediaFilterComparator {
             () ->
                 checkField(
                     "castMemberIds", MediaFilter::getCastMemberIds, cursorFilter, currentFilter))
-        .or(() -> checkField("unmatched", MediaFilter::getUnmatched, cursorFilter, currentFilter));
+        .or(() -> checkField("unmatched", MediaFilter::getUnmatched, cursorFilter, currentFilter))
+        .or(
+            () ->
+                checkField(
+                    "watchStatus", MediaFilter::getWatchStatus, cursorFilter, currentFilter));
   }
 
   private static Optional<String> checkField(

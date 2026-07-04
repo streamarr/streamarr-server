@@ -23,7 +23,12 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 @Tag("UnitTest")
 @EnableDgsTest
 @SpringBootTest(
-    classes = {SeasonFieldResolver.class, SeriesFieldResolver.class, SeriesResolver.class})
+    classes = {
+      SeasonFieldResolver.class,
+      EpisodeFieldResolver.class,
+      SeriesFieldResolver.class,
+      SeriesResolver.class
+    })
 @DisplayName("Season Field Resolver Tests")
 class SeasonFieldResolverTest {
 

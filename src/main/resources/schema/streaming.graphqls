@@ -49,3 +49,5 @@ type WatchProgress {
     percentComplete: Float!
     durationSeconds: Int!
 }
+
+union ContinueWatchingMedia = Movie | Episode

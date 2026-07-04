@@ -43,6 +43,7 @@ enum OrderMediaBy {
     ADDED
     RELEASE_DATE
     RUNTIME
+    LAST_WATCHED
 }
 
 enum SortDirection {
@@ -64,6 +65,7 @@ input MediaFilter {
     directorIds: [ID!]
     castMemberIds: [ID!]
     unmatched: Boolean
+    watchStatus: WatchStatus
 }
 
 enum AlphabetLetter {

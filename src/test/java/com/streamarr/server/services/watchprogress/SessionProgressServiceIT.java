@@ -1,5 +1,6 @@
 package com.streamarr.server.services.watchprogress;
 
+import static com.streamarr.server.fixtures.SessionProgressFixture.progressBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
@@ -7,7 +8,6 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
-import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
@@ -34,7 +34,6 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
   @Autowired private SessionProgressRepository sessionProgressRepository;
   @Autowired private MovieRepository movieRepository;
   @Autowired private LibraryRepository libraryRepository;
-  @Autowired private SessionProgressService sessionProgressService;
   @Autowired private WatchStatusService watchStatusService;
   @Autowired private EntityManager entityManager;
   @Autowired private AuditorAware<UUID> auditorAware;
@@ -71,6 +70,14 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
     return new MovieWithFile(movie, mediaFileId);
   }
 
+  private SaveWatchProgress.SaveWatchProgressBuilder upsertBuilder(
+      UUID sessionId, UUID mediaFileId) {
+    return SaveWatchProgress.builder()
+        .sessionId(sessionId)
+        .userId(USER_ID)
+        .mediaFileId(mediaFileId);
+  }
+
   @Test
   @Transactional
   @DisplayName("Should persist and retrieve watch progress when saved")
@@ -80,10 +87,8 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
 
     var saved =
         sessionProgressRepository.save(
-            SessionProgress.builder()
+            progressBuilder(USER_ID, fixture.mediaFileId())
                 .sessionId(sessionId)
-                .userId(USER_ID)
-                .mediaFileId(fixture.mediaFileId())
                 .positionSeconds(3600)
                 .percentComplete(50.0)
                 .durationSeconds(7200)
@@ -109,10 +114,7 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
     var fixture = createMovieWithFile();
 
     sessionProgressRepository.saveAndFlush(
-        SessionProgress.builder()
-            .sessionId(UUID.randomUUID())
-            .userId(USER_ID)
-            .mediaFileId(fixture.mediaFileId())
+        progressBuilder(USER_ID, fixture.mediaFileId())
             .positionSeconds(300)
             .percentComplete(10.0)
             .durationSeconds(3000)
@@ -121,10 +123,7 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
     entityManager.clear();
 
     sessionProgressRepository.saveAndFlush(
-        SessionProgress.builder()
-            .sessionId(UUID.randomUUID())
-            .userId(USER_ID)
-            .mediaFileId(fixture.mediaFileId())
+        progressBuilder(USER_ID, fixture.mediaFileId())
             .positionSeconds(600)
             .percentComplete(20.0)
             .durationSeconds(3000)
@@ -146,10 +145,7 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
     var fixture = createMovieWithFile();
 
     sessionProgressRepository.saveAndFlush(
-        SessionProgress.builder()
-            .sessionId(UUID.randomUUID())
-            .userId(USER_ID)
-            .mediaFileId(fixture.mediaFileId())
+        progressBuilder(USER_ID, fixture.mediaFileId())
             .positionSeconds(1800)
             .percentComplete(50.0)
             .durationSeconds(3600)
@@ -177,10 +173,7 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
     var fixture = createMovieWithFile();
 
     sessionProgressRepository.saveAndFlush(
-        SessionProgress.builder()
-            .sessionId(UUID.randomUUID())
-            .userId(USER_ID)
-            .mediaFileId(fixture.mediaFileId())
+        progressBuilder(USER_ID, fixture.mediaFileId())
             .positionSeconds(2400)
             .percentComplete(66.7)
             .durationSeconds(3600)
@@ -212,10 +205,7 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
       var sessionId = UUID.randomUUID();
 
       sessionProgressRepository.upsertProgress(
-          SaveWatchProgress.builder()
-              .sessionId(sessionId)
-              .userId(USER_ID)
-              .mediaFileId(fixture.mediaFileId())
+          upsertBuilder(sessionId, fixture.mediaFileId())
               .positionSeconds(300)
               .percentComplete(25.0)
               .durationSeconds(1200)
@@ -237,10 +227,7 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
       var sessionId = UUID.randomUUID();
 
       sessionProgressRepository.upsertProgress(
-          SaveWatchProgress.builder()
-              .sessionId(sessionId)
-              .userId(USER_ID)
-              .mediaFileId(fixture.mediaFileId())
+          upsertBuilder(sessionId, fixture.mediaFileId())
               .positionSeconds(300)
               .percentComplete(25.0)
               .durationSeconds(1200)
@@ -249,10 +236,7 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
       entityManager.clear();
 
       sessionProgressRepository.upsertProgress(
-          SaveWatchProgress.builder()
-              .sessionId(sessionId)
-              .userId(USER_ID)
-              .mediaFileId(fixture.mediaFileId())
+          upsertBuilder(sessionId, fixture.mediaFileId())
               .positionSeconds(600)
               .percentComplete(50.0)
               .durationSeconds(1200)
@@ -273,10 +257,7 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
       var sessionId = UUID.randomUUID();
 
       sessionProgressRepository.upsertProgress(
-          SaveWatchProgress.builder()
-              .sessionId(sessionId)
-              .userId(USER_ID)
-              .mediaFileId(fixture.mediaFileId())
+          upsertBuilder(sessionId, fixture.mediaFileId())
               .positionSeconds(300)
               .percentComplete(25.0)
               .durationSeconds(1200)
@@ -299,10 +280,7 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
       var sessionId = UUID.randomUUID();
 
       sessionProgressRepository.upsertProgress(
-          SaveWatchProgress.builder()
-              .sessionId(sessionId)
-              .userId(USER_ID)
-              .mediaFileId(fixture.mediaFileId())
+          upsertBuilder(sessionId, fixture.mediaFileId())
               .positionSeconds(300)
               .percentComplete(25.0)
               .durationSeconds(1200)
@@ -311,10 +289,7 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
       entityManager.clear();
 
       sessionProgressRepository.upsertProgress(
-          SaveWatchProgress.builder()
-              .sessionId(sessionId)
-              .userId(USER_ID)
-              .mediaFileId(fixture.mediaFileId())
+          upsertBuilder(sessionId, fixture.mediaFileId())
               .positionSeconds(600)
               .percentComplete(50.0)
               .durationSeconds(1200)
@@ -342,10 +317,8 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
       var sessionId = UUID.randomUUID();
 
       sessionProgressRepository.saveAndFlush(
-          SessionProgress.builder()
+          progressBuilder(USER_ID, fixture.mediaFileId())
               .sessionId(sessionId)
-              .userId(USER_ID)
-              .mediaFileId(fixture.mediaFileId())
               .positionSeconds(100)
               .percentComplete(5.0)
               .durationSeconds(2000)

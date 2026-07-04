@@ -17,6 +17,7 @@ import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.domain.streaming.WatchStatus;
 import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
 import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.CursorValidator;
@@ -32,6 +33,7 @@ import com.streamarr.server.services.pagination.PaginationService;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 import org.jooq.SortOrder;
 import org.junit.jupiter.api.DisplayName;
@@ -396,6 +398,50 @@ class LibraryResolverTest {
               "data.library.items.edges[0].node.title");
 
       assertThat(title).isEqualTo("Filtered Movie");
+    }
+
+    @Test
+    @DisplayName(
+        "Should forward watchStatus filter to movie service when watchStatus provided in"
+            + " GraphQL filter input")
+    void shouldForwardWatchStatusFilterToMovieServiceWhenWatchStatusProvidedInGraphqlFilterInput() {
+      var libraryId = UUID.randomUUID();
+      var library = buildMovieLibrary(libraryId);
+
+      var movie = Movie.builder().title("In Progress Movie").titleSort("In Progress Movie").build();
+      movie.setId(UUID.randomUUID());
+
+      var page = new MediaPage<>(List.of(new PageItem<>(movie, "In Progress Movie")), false, false);
+      var capturedOptions = new AtomicReference<MediaPaginationOptions>();
+
+      when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
+      when(movieService.getMoviesWithFilter(any(MediaPaginationOptions.class)))
+          .thenAnswer(
+              invocation -> {
+                capturedOptions.set(invocation.getArgument(0));
+                return page;
+              });
+
+      String title =
+          dgsQueryExecutor.executeAndExtractJsonPath(
+              String.format(
+                  """
+                  { library(id: "%s") { items(first: 10, filter: {watchStatus: IN_PROGRESS}) { edges { node { ... on Movie { title } } } } } }
+                  """,
+                  libraryId),
+              "data.library.items.edges[0].node.title");
+
+      assertThat(title).isEqualTo("In Progress Movie");
+      assertThat(capturedOptions.get())
+          .as(
+              "MovieService must receive the MediaPaginationOptions produced from the GraphQL input")
+          .isNotNull();
+      assertThat(capturedOptions.get().getMediaFilter().getWatchStatus())
+          .as("watchStatus must be forwarded from GraphQL filter to MediaFilter")
+          .isEqualTo(WatchStatus.IN_PROGRESS);
+      assertThat(capturedOptions.get().getMediaFilter().getLibraryId())
+          .as("libraryId must be forwarded from parent library to MediaFilter")
+          .isEqualTo(libraryId);
     }
 
     @Test

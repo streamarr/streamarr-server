@@ -11,30 +11,28 @@ import java.util.stream.Collectors;
 
 public class FakeSeasonRepository extends FakeJpaRepository<Season> implements SeasonRepository {
 
+  private static boolean inSeries(Season season, Collection<UUID> seriesIds) {
+    return season.getSeries() != null && seriesIds.contains(season.getSeries().getId());
+  }
+
   @Override
   public Optional<Season> findBySeriesIdAndSeasonNumber(UUID seriesId, int seasonNumber) {
     return database.values().stream()
         .filter(
             season ->
-                season.getSeries() != null
-                    && seriesId.equals(season.getSeries().getId())
-                    && season.getSeasonNumber() == seasonNumber)
+                inSeries(season, List.of(seriesId)) && season.getSeasonNumber() == seasonNumber)
         .findFirst();
   }
 
   @Override
   public List<Season> findBySeriesIdIn(Collection<UUID> seriesIds) {
-    return database.values().stream()
-        .filter(
-            season -> season.getSeries() != null && seriesIds.contains(season.getSeries().getId()))
-        .toList();
+    return database.values().stream().filter(season -> inSeries(season, seriesIds)).toList();
   }
 
   @Override
   public Map<UUID, List<UUID>> findSeasonIdsBySeriesIds(Collection<UUID> seriesIds) {
     return database.values().stream()
-        .filter(
-            season -> season.getSeries() != null && seriesIds.contains(season.getSeries().getId()))
+        .filter(season -> inSeries(season, seriesIds))
         .collect(
             Collectors.groupingBy(
                 s -> s.getSeries().getId(),
@@ -43,8 +41,6 @@ public class FakeSeasonRepository extends FakeJpaRepository<Season> implements S
 
   @Override
   public List<Season> findBySeriesId(UUID seriesId) {
-    return database.values().stream()
-        .filter(season -> season.getSeries() != null && seriesId.equals(season.getSeries().getId()))
-        .toList();
+    return findBySeriesIdIn(List.of(seriesId));
   }
 }

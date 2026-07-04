@@ -65,11 +65,7 @@ public class SessionProgressRepositoryCustomImpl implements SessionProgressRepos
     List<SessionProgress> results =
         JooqQueryHelper.nativeQuery(entityManager, query, SessionProgress.class);
 
-    if (results.isEmpty()) {
-      return Optional.empty();
-    }
-
-    return Optional.of(results.getFirst());
+    return results.stream().findFirst();
   }
 
   @Override

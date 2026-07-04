@@ -66,15 +66,8 @@ public final class StreamSessionFixture {
         .build();
   }
 
-  public static QualityVariant qualityVariant(
-      int width, int height, long videoBitrate, String label) {
-    return QualityVariant.builder()
-        .width(width)
-        .height(height)
-        .videoBitrate(videoBitrate)
-        .audioBitrate(128_000L)
-        .label(label)
-        .build();
+  public static QualityVariant.QualityVariantBuilder defaultVariantBuilder() {
+    return QualityVariant.builder().audioBitrate(128_000L);
   }
 
   public static StreamSession withActiveVariantHandles(StreamSession session) {
