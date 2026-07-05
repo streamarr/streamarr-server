@@ -266,6 +266,11 @@ public class SeriesService {
   }
 
   @Transactional(readOnly = true)
+  public Optional<Season> findSeasonById(UUID seasonId) {
+    return seasonRepository.findById(seasonId);
+  }
+
+  @Transactional(readOnly = true)
   public Optional<Episode> findEpisodeById(UUID episodeId) {
     return episodeRepository.findById(episodeId);
   }
