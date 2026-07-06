@@ -1,4 +1,4 @@
-= ADR 0015: Authentication, Profiles, and Content Controls
+= ADR 0015: Authorization, Profiles, and Content Controls
 
 == Status
 
@@ -8,7 +8,8 @@ Proposed
 
 Streamarr is a private, invite-only media server.
 It will usually be run for one household, but the identity model must support multiple invited households without exposing one household's profiles, watch activity, or content-control policy to another.
-Authentication is required before any multi-user, remote-access, or privacy-first playback workflow can be safe.
+Authentication is required before any multi-user, remote-access, or privacy-first playback workflow can be safe, but this ADR focuses on the authorization, profile, household, and content-visibility model.
+Authentication mechanisms and session security are decided separately in link:0016-authentication-mechanisms-and-session-security.adoc[ADR 0016].
 
 Issue https://github.com/streamarr/streamarr-server/issues/41[#41] defines the broad authentication and user-management need.
 Issue https://github.com/streamarr/streamarr-server/issues/163[#163] tracks replacing the placeholder user id with an authenticated identity.
@@ -23,7 +24,7 @@ Community feedback around Plex and Jellyfin shows that the recurring failure mod
 
 == Decision
 
-Model authentication and authorization around two identities and one household boundary:
+Model account/profile authorization around two identities and one household boundary:
 
 * `UserAccount`: login and security principal
 * `Profile`: viewing identity
@@ -38,10 +39,12 @@ Setup endpoints are valid only while zero users exist.
 After setup, those endpoints are no longer anonymously usable.
 
 Accounts may belong to multiple households.
-Profiles belong to a household and may be selectable by one or more accounts through explicit membership.
-Household membership carries household-local relationship data such as owner, manager, parent, or member without creating new global account roles.
+Each request acts in one active household context.
+Profiles belong to exactly one household and may be selectable by one or more accounts through explicit profile membership.
+Household membership carries household-local relationship data without creating new global account roles: `owner` administers the household, `manager` can manage household settings and profiles, `parent` can manage child/restricted profile policy and activity, and `member` can use profiles granted to the account.
 Household boundaries isolate profiles, activity, and policy by default.
-Cross-household profile access must be explicit.
+No cross-household profile, content, activity, or administration grants are supported in v1.
+An account that belongs to multiple households can switch active household context, but acting in household X exposes only household X's profiles, activity, and policy.
 
 Use `ADMIN` and `USER` account roles initially.
 Do not model children as a role.
@@ -49,53 +52,10 @@ Kid, teen, and adult viewing behavior is expressed through profile content polic
 Admin profiles are unrestricted.
 Roles should be modeled as first-class values rather than booleans, and all role/permission checks should flow through the authorization facade so future roles, groups, permission templates, or delegated-admin tiers do not require scattered `isAdmin` checks.
 
-Use Spring Security for authentication and authorization.
-Store local passwords with a custom `DelegatingPasswordEncoder` whose encode id is Argon2id.
-Do not rely on Spring Security's default delegating encoder if its encode id is bcrypt.
-Store the full encoded password string, including algorithm id, parameters, salt, and hash, in the account password column.
-Do not store salts in a separate application-managed column.
-
-The initial Argon2id parameters are:
-
-* salt length: 16 bytes
-* hash length: 32 bytes
-* parallelism: 1
-* memory: 19456 KiB
-* iterations: 2
-
-These parameters follow the OWASP Argon2id minimum and should be benchmarked on target hardware.
-Password verification should be expensive enough to resist offline guessing while remaining practical for login and setup flows.
-Old password hashes should be rehashed on successful login when `PasswordEncoder.upgradeEncoding` indicates that stronger parameters are available.
-
-Use long-lived, revocable refresh tokens for account/device sessions.
-Use short-lived access tokens scoped to both account and active profile.
-Refresh tokens authenticate the device session.
-Access tokens authorize normal GraphQL and streaming requests.
-Access tokens carry enough account/profile/session/version identity for the server to validate that the session, account membership, active profile, and profile policy version remain valid.
-Restriction, membership, password, and session changes use the planned invalidation pipeline; short token TTLs are a backstop, not the primary safety mechanism.
-
-Limited-input clients, such as Apple TV, Android TV, Nvidia Shield, and smart TV apps, use device pairing rather than entering credentials directly.
-A TV client requests a short-lived, single-use device/user code and displays it to the viewer.
-The code is only a correlation handle for a pending device authorization request; it is not authentication by itself.
-An already-authenticated browser or mobile session approves the device.
-If the approving account is subject to MFA, that MFA requirement must be satisfied before the server approves the device and issues a refresh token to the TV.
-
-Browser, iOS, Android, and other capable clients authenticate directly.
-They may use local password auth, future OAuth, and MFA according to the account's effective authentication policy.
-All clients receive tokens only after their required factors are satisfied.
-
-Support admin-managed authentication policy.
-Admins can set minimum MFA requirements for all accounts, admin accounts, specific accounts, or future sensitive actions.
-Users may opt into stronger MFA than required, but cannot weaken requirements below the admin policy.
-The effective MFA requirement is the strongest requirement from server policy, account policy, and action policy.
-The first policy modes are `OFF`, `ADMIN_ONLY`, and `ALL_USERS`.
-Action-specific MFA is deferred but the model should allow it.
-
-MFA factors should include WebAuthn/FIDO2 as a second factor, not as passwordless passkey login in the initial implementation.
-When WebAuthn is required, authentication must include both password and WebAuthn factors.
-TOTP authenticator-app support is a planned fallback factor.
-Recovery codes are required once MFA exists so users and admins have a safe account recovery path.
-Email or magic-link one-time tokens may support recovery or device-pairing UX, but are not the primary MFA factor.
+Authenticated requests carry account, active profile, session, and policy-version identity as defined in link:0016-authentication-mechanisms-and-session-security.adoc[ADR 0016].
+Access tokens authorize normal GraphQL and streaming requests only for the account/profile context they identify.
+Access-token validation must be able to determine that the session, account membership, active profile, and profile policy version remain valid.
+Profile restriction and membership changes use the version-counter invalidation mechanism defined in link:0016-authentication-mechanisms-and-session-security.adoc[ADR 0016]; short token TTLs are a backstop, not the primary safety mechanism.
 
 Profile selection is server-mediated.
 Selecting a profile returns a fresh profile-scoped access token.
@@ -107,10 +67,12 @@ The server must never trust a client-supplied `profileId`, OS-user mapping, loca
 Switching into any PIN-protected profile requires server-verified PIN.
 All profiles may be PIN-protected, and admin/adult profiles must be PIN-protected once restricted profiles exist.
 PIN verification issues a fresh access token for the selected profile.
-Changing a password invalidates all tokens.
 Changing profile restrictions invalidates existing access tokens for that profile via profile token versioning.
 
 Store household and profile membership separately from accounts, e.g. `household_memberships` and `account_profiles`.
+`household_memberships` links accounts to households.
+`profiles` carry a household foreign key.
+`account_profiles` links accounts to profiles only when the account is a member of that profile's household; cross-household profile links require a future explicit grant model.
 This allows a parent account to access child profiles and later allows an older child to receive their own account linked to the same profile.
 
 Activity visibility follows owner-sees-all semantics within explicit scopes.
@@ -136,15 +98,17 @@ The server owns enforcement.
 The local network is not an authorization bypass.
 
 Content visibility is profile-scoped and expressed as one central fail-closed policy.
-That policy exposes equivalent portable query constraints and point checks from the same definition.
+That policy exposes a typed domain object and equivalent point checks from the same definition.
 No resolver, controller, repository, search adapter, or streaming endpoint may filter restricted content ad hoc.
 Hidden media behaves as absent, not forbidden: restricted content is omitted from browse, search, continue watching, up next, recently added, person, genre, artwork, collection, recommendation, and future REST/GraphQL list surfaces, and direct lookup/playback failures must not reveal whether hidden media exists.
 This fail-closed visibility builder has different empty-input semantics than optional user filters: an empty or misconfigured restricted profile policy denies, while only an explicit unrestricted/admin branch yields no visibility restriction.
 
-The authorization layer returns portable visibility constraints, not SQL, jOOQ, search-engine DSL, or adapter-specific filters.
-Each query adapter translates those constraints into its native query/filter mechanism and enforces them before ranking, pagination, counts, facets, suggestions, autocomplete, recommendations, or results are produced.
-Postgres/jOOQ is the initial catalog query adapter.
-Future search adapters must enforce the same visibility constraints natively and fail closed for restricted profiles if they cannot represent the complete scope.
+The `AuthorizationService` facade returns the profile's visibility policy as a typed domain object, modeled like the existing media-filter concepts but with fail-closed security semantics.
+The authorization layer does not return SQL, jOOQ, search-engine DSL, or adapter-specific filters.
+The Postgres/jOOQ repository adapter is the initial translator from the visibility policy to a fail-closed `WHERE` condition.
+Point checks evaluate the same visibility policy in memory.
+Future search adapters must translate the same typed visibility policy into their engine-native filters and enforce it before ranking, pagination, counts, facets, suggestions, autocomplete, recommendations, or results are produced.
+Any adapter that cannot represent the complete visibility policy must fail closed for restricted profiles.
 
 Stream, manifest, and playback URL issuance is profile-bound and re-evaluates the same content visibility policy.
 Active stream and transcode sessions participate in session invalidation so policy changes, membership changes, future curfews, future quotas, and future stream limits can terminate or deny playback server-side.
@@ -156,6 +120,15 @@ Each household has a default rating region, and Streamarr uses a deterministic b
 Rating-to-age mappings are code, not a live-editable admin table in v1.
 Missing mappings and unrated or unknown content are intentionally conservative and blocked for restricted profiles by default.
 Manual per-item or per-library rating overrides are reserved for future work.
+
+The rating resolver uses deterministic precedence for a `(profile, title)`:
+
+* First, use a certification in the household's default region if present and mapped.
+* Otherwise, walk a fixed code-defined fallback region cascade and use the first present, mapped certification.
+* Otherwise, treat the title as unrated or unknown.
+
+The resolver must not take the maximum age across all regions because that over-blocks international libraries.
+It must not take the minimum age across all regions because that under-blocks restricted profiles.
 
 The first US rating mapping is:
 
@@ -186,28 +159,24 @@ Explicitly deferred from v1:
 * Live-editable rating maps
 * Incognito or private playback
 * Curfews and cumulative screen-time budgets
-* Per-profile stream/transcode limits
-* Remove-from-continue-watching independent of watched state
+* Per-profile stream/transcode limits, despite high verified demand
+* Remove-from-continue-watching independent of watched state, despite high verified demand
 * CDN caching policy, per-segment revocation, and advanced mid-stream checks
 * User-created playlist/collection ownership and sharing
 
 == Consequences
 
 * Account tokens and profile tokens have different responsibilities.
-* Password hashing choices are isolated behind Spring Security `PasswordEncoder`, allowing future algorithm and work-factor upgrades without changing account schema.
-* Rainbow-table resistance comes from per-password random salts managed by the selected encoder, not from custom application code.
-* MFA and device pairing become account/session concerns, while profile selection remains a viewing-context concern.
-* TV clients do not get weaker authentication; they delegate credential entry and MFA to a capable authenticated device.
+* Authentication mechanisms, password hashing, MFA policy, and device pairing can change under link:0016-authentication-mechanisms-and-session-security.adoc[ADR 0016] without reopening the content-visibility decision.
 * Services should receive account/profile ids explicitly rather than resolving identity from async loader code.
 * Watch progress and watch history move from user-scoped to profile-scoped behavior.
 * A profile can be accessible from multiple accounts.
 * A minimal `Household` entity exists from v1 so household isolation, rating defaults, profile ownership, and later cross-household features have a stable boundary.
 * Apple TV user-to-profile mapping remains client-local and does not leak Apple-specific identity into the server model.
 * Restricted media checks must be applied centrally so all catalog, search, direct lookup, continue-watching, up-next, future search, and streaming paths share the same visibility policy.
-* Query adapters must translate portable visibility constraints into native filters instead of receiving raw SQL from the authorization layer.
+* Query adapters must translate the typed visibility policy into native filters instead of receiving raw SQL from the authorization layer.
 * Rating normalization must consider multiple raw certifications per title rather than a single embedded rating.
 * Unknown or missing rating data becomes intentionally conservative for restricted profiles.
-* Future OAuth providers map into local `UserAccount` records and inherit the same account/profile/session model.
 * External authorization engines remain future adapters behind the Streamarr authorization facade, not v1 dependencies.
 
 == References
@@ -216,16 +185,9 @@ Explicitly deferred from v1:
 * link:0003-keyset-pagination.adoc[ADR 0003: Keyset Pagination Over Offset]
 * link:0005-tdd-and-behavior-testing.adoc[ADR 0005: TDD and Behavior Testing]
 * link:0014-protocol-agnostic-pagination.adoc[ADR 0014: Protocol-Agnostic Pagination]
+* link:0016-authentication-mechanisms-and-session-security.adoc[ADR 0016: Authentication Mechanisms and Session Security]
 * https://github.com/streamarr/streamarr-server/issues/41[Issue #41: Authentication & User Management]
 * https://github.com/streamarr/streamarr-server/issues/163[Issue #163: Replace placeholder user ID with authenticated user from Spring Security]
-* https://docs.spring.io/spring-security/reference/features/authentication/password-storage.html[Spring Security: Password Storage]
-* https://docs.spring.io/spring-security/reference/servlet/authentication/mfa.html[Spring Security: Multi-Factor Authentication]
-* https://docs.spring.io/spring-security/reference/servlet/authentication/passkeys.html[Spring Security: Passkeys/WebAuthn]
-* https://docs.spring.io/spring-authorization-server/reference/protocol-endpoints.html[Spring Authorization Server: Protocol Endpoints]
-* https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html[OWASP Password Storage Cheat Sheet]
-* https://cheatsheetseries.owasp.org/cheatsheets/Multifactor_Authentication_Cheat_Sheet.html[OWASP Multifactor Authentication Cheat Sheet]
-* https://pages.nist.gov/800-63-4/sp800-63b.html[NIST SP 800-63B]
-* https://www.rfc-editor.org/rfc/rfc9106.html[RFC 9106: Argon2]
 * https://developer.apple.com/documentation/tvservices/mapping-apple-tv-users-to-app-profiles[Apple: Mapping Apple TV users to app profiles]
 * https://developer.apple.com/documentation/tvservices/tvusermanager[Apple: TVUserManager]
 * https://support.plex.tv/articles/203948776-managed-users/[Plex: Managed Accounts]

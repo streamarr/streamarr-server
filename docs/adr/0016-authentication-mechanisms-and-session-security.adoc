@@ -1,0 +1,96 @@
+= ADR 0016: Authentication Mechanisms and Session Security
+
+== Status
+
+Proposed
+
+== Context
+
+link:0015-authentication-profiles-and-content-controls.adoc[ADR 0015] defines Streamarr's account, profile, household, authorization, and content-visibility model.
+Those decisions require authenticated account/device sessions, profile-scoped request identity, token invalidation, and an authentication path that works across browsers, mobile clients, and limited-input TV clients.
+
+Authentication mechanisms must be independently revisable from content-control authorization.
+Password hashing work factors, MFA requirements, and device-pairing details will evolve as hardware, Spring Security, client capabilities, and security guidance change.
+
+== Decision
+
+Use Spring Security as Streamarr's authentication and security-context spine.
+Spring Security owns authentication plumbing, request authentication, method-security integration, security context propagation, factor authorities, and future OAuth integration.
+Streamarr domain authorization remains separate as described in link:0015-authentication-profiles-and-content-controls.adoc[ADR 0015].
+
+Support local password authentication initially.
+Store local passwords with a custom `DelegatingPasswordEncoder` whose encode id is Argon2id.
+Do not rely on Spring Security's default delegating encoder if its encode id is bcrypt.
+Store the full encoded password string, including algorithm id, parameters, salt, and hash, in the account password column.
+Do not store salts in a separate application-managed column.
+
+Argon2id parameters are configuration, not immutable architecture.
+Configured parameters must meet or exceed the current OWASP Argon2id minimum, must be benchmarked on target hardware, and must keep login/setup latency practical for a self-hosted media server.
+Password verification should be expensive enough to resist offline guessing while remaining practical for normal login flows.
+Old password hashes should be rehashed on successful login when `PasswordEncoder.upgradeEncoding` indicates that stronger parameters are available.
+
+Use long-lived, revocable refresh tokens for account/device sessions.
+Use short-lived access tokens scoped to both account and active profile.
+Refresh tokens authenticate the device session.
+Access tokens authorize normal GraphQL and streaming requests only for the account/profile context they identify.
+Access tokens carry enough account, active profile, session, and version identity for the server to validate the account session and the profile authorization model from ADR 0015.
+
+Restriction, membership, password, and session changes use version-counter invalidation.
+Session, membership, and profile-policy version counters are stored in Postgres as the source of truth.
+Each application instance caches the relevant counters in memory.
+When an instance changes a restriction, membership, password, or session, it updates the Postgres version counter and publishes a Postgres `LISTEN`/`NOTIFY` event so other instances evict and refresh the affected cached versions.
+Each request validates token-embedded versions against the in-memory cache, avoiding a database hit on the hot path.
+Short access-token TTLs are a backstop for missed notifications, not the primary safety mechanism.
+Changing a password invalidates all tokens for the account.
+Changing profile restrictions or membership invalidates affected profile-scoped access tokens through profile policy or membership versioning.
+
+Limited-input clients, such as Apple TV, Android TV, Nvidia Shield, and smart TV apps, use device pairing rather than entering credentials directly.
+A TV client requests a short-lived, single-use device/user code and displays it to the viewer.
+The code is only a correlation handle for a pending device authorization request; it is not authentication by itself.
+An already-authenticated browser or mobile session approves the device.
+If the approving account is subject to MFA, that MFA requirement must be satisfied before the server approves the device and issues a refresh token to the TV.
+
+Browser, iOS, Android, and other capable clients authenticate directly.
+They may use local password auth, future OAuth, and MFA according to the account's effective authentication policy.
+All clients receive tokens only after their required factors are satisfied.
+TV clients do not get weaker authentication; they delegate credential entry and MFA to a capable authenticated device.
+
+Support admin-managed authentication policy.
+Admins can set minimum MFA requirements for all accounts, admin accounts, specific accounts, or future sensitive actions.
+Users may opt into stronger MFA than required, but cannot weaken requirements below the admin policy.
+The effective MFA requirement is the strongest requirement from server policy, account policy, and action policy.
+The first policy modes are `OFF`, `ADMIN_ONLY`, and `ALL_USERS`.
+Action-specific MFA is deferred but the model should allow it.
+
+MFA factors should include WebAuthn/FIDO2 as a second factor, not as passwordless passkey login in the initial implementation.
+When WebAuthn is required, authentication must include both password and WebAuthn factors.
+TOTP authenticator-app support is a planned fallback factor.
+Recovery codes are required once MFA exists so users and admins have a safe account recovery path.
+Email or magic-link one-time tokens may support recovery or device-pairing UX, but are not the primary MFA factor.
+
+Future OAuth providers map into local `UserAccount` records and inherit the same account, household, profile, session, MFA, and token model.
+
+== Consequences
+
+* Authentication mechanisms can evolve without reopening ADR 0015's content-visibility and authorization decisions.
+* Password hashing choices are isolated behind Spring Security `PasswordEncoder`, allowing future algorithm and work-factor upgrades without changing account schema.
+* Rainbow-table resistance comes from per-password random salts managed by the selected encoder, not from custom application code.
+* Argon2id work factors live in configuration or a security runbook, not in this ADR.
+* MFA and device pairing are account/session concerns, while profile selection remains a viewing-context concern.
+* Refresh-token revocation and profile-scoped access-token invalidation are required server features, not optional client behavior.
+* Cross-instance token invalidation uses Postgres version counters plus `LISTEN`/`NOTIFY`, avoiding Redis or another new infrastructure dependency in v1.
+* Future OAuth providers are authentication inputs to local accounts, not replacements for Streamarr's account/profile/household model.
+
+== References
+
+* link:0015-authentication-profiles-and-content-controls.adoc[ADR 0015: Authorization, Profiles, and Content Controls]
+* https://github.com/streamarr/streamarr-server/issues/41[Issue #41: Authentication & User Management]
+* https://github.com/streamarr/streamarr-server/issues/163[Issue #163: Replace placeholder user ID with authenticated user from Spring Security]
+* https://docs.spring.io/spring-security/reference/features/authentication/password-storage.html[Spring Security: Password Storage]
+* https://docs.spring.io/spring-security/reference/servlet/authentication/mfa.html[Spring Security: Multi-Factor Authentication]
+* https://docs.spring.io/spring-security/reference/servlet/authentication/passkeys.html[Spring Security: Passkeys/WebAuthn]
+* https://docs.spring.io/spring-authorization-server/reference/protocol-endpoints.html[Spring Authorization Server: Protocol Endpoints]
+* https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html[OWASP Password Storage Cheat Sheet]
+* https://cheatsheetseries.owasp.org/cheatsheets/Multifactor_Authentication_Cheat_Sheet.html[OWASP Multifactor Authentication Cheat Sheet]
+* https://pages.nist.gov/800-63-4/sp800-63b.html[NIST SP 800-63B]
+* https://www.rfc-editor.org/rfc/rfc9106.html[RFC 9106: Argon2]
