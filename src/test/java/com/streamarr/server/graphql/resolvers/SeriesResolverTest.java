@@ -8,6 +8,7 @@ import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.MediaFile;
+import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.services.SeriesService;
 import java.util.List;
@@ -92,6 +93,44 @@ class SeriesResolverTest {
             "data.series.files[0].filepathUri");
 
     assertThat(filepathUri).isEqualTo("/media/shows/Breaking Bad/Season 1/breaking.bad.s01e01.mkv");
+  }
+
+  @Test
+  @DisplayName("Should return season when valid ID provided")
+  void shouldReturnSeasonWhenValidIdProvided() {
+    var seasonId = UUID.randomUUID();
+    var season = Season.builder().title("Season 1").seasonNumber(1).build();
+    season.setId(seasonId);
+
+    when(seriesService.findSeasonById(seasonId)).thenReturn(Optional.of(season));
+
+    String title =
+        dgsQueryExecutor.executeAndExtractJsonPath(
+            String.format("{ season(id: \"%s\") { title seasonNumber } }", seasonId),
+            "data.season.title");
+
+    assertThat(title).isEqualTo("Season 1");
+  }
+
+  @Test
+  @DisplayName("Should return null when season not found")
+  void shouldReturnNullWhenSeasonNotFound() {
+    when(seriesService.findSeasonById(any(UUID.class))).thenReturn(Optional.empty());
+
+    Object result =
+        dgsQueryExecutor.executeAndExtractJsonPath(
+            String.format("{ season(id: \"%s\") { title } }", UUID.randomUUID()), "data.season");
+
+    assertThat(result).isNull();
+  }
+
+  @Test
+  @DisplayName("Should return error when invalid season ID provided")
+  void shouldReturnErrorWhenInvalidSeasonIdProvided() {
+    var result = dgsQueryExecutor.execute("{ season(id: \"not-a-uuid\") { title } }");
+
+    assertThat(result.getErrors()).isNotEmpty();
+    assertThat(result.getErrors().get(0).getMessage()).contains("Invalid ID format");
   }
 
   @Test

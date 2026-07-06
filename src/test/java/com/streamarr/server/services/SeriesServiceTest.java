@@ -100,6 +100,32 @@ class SeriesServiceTest {
   }
 
   @Nested
+  @DisplayName("Lookups")
+  class Lookups {
+
+    @Test
+    @DisplayName("Should return season by ID")
+    void shouldReturnSeasonById() {
+      var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
+      var season =
+          seasonRepository.save(
+              Season.builder().title("Season 1").seasonNumber(1).series(series).build());
+
+      var result = seriesService.findSeasonById(season.getId());
+
+      assertThat(result).contains(season);
+    }
+
+    @Test
+    @DisplayName("Should return empty when season ID is unknown")
+    void shouldReturnEmptyWhenSeasonIdIsUnknown() {
+      var result = seriesService.findSeasonById(UUID.randomUUID());
+
+      assertThat(result).isEmpty();
+    }
+  }
+
+  @Nested
   @DisplayName("Sorting")
   class Sorting {
 
