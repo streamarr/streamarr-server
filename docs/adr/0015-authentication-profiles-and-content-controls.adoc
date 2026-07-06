@@ -1,0 +1,107 @@
+= ADR 0015: Authentication, Profiles, and Content Controls
+
+== Status
+
+Accepted
+
+== Context
+
+Streamarr is a single-household, invite-only media server.
+Authentication is required before any multi-user, remote-access, or privacy-first playback workflow can be safe.
+
+Issue https://github.com/streamarr/streamarr-server/issues/41[#41] defines the broad authentication and user-management need.
+Issue https://github.com/streamarr/streamarr-server/issues/163[#163] tracks replacing the placeholder user id with an authenticated identity.
+
+Watch progress, continue watching, and content restrictions are not just account concerns.
+Shared devices, Apple TV multi-user support, and young children without their own login require a separate viewing identity.
+Apple TV can map Apple TV users to app profiles locally, while the server only needs to enforce accounts, device sessions, and profiles.
+
+Content controls must be first-class from the start.
+Restricted media must not leak through search, direct id lookup, continue watching, recommendations, collections, or playback URLs.
+
+== Decision
+
+Model authentication and authorization around two identities:
+
+* `UserAccount`: login and security principal
+* `Profile`: viewing identity
+
+Accounts authenticate users.
+Profiles own watch progress, watch history, content restrictions, and the active viewing context.
+
+Use `ADMIN` and `USER` account roles initially.
+Do not model children as a role.
+Kid, teen, and adult viewing behavior is expressed through profile content policy.
+Admin profiles are unrestricted.
+
+Use long-lived, revocable refresh tokens for account/device sessions.
+Use short-lived access tokens scoped to both account and active profile.
+Refresh tokens authenticate the device session.
+Access tokens authorize normal GraphQL and streaming requests.
+
+Profile selection is server-mediated.
+Selecting a profile returns a fresh profile-scoped access token.
+If an account has exactly one selectable profile, the server may select it automatically.
+If multiple profiles are selectable and no active profile is available, requests fail with a profile-required error.
+
+Profile switching to an unrestricted profile requires server-verified PIN once any restricted profile exists.
+PIN verification issues a fresh access token for the selected profile.
+Changing a password invalidates all tokens.
+Changing profile restrictions invalidates existing access tokens for that profile via profile token versioning.
+
+Store profile membership separately from accounts, e.g. `account_profiles`.
+This allows a parent account to access child profiles and later allows an older child to receive their own account linked to the same profile.
+
+GraphQL is authenticated by default.
+Unauthenticated GraphQL requests are rejected, including schema introspection.
+Streaming REST endpoints use the same bearer access token model as GraphQL.
+Development should behave like production rather than using a separate auth bypass.
+
+Initial setup creates the first admin account.
+Setup endpoints are valid only while zero users exist.
+After setup, those endpoints are no longer anonymously usable.
+
+Content restriction policy is profile-scoped.
+Restricted content is omitted from all browse/search/list surfaces and denied at playback/direct lookup.
+Authorization failures must not reveal whether hidden media exists.
+
+Normalize content ratings to numeric minimum recommended ages while preserving raw rating metadata.
+Profiles use an explicit `maximumAllowedRatingAge`.
+Unrated or unknown content is blocked for restricted profiles by default.
+
+The first US rating mapping is:
+
+* `G`, `TV-G`, `TV-Y` -> `0`
+* `TV-Y7`, `TV-Y7-FV` -> `7`
+* `PG`, `TV-PG` -> `10`
+* `PG-13` -> `13`
+* `TV-14` -> `14`
+* `R`, `TV-MA` -> `17`
+* `NC-17` -> `18`
+* unrated or unknown -> blocked for restricted profiles
+
+Saved-filter-based profile restrictions are deferred.
+The data model should leave room for future allow/deny filters across ratings, libraries, genres, tags, and other media dimensions.
+
+== Consequences
+
+* Account tokens and profile tokens have different responsibilities.
+* Services should receive account/profile ids explicitly rather than resolving identity from async loader code.
+* Watch progress and watch history move from user-scoped to profile-scoped behavior.
+* A profile can be accessible from multiple accounts.
+* Apple TV user-to-profile mapping remains client-local and does not leak Apple-specific identity into the server model.
+* Restricted media checks must be applied centrally so all catalog, search, direct lookup, continue-watching, up-next, and streaming paths share the same visibility policy.
+* Rating normalization can be computed from existing structured `ContentRating` metadata on movies and series.
+* Unknown or missing rating data becomes intentionally conservative for restricted profiles.
+* Future OAuth providers map into local `UserAccount` records and inherit the same account/profile/session model.
+
+== References
+
+* link:0002-graphql-over-rest.adoc[ADR 0002: GraphQL Over REST]
+* link:0005-tdd-and-behavior-testing.adoc[ADR 0005: TDD and Behavior Testing]
+* https://github.com/streamarr/streamarr-server/issues/41[Issue #41: Authentication & User Management]
+* https://github.com/streamarr/streamarr-server/issues/163[Issue #163: Replace placeholder user ID with authenticated user from Spring Security]
+* https://developer.apple.com/documentation/tvservices/mapping-apple-tv-users-to-app-profiles[Apple: Mapping Apple TV users to app profiles]
+* https://developer.apple.com/documentation/tvservices/tvusermanager[Apple: TVUserManager]
+* https://www.filmratings.com/[MPA Film Ratings]
+* https://www.tvguidelines.org/resources/TheRatings.pdf[TV Parental Guidelines]
