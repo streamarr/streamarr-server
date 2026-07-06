@@ -7,141 +7,117 @@ Proposed
 == Context
 
 Streamarr is a private, invite-only media server.
-It will usually be run for one household, but the identity model must support multiple invited households without exposing one household's profiles, watch activity, or content-control policy to another.
-Authentication is required before any multi-user, remote-access, or privacy-first playback workflow can be safe, but this ADR focuses on the authorization, profile, household, and content-visibility model.
+It usually runs for a single household, but the identity model must support several invited households without exposing one household's profiles, watch activity, or content policy to another.
+
+This ADR covers the authorization, profile, household, and content-visibility model.
 Authentication mechanisms and session security are decided separately in link:0016-authentication-mechanisms-and-session-security.adoc[ADR 0016].
-ADR numbering does not require this ADR's full content-control enforcement to land before ADR 0016.
-The authentication/session foundation can land first, but it must expose the account, household, profile, session, and version identity shape needed by this authorization model.
+That authentication foundation can land first, but its first increment must carry the account, household, profile, session, and version identity this model needs — not a `userId`-only shortcut.
 
-Issue https://github.com/streamarr/streamarr-server/issues/41[#41] defines the broad authentication and user-management need.
-Issue https://github.com/streamarr/streamarr-server/issues/163[#163] tracks replacing the placeholder user id with an authenticated identity.
+Issue https://github.com/streamarr/streamarr-server/issues/41[#41] defines the broad authentication and user-management need; issue https://github.com/streamarr/streamarr-server/issues/163[#163] tracks replacing the placeholder user id with an authenticated identity.
 
-Watch progress, continue watching, and content restrictions are not just account concerns.
-Shared devices, Apple TV multi-user support, and young children without their own login require a separate viewing identity.
-Apple TV can map Apple TV users to app profiles locally, while the server only needs to enforce accounts, device sessions, and profiles.
+Watch progress, continue watching, and content restrictions are viewing concerns, not account concerns.
+Shared devices, Apple TV multi-user support, and young children without their own login all need a viewing identity distinct from the login account.
+Apple TV maps its users to app profiles locally; the server enforces only accounts, device sessions, and profiles.
 
-Content controls must be first-class from the start.
-Restricted media must not leak through search, direct id lookup, continue watching, recommendations, collections, or playback URLs.
-Community feedback around Plex and Jellyfin shows that the recurring failure mode is not only missing parental controls; it is controls that leak through alternate clients, raw APIs, secondary surfaces, or active streams.
+Content controls are first-class from the start.
+The recurring failure mode in Plex and Jellyfin is not missing parental controls but controls that leak — through alternate clients, raw APIs, secondary surfaces, or active streams.
+Restricted media must stay hidden on every path: search, direct id lookup, continue watching, recommendations, collections, and playback URLs alike.
 
 == Decision
 
-Model account/profile authorization around two identities and one household boundary:
+Model authorization around two identities and one boundary:
 
 * `UserAccount`: login and security principal
 * `Profile`: viewing identity
-* `Household`: privacy, administration, and default policy boundary
+* `Household`: privacy, administration, and default-policy boundary
 
 Accounts authenticate users.
 Profiles own watch progress, watch history, content restrictions, and the active viewing context.
-Households own profiles and scope household-local administration, default rating region, and activity visibility.
+Households own profiles and scope household-local administration, the default rating region, and activity visibility.
 
-Initial setup creates the first household and first admin account.
-Setup endpoints are valid only while zero users exist.
-After setup, those endpoints are no longer anonymously usable.
+Initial setup creates the first household and admin account.
+Setup endpoints work only while no users exist; afterward they are no longer anonymously reachable.
 
-Accounts may belong to multiple households.
-After login, narrowly scoped account-bootstrap operations may list the account's own household memberships and select a household.
-All other household, profile, content, activity, and administration requests act in one active household context.
-Profiles belong to exactly one household and may be selectable by one or more accounts through explicit profile membership.
-Household membership carries household-local relationship data without creating new global account roles: `owner` administers the household, `parent` can manage child/restricted profile policy and activity, `member` can use profiles granted to the account, and `manager` is reserved for future delegated household administration.
-V1 enforces `owner`, `parent`, and `member` checks; `manager` is stored only if needed for forward compatibility and confers no additional permissions until delegated household management is explicitly designed.
-Household boundaries isolate profiles, activity, and policy by default.
-No cross-household profile, content, activity, or administration grants are supported in v1.
-An account that belongs to multiple households can switch active household context, but acting in household X exposes only household X's profiles, activity, and policy.
+An account may belong to several households.
+Immediately after login, narrowly scoped bootstrap operations may list the account's own household memberships and select one; every other request acts within a single active household.
+Profiles belong to exactly one household and become selectable by an account through explicit profile membership.
 
-Use `ADMIN` and `USER` account roles initially.
-Do not model children as a role.
-Kid, teen, and adult viewing behavior is expressed through profile content policy.
-Admin profiles are unrestricted.
-Roles should be modeled as first-class values rather than booleans, and all role/permission checks should flow through the authorization facade so future roles, groups, permission templates, or delegated-admin tiers do not require scattered `isAdmin` checks.
+Household membership carries household-local roles rather than new global ones: `owner` administers the household, `parent` manages child and restricted-profile policy and activity, and `member` uses the profiles granted to them.
+A fourth role, `manager`, is reserved for future delegated administration; v1 enforces only `owner`, `parent`, and `member`, and stores `manager` without granting it any permission.
 
-Authenticated requests carry account, optional active household, optional active profile, session, and policy-version identity as defined in link:0016-authentication-mechanisms-and-session-security.adoc[ADR 0016].
-Account-bootstrap requests without an active household are limited to login/session and own-household selection surfaces; they cannot access household content, profile activity, playback, or administration.
-Access tokens authorize normal GraphQL and streaming requests only for the account/household/profile context they identify.
-Access-token validation must be able to determine that the session and, when present, household membership, active profile membership, and profile policy version remain valid.
-Profile restriction, household membership, and profile membership changes use the version-counter invalidation mechanism defined in link:0016-authentication-mechanisms-and-session-security.adoc[ADR 0016]; short token TTLs are a backstop, not the primary safety mechanism.
+Household boundaries isolate profiles, activity, and policy.
+V1 supports no cross-household grants: an account with several households can switch its active context, but acting in one exposes only that household's data.
 
-Household selection is server-mediated.
-Selecting or switching households returns a fresh household-scoped access token.
-If an account has exactly one selectable household, the server may select it automatically.
-Profile-scoped access tokens must include the active household, and the server must validate that the selected profile belongs to that household.
-Household-scoped authenticated requests without an active profile are valid only for pre-profile-selection or household-management surfaces that do not require profile visibility policy.
+Global account roles are `ADMIN` and `USER`; children are not a role.
+Kid, teen, and adult viewing is expressed through profile content policy, and admin profiles are unrestricted.
+Model roles as first-class values, not booleans, and route every role and permission check through the authorization facade so future roles, groups, or delegated-admin tiers never require scattered `isAdmin` checks.
 
-Profile selection is server-mediated.
-Selecting a profile returns a fresh profile-scoped access token.
-If an account has exactly one selectable profile, the server may select it automatically.
-If multiple profiles are selectable and no active profile is available, requests fail with a profile-required error.
-Clients may render profile pickers, remember local profile preferences, or map Apple TV users to local profile choices, but those client hints never authorize a profile by themselves.
-The server must never trust a client-supplied `profileId`, OS-user mapping, local network status, or client-side lock/stop behavior as authorization.
+Authenticated requests carry account, session, and — once selected — household and profile identity, scoped and validated as link:0016-authentication-mechanisms-and-session-security.adoc[ADR 0016] specifies.
+A token authorizes requests only within the context it names: a bootstrap token (no household yet) reaches only login, session, and own-household selection, never content, activity, playback, or administration.
+Validation must confirm that the session and, where present, the household membership, profile membership, and profile-policy version are still current.
+Profile restriction, household membership, and profile membership changes propagate through the version-counter invalidation in ADR 0016; short token lifetimes are a backstop, not the primary guard.
 
-Profile switching is separate from account or device authentication.
-Authenticating a TV device proves the account/device session as defined in link:0016-authentication-mechanisms-and-session-security.adoc[ADR 0016]; it does not authorize every profile on that device.
-Switching into any PIN-protected profile requires server-verified PIN.
-All profiles may be PIN-protected, and admin/adult profiles must be PIN-protected once restricted profiles exist.
-PIN verification issues a fresh access token for the selected profile, but it does not authenticate an account, register a device, or satisfy MFA.
-Changing profile restrictions invalidates existing access tokens for that profile via profile token versioning.
+Household and profile selection are both server-mediated: choosing or switching either issues a fresh token scoped to it, and when exactly one is selectable the server may select it automatically.
+A profile-scoped token always names its household, and the server verifies the profile belongs to that household.
+A household-scoped token with no active profile reaches only pre-selection and household-management surfaces that need no profile policy; if several profiles are selectable and none is active, requests fail with a profile-required error.
 
-Store household and profile membership separately from accounts, e.g. `household_memberships` and `account_profiles`.
-`household_memberships` links accounts to households.
-`profiles` carry a household foreign key.
-`account_profiles` links accounts to profiles only when the account is a member of that profile's household; cross-household profile links require a future explicit grant model.
-This allows a parent account to access child profiles and later allows an older child to receive their own account linked to the same profile.
+Clients may show profile pickers, remember local preferences, or map Apple TV users to profiles, but such hints never authorize a profile on their own.
+The server never treats a client-supplied `profileId`, OS-user mapping, local-network status, or client-side lock or stop behavior as authorization.
 
-Activity visibility follows owner-sees-all semantics within explicit scopes.
-Server `ADMIN` accounts can see all account and profile activity.
-Household owners or parent accounts can see activity for profiles they manage within their household.
-Normal accounts see only their own activity and activity for profiles they are authorized to use.
-When an admin or parent previews another profile, content queries use the selected profile's visibility policy rather than the admin's unrestricted profile.
+Profile switching is distinct from authentication.
+Authenticating a TV device proves the account/device session (ADR 0016) but authorizes no profile on it.
+Switching into a PIN-protected profile requires a server-verified PIN; any profile may be PIN-protected, and admin or adult profiles must be once restricted profiles exist.
+A verified PIN issues a fresh profile token but does not authenticate an account, register a device, or satisfy MFA.
+Changing a profile's restrictions invalidates its existing tokens through profile-policy versioning.
 
-GraphQL is authenticated by default.
-Unauthenticated GraphQL requests are rejected, including schema introspection.
-Streaming REST endpoints use the same bearer access token model as GraphQL.
-Development should behave like production rather than using a separate auth bypass.
+Store membership separately from accounts.
+`household_memberships` links accounts to households; `profiles` carry a household foreign key; and `account_profiles` links an account to a profile only when the account already belongs to that profile's household.
+Cross-household links await a future grant model.
+This lets a parent account reach a child's profile today, and lets that child later gain their own account linked to the same profile.
 
-Use a Streamarr-owned, hexagonal `AuthorizationService` and policy facade in its own package.
-Spring Security remains the application security spine for request authentication, method security, roles, factors, sessions, and integration with the security context.
-Streamarr domain policy decides account/profile/household membership, profile selection, content visibility, activity access, and future profile-policy features.
-V1 authorization runs in-process for implementation speed.
-The facade must remain adapter-shaped so future external authorization engines such as Topaz, OpenFGA, SpiceDB, Cedar, Cerbos, or OPA/Rego can back appropriate point decisions without rewriting media queries or API callers.
+Activity visibility is owner-sees-all within a scope.
+A server `ADMIN` sees all account and profile activity; a household owner or parent sees activity for the profiles they manage; every other account sees only its own activity and that of profiles it may use.
+When an admin or parent previews another profile, content queries apply that profile's visibility policy, not the previewer's unrestricted one.
 
-If a hostile client, patched app, replayed request, hand-crafted token, or `curl` call could bypass a control, that control belongs on the server.
-Clients own presentation and convenience.
-The server owns enforcement.
-The local network is not an authorization bypass.
+GraphQL is authenticated by default: unauthenticated requests, including schema introspection, are rejected.
+Streaming REST endpoints use the same bearer-token model, and development runs with the same authentication as production rather than a bypass.
 
-Content visibility is profile-scoped and expressed as one central fail-closed policy.
-That policy exposes a typed domain object and equivalent point checks from the same definition.
-No resolver, controller, repository, search adapter, or streaming endpoint may filter restricted content ad hoc.
-Hidden media behaves as absent, not forbidden: restricted content is omitted from browse, search, continue watching, up next, recently added, person, genre, artwork, collection, recommendation, and future REST/GraphQL list surfaces, and direct lookup/playback failures must not reveal whether hidden media exists.
-This fail-closed visibility builder has different empty-input semantics than optional user filters: an empty or misconfigured restricted profile policy denies, while only an explicit unrestricted/admin branch yields no visibility restriction.
+Authorization lives behind a Streamarr-owned, hexagonal `AuthorizationService` facade in its own package.
+Spring Security stays the security spine — request authentication, method security, factors, sessions, and security-context propagation — while Streamarr domain policy decides membership, profile selection, content visibility, activity access, and future policy features.
+V1 runs this policy in-process, but the facade stays adapter-shaped so an external engine (Topaz, OpenFGA, SpiceDB, Cedar, Cerbos, or OPA/Rego) could later back point decisions without rewriting media queries or callers.
 
-The `AuthorizationService` facade returns the profile's visibility policy as a typed domain object, modeled like the existing media-filter concepts but with fail-closed security semantics.
-The authorization layer does not return SQL, jOOQ, search-engine DSL, or adapter-specific filters.
-The Postgres/jOOQ repository adapter is the initial translator from the visibility policy to a fail-closed `WHERE` condition.
-Point checks evaluate the same visibility policy in memory.
-Future search adapters must translate the same typed visibility policy into their engine-native filters and enforce it before ranking, pagination, counts, facets, suggestions, autocomplete, recommendations, or results are produced.
-Any adapter that cannot represent the complete visibility policy must fail closed for restricted profiles.
+If a hostile client, replayed request, forged token, or bare `curl` call could bypass a control, that control belongs on the server.
+Clients own presentation and convenience; the server owns enforcement; the local network grants no exemption.
 
-Stream, manifest, and playback URL issuance is profile-bound and re-evaluates the same content visibility policy.
-Active stream and transcode sessions participate in session invalidation so policy changes, membership changes, future curfews, future quotas, and future stream limits can terminate or deny playback server-side.
-CDN behavior, per-segment revocation, and advanced mid-stream re-check strategies are deferred, but client-side stop commands are not considered enforcement.
+Content visibility is profile-scoped and defined once, as a single fail-closed policy that yields both a typed domain object and equivalent in-memory point checks.
+No resolver, controller, repository, search adapter, or streaming endpoint filters restricted content on its own.
 
-Store multiple raw content certifications per title while preserving rating system, value, country, and media type.
-Profiles use an explicit `maximumAllowedRatingAge`; parents choose an age ceiling, not individual certification-system knobs.
-Each household has a default rating region, and Streamarr uses a deterministic built-in resolver to choose the applicable certification and normalized age for a profile/title.
-Rating-to-age mappings are code, not a live-editable admin table in v1.
-Missing mappings and unrated or unknown content are intentionally conservative and blocked for restricted profiles by default.
-Manual per-item or per-library rating overrides are reserved for future work.
+Hidden media behaves as absent, not forbidden.
+It is omitted from every list surface — browse, search, continue watching, up next, recently added, person, genre, artwork, recommendations, collections, and any future REST or GraphQL list — and direct lookup or playback of hidden media must fail without revealing that it exists.
+This builder's empty-input semantics differ from an optional user filter: an empty or misconfigured restricted-profile policy denies everything, and only an explicit unrestricted or admin branch lifts visibility restrictions.
 
-The rating resolver uses deterministic precedence for a `(profile, title)`:
+The facade returns the policy as a typed domain object — shaped like the existing media-filter concepts but with fail-closed semantics — never as SQL, jOOQ, a search DSL, or any adapter-specific filter.
+The Postgres/jOOQ adapter is the first translator, turning the policy into a fail-closed `WHERE` condition; point checks evaluate the same policy in memory.
+Every future search adapter must translate that same typed policy into its native filter and apply it before ranking, pagination, counts, facets, suggestions, autocomplete, recommendations, or results are produced.
+An adapter that cannot express the full policy must fail closed for restricted profiles.
 
-* First, use a certification in the household's default region if present and mapped.
-* Otherwise, walk a fixed code-defined fallback region cascade and use the first present, mapped certification.
-* Otherwise, treat the title as unrated or unknown.
+Stream, manifest, and playback-URL issuance is profile-bound and re-evaluates the same visibility policy.
+Active stream and transcode sessions join session invalidation, so a policy or membership change — and future curfews, quotas, or stream limits — can deny or terminate playback server-side.
+CDN behavior, per-segment revocation, and mid-stream re-check strategies are deferred; a client-side stop is not enforcement.
 
-The resolver must not take the maximum age across all regions because that over-blocks international libraries.
-It must not take the minimum age across all regions because that under-blocks restricted profiles.
+Store every raw certification a title carries, preserving its rating system, value, country, and media type.
+A profile sets a single `maximumAllowedRatingAge` — parents pick an age ceiling, not per-system knobs.
+Each household has a default rating region, and a deterministic built-in resolver maps a `(profile, title)` pair to the applicable certification and a normalized age.
+These rating-to-age mappings are code, not a live-editable table in v1; missing mappings and unrated or unknown content are treated conservatively and blocked for restricted profiles.
+Per-item and per-library overrides are future work.
+
+The resolver picks a certification for a `(profile, title)` by fixed precedence:
+
+* a certification in the household's default region, if present and mapped;
+* otherwise the first present, mapped certification along a fixed fallback-region cascade;
+* otherwise, treat the title as unrated or unknown.
+
+It deliberately takes neither the maximum age across regions, which over-blocks international libraries, nor the minimum, which under-blocks restricted profiles.
 
 The first US rating mapping is:
 
@@ -154,16 +130,14 @@ The first US rating mapping is:
 * `NC-17` -> `18`
 * unrated or unknown -> blocked for restricted profiles
 
-Profile content policy is a composable set of allow/deny predicates over media attributes such as rating, library, genre, tag, and future saved-filter dimensions.
-V1 implements the rating ceiling and unrestricted/admin behavior.
-The model should leave room for library scoping, deny lists, per-title exceptions, per-library rating ceilings, kids-mode flags, curfews, cumulative screen-time budgets, per-profile stream limits, and remove-from-continue-watching without coupling those future policies to one query engine.
+Profile content policy is a composable set of allow/deny predicates over media attributes — rating, library, genre, tag, and future saved-filter dimensions.
+V1 implements the rating ceiling plus unrestricted/admin behavior, but the model leaves room for later policies — library scoping, deny lists, per-title exceptions, per-library rating ceilings, kids-mode flags, curfews, screen-time budgets, stream limits, remove-from-continue-watching — without binding any of them to a single query engine.
 
-Relationship-heavy authorization such as cross-household sharing, delegated administration, per-collection grants, or user-created playlist/collection sharing is out of scope for v1 beyond the household/profile membership primitives above.
-When those requirements arrive, they should use relationship-shaped in-process policy first and may later move behind an external ReBAC-capable adapter.
+Relationship-heavy authorization — cross-household sharing, delegated administration, per-collection grants, playlist sharing — is out of scope for v1 beyond the membership primitives above.
+When it arrives, it should start as relationship-shaped in-process policy and may later move behind an external ReBAC adapter.
 
-Admin and parent management workflows are web-first.
-TV and mobile clients should support sign-in, device linking, profile selection, PIN entry, and playback.
-Full account, household, profile, rating, activity, and content-control administration belongs in the web/admin surface so limited-input clients do not carry the full management product.
+Admin and parent management is web-first.
+TV and mobile clients handle sign-in, device linking, profile selection, PIN entry, and playback; full account, household, profile, rating, activity, and content-control administration stays in the web surface so limited-input clients need not carry the whole management product.
 
 Explicitly deferred from v1:
 
@@ -179,18 +153,16 @@ Explicitly deferred from v1:
 
 == Consequences
 
-* Account-bootstrap, household-scoped, and profile-scoped access tokens have different responsibilities.
-* Authentication mechanisms, password hashing, MFA policy, and device pairing can change under link:0016-authentication-mechanisms-and-session-security.adoc[ADR 0016] without reopening the content-visibility decision.
-* Services should receive account, household, and profile ids explicitly rather than resolving identity from async loader code.
-* Watch progress and watch history move from user-scoped to profile-scoped behavior.
-* A profile can be accessible from multiple accounts.
-* A minimal `Household` entity exists from v1 so household isolation, rating defaults, profile ownership, and later cross-household features have a stable boundary.
-* Apple TV user-to-profile mapping remains client-local and does not leak Apple-specific identity into the server model.
-* Restricted media checks must be applied centrally so all catalog, search, direct lookup, continue-watching, up-next, future search, and streaming paths share the same visibility policy.
-* Query adapters must translate the typed visibility policy into native filters instead of receiving raw SQL from the authorization layer.
-* Rating normalization must consider multiple raw certifications per title rather than a single embedded rating.
-* Unknown or missing rating data becomes intentionally conservative for restricted profiles.
-* External authorization engines remain future adapters behind the Streamarr authorization facade, not v1 dependencies.
+* Bootstrap, household, and profile access tokens carry different responsibilities.
+* Authentication, password hashing, MFA policy, and device pairing can change under link:0016-authentication-mechanisms-and-session-security.adoc[ADR 0016] without reopening this content-visibility decision.
+* Services receive account, household, and profile ids explicitly rather than resolving identity inside async loader code.
+* Watch progress and history move from account-scoped to profile-scoped.
+* A profile can be reached from multiple accounts.
+* A minimal `Household` entity exists from v1, giving isolation, rating defaults, profile ownership, and later cross-household features a stable boundary.
+* Apple TV user-to-profile mapping stays client-local and never leaks Apple-specific identity into the server model.
+* Central visibility checks let catalog, search, direct lookup, continue-watching, future search, and streaming share one policy, with adapters translating the typed policy instead of receiving raw SQL.
+* Rating normalization spans multiple certifications per title, and missing or unknown ratings fail conservatively for restricted profiles.
+* External authorization engines stay future adapters behind the facade, not v1 dependencies.
 
 == References
 
