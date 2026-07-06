@@ -6,7 +6,7 @@ Proposed
 
 == Context
 
-link:0015-authentication-profiles-and-content-controls.adoc[ADR 0015] defines Streamarr's account, profile, household, authorization, and content-visibility model.
+link:0015-authorization-profiles-and-content-controls.adoc[ADR 0015] defines Streamarr's account, profile, household, authorization, and content-visibility model.
 Those decisions require authenticated account/device sessions, profile-scoped request identity, token invalidation, and an authentication path that works across browsers, mobile clients, and limited-input TV clients.
 
 Authentication mechanisms must be independently revisable from content-control authorization.
@@ -16,7 +16,7 @@ Password hashing work factors, MFA requirements, and device-pairing details will
 
 Use Spring Security as Streamarr's authentication and security-context spine.
 Spring Security owns authentication plumbing, request authentication, method-security integration, security context propagation, factor authorities, and future OAuth integration.
-Streamarr domain authorization remains separate as described in link:0015-authentication-profiles-and-content-controls.adoc[ADR 0015].
+Streamarr domain authorization remains separate as described in link:0015-authorization-profiles-and-content-controls.adoc[ADR 0015].
 
 Support local password authentication initially.
 Store local passwords with a custom `DelegatingPasswordEncoder` whose encode id is Argon2id.
@@ -30,19 +30,26 @@ Password verification should be expensive enough to resist offline guessing whil
 Old password hashes should be rehashed on successful login when `PasswordEncoder.upgradeEncoding` indicates that stronger parameters are available.
 
 Use long-lived, revocable refresh tokens for account/device sessions.
-Use short-lived access tokens scoped to both account and active profile.
+Use short-lived access tokens in explicit scopes: account-bootstrap, household, or profile.
 Refresh tokens authenticate the device session.
-Access tokens authorize normal GraphQL and streaming requests only for the account/profile context they identify.
-Access tokens carry enough account, active profile, session, and version identity for the server to validate the account session and the profile authorization model from ADR 0015.
+Refresh tokens are account/device scoped rather than household/profile scoped.
+Account-bootstrap access tokens carry account and session identity but no active household or profile; they are valid only for login/session, listing the account's own household memberships, and selecting a household.
+Selecting or switching households issues a fresh household-scoped access token.
+Profile selection issues a fresh profile-scoped access token nested under the active household.
+If an access token carries an active profile, the server must validate that the profile belongs to the active household.
+Household-scoped access tokens without an active profile are valid only for pre-profile-selection or household-management surfaces that do not require a profile visibility policy.
+Access tokens authorize normal GraphQL and streaming requests only for the account/household/profile context they identify.
+Access tokens carry enough account, optional active household, optional active profile, session, and version identity for the server to validate the account session and the household/profile authorization model from ADR 0015.
 
 Restriction, membership, password, and session changes use version-counter invalidation.
 Session, membership, and profile-policy version counters are stored in Postgres as the source of truth.
 Each application instance caches the relevant counters in memory.
 When an instance changes a restriction, membership, password, or session, it updates the Postgres version counter and publishes a Postgres `LISTEN`/`NOTIFY` event so other instances evict and refresh the affected cached versions.
+The `LISTEN` subscriber uses a dedicated long-held PostgreSQL connection per application instance, outside the main Hikari pool used for transactional work.
 Each request validates token-embedded versions against the in-memory cache, avoiding a database hit on the hot path.
 Short access-token TTLs are a backstop for missed notifications, not the primary safety mechanism.
 Changing a password invalidates all tokens for the account.
-Changing profile restrictions or membership invalidates affected profile-scoped access tokens through profile policy or membership versioning.
+Changing household membership, profile membership, or profile restrictions invalidates affected household-scoped and profile-scoped access tokens through membership or profile-policy versioning.
 
 Limited-input clients, such as Apple TV, Android TV, Nvidia Shield, and smart TV apps, use device pairing rather than entering credentials directly.
 A TV client requests a short-lived, single-use device/user code and displays it to the viewer.
@@ -79,11 +86,12 @@ Future OAuth providers map into local `UserAccount` records and inherit the same
 * MFA and device pairing are account/session concerns, while profile selection remains a viewing-context concern.
 * Refresh-token revocation and profile-scoped access-token invalidation are required server features, not optional client behavior.
 * Cross-instance token invalidation uses Postgres version counters plus `LISTEN`/`NOTIFY`, avoiding Redis or another new infrastructure dependency in v1.
+* The invalidation listener must not borrow and hold a connection from the default transactional Hikari pool, including during reconnect or backoff loops.
 * Future OAuth providers are authentication inputs to local accounts, not replacements for Streamarr's account/profile/household model.
 
 == References
 
-* link:0015-authentication-profiles-and-content-controls.adoc[ADR 0015: Authorization, Profiles, and Content Controls]
+* link:0015-authorization-profiles-and-content-controls.adoc[ADR 0015: Authorization, Profiles, and Content Controls]
 * https://github.com/streamarr/streamarr-server/issues/41[Issue #41: Authentication & User Management]
 * https://github.com/streamarr/streamarr-server/issues/163[Issue #163: Replace placeholder user ID with authenticated user from Spring Security]
 * https://docs.spring.io/spring-security/reference/features/authentication/password-storage.html[Spring Security: Password Storage]
