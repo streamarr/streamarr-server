@@ -10,6 +10,8 @@ Streamarr is a private, invite-only media server.
 It will usually be run for one household, but the identity model must support multiple invited households without exposing one household's profiles, watch activity, or content-control policy to another.
 Authentication is required before any multi-user, remote-access, or privacy-first playback workflow can be safe, but this ADR focuses on the authorization, profile, household, and content-visibility model.
 Authentication mechanisms and session security are decided separately in link:0016-authentication-mechanisms-and-session-security.adoc[ADR 0016].
+ADR numbering does not require this ADR's full content-control enforcement to land before ADR 0016.
+The authentication/session foundation can land first, but it must expose the account, household, profile, session, and version identity shape needed by this authorization model.
 
 Issue https://github.com/streamarr/streamarr-server/issues/41[#41] defines the broad authentication and user-management need.
 Issue https://github.com/streamarr/streamarr-server/issues/163[#163] tracks replacing the placeholder user id with an authenticated identity.

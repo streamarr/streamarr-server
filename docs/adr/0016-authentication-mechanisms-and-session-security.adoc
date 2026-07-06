@@ -8,6 +8,8 @@ Proposed
 
 link:0015-authorization-profiles-and-content-controls.adoc[ADR 0015] defines Streamarr's account, profile, household, authorization, and content-visibility model.
 Those decisions require authenticated account/device sessions, profile-scoped request identity, token invalidation, and an authentication path that works across browsers, mobile clients, and limited-input TV clients.
+Implementation should land the authentication/session foundation before richer content-control enforcement, but not as a `userId`-only shortcut.
+The first authentication increment must carry the account, household, profile, session, and version identity shape required by ADR 0015 and leave authorization checks behind the Streamarr authorization facade.
 
 Authentication mechanisms must be independently revisable from content-control authorization.
 Password hashing work factors, MFA requirements, and device-pairing details will evolve as hardware, Spring Security, client capabilities, and security guidance change.
