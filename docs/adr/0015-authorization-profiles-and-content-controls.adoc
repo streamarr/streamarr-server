@@ -73,9 +73,11 @@ If multiple profiles are selectable and no active profile is available, requests
 Clients may render profile pickers, remember local profile preferences, or map Apple TV users to local profile choices, but those client hints never authorize a profile by themselves.
 The server must never trust a client-supplied `profileId`, OS-user mapping, local network status, or client-side lock/stop behavior as authorization.
 
+Profile switching is separate from account or device authentication.
+Authenticating a TV device proves the account/device session as defined in link:0016-authentication-mechanisms-and-session-security.adoc[ADR 0016]; it does not authorize every profile on that device.
 Switching into any PIN-protected profile requires server-verified PIN.
 All profiles may be PIN-protected, and admin/adult profiles must be PIN-protected once restricted profiles exist.
-PIN verification issues a fresh access token for the selected profile.
+PIN verification issues a fresh access token for the selected profile, but it does not authenticate an account, register a device, or satisfy MFA.
 Changing profile restrictions invalidates existing access tokens for that profile via profile token versioning.
 
 Store household and profile membership separately from accounts, e.g. `household_memberships` and `account_profiles`.

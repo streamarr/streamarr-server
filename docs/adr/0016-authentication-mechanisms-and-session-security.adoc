@@ -57,6 +57,9 @@ A TV client requests a short-lived, single-use device/user code and displays it 
 The code is only a correlation handle for a pending device authorization request; it is not authentication by itself.
 An already-authenticated browser or mobile session approves the device.
 If the approving account is subject to MFA, that MFA requirement must be satisfied before the server approves the device and issues a refresh token to the TV.
+This flow authenticates the account/device session and may use Spring Security one-time-token login or an equivalent one-time-token approval mechanism.
+It is distinct from profile switching: a profile PIN is a Streamarr domain gate for selecting a profile on an already-authenticated account/device session, not an account credential, one-time login token, or MFA factor.
+Profile PIN verification must be server-side and rate-limited with lockout or backoff because profile PINs are low-entropy convenience gates.
 
 Browser, iOS, Android, and other capable clients authenticate directly.
 They may use local password auth, future OAuth, and MFA according to the account's effective authentication policy.
@@ -97,6 +100,7 @@ Future OAuth providers map into local `UserAccount` records and inherit the same
 * https://github.com/streamarr/streamarr-server/issues/163[Issue #163: Replace placeholder user ID with authenticated user from Spring Security]
 * https://docs.spring.io/spring-security/reference/features/authentication/password-storage.html[Spring Security: Password Storage]
 * https://docs.spring.io/spring-security/reference/servlet/authentication/mfa.html[Spring Security: Multi-Factor Authentication]
+* https://docs.spring.io/spring-security/reference/servlet/authentication/onetimetoken.html[Spring Security: One-Time Token Login]
 * https://docs.spring.io/spring-security/reference/servlet/authentication/passkeys.html[Spring Security: Passkeys/WebAuthn]
 * https://docs.spring.io/spring-authorization-server/reference/protocol-endpoints.html[Spring Authorization Server: Protocol Endpoints]
 * https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html[OWASP Password Storage Cheat Sheet]
