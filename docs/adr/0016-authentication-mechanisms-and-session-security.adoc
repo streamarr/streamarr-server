@@ -35,6 +35,7 @@ Refresh tokens authenticate the device session.
 Refresh tokens are account/device scoped rather than household/profile scoped.
 Account-bootstrap access tokens carry account and session identity but no active household or profile; they are valid only for login/session, listing the account's own household memberships, and selecting a household.
 Selecting or switching households issues a fresh household-scoped access token.
+If the account has exactly one selectable household, login may immediately issue the household-scoped access token.
 Profile selection issues a fresh profile-scoped access token nested under the active household.
 If an access token carries an active profile, the server must validate that the profile belongs to the active household.
 Household-scoped access tokens without an active profile are valid only for pre-profile-selection or household-management surfaces that do not require a profile visibility policy.

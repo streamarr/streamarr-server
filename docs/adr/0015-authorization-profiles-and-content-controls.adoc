@@ -62,6 +62,7 @@ Profile restriction, household membership, and profile membership changes use th
 
 Household selection is server-mediated.
 Selecting or switching households returns a fresh household-scoped access token.
+If an account has exactly one selectable household, the server may select it automatically.
 Profile-scoped access tokens must include the active household, and the server must validate that the selected profile belongs to that household.
 Household-scoped authenticated requests without an active profile are valid only for pre-profile-selection or household-management surfaces that do not require profile visibility policy.
 
