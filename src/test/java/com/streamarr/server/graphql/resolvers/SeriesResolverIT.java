@@ -9,14 +9,22 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.domain.metadata.Company;
+import com.streamarr.server.domain.metadata.Genre;
+import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.repositories.CompanyRepository;
+import com.streamarr.server.repositories.GenreRepository;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -32,6 +40,9 @@ class SeriesResolverIT extends AbstractIntegrationTest {
   @Autowired private SeriesRepository seriesRepository;
   @Autowired private SeasonRepository seasonRepository;
   @Autowired private EpisodeRepository episodeRepository;
+  @Autowired private PersonRepository personRepository;
+  @Autowired private CompanyRepository companyRepository;
+  @Autowired private GenreRepository genreRepository;
 
   @Test
   @DisplayName("Should resolve series scalar fields from season query")
@@ -136,6 +147,72 @@ class SeriesResolverIT extends AbstractIntegrationTest {
     assertThat(episodes)
         .extracting(episode -> episode.get("episodeNumber"))
         .containsExactly(1, 2, 17);
+  }
+
+  @Test
+  @DisplayName("Should resolve studios cast directors and genres from series query")
+  @SuppressWarnings("unchecked")
+  void shouldResolveStudiosCastDirectorsAndGenresFromSeriesQuery() {
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
+    var actor =
+        personRepository.save(
+            Person.builder().name("Nina Dobrev").sourceId(uniqueSourceId()).build());
+    var director =
+        personRepository.save(
+            Person.builder().name("Kevin Williamson").sourceId(uniqueSourceId()).build());
+    var studio =
+        companyRepository.save(
+            Company.builder().name("Warner Bros").sourceId(uniqueSourceId()).build());
+    var genre =
+        genreRepository.save(Genre.builder().name("Fantasy").sourceId(uniqueSourceId()).build());
+
+    var series =
+        seriesRepository.saveAndFlush(
+            Series.builder()
+                .title("The Vampire Diaries")
+                .titleSort("Vampire Diaries, The")
+                .library(library)
+                .studios(Set.of(studio))
+                .cast(List.of(actor))
+                .directors(List.of(director))
+                .genres(Set.of(genre))
+                .build());
+
+    var result =
+        dgsQueryExecutor.execute(
+            """
+            {
+              series(id: "%s") {
+                studios { name }
+                cast { name }
+                directors { name }
+                genres { name }
+              }
+            }
+            """
+                .formatted(series.getId()));
+
+    assertThat(result.getErrors()).isEmpty();
+
+    Map<String, Object> data = result.getData();
+    var seriesData = (Map<String, Object>) data.get("series");
+
+    assertThat((List<Map<String, Object>>) seriesData.get("studios"))
+        .extracting(studioData -> studioData.get("name"))
+        .containsExactly("Warner Bros");
+    assertThat((List<Map<String, Object>>) seriesData.get("cast"))
+        .extracting(castData -> castData.get("name"))
+        .containsExactly("Nina Dobrev");
+    assertThat((List<Map<String, Object>>) seriesData.get("directors"))
+        .extracting(directorData -> directorData.get("name"))
+        .containsExactly("Kevin Williamson");
+    assertThat((List<Map<String, Object>>) seriesData.get("genres"))
+        .extracting(genreData -> genreData.get("name"))
+        .containsExactly("Fantasy");
+  }
+
+  private String uniqueSourceId() {
+    return "series-resolver-it-" + UUID.randomUUID();
   }
 
   private Season createSeason() {
