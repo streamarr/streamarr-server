@@ -77,6 +77,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   private UserAccount account;
   private Household household;
   private Profile profile;
+  private UUID secondHouseholdId;
   private String setupEmail;
   private String setupHouseholdName;
 
@@ -88,6 +89,9 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     }
     if (setupEmail != null) {
       dsl.deleteFrom(USER_ACCOUNT).where(USER_ACCOUNT.EMAIL.eq(setupEmail)).execute();
+    }
+    if (secondHouseholdId != null) {
+      householdRepository.deleteById(secondHouseholdId);
     }
     if (household != null) {
       householdRepository.deleteById(household.getId());
@@ -332,6 +336,148 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
         .andReturn()
         .getResponse()
         .getCookies();
+  }
+
+  @Test
+  @DisplayName("Should preserve profile scope when refreshing")
+  void shouldPreserveProfileScopeWhenRefreshing() throws Exception {
+    seedSingleProfileIdentity();
+    var refreshToken = loginAndReadField("refreshToken");
+
+    mockMvc
+        .perform(
+            post("/api/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(refreshBody(refreshToken)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.scope").value("profile"));
+  }
+
+  @Test
+  @DisplayName("Should downgrade to account scope when stored context no longer valid")
+  void shouldDowngradeToAccountScopeWhenStoredContextNoLongerValid() throws Exception {
+    seedSingleProfileIdentity();
+    var refreshToken = loginAndReadField("refreshToken");
+
+    // Revoking the membership cascades the profile link away; refresh must never trust the
+    // stored selection without revalidating it.
+    var membership =
+        membershipRepository
+            .findByAccountIdAndHouseholdId(account.getId(), household.getId())
+            .orElseThrow();
+    membershipRepository.delete(membership);
+
+    mockMvc
+        .perform(
+            post("/api/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(refreshBody(refreshToken)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.scope").value("account"));
+  }
+
+  @Test
+  @DisplayName("Should clear active profile when household switched")
+  void shouldClearActiveProfileWhenHouseholdSwitched() throws Exception {
+    seedSingleProfileIdentity();
+    var secondHousehold =
+        householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    secondHouseholdId = secondHousehold.getId();
+    membershipRepository.save(
+        HouseholdMembership.builder()
+            .accountId(account.getId())
+            .householdId(secondHousehold.getId())
+            .householdRole(HouseholdRole.MEMBER)
+            .build());
+    for (int i = 0; i < 2; i++) {
+      var extraProfile =
+          profileRepository.save(
+              ProfileFixture.defaultProfileBuilder().householdId(secondHousehold.getId()).build());
+      accountProfileRepository.save(
+          AccountProfile.builder()
+              .accountId(account.getId())
+              .householdId(secondHousehold.getId())
+              .profileId(extraProfile.getId())
+              .build());
+    }
+
+    // Two households: login stays at account scope (no auto-selection).
+    var loginResponse =
+        mockMvc
+            .perform(
+                post("/api/auth/login")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(loginBody(account.getEmail(), PASSWORD)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.scope").value("account"))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    var accessToken = objectMapper.readTree(loginResponse).get("accessToken").asString();
+
+    // Selecting the single-profile household auto-selects its sole profile.
+    var firstSelect =
+        mockMvc
+            .perform(
+                post("/api/auth/select-household")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .header("Authorization", "Bearer " + accessToken)
+                    .content(
+                        "{\"householdId\": \"%s\", \"cookieMode\": false}"
+                            .formatted(household.getId())))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.scope").value("profile"))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    var profileScopedToken = objectMapper.readTree(firstSelect).get("accessToken").asString();
+    var profileClaims = decodeToken(profileScopedToken);
+    assertThat(profileClaims.getClaimAsString("hh")).isEqualTo(household.getId().toString());
+    assertThat(profileClaims.getClaimAsString("pf")).isEqualTo(profile.getId().toString());
+
+    // Switching to the two-profile household clears the profile — never a mismatched hh/pf pair.
+    var secondSelect =
+        mockMvc
+            .perform(
+                post("/api/auth/select-household")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .header("Authorization", "Bearer " + profileScopedToken)
+                    .content(
+                        "{\"householdId\": \"%s\", \"cookieMode\": false}"
+                            .formatted(secondHousehold.getId())))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.scope").value("household"))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    var householdScopedToken = objectMapper.readTree(secondSelect).get("accessToken").asString();
+    var householdClaims = decodeToken(householdScopedToken);
+    assertThat(householdClaims.getClaimAsString("hh"))
+        .isEqualTo(secondHousehold.getId().toString());
+    assertThat(householdClaims.hasClaim("pf")).isFalse();
+  }
+
+  private String loginAndReadField(String field) throws Exception {
+    var response =
+        mockMvc
+            .perform(
+                post("/api/auth/login")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(loginBody(account.getEmail(), PASSWORD)))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return objectMapper.readTree(response).get(field).asString();
+  }
+
+  private org.springframework.security.oauth2.jwt.Jwt decodeToken(String token) {
+    var keyBytes = java.util.Base64.getDecoder().decode(tokenProperties.signingKey());
+    return org.springframework.security.oauth2.jwt.NimbusJwtDecoder.withSecretKey(
+            new javax.crypto.spec.SecretKeySpec(keyBytes, "HmacSHA256"))
+        .macAlgorithm(org.springframework.security.oauth2.jose.jws.MacAlgorithm.HS256)
+        .build()
+        .decode(token);
   }
 
   /** Minted against the real identity graph with a fixed past clock — expired but well-formed. */

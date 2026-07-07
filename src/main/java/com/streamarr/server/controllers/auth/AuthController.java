@@ -10,6 +10,7 @@ import com.streamarr.server.services.auth.SessionScopeService;
 import com.streamarr.server.services.auth.SetupCommand;
 import com.streamarr.server.services.auth.SetupService;
 import com.streamarr.server.services.auth.TokenRefreshService;
+import com.streamarr.server.services.authorization.AuthorizationService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.Arrays;
@@ -33,7 +34,28 @@ public class AuthController {
   private final TokenRefreshService tokenRefreshService;
   private final SessionScopeService sessionScopeService;
   private final AccessTokenIssuer accessTokenIssuer;
+  private final AuthorizationService authorizationService;
   private final AuthCookieWriter cookieWriter;
+
+  @PostMapping("/select-household")
+  public ResponseEntity<AuthTokensResponse> selectHousehold(
+      @Valid @RequestBody SelectHouseholdRequest request) {
+    var identity = authorizationService.currentIdentity();
+    var context =
+        sessionScopeService.selectHousehold(
+            identity.accountId(), identity.sessionId(), request.householdId());
+    return respondAccessOnly(accessTokenIssuer.issue(context), request.cookieMode());
+  }
+
+  @PostMapping("/select-profile")
+  public ResponseEntity<AuthTokensResponse> selectProfile(
+      @Valid @RequestBody SelectProfileRequest request) {
+    var identity = authorizationService.currentIdentity();
+    var context =
+        sessionScopeService.selectProfile(
+            identity.accountId(), identity.sessionId(), request.profileId());
+    return respondAccessOnly(accessTokenIssuer.issue(context), request.cookieMode());
+  }
 
   @PostMapping("/setup")
   public ResponseEntity<AuthTokensResponse> setup(

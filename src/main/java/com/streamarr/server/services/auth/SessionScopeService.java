@@ -2,9 +2,15 @@ package com.streamarr.server.services.auth;
 
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.exceptions.AuthenticationRequiredException;
+import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
+import com.streamarr.server.exceptions.HouseholdRequiredException;
+import com.streamarr.server.exceptions.ProfileAccessDeniedException;
 import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.HouseholdMembershipRepository;
+import com.streamarr.server.repositories.auth.UserAccountRepository;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,6 +26,7 @@ public class SessionScopeService {
   private final HouseholdMembershipRepository membershipRepository;
   private final AccountProfileRepository accountProfileRepository;
   private final AuthSessionRepository sessionRepository;
+  private final UserAccountRepository userAccountRepository;
 
   /**
    * ADR 0016 auto-selection: a sole household is selected automatically, then a sole selectable
@@ -93,6 +100,73 @@ public class SessionScopeService {
 
     clearSelection(session, true);
     return TokenContext.builder().account(account).session(session).build();
+  }
+
+  /**
+   * Selecting or switching a household always clears the active profile first, then may auto-select
+   * the sole selectable profile in the new household — a mismatched household/profile pair can
+   * never be minted.
+   */
+  @Transactional
+  public TokenContext selectHousehold(UUID accountId, UUID sessionId, UUID householdId) {
+    membershipRepository
+        .findByAccountIdAndHouseholdId(accountId, householdId)
+        .orElseThrow(HouseholdAccessDeniedException::new);
+
+    var account = loadAccount(accountId);
+    var session = loadSession(sessionId);
+
+    session.setActiveHouseholdId(householdId);
+    session.setActiveProfileId(null);
+
+    var links = accountProfileRepository.findByAccountIdAndHouseholdId(accountId, householdId);
+    if (links.size() == 1) {
+      session.setActiveProfileId(links.getFirst().getProfileId());
+    }
+
+    sessionRepository.save(session);
+
+    return TokenContext.builder()
+        .account(account)
+        .session(session)
+        .householdId(householdId)
+        .profileId(session.getActiveProfileId())
+        .build();
+  }
+
+  @Transactional
+  public TokenContext selectProfile(UUID accountId, UUID sessionId, UUID profileId) {
+    var account = loadAccount(accountId);
+    var session = loadSession(sessionId);
+
+    var householdId = session.getActiveHouseholdId();
+    if (householdId == null) {
+      throw new HouseholdRequiredException();
+    }
+
+    accountProfileRepository
+        .findByAccountIdAndHouseholdIdAndProfileId(accountId, householdId, profileId)
+        .orElseThrow(ProfileAccessDeniedException::new);
+
+    session.setActiveProfileId(profileId);
+    sessionRepository.save(session);
+
+    return TokenContext.builder()
+        .account(account)
+        .session(session)
+        .householdId(householdId)
+        .profileId(profileId)
+        .build();
+  }
+
+  private UserAccount loadAccount(UUID accountId) {
+    return userAccountRepository
+        .findById(accountId)
+        .orElseThrow(AuthenticationRequiredException::new);
+  }
+
+  private AuthSession loadSession(UUID sessionId) {
+    return sessionRepository.findById(sessionId).orElseThrow(AuthenticationRequiredException::new);
   }
 
   private void clearSelection(AuthSession session, boolean includingHousehold) {
