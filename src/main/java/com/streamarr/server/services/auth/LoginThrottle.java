@@ -50,6 +50,22 @@ public class LoginThrottle {
     removeKey(sourceKey(source));
   }
 
+  /**
+   * Drops entries whose attempts all fell out of the window. Without this, unique sprayed keys
+   * would accumulate forever — they are never touched again, so per-touch pruning cannot reach
+   * them. Returns the number of evicted entries for observability.
+   */
+  public int sweepExpired() {
+    var evicted = 0;
+    for (var key : attempts.keySet()) {
+      var remaining = attempts.computeIfPresent(key, (_, timestamps) -> pruned(timestamps));
+      if (remaining == null) {
+        evicted++;
+      }
+    }
+    return evicted;
+  }
+
   private boolean reserve(String key) {
     if (key == null) {
       return true;
@@ -88,6 +104,11 @@ public class LoginThrottle {
       return;
     }
     attempts.remove(key);
+  }
+
+  private Deque<Instant> pruned(Deque<Instant> timestamps) {
+    prune(timestamps);
+    return timestamps.isEmpty() ? null : timestamps;
   }
 
   private void prune(Deque<Instant> timestamps) {

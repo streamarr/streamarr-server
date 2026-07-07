@@ -162,6 +162,33 @@ class LoginThrottleTest {
   }
 
   @Test
+  @DisplayName("Should evict sprayed keys when sweeping after window")
+  void shouldEvictSprayedKeysWhenSweepingAfterWindow() {
+    var sprayedKeys = 50;
+    for (int i = 0; i < sprayedKeys; i++) {
+      throttle.registerAttempt("sprayed-" + i + "@example.com", "src-" + i);
+    }
+
+    currentTime.updateAndGet(instant -> instant.plus(WINDOW).plusSeconds(1));
+
+    assertThat(throttle.sweepExpired()).isEqualTo(sprayedKeys * 2);
+    assertThat(throttle.sweepExpired()).isZero();
+  }
+
+  @Test
+  @DisplayName("Should keep live budgets when sweeping within window")
+  void shouldKeepLiveBudgetsWhenSweepingWithinWindow() {
+    for (int i = 0; i < MAX_ATTEMPTS; i++) {
+      throttle.registerAttempt(EMAIL, SOURCE);
+    }
+
+    assertThat(throttle.sweepExpired()).isZero();
+
+    assertThatThrownBy(() -> throttle.registerAttempt(EMAIL, SOURCE))
+        .isInstanceOf(TooManyLoginAttemptsException.class);
+  }
+
+  @Test
   @DisplayName("Should treat email case-insensitively when throttling")
   void shouldTreatEmailCaseInsensitivelyWhenThrottling() {
     for (int i = 0; i < MAX_ATTEMPTS; i++) {
