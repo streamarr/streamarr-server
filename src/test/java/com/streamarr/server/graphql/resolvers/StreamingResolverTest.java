@@ -117,6 +117,31 @@ class StreamingResolverTest {
   }
 
   @Test
+  @DisplayName("Should expose an absolute timeline capability on the session")
+  void shouldExposeAnAbsoluteTimelineCapabilityOnTheSession() {
+    var sessionId = UUID.randomUUID();
+    var session = buildSession(sessionId);
+    STUB_SERVICE.setNextResult(session);
+
+    var mutation =
+        String.format(
+            """
+            mutation {
+              createStreamSession(mediaFileId: "%s") {
+                id
+                timeline
+              }
+            }
+            """,
+            UUID.randomUUID());
+
+    var context = dgsQueryExecutor.executeAndGetDocumentContext(mutation);
+    String timeline = context.read("data.createStreamSession.timeline");
+
+    assertThat(timeline).isEqualTo("ABSOLUTE");
+  }
+
+  @Test
   @DisplayName("Should map GraphQL options input to streaming options when options provided")
   void shouldMapGraphqlOptionsInputToStreamingOptionsWhenOptionsProvided() {
     var sessionId = UUID.randomUUID();
