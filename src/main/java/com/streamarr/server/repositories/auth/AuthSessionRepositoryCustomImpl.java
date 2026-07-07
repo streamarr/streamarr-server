@@ -36,7 +36,11 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
             .returning(AUTH_SESSION.SESSION_VERSION)
             .fetchOne();
 
-    return Optional.ofNullable(updated).map(record -> record.get(AUTH_SESSION.SESSION_VERSION));
+    var bumped =
+        Optional.ofNullable(updated).map(record -> record.get(AUTH_SESSION.SESSION_VERSION));
+    bumped.ifPresent(
+        version -> publishCounterNotification("SESSION", sessionId.toString(), version));
+    return bumped;
   }
 
   @Override
@@ -53,6 +57,20 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
             .returning(AUTH_SESSION.SESSION_VERSION)
             .fetchOne();
 
-    return Optional.ofNullable(updated).map(record -> record.get(AUTH_SESSION.SESSION_VERSION));
+    var bumped =
+        Optional.ofNullable(updated).map(record -> record.get(AUTH_SESSION.SESSION_VERSION));
+    bumped.ifPresent(
+        version -> publishCounterNotification("SESSION", sessionId.toString(), version));
+    return bumped;
+  }
+
+  private void publishCounterNotification(String kind, String key, long version) {
+    dsl.select(
+            org.jooq.impl.DSL.function(
+                "pg_notify",
+                String.class,
+                org.jooq.impl.DSL.val("streamarr_counters"),
+                org.jooq.impl.DSL.val(kind + "|" + key + "|" + version)))
+        .fetch();
   }
 }

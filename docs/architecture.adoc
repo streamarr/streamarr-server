@@ -111,6 +111,23 @@ See link:adr/0007-transcode-first-with-smart-remux.adoc[ADR 0007],
 link:adr/0009-h264-plus-av1-codec-strategy.adoc[ADR 0009],
 link:adr/0013-stream-decision-architecture.adoc[ADR 0013].
 
+== Authentication and Invalidation
+
+Identity, sessions, and token security follow ADR 0015/0016: HMAC-signed access tokens with
+nested scopes, digest-only rotating refresh tokens, and per-request version-counter checks that
+fail closed. The browser client is same-origin by construction -- the Vite dev server proxies
+`/graphql` and `/api` in development, and production serves the client from the same origin --
+so no CORS configuration exists and none should be added.
+
+Cross-instance token invalidation rides PostgreSQL LISTEN/NOTIFY: counter bumps call
+`pg_notify` inside the bumping transaction, and each instance's `CounterNotificationListener`
+applies them to its local version cache over one dedicated (non-Hikari) connection, clearing
+the whole cache on every reconnect so missed notifications cannot leave stale entries.
+
+CAUTION: PgBouncer in transaction-pooling mode does not deliver LISTEN/NOTIFY. The listener's
+dedicated connection must reach PostgreSQL directly (or through session-mode pooling), even when
+application traffic goes through a transaction-mode pooler.
+
 == Key Design Decisions
 
 See link:adr/[Architecture Decision Records] for detailed rationale. Summary:

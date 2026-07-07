@@ -75,8 +75,20 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
       return;
     }
 
+    var version = updated.get(HOUSEHOLD_MEMBERSHIP.VERSION);
     eventPublisher.publishEvent(
-        CounterBumpedEvent.membership(
-            link.getAccountId(), link.getHouseholdId(), updated.get(HOUSEHOLD_MEMBERSHIP.VERSION)));
+        CounterBumpedEvent.membership(link.getAccountId(), link.getHouseholdId(), version));
+    publishCounterNotification(
+        "MEMBERSHIP", link.getAccountId() + ":" + link.getHouseholdId(), version);
+  }
+
+  private void publishCounterNotification(String kind, String key, long version) {
+    dsl.select(
+            org.jooq.impl.DSL.function(
+                "pg_notify",
+                String.class,
+                org.jooq.impl.DSL.val("streamarr_counters"),
+                org.jooq.impl.DSL.val(kind + "|" + key + "|" + version)))
+        .fetch();
   }
 }
