@@ -27,11 +27,6 @@ public class FakeSeasonRepository extends FakeJpaRepository<Season> implements S
   }
 
   @Override
-  public List<Season> findBySeriesIdIn(Collection<UUID> seriesIds) {
-    return database.values().stream().filter(season -> inSeries(season, seriesIds)).toList();
-  }
-
-  @Override
   public Map<UUID, List<UUID>> findSeasonIdsBySeriesIds(Collection<UUID> seriesIds) {
     return database.values().stream()
         .filter(season -> inSeries(season, seriesIds))
@@ -43,7 +38,8 @@ public class FakeSeasonRepository extends FakeJpaRepository<Season> implements S
 
   @Override
   public List<Season> findBySeriesIdOrderBySeasonNumber(UUID seriesId) {
-    return findBySeriesIdIn(List.of(seriesId)).stream()
+    return database.values().stream()
+        .filter(season -> inSeries(season, List.of(seriesId)))
         .sorted(comparingInt(Season::getSeasonNumber))
         .toList();
   }

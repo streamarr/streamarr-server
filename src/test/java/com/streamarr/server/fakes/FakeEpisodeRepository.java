@@ -19,14 +19,10 @@ public class FakeEpisodeRepository extends FakeJpaRepository<Episode> implements
 
   @Override
   public List<Episode> findBySeasonIdOrderByEpisodeNumber(UUID seasonId) {
-    return findBySeasonIdIn(List.of(seasonId)).stream()
+    return database.values().stream()
+        .filter(episode -> inSeasons(episode, List.of(seasonId)))
         .sorted(comparingInt(Episode::getEpisodeNumber))
         .toList();
-  }
-
-  @Override
-  public List<Episode> findBySeasonIdIn(Collection<UUID> seasonIds) {
-    return database.values().stream().filter(episode -> inSeasons(episode, seasonIds)).toList();
   }
 
   @Override
