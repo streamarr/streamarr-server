@@ -14,8 +14,6 @@ public interface StreamingService {
 
   void destroySession(UUID sessionId);
 
-  StreamSession seekSession(UUID sessionId, int positionSeconds);
-
   Collection<StreamSession> getAllSessions();
 
   int getActiveSessionCount();
