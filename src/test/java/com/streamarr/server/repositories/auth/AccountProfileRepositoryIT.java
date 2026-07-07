@@ -1,6 +1,7 @@
 package com.streamarr.server.repositories.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.AccountProfile;
@@ -13,6 +14,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 
 @Tag("IntegrationTest")
 @DisplayName("Account Profile Repository Integration Tests")
@@ -42,6 +44,41 @@ class AccountProfileRepositoryIT extends AbstractIntegrationTest {
     assertThat(membershipVersionOf(seeded.membership())).isEqualTo(2L);
     assertThat(accountProfileRepository.findAll())
         .noneMatch(remaining -> seeded.link().getProfileId().equals(remaining.getProfileId()));
+  }
+
+  @Test
+  @DisplayName("Should not bump membership version when revoking absent link")
+  void shouldNotBumpMembershipVersionWhenRevokingAbsentLink() {
+    var seeded = seedMembershipWithUnlinkedProfile();
+
+    accountProfileRepository.revokeProfileLink(seeded.link());
+
+    assertThat(membershipVersionOf(seeded.membership())).isZero();
+  }
+
+  @Test
+  @DisplayName("Should not bump membership version when duplicate link rejected")
+  void shouldNotBumpMembershipVersionWhenDuplicateLinkRejected() {
+    var seeded = seedMembershipWithUnlinkedProfile();
+    accountProfileRepository.linkProfile(seeded.link());
+
+    assertThatThrownBy(() -> accountProfileRepository.linkProfile(seeded.link()))
+        .isInstanceOf(DataIntegrityViolationException.class);
+
+    assertThat(membershipVersionOf(seeded.membership())).isEqualTo(1L);
+  }
+
+  @Test
+  @DisplayName("Should advance membership audit timestamp when version bumped")
+  void shouldAdvanceMembershipAuditTimestampWhenVersionBumped() {
+    var seeded = seedMembershipWithUnlinkedProfile();
+    var savedAt = seeded.membership().getLastModifiedOn();
+
+    accountProfileRepository.linkProfile(seeded.link());
+
+    var reloaded =
+        householdMembershipRepository.findById(seeded.membership().getId()).orElseThrow();
+    assertThat(reloaded.getLastModifiedOn()).isAfter(savedAt);
   }
 
   private record SeededMembership(HouseholdMembership membership, AccountProfile link) {}
