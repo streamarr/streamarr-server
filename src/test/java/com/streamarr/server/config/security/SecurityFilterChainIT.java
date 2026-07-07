@@ -68,7 +68,13 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   @DisplayName("Should permit auth and health endpoints")
   void shouldPermitAuthAndHealthEndpoints() throws Exception {
     mockMvc.perform(get("/api/auth/status")).andExpect(status().isOk());
-    mockMvc.perform(get("/actuator/health")).andExpect(status().isOk());
+    // The contract is reachability, not health: a DOWN indicator answers 503, never 401/403.
+    mockMvc
+        .perform(get("/actuator/health"))
+        .andExpect(
+            result ->
+                org.assertj.core.api.Assertions.assertThat(result.getResponse().getStatus())
+                    .isNotIn(401, 403));
   }
 
   @Test
