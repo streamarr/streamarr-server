@@ -100,7 +100,7 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
             .libraryId(library.getId())
             .status(MediaFileStatus.MATCHED)
             .filename("pilot.mkv")
-            .filepathUri("/media/" + UUID.randomUUID() + ".mkv")
+            .filepathUri("file:///media/" + UUID.randomUUID() + ".mkv")
             .build();
 
     var episode =

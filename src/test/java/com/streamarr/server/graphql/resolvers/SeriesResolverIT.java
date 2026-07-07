@@ -76,9 +76,9 @@ class SeriesResolverIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should resolve seasons by season number from series query")
+  @DisplayName("Should return seasons ordered by season number from series query")
   @SuppressWarnings("unchecked")
-  void shouldResolveSeasonsBySeasonNumberFromSeriesQuery() {
+  void shouldReturnSeasonsOrderedBySeasonNumberFromSeriesQuery() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
     var series = createSeries(library);
     seasonRepository.saveAllAndFlush(
@@ -114,9 +114,9 @@ class SeriesResolverIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should resolve episodes by episode number from season query")
+  @DisplayName("Should return episodes ordered by episode number from season query")
   @SuppressWarnings("unchecked")
-  void shouldResolveEpisodesByEpisodeNumberFromSeasonQuery() {
+  void shouldReturnEpisodesOrderedByEpisodeNumberFromSeasonQuery() {
     var season = createSeason();
     var library = season.getLibrary();
     episodeRepository.saveAllAndFlush(

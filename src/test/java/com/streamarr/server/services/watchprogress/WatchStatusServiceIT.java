@@ -132,7 +132,7 @@ class WatchStatusServiceIT extends AbstractIntegrationTest {
             .libraryId(library.getId())
             .status(MediaFileStatus.MATCHED)
             .filename("episode.mkv")
-            .filepathUri("/media/" + UUID.randomUUID() + ".mkv")
+            .filepathUri("file:///media/" + UUID.randomUUID() + ".mkv")
             .build();
     return episodeRepository.saveAndFlush(
         Episode.builder()

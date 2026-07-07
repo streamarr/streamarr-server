@@ -353,8 +353,8 @@ class WatchStatusServiceTest {
     }
 
     @Test
-    @DisplayName("Should return unwatched when series seasons have no episodes")
-    void shouldReturnUnwatchedWhenSeriesSeasonsHaveNoEpisodes() {
+    @DisplayName("Should return unwatched when series has no episodes or no watch history")
+    void shouldReturnUnwatchedWhenSeriesHasNoEpisodesOrNoHistory() {
       var populated = buildSeries();
       var populatedSeason =
           seasonRepository.save(Season.builder().seasonNumber(1).series(populated).build());
