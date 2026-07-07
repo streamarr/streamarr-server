@@ -2,6 +2,8 @@ package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.auth.AccountProfile;
 import com.streamarr.server.repositories.auth.AccountProfileRepository;
+import java.util.Optional;
+import java.util.UUID;
 
 public class FakeAccountProfileRepository extends FakeJpaRepository<AccountProfile>
     implements AccountProfileRepository {
@@ -10,6 +12,18 @@ public class FakeAccountProfileRepository extends FakeJpaRepository<AccountProfi
 
   public FakeAccountProfileRepository(FakeHouseholdMembershipRepository membershipRepository) {
     this.membershipRepository = membershipRepository;
+  }
+
+  @Override
+  public Optional<AccountProfile> findByAccountIdAndHouseholdIdAndProfileId(
+      UUID accountId, UUID householdId, UUID profileId) {
+    return database.values().stream()
+        .filter(
+            link ->
+                accountId.equals(link.getAccountId())
+                    && householdId.equals(link.getHouseholdId())
+                    && profileId.equals(link.getProfileId()))
+        .findFirst();
   }
 
   @Override
