@@ -46,6 +46,11 @@ streaming:
     max-played-percent: ${STREAMING_WATCH_PROGRESS_MAX_RESUME_PERCENT:90.0}
     max-remaining-seconds: ${STREAMING_WATCH_PROGRESS_MAX_REMAINING_SECONDS:300}
 
+dev:
+  seed-identity: ${DEV_SEED_IDENTITY:true}
+  admin-email: ${DEV_ADMIN_EMAIL:admin@dev.local}
+  admin-password: ${DEV_ADMIN_PASSWORD:streamarr-dev}
+
 auth:
   token:
     signing-key: ${AUTH_TOKEN_SIGNING_KEY:}

@@ -8,7 +8,7 @@ import java.util.UUID;
 
 public interface StreamingService {
 
-  StreamSession createSession(UUID mediaFileId, StreamingOptions options);
+  StreamSession createSession(UUID mediaFileId, UUID profileId, StreamingOptions options);
 
   Optional<StreamSession> accessSession(UUID sessionId);
 

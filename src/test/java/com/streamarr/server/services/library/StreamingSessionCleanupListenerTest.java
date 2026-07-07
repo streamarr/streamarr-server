@@ -79,7 +79,7 @@ class StreamingSessionCleanupListenerTest {
     }
 
     @Override
-    public StreamSession createSession(UUID mediaFileId, StreamingOptions options) {
+    public StreamSession createSession(UUID mediaFileId, UUID profileId, StreamingOptions options) {
       throw new UnsupportedOperationException();
     }
 

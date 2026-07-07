@@ -19,6 +19,8 @@ public class StreamSession {
 
   private final UUID sessionId;
   private final UUID mediaFileId;
+  // The owning profile, stamped at creation — playback tokens bind to it.
+  private final UUID profileId;
   private final Path sourcePath;
   private final MediaProbe mediaProbe;
   private final TranscodeDecision transcodeDecision;

@@ -42,7 +42,7 @@ public class HlsStreamingService implements StreamingService {
   private final MutexFactory<UUID> resumeMutex;
 
   @Override
-  public StreamSession createSession(UUID mediaFileId, StreamingOptions options) {
+  public StreamSession createSession(UUID mediaFileId, UUID profileId, StreamingOptions options) {
     var mediaFile =
         mediaFileRepository
             .findById(mediaFileId)
@@ -60,6 +60,7 @@ public class HlsStreamingService implements StreamingService {
         StreamSession.builder()
             .sessionId(sessionId)
             .mediaFileId(mediaFileId)
+            .profileId(profileId)
             .sourcePath(FilepathCodec.decode(mediaFile.getFilepathUri()))
             .mediaProbe(probe)
             .transcodeDecision(decision)
