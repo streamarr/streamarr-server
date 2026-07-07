@@ -7,6 +7,9 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfFilter;
+import org.springframework.security.web.header.HeaderWriterFilter;
 
 @Configuration
 @RequiredArgsConstructor
@@ -23,13 +26,16 @@ public class SecurityConfig {
    * already real — presented tokens are decoded, version-checked, and rejected with the machine
    * codes clients key on.
    *
-   * <p>CSRF stays disabled only while nothing in the suite authenticates by cookie; the CSRF slice
-   * of this PR replaces it with csrf.spa() and a cookie-scoped protection matcher.
+   * <p>CSRF (SPA shape: readable XSRF-TOKEN cookie, Xor handler) protects exactly the
+   * cookie-authenticated requests. The filter is wired manually because the resource-server DSL
+   * exempts any request its bearer resolver finds a token on — and our resolver reads the access
+   * cookie, which is precisely the ambient credential CSRF must cover.
    */
   @SuppressWarnings("java:S4502")
   @Bean
   SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
     return http.csrf(AbstractHttpConfigurer::disable)
+        .addFilterAfter(cookieScopedCsrfFilter(), HeaderWriterFilter.class)
         .authorizeHttpRequests(authorize -> authorize.anyRequest().permitAll())
         .oauth2ResourceServer(
             oauth2 ->
@@ -45,5 +51,13 @@ public class SecurityConfig {
                     .authenticationEntryPoint(authenticationEntryPoint)
                     .accessDeniedHandler(accessDeniedHandler))
         .build();
+  }
+
+  private CsrfFilter cookieScopedCsrfFilter() {
+    var filter = new CsrfFilter(CookieCsrfTokenRepository.withHttpOnlyFalse());
+    filter.setRequireCsrfProtectionMatcher(new CookieAuthenticationCsrfMatcher());
+    filter.setRequestHandler(new SpaCookieCsrfTokenRequestHandler());
+    filter.setAccessDeniedHandler(accessDeniedHandler);
+    return filter;
   }
 }

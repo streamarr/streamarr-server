@@ -323,13 +323,16 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
             .andReturn()
             .getResponse();
     var refreshCookie = loginResponse.getCookie("streamarr_refresh");
+    var csrfCookie = loginResponse.getCookie("XSRF-TOKEN");
 
     // Browsers attach the Path=/ access cookie to every request — including refresh. An expired
     // access credential must never deadlock renewal into logout.
     mockMvc
         .perform(
             post("/api/auth/refresh")
-                .cookie(new Cookie("streamarr_access", expiredAccessToken()), refreshCookie))
+                .cookie(
+                    new Cookie("streamarr_access", expiredAccessToken()), refreshCookie, csrfCookie)
+                .header("X-XSRF-TOKEN", csrfCookie.getValue()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.accessTokenExpiresAt").exists())
         .andExpect(jsonPath("$.scope").value("profile"))
@@ -455,6 +458,87 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     assertThat(householdClaims.getClaimAsString("hh"))
         .isEqualTo(secondHousehold.getId().toString());
     assertThat(householdClaims.hasClaim("pf")).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should reject cookie authenticated post without csrf token")
+  void shouldRejectCookieAuthenticatedPostWithoutCsrfToken() throws Exception {
+    seedSingleProfileIdentity();
+    var accessCookie = cookieModeLogin().getCookie("streamarr_access");
+
+    mockMvc
+        .perform(
+            post("/api/auth/select-household")
+                .contentType(MediaType.APPLICATION_JSON)
+                .cookie(accessCookie)
+                .content(
+                    "{\"householdId\": \"%s\", \"cookieMode\": true}".formatted(household.getId())))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  @DisplayName("Should accept bearer post without csrf token")
+  void shouldAcceptBearerPostWithoutCsrfToken() throws Exception {
+    seedSingleProfileIdentity();
+    var accessToken = loginAndReadField("accessToken");
+
+    mockMvc
+        .perform(
+            post("/api/auth/select-household")
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("Authorization", "Bearer " + accessToken)
+                .content(
+                    "{\"householdId\": \"%s\", \"cookieMode\": false}"
+                        .formatted(household.getId())))
+        .andExpect(status().isOk());
+  }
+
+  @Test
+  @DisplayName("Should reject refresh when only refresh cookie and no csrf token")
+  void shouldRejectRefreshWhenOnlyRefreshCookieAndNoCsrfToken() throws Exception {
+    seedSingleProfileIdentity();
+    var refreshCookie = cookieModeLogin().getCookie("streamarr_refresh");
+
+    // Browsers drop the expired access cookie; the matcher must still treat the ambient refresh
+    // cookie as an authentication carrier.
+    mockMvc
+        .perform(post("/api/auth/refresh").cookie(refreshCookie))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  @DisplayName("Should refresh when only refresh cookie and csrf token present")
+  void shouldRefreshWhenOnlyRefreshCookieAndCsrfTokenPresent() throws Exception {
+    seedSingleProfileIdentity();
+    var loginResponse = cookieModeLogin();
+    var refreshCookie = loginResponse.getCookie("streamarr_refresh");
+    var csrfCookie = loginResponse.getCookie("XSRF-TOKEN");
+    assertThat(csrfCookie).isNotNull();
+
+    // The page reads the XSRF-TOKEN cookie and echoes its raw value — the SW contract.
+    mockMvc
+        .perform(
+            post("/api/auth/refresh")
+                .cookie(refreshCookie, csrfCookie)
+                .header("X-XSRF-TOKEN", csrfCookie.getValue()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.scope").value("profile"));
+  }
+
+  private org.springframework.mock.web.MockHttpServletResponse cookieModeLogin() throws Exception {
+    return mockMvc
+        .perform(
+            post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"email": "%s", "password": "%s", "deviceName": "it-device", \
+                    "cookieMode": true}
+                    """
+                        .formatted(account.getEmail(), PASSWORD)))
+        .andExpect(status().isOk())
+        .andReturn()
+        .getResponse();
   }
 
   private String loginAndReadField(String field) throws Exception {
