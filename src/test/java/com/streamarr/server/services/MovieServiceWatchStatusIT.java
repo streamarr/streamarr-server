@@ -47,7 +47,7 @@ class MovieServiceWatchStatusIT extends AbstractIntegrationTest {
   @Autowired private MovieService movieService;
   @Autowired private DSLContext dsl;
 
-  private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+  private static final UUID PROFILE_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
   private Library library;
   private Movie watchedMovie;
@@ -64,7 +64,7 @@ class MovieServiceWatchStatusIT extends AbstractIntegrationTest {
     // Mark watchedMovie as WATCHED via watch_history
     watchHistoryRepository.saveAndFlush(
         WatchHistory.builder()
-            .userId(USER_ID)
+            .profileId(PROFILE_ID)
             .collectableId(watchedMovie.getId())
             .watchedAt(Instant.now())
             .durationSeconds(7200)
@@ -75,7 +75,7 @@ class MovieServiceWatchStatusIT extends AbstractIntegrationTest {
     sessionProgressRepository.saveAndFlush(
         SessionProgress.builder()
             .sessionId(UUID.randomUUID())
-            .userId(USER_ID)
+            .profileId(PROFILE_ID)
             .mediaFileId(inProgressFileId)
             .positionSeconds(1800)
             .percentComplete(25.0)
@@ -108,7 +108,7 @@ class MovieServiceWatchStatusIT extends AbstractIntegrationTest {
       var filter =
           MediaFilter.builder()
               .libraryId(library.getId())
-              .userId(USER_ID)
+              .profileId(PROFILE_ID)
               .watchStatus(WatchStatus.WATCHED)
               .build();
 
@@ -125,7 +125,7 @@ class MovieServiceWatchStatusIT extends AbstractIntegrationTest {
       var filter =
           MediaFilter.builder()
               .libraryId(library.getId())
-              .userId(USER_ID)
+              .profileId(PROFILE_ID)
               .watchStatus(WatchStatus.IN_PROGRESS)
               .build();
 
@@ -142,7 +142,7 @@ class MovieServiceWatchStatusIT extends AbstractIntegrationTest {
       var filter =
           MediaFilter.builder()
               .libraryId(library.getId())
-              .userId(USER_ID)
+              .profileId(PROFILE_ID)
               .watchStatus(WatchStatus.UNWATCHED)
               .build();
 
@@ -174,7 +174,7 @@ class MovieServiceWatchStatusIT extends AbstractIntegrationTest {
       var filter =
           MediaFilter.builder()
               .libraryId(library.getId())
-              .userId(USER_ID)
+              .profileId(PROFILE_ID)
               .sortBy(OrderMediaBy.LAST_WATCHED)
               .sortDirection(SortOrder.DESC)
               .build();
@@ -209,7 +209,7 @@ class MovieServiceWatchStatusIT extends AbstractIntegrationTest {
       var filter =
           MediaFilter.builder()
               .libraryId(paginationLibrary.getId())
-              .userId(USER_ID)
+              .profileId(PROFILE_ID)
               .sortBy(OrderMediaBy.LAST_WATCHED)
               .sortDirection(SortOrder.DESC)
               .build();
@@ -270,7 +270,7 @@ class MovieServiceWatchStatusIT extends AbstractIntegrationTest {
       sessionProgressRepository.saveAndFlush(
           SessionProgress.builder()
               .sessionId(UUID.randomUUID())
-              .userId(USER_ID)
+              .profileId(PROFILE_ID)
               .mediaFileId(movie.getFiles().iterator().next().getId())
               .positionSeconds(600)
               .percentComplete(25.0)

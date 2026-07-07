@@ -141,7 +141,7 @@ public class Keys {
     public static final UniqueKey<SessionProgressRecord> SESSION_PROGRESS_PKEY = Internal.createUniqueKey(SessionProgress.SESSION_PROGRESS, DSL.name("session_progress_pkey"), new TableField[] { SessionProgress.SESSION_PROGRESS.ID }, true);
     public static final UniqueKey<SessionProgressRecord> UQ_SESSION_PROGRESS_SESSION = Internal.createUniqueKey(SessionProgress.SESSION_PROGRESS, DSL.name("uq_session_progress_session"), new TableField[] { SessionProgress.SESSION_PROGRESS.SESSION_ID }, true);
     public static final UniqueKey<UserAccountRecord> USER_ACCOUNT_PKEY = Internal.createUniqueKey(UserAccount.USER_ACCOUNT, DSL.name("user_account_pkey"), new TableField[] { UserAccount.USER_ACCOUNT.ID }, true);
-    public static final UniqueKey<WatchHistoryRecord> UQ_WATCH_HISTORY_USER_COLLECTABLE_WATCHED = Internal.createUniqueKey(WatchHistory.WATCH_HISTORY, DSL.name("uq_watch_history_user_collectable_watched"), new TableField[] { WatchHistory.WATCH_HISTORY.USER_ID, WatchHistory.WATCH_HISTORY.COLLECTABLE_ID, WatchHistory.WATCH_HISTORY.WATCHED_AT }, true);
+    public static final UniqueKey<WatchHistoryRecord> UQ_WATCH_HISTORY_PROFILE_COLLECTABLE_WATCHED = Internal.createUniqueKey(WatchHistory.WATCH_HISTORY, DSL.name("uq_watch_history_profile_collectable_watched"), new TableField[] { WatchHistory.WATCH_HISTORY.PROFILE_ID, WatchHistory.WATCH_HISTORY.COLLECTABLE_ID, WatchHistory.WATCH_HISTORY.WATCHED_AT }, true);
     public static final UniqueKey<WatchHistoryRecord> WATCH_HISTORY_PKEY = Internal.createUniqueKey(WatchHistory.WATCH_HISTORY, DSL.name("watch_history_pkey"), new TableField[] { WatchHistory.WATCH_HISTORY.ID }, true);
 
     // -------------------------------------------------------------------------

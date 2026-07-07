@@ -12,5 +12,6 @@ public interface SessionProgressRepository
 
   Optional<SessionProgress> findBySessionId(UUID sessionId);
 
-  List<SessionProgress> findByUserIdAndMediaFileIdIn(UUID userId, Collection<UUID> mediaFileIds);
+  List<SessionProgress> findByProfileIdAndMediaFileIdIn(
+      UUID profileId, Collection<UUID> mediaFileIds);
 }

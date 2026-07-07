@@ -37,7 +37,7 @@ class WatchStatusServiceTest {
   private CapturingEventPublisher eventPublisher;
   private WatchStatusService service;
 
-  private static final UUID USER_ID = UUID.randomUUID();
+  private static final UUID PROFILE_ID = UUID.randomUUID();
 
   @BeforeEach
   void setUp() {
@@ -66,11 +66,11 @@ class WatchStatusServiceTest {
     void shouldCreateWatchHistoryEntryWhenMarkingWatchedExplicitly() {
       var movieId = UUID.randomUUID();
 
-      service.markWatched(USER_ID, movieId, CollectableScope.DIRECT_MEDIA, Instant.now(), 7200);
+      service.markWatched(PROFILE_ID, movieId, CollectableScope.DIRECT_MEDIA, Instant.now(), 7200);
 
       var history =
-          watchHistoryRepository.findFirstByUserIdAndCollectableIdOrderByWatchedAtDesc(
-              USER_ID, movieId);
+          watchHistoryRepository.findFirstByProfileIdAndCollectableIdOrderByWatchedAtDesc(
+              PROFILE_ID, movieId);
       assertThat(history).isPresent();
       assertThat(history.get().getDurationSeconds()).isEqualTo(7200);
       assertThat(history.get().getDismissedAt()).isNull();
@@ -83,7 +83,7 @@ class WatchStatusServiceTest {
       episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
       episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
 
-      service.markWatched(USER_ID, season.getId(), CollectableScope.SEASON, Instant.now(), 3600);
+      service.markWatched(PROFILE_ID, season.getId(), CollectableScope.SEASON, Instant.now(), 3600);
 
       assertThat(watchHistoryRepository.count()).isEqualTo(2);
     }
@@ -95,9 +95,9 @@ class WatchStatusServiceTest {
       mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
 
       service.markWatched(
-          USER_ID, movie.getId(), CollectableScope.DIRECT_MEDIA, Instant.now(), 7200);
+          PROFILE_ID, movie.getId(), CollectableScope.DIRECT_MEDIA, Instant.now(), 7200);
 
-      var result = service.getWatchStatusForDirectMedia(USER_ID, List.of(movie.getId()));
+      var result = service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId()));
       assertThat(result).containsEntry(movie.getId(), WatchStatus.WATCHED);
     }
 
@@ -108,10 +108,10 @@ class WatchStatusServiceTest {
       mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
 
       service.markWatched(
-          USER_ID, movie.getId(), CollectableScope.DIRECT_MEDIA, Instant.now(), 7200);
-      service.markUnwatched(USER_ID, movie.getId());
+          PROFILE_ID, movie.getId(), CollectableScope.DIRECT_MEDIA, Instant.now(), 7200);
+      service.markUnwatched(PROFILE_ID, movie.getId());
 
-      var result = service.getWatchStatusForDirectMedia(USER_ID, List.of(movie.getId()));
+      var result = service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId()));
       assertThat(result).containsEntry(movie.getId(), WatchStatus.UNWATCHED);
     }
 
@@ -122,13 +122,13 @@ class WatchStatusServiceTest {
       var mf = mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
 
       service.markWatched(
-          USER_ID, movie.getId(), CollectableScope.DIRECT_MEDIA, Instant.now(), 7200);
+          PROFILE_ID, movie.getId(), CollectableScope.DIRECT_MEDIA, Instant.now(), 7200);
 
       // Simulate active re-watch session
       sessionProgressRepository.save(
-          progressBuilder(USER_ID, mf.getId()).positionSeconds(1800).build());
+          progressBuilder(PROFILE_ID, mf.getId()).positionSeconds(1800).build());
 
-      var result = service.getWatchStatusForDirectMedia(USER_ID, List.of(movie.getId()));
+      var result = service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId()));
       assertThat(result).containsEntry(movie.getId(), WatchStatus.WATCHED);
     }
   }
@@ -146,11 +146,11 @@ class WatchStatusServiceTest {
       var mf2 = mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
 
       sessionProgressRepository.save(
-          progressBuilder(USER_ID, mf1.getId()).positionSeconds(300).build());
+          progressBuilder(PROFILE_ID, mf1.getId()).positionSeconds(300).build());
       sessionProgressRepository.save(
-          progressBuilder(USER_ID, mf2.getId()).positionSeconds(600).build());
+          progressBuilder(PROFILE_ID, mf2.getId()).positionSeconds(600).build());
 
-      var result = service.getWatchStatusForDirectMedia(USER_ID, List.of(movie.getId()));
+      var result = service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId()));
 
       assertThat(result).containsEntry(movie.getId(), WatchStatus.IN_PROGRESS);
     }
@@ -162,7 +162,7 @@ class WatchStatusServiceTest {
 
       mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
 
-      var result = service.getWatchStatusForDirectMedia(USER_ID, List.of(movie.getId()));
+      var result = service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId()));
 
       assertThat(result).containsEntry(movie.getId(), WatchStatus.UNWATCHED);
     }
@@ -176,9 +176,9 @@ class WatchStatusServiceTest {
       mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
 
       sessionProgressRepository.save(
-          progressBuilder(USER_ID, mf1.getId()).positionSeconds(300).build());
+          progressBuilder(PROFILE_ID, mf1.getId()).positionSeconds(300).build());
 
-      var result = service.getWatchStatusForDirectMedia(USER_ID, List.of(movie.getId()));
+      var result = service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId()));
 
       assertThat(result).hasSize(1).containsEntry(movie.getId(), WatchStatus.IN_PROGRESS);
     }
@@ -193,10 +193,10 @@ class WatchStatusServiceTest {
       mediaFileRepository.save(buildMatchedMediaFile(movie2.getId()));
 
       sessionProgressRepository.save(
-          progressBuilder(USER_ID, mf1.getId()).positionSeconds(300).build());
+          progressBuilder(PROFILE_ID, mf1.getId()).positionSeconds(300).build());
 
       var result =
-          service.getWatchStatusForDirectMedia(USER_ID, List.of(movie1.getId(), movie2.getId()));
+          service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie1.getId(), movie2.getId()));
 
       assertThat(result)
           .containsEntry(movie1.getId(), WatchStatus.IN_PROGRESS)
@@ -207,7 +207,7 @@ class WatchStatusServiceTest {
     @DisplayName("Should return unwatched when no media files exist")
     void shouldReturnUnwatchedWhenNoMediaFilesExist() {
       var unknownId = UUID.randomUUID();
-      var result = service.getWatchStatusForDirectMedia(USER_ID, List.of(unknownId));
+      var result = service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(unknownId));
 
       assertThat(result).containsEntry(unknownId, WatchStatus.UNWATCHED);
     }
@@ -228,11 +228,11 @@ class WatchStatusServiceTest {
       var mf2 = mediaFileRepository.save(buildMatchedMediaFile(ep2.getId()));
 
       sessionProgressRepository.save(
-          progressBuilder(USER_ID, mf1.getId()).positionSeconds(300).build());
+          progressBuilder(PROFILE_ID, mf1.getId()).positionSeconds(300).build());
       sessionProgressRepository.save(
-          progressBuilder(USER_ID, mf2.getId()).positionSeconds(600).build());
+          progressBuilder(PROFILE_ID, mf2.getId()).positionSeconds(600).build());
 
-      var result = service.getWatchStatusForSeasons(USER_ID, List.of(season.getId()));
+      var result = service.getWatchStatusForSeasons(PROFILE_ID, List.of(season.getId()));
 
       assertThat(result).containsEntry(season.getId(), WatchStatus.IN_PROGRESS);
     }
@@ -248,9 +248,9 @@ class WatchStatusServiceTest {
       mediaFileRepository.save(buildMatchedMediaFile(ep2.getId()));
 
       sessionProgressRepository.save(
-          progressBuilder(USER_ID, mf1.getId()).positionSeconds(300).build());
+          progressBuilder(PROFILE_ID, mf1.getId()).positionSeconds(300).build());
 
-      var result = service.getWatchStatusForSeasons(USER_ID, List.of(season.getId()));
+      var result = service.getWatchStatusForSeasons(PROFILE_ID, List.of(season.getId()));
 
       assertThat(result).containsEntry(season.getId(), WatchStatus.IN_PROGRESS);
     }
@@ -258,7 +258,7 @@ class WatchStatusServiceTest {
     @Test
     @DisplayName("Should return empty map when no episodes exist")
     void shouldReturnEmptyMapWhenNoEpisodesExist() {
-      var result = service.getWatchStatusForSeasons(USER_ID, List.of(UUID.randomUUID()));
+      var result = service.getWatchStatusForSeasons(PROFILE_ID, List.of(UUID.randomUUID()));
 
       assertThat(result).isEmpty();
     }
@@ -275,9 +275,9 @@ class WatchStatusServiceTest {
       mediaFileRepository.save(buildMatchedMediaFile(ep2.getId()));
 
       sessionProgressRepository.save(
-          progressBuilder(USER_ID, mf1.getId()).positionSeconds(300).build());
+          progressBuilder(PROFILE_ID, mf1.getId()).positionSeconds(300).build());
 
-      var result = service.getWatchStatusForSeasons(USER_ID, List.of(s1.getId(), s2.getId()));
+      var result = service.getWatchStatusForSeasons(PROFILE_ID, List.of(s1.getId(), s2.getId()));
 
       assertThat(result)
           .containsEntry(s1.getId(), WatchStatus.IN_PROGRESS)
@@ -302,11 +302,11 @@ class WatchStatusServiceTest {
       var mf2 = mediaFileRepository.save(buildMatchedMediaFile(ep2.getId()));
 
       sessionProgressRepository.save(
-          progressBuilder(USER_ID, mf1.getId()).positionSeconds(300).build());
+          progressBuilder(PROFILE_ID, mf1.getId()).positionSeconds(300).build());
       sessionProgressRepository.save(
-          progressBuilder(USER_ID, mf2.getId()).positionSeconds(600).build());
+          progressBuilder(PROFILE_ID, mf2.getId()).positionSeconds(600).build());
 
-      var result = service.getWatchStatusForSeries(USER_ID, List.of(series.getId()));
+      var result = service.getWatchStatusForSeries(PROFILE_ID, List.of(series.getId()));
 
       assertThat(result).containsEntry(series.getId(), WatchStatus.IN_PROGRESS);
     }
@@ -324,9 +324,9 @@ class WatchStatusServiceTest {
       mediaFileRepository.save(buildMatchedMediaFile(ep2.getId()));
 
       sessionProgressRepository.save(
-          progressBuilder(USER_ID, mf1.getId()).positionSeconds(300).build());
+          progressBuilder(PROFILE_ID, mf1.getId()).positionSeconds(300).build());
 
-      var result = service.getWatchStatusForSeries(USER_ID, List.of(series.getId()));
+      var result = service.getWatchStatusForSeries(PROFILE_ID, List.of(series.getId()));
 
       assertThat(result).hasSize(1).containsEntry(series.getId(), WatchStatus.IN_PROGRESS);
     }
@@ -334,7 +334,7 @@ class WatchStatusServiceTest {
     @Test
     @DisplayName("Should return empty map when no seasons exist")
     void shouldReturnEmptyMapWhenNoSeasonsExist() {
-      var result = service.getWatchStatusForSeries(USER_ID, List.of(UUID.randomUUID()));
+      var result = service.getWatchStatusForSeries(PROFILE_ID, List.of(UUID.randomUUID()));
 
       assertThat(result).isEmpty();
     }
@@ -353,10 +353,10 @@ class WatchStatusServiceTest {
       mediaFileRepository.save(buildMatchedMediaFile(ep2.getId()));
 
       sessionProgressRepository.save(
-          progressBuilder(USER_ID, mf1.getId()).positionSeconds(300).build());
+          progressBuilder(PROFILE_ID, mf1.getId()).positionSeconds(300).build());
 
       var result =
-          service.getWatchStatusForSeries(USER_ID, List.of(series1.getId(), series2.getId()));
+          service.getWatchStatusForSeries(PROFILE_ID, List.of(series1.getId(), series2.getId()));
 
       assertThat(result)
           .containsEntry(series1.getId(), WatchStatus.IN_PROGRESS)

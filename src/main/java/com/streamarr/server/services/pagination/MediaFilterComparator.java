@@ -15,7 +15,7 @@ public final class MediaFilterComparator {
                 checkField(
                     "sortDirection", MediaFilter::getSortDirection, cursorFilter, currentFilter))
         .or(() -> checkField("libraryId", MediaFilter::getLibraryId, cursorFilter, currentFilter))
-        .or(() -> checkField("userId", MediaFilter::getUserId, cursorFilter, currentFilter))
+        .or(() -> checkField("profileId", MediaFilter::getProfileId, cursorFilter, currentFilter))
         .or(
             () ->
                 checkField("startLetter", MediaFilter::getStartLetter, cursorFilter, currentFilter))

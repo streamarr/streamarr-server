@@ -82,9 +82,9 @@ public class WatchHistory extends TableImpl<WatchHistoryRecord> {
     public final TableField<WatchHistoryRecord, UUID> LAST_MODIFIED_BY = createField(DSL.name("last_modified_by"), SQLDataType.UUID, this, "");
 
     /**
-     * The column <code>public.watch_history.user_id</code>.
+     * The column <code>public.watch_history.profile_id</code>.
      */
-    public final TableField<WatchHistoryRecord, UUID> USER_ID = createField(DSL.name("user_id"), SQLDataType.UUID.nullable(false), this, "");
+    public final TableField<WatchHistoryRecord, UUID> PROFILE_ID = createField(DSL.name("profile_id"), SQLDataType.UUID.nullable(false), this, "");
 
     /**
      * The column <code>public.watch_history.collectable_id</code>.
@@ -142,7 +142,7 @@ public class WatchHistory extends TableImpl<WatchHistoryRecord> {
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_WATCH_HISTORY_USER_COLLECTABLE);
+        return Arrays.asList(Indexes.IDX_WATCH_HISTORY_PROFILE_COLLECTABLE);
     }
 
     @Override
@@ -152,7 +152,7 @@ public class WatchHistory extends TableImpl<WatchHistoryRecord> {
 
     @Override
     public List<UniqueKey<WatchHistoryRecord>> getUniqueKeys() {
-        return Arrays.asList(Keys.UQ_WATCH_HISTORY_USER_COLLECTABLE_WATCHED);
+        return Arrays.asList(Keys.UQ_WATCH_HISTORY_PROFILE_COLLECTABLE_WATCHED);
     }
 
     @Override

@@ -6,7 +6,7 @@ import lombok.Builder;
 @Builder
 public record SaveWatchProgress(
     UUID sessionId,
-    UUID userId,
+    UUID profileId,
     UUID mediaFileId,
     int positionSeconds,
     double percentComplete,

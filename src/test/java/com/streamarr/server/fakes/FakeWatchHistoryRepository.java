@@ -13,29 +13,33 @@ public class FakeWatchHistoryRepository extends FakeJpaRepository<WatchHistory>
     implements WatchHistoryRepository {
 
   @Override
-  public Optional<WatchHistory> findFirstByUserIdAndCollectableIdOrderByWatchedAtDesc(
-      UUID userId, UUID collectableId) {
+  public Optional<WatchHistory> findFirstByProfileIdAndCollectableIdOrderByWatchedAtDesc(
+      UUID profileId, UUID collectableId) {
     return database.values().stream()
-        .filter(wh -> userId.equals(wh.getUserId()) && collectableId.equals(wh.getCollectableId()))
+        .filter(
+            wh ->
+                profileId.equals(wh.getProfileId()) && collectableId.equals(wh.getCollectableId()))
         .max(Comparator.comparing(WatchHistory::getWatchedAt));
   }
 
   @Override
-  public List<WatchHistory> findByUserIdAndCollectableIdIn(
-      UUID userId, Collection<UUID> collectableIds) {
+  public List<WatchHistory> findByProfileIdAndCollectableIdIn(
+      UUID profileId, Collection<UUID> collectableIds) {
     return database.values().stream()
         .filter(
-            wh -> userId.equals(wh.getUserId()) && collectableIds.contains(wh.getCollectableId()))
+            wh ->
+                profileId.equals(wh.getProfileId())
+                    && collectableIds.contains(wh.getCollectableId()))
         .toList();
   }
 
   @Override
   public void batchInsert(
-      UUID userId, Collection<UUID> collectableIds, Instant watchedAt, int durationSeconds) {
+      UUID profileId, Collection<UUID> collectableIds, Instant watchedAt, int durationSeconds) {
     for (var collectableId : collectableIds) {
       save(
           WatchHistory.builder()
-              .userId(userId)
+              .profileId(profileId)
               .collectableId(collectableId)
               .watchedAt(watchedAt)
               .durationSeconds(durationSeconds)
@@ -44,12 +48,12 @@ public class FakeWatchHistoryRepository extends FakeJpaRepository<WatchHistory>
   }
 
   @Override
-  public void dismissAll(UUID userId, Collection<UUID> collectableIds) {
+  public void dismissAll(UUID profileId, Collection<UUID> collectableIds) {
     var now = Instant.now();
     database.values().stream()
         .filter(
             wh ->
-                userId.equals(wh.getUserId())
+                profileId.equals(wh.getProfileId())
                     && collectableIds.contains(wh.getCollectableId())
                     && wh.getDismissedAt() == null)
         .forEach(wh -> wh.setDismissedAt(now));

@@ -92,9 +92,9 @@ public class SessionProgress extends TableImpl<SessionProgressRecord> {
     public final TableField<SessionProgressRecord, UUID> SESSION_ID = createField(DSL.name("session_id"), SQLDataType.UUID.nullable(false), this, "");
 
     /**
-     * The column <code>public.session_progress.user_id</code>.
+     * The column <code>public.session_progress.profile_id</code>.
      */
-    public final TableField<SessionProgressRecord, UUID> USER_ID = createField(DSL.name("user_id"), SQLDataType.UUID.nullable(false), this, "");
+    public final TableField<SessionProgressRecord, UUID> PROFILE_ID = createField(DSL.name("profile_id"), SQLDataType.UUID.nullable(false), this, "");
 
     /**
      * The column <code>public.session_progress.media_file_id</code>.
@@ -185,7 +185,7 @@ public class SessionProgress extends TableImpl<SessionProgressRecord> {
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_SESSION_PROGRESS_MEDIA_FILE_ID, Indexes.IDX_SESSION_PROGRESS_RESUME, Indexes.IDX_SESSION_PROGRESS_USER_ID);
+        return Arrays.asList(Indexes.IDX_SESSION_PROGRESS_MEDIA_FILE_ID, Indexes.IDX_SESSION_PROGRESS_PROFILE_ID, Indexes.IDX_SESSION_PROGRESS_RESUME);
     }
 
     @Override

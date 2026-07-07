@@ -104,7 +104,7 @@ public class LibraryResolver {
     int last = dfe.getArgumentOrDefault("last", 0);
     String before = dfe.getArgument("before");
 
-    var builder = MediaFilter.builder().libraryId(library.getId()).userId(CurrentUser.id());
+    var builder = MediaFilter.builder().libraryId(library.getId()).profileId(CurrentUser.id());
 
     applySortOptions(builder, sort);
 

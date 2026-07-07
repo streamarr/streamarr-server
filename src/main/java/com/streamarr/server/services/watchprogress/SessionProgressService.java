@@ -33,13 +33,14 @@ public class SessionProgressService {
   private final WatchStatusService watchStatusService;
   private final ApplicationEventPublisher eventPublisher;
 
-  public Optional<SessionProgress> getProgress(UUID userId, UUID mediaFileId) {
-    return sessionProgressRepository.findMostRecentByUserIdAndMediaFileId(userId, mediaFileId);
+  public Optional<SessionProgress> getProgress(UUID profileId, UUID mediaFileId) {
+    return sessionProgressRepository.findMostRecentByProfileIdAndMediaFileId(
+        profileId, mediaFileId);
   }
 
   @Transactional
   public void reportStreamSessionTimeline(
-      UUID userId, UUID sessionId, int positionSeconds, PlaybackState state) {
+      UUID profileId, UUID sessionId, int positionSeconds, PlaybackState state) {
     if (positionSeconds < 0) {
       return;
     }
@@ -62,11 +63,11 @@ public class SessionProgressService {
             sessionId, session.getMediaFileId(), positionSeconds, percentComplete, durationSeconds);
 
     if (state == PlaybackState.STOPPED) {
-      handleStoppedPlayback(userId, context);
+      handleStoppedPlayback(profileId, context);
       return;
     }
 
-    persistProgress(userId, context, state);
+    persistProgress(profileId, context, state);
   }
 
   private record PlaybackContext(
@@ -76,39 +77,43 @@ public class SessionProgressService {
       double percentComplete,
       int durationSeconds) {}
 
-  private void handleStoppedPlayback(UUID userId, PlaybackContext ctx) {
+  private void handleStoppedPlayback(UUID profileId, PlaybackContext ctx) {
     var remainingSeconds = ctx.durationSeconds() - ctx.positionSeconds();
     var decision =
         evaluateStopDecision(ctx.percentComplete(), remainingSeconds, ctx.durationSeconds());
 
     switch (decision) {
       case DISCARD -> sessionProgressRepository.deleteBySessionId(ctx.sessionId());
-      case MARK_WATCHED -> markSessionWatched(userId, ctx);
-      case PERSIST -> persistProgress(userId, ctx, PlaybackState.STOPPED);
+      case MARK_WATCHED -> markSessionWatched(profileId, ctx);
+      case PERSIST -> persistProgress(profileId, ctx, PlaybackState.STOPPED);
     }
   }
 
-  private void markSessionWatched(UUID userId, PlaybackContext ctx) {
+  private void markSessionWatched(UUID profileId, PlaybackContext ctx) {
     sessionProgressRepository.deleteBySessionId(ctx.sessionId());
 
     var collectableId = resolveCollectableId(ctx.mediaFileId());
     watchStatusService.markWatched(
-        userId, collectableId, CollectableScope.DIRECT_MEDIA, Instant.now(), ctx.durationSeconds());
+        profileId,
+        collectableId,
+        CollectableScope.DIRECT_MEDIA,
+        Instant.now(),
+        ctx.durationSeconds());
 
     eventPublisher.publishEvent(
         ItemWatchedEvent.builder()
             .sessionId(ctx.sessionId())
-            .userId(userId)
+            .profileId(profileId)
             .mediaFileId(ctx.mediaFileId())
             .collectableId(collectableId)
             .build());
   }
 
-  private void persistProgress(UUID userId, PlaybackContext ctx, PlaybackState state) {
+  private void persistProgress(UUID profileId, PlaybackContext ctx, PlaybackState state) {
     sessionProgressRepository.upsertProgress(
         SaveWatchProgress.builder()
             .sessionId(ctx.sessionId())
-            .userId(userId)
+            .profileId(profileId)
             .mediaFileId(ctx.mediaFileId())
             .positionSeconds(ctx.positionSeconds())
             .percentComplete(ctx.percentComplete())
@@ -118,7 +123,7 @@ public class SessionProgressService {
     eventPublisher.publishEvent(
         SessionProgressChangedEvent.builder()
             .sessionId(ctx.sessionId())
-            .userId(userId)
+            .profileId(profileId)
             .mediaFileId(ctx.mediaFileId())
             .positionSeconds(ctx.positionSeconds())
             .percentComplete(ctx.percentComplete())

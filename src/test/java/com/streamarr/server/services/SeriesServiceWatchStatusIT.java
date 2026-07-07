@@ -54,7 +54,7 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
   @Autowired private SeriesService seriesService;
   @Autowired private DSLContext dsl;
 
-  private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+  private static final UUID PROFILE_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
   private Library library;
 
@@ -67,7 +67,7 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
     for (var episodeId : watched.episodeIds()) {
       watchHistoryRepository.saveAndFlush(
           WatchHistory.builder()
-              .userId(USER_ID)
+              .profileId(PROFILE_ID)
               .collectableId(episodeId)
               .watchedAt(Instant.now())
               .durationSeconds(3600)
@@ -80,7 +80,7 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
     for (var episodeId : watchedWithProgress.episodeIds()) {
       watchHistoryRepository.saveAndFlush(
           WatchHistory.builder()
-              .userId(USER_ID)
+              .profileId(PROFILE_ID)
               .collectableId(episodeId)
               .watchedAt(Instant.now())
               .durationSeconds(3600)
@@ -89,7 +89,7 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
     sessionProgressRepository.saveAndFlush(
         SessionProgress.builder()
             .sessionId(UUID.randomUUID())
-            .userId(USER_ID)
+            .profileId(PROFILE_ID)
             .mediaFileId(watchedWithProgress.firstEpisodeFileId())
             .positionSeconds(60)
             .percentComplete(2.0)
@@ -101,7 +101,7 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
     sessionProgressRepository.saveAndFlush(
         SessionProgress.builder()
             .sessionId(UUID.randomUUID())
-            .userId(USER_ID)
+            .profileId(PROFILE_ID)
             .mediaFileId(sessionInProgress.firstEpisodeFileId())
             .positionSeconds(900)
             .percentComplete(25.0)
@@ -113,7 +113,7 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
     var partiallyWatched = createSeriesWithEpisodes("Partially Watched Series", 2);
     watchHistoryRepository.saveAndFlush(
         WatchHistory.builder()
-            .userId(USER_ID)
+            .profileId(PROFILE_ID)
             .collectableId(partiallyWatched.episodeIds().getFirst())
             .watchedAt(Instant.now())
             .durationSeconds(3600)
@@ -144,7 +144,7 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
       var filter =
           MediaFilter.builder()
               .libraryId(library.getId())
-              .userId(USER_ID)
+              .profileId(PROFILE_ID)
               .watchStatus(WatchStatus.WATCHED)
               .build();
 
@@ -163,7 +163,7 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
       var filter =
           MediaFilter.builder()
               .libraryId(library.getId())
-              .userId(USER_ID)
+              .profileId(PROFILE_ID)
               .watchStatus(WatchStatus.IN_PROGRESS)
               .build();
 
@@ -180,7 +180,7 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
       var filter =
           MediaFilter.builder()
               .libraryId(library.getId())
-              .userId(USER_ID)
+              .profileId(PROFILE_ID)
               .watchStatus(WatchStatus.UNWATCHED)
               .build();
 
@@ -229,7 +229,7 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
       var filter =
           MediaFilter.builder()
               .libraryId(sortLibrary.getId())
-              .userId(USER_ID)
+              .profileId(PROFILE_ID)
               .sortBy(OrderMediaBy.LAST_WATCHED)
               .sortDirection(SortOrder.DESC)
               .build();
@@ -258,7 +258,7 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
       var filter =
           MediaFilter.builder()
               .libraryId(paginationLibrary.getId())
-              .userId(USER_ID)
+              .profileId(PROFILE_ID)
               .sortBy(OrderMediaBy.LAST_WATCHED)
               .sortDirection(SortOrder.DESC)
               .build();
@@ -303,7 +303,7 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
       sessionProgressRepository.saveAndFlush(
           SessionProgress.builder()
               .sessionId(UUID.randomUUID())
-              .userId(USER_ID)
+              .profileId(PROFILE_ID)
               .mediaFileId(fixture.firstEpisodeFileId())
               .positionSeconds(600)
               .percentComplete(25.0)

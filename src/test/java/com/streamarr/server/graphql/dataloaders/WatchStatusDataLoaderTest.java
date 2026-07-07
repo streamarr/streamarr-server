@@ -34,7 +34,7 @@ class WatchStatusDataLoaderTest {
   private FakeSeasonRepository seasonRepository;
   private WatchStatusDataLoader dataLoader;
 
-  private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+  private static final UUID PROFILE_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
   @BeforeEach
   void setUp() {
@@ -56,7 +56,8 @@ class WatchStatusDataLoaderTest {
   @Test
   @DisplayName("Should return unwatched when entity has no media files")
   void shouldReturnUnwatchedWhenEntityHasNoMediaFiles() throws Exception {
-    var key = new WatchStatusLoaderKey(USER_ID, UUID.randomUUID(), CollectableScope.DIRECT_MEDIA);
+    var key =
+        new WatchStatusLoaderKey(PROFILE_ID, UUID.randomUUID(), CollectableScope.DIRECT_MEDIA);
     var result = dataLoader.load(Set.of(key)).toCompletableFuture().get();
 
     assertThat(result).containsEntry(key, WatchStatus.UNWATCHED);
@@ -68,9 +69,9 @@ class WatchStatusDataLoaderTest {
     var movie = buildMovie();
     var mediaFile = mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
     sessionProgressRepository.save(
-        progressBuilder(USER_ID, mediaFile.getId()).positionSeconds(300).build());
+        progressBuilder(PROFILE_ID, mediaFile.getId()).positionSeconds(300).build());
 
-    var mine = new WatchStatusLoaderKey(USER_ID, movie.getId(), CollectableScope.DIRECT_MEDIA);
+    var mine = new WatchStatusLoaderKey(PROFILE_ID, movie.getId(), CollectableScope.DIRECT_MEDIA);
     var theirs =
         new WatchStatusLoaderKey(UUID.randomUUID(), movie.getId(), CollectableScope.DIRECT_MEDIA);
 
@@ -87,14 +88,14 @@ class WatchStatusDataLoaderTest {
     var movie = buildMovie();
     var movieFile = mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
     sessionProgressRepository.save(
-        progressBuilder(USER_ID, movieFile.getId()).positionSeconds(300).build());
+        progressBuilder(PROFILE_ID, movieFile.getId()).positionSeconds(300).build());
 
     var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
     var seasonEpisode =
         episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
     var seasonFile = mediaFileRepository.save(buildMatchedMediaFile(seasonEpisode.getId()));
     sessionProgressRepository.save(
-        progressBuilder(USER_ID, seasonFile.getId()).positionSeconds(300).build());
+        progressBuilder(PROFILE_ID, seasonFile.getId()).positionSeconds(300).build());
 
     var series = buildSeries();
     var seriesSeason =
@@ -103,11 +104,12 @@ class WatchStatusDataLoaderTest {
         episodeRepository.save(Episode.builder().episodeNumber(1).season(seriesSeason).build());
     var seriesFile = mediaFileRepository.save(buildMatchedMediaFile(seriesEpisode.getId()));
     sessionProgressRepository.save(
-        progressBuilder(USER_ID, seriesFile.getId()).positionSeconds(300).build());
+        progressBuilder(PROFILE_ID, seriesFile.getId()).positionSeconds(300).build());
 
-    var movieKey = new WatchStatusLoaderKey(USER_ID, movie.getId(), CollectableScope.DIRECT_MEDIA);
-    var seasonKey = new WatchStatusLoaderKey(USER_ID, season.getId(), CollectableScope.SEASON);
-    var seriesKey = new WatchStatusLoaderKey(USER_ID, series.getId(), CollectableScope.SERIES);
+    var movieKey =
+        new WatchStatusLoaderKey(PROFILE_ID, movie.getId(), CollectableScope.DIRECT_MEDIA);
+    var seasonKey = new WatchStatusLoaderKey(PROFILE_ID, season.getId(), CollectableScope.SEASON);
+    var seriesKey = new WatchStatusLoaderKey(PROFILE_ID, series.getId(), CollectableScope.SERIES);
 
     var result =
         dataLoader.load(Set.of(movieKey, seasonKey, seriesKey)).toCompletableFuture().get();

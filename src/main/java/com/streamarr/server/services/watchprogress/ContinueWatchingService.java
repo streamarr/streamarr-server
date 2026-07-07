@@ -22,8 +22,8 @@ public class ContinueWatchingService {
   private final EpisodeRepository episodeRepository;
 
   @Transactional(readOnly = true)
-  public List<BaseCollectable<?>> getContinueWatching(UUID userId, int limit) {
-    var collectableIds = continueWatchingRepository.findCollectableIds(userId, limit);
+  public List<BaseCollectable<?>> getContinueWatching(UUID profileId, int limit) {
+    var collectableIds = continueWatchingRepository.findCollectableIds(profileId, limit);
 
     if (collectableIds.isEmpty()) {
       return List.of();

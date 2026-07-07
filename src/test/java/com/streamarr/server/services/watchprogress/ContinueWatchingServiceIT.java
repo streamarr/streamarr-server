@@ -50,7 +50,7 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
   @Autowired private WatchHistoryRepository watchHistoryRepository;
   @Autowired private DSLContext dsl;
 
-  private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+  private static final UUID PROFILE_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
   private static final Instant MOVIE_ACTIVITY_AT = Instant.parse("2026-01-01T00:00:00Z");
   private static final Instant EPISODE_ACTIVITY_AT = Instant.parse("2026-02-01T00:00:00Z");
 
@@ -67,9 +67,11 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
   void setup() {
     // TODO(#163): replace this cleanup with per-class user IDs once auth lands.
     dsl.deleteFrom(Tables.SESSION_PROGRESS)
-        .where(Tables.SESSION_PROGRESS.USER_ID.eq(USER_ID))
+        .where(Tables.SESSION_PROGRESS.PROFILE_ID.eq(PROFILE_ID))
         .execute();
-    dsl.deleteFrom(Tables.WATCH_HISTORY).where(Tables.WATCH_HISTORY.USER_ID.eq(USER_ID)).execute();
+    dsl.deleteFrom(Tables.WATCH_HISTORY)
+        .where(Tables.WATCH_HISTORY.PROFILE_ID.eq(PROFILE_ID))
+        .execute();
 
     movieLibrary = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     seriesLibrary = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
@@ -82,7 +84,7 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
     watchedMovie = createMovieWithFile("Watched Movie");
     watchHistoryRepository.saveAndFlush(
         WatchHistory.builder()
-            .userId(USER_ID)
+            .profileId(PROFILE_ID)
             .collectableId(watchedMovie.getId())
             .watchedAt(Instant.now())
             .durationSeconds(7200)
@@ -133,7 +135,7 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
     sessionProgressRepository.saveAndFlush(
         SessionProgress.builder()
             .sessionId(UUID.randomUUID())
-            .userId(USER_ID)
+            .profileId(PROFILE_ID)
             .mediaFileId(fileId)
             .positionSeconds(positionSeconds)
             .percentComplete(percentComplete)
@@ -180,7 +182,7 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
     sessionProgressRepository.saveAndFlush(
         SessionProgress.builder()
             .sessionId(UUID.randomUUID())
-            .userId(USER_ID)
+            .profileId(PROFILE_ID)
             .mediaFileId(fileId)
             .positionSeconds(positionSeconds)
             .percentComplete(percentComplete)
@@ -197,7 +199,7 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("Should return exactly the in-progress movie and episode when querying")
     void shouldReturnExactlyTheInProgressMovieAndEpisodeWhenQuerying() {
-      var results = continueWatchingService.getContinueWatching(USER_ID, 20);
+      var results = continueWatchingService.getContinueWatching(PROFILE_ID, 20);
 
       assertThat(results)
           .extracting(BaseCollectable::getId)
@@ -207,7 +209,7 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("Should not include the watched movie when querying")
     void shouldNotIncludeTheWatchedMovieWhenQuerying() {
-      var results = continueWatchingService.getContinueWatching(USER_ID, 20);
+      var results = continueWatchingService.getContinueWatching(PROFILE_ID, 20);
 
       assertThat(results)
           .isNotEmpty()
@@ -218,7 +220,7 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("Should not include the unwatched movie with no session progress when querying")
     void shouldNotIncludeTheUnwatchedMovieWithNoSessionProgressWhenQuerying() {
-      var results = continueWatchingService.getContinueWatching(USER_ID, 20);
+      var results = continueWatchingService.getContinueWatching(PROFILE_ID, 20);
 
       assertThat(results)
           .isNotEmpty()
@@ -229,7 +231,7 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("Should return empty list when called with limit zero")
     void shouldReturnEmptyListWhenCalledWithLimitZero() {
-      var results = continueWatchingService.getContinueWatching(USER_ID, 0);
+      var results = continueWatchingService.getContinueWatching(PROFILE_ID, 0);
 
       assertThat(results).isEmpty();
     }
@@ -237,7 +239,7 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("Should return only the most recent item when called with limit one")
     void shouldReturnOnlyTheMostRecentItemWhenCalledWithLimitOne() {
-      var results = continueWatchingService.getContinueWatching(USER_ID, 1);
+      var results = continueWatchingService.getContinueWatching(PROFILE_ID, 1);
 
       assertThat(results)
           .extracting(BaseCollectable::getId)
@@ -249,7 +251,7 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
         "Should order items by session progress last modified descending when querying"
             + " with pinned timestamps")
     void shouldOrderItemsBySessionProgressLastModifiedDescendingWhenQueryingWithPinnedTimestamps() {
-      var results = continueWatchingService.getContinueWatching(USER_ID, 20);
+      var results = continueWatchingService.getContinueWatching(PROFILE_ID, 20);
 
       // EPISODE_ACTIVITY_AT (Feb) > MOVIE_ACTIVITY_AT (Jan) — episode must come first.
       assertThat(results)

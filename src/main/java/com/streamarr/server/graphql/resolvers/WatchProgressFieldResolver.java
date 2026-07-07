@@ -92,9 +92,9 @@ public class WatchProgressFieldResolver {
 
     DataLoader<SessionProgressLoaderKey, WatchProgressDto> loader =
         dfe.getDataLoader(WATCH_PROGRESS_LOADER);
-    var userId = CurrentUser.id();
+    var profileId = CurrentUser.id();
     var keys =
-        files.stream().map(file -> new SessionProgressLoaderKey(userId, file.getId())).toList();
+        files.stream().map(file -> new SessionProgressLoaderKey(profileId, file.getId())).toList();
 
     return loader
         .loadMany(keys)

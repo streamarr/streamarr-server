@@ -18,28 +18,30 @@ public class FakeSessionProgressRepository extends FakeJpaRepository<SessionProg
   }
 
   @Override
-  public List<SessionProgress> findByUserIdAndMediaFileIdIn(
-      UUID userId, Collection<UUID> mediaFileIds) {
+  public List<SessionProgress> findByProfileIdAndMediaFileIdIn(
+      UUID profileId, Collection<UUID> mediaFileIds) {
     return database.values().stream()
-        .filter(sp -> userId.equals(sp.getUserId()) && mediaFileIds.contains(sp.getMediaFileId()))
+        .filter(
+            sp -> profileId.equals(sp.getProfileId()) && mediaFileIds.contains(sp.getMediaFileId()))
         .toList();
   }
 
   @Override
-  public void deleteByUserIdAndMediaFileIds(UUID userId, Collection<UUID> mediaFileIds) {
+  public void deleteByProfileIdAndMediaFileIds(UUID profileId, Collection<UUID> mediaFileIds) {
     database
         .entrySet()
         .removeIf(
             entry ->
-                userId.equals(entry.getValue().getUserId())
+                profileId.equals(entry.getValue().getProfileId())
                     && mediaFileIds.contains(entry.getValue().getMediaFileId()));
   }
 
   @Override
-  public Optional<SessionProgress> findMostRecentByUserIdAndMediaFileId(
-      UUID userId, UUID mediaFileId) {
+  public Optional<SessionProgress> findMostRecentByProfileIdAndMediaFileId(
+      UUID profileId, UUID mediaFileId) {
     return database.values().stream()
-        .filter(sp -> userId.equals(sp.getUserId()) && mediaFileId.equals(sp.getMediaFileId()))
+        .filter(
+            sp -> profileId.equals(sp.getProfileId()) && mediaFileId.equals(sp.getMediaFileId()))
         .max(
             Comparator.comparing(
                 sp -> sp.getLastModifiedOn() != null ? sp.getLastModifiedOn() : sp.getCreatedOn()));
@@ -58,7 +60,7 @@ public class FakeSessionProgressRepository extends FakeJpaRepository<SessionProg
     save(
         SessionProgress.builder()
             .sessionId(progress.sessionId())
-            .userId(progress.userId())
+            .profileId(progress.profileId())
             .mediaFileId(progress.mediaFileId())
             .positionSeconds(progress.positionSeconds())
             .percentComplete(progress.percentComplete())

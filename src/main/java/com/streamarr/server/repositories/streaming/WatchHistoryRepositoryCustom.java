@@ -7,7 +7,7 @@ import java.util.UUID;
 public interface WatchHistoryRepositoryCustom {
 
   void batchInsert(
-      UUID userId, Collection<UUID> collectableIds, Instant watchedAt, int durationSeconds);
+      UUID profileId, Collection<UUID> collectableIds, Instant watchedAt, int durationSeconds);
 
-  void dismissAll(UUID userId, Collection<UUID> collectableIds);
+  void dismissAll(UUID profileId, Collection<UUID> collectableIds);
 }

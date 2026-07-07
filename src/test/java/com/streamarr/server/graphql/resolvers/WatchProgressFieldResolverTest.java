@@ -61,7 +61,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 @DisplayName("Watch Progress Field Resolver Tests")
 class WatchProgressFieldResolverTest {
 
-  private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+  private static final UUID PROFILE_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
   @Autowired private FakeSessionProgressRepository sessionProgressRepository;
@@ -145,7 +145,7 @@ class WatchProgressFieldResolverTest {
       when(movieService.findMediaFiles(movie.getId())).thenReturn(List.of(mediaFile));
 
       sessionProgressRepository.save(
-          progressBuilder(USER_ID, mediaFile.getId())
+          progressBuilder(PROFILE_ID, mediaFile.getId())
               .positionSeconds(1800)
               .percentComplete(50.0)
               .durationSeconds(3600)
@@ -211,7 +211,7 @@ class WatchProgressFieldResolverTest {
       when(movieService.findMediaFiles(movie.getId())).thenReturn(List.of(mediaFile));
 
       sessionProgressRepository.save(
-          progressBuilder(USER_ID, mediaFile.getId()).positionSeconds(300).build());
+          progressBuilder(PROFILE_ID, mediaFile.getId()).positionSeconds(300).build());
 
       String status =
           dgsQueryExecutor.executeAndExtractJsonPath(
@@ -236,7 +236,7 @@ class WatchProgressFieldResolverTest {
       when(seriesService.findMediaFiles(graph.episode().getId())).thenReturn(List.of(mediaFile));
 
       sessionProgressRepository.save(
-          progressBuilder(USER_ID, mediaFile.getId())
+          progressBuilder(PROFILE_ID, mediaFile.getId())
               .positionSeconds(600)
               .percentComplete(25.0)
               .durationSeconds(2400)
@@ -272,7 +272,7 @@ class WatchProgressFieldResolverTest {
       mediaFileRepository.save(mediaFile);
 
       sessionProgressRepository.save(
-          progressBuilder(USER_ID, mediaFile.getId()).positionSeconds(1200).build());
+          progressBuilder(PROFILE_ID, mediaFile.getId()).positionSeconds(1200).build());
 
       String status =
           dgsQueryExecutor.executeAndExtractJsonPath(
@@ -302,7 +302,7 @@ class WatchProgressFieldResolverTest {
       mediaFileRepository.save(mediaFile);
 
       sessionProgressRepository.save(
-          progressBuilder(USER_ID, mediaFile.getId()).positionSeconds(300).build());
+          progressBuilder(PROFILE_ID, mediaFile.getId()).positionSeconds(300).build());
 
       String status =
           dgsQueryExecutor.executeAndExtractJsonPath(
@@ -351,7 +351,7 @@ class WatchProgressFieldResolverTest {
 
       var olderProgress =
           sessionProgressRepository.save(
-              progressBuilder(USER_ID, olderFile.getId())
+              progressBuilder(PROFILE_ID, olderFile.getId())
                   .positionSeconds(300)
                   .percentComplete(10.0)
                   .durationSeconds(3000)
@@ -360,7 +360,7 @@ class WatchProgressFieldResolverTest {
 
       var newerProgress =
           sessionProgressRepository.save(
-              progressBuilder(USER_ID, newerFile.getId())
+              progressBuilder(PROFILE_ID, newerFile.getId())
                   .positionSeconds(900)
                   .percentComplete(75.0)
                   .durationSeconds(1200)
@@ -424,7 +424,7 @@ class WatchProgressFieldResolverTest {
       mediaFileRepository.save(mediaFile);
 
       sessionProgressRepository.save(
-          progressBuilder(USER_ID, mediaFile.getId()).positionSeconds(300).build());
+          progressBuilder(PROFILE_ID, mediaFile.getId()).positionSeconds(300).build());
 
       // IN_PROGRESS requires the resolver to wire SERIES scope; a misrouted scope
       // would fall back to UNWATCHED
@@ -477,7 +477,7 @@ class WatchProgressFieldResolverTest {
 
       var olderProgress =
           sessionProgressRepository.save(
-              progressBuilder(USER_ID, olderFile.getId())
+              progressBuilder(PROFILE_ID, olderFile.getId())
                   .positionSeconds(300)
                   .percentComplete(10.0)
                   .durationSeconds(3000)
@@ -486,7 +486,7 @@ class WatchProgressFieldResolverTest {
 
       var newerProgress =
           sessionProgressRepository.save(
-              progressBuilder(USER_ID, newerFile.getId())
+              progressBuilder(PROFILE_ID, newerFile.getId())
                   .positionSeconds(900)
                   .percentComplete(25.0)
                   .durationSeconds(3600)
