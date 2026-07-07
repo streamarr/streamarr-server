@@ -42,7 +42,7 @@ public class FakeSeasonRepository extends FakeJpaRepository<Season> implements S
   }
 
   @Override
-  public List<Season> findBySeriesId(UUID seriesId) {
+  public List<Season> findBySeriesIdOrderBySeasonNumber(UUID seriesId) {
     return findBySeriesIdIn(List.of(seriesId)).stream()
         .sorted(comparingInt(Season::getSeasonNumber))
         .toList();
