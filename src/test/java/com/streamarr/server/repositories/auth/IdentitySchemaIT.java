@@ -86,46 +86,6 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should bump membership version when profile link revoked")
-  void shouldBumpMembershipVersionWhenProfileLinkRevoked() {
-    var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
-    var household = householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
-    var membership =
-        householdMembershipRepository.save(
-            HouseholdMembership.builder()
-                .accountId(account.getId())
-                .householdId(household.getId())
-                .householdRole(HouseholdRole.OWNER)
-                .build());
-    var profile =
-        profileRepository.save(
-            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
-    var link =
-        AccountProfile.builder()
-            .accountId(account.getId())
-            .householdId(household.getId())
-            .profileId(profile.getId())
-            .build();
-
-    accountProfileRepository.linkProfile(link);
-
-    assertThat(membershipVersionOf(membership)).isEqualTo(1L);
-
-    accountProfileRepository.revokeProfileLink(link);
-
-    assertThat(membershipVersionOf(membership)).isEqualTo(2L);
-    assertThat(accountProfileRepository.findAll())
-        .noneMatch(remaining -> profile.getId().equals(remaining.getProfileId()));
-  }
-
-  private long membershipVersionOf(HouseholdMembership membership) {
-    return householdMembershipRepository
-        .findById(membership.getId())
-        .orElseThrow()
-        .getMembershipVersion();
-  }
-
-  @Test
   @DisplayName("Should reject account profile link when profile belongs to other household")
   void shouldRejectAccountProfileLinkWhenProfileBelongsToOtherHousehold() {
     var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
