@@ -29,6 +29,6 @@ public class EpisodeFieldResolver {
     var seasonId = episode.getSeason().getId();
     return seriesService
         .findSeasonById(seasonId)
-        .orElseThrow(() -> new SeasonNotFoundException(seasonId));
+        .orElseThrow(() -> new SeasonNotFoundException(seasonId, episode.getId()));
   }
 }
