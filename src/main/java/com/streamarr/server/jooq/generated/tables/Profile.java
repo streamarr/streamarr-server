@@ -9,6 +9,8 @@ import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.tables.AccountProfile.AccountProfilePath;
 import com.streamarr.server.jooq.generated.tables.AuthSession.AuthSessionPath;
 import com.streamarr.server.jooq.generated.tables.Household.HouseholdPath;
+import com.streamarr.server.jooq.generated.tables.SessionProgress.SessionProgressPath;
+import com.streamarr.server.jooq.generated.tables.WatchHistory.WatchHistoryPath;
 import com.streamarr.server.jooq.generated.tables.records.ProfileRecord;
 
 import java.time.OffsetDateTime;
@@ -219,6 +221,32 @@ public class Profile extends TableImpl<ProfileRecord> {
             _authSession = new AuthSessionPath(this, null, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_PROFILE.getInverseKey());
 
         return _authSession;
+    }
+
+    private transient SessionProgressPath _sessionProgress;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.session_progress</code> table
+     */
+    public SessionProgressPath sessionProgress() {
+        if (_sessionProgress == null)
+            _sessionProgress = new SessionProgressPath(this, null, Keys.SESSION_PROGRESS__FK_SESSION_PROGRESS_PROFILE.getInverseKey());
+
+        return _sessionProgress;
+    }
+
+    private transient WatchHistoryPath _watchHistory;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.watch_history</code> table
+     */
+    public WatchHistoryPath watchHistory() {
+        if (_watchHistory == null)
+            _watchHistory = new WatchHistoryPath(this, null, Keys.WATCH_HISTORY__FK_WATCH_HISTORY_PROFILE.getInverseKey());
+
+        return _watchHistory;
     }
 
     @Override

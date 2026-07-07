@@ -13,9 +13,12 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.streaming.SaveWatchProgress;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
+import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.security.WithProfileContext;
 import jakarta.persistence.EntityManager;
 import java.util.Set;
 import java.util.UUID;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -29,21 +32,26 @@ import org.springframework.transaction.annotation.Transactional;
 @Tag("IntegrationTest")
 @DisplayName("Watch Progress Integration Tests")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@WithProfileContext
 class SessionProgressServiceIT extends AbstractIntegrationTest {
 
   @Autowired private SessionProgressRepository sessionProgressRepository;
+  @Autowired private AuthTestSupport authTestSupport;
   @Autowired private MovieRepository movieRepository;
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private WatchStatusService watchStatusService;
   @Autowired private EntityManager entityManager;
   @Autowired private AuditorAware<UUID> auditorAware;
 
-  private static final UUID PROFILE_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+  private AuthTestSupport.TestIdentity identity;
+  private UUID profileId;
 
   private Library library;
 
   @BeforeAll
   void setup() {
+    identity = authTestSupport.createIdentity();
+    profileId = identity.profile().getId();
     library = libraryRepository.save(LibraryFixtureCreator.buildFakeLibrary());
   }
 
@@ -74,7 +82,7 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
       UUID sessionId, UUID mediaFileId) {
     return SaveWatchProgress.builder()
         .sessionId(sessionId)
-        .profileId(PROFILE_ID)
+        .profileId(profileId)
         .mediaFileId(mediaFileId);
   }
 
@@ -87,7 +95,7 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
 
     var saved =
         sessionProgressRepository.save(
-            progressBuilder(PROFILE_ID, fixture.mediaFileId())
+            progressBuilder(profileId, fixture.mediaFileId())
                 .sessionId(sessionId)
                 .positionSeconds(3600)
                 .percentComplete(50.0)
@@ -114,7 +122,7 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
     var fixture = createMovieWithFile();
 
     sessionProgressRepository.saveAndFlush(
-        progressBuilder(PROFILE_ID, fixture.mediaFileId())
+        progressBuilder(profileId, fixture.mediaFileId())
             .positionSeconds(300)
             .percentComplete(10.0)
             .durationSeconds(3000)
@@ -123,7 +131,7 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
     entityManager.clear();
 
     sessionProgressRepository.saveAndFlush(
-        progressBuilder(PROFILE_ID, fixture.mediaFileId())
+        progressBuilder(profileId, fixture.mediaFileId())
             .positionSeconds(600)
             .percentComplete(20.0)
             .durationSeconds(3000)
@@ -133,7 +141,7 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
 
     var mostRecent =
         sessionProgressRepository.findMostRecentByProfileIdAndMediaFileId(
-            PROFILE_ID, fixture.mediaFileId());
+            profileId, fixture.mediaFileId());
     assertThat(mostRecent).isPresent();
     assertThat(mostRecent.get().getPositionSeconds()).isEqualTo(600);
   }
@@ -145,7 +153,7 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
     var fixture = createMovieWithFile();
 
     sessionProgressRepository.saveAndFlush(
-        progressBuilder(PROFILE_ID, fixture.mediaFileId())
+        progressBuilder(profileId, fixture.mediaFileId())
             .positionSeconds(1800)
             .percentComplete(50.0)
             .durationSeconds(3600)
@@ -153,7 +161,7 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
 
     assertThat(
             sessionProgressRepository.findMostRecentByProfileIdAndMediaFileId(
-                PROFILE_ID, fixture.mediaFileId()))
+                profileId, fixture.mediaFileId()))
         .isPresent();
 
     movieRepository.deleteById(fixture.movie().getId());
@@ -162,7 +170,7 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
 
     assertThat(
             sessionProgressRepository.findMostRecentByProfileIdAndMediaFileId(
-                PROFILE_ID, fixture.mediaFileId()))
+                profileId, fixture.mediaFileId()))
         .isEmpty();
   }
 
@@ -173,7 +181,7 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
     var fixture = createMovieWithFile();
 
     sessionProgressRepository.saveAndFlush(
-        progressBuilder(PROFILE_ID, fixture.mediaFileId())
+        progressBuilder(profileId, fixture.mediaFileId())
             .positionSeconds(2400)
             .percentComplete(66.7)
             .durationSeconds(3600)
@@ -182,14 +190,14 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
     entityManager.flush();
     entityManager.clear();
 
-    watchStatusService.markUnwatched(PROFILE_ID, fixture.movie().getId());
+    watchStatusService.markUnwatched(profileId, fixture.movie().getId());
 
     entityManager.flush();
     entityManager.clear();
 
     assertThat(
             sessionProgressRepository.findMostRecentByProfileIdAndMediaFileId(
-                PROFILE_ID, fixture.mediaFileId()))
+                profileId, fixture.mediaFileId()))
         .isEmpty();
   }
 
@@ -317,7 +325,7 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
       var sessionId = UUID.randomUUID();
 
       sessionProgressRepository.saveAndFlush(
-          progressBuilder(PROFILE_ID, fixture.mediaFileId())
+          progressBuilder(profileId, fixture.mediaFileId())
               .sessionId(sessionId)
               .positionSeconds(100)
               .percentComplete(5.0)
@@ -332,5 +340,10 @@ class SessionProgressServiceIT extends AbstractIntegrationTest {
 
       assertThat(sessionProgressRepository.findBySessionId(sessionId)).isEmpty();
     }
+  }
+
+  @AfterAll
+  void deleteIdentitySeed() {
+    authTestSupport.deleteIdentity(identity);
   }
 }

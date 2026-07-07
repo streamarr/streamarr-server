@@ -8,13 +8,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
-import com.streamarr.server.domain.streaming.WatchHistory;
 import com.streamarr.server.exceptions.SetupAlreadyCompletedException;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
-import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -41,8 +38,6 @@ class SetupServiceConcurrencyIT extends AbstractIntegrationTest {
 
   @Autowired private HouseholdRepository householdRepository;
 
-  @Autowired private WatchHistoryRepository watchHistoryRepository;
-
   @Autowired private DSLContext dsl;
 
   private final List<SetupResult> completedSetups = new CopyOnWriteArrayList<>();
@@ -64,8 +59,8 @@ class SetupServiceConcurrencyIT extends AbstractIntegrationTest {
     dsl.deleteFrom(SERVER_BOOTSTRAP).execute();
 
     for (var setup : completedSetups) {
-      // No profile FK exists yet, so remapped watch rows must be swept explicitly before they
-      // strand in the reused container.
+      // Redundant with the profile FK cascade since V047, but kept explicit: stranded watch rows
+      // in the reused container would poison later runs if the cascade ever changed.
       dsl.deleteFrom(WATCH_HISTORY)
           .where(WATCH_HISTORY.PROFILE_ID.eq(setup.profile().getId()))
           .execute();
@@ -78,13 +73,7 @@ class SetupServiceConcurrencyIT extends AbstractIntegrationTest {
   @DisplayName("Should allow exactly one setup when claimed concurrently")
   void shouldAllowExactlyOneSetupWhenClaimedConcurrently() {
     var suffix = String.valueOf(System.nanoTime());
-    watchHistoryRepository.save(
-        WatchHistory.builder()
-            .profileId(PLACEHOLDER_PROFILE_ID)
-            .collectableId(UUID.randomUUID())
-            .watchedAt(Instant.now())
-            .durationSeconds(3600)
-            .build());
+    seedLegacyPlaceholderWatchRow();
 
     var commands =
         List.of(
@@ -138,6 +127,28 @@ class SetupServiceConcurrencyIT extends AbstractIntegrationTest {
         .isTrue();
     assertThat(dsl.fetchExists(WATCH_HISTORY, WATCH_HISTORY.PROFILE_ID.eq(PLACEHOLDER_PROFILE_ID)))
         .isFalse();
+  }
+
+  /**
+   * Legacy placeholder rows predate the NOT VALID profile FK, so they can no longer be written
+   * through normal inserts — exactly as designed. Recreate the pre-migration state by bypassing
+   * constraint checks for one statement (the container user is a superuser).
+   */
+  private void seedLegacyPlaceholderWatchRow() {
+    dsl.connection(
+        connection -> {
+          try (var statement = connection.createStatement()) {
+            statement.execute("SET session_replication_role = replica");
+            statement.execute(
+                "INSERT INTO watch_history (profile_id, collectable_id, watched_at,"
+                    + " duration_seconds) VALUES ('"
+                    + PLACEHOLDER_PROFILE_ID
+                    + "', '"
+                    + UUID.randomUUID()
+                    + "', now(), 3600)");
+            statement.execute("SET session_replication_role = DEFAULT");
+          }
+        });
   }
 
   private SetupCommand.SetupCommandBuilder commandBuilder(String suffix, String marker) {
