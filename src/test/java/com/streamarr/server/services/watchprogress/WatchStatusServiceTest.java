@@ -6,6 +6,7 @@ import static com.streamarr.server.fixtures.MediaEntityFixture.buildSeries;
 import static com.streamarr.server.fixtures.SessionProgressFixture.progressBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.domain.AuditFieldSetter;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.streaming.CollectableScope;
@@ -282,6 +283,126 @@ class WatchStatusServiceTest {
       assertThat(result)
           .containsEntry(s1.getId(), WatchStatus.IN_PROGRESS)
           .containsEntry(s2.getId(), WatchStatus.UNWATCHED);
+    }
+  }
+
+  @Nested
+  @DisplayName("Scope Resolution")
+  class ScopeResolution {
+
+    @Test
+    @DisplayName("Should resolve season scope when marking season watched by id")
+    void shouldResolveSeasonScopeWhenMarkingSeasonWatchedById() {
+      var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
+      episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
+      episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
+
+      service.markWatched(USER_ID, season.getId());
+
+      assertThat(watchHistoryRepository.count()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("Should dismiss all episode history when marking season unwatched explicitly")
+    void shouldDismissAllEpisodeHistoryWhenMarkingSeasonUnwatchedExplicitly() {
+      var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
+      episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
+      episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
+      service.markWatched(USER_ID, season.getId(), CollectableScope.SEASON, Instant.now(), 3600);
+
+      service.markUnwatched(USER_ID, season.getId(), CollectableScope.SEASON);
+
+      var result = service.getWatchStatusForSeasons(USER_ID, List.of(season.getId()));
+      assertThat(result).containsEntry(season.getId(), WatchStatus.UNWATCHED);
+    }
+  }
+
+  @Nested
+  @DisplayName("Aggregate History Derivation")
+  class AggregateHistoryDerivation {
+
+    @Test
+    @DisplayName("Should return watched when every episode across seasons has history")
+    void shouldReturnWatchedWhenEveryEpisodeAcrossSeasonsHasHistory() {
+      var series = buildSeries();
+      var s1 = seasonRepository.save(Season.builder().seasonNumber(1).series(series).build());
+      var s2 = seasonRepository.save(Season.builder().seasonNumber(2).series(series).build());
+      episodeRepository.save(Episode.builder().episodeNumber(1).season(s1).build());
+      episodeRepository.save(Episode.builder().episodeNumber(1).season(s2).build());
+
+      service.markWatched(USER_ID, series.getId(), CollectableScope.SERIES, Instant.now(), 3600);
+
+      var result = service.getWatchStatusForSeries(USER_ID, List.of(series.getId()));
+      assertThat(result).containsEntry(series.getId(), WatchStatus.WATCHED);
+    }
+
+    @Test
+    @DisplayName("Should return in progress when only some episodes have history")
+    void shouldReturnInProgressWhenOnlySomeEpisodesHaveHistory() {
+      var series = buildSeries();
+      var season = seasonRepository.save(Season.builder().seasonNumber(1).series(series).build());
+      var watched =
+          episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
+      episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
+
+      service.markWatched(
+          USER_ID, watched.getId(), CollectableScope.DIRECT_MEDIA, Instant.now(), 3600);
+
+      var result = service.getWatchStatusForSeries(USER_ID, List.of(series.getId()));
+      assertThat(result).containsEntry(series.getId(), WatchStatus.IN_PROGRESS);
+    }
+
+    @Test
+    @DisplayName("Should return unwatched when series seasons have no episodes")
+    void shouldReturnUnwatchedWhenSeriesSeasonsHaveNoEpisodes() {
+      var populated = buildSeries();
+      var populatedSeason =
+          seasonRepository.save(Season.builder().seasonNumber(1).series(populated).build());
+      episodeRepository.save(Episode.builder().episodeNumber(1).season(populatedSeason).build());
+
+      var empty = buildSeries();
+      seasonRepository.save(Season.builder().seasonNumber(1).series(empty).build());
+
+      var result =
+          service.getWatchStatusForSeries(USER_ID, List.of(populated.getId(), empty.getId()));
+
+      assertThat(result)
+          .containsEntry(populated.getId(), WatchStatus.UNWATCHED)
+          .containsEntry(empty.getId(), WatchStatus.UNWATCHED);
+    }
+
+    @Test
+    @DisplayName("Should return unwatched when session progress position is zero")
+    void shouldReturnUnwatchedWhenSessionProgressPositionIsZero() {
+      var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
+      var episode =
+          episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
+      var file = mediaFileRepository.save(buildMatchedMediaFile(episode.getId()));
+
+      sessionProgressRepository.save(
+          progressBuilder(USER_ID, file.getId()).positionSeconds(0).build());
+
+      var result = service.getWatchStatusForSeasons(USER_ID, List.of(season.getId()));
+      assertThat(result).containsEntry(season.getId(), WatchStatus.UNWATCHED);
+    }
+
+    @Test
+    @DisplayName("Should prefer most recent session when duplicate progress rows share media file")
+    void shouldPreferMostRecentSessionWhenDuplicateProgressRowsShareMediaFile() {
+      var movie = buildMovie();
+      var file = mediaFileRepository.save(buildMatchedMediaFile(movie.getId()));
+
+      var stale =
+          sessionProgressRepository.save(
+              progressBuilder(USER_ID, file.getId()).positionSeconds(900).build());
+      AuditFieldSetter.setLastModifiedOn(stale, Instant.parse("2026-01-01T00:00:00Z"));
+      var latest =
+          sessionProgressRepository.save(
+              progressBuilder(USER_ID, file.getId()).positionSeconds(0).build());
+      AuditFieldSetter.setLastModifiedOn(latest, Instant.parse("2026-02-01T00:00:00Z"));
+
+      var result = service.getWatchStatusForDirectMedia(USER_ID, List.of(movie.getId()));
+      assertThat(result).containsEntry(movie.getId(), WatchStatus.UNWATCHED);
     }
   }
 
