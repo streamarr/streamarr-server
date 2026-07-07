@@ -86,6 +86,7 @@ class SeriesResolverIT extends AbstractIntegrationTest {
             createSeason(library, series, 2),
             createSeason(library, series, 3),
             createSeason(library, series, 4),
+            createSeason(library, series, 0),
             createSeason(library, series, 1),
             createSeason(library, series, 5)));
 
@@ -110,7 +111,7 @@ class SeriesResolverIT extends AbstractIntegrationTest {
 
     assertThat(seasons)
         .extracting(season -> season.get("seasonNumber"))
-        .containsExactly(1, 2, 3, 4, 5);
+        .containsExactly(0, 1, 2, 3, 4, 5);
   }
 
   @Test

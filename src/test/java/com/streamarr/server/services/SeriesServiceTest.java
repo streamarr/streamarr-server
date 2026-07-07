@@ -123,6 +123,30 @@ class SeriesServiceTest {
 
       assertThat(result).isEmpty();
     }
+
+    @Test
+    @DisplayName("Should return seasons ordered by season number when saved out of order")
+    void shouldReturnSeasonsOrderedBySeasonNumberWhenSavedOutOfOrder() {
+      var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
+      seasonRepository.save(Season.builder().seasonNumber(2).series(series).build());
+      seasonRepository.save(Season.builder().seasonNumber(1).series(series).build());
+
+      var result = seriesService.findSeasons(series.getId());
+
+      assertThat(result).extracting(Season::getSeasonNumber).containsExactly(1, 2);
+    }
+
+    @Test
+    @DisplayName("Should return episodes ordered by episode number when saved out of order")
+    void shouldReturnEpisodesOrderedByEpisodeNumberWhenSavedOutOfOrder() {
+      var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
+      episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
+      episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
+
+      var result = seriesService.findEpisodes(season.getId());
+
+      assertThat(result).extracting(Episode::getEpisodeNumber).containsExactly(1, 2);
+    }
   }
 
   @Nested
