@@ -42,7 +42,64 @@ class TokenVersionValidatorTest {
     assertThat(validator.validate(tokenWithSessionVersion(0L)).hasErrors()).isTrue();
   }
 
+  @Test
+  @DisplayName("Should reject token when membership version stale")
+  void shouldRejectTokenWhenMembershipVersionStale() {
+    var householdId = UUID.randomUUID();
+    reader.sessionVersions.put(sessionId, 1L);
+    reader.membershipVersions.put(accountId + ":" + householdId, 6L);
+
+    assertThat(validator.validate(householdToken(householdId, 6L)).hasErrors()).isFalse();
+    assertThat(validator.validate(householdToken(householdId, 5L)).hasErrors()).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should reject token when policy version stale")
+  void shouldRejectTokenWhenPolicyVersionStale() {
+    var householdId = UUID.randomUUID();
+    var profileId = UUID.randomUUID();
+    reader.sessionVersions.put(sessionId, 1L);
+    reader.membershipVersions.put(accountId + ":" + householdId, 2L);
+    reader.profilePolicyVersions.put(profileId, 9L);
+
+    assertThat(validator.validate(profileToken(householdId, profileId, 9L)).hasErrors()).isFalse();
+    assertThat(validator.validate(profileToken(householdId, profileId, 8L)).hasErrors()).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should reject token when scoped claims incomplete")
+  void shouldRejectTokenWhenScopedClaimsIncomplete() {
+    reader.sessionVersions.put(sessionId, 1L);
+
+    var missingMembershipVersion =
+        baseToken(1L).claim(TokenClaims.HOUSEHOLD_ID, UUID.randomUUID().toString()).build();
+
+    assertThat(validator.validate(missingMembershipVersion).hasErrors()).isTrue();
+  }
+
   private Jwt tokenWithSessionVersion(long sessionVersion) {
+    return baseToken(sessionVersion).build();
+  }
+
+  private Jwt householdToken(UUID householdId, long membershipVersion) {
+    return baseToken(1L)
+        .claim(TokenClaims.HOUSEHOLD_ID, householdId.toString())
+        .claim(TokenClaims.MEMBERSHIP_VERSION, membershipVersion)
+        .claim(TokenClaims.SCOPE, TokenScope.HOUSEHOLD.claimValue())
+        .build();
+  }
+
+  private Jwt profileToken(UUID householdId, UUID profileId, long policyVersion) {
+    return baseToken(1L)
+        .claim(TokenClaims.HOUSEHOLD_ID, householdId.toString())
+        .claim(TokenClaims.MEMBERSHIP_VERSION, 2L)
+        .claim(TokenClaims.PROFILE_ID, profileId.toString())
+        .claim(TokenClaims.POLICY_VERSION, policyVersion)
+        .claim(TokenClaims.SCOPE, TokenScope.PROFILE.claimValue())
+        .build();
+  }
+
+  private Jwt.Builder baseToken(long sessionVersion) {
     var now = Instant.now();
     return Jwt.withTokenValue("test-token")
         .header("alg", "HS256")
@@ -51,7 +108,6 @@ class TokenVersionValidatorTest {
         .expiresAt(now.plusSeconds(600))
         .claim(TokenClaims.SESSION_ID, sessionId.toString())
         .claim(TokenClaims.SESSION_VERSION, sessionVersion)
-        .claim(TokenClaims.SCOPE, TokenScope.ACCOUNT.claimValue())
-        .build();
+        .claim(TokenClaims.SCOPE, TokenScope.ACCOUNT.claimValue());
   }
 }

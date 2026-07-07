@@ -18,6 +18,8 @@ public class TokenCryptoConfig {
   private static final int MIN_KEY_BYTES = 32;
   private static final String HMAC_ALGORITHM = "HmacSHA256";
 
+  private final SecureRandom secureRandom = new SecureRandom();
+
   @Bean
   public SecretKey authSigningKey(AuthTokenProperties properties) {
     if (properties.signingKey() == null || properties.signingKey().isBlank()) {
@@ -26,7 +28,7 @@ public class TokenCryptoConfig {
               + " access and playback tokens are invalidated on restart; sessions recover through"
               + " refresh.");
       var bytes = new byte[MIN_KEY_BYTES];
-      new SecureRandom().nextBytes(bytes);
+      secureRandom.nextBytes(bytes);
       return new SecretKeySpec(bytes, HMAC_ALGORITHM);
     }
 
