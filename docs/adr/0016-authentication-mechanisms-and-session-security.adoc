@@ -63,7 +63,8 @@ Cookies are ambient credentials, so cookie-authenticated requests keep Spring Se
 `httpOnly` keeps scripts from reading the session cookie, and cross-site tracing cannot echo it back while HTTP `TRACE` stays disabled — embedded Tomcat's default, which must not be re-enabled.
 That narrows XSS rather than eliminating it: an injected script can still ride the session, so Spring Security's default security headers, a Content-Security-Policy, and output encoding remain required hygiene.
 Streaming is the third carrier: playlist-driven players — AVPlayer above all — cannot attach headers to the segment requests a playlist spawns, so issued manifest, playlist, and segment URLs embed a short-lived, playback-scoped profile token the server validates exactly like a header token.
-Same tokens, different carrier, not a weaker channel: playback-URL tokens authorize nothing but playback and stay out of access logs.
+Same tokens, different carrier, not a weaker channel: playback-URL tokens authorize nothing but playback, and the server redacts them from its own request logs and traces.
+Logs the server does not own — a reverse proxy in front of a self-hosted install — will record these URLs, which is exactly why the tokens' short TTL and playback-only scope bound what a captured URL is worth.
 
 Renewal is a server contract before it is client code.
 The server never slides an access token or re-issues one on its own authority; renewal always passes through the refresh endpoint.
@@ -104,7 +105,7 @@ Explicitly deferred from v1:
 
 * Passwordless passkey login — WebAuthn ships as a second factor first
 * TOTP as the fallback second factor
-* Action-specific, step-up MFA — the policy model allows for it, nothing builds it yet
+* Action-specific, step-up MFA — the policy model allows for it, nothing builds it yet; device-pairing approval is the natural first target
 * OAuth provider login
 
 == Consequences

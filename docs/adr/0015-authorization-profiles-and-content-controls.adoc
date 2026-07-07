@@ -35,7 +35,7 @@ Households own profiles and scope household-local administration, the default ra
 
 Initial setup creates the first household and admin account.
 Setup endpoints work only while no users exist; afterward they are no longer anonymously reachable.
-That guard is a database constraint, not a Java check — concurrent first-setup requests are a check-then-act race unless the no-users condition is enforced atomically in the insert itself.
+That guard lives in the database, not in a Java check, and a plain `INSERT ... WHERE NOT EXISTS` still races under snapshot isolation — so setup claims a singleton bootstrap row (or an equivalent unique guard) whose second concurrent claim fails on its constraint.
 
 An account may belong to several households.
 Immediately after login, account-scoped requests choose the active household; every other request acts within a single active household.
@@ -50,7 +50,8 @@ Postgres row-level security remains available as later defense-in-depth; v1 reli
 V1 supports no cross-household grants: an account with several households can switch its active context, but acting in one exposes only that household's data.
 
 Global account roles are `ADMIN` and `USER`; children are not a role.
-Kid, teen, and adult viewing is expressed through profile content policy, and admin profiles are unrestricted.
+Kid, teen, and adult viewing is expressed through profile content policy.
+Unrestricted is itself a profile policy value, never inherited from an account role: no profile is unrestricted because an `ADMIN` uses it, which is what lets an admin preview a child's profile and receive the child's policy.
 Model roles as first-class values, not booleans, and route every role and permission check through the authorization facade so future roles, groups, or delegated-admin tiers never require scattered `isAdmin` checks.
 
 Authenticated requests carry account, session, and — once selected — household and profile identity, scoped and validated as link:0016-authentication-mechanisms-and-session-security.adoc[ADR 0016] specifies.
@@ -89,7 +90,7 @@ The server never treats a client-supplied `profileId`, OS-user mapping, local-ne
 
 Profile switching is distinct from authentication.
 Authenticating a TV device proves the account/device session (ADR 0016) but authorizes no profile on it.
-Switching into a PIN-protected profile requires a server-verified PIN; any profile may be PIN-protected, and admin or adult profiles must be PIN-protected once restricted profiles exist.
+Switching into a PIN-protected profile requires a server-verified PIN; any profile may be PIN-protected, and once restricted profiles exist, every profile with a less restrictive policy — unrestricted ones above all — must be PIN-protected.
 A verified profile PIN issues a fresh profile token but does not authenticate an account, register a device, or satisfy MFA.
 Changing a profile's restrictions invalidates its existing tokens through profile-policy versioning.
 
@@ -119,7 +120,7 @@ No resolver, controller, repository, search adapter, or streaming endpoint filte
 
 Hidden media behaves as absent, not forbidden.
 It is omitted from every list surface — browse, search, continue watching, up next, recently added, person, genre, artwork, recommendations, collections, and any future REST or GraphQL list — and direct lookup or playback of hidden media must fail with a response indistinguishable from one for an id that never existed.
-This builder's empty-input semantics differ from an optional user filter: an empty or misconfigured restricted-profile policy denies everything, and only an explicit unrestricted or admin branch lifts visibility restrictions.
+This builder's empty-input semantics differ from an optional user filter: an empty or misconfigured restricted-profile policy denies everything, and only an explicitly unrestricted policy lifts visibility restrictions.
 
 The facade returns the policy as a typed domain object — shaped like the existing media-filter concepts but with fail-closed semantics — never as SQL, jOOQ, a search DSL, or any adapter-specific filter.
 The Postgres/jOOQ adapter is the first translator, turning the policy into a fail-closed `WHERE` condition; point checks evaluate the same policy in memory.
@@ -142,6 +143,7 @@ The resolver picks a certification for a `(profile, title)` by fixed precedence:
 * otherwise, treat the title as unrated or unknown.
 
 It deliberately takes neither the maximum age across regions, which over-blocks international libraries, nor the minimum, which under-blocks restricted profiles.
+V1 ships only the US mapping, so its cascade is just `US`; the cascade's order lives in code beside the rating maps and grows with them.
 
 The first US rating mapping is:
 
@@ -155,7 +157,7 @@ The first US rating mapping is:
 * unrated or unknown -> blocked for restricted profiles
 
 Profile content policy is a composable set of allow/deny predicates over media attributes: rating, library, genre, tag, and future saved-filter dimensions.
-V1 implements the rating ceiling plus unrestricted/admin behavior.
+V1 implements the rating ceiling plus the unrestricted policy.
 The model leaves room for later policy types without binding any of them to a single query engine.
 
 Relationship-heavy authorization — cross-household sharing, delegated administration, per-collection grants, playlist sharing — is out of scope for v1 beyond the membership primitives above.
@@ -183,7 +185,7 @@ Explicitly deferred from v1:
 * Services receive account, household, and profile ids explicitly rather than resolving identity inside async loader code.
 * Watch progress and history move from account-scoped to profile-scoped.
 * A profile can be reached from multiple accounts.
-* Mandatory PINs on admin and adult profiles once restricted profiles exist trade a prompt at every profile switch for containment of unrestricted contexts — an accepted UX cost.
+* Mandatory PINs on less-restricted profiles once restricted ones exist trade a prompt at profile switch for containment — an accepted UX cost.
 * A minimal `Household` entity exists from v1, giving isolation, rating defaults, profile ownership, and later cross-household features a stable boundary.
 * Central visibility checks let catalog, search, direct lookup, continue-watching, future search, and streaming share one policy, with adapters translating the typed policy instead of receiving raw SQL.
 * Rating normalization spans multiple certifications per title, and missing or unknown ratings fail conservatively for restricted profiles.
