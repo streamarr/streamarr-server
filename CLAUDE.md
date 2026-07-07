@@ -136,7 +136,7 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 - These rules are enforced by ArchUnit tests (`ArchitectureTest`)
 
 ## Settled Decisions (do not revisit without an ADR)
-- Architectural decisions are recorded in `docs/adr/` — read the relevant ADR before revisiting a decision, and record newly settled ones as ADRs
+- Architectural decisions are recorded in `docs/adr/` — read the relevant ADR before revisiting a decision, and record newly settled ones as ADRs starting from `docs/adr/template.adoc`
 - **Concurrency runtime**: virtual threads (Loom). Akka and Vert.x were each adopted and removed in 2022 — don't reintroduce reactive/actor frameworks.
 - **Outbound HTTP**: Methanol over JDK `HttpClient` with interceptors (retry, rate limit, cache). Don't introduce `RestTemplate`/`RestClient`/`WebClient`.
 - **Delivery protocol**: GraphQL only. A complete REST/JSON:API layer was built and deleted within 24 hours — keep transport experiments on spike branches; extract protocol-agnostic services (`MediaPage`/`PageItem` pattern) but don't merge speculative protocol surfaces.
