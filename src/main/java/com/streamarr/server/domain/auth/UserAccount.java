@@ -6,6 +6,7 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -32,5 +33,7 @@ public class UserAccount extends BaseAuditableEntity<UserAccount> {
   @JdbcTypeCode(SqlTypes.NAMED_ENUM)
   private AccountRole accountRole;
 
-  private boolean enabled;
+  // Mirrors the V044 column default; disabled-by-default flows (invites, verification)
+  // must opt out explicitly.
+  @Builder.Default private boolean enabled = true;
 }
