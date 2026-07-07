@@ -4,12 +4,16 @@
 package com.streamarr.server.jooq.generated;
 
 
+import com.streamarr.server.jooq.generated.tables.AccountProfile;
+import com.streamarr.server.jooq.generated.tables.AuthSession;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable;
 import com.streamarr.server.jooq.generated.tables.Company;
 import com.streamarr.server.jooq.generated.tables.Episode;
 import com.streamarr.server.jooq.generated.tables.ExternalIdentifier;
 import com.streamarr.server.jooq.generated.tables.FileProcessingTask;
 import com.streamarr.server.jooq.generated.tables.Genre;
+import com.streamarr.server.jooq.generated.tables.Household;
+import com.streamarr.server.jooq.generated.tables.HouseholdMembership;
 import com.streamarr.server.jooq.generated.tables.Image;
 import com.streamarr.server.jooq.generated.tables.Library;
 import com.streamarr.server.jooq.generated.tables.LibraryMetadata;
@@ -20,7 +24,9 @@ import com.streamarr.server.jooq.generated.tables.MovieDirector;
 import com.streamarr.server.jooq.generated.tables.MovieGenre;
 import com.streamarr.server.jooq.generated.tables.MoviePerson;
 import com.streamarr.server.jooq.generated.tables.Person;
+import com.streamarr.server.jooq.generated.tables.Profile;
 import com.streamarr.server.jooq.generated.tables.Rating;
+import com.streamarr.server.jooq.generated.tables.RefreshToken;
 import com.streamarr.server.jooq.generated.tables.Review;
 import com.streamarr.server.jooq.generated.tables.SchemaHistory;
 import com.streamarr.server.jooq.generated.tables.Season;
@@ -29,7 +35,9 @@ import com.streamarr.server.jooq.generated.tables.SeriesCompany;
 import com.streamarr.server.jooq.generated.tables.SeriesDirector;
 import com.streamarr.server.jooq.generated.tables.SeriesGenre;
 import com.streamarr.server.jooq.generated.tables.SeriesPerson;
+import com.streamarr.server.jooq.generated.tables.ServerBootstrap;
 import com.streamarr.server.jooq.generated.tables.SessionProgress;
+import com.streamarr.server.jooq.generated.tables.UserAccount;
 import com.streamarr.server.jooq.generated.tables.WatchHistory;
 
 import java.util.Arrays;
@@ -53,6 +61,16 @@ public class Public extends SchemaImpl {
      * The reference instance of <code>public</code>
      */
     public static final Public PUBLIC = new Public();
+
+    /**
+     * The table <code>public.account_profile</code>.
+     */
+    public final AccountProfile ACCOUNT_PROFILE = AccountProfile.ACCOUNT_PROFILE;
+
+    /**
+     * The table <code>public.auth_session</code>.
+     */
+    public final AuthSession AUTH_SESSION = AuthSession.AUTH_SESSION;
 
     /**
      * The table <code>public.base_collectable</code>.
@@ -83,6 +101,16 @@ public class Public extends SchemaImpl {
      * The table <code>public.genre</code>.
      */
     public final Genre GENRE = Genre.GENRE;
+
+    /**
+     * The table <code>public.household</code>.
+     */
+    public final Household HOUSEHOLD = Household.HOUSEHOLD;
+
+    /**
+     * The table <code>public.household_membership</code>.
+     */
+    public final HouseholdMembership HOUSEHOLD_MEMBERSHIP = HouseholdMembership.HOUSEHOLD_MEMBERSHIP;
 
     /**
      * The table <code>public.image</code>.
@@ -135,9 +163,19 @@ public class Public extends SchemaImpl {
     public final Person PERSON = Person.PERSON;
 
     /**
+     * The table <code>public.profile</code>.
+     */
+    public final Profile PROFILE = Profile.PROFILE;
+
+    /**
      * The table <code>public.rating</code>.
      */
     public final Rating RATING = Rating.RATING;
+
+    /**
+     * The table <code>public.refresh_token</code>.
+     */
+    public final RefreshToken REFRESH_TOKEN = RefreshToken.REFRESH_TOKEN;
 
     /**
      * The table <code>public.review</code>.
@@ -180,9 +218,19 @@ public class Public extends SchemaImpl {
     public final SeriesPerson SERIES_PERSON = SeriesPerson.SERIES_PERSON;
 
     /**
+     * The table <code>public.server_bootstrap</code>.
+     */
+    public final ServerBootstrap SERVER_BOOTSTRAP = ServerBootstrap.SERVER_BOOTSTRAP;
+
+    /**
      * The table <code>public.session_progress</code>.
      */
     public final SessionProgress SESSION_PROGRESS = SessionProgress.SESSION_PROGRESS;
+
+    /**
+     * The table <code>public.user_account</code>.
+     */
+    public final UserAccount USER_ACCOUNT = UserAccount.USER_ACCOUNT;
 
     /**
      * The table <code>public.watch_history</code>.
@@ -205,12 +253,16 @@ public class Public extends SchemaImpl {
     @Override
     public final List<Table<?>> getTables() {
         return Arrays.asList(
+            AccountProfile.ACCOUNT_PROFILE,
+            AuthSession.AUTH_SESSION,
             BaseCollectable.BASE_COLLECTABLE,
             Company.COMPANY,
             Episode.EPISODE,
             ExternalIdentifier.EXTERNAL_IDENTIFIER,
             FileProcessingTask.FILE_PROCESSING_TASK,
             Genre.GENRE,
+            Household.HOUSEHOLD,
+            HouseholdMembership.HOUSEHOLD_MEMBERSHIP,
             Image.IMAGE,
             Library.LIBRARY,
             LibraryMetadata.LIBRARY_METADATA,
@@ -221,7 +273,9 @@ public class Public extends SchemaImpl {
             MovieGenre.MOVIE_GENRE,
             MoviePerson.MOVIE_PERSON,
             Person.PERSON,
+            Profile.PROFILE,
             Rating.RATING,
+            RefreshToken.REFRESH_TOKEN,
             Review.REVIEW,
             SchemaHistory.SCHEMA_HISTORY,
             Season.SEASON,
@@ -230,7 +284,9 @@ public class Public extends SchemaImpl {
             SeriesDirector.SERIES_DIRECTOR,
             SeriesGenre.SERIES_GENRE,
             SeriesPerson.SERIES_PERSON,
+            ServerBootstrap.SERVER_BOOTSTRAP,
             SessionProgress.SESSION_PROGRESS,
+            UserAccount.USER_ACCOUNT,
             WatchHistory.WATCH_HISTORY
         );
     }
