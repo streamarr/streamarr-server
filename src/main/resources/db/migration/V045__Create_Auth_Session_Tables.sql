@@ -22,7 +22,11 @@ CREATE TABLE auth_session
     CONSTRAINT fk_auth_session_active_household FOREIGN KEY (active_household_id)
         REFERENCES household (id) ON DELETE SET NULL,
     CONSTRAINT fk_auth_session_active_profile FOREIGN KEY (active_profile_id)
-        REFERENCES profile (id) ON DELETE SET NULL
+        REFERENCES profile (id) ON DELETE SET NULL,
+    -- MATCH SIMPLE skips the check when either column is NULL, so a selected profile must
+    -- belong to the selected household; deleting the profile clears only the profile column.
+    CONSTRAINT fk_auth_session_active_profile_household FOREIGN KEY (active_profile_id, active_household_id)
+        REFERENCES profile (id, household_id) ON DELETE SET NULL (active_profile_id)
 );
 
 CREATE INDEX idx_auth_session_account_id ON auth_session (account_id);

@@ -152,6 +152,51 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should reject session active profile from other household")
+  void shouldRejectSessionActiveProfileFromOtherHousehold() {
+    var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    var household = householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    var otherHousehold =
+        householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    var profile =
+        profileRepository.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+
+    var session =
+        AuthSession.builder()
+            .accountId(account.getId())
+            .activeHouseholdId(otherHousehold.getId())
+            .activeProfileId(profile.getId())
+            .build();
+
+    assertThatThrownBy(() -> authSessionRepository.save(session))
+        .isInstanceOf(DataIntegrityViolationException.class);
+  }
+
+  @Test
+  @DisplayName("Should clear active selections when household deleted")
+  void shouldClearActiveSelectionsWhenHouseholdDeleted() {
+    var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    var household = householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    var profile =
+        profileRepository.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+    var session =
+        authSessionRepository.save(
+            AuthSession.builder()
+                .accountId(account.getId())
+                .activeHouseholdId(household.getId())
+                .activeProfileId(profile.getId())
+                .build());
+
+    householdRepository.delete(household);
+
+    var reloaded = authSessionRepository.findById(session.getId()).orElseThrow();
+    assertThat(reloaded.getActiveHouseholdId()).isNull();
+    assertThat(reloaded.getActiveProfileId()).isNull();
+  }
+
+  @Test
   @DisplayName("Should reject second bootstrap claim")
   void shouldRejectSecondBootstrapClaim() {
     var admin =
