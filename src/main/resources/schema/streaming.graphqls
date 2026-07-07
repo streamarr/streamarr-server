@@ -2,19 +2,6 @@ type StreamSession {
     id: ID!
     streamUrl: String!
     transcodeMode: TranscodeMode!
-    "Timeline addressing for the session's playlist and reported positions."
-    timeline: StreamTimeline!
-}
-
-"""
-How stream positions map to media time. ABSOLUTE means the playlist covers
-the full media duration and player positions equal real media positions, so
-clients seek locally and report positions without any seek-offset
-compensation. Servers without this field trim the playlist at the seek
-point instead.
-"""
-enum StreamTimeline {
-    ABSOLUTE
 }
 
 enum TranscodeMode {

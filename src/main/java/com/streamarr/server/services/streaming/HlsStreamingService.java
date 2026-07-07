@@ -12,7 +12,6 @@ import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.MaxConcurrentTranscodesException;
 import com.streamarr.server.exceptions.MediaFileNotFoundException;
-import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.library.FilepathCodec;
@@ -94,28 +93,6 @@ public class HlsStreamingService implements StreamingService {
           s.setLastAccessedAt(Instant.now());
           sessionRepository.save(s);
         });
-    return session;
-  }
-
-  @Override
-  public StreamSession seekSession(UUID sessionId, int positionSeconds) {
-    var session =
-        sessionRepository
-            .findById(sessionId)
-            .orElseThrow(() -> new SessionNotFoundException(sessionId));
-
-    transcodeExecutor.stop(sessionId);
-    session.seek(positionSeconds);
-
-    // Relocate the encoder on the absolute timeline: snap to the segment
-    // boundary so produced segments align with the full-duration playlist.
-    // Previously transcoded segments stay valid and are kept.
-    var segmentDurationSeconds = (int) properties.segmentDuration().toSeconds();
-    var startSegment = positionSeconds / segmentDurationSeconds;
-    startTranscodes(session, startSegment * segmentDurationSeconds, startSegment);
-    sessionRepository.save(session);
-
-    log.info("Seek-ed session {} to position {}s", sessionId, positionSeconds);
     return session;
   }
 

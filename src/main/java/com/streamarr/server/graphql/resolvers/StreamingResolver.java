@@ -22,8 +22,6 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class StreamingResolver {
 
-  private static final String ABSOLUTE_TIMELINE = "ABSOLUTE";
-
   private final StreamingService streamingService;
   private final SessionProgressService sessionProgressService;
   private final WatchStatusService watchStatusService;
@@ -33,14 +31,6 @@ public class StreamingResolver {
       @InputArgument String mediaFileId, @InputArgument StreamingOptionsInput options) {
     var opts = mapOptions(options);
     var session = streamingService.createSession(parseUuid(mediaFileId), opts);
-
-    return toDto(session);
-  }
-
-  @DgsMutation
-  public StreamSessionDto seekStreamSession(
-      @InputArgument String sessionId, @InputArgument int positionSeconds) {
-    var session = streamingService.seekSession(parseUuid(sessionId), positionSeconds);
 
     return toDto(session);
   }
@@ -121,7 +111,6 @@ public class StreamingResolver {
         .id(session.getSessionId().toString())
         .streamUrl("/api/stream/" + session.getSessionId() + "/master.m3u8")
         .transcodeMode(session.getTranscodeDecision().transcodeMode().name())
-        .timeline(ABSOLUTE_TIMELINE)
         .build();
   }
 

@@ -117,31 +117,6 @@ class StreamingResolverTest {
   }
 
   @Test
-  @DisplayName("Should expose an absolute timeline capability on the session")
-  void shouldExposeAnAbsoluteTimelineCapabilityOnTheSession() {
-    var sessionId = UUID.randomUUID();
-    var session = buildSession(sessionId);
-    STUB_SERVICE.setNextResult(session);
-
-    var mutation =
-        String.format(
-            """
-            mutation {
-              createStreamSession(mediaFileId: "%s") {
-                id
-                timeline
-              }
-            }
-            """,
-            UUID.randomUUID());
-
-    var context = dgsQueryExecutor.executeAndGetDocumentContext(mutation);
-    String timeline = context.read("data.createStreamSession.timeline");
-
-    assertThat(timeline).isEqualTo("ABSOLUTE");
-  }
-
-  @Test
   @DisplayName("Should map GraphQL options input to streaming options when options provided")
   void shouldMapGraphqlOptionsInputToStreamingOptionsWhenOptionsProvided() {
     var sessionId = UUID.randomUUID();
@@ -223,47 +198,6 @@ class StreamingResolverTest {
     assertThat(result.getErrors().getFirst().getMessage()).contains("Invalid ID format");
   }
 
-  @Test
-  @DisplayName("Should return session DTO when seeking session")
-  void shouldReturnSessionDtoWhenSeekingSession() {
-    var sessionId = UUID.randomUUID();
-    var session = buildSession(sessionId);
-    STUB_SERVICE.setNextResult(session);
-
-    var mutation =
-        String.format(
-            """
-            mutation {
-              seekStreamSession(sessionId: "%s", positionSeconds: 300) {
-                id
-                streamUrl
-              }
-            }
-            """,
-            sessionId);
-
-    var id = dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.seekStreamSession.id");
-
-    assertThat(id).isEqualTo(sessionId.toString());
-  }
-
-  @Test
-  @DisplayName("Should return error when seek session ID is invalid")
-  void shouldReturnErrorWhenSeekSessionIdIsInvalid() {
-    var result =
-        dgsQueryExecutor.execute(
-            """
-            mutation {
-              seekStreamSession(sessionId: "bad-id", positionSeconds: 300) {
-                id
-              }
-            }
-            """);
-
-    assertThat(result.getErrors()).isNotEmpty();
-    assertThat(result.getErrors().getFirst().getMessage()).contains("Invalid ID format");
-  }
-
   @ParameterizedTest(name = "{0}")
   @MethodSource("booleanMutations")
   @DisplayName("Should return true when executing boolean mutation")
@@ -328,11 +262,6 @@ class StreamingResolverTest {
     @Override
     public Optional<StreamSession> accessSession(UUID sessionId) {
       return Optional.ofNullable(nextResult);
-    }
-
-    @Override
-    public StreamSession seekSession(UUID sessionId, int positionSeconds) {
-      return nextResult;
     }
 
     @Override

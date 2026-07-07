@@ -44,11 +44,6 @@ public class StreamSession {
     return playbackSnapshot.get();
   }
 
-  public void seek(int positionSeconds) {
-    playbackSnapshot.updateAndGet(
-        current -> new PlaybackSnapshot(positionSeconds, current.state(), Instant.now()));
-  }
-
   public Instant getLastAccessedAt() {
     return playbackSnapshot.get().accessedAt();
   }

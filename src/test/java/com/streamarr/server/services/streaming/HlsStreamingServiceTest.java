@@ -8,7 +8,6 @@ import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.streaming.MediaProbe;
-import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
@@ -18,7 +17,6 @@ import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.MaxConcurrentTranscodesException;
 import com.streamarr.server.exceptions.MediaFileNotFoundException;
-import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeSegmentStore;
@@ -325,89 +323,16 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("Should update seek position when seeking session")
-  void shouldUpdateSeekPositionWhenSeekingSession() {
-    var file = seedMediaFile();
-    var session = service.createSession(file.getId(), defaultOptions());
-    var originalSessionId = session.getSessionId();
-
-    var seeked = service.seekSession(originalSessionId, 300);
-
-    assertThat(seeked.getSessionId()).isEqualTo(originalSessionId);
-    assertThat(seeked.getPlaybackSnapshot().positionSeconds()).isEqualTo(300);
-  }
-
-  @Test
-  @DisplayName("Should restart transcode when seeking")
-  void shouldRestartTranscodeWhenSeeking() {
-    var file = seedMediaFile();
-    var session = service.createSession(file.getId(), defaultOptions());
-
-    var seeked = service.seekSession(session.getSessionId(), 300);
-
-    assertThat(seeked.getHandle()).isNotNull();
-    assertThat(transcodeExecutor.isRunning(session.getSessionId())).isTrue();
-  }
-
-  @Test
-  @DisplayName("Should stop old transcode when seeking to new position")
-  void shouldStopOldTranscodeWhenSeekingToNewPosition() {
-    var file = seedMediaFile();
-    var session = service.createSession(file.getId(), defaultOptions());
-
-    service.seekSession(session.getSessionId(), 300);
-
-    assertThat(transcodeExecutor.getStopped()).contains(session.getSessionId());
-  }
-
-  @Test
-  @DisplayName("Should restart the transcode at the absolute segment when seeking")
-  void shouldRestartTheTranscodeAtTheAbsoluteSegmentWhenSeeking() {
-    var file = seedMediaFile();
-    var session = service.createSession(file.getId(), defaultOptions());
-
-    service.seekSession(session.getSessionId(), 300);
-
-    var lastRequest = transcodeExecutor.getStartedRequests().getLast();
-    assertThat(lastRequest.seekPosition()).isEqualTo(300);
-    assertThat(lastRequest.startNumber()).isEqualTo(50);
-  }
-
-  @Test
-  @DisplayName("Should snap a mid-segment seek to the segment boundary")
-  void shouldSnapAMidSegmentSeekToTheSegmentBoundary() {
-    var file = seedMediaFile();
-    var session = service.createSession(file.getId(), defaultOptions());
-
-    service.seekSession(session.getSessionId(), 303);
-
-    // segment50 covers [300s, 306s); ffmpeg must start on the boundary so the
-    // produced segments align with the absolute playlist timeline.
-    var lastRequest = transcodeExecutor.getStartedRequests().getLast();
-    assertThat(lastRequest.seekPosition()).isEqualTo(300);
-    assertThat(lastRequest.startNumber()).isEqualTo(50);
-  }
-
-  @Test
-  @DisplayName("Should keep previously transcoded segments when seeking")
-  void shouldKeepPreviouslyTranscodedSegmentsWhenSeeking() {
+  @DisplayName("Should keep previously transcoded segments when relocating")
+  void shouldKeepPreviouslyTranscodedSegmentsWhenRelocating() {
     var file = seedMediaFile();
     var session = service.createSession(file.getId(), defaultOptions());
     segmentStore.addSegment(session.getSessionId(), "segment0.ts", new byte[] {1});
 
-    service.seekSession(session.getSessionId(), 300);
+    service.resumeSessionIfNeeded(session.getSessionId(), "segment100.ts");
 
     // Segments are addressed on the absolute timeline, so earlier segments stay valid.
     assertThat(segmentStore.segmentExists(session.getSessionId(), "segment0.ts")).isTrue();
-  }
-
-  @Test
-  @DisplayName("Should throw when seeking nonexistent session")
-  void shouldThrowWhenSeekingNonexistentSession() {
-    var invalidId = UUID.randomUUID();
-
-    assertThatThrownBy(() -> service.seekSession(invalidId, 300))
-        .isInstanceOf(SessionNotFoundException.class);
   }
 
   @Test
@@ -866,7 +791,8 @@ class HlsStreamingServiceTest {
   void shouldRelocateTheTranscodeWhenTheRequestedSegmentIsBehindTheEncoderStart() {
     var file = seedMediaFile();
     var session = service.createSession(file.getId(), defaultOptions());
-    service.seekSession(session.getSessionId(), 300);
+    // Move the encoder forward first: segment50 is far ahead of fresh output.
+    service.resumeSessionIfNeeded(session.getSessionId(), "segment50.ts");
 
     service.resumeSessionIfNeeded(session.getSessionId(), "segment10.ts");
 
@@ -922,7 +848,6 @@ class HlsStreamingServiceTest {
   void shouldNotRelocateWhenTheRequestedSegmentAlreadyExists() {
     var file = seedMediaFile();
     var session = service.createSession(file.getId(), defaultOptions());
-    service.seekSession(session.getSessionId(), 300);
     segmentStore.addSegment(session.getSessionId(), "segment10.ts", new byte[] {1});
     var requestsBefore = transcodeExecutor.getStartedRequests().size();
 
@@ -932,22 +857,17 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("Should resume at the absolute segment position when resuming after seek")
-  void shouldResumeAtTheAbsoluteSegmentPositionWhenResumingAfterSeek() {
+  @DisplayName("Should resume at the absolute segment position when resuming")
+  void shouldResumeAtTheAbsoluteSegmentPositionWhenResuming() {
     var file = seedMediaFile();
     var session = service.createSession(file.getId(), defaultOptions());
-
-    service.seekSession(session.getSessionId(), 60);
-
-    session.updatePlaybackState(120, PlaybackState.PLAYING);
 
     session.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
     transcodeExecutor.markDead(session.getSessionId());
 
     service.resumeSessionIfNeeded(session.getSessionId(), "segment5.ts");
 
-    // The timeline is absolute: segment5 always covers [30s, 36s), regardless of
-    // any earlier seek.
+    // The timeline is absolute: segment5 always covers [30s, 36s).
     var lastRequest = transcodeExecutor.getStartedRequests().getLast();
     assertThat(lastRequest.seekPosition()).isEqualTo(30);
     assertThat(lastRequest.startNumber()).isEqualTo(5);

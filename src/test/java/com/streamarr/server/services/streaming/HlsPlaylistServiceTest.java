@@ -422,24 +422,10 @@ class HlsPlaylistServiceTest {
   }
 
   @Test
-  @DisplayName("Should keep the full segment count when the session has been seeked")
-  void shouldKeepTheFullSegmentCountWhenTheSessionHasBeenSeeked() {
-    // The playlist timeline is absolute: 120s / 6s = 20 segments regardless of seeking.
+  @DisplayName("Should keep the full segment count when playback advances")
+  void shouldKeepTheFullSegmentCountWhenPlaybackAdvances() {
+    // The playlist timeline is absolute: 120s / 6s = 20 segments, always.
     var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 120);
-    session.seek(60);
-
-    var playlist = service.generateMediaPlaylist(session);
-
-    var segmentLines =
-        playlist.lines().filter(l -> l.startsWith("segment") && l.endsWith(".ts")).toList();
-    assertThat(segmentLines).hasSize(20);
-  }
-
-  @Test
-  @DisplayName("Should keep the full segment count when playback advances after a seek")
-  void shouldKeepTheFullSegmentCountWhenPlaybackAdvancesAfterASeek() {
-    var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 120);
-    session.seek(60);
     session.updatePlaybackState(90, PlaybackState.PLAYING);
 
     var playlist = service.generateMediaPlaylist(session);
