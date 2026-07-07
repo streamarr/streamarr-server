@@ -2,7 +2,6 @@ package com.streamarr.server.config;
 
 import com.streamarr.server.services.auth.SetupCommand;
 import com.streamarr.server.services.auth.SetupService;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -19,19 +18,23 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component
 @Profile("dev")
-@RequiredArgsConstructor
 public class DevIdentitySeeder {
 
   private final SetupService setupService;
+  private final boolean seedIdentity;
+  private final String adminEmail;
+  private final String adminPassword;
 
-  @Value("${dev.seed-identity:true}")
-  private boolean seedIdentity;
-
-  @Value("${dev.admin-email:admin@dev.local}")
-  private String adminEmail;
-
-  @Value("${dev.admin-password:streamarr-dev}")
-  private String adminPassword;
+  public DevIdentitySeeder(
+      SetupService setupService,
+      @Value("${dev.seed-identity:true}") boolean seedIdentity,
+      @Value("${dev.admin-email:admin@dev.local}") String adminEmail,
+      @Value("${dev.admin-password:streamarr-dev}") String adminPassword) {
+    this.setupService = setupService;
+    this.seedIdentity = seedIdentity;
+    this.adminEmail = adminEmail;
+    this.adminPassword = adminPassword;
+  }
 
   @Order(0)
   @EventListener(ApplicationReadyEvent.class)
