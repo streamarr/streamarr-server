@@ -109,6 +109,26 @@ class LoginThrottleTest {
   }
 
   @Test
+  @DisplayName("Should keep earlier attempts when returned slot not the only one")
+  void shouldKeepEarlierAttemptsWhenReturnedSlotNotTheOnlyOne() {
+    for (int i = 0; i < MAX_ATTEMPTS; i++) {
+      throttle.registerAttempt("other-" + i + "@example.com", SOURCE);
+    }
+    throttle.registerAttempt(EMAIL, "src-earlier");
+
+    assertThatThrownBy(() -> throttle.registerAttempt(EMAIL, SOURCE))
+        .isInstanceOf(TooManyLoginAttemptsException.class);
+
+    for (int i = 0; i < MAX_ATTEMPTS - 1; i++) {
+      var freshSource = "src-" + i;
+      assertThatCode(() -> throttle.registerAttempt(EMAIL, freshSource)).doesNotThrowAnyException();
+    }
+
+    assertThatThrownBy(() -> throttle.registerAttempt(EMAIL, "src-fresh"))
+        .isInstanceOf(TooManyLoginAttemptsException.class);
+  }
+
+  @Test
   @DisplayName("Should allow attempts again when window passes")
   void shouldAllowAttemptsAgainWhenWindowPasses() {
     for (int i = 0; i < MAX_ATTEMPTS; i++) {

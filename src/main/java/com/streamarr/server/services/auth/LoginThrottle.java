@@ -81,7 +81,9 @@ public class LoginThrottle {
             current.addLast(clock.instant());
             reserved.set(true);
           }
-          return current.isEmpty() ? null : current;
+          // Never empty here: blocked means at least maxAttempts entries, reserved means one
+          // was just added.
+          return current;
         });
     return reserved.get();
   }
