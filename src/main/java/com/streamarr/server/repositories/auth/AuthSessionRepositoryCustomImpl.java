@@ -36,8 +36,7 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
             .returning(AUTH_SESSION.SESSION_VERSION)
             .fetchOne();
 
-    var bumped =
-        Optional.ofNullable(updated).map(record -> record.get(AUTH_SESSION.SESSION_VERSION));
+    var bumped = Optional.ofNullable(updated).map(row -> row.get(AUTH_SESSION.SESSION_VERSION));
     bumped.ifPresent(
         version -> publishCounterNotification("SESSION", sessionId.toString(), version));
     return bumped;
@@ -57,8 +56,7 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
             .returning(AUTH_SESSION.SESSION_VERSION)
             .fetchOne();
 
-    var bumped =
-        Optional.ofNullable(updated).map(record -> record.get(AUTH_SESSION.SESSION_VERSION));
+    var bumped = Optional.ofNullable(updated).map(row -> row.get(AUTH_SESSION.SESSION_VERSION));
     bumped.ifPresent(
         version -> publishCounterNotification("SESSION", sessionId.toString(), version));
     return bumped;

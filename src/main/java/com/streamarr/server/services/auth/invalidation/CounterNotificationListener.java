@@ -110,11 +110,7 @@ public class CounterNotificationListener implements SmartLifecycle {
         connectionDetails.getPassword());
   }
 
-  /** Payload shape: {@code KIND|key|version}; membership keys keep their inner colon. */
   private void apply(String payload) {
-    if (payload == null) {
-      return;
-    }
 
     var parts = payload.split("\\|", 3);
     if (parts.length != 3) {
