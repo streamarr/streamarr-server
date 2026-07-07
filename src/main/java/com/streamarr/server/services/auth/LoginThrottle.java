@@ -4,18 +4,21 @@ import com.streamarr.server.config.security.AuthThrottleProperties;
 import com.streamarr.server.exceptions.TooManyLoginAttemptsException;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.Locale;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 /**
- * In-memory, per-instance login throttle keyed by account email and request source. Restart resets
- * the counters and N instances multiply the attempt budget by N — the same single-JVM posture as
- * MutexFactory; database-backed throttling is the documented fast-follow if multi-instance
- * deployment materialises.
+ * In-memory, per-instance login throttle keyed by account email and request source. An attempt
+ * reserves its slot atomically before any password work, so a concurrent burst cannot overrun the
+ * budget; blocked attempts reserve nothing, so hostile traffic cannot extend a victim's lockout.
+ * Restart resets the counters and N instances multiply the attempt budget by N — the same
+ * single-JVM posture as MutexFactory; database-backed throttling is the documented fast-follow if
+ * multi-instance deployment materialises.
  */
 @Component
 @RequiredArgsConstructor
@@ -24,56 +27,73 @@ public class LoginThrottle {
   private final AuthThrottleProperties properties;
   private final Clock clock;
 
-  private final ConcurrentHashMap<String, Deque<Instant>> failures = new ConcurrentHashMap<>();
+  private final ConcurrentHashMap<String, Deque<Instant>> attempts = new ConcurrentHashMap<>();
 
-  public void ensureAllowed(String email, String source) {
-    if (isBlocked(emailKey(email)) || isBlocked(sourceKey(source))) {
+  /** Reserves one attempt slot on both keys, or throws without consuming any budget. */
+  public void registerAttempt(String email, String source) {
+    var emailKey = emailKey(email);
+    var sourceKey = sourceKey(source);
+
+    if (!reserve(emailKey)) {
       throw new TooManyLoginAttemptsException();
     }
-  }
+    if (reserve(sourceKey)) {
+      return;
+    }
 
-  public void recordFailure(String email, String source) {
-    record(emailKey(email));
-    record(sourceKey(source));
+    release(emailKey);
+    throw new TooManyLoginAttemptsException();
   }
 
   public void reset(String email, String source) {
-    if (emailKey(email) != null) {
-      failures.remove(emailKey(email));
-    }
-    if (sourceKey(source) != null) {
-      failures.remove(sourceKey(source));
-    }
+    removeKey(emailKey(email));
+    removeKey(sourceKey(source));
   }
 
-  private boolean isBlocked(String key) {
+  private boolean reserve(String key) {
     if (key == null) {
-      return false;
+      return true;
     }
 
-    var attempts = failures.get(key);
-    if (attempts == null) {
-      return false;
-    }
-
-    prune(attempts);
-    return attempts.size() >= properties.maxAttempts();
+    var reserved = new AtomicBoolean();
+    attempts.compute(
+        key,
+        (_, timestamps) -> {
+          var current = timestamps == null ? new ArrayDeque<Instant>() : timestamps;
+          prune(current);
+          if (current.size() < properties.maxAttempts()) {
+            current.addLast(clock.instant());
+            reserved.set(true);
+          }
+          return current.isEmpty() ? null : current;
+        });
+    return reserved.get();
   }
 
-  private void record(String key) {
+  private void release(String key) {
     if (key == null) {
       return;
     }
 
-    var attempts = failures.computeIfAbsent(key, _ -> new ConcurrentLinkedDeque<>());
-    attempts.addLast(clock.instant());
-    prune(attempts);
+    attempts.computeIfPresent(
+        key,
+        (_, timestamps) -> {
+          timestamps.pollLast();
+          return timestamps.isEmpty() ? null : timestamps;
+        });
   }
 
-  private void prune(Deque<Instant> attempts) {
+  private void removeKey(String key) {
+    if (key == null) {
+      return;
+    }
+    attempts.remove(key);
+  }
+
+  private void prune(Deque<Instant> timestamps) {
     var cutoff = clock.instant().minus(properties.window());
-    while (!attempts.isEmpty() && attempts.peekFirst().isBefore(cutoff)) {
-      attempts.pollFirst();
+    while (!timestamps.isEmpty() && timestamps.peekFirst().isBefore(cutoff)) {
+      timestamps.pollFirst();
     }
   }
 
