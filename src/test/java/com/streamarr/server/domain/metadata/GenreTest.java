@@ -33,7 +33,17 @@ class GenreTest {
   void shouldNotBeEqualWhenSourceIdIsNull() {
     var a = Genre.builder().name("Unknown").build();
     var b = Genre.builder().name("Unknown").build();
+    var withSourceId = Genre.builder().sourceId("878").name("Science Fiction").build();
 
-    assertThat(a).isNotEqualTo(b);
+    assertThat(a).isNotEqualTo(b).isNotEqualTo(withSourceId);
+    assertThat(withSourceId).isNotEqualTo(a);
+  }
+
+  @Test
+  @DisplayName("Should not be equal when compared against different type")
+  void shouldNotBeEqualWhenComparedAgainstDifferentType() {
+    var genre = Genre.builder().sourceId("878").name("Science Fiction").build();
+
+    assertThat(genre).isNotEqualTo(Person.builder().sourceId("878").name("Same Key").build());
   }
 }

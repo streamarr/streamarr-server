@@ -33,8 +33,10 @@ class PersonTest {
   void shouldNotBeEqualWhenSourceIdIsNull() {
     var a = Person.builder().name("Unknown").build();
     var b = Person.builder().name("Unknown").build();
+    var withSourceId = Person.builder().sourceId("6193").name("Leonardo DiCaprio").build();
 
-    assertThat(a).isNotEqualTo(b);
+    assertThat(a).isNotEqualTo(b).isNotEqualTo(withSourceId);
+    assertThat(withSourceId).isNotEqualTo(a);
   }
 
   @Test

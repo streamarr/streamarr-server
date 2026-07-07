@@ -2,6 +2,7 @@ package com.streamarr.server.domain.media;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.domain.metadata.Genre;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -33,7 +34,17 @@ class MediaFileTest {
   void shouldNotBeEqualWhenFilepathUriIsNull() {
     var a = MediaFile.builder().filename("orphan.mkv").build();
     var b = MediaFile.builder().filename("orphan.mkv").build();
+    var withUri = MediaFile.builder().filepathUri("file:///media/movie.mkv").build();
 
-    assertThat(a).isNotEqualTo(b);
+    assertThat(a).isNotEqualTo(b).isNotEqualTo(withUri);
+    assertThat(withUri).isNotEqualTo(a);
+  }
+
+  @Test
+  @DisplayName("Should not be equal when compared against different type")
+  void shouldNotBeEqualWhenComparedAgainstDifferentType() {
+    var mediaFile = MediaFile.builder().filepathUri("file:///media/movie.mkv").build();
+
+    assertThat(mediaFile).isNotEqualTo(Genre.builder().name("Drama").sourceId("18").build());
   }
 }
