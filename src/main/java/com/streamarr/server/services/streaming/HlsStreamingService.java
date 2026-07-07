@@ -100,9 +100,14 @@ public class HlsStreamingService implements StreamingService {
             .orElseThrow(() -> new SessionNotFoundException(sessionId));
 
     transcodeExecutor.stop(sessionId);
-    segmentStore.deleteSession(sessionId);
     session.seek(positionSeconds);
-    startTranscodes(session, positionSeconds, 0);
+
+    // Relocate the encoder on the absolute timeline: snap to the segment
+    // boundary so produced segments align with the full-duration playlist.
+    // Previously transcoded segments stay valid and are kept.
+    var segmentDurationSeconds = (int) properties.segmentDuration().toSeconds();
+    var startSegment = positionSeconds / segmentDurationSeconds;
+    startTranscodes(session, startSegment * segmentDurationSeconds, startSegment);
     sessionRepository.save(session);
 
     log.info("Seek-ed session {} to position {}s", sessionId, positionSeconds);
@@ -163,8 +168,7 @@ public class HlsStreamingService implements StreamingService {
     }
 
     var segmentIndex = parseSegmentIndex(segmentName);
-    var resumeSeek =
-        session.getSeekOrigin() + (segmentIndex * (int) properties.segmentDuration().toSeconds());
+    var resumeSeek = segmentIndex * (int) properties.segmentDuration().toSeconds();
 
     startTranscodes(session, resumeSeek, segmentIndex);
     session.setLastAccessedAt(Instant.now());

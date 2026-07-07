@@ -361,6 +361,47 @@ class HlsStreamingServiceTest {
   }
 
   @Test
+  @DisplayName("Should restart the transcode at the absolute segment when seeking")
+  void shouldRestartTheTranscodeAtTheAbsoluteSegmentWhenSeeking() {
+    var file = seedMediaFile();
+    var session = service.createSession(file.getId(), defaultOptions());
+
+    service.seekSession(session.getSessionId(), 300);
+
+    var lastRequest = transcodeExecutor.getStartedRequests().getLast();
+    assertThat(lastRequest.seekPosition()).isEqualTo(300);
+    assertThat(lastRequest.startNumber()).isEqualTo(50);
+  }
+
+  @Test
+  @DisplayName("Should snap a mid-segment seek to the segment boundary")
+  void shouldSnapAMidSegmentSeekToTheSegmentBoundary() {
+    var file = seedMediaFile();
+    var session = service.createSession(file.getId(), defaultOptions());
+
+    service.seekSession(session.getSessionId(), 303);
+
+    // segment50 covers [300s, 306s); ffmpeg must start on the boundary so the
+    // produced segments align with the absolute playlist timeline.
+    var lastRequest = transcodeExecutor.getStartedRequests().getLast();
+    assertThat(lastRequest.seekPosition()).isEqualTo(300);
+    assertThat(lastRequest.startNumber()).isEqualTo(50);
+  }
+
+  @Test
+  @DisplayName("Should keep previously transcoded segments when seeking")
+  void shouldKeepPreviouslyTranscodedSegmentsWhenSeeking() {
+    var file = seedMediaFile();
+    var session = service.createSession(file.getId(), defaultOptions());
+    segmentStore.addSegment(session.getSessionId(), "segment0.ts", new byte[] {1});
+
+    service.seekSession(session.getSessionId(), 300);
+
+    // Segments are addressed on the absolute timeline, so earlier segments stay valid.
+    assertThat(segmentStore.segmentExists(session.getSessionId(), "segment0.ts")).isTrue();
+  }
+
+  @Test
   @DisplayName("Should throw when seeking nonexistent session")
   void shouldThrowWhenSeekingNonexistentSession() {
     var invalidId = UUID.randomUUID();
@@ -820,24 +861,24 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName(
-      "Should compute resume position from seek origin and segment index when resuming after seek")
-  void shouldComputeResumePositionFromSeekOriginAndSegmentIndexWhenResumingAfterSeek() {
+  @DisplayName("Should resume at the absolute segment position when resuming after seek")
+  void shouldResumeAtTheAbsoluteSegmentPositionWhenResumingAfterSeek() {
     var file = seedMediaFile();
     var session = service.createSession(file.getId(), defaultOptions());
 
     service.seekSession(session.getSessionId(), 60);
 
     session.updatePlaybackState(120, PlaybackState.PLAYING);
-    assertThat(session.getSeekOrigin()).isEqualTo(60);
 
     session.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
     transcodeExecutor.markDead(session.getSessionId());
 
     service.resumeSessionIfNeeded(session.getSessionId(), "segment5.ts");
 
-    // resumeSeek = seekOrigin(60) + segmentIndex(5) * segmentDuration(6) = 60 + 30 = 90
+    // The timeline is absolute: segment5 always covers [30s, 36s), regardless of
+    // any earlier seek.
     var lastRequest = transcodeExecutor.getStartedRequests().getLast();
-    assertThat(lastRequest.seekPosition()).isEqualTo(90);
+    assertThat(lastRequest.seekPosition()).isEqualTo(30);
+    assertThat(lastRequest.startNumber()).isEqualTo(5);
   }
 }
