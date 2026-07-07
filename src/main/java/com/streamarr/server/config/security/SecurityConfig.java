@@ -18,7 +18,7 @@ public class SecurityConfig {
    */
   @SuppressWarnings("java:S4502")
   @Bean
-  SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+  SecurityFilterChain securityFilterChain(HttpSecurity http) {
     return http.csrf(AbstractHttpConfigurer::disable)
         .authorizeHttpRequests(authorize -> authorize.anyRequest().permitAll())
         .build();
