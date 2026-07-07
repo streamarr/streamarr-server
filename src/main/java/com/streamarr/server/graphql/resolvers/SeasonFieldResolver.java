@@ -4,6 +4,8 @@ import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsData;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.Season;
+import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.exceptions.SeriesNotFoundException;
 import com.streamarr.server.services.SeriesService;
 import graphql.schema.DataFetchingEnvironment;
 import java.util.List;
@@ -19,5 +21,14 @@ public class SeasonFieldResolver {
   public List<Episode> episodes(DataFetchingEnvironment dfe) {
     Season season = dfe.getSource();
     return seriesService.findEpisodes(season.getId());
+  }
+
+  @DgsData(parentType = "Season", field = "series")
+  public Series series(DataFetchingEnvironment dfe) {
+    Season season = dfe.getSource();
+    var seriesId = season.getSeries().getId();
+    return seriesService
+        .findById(seriesId)
+        .orElseThrow(() -> new SeriesNotFoundException(seriesId, season.getId()));
   }
 }

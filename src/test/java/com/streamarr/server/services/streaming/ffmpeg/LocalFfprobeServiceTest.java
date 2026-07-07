@@ -623,6 +623,79 @@ class LocalFfprobeServiceTest {
         .hasMessage(TranscodeException.GENERIC_MESSAGE);
   }
 
+  @Test
+  @DisplayName("Should ignore explicit null metadata when stream fields are null")
+  void shouldIgnoreExplicitNullMetadataWhenStreamFieldsAreNull() {
+    var json =
+        """
+        {
+          "streams": [
+            {
+              "index": null,
+              "codec_type": "video",
+              "codec_name": "h264",
+              "width": 1920,
+              "height": 1080,
+              "r_frame_rate": "24/1",
+              "tags": null,
+              "disposition": null
+            },
+            {
+              "codec_type": "audio",
+              "codec_name": "aac",
+              "channels": null,
+              "bit_rate": null,
+              "tags": { "language": null },
+              "disposition": { "default": null, "forced": 1 }
+            }
+          ],
+          "format": {
+            "duration": "60.0",
+            "bit_rate": "5000000"
+          }
+        }
+        """;
+
+    var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
+
+    var probe = service.probe(Path.of("/test/movie.mkv"));
+
+    var video = probe.streams().getFirst();
+    assertThat(video.index()).isZero();
+    assertThat(video.language()).isEmpty();
+    assertThat(video.isDefault()).isFalse();
+
+    var audio = probe.streams().get(1);
+    assertThat(audio.index()).isEqualTo(1);
+    assertThat(audio.language()).isEmpty();
+    assertThat(audio.channels()).isEmpty();
+    assertThat(audio.bitrate()).isEmpty();
+    assertThat(audio.isDefault()).isFalse();
+    assertThat(audio.isForced()).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should throw with generic message when streams key is missing")
+  void shouldThrowWithGenericMessageWhenStreamsKeyIsMissing() {
+    var json =
+        """
+        {
+          "format": {
+            "duration": "60.0",
+            "bit_rate": "5000000"
+          }
+        }
+        """;
+
+    var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
+
+    var filePath = Path.of("/test/movie.mkv");
+
+    assertThatThrownBy(() -> service.probe(filePath))
+        .isInstanceOf(TranscodeException.class)
+        .hasMessage(TranscodeException.GENERIC_MESSAGE);
+  }
+
   private Process createFakeProcess(String stdout, int exitCode) {
     return new FakeProcess(stdout, exitCode);
   }

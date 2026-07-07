@@ -145,6 +145,7 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 
 ## Persistence (JPA + jOOQ Hybrid)
 - Spring Data JPA repositories own CRUD; complex or conflict-handling queries use jOOQ via the Spring Data fragment convention: `{Repository}Custom` interface + `{Repository}CustomImpl` class with an injected `DSLContext` — Spring Data auto-discovers the impl by naming convention
+- **No `@Query` JPQL**: every repository query is either a derived method (`findBySeriesIdOrderBySeasonNumber`) or jOOQ on the `{Repository}Custom` fragment. JPQL strings break silently on entity refactors; derived signatures are validated at startup and jOOQ at compile time. Remaining `@Query` usages are legacy (tracked in #193) — don't copy them
 - **Reads**: jOOQ builds the SQL, but execute through `JooqQueryHelper.nativeQuery(…)` (JPA `EntityManager` native query) so results map to JPA entities — don't `context.fetch*()` for entity reads
 - **Writes**: execute jOOQ DSL directly (`context.update(…).returning()`, `INSERT … ON CONFLICT`) and map records to entities manually
 - **Pagination**: keyset/seek (`row(fields)` comparisons, NULLS LAST) fetching `limit + 2` to detect adjacent pages — no OFFSET pagination
