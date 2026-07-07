@@ -35,6 +35,7 @@ Households own profiles and scope household-local administration, the default ra
 
 Initial setup creates the first household and admin account.
 Setup endpoints work only while no users exist; afterward they are no longer anonymously reachable.
+That guard is a database constraint, not a Java check — concurrent first-setup requests are a check-then-act race unless the no-users condition is enforced atomically in the insert itself.
 
 An account may belong to several households.
 Immediately after login, account-scoped requests choose the active household; every other request acts within a single active household.
@@ -44,6 +45,8 @@ Household membership carries household-local roles rather than new global roles.
 
 Household boundaries isolate profiles, activity, and policy.
 For now, this is Streamarr's closest v1 analogue to multi-tenancy, so queries must treat a missing `household_id` like a highest-severity cross-tenant leak.
+Enforcement is structural rather than vigilance: repositories over household-scoped data take household identity as a required parameter supplied by the authorization facade, never resolved internally, and every household-scoped surface carries a test proving another household's data stays invisible.
+Postgres row-level security remains available as later defense-in-depth; v1 relies on the explicit parameter and its tests.
 V1 supports no cross-household grants: an account with several households can switch its active context, but acting in one exposes only that household's data.
 
 Global account roles are `ADMIN` and `USER`; children are not a role.
@@ -75,6 +78,9 @@ Profile restriction, household membership, and profile membership changes propag
 | Anything outside the active household/profile context
 |===
 
+Scopes nest: a profile token also reaches the household- and account-scoped surfaces of its own household, and a household token the account-scoped ones, so a client holds one access token at a time and upgrades it by selection.
+Nesting widens context, never privilege — household-role and policy checks still gate every surface.
+
 Household and profile selection are both server-mediated: choosing or switching either issues a fresh token scoped to it, and when exactly one is selectable the server may select it automatically.
 If a request needs a profile and none is active, it fails with a profile-required error.
 
@@ -89,6 +95,8 @@ Changing a profile's restrictions invalidates its existing tokens through profil
 
 Store membership separately from accounts.
 `household_memberships` links accounts to households; `profiles` carry a household foreign key; and `account_profiles` links an account to a profile only when the account already belongs to that profile's household.
+The invariant is schema-enforced, not application-checked: `account_profiles` carries the household id with composite foreign keys into both `household_memberships` and `profiles`, so a link can exist only while the account's membership does.
+Revoking a membership cascades away that account's profile links instead of leaving dormant grants a re-added member would silently regain.
 Cross-household links await a future grant model.
 This lets a parent account reach a child's profile today, and lets that child later gain their own account linked to the same profile.
 
@@ -97,7 +105,7 @@ A server `ADMIN` sees all account and profile activity; a household owner or par
 When an admin or parent previews another profile, content queries apply that profile's visibility policy, not the previewer's unrestricted one.
 
 GraphQL is authenticated by default: unauthenticated requests, including schema introspection, are rejected.
-Streaming REST endpoints use the same bearer-token model, and development runs with the same authentication as production rather than a bypass.
+Streaming REST endpoints enforce the same profile-scoped tokens through the playback-URL delivery link:0016-authentication-mechanisms-and-session-security.adoc[ADR 0016] defines — the same token model with a different carrier, since playlist-driven players cannot attach headers to segment requests — and development runs with the same authentication as production rather than a bypass.
 
 Authorization lives behind a Streamarr-owned, hexagonal `AuthorizationService` facade in its own package.
 Spring Security stays the security spine — request authentication, method security, factors, sessions, and security-context propagation — while Streamarr domain policy decides membership, profile selection, content visibility, activity access, and future policy features.
@@ -110,7 +118,7 @@ Content visibility is profile-scoped and defined once, as a single fail-closed p
 No resolver, controller, repository, search adapter, or streaming endpoint filters restricted content on its own.
 
 Hidden media behaves as absent, not forbidden.
-It is omitted from every list surface — browse, search, continue watching, up next, recently added, person, genre, artwork, recommendations, collections, and any future REST or GraphQL list — and direct lookup or playback of hidden media must fail without revealing that it exists.
+It is omitted from every list surface — browse, search, continue watching, up next, recently added, person, genre, artwork, recommendations, collections, and any future REST or GraphQL list — and direct lookup or playback of hidden media must fail with a response indistinguishable from one for an id that never existed.
 This builder's empty-input semantics differ from an optional user filter: an empty or misconfigured restricted-profile policy denies everything, and only an explicit unrestricted or admin branch lifts visibility restrictions.
 
 The facade returns the policy as a typed domain object — shaped like the existing media-filter concepts but with fail-closed semantics — never as SQL, jOOQ, a search DSL, or any adapter-specific filter.
@@ -175,6 +183,7 @@ Explicitly deferred from v1:
 * Services receive account, household, and profile ids explicitly rather than resolving identity inside async loader code.
 * Watch progress and history move from account-scoped to profile-scoped.
 * A profile can be reached from multiple accounts.
+* Mandatory PINs on admin and adult profiles once restricted profiles exist trade a prompt at every profile switch for containment of unrestricted contexts — an accepted UX cost.
 * A minimal `Household` entity exists from v1, giving isolation, rating defaults, profile ownership, and later cross-household features a stable boundary.
 * Central visibility checks let catalog, search, direct lookup, continue-watching, future search, and streaming share one policy, with adapters translating the typed policy instead of receiving raw SQL.
 * Rating normalization spans multiple certifications per title, and missing or unknown ratings fail conservatively for restricted profiles.
