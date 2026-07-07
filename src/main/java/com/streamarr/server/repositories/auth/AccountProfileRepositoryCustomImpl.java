@@ -55,7 +55,9 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
 
   private void bumpMembershipVersion(AccountProfile link, UUID auditUser) {
     dsl.update(HOUSEHOLD_MEMBERSHIP)
-        .set(HOUSEHOLD_MEMBERSHIP.VERSION, HOUSEHOLD_MEMBERSHIP.VERSION.plus(1))
+        .set(
+            HOUSEHOLD_MEMBERSHIP.MEMBERSHIP_VERSION,
+            HOUSEHOLD_MEMBERSHIP.MEMBERSHIP_VERSION.plus(1))
         .set(HOUSEHOLD_MEMBERSHIP.LAST_MODIFIED_ON, OffsetDateTime.now(ZoneOffset.UTC))
         .set(HOUSEHOLD_MEMBERSHIP.LAST_MODIFIED_BY, auditUser)
         .where(HOUSEHOLD_MEMBERSHIP.ACCOUNT_ID.eq(link.getAccountId()))

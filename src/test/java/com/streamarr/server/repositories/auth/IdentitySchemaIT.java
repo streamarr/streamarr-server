@@ -119,7 +119,10 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
   }
 
   private long membershipVersionOf(HouseholdMembership membership) {
-    return householdMembershipRepository.findById(membership.getId()).orElseThrow().getVersion();
+    return householdMembershipRepository
+        .findById(membership.getId())
+        .orElseThrow()
+        .getMembershipVersion();
   }
 
   @Test

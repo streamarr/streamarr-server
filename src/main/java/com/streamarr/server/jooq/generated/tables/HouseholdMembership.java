@@ -105,9 +105,9 @@ public class HouseholdMembership extends TableImpl<HouseholdMembershipRecord> {
     public final TableField<HouseholdMembershipRecord, HouseholdRole> HOUSEHOLD_ROLE = createField(DSL.name("household_role"), SQLDataType.VARCHAR.nullable(false).asEnumDataType(HouseholdRole.class), this, "");
 
     /**
-     * The column <code>public.household_membership.version</code>.
+     * The column <code>public.household_membership.membership_version</code>.
      */
-    public final TableField<HouseholdMembershipRecord, Long> VERSION = createField(DSL.name("version"), SQLDataType.BIGINT.nullable(false).defaultValue(DSL.field(DSL.raw("0"), SQLDataType.BIGINT)), this, "");
+    public final TableField<HouseholdMembershipRecord, Long> MEMBERSHIP_VERSION = createField(DSL.name("membership_version"), SQLDataType.BIGINT.nullable(false).defaultValue(DSL.field(DSL.raw("0"), SQLDataType.BIGINT)), this, "");
 
     private HouseholdMembership(Name alias, Table<HouseholdMembershipRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
