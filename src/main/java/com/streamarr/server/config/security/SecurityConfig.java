@@ -53,6 +53,10 @@ public class SecurityConfig {
         .build();
   }
 
+  // The XSRF-TOKEN cookie is deliberately script-readable (S3330): its whole purpose is the
+  // double-submit echo — the page reads it and sends X-XSRF-TOKEN. It is not a credential; both
+  // auth cookies remain httpOnly.
+  @SuppressWarnings("java:S3330")
   private CsrfFilter cookieScopedCsrfFilter() {
     var filter = new CsrfFilter(CookieCsrfTokenRepository.withHttpOnlyFalse());
     filter.setRequireCsrfProtectionMatcher(new CookieAuthenticationCsrfMatcher());
