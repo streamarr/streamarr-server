@@ -64,6 +64,44 @@ class SeriesResolverIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should resolve seasons by season number from series query")
+  @SuppressWarnings("unchecked")
+  void shouldResolveSeasonsBySeasonNumberFromSeriesQuery() {
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
+    var series = createSeries(library);
+    seasonRepository.saveAllAndFlush(
+        List.of(
+            createSeason(library, series, 2),
+            createSeason(library, series, 3),
+            createSeason(library, series, 4),
+            createSeason(library, series, 1),
+            createSeason(library, series, 5)));
+
+    var result =
+        dgsQueryExecutor.execute(
+            """
+            {
+              series(id: "%s") {
+                seasons {
+                  seasonNumber
+                }
+              }
+            }
+            """
+                .formatted(series.getId()));
+
+    assertThat(result.getErrors()).isEmpty();
+
+    Map<String, Object> data = result.getData();
+    var seriesData = (Map<String, Object>) data.get("series");
+    var seasons = (List<Map<String, Object>>) seriesData.get("seasons");
+
+    assertThat(seasons)
+        .extracting(season -> season.get("seasonNumber"))
+        .containsExactly(1, 2, 3, 4, 5);
+  }
+
+  @Test
   @DisplayName("Should resolve episodes by episode number from season query")
   @SuppressWarnings("unchecked")
   void shouldResolveEpisodesByEpisodeNumberFromSeasonQuery() {
@@ -102,8 +140,11 @@ class SeriesResolverIT extends AbstractIntegrationTest {
   private Season createSeason() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
     var series = createSeries(library);
-    return seasonRepository.saveAndFlush(
-        Season.builder().seasonNumber(1).series(series).library(library).build());
+    return seasonRepository.saveAndFlush(createSeason(library, series, 1));
+  }
+
+  private Season createSeason(Library library, Series series, int seasonNumber) {
+    return Season.builder().seasonNumber(seasonNumber).series(series).library(library).build();
   }
 
   private Series createSeries(Library library) {

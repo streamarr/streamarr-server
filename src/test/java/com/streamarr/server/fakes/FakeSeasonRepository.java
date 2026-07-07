@@ -1,5 +1,7 @@
 package com.streamarr.server.fakes;
 
+import static java.util.Comparator.comparingInt;
+
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import java.util.Collection;
@@ -41,6 +43,8 @@ public class FakeSeasonRepository extends FakeJpaRepository<Season> implements S
 
   @Override
   public List<Season> findBySeriesId(UUID seriesId) {
-    return findBySeriesIdIn(List.of(seriesId));
+    return findBySeriesIdIn(List.of(seriesId)).stream()
+        .sorted(comparingInt(Season::getSeasonNumber))
+        .toList();
   }
 }
