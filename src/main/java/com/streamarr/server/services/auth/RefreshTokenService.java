@@ -1,0 +1,140 @@
+package com.streamarr.server.services.auth;
+
+import com.streamarr.server.config.security.AuthTokenProperties;
+import com.streamarr.server.domain.auth.AuthSession;
+import com.streamarr.server.domain.auth.RefreshToken;
+import com.streamarr.server.domain.auth.RefreshTokenStatus;
+import com.streamarr.server.domain.auth.SessionRevocationReason;
+import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.exceptions.InvalidRefreshTokenException;
+import com.streamarr.server.exceptions.TokenReuseDetectedException;
+import com.streamarr.server.repositories.auth.AuthSessionRepository;
+import com.streamarr.server.repositories.auth.RefreshTokenRepository;
+import com.streamarr.server.services.auth.events.CounterBumpedEvent;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import java.time.Clock;
+import java.time.Instant;
+import java.util.Base64;
+import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+@RequiredArgsConstructor
+public class RefreshTokenService {
+
+  private static final int RAW_TOKEN_BYTES = 32;
+
+  private final AuthSessionRepository sessionRepository;
+  private final RefreshTokenRepository tokenRepository;
+  private final AuthTokenProperties properties;
+  private final Clock clock;
+  private final ApplicationEventPublisher eventPublisher;
+
+  private final SecureRandom secureRandom = new SecureRandom();
+
+  @Transactional
+  public IssuedRefreshToken createSession(UserAccount account, String deviceName) {
+    var session =
+        sessionRepository.save(
+            AuthSession.builder().accountId(account.getId()).deviceName(deviceName).build());
+
+    var rawToken = generateRawToken();
+    tokenRepository.save(buildActiveToken(session, rawToken, clock.instant()));
+
+    return new IssuedRefreshToken(rawToken, session);
+  }
+
+  @Transactional
+  public RefreshResult redeem(String rawToken) {
+    var digest = digestOf(rawToken);
+    var now = clock.instant();
+
+    // Rotation is a single conditional statement: exactly one caller can consume an ACTIVE token.
+    if (tokenRepository.consumeActiveToken(digest, now) > 0) {
+      return rotate(digest, now);
+    }
+
+    return handleUnconsumedToken(digest, now);
+  }
+
+  private RefreshResult rotate(String consumedDigest, Instant now) {
+    var consumed =
+        tokenRepository.findByDigest(consumedDigest).orElseThrow(InvalidRefreshTokenException::new);
+    var session =
+        sessionRepository
+            .findById(consumed.getSessionId())
+            .orElseThrow(InvalidRefreshTokenException::new);
+
+    var rawToken = generateRawToken();
+    tokenRepository.save(buildActiveToken(session, rawToken, now));
+
+    return new RefreshResult.Rotated(rawToken, session);
+  }
+
+  private RefreshResult handleUnconsumedToken(String digest, Instant now) {
+    var token = tokenRepository.findByDigest(digest).orElseThrow(InvalidRefreshTokenException::new);
+    var session =
+        sessionRepository
+            .findById(token.getSessionId())
+            .orElseThrow(InvalidRefreshTokenException::new);
+
+    if (isWithinGrace(token, now) && session.getRevokedAt() == null) {
+      return new RefreshResult.GraceReplay(session);
+    }
+
+    if (token.getStatus() == RefreshTokenStatus.ACTIVE) {
+      // Active but past expiry — stale, not theft.
+      throw new InvalidRefreshTokenException();
+    }
+
+    revokeSessionForReuse(session, now);
+    throw new TokenReuseDetectedException();
+  }
+
+  private boolean isWithinGrace(RefreshToken token, Instant now) {
+    return token.getStatus() == RefreshTokenStatus.ROTATED
+        && token.getRotatedAt() != null
+        && !now.isAfter(token.getRotatedAt().plus(properties.rotationGrace()));
+  }
+
+  private void revokeSessionForReuse(AuthSession session, Instant now) {
+    var bumpedVersion =
+        sessionRepository.revoke(session.getId(), SessionRevocationReason.TOKEN_REUSE, now);
+    tokenRepository.revokeAllForSession(session.getId());
+
+    bumpedVersion.ifPresent(
+        version ->
+            eventPublisher.publishEvent(CounterBumpedEvent.session(session.getId(), version)));
+  }
+
+  private RefreshToken buildActiveToken(AuthSession session, String rawToken, Instant now) {
+    return RefreshToken.builder()
+        .sessionId(session.getId())
+        .digest(digestOf(rawToken))
+        .status(RefreshTokenStatus.ACTIVE)
+        .expiresAt(now.plus(properties.refreshTokenTtl()))
+        .build();
+  }
+
+  private String generateRawToken() {
+    var bytes = new byte[RAW_TOKEN_BYTES];
+    secureRandom.nextBytes(bytes);
+    return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+  }
+
+  private static String digestOf(String rawToken) {
+    try {
+      var digest = MessageDigest.getInstance("SHA-256");
+      return Base64.getUrlEncoder()
+          .withoutPadding()
+          .encodeToString(digest.digest(rawToken.getBytes(StandardCharsets.UTF_8)));
+    } catch (NoSuchAlgorithmException e) {
+      throw new IllegalStateException("SHA-256 is required but unavailable.", e);
+    }
+  }
+}
