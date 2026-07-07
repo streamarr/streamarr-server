@@ -2,3 +2,14 @@ spring:
   datasource:
     hikari:
       maximum-pool-size: 10
+
+auth:
+  token:
+    # Fixed checked-in test key (32 bytes, base64) so tokens verify across cached Spring
+    # contexts and pre-minted expired tokens stay deterministic. Never used outside tests.
+    signing-key: dGVzdC1zaWduaW5nLWtleS0zMi1ieXRlcy1sb25nISE=
+  argon2:
+    # Weak params (~1-3 ms/hash) keep login/setup tests fast; params are config per ADR 0016.
+    memory-kib: 4096
+    iterations: 1
+    parallelism: 1

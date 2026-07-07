@@ -46,6 +46,20 @@ streaming:
     max-played-percent: ${STREAMING_WATCH_PROGRESS_MAX_RESUME_PERCENT:90.0}
     max-remaining-seconds: ${STREAMING_WATCH_PROGRESS_MAX_REMAINING_SECONDS:300}
 
+auth:
+  token:
+    signing-key: ${AUTH_TOKEN_SIGNING_KEY:}
+    access-token-ttl: ${AUTH_ACCESS_TOKEN_TTL:10m}
+    refresh-token-ttl: ${AUTH_REFRESH_TOKEN_TTL:30d}
+    rotation-grace: ${AUTH_ROTATION_GRACE:30s}
+  argon2:
+    memory-kib: ${AUTH_ARGON2_MEMORY_KIB:19456}
+    iterations: ${AUTH_ARGON2_ITERATIONS:2}
+    parallelism: ${AUTH_ARGON2_PARALLELISM:1}
+  throttle:
+    max-attempts: ${AUTH_THROTTLE_MAX_ATTEMPTS:5}
+    window: ${AUTH_THROTTLE_WINDOW:15m}
+
 otel:
   sdk:
     disabled: true
