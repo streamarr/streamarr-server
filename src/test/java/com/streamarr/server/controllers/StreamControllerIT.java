@@ -22,13 +22,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.test.context.bean.override.convention.TestBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 @Tag("IntegrationTest")
 @DisplayName("Stream Controller Integration Tests")
-@AutoConfigureMockMvc
 class StreamControllerIT extends AbstractIntegrationTest {
 
   private static final StubStreamingService STUB_SERVICE = new StubStreamingService();
