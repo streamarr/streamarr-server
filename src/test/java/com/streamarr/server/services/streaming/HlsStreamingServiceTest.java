@@ -861,6 +861,77 @@ class HlsStreamingServiceTest {
   }
 
   @Test
+  @DisplayName(
+      "Should relocate the transcode when the requested segment is behind the encoder start")
+  void shouldRelocateTheTranscodeWhenTheRequestedSegmentIsBehindTheEncoderStart() {
+    var file = seedMediaFile();
+    var session = service.createSession(file.getId(), defaultOptions());
+    service.seekSession(session.getSessionId(), 300);
+
+    service.resumeSessionIfNeeded(session.getSessionId(), "segment10.ts");
+
+    // The encoder started at segment50 and will never produce segment10.
+    var lastRequest = transcodeExecutor.getStartedRequests().getLast();
+    assertThat(lastRequest.seekPosition()).isEqualTo(60);
+    assertThat(lastRequest.startNumber()).isEqualTo(10);
+  }
+
+  @Test
+  @DisplayName("Should relocate the transcode when the requested segment is far ahead of progress")
+  void shouldRelocateTheTranscodeWhenTheRequestedSegmentIsFarAheadOfProgress() {
+    var file = seedMediaFile();
+    var session = service.createSession(file.getId(), defaultOptions());
+
+    service.resumeSessionIfNeeded(session.getSessionId(), "segment100.ts");
+
+    // Nothing near segment100 has been produced; waiting would stall the player.
+    var lastRequest = transcodeExecutor.getStartedRequests().getLast();
+    assertThat(lastRequest.seekPosition()).isEqualTo(600);
+    assertThat(lastRequest.startNumber()).isEqualTo(100);
+  }
+
+  @Test
+  @DisplayName("Should wait when the requested segment is near the encoder start")
+  void shouldWaitWhenTheRequestedSegmentIsNearTheEncoderStart() {
+    var file = seedMediaFile();
+    var session = service.createSession(file.getId(), defaultOptions());
+    var requestsBefore = transcodeExecutor.getStartedRequests().size();
+
+    service.resumeSessionIfNeeded(session.getSessionId(), "segment2.ts");
+
+    // The encoder started at segment0 and will reach segment2 shortly.
+    assertThat(transcodeExecutor.getStartedRequests()).hasSize(requestsBefore);
+  }
+
+  @Test
+  @DisplayName("Should wait when the encoder is within the forward gap of the request")
+  void shouldWaitWhenTheEncoderIsWithinTheForwardGapOfTheRequest() {
+    var file = seedMediaFile();
+    var session = service.createSession(file.getId(), defaultOptions());
+    segmentStore.addSegment(session.getSessionId(), "segment96.ts", new byte[] {1});
+    var requestsBefore = transcodeExecutor.getStartedRequests().size();
+
+    service.resumeSessionIfNeeded(session.getSessionId(), "segment100.ts");
+
+    // segment96 exists, so the encoder is close behind the request.
+    assertThat(transcodeExecutor.getStartedRequests()).hasSize(requestsBefore);
+  }
+
+  @Test
+  @DisplayName("Should not relocate when the requested segment already exists")
+  void shouldNotRelocateWhenTheRequestedSegmentAlreadyExists() {
+    var file = seedMediaFile();
+    var session = service.createSession(file.getId(), defaultOptions());
+    service.seekSession(session.getSessionId(), 300);
+    segmentStore.addSegment(session.getSessionId(), "segment10.ts", new byte[] {1});
+    var requestsBefore = transcodeExecutor.getStartedRequests().size();
+
+    service.resumeSessionIfNeeded(session.getSessionId(), "segment10.ts");
+
+    assertThat(transcodeExecutor.getStartedRequests()).hasSize(requestsBefore);
+  }
+
+  @Test
   @DisplayName("Should resume at the absolute segment position when resuming after seek")
   void shouldResumeAtTheAbsoluteSegmentPositionWhenResumingAfterSeek() {
     var file = seedMediaFile();
