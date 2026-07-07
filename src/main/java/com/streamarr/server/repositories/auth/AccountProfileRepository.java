@@ -1,6 +1,7 @@
 package com.streamarr.server.repositories.auth;
 
 import com.streamarr.server.domain.auth.AccountProfile;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -12,4 +13,6 @@ public interface AccountProfileRepository
 
   Optional<AccountProfile> findByAccountIdAndHouseholdIdAndProfileId(
       UUID accountId, UUID householdId, UUID profileId);
+
+  List<AccountProfile> findByAccountIdAndHouseholdId(UUID accountId, UUID householdId);
 }

@@ -9,6 +9,13 @@ public class FakeHouseholdMembershipRepository extends FakeJpaRepository<Househo
     implements HouseholdMembershipRepository {
 
   @Override
+  public java.util.List<HouseholdMembership> findByAccountId(UUID accountId) {
+    return database.values().stream()
+        .filter(membership -> accountId.equals(membership.getAccountId()))
+        .toList();
+  }
+
+  @Override
   public Optional<HouseholdMembership> findByAccountIdAndHouseholdId(
       UUID accountId, UUID householdId) {
     return database.values().stream()
