@@ -25,11 +25,13 @@ import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
+import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.services.library.LibraryManagementService;
 import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PageItem;
 import com.streamarr.server.services.pagination.PaginationService;
+import com.streamarr.server.support.security.WithProfileContext;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -50,6 +52,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @Tag("UnitTest")
 @EnableDgsTest
+@WithProfileContext
 @SpringBootTest(
     classes = {
       LibraryResolver.class,
@@ -57,7 +60,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
       CursorUtil.class,
       CursorValidator.class,
       RelayConnectionAdapter.class,
-      JacksonAutoConfiguration.class
+      JacksonAutoConfiguration.class,
+      SecurityContextAuthorizationService.class
     })
 @DisplayName("Library Resolver Tests")
 class LibraryResolverTest {
@@ -447,7 +451,7 @@ class LibraryResolverTest {
     @Test
     @DisplayName("Should throw with simple class name when unsupported media type in type resolver")
     void shouldThrowWithSimpleClassNameWhenUnsupportedMediaTypeInTypeResolver() {
-      var resolver = new LibraryResolver(null, null, null, null, null, null, null, null);
+      var resolver = new LibraryResolver(null, null, null, null, null, null, null, null, null);
 
       var unsupportedMedia = new Object();
 

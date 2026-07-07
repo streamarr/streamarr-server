@@ -27,7 +27,10 @@ import com.streamarr.server.graphql.dataloaders.SessionProgressDataLoader;
 import com.streamarr.server.graphql.dataloaders.WatchStatusDataLoader;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
+import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
+import com.streamarr.server.support.security.TestIdentityConstants;
+import com.streamarr.server.support.security.WithProfileContext;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -45,6 +48,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @Tag("UnitTest")
 @EnableDgsTest
+@WithProfileContext
 @SpringBootTest(
     classes = {
       WatchProgressFieldResolver.class,
@@ -56,12 +60,13 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
       SeriesFieldResolver.class,
       SeasonFieldResolver.class,
       EpisodeFieldResolver.class,
-      WatchProgressFieldResolverTest.TestConfig.class
+      WatchProgressFieldResolverTest.TestConfig.class,
+      SecurityContextAuthorizationService.class
     })
 @DisplayName("Watch Progress Field Resolver Tests")
 class WatchProgressFieldResolverTest {
 
-  private static final UUID PROFILE_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+  private static final UUID PROFILE_ID = TestIdentityConstants.PROFILE_ID;
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
   @Autowired private FakeSessionProgressRepository sessionProgressRepository;

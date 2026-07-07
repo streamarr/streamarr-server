@@ -13,9 +13,11 @@ import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.watchprogress.SessionProgressService;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
+import com.streamarr.server.support.security.WithProfileContext;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -39,7 +41,13 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @Tag("UnitTest")
 @EnableDgsTest
-@SpringBootTest(classes = {StreamingResolver.class, StreamingResolverTest.TestConfig.class})
+@WithProfileContext
+@SpringBootTest(
+    classes = {
+      StreamingResolver.class,
+      StreamingResolverTest.TestConfig.class,
+      SecurityContextAuthorizationService.class
+    })
 @DisplayName("Streaming Resolver Tests")
 class StreamingResolverTest {
 
@@ -295,7 +303,7 @@ class StreamingResolverTest {
     }
 
     @Override
-    public StreamSession createSession(UUID mediaFileId, StreamingOptions options) {
+    public StreamSession createSession(UUID mediaFileId, UUID profileId, StreamingOptions options) {
       this.lastReceivedOptions = options;
       return nextResult;
     }
