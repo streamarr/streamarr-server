@@ -1,5 +1,6 @@
 package com.streamarr.server.controllers.auth;
 
+import com.streamarr.server.config.security.AuthCookies;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import java.time.Duration;
 import lombok.RequiredArgsConstructor;
@@ -10,9 +11,9 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class AuthCookieWriter {
 
-  public static final String ACCESS_COOKIE = "streamarr_access";
-  public static final String REFRESH_COOKIE = "streamarr_refresh";
-  public static final String REFRESH_PATH = "/api/auth/refresh";
+  public static final String ACCESS_COOKIE = AuthCookies.ACCESS_COOKIE;
+  public static final String REFRESH_COOKIE = AuthCookies.REFRESH_COOKIE;
+  public static final String REFRESH_PATH = AuthCookies.REFRESH_PATH;
 
   private final AuthTokenProperties properties;
 

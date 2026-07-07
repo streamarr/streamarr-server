@@ -4,11 +4,13 @@ import static com.streamarr.server.jooq.generated.tables.AccountProfile.ACCOUNT_
 import static com.streamarr.server.jooq.generated.tables.HouseholdMembership.HOUSEHOLD_MEMBERSHIP;
 
 import com.streamarr.server.domain.auth.AccountProfile;
+import com.streamarr.server.services.auth.events.CounterBumpedEvent;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.AuditorAware;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,6 +19,7 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
 
   private final DSLContext dsl;
   private final AuditorAware<UUID> auditorAware;
+  private final ApplicationEventPublisher eventPublisher;
 
   @Override
   @Transactional
@@ -53,13 +56,27 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
     bumpMembershipVersion(link, auditUser);
   }
 
+  /**
+   * The bump and its cache-refresh event live here so no future grant/revoke endpoint can forget
+   * either half of the invariant (ADR 0015 counter propagation).
+   */
   private void bumpMembershipVersion(AccountProfile link, UUID auditUser) {
-    dsl.update(HOUSEHOLD_MEMBERSHIP)
-        .set(HOUSEHOLD_MEMBERSHIP.VERSION, HOUSEHOLD_MEMBERSHIP.VERSION.plus(1))
-        .set(HOUSEHOLD_MEMBERSHIP.LAST_MODIFIED_ON, OffsetDateTime.now(ZoneOffset.UTC))
-        .set(HOUSEHOLD_MEMBERSHIP.LAST_MODIFIED_BY, auditUser)
-        .where(HOUSEHOLD_MEMBERSHIP.ACCOUNT_ID.eq(link.getAccountId()))
-        .and(HOUSEHOLD_MEMBERSHIP.HOUSEHOLD_ID.eq(link.getHouseholdId()))
-        .execute();
+    var updated =
+        dsl.update(HOUSEHOLD_MEMBERSHIP)
+            .set(HOUSEHOLD_MEMBERSHIP.VERSION, HOUSEHOLD_MEMBERSHIP.VERSION.plus(1))
+            .set(HOUSEHOLD_MEMBERSHIP.LAST_MODIFIED_ON, OffsetDateTime.now(ZoneOffset.UTC))
+            .set(HOUSEHOLD_MEMBERSHIP.LAST_MODIFIED_BY, auditUser)
+            .where(HOUSEHOLD_MEMBERSHIP.ACCOUNT_ID.eq(link.getAccountId()))
+            .and(HOUSEHOLD_MEMBERSHIP.HOUSEHOLD_ID.eq(link.getHouseholdId()))
+            .returning(HOUSEHOLD_MEMBERSHIP.VERSION)
+            .fetchOne();
+
+    if (updated == null) {
+      return;
+    }
+
+    eventPublisher.publishEvent(
+        CounterBumpedEvent.membership(
+            link.getAccountId(), link.getHouseholdId(), updated.get(HOUSEHOLD_MEMBERSHIP.VERSION)));
   }
 }

@@ -1,6 +1,7 @@
 package com.streamarr.server.config.security;
 
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
+import com.streamarr.server.services.auth.TokenVersionValidator;
 import java.security.SecureRandom;
 import java.util.Base64;
 import javax.crypto.SecretKey;
@@ -8,7 +9,12 @@ import javax.crypto.spec.SecretKeySpec;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.springframework.security.oauth2.jwt.JwtValidators;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 
 @Slf4j
@@ -50,5 +56,17 @@ public class TokenCryptoConfig {
   @Bean
   public JwtEncoder jwtEncoder(SecretKey authSigningKey) {
     return new NimbusJwtEncoder(new ImmutableSecret<>(authSigningKey));
+  }
+
+  /**
+   * Version validation runs inside the decoder, so a stale token never becomes an Authentication.
+   */
+  @Bean
+  public JwtDecoder jwtDecoder(SecretKey authSigningKey, TokenVersionValidator versionValidator) {
+    var decoder =
+        NimbusJwtDecoder.withSecretKey(authSigningKey).macAlgorithm(MacAlgorithm.HS256).build();
+    decoder.setJwtValidator(
+        new DelegatingOAuth2TokenValidator<>(JwtValidators.createDefault(), versionValidator));
+    return decoder;
   }
 }

@@ -4,11 +4,14 @@ import static com.streamarr.server.jooq.generated.tables.Household.HOUSEHOLD;
 import static com.streamarr.server.jooq.generated.tables.ServerBootstrap.SERVER_BOOTSTRAP;
 import static com.streamarr.server.jooq.generated.tables.UserAccount.USER_ACCOUNT;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.config.security.AuthTokenProperties;
+import com.streamarr.server.config.security.TokenCryptoConfig;
 import com.streamarr.server.domain.auth.AccountProfile;
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdMembership;
@@ -23,7 +26,14 @@ import com.streamarr.server.repositories.auth.HouseholdMembershipRepository;
 import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import com.streamarr.server.services.auth.AccessTokenIssuer;
+import com.streamarr.server.services.auth.RefreshTokenService;
+import com.streamarr.server.services.auth.TokenContext;
 import jakarta.servlet.http.Cookie;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.UUID;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
@@ -59,6 +69,10 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   @Autowired private DSLContext dsl;
 
   @Autowired private ObjectMapper objectMapper;
+
+  @Autowired private AuthTokenProperties tokenProperties;
+
+  @Autowired private RefreshTokenService refreshTokenService;
 
   private UserAccount account;
   private Household household;
@@ -232,6 +246,117 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.accessToken").isNotEmpty())
         .andExpect(jsonPath("$.refreshToken").doesNotExist());
+  }
+
+  @Test
+  @DisplayName("Should reject existing profile token when profile link revoked")
+  void shouldRejectExistingProfileTokenWhenProfileLinkRevoked() throws Exception {
+    seedSingleProfileIdentity();
+    var loginResponse =
+        mockMvc
+            .perform(
+                post("/api/auth/login")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(loginBody(account.getEmail(), PASSWORD)))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    var accessToken = objectMapper.readTree(loginResponse).get("accessToken").asString();
+
+    // Control: the fresh profile token authenticates (probe passes the filter, then 404s).
+    mockMvc
+        .perform(
+            get("/api/images/{id}", UUID.randomUUID())
+                .header("Authorization", "Bearer " + accessToken))
+        .andExpect(status().isNotFound());
+
+    accountProfileRepository.revokeProfileLink(
+        AccountProfile.builder()
+            .accountId(account.getId())
+            .householdId(household.getId())
+            .profileId(profile.getId())
+            .build());
+
+    // The membership counter bump makes every outstanding profile token stale immediately.
+    mockMvc
+        .perform(
+            get("/api/images/{id}", UUID.randomUUID())
+                .header("Authorization", "Bearer " + accessToken))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("INVALID_TOKEN"));
+  }
+
+  @Test
+  @DisplayName("Should return expired token code when bearer expired")
+  void shouldReturnExpiredTokenCodeWhenBearerExpired() throws Exception {
+    seedSingleProfileIdentity();
+
+    mockMvc
+        .perform(
+            get("/api/images/{id}", UUID.randomUUID())
+                .header("Authorization", "Bearer " + expiredAccessToken()))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("EXPIRED_TOKEN"));
+  }
+
+  @Test
+  @DisplayName("Should refresh when access cookie expired but refresh cookie valid")
+  void shouldRefreshWhenAccessCookieExpiredButRefreshCookieValid() throws Exception {
+    seedSingleProfileIdentity();
+    var loginResponse =
+        mockMvc
+            .perform(
+                post("/api/auth/login")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        """
+                        {"email": "%s", "password": "%s", "deviceName": "it-device", \
+                        "cookieMode": true}
+                        """
+                            .formatted(account.getEmail(), PASSWORD)))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse();
+    var refreshCookie = loginResponse.getCookie("streamarr_refresh");
+
+    // Browsers attach the Path=/ access cookie to every request — including refresh. An expired
+    // access credential must never deadlock renewal into logout.
+    mockMvc
+        .perform(
+            post("/api/auth/refresh")
+                .cookie(new Cookie("streamarr_access", expiredAccessToken()), refreshCookie))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.accessTokenExpiresAt").exists())
+        .andExpect(jsonPath("$.scope").value("profile"))
+        .andReturn()
+        .getResponse()
+        .getCookies();
+  }
+
+  /** Minted against the real identity graph with a fixed past clock — expired but well-formed. */
+  private String expiredAccessToken() {
+    var issued = refreshTokenService.createSession(account, "expired-token-test");
+    var cryptoConfig = new TokenCryptoConfig();
+    var pastClock = Clock.fixed(Instant.now().minus(Duration.ofHours(1)), ZoneOffset.UTC);
+    var pastIssuer =
+        new AccessTokenIssuer(
+            cryptoConfig.jwtEncoder(cryptoConfig.authSigningKey(tokenProperties)),
+            tokenProperties,
+            pastClock,
+            membershipRepository,
+            profileRepository,
+            accountProfileRepository);
+
+    return pastIssuer
+        .issue(
+            TokenContext.builder()
+                .account(account)
+                .session(issued.session())
+                .householdId(household.getId())
+                .profileId(profile.getId())
+                .build())
+        .value();
   }
 
   private String loginBody(String email, String password) {
