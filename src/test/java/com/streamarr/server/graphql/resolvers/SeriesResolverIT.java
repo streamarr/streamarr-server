@@ -59,8 +59,9 @@ class SeriesResolverIT extends AbstractIntegrationTest {
     var seasonData = (Map<String, Object>) data.get("season");
     var seriesData = (Map<String, Object>) seasonData.get("series");
 
-    assertThat(seriesData.get("title")).isEqualTo("The Vampire Diaries");
-    assertThat(seriesData.get("firstAirDate")).isEqualTo("2009-09-10");
+    assertThat(seriesData)
+        .containsEntry("title", "The Vampire Diaries")
+        .containsEntry("firstAirDate", "2009-09-10");
   }
 
   @Test

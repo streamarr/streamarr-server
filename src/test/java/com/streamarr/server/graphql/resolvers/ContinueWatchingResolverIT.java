@@ -85,9 +85,9 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
     var season = (Map<String, Object>) item.get("season");
     var series = (Map<String, Object>) season.get("series");
 
-    assertThat(item.get("title")).isEqualTo(episode.getTitle());
-    assertThat(season.get("seasonNumber")).isEqualTo(1);
-    assertThat(series.get("title")).isEqualTo("Test Series");
+    assertThat(item).containsEntry("title", episode.getTitle());
+    assertThat(season).containsEntry("seasonNumber", 1);
+    assertThat(series).containsEntry("title", "Test Series");
   }
 
   private Episode createEpisodeWithProgress() {
