@@ -15,4 +15,6 @@ public interface SessionProgressRepositoryCustom {
   void deleteBySessionId(UUID sessionId);
 
   void deleteByProfileIdAndMediaFileIds(UUID profileId, Collection<UUID> mediaFileIds);
+
+  void reassignProfile(UUID fromProfileId, UUID toProfileId);
 }

@@ -73,4 +73,11 @@ public class FakeSessionProgressRepository extends FakeJpaRepository<SessionProg
   public void deleteBySessionId(UUID sessionId) {
     database.entrySet().removeIf(entry -> sessionId.equals(entry.getValue().getSessionId()));
   }
+
+  @Override
+  public void reassignProfile(UUID fromProfileId, UUID toProfileId) {
+    database.values().stream()
+        .filter(sp -> fromProfileId.equals(sp.getProfileId()))
+        .forEach(sp -> sp.setProfileId(toProfileId));
+  }
 }

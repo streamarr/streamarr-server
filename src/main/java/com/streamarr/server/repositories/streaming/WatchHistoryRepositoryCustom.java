@@ -10,4 +10,6 @@ public interface WatchHistoryRepositoryCustom {
       UUID profileId, Collection<UUID> collectableIds, Instant watchedAt, int durationSeconds);
 
   void dismissAll(UUID profileId, Collection<UUID> collectableIds);
+
+  void reassignProfile(UUID fromProfileId, UUID toProfileId);
 }

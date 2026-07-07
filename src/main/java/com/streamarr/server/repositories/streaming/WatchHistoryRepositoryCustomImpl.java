@@ -70,4 +70,14 @@ public class WatchHistoryRepositoryCustomImpl implements WatchHistoryRepositoryC
         .and(WATCH_HISTORY.DISMISSED_AT.isNull())
         .execute();
   }
+
+  @Override
+  public void reassignProfile(UUID fromProfileId, UUID toProfileId) {
+    dsl.update(WATCH_HISTORY)
+        .set(WATCH_HISTORY.PROFILE_ID, toProfileId)
+        .set(WATCH_HISTORY.LAST_MODIFIED_ON, OffsetDateTime.now(ZoneOffset.UTC))
+        .set(WATCH_HISTORY.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
+        .where(WATCH_HISTORY.PROFILE_ID.eq(fromProfileId))
+        .execute();
+  }
 }
