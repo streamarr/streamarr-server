@@ -16,7 +16,8 @@ public record AuthenticatedIdentity(
     TokenScope scope,
     UUID householdId,
     HouseholdRole householdRole,
-    UUID profileId) {
+    UUID profileId,
+    UUID streamSessionId) {
 
   public static AuthenticatedIdentity fromJwt(Jwt jwt) {
     return AuthenticatedIdentity.builder()
@@ -27,6 +28,7 @@ public record AuthenticatedIdentity(
         .householdId(uuidClaim(jwt, TokenClaims.HOUSEHOLD_ID))
         .householdRole(householdRoleClaim(jwt))
         .profileId(uuidClaim(jwt, TokenClaims.PROFILE_ID))
+        .streamSessionId(uuidClaim(jwt, TokenClaims.STREAM_SESSION))
         .build();
   }
 

@@ -5,14 +5,22 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.auth.AccountRole;
+import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.StreamSessionFixture;
+import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.PlaybackTokenIssuer;
+import com.streamarr.server.services.auth.TokenScope;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
+import com.streamarr.server.support.AuthTestSupport;
+import jakarta.servlet.http.Cookie;
+import java.time.Duration;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Optional;
@@ -34,6 +42,38 @@ class StreamControllerIT extends AbstractIntegrationTest {
   private static final FakeTranscodeExecutor FAKE_EXECUTOR = new FakeTranscodeExecutor();
 
   @Autowired private MockMvc mockMvc;
+
+  @Autowired private PlaybackTokenIssuer playbackTokenIssuer;
+
+  @Autowired private AuthTestSupport authTestSupport;
+
+  private AuthTestSupport.TestIdentity identity;
+
+  @org.junit.jupiter.api.BeforeEach
+  void seedIdentity() {
+    identity = authTestSupport.createIdentity();
+  }
+
+  @org.junit.jupiter.api.AfterEach
+  void deleteIdentity() {
+    authTestSupport.deleteIdentity(identity);
+  }
+
+  private String playbackToken(java.util.UUID streamSessionId) {
+    var authenticatedIdentity =
+        AuthenticatedIdentity.builder()
+            .accountId(identity.account().getId())
+            .role(AccountRole.USER)
+            .sessionId(identity.session().getId())
+            .scope(TokenScope.PROFILE)
+            .householdId(identity.household().getId())
+            .householdRole(HouseholdRole.OWNER)
+            .profileId(identity.profile().getId())
+            .build();
+    return playbackTokenIssuer
+        .issue(authenticatedIdentity, streamSessionId, Duration.ofHours(1))
+        .value();
+  }
 
   @TestBean StreamingService streamingService;
   @TestBean SegmentStore segmentStore;
@@ -59,7 +99,9 @@ class StreamControllerIT extends AbstractIntegrationTest {
 
     var result =
         mockMvc
-            .perform(get("/api/stream/{id}/master.m3u8", session.getSessionId()))
+            .perform(
+                get("/api/stream/{id}/master.m3u8", session.getSessionId())
+                    .param("t", playbackToken(session.getSessionId())))
             .andExpect(status().isOk())
             .andReturn();
 
@@ -70,8 +112,11 @@ class StreamControllerIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should return 404 when session not found")
   void shouldReturn404WhenSessionNotFound() throws Exception {
+    var missingSessionId = UUID.randomUUID();
     mockMvc
-        .perform(get("/api/stream/{id}/master.m3u8", UUID.randomUUID()))
+        .perform(
+            get("/api/stream/{id}/master.m3u8", missingSessionId)
+                .param("t", playbackToken(missingSessionId)))
         .andExpect(status().isNotFound());
   }
 
@@ -85,7 +130,9 @@ class StreamControllerIT extends AbstractIntegrationTest {
 
     var result =
         mockMvc
-            .perform(get("/api/stream/{id}/segment0.ts", session.getSessionId()))
+            .perform(
+                get("/api/stream/{id}/segment0.ts", session.getSessionId())
+                    .param("t", playbackToken(session.getSessionId())))
             .andExpect(status().isOk())
             .andReturn();
 
@@ -100,8 +147,56 @@ class StreamControllerIT extends AbstractIntegrationTest {
     STUB_SERVICE.addSession(session);
 
     mockMvc
-        .perform(get("/api/stream/{id}/segment99.ts", session.getSessionId()))
+        .perform(
+            get("/api/stream/{id}/segment99.ts", session.getSessionId())
+                .param("t", playbackToken(session.getSessionId())))
         .andExpect(status().isNotFound());
+  }
+
+  @Test
+  @DisplayName("Should reject segment request when token missing")
+  void shouldRejectSegmentRequestWhenTokenMissing() throws Exception {
+    var session = StreamSessionFixture.buildMpegtsSession();
+    STUB_SERVICE.addSession(session);
+
+    mockMvc
+        .perform(get("/api/stream/{id}/master.m3u8", session.getSessionId()))
+        .andExpect(status().isUnauthorized());
+  }
+
+  @Test
+  @DisplayName("Should reject playback when token session mismatches path")
+  void shouldRejectPlaybackWhenTokenSessionMismatchesPath() throws Exception {
+    var sessionA = StreamSessionFixture.buildMpegtsSession();
+    var sessionB = StreamSessionFixture.buildMpegtsSession();
+    STUB_SERVICE.addSession(sessionA);
+    STUB_SERVICE.addSession(sessionB);
+
+    // A captured URL is worth exactly one stream session — never a different one.
+    mockMvc
+        .perform(
+            get("/api/stream/{id}/master.m3u8", sessionB.getSessionId())
+                .param("t", playbackToken(sessionA.getSessionId())))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  @DisplayName("Should serve segment when access cookie expired but playback token valid")
+  void shouldServeSegmentWhenAccessCookieExpiredButPlaybackTokenValid() throws Exception {
+    var session = StreamSessionFixture.buildMpegtsSession();
+    var segmentData = new byte[] {0x47, 0x00, 0x11, 0x10};
+    STUB_SERVICE.addSession(session);
+    FAKE_SEGMENT_STORE.addSegment(session.getSessionId(), "segment0.ts", segmentData);
+
+    // Browsers attach the stale Path=/ access cookie to every segment fetch; stream paths must
+    // ignore headers and cookies entirely or playback dies mid-movie.
+    mockMvc
+        .perform(
+            get("/api/stream/{id}/segment0.ts", session.getSessionId())
+                .param("t", playbackToken(session.getSessionId()))
+                .cookie(
+                    new Cookie("streamarr_access", authTestSupport.expiredProfileBearer(identity))))
+        .andExpect(status().isOk());
   }
 
   private static class StubStreamingService implements StreamingService {

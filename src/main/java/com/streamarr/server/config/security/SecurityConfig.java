@@ -26,10 +26,10 @@ public class SecurityConfig {
   private final RestAccessDeniedHandler accessDeniedHandler;
 
   /**
-   * The permit matrix: pre-auth endpoints and health stay open; streams stay open only until
-   * playback-URL tokens land (the next increment flips them to SCOPE_PLAYBACK); everything else —
-   * GraphQL including introspection, images, future surfaces — demands SCOPE_ACCOUNT, which
-   * household and profile tokens satisfy through the scope hierarchy.
+   * The permit matrix: pre-auth endpoints and health stay open; streams demand SCOPE_PLAYBACK
+   * carried in the playback-URL token (outside the hierarchy); everything else — GraphQL including
+   * introspection, images, future surfaces — demands SCOPE_ACCOUNT, which household and profile
+   * tokens satisfy through the scope hierarchy.
    *
    * <p>CSRF (SPA shape: readable XSRF-TOKEN cookie, Xor handler) protects exactly the
    * cookie-authenticated requests. The filter is wired manually because the resource-server DSL
@@ -51,9 +51,8 @@ public class SecurityConfig {
                     .permitAll()
                     .requestMatchers("/actuator/health/**", "/actuator/health")
                     .permitAll()
-                    // Transitional: open until playback-URL tokens land (next PR).
                     .requestMatchers("/api/stream/**")
-                    .permitAll()
+                    .hasAuthority("SCOPE_PLAYBACK")
                     .anyRequest()
                     .hasAuthority("SCOPE_ACCOUNT"))
         .oauth2ResourceServer(

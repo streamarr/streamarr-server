@@ -59,9 +59,36 @@ class StreamingResolverTest {
     StreamingService streamingService() {
       return STUB_SERVICE;
     }
+
+    @Bean
+    com.streamarr.server.config.StreamingProperties streamingProperties() {
+      return com.streamarr.server.config.StreamingProperties.builder()
+          .maxConcurrentTranscodes(8)
+          .segmentDuration(java.time.Duration.ofSeconds(6))
+          .sessionTimeout(java.time.Duration.ofSeconds(60))
+          .sessionRetention(java.time.Duration.ofHours(24))
+          .build();
+    }
   }
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
+  @MockitoBean private com.streamarr.server.services.auth.PlaybackTokenIssuer playbackTokenIssuer;
+
+  @org.junit.jupiter.api.BeforeEach
+  void stubPlaybackTokenIssuer() {
+    org.mockito.Mockito.when(
+            playbackTokenIssuer.issue(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any()))
+        .thenReturn(
+            com.streamarr.server.services.auth.AccessToken.builder()
+                .value("resolver-token")
+                .expiresAt(java.time.Instant.now().plusSeconds(3600))
+                .scope(com.streamarr.server.services.auth.TokenScope.PLAYBACK)
+                .build());
+  }
+
   @MockitoBean private SessionProgressService sessionProgressService;
   @MockitoBean private WatchStatusService watchStatusService;
 

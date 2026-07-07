@@ -3,6 +3,7 @@ package com.streamarr.server.graphql.resolvers;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
+import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
@@ -10,6 +11,7 @@ import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.InvalidIdException;
 import com.streamarr.server.graphql.dto.StreamSessionDto;
 import com.streamarr.server.graphql.dto.StreamingOptionsInput;
+import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.watchprogress.SessionProgressService;
@@ -24,6 +26,8 @@ public class StreamingResolver {
 
   private final StreamingService streamingService;
   private final AuthorizationService authorizationService;
+  private final PlaybackTokenIssuer playbackTokenIssuer;
+  private final StreamingProperties streamingProperties;
   private final SessionProgressService sessionProgressService;
   private final WatchStatusService watchStatusService;
 
@@ -120,7 +124,16 @@ public class StreamingResolver {
   private StreamSessionDto toDto(StreamSession session) {
     return StreamSessionDto.builder()
         .id(session.getSessionId().toString())
-        .streamUrl("/api/stream/" + session.getSessionId() + "/master.m3u8")
+        .streamUrl(
+            "/api/stream/"
+                + session.getSessionId()
+                + "/master.m3u8?t="
+                + playbackTokenIssuer
+                    .issue(
+                        authorizationService.currentIdentity(),
+                        session.getSessionId(),
+                        streamingProperties.sessionRetention())
+                    .value())
         .transcodeMode(session.getTranscodeDecision().transcodeMode().name())
         .build();
   }

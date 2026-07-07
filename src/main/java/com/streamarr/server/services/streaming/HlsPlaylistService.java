@@ -22,7 +22,7 @@ public class HlsPlaylistService {
 
   private final StreamingProperties properties;
 
-  public String generateMasterPlaylist(StreamSession session) {
+  public String generateMasterPlaylist(StreamSession session, String token) {
     var decision = session.getTranscodeDecision();
     var audio = decision.audioDecision();
     var videoCodecString = CODEC_STRINGS.getOrDefault(decision.videoCodecFamily(), "avc1.640028");
@@ -41,14 +41,14 @@ public class HlsPlaylistService {
     if (session.getVariants().isEmpty()) {
       var probe = session.getMediaProbe();
       appendStreamInf(sb, probe.bitrate(), probe.width(), probe.height(), codecs, hasAudio);
-      sb.append("stream.m3u8\n");
+      sb.append("stream.m3u8?t=").append(token).append("\n");
       return sb.toString();
     }
 
     for (var variant : session.getVariants()) {
       var bandwidth = variant.videoBitrate() + audio.bitrate();
       appendStreamInf(sb, bandwidth, variant.width(), variant.height(), codecs, hasAudio);
-      sb.append(variant.label()).append("/stream.m3u8\n");
+      sb.append(variant.label()).append("/stream.m3u8?t=").append(token).append("\n");
     }
 
     return sb.toString();
@@ -77,7 +77,7 @@ public class HlsPlaylistService {
     sb.append("\n");
   }
 
-  public String generateMediaPlaylist(StreamSession session) {
+  public String generateMediaPlaylist(StreamSession session, String token) {
     var decision = session.getTranscodeDecision();
     var container = decision.containerFormat();
     var probe = session.getMediaProbe();
@@ -97,14 +97,14 @@ public class HlsPlaylistService {
     sb.append("#EXT-X-PLAYLIST-TYPE:VOD\n");
 
     if (container == ContainerFormat.FMP4) {
-      sb.append("#EXT-X-MAP:URI=\"init.mp4\"\n");
+      sb.append("#EXT-X-MAP:URI=\"init.mp4?t=").append(token).append("\"\n");
     }
 
     for (int i = 0; i < segmentCount; i++) {
       var remainingMs = remainingDurationMs - (i * segmentDurationMs);
       var durationMs = Math.min(segmentDurationMs, remainingMs);
       sb.append("#EXTINF:").append(String.format("%.6f", durationMs / 1000.0)).append(",\n");
-      sb.append("segment").append(i).append(extension).append("\n");
+      sb.append("segment").append(i).append(extension).append("?t=").append(token).append("\n");
     }
 
     sb.append("#EXT-X-ENDLIST\n");

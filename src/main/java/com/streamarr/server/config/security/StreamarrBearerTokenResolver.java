@@ -26,6 +26,13 @@ public class StreamarrBearerTokenResolver implements BearerTokenResolver {
       return null;
     }
 
+    // Stream paths resolve ONLY the ?t= parameter: a stale Path=/ access cookie must never 401
+    // playback mid-movie, and even a valid one fails there (streams demand SCOPE_PLAYBACK).
+    if (request.getRequestURI().startsWith("/api/stream/")) {
+      var queryToken = request.getParameter("t");
+      return queryToken != null && !queryToken.isBlank() ? queryToken : null;
+    }
+
     var headerToken = headerResolver.resolve(request);
     if (headerToken != null) {
       return headerToken;

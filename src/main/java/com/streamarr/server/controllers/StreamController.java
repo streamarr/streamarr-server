@@ -3,6 +3,7 @@ package com.streamarr.server.controllers;
 import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.exceptions.InvalidSegmentPathException;
+import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.StreamingService;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -32,27 +34,30 @@ public class StreamController {
   private final StreamingService streamingService;
   private final HlsPlaylistService playlistService;
   private final SegmentStore segmentStore;
+  private final AuthorizationService authorizationService;
 
   @GetMapping("/{sessionId}/master.m3u8")
-  public ResponseEntity<String> getMasterPlaylist(@PathVariable UUID sessionId) {
+  public ResponseEntity<String> getMasterPlaylist(
+      @PathVariable UUID sessionId, @RequestParam("t") String token) {
     var session = findSession(sessionId);
     if (session.isEmpty()) {
       return ResponseEntity.notFound().build();
     }
 
-    var playlist = playlistService.generateMasterPlaylist(session.get());
+    var playlist = playlistService.generateMasterPlaylist(session.get(), token);
 
     return ResponseEntity.ok().contentType(HLS_MEDIA_TYPE).body(playlist);
   }
 
   @GetMapping("/{sessionId}/stream.m3u8")
-  public ResponseEntity<String> getStreamPlaylist(@PathVariable UUID sessionId) {
+  public ResponseEntity<String> getStreamPlaylist(
+      @PathVariable UUID sessionId, @RequestParam("t") String token) {
     var session = findSession(sessionId);
     if (session.isEmpty()) {
       return ResponseEntity.notFound().build();
     }
 
-    var playlist = playlistService.generateMediaPlaylist(session.get());
+    var playlist = playlistService.generateMediaPlaylist(session.get(), token);
 
     return ResponseEntity.ok().contentType(HLS_MEDIA_TYPE).body(playlist);
   }
@@ -81,7 +86,9 @@ public class StreamController {
 
   @GetMapping("/{sessionId}/{variantLabel}/stream.m3u8")
   public ResponseEntity<String> getVariantStreamPlaylist(
-      @PathVariable UUID sessionId, @PathVariable String variantLabel) {
+      @PathVariable UUID sessionId,
+      @PathVariable String variantLabel,
+      @RequestParam("t") String token) {
     validatePathSegment(variantLabel);
     var session = findSession(sessionId);
     if (session.isEmpty()) {
@@ -93,7 +100,7 @@ public class StreamController {
       return ResponseEntity.notFound().build();
     }
 
-    var playlist = playlistService.generateMediaPlaylist(s);
+    var playlist = playlistService.generateMediaPlaylist(s, token);
 
     return ResponseEntity.ok().contentType(HLS_MEDIA_TYPE).body(playlist);
   }
@@ -170,7 +177,16 @@ public class StreamController {
     return session.getVariants().stream().noneMatch(v -> v.label().equals(variantLabel));
   }
 
+  /** A playback token is worth exactly the one stream session it was minted for. */
+  private void requireTokenBoundTo(UUID sessionId) {
+    if (!sessionId.equals(authorizationService.currentIdentity().streamSessionId())) {
+      throw new org.springframework.security.access.AccessDeniedException(
+          "Playback token is not valid for this stream session.");
+    }
+  }
+
   private Optional<StreamSession> findSession(UUID sessionId) {
+    requireTokenBoundTo(sessionId);
     return streamingService.accessSession(sessionId);
   }
 

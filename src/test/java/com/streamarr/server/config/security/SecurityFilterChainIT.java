@@ -56,12 +56,13 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should permit stream endpoints without token")
-  void shouldPermitStreamEndpointsWithoutToken() throws Exception {
-    // Transitional until playback-URL tokens land (the next PR flips this to SCOPE_PLAYBACK).
+  @DisplayName("Should reject stream endpoints without playback token")
+  void shouldRejectStreamEndpointsWithoutPlaybackToken() throws Exception {
+    // Streams demand SCOPE_PLAYBACK carried in the ?t= parameter — headers and cookies never
+    // reach them, and API tokens never authorize playback.
     mockMvc
         .perform(get("/api/stream/{id}/master.m3u8", UUID.randomUUID()))
-        .andExpect(status().isNotFound());
+        .andExpect(status().isUnauthorized());
   }
 
   @Test
