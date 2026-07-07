@@ -74,6 +74,10 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
 
   @Autowired private RefreshTokenService refreshTokenService;
 
+  @Autowired
+  private com.streamarr.server.repositories.auth.ServerBootstrapRepository
+      serverBootstrapRepository;
+
   private UserAccount account;
   private Household household;
   private Profile profile;
@@ -523,6 +527,166 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
                 .header("X-XSRF-TOKEN", csrfCookie.getValue()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.scope").value("profile"));
+  }
+
+  @Test
+  @DisplayName("Should revoke all other sessions when password changed")
+  void shouldRevokeAllOtherSessionsWhenPasswordChanged() throws Exception {
+    seedSingleProfileIdentity();
+    var deviceA = objectMapper.readTree(loginResponseBody());
+    var deviceB = objectMapper.readTree(loginResponseBody());
+
+    changePassword(deviceA.get("accessToken").asString(), PASSWORD, "a brand new passphrase!")
+        .andExpect(status().isOk());
+
+    // Device B's access token dies immediately (account-wide sv bump) and its refresh is revoked.
+    mockMvc
+        .perform(
+            get("/api/images/{id}", UUID.randomUUID())
+                .header("Authorization", "Bearer " + deviceB.get("accessToken").asString()))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("INVALID_TOKEN"));
+    mockMvc
+        .perform(
+            post("/api/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(refreshBody(deviceB.get("refreshToken").asString())))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("INVALID_REFRESH_TOKEN"));
+  }
+
+  @Test
+  @DisplayName("Should keep caller session with fresh tokens when password changed")
+  void shouldKeepCallerSessionWithFreshTokensWhenPasswordChanged() throws Exception {
+    seedSingleProfileIdentity();
+    var login = objectMapper.readTree(loginResponseBody());
+    var oldAccessToken = login.get("accessToken").asString();
+    var oldRefreshToken = login.get("refreshToken").asString();
+
+    var changed =
+        objectMapper.readTree(
+            changePassword(oldAccessToken, PASSWORD, "a brand new passphrase!")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessToken").isNotEmpty())
+                .andExpect(jsonPath("$.refreshToken").isNotEmpty())
+                .andExpect(jsonPath("$.scope").value("profile"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString());
+
+    // The fresh tokens work; every pre-change credential is dead — including the caller's own.
+    mockMvc
+        .perform(
+            get("/api/images/{id}", UUID.randomUUID())
+                .header("Authorization", "Bearer " + changed.get("accessToken").asString()))
+        .andExpect(status().isNotFound());
+    mockMvc
+        .perform(
+            get("/api/images/{id}", UUID.randomUUID())
+                .header("Authorization", "Bearer " + oldAccessToken))
+        .andExpect(status().isUnauthorized());
+    mockMvc
+        .perform(
+            post("/api/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(refreshBody(oldRefreshToken)))
+        .andExpect(status().isUnauthorized());
+    mockMvc
+        .perform(
+            post("/api/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(refreshBody(changed.get("refreshToken").asString())))
+        .andExpect(status().isOk());
+  }
+
+  @Test
+  @DisplayName("Should reject password change when current password wrong")
+  void shouldRejectPasswordChangeWhenCurrentPasswordWrong() throws Exception {
+    seedSingleProfileIdentity();
+    var accessToken = loginAndReadField("accessToken");
+
+    changePassword(accessToken, "not the current password", "irrelevant new one")
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
+
+    // Nothing was revoked: the caller's token still authenticates.
+    mockMvc
+        .perform(
+            get("/api/images/{id}", UUID.randomUUID())
+                .header("Authorization", "Bearer " + accessToken))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  @DisplayName("Should report setup completion state on status")
+  void shouldReportSetupCompletionStateOnStatus() throws Exception {
+    mockMvc
+        .perform(get("/api/auth/status"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.setupComplete").value(false));
+
+    account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    serverBootstrapRepository.claim(account.getId());
+
+    mockMvc
+        .perform(get("/api/auth/status"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.setupComplete").value(true));
+  }
+
+  @Test
+  @DisplayName("Should revoke session and clear cookies on logout")
+  void shouldRevokeSessionAndClearCookiesOnLogout() throws Exception {
+    seedSingleProfileIdentity();
+    var login = objectMapper.readTree(loginResponseBody());
+    var accessToken = login.get("accessToken").asString();
+
+    var logoutResponse =
+        mockMvc
+            .perform(post("/api/auth/logout").header("Authorization", "Bearer " + accessToken))
+            .andExpect(status().isNoContent())
+            .andReturn()
+            .getResponse();
+    assertThat(logoutResponse.getCookie("streamarr_access").getMaxAge()).isZero();
+    assertThat(logoutResponse.getCookie("streamarr_refresh").getMaxAge()).isZero();
+
+    // The session-version bump kills the outstanding access token; the refresh family is revoked.
+    mockMvc
+        .perform(
+            get("/api/images/{id}", UUID.randomUUID())
+                .header("Authorization", "Bearer " + accessToken))
+        .andExpect(status().isUnauthorized());
+    mockMvc
+        .perform(
+            post("/api/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(refreshBody(login.get("refreshToken").asString())))
+        .andExpect(status().isUnauthorized());
+  }
+
+  private org.springframework.test.web.servlet.ResultActions changePassword(
+      String bearerToken, String currentPassword, String newPassword) throws Exception {
+    return mockMvc.perform(
+        post("/api/auth/change-password")
+            .contentType(MediaType.APPLICATION_JSON)
+            .header("Authorization", "Bearer " + bearerToken)
+            .content(
+                """
+                {"currentPassword": "%s", "newPassword": "%s", "cookieMode": false}
+                """
+                    .formatted(currentPassword, newPassword)));
+  }
+
+  private String loginResponseBody() throws Exception {
+    return mockMvc
+        .perform(
+            post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(loginBody(account.getEmail(), PASSWORD)))
+        .andExpect(status().isOk())
+        .andReturn()
+        .getResponse()
+        .getContentAsString();
   }
 
   private org.springframework.mock.web.MockHttpServletResponse cookieModeLogin() throws Exception {

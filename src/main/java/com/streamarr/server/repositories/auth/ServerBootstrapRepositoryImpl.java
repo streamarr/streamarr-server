@@ -31,4 +31,9 @@ public class ServerBootstrapRepositoryImpl implements ServerBootstrapRepository 
 
     return rowsAffected > 0;
   }
+
+  @Override
+  public boolean isClaimed() {
+    return dsl.fetchExists(SERVER_BOOTSTRAP);
+  }
 }

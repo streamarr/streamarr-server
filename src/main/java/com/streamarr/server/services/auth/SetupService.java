@@ -46,6 +46,10 @@ public class SetupService {
   private final WatchHistoryRepository watchHistoryRepository;
   private final PasswordEncoder passwordEncoder;
 
+  public boolean isSetupComplete() {
+    return serverBootstrapRepository.isClaimed();
+  }
+
   @Transactional
   public SetupResult setup(SetupCommand command) {
     // saveAndFlush before each jOOQ statement: Hibernate defers JPA inserts until flush, but

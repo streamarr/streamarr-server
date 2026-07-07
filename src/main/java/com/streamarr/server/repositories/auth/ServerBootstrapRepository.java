@@ -9,4 +9,6 @@ public interface ServerBootstrapRepository {
    * exactly one caller wins.
    */
   boolean claim(UUID adminAccountId);
+
+  boolean isClaimed();
 }

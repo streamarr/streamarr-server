@@ -3,8 +3,10 @@ package com.streamarr.server.controllers.auth;
 import com.streamarr.server.exceptions.InvalidRefreshTokenException;
 import com.streamarr.server.services.auth.AccessToken;
 import com.streamarr.server.services.auth.AccessTokenIssuer;
+import com.streamarr.server.services.auth.ChangePasswordCommand;
 import com.streamarr.server.services.auth.LoginCommand;
 import com.streamarr.server.services.auth.LoginService;
+import com.streamarr.server.services.auth.PasswordChangeService;
 import com.streamarr.server.services.auth.RefreshTokenService;
 import com.streamarr.server.services.auth.SessionScopeService;
 import com.streamarr.server.services.auth.SetupCommand;
@@ -35,7 +37,43 @@ public class AuthController {
   private final SessionScopeService sessionScopeService;
   private final AccessTokenIssuer accessTokenIssuer;
   private final AuthorizationService authorizationService;
+  private final PasswordChangeService passwordChangeService;
   private final AuthCookieWriter cookieWriter;
+
+  @org.springframework.web.bind.annotation.GetMapping("/status")
+  public StatusResponse status() {
+    return new StatusResponse(setupService.isSetupComplete());
+  }
+
+  @PostMapping("/logout")
+  public ResponseEntity<Void> logout() {
+    var identity = authorizationService.currentIdentity();
+    refreshTokenService.logout(identity.sessionId());
+
+    return ResponseEntity.noContent()
+        .header(HttpHeaders.SET_COOKIE, cookieWriter.expiredAccessCookie().toString())
+        .header(HttpHeaders.SET_COOKIE, cookieWriter.expiredRefreshCookie().toString())
+        .build();
+  }
+
+  @PostMapping("/change-password")
+  public ResponseEntity<AuthTokensResponse> changePassword(
+      @Valid @RequestBody ChangePasswordRequest request) {
+    var identity = authorizationService.currentIdentity();
+    var result =
+        passwordChangeService.changePassword(
+            ChangePasswordCommand.builder()
+                .accountId(identity.accountId())
+                .sessionId(identity.sessionId())
+                .currentPassword(request.currentPassword())
+                .newPassword(request.newPassword())
+                .build());
+
+    var context = sessionScopeService.revalidateStoredContext(result.account(), result.session());
+    var accessToken = accessTokenIssuer.issue(context);
+
+    return respond(HttpStatus.OK, accessToken, result.rawRefreshToken(), request.cookieMode());
+  }
 
   @PostMapping("/select-household")
   public ResponseEntity<AuthTokensResponse> selectHousehold(

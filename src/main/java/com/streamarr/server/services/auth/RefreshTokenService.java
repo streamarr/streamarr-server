@@ -49,6 +49,30 @@ public class RefreshTokenService {
     return new IssuedRefreshToken(rawToken, session);
   }
 
+  /** Revokes the session and its whole token family; the version bump kills live access tokens. */
+  @Transactional
+  public void logout(java.util.UUID sessionId) {
+    sessionRepository
+        .revoke(sessionId, SessionRevocationReason.LOGOUT, clock.instant())
+        .ifPresent(
+            version -> eventPublisher.publishEvent(CounterBumpedEvent.session(sessionId, version)));
+    tokenRepository.revokeAllForSession(sessionId);
+  }
+
+  /**
+   * Replaces the session's refresh token family with one fresh ACTIVE token — the one-ACTIVE
+   * invariant holds because everything else is revoked first.
+   */
+  @Transactional
+  public IssuedRefreshToken reissueFor(AuthSession session) {
+    tokenRepository.revokeAllForSession(session.getId());
+
+    var rawToken = generateRawToken();
+    tokenRepository.save(buildActiveToken(session, rawToken, clock.instant()));
+
+    return new IssuedRefreshToken(rawToken, session);
+  }
+
   @Transactional
   public RefreshResult redeem(String rawToken) {
     var digest = digestOf(rawToken);

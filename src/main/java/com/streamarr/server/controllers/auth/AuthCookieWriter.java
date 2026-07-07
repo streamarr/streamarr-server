@@ -31,6 +31,14 @@ public class AuthCookieWriter {
         REFRESH_COOKIE, rawRefreshToken, REFRESH_PATH, properties.refreshTokenTtl());
   }
 
+  public ResponseCookie expiredAccessCookie() {
+    return withDefaults(ACCESS_COOKIE, "", "/", Duration.ZERO);
+  }
+
+  public ResponseCookie expiredRefreshCookie() {
+    return withDefaults(REFRESH_COOKIE, "", REFRESH_PATH, Duration.ZERO);
+  }
+
   private static ResponseCookie withDefaults(
       String name, String value, String path, Duration maxAge) {
     return ResponseCookie.from(name, value)

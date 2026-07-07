@@ -38,4 +38,21 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
 
     return Optional.ofNullable(updated).map(record -> record.get(AUTH_SESSION.SESSION_VERSION));
   }
+
+  @Override
+  public Optional<Long> bumpVersion(UUID sessionId, Instant now) {
+    var nowOffset = now.atOffset(ZoneOffset.UTC);
+
+    var updated =
+        dsl.update(AUTH_SESSION)
+            .set(AUTH_SESSION.SESSION_VERSION, AUTH_SESSION.SESSION_VERSION.plus(1))
+            .set(AUTH_SESSION.LAST_MODIFIED_ON, nowOffset)
+            .set(AUTH_SESSION.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
+            .where(AUTH_SESSION.ID.eq(sessionId))
+            .and(AUTH_SESSION.REVOKED_AT.isNull())
+            .returning(AUTH_SESSION.SESSION_VERSION)
+            .fetchOne();
+
+    return Optional.ofNullable(updated).map(record -> record.get(AUTH_SESSION.SESSION_VERSION));
+  }
 }
