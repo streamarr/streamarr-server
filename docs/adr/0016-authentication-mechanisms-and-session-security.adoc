@@ -31,7 +31,7 @@ When `PasswordEncoder.upgradeEncoding` reports stronger parameters, rehash the p
 Account/device sessions use long-lived, revocable refresh tokens, scoped to the account and device rather than to a household or profile.
 Requests use short-lived access tokens in one of three explicit scopes:
 
-* *bootstrap* — carries account and session only; valid for login, session, listing the account's own household memberships, and selecting a household;
+* *account-scoped* — carries account and session only; valid for login, session, listing the account's own household memberships, and selecting a household;
 * *household* — issued when a household is selected or switched, or immediately at login if exactly one is selectable; valid for pre-profile and household-management surfaces that need no profile policy;
 * *profile* — issued on profile selection and nested under the active household.
 
