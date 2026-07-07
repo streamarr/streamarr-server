@@ -16,8 +16,7 @@ class MediaFileTest {
     var a = MediaFile.builder().filepathUri("file:///media/movie.mkv").filename("a.mkv").build();
     var b = MediaFile.builder().filepathUri("file:///media/movie.mkv").filename("b.mkv").build();
 
-    assertThat(a).isEqualTo(b);
-    assertThat(a).hasSameHashCodeAs(b);
+    assertThat(a).isEqualTo(b).hasSameHashCodeAs(b);
   }
 
   @Test

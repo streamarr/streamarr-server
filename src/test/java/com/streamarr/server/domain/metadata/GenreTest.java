@@ -16,8 +16,7 @@ class GenreTest {
     var a = Genre.builder().sourceId("878").name("Science Fiction").build();
     var b = Genre.builder().sourceId("878").name("Sci-Fi").build();
 
-    assertThat(a).isEqualTo(b);
-    assertThat(a).hasSameHashCodeAs(b);
+    assertThat(a).isEqualTo(b).hasSameHashCodeAs(b);
   }
 
   @Test

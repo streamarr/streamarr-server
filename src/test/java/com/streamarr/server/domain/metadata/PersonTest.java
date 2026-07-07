@@ -16,8 +16,7 @@ class PersonTest {
     var a = Person.builder().sourceId("6193").name("Leonardo DiCaprio").build();
     var b = Person.builder().sourceId("6193").name("Leo DiCaprio").build();
 
-    assertThat(a).isEqualTo(b);
-    assertThat(a).hasSameHashCodeAs(b);
+    assertThat(a).isEqualTo(b).hasSameHashCodeAs(b);
   }
 
   @Test
