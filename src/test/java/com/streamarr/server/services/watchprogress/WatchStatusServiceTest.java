@@ -306,14 +306,21 @@ class WatchStatusServiceTest {
     @DisplayName("Should dismiss all episode history when marking season unwatched explicitly")
     void shouldDismissAllEpisodeHistoryWhenMarkingSeasonUnwatchedExplicitly() {
       var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
-      episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
-      episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
+      var first = episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
+      var second =
+          episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
       service.markWatched(USER_ID, season.getId(), CollectableScope.SEASON, Instant.now(), 3600);
 
       service.markUnwatched(USER_ID, season.getId(), CollectableScope.SEASON);
 
-      var result = service.getWatchStatusForSeasons(USER_ID, List.of(season.getId()));
-      assertThat(result).containsEntry(season.getId(), WatchStatus.UNWATCHED);
+      var history =
+          watchHistoryRepository.findByUserIdAndCollectableIdIn(
+              USER_ID, List.of(first.getId(), second.getId()));
+      assertThat(history)
+          .hasSize(2)
+          .allSatisfy(entry -> assertThat(entry.getDismissedAt()).isNotNull());
+      assertThat(service.getWatchStatusForSeasons(USER_ID, List.of(season.getId())))
+          .containsEntry(season.getId(), WatchStatus.UNWATCHED);
     }
   }
 

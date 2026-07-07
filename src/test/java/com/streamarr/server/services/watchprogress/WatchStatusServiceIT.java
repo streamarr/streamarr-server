@@ -105,6 +105,10 @@ class WatchStatusServiceIT extends AbstractIntegrationTest {
 
     watchStatusService.markUnwatched(userId, series.getId());
 
+    assertThat(
+            watchHistoryRepository.findByUserIdAndCollectableIdIn(userId, List.of(episode.getId())))
+        .isNotEmpty()
+        .allSatisfy(entry -> assertThat(entry.getDismissedAt()).isNotNull());
     assertThat(watchStatusService.getWatchStatusForSeries(userId, List.of(series.getId())))
         .containsEntry(series.getId(), WatchStatus.UNWATCHED);
     assertThat(sessionProgressRepository.findByUserIdAndMediaFileIdIn(userId, Set.of(mediaFileId)))
