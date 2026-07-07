@@ -4,12 +4,16 @@
 package com.streamarr.server.jooq.generated;
 
 
+import com.streamarr.server.jooq.generated.tables.AccountProfile;
+import com.streamarr.server.jooq.generated.tables.AuthSession;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable;
 import com.streamarr.server.jooq.generated.tables.Company;
 import com.streamarr.server.jooq.generated.tables.Episode;
 import com.streamarr.server.jooq.generated.tables.ExternalIdentifier;
 import com.streamarr.server.jooq.generated.tables.FileProcessingTask;
 import com.streamarr.server.jooq.generated.tables.Genre;
+import com.streamarr.server.jooq.generated.tables.Household;
+import com.streamarr.server.jooq.generated.tables.HouseholdMembership;
 import com.streamarr.server.jooq.generated.tables.Image;
 import com.streamarr.server.jooq.generated.tables.Library;
 import com.streamarr.server.jooq.generated.tables.LibraryMetadata;
@@ -20,7 +24,9 @@ import com.streamarr.server.jooq.generated.tables.MovieDirector;
 import com.streamarr.server.jooq.generated.tables.MovieGenre;
 import com.streamarr.server.jooq.generated.tables.MoviePerson;
 import com.streamarr.server.jooq.generated.tables.Person;
+import com.streamarr.server.jooq.generated.tables.Profile;
 import com.streamarr.server.jooq.generated.tables.Rating;
+import com.streamarr.server.jooq.generated.tables.RefreshToken;
 import com.streamarr.server.jooq.generated.tables.Review;
 import com.streamarr.server.jooq.generated.tables.SchemaHistory;
 import com.streamarr.server.jooq.generated.tables.Season;
@@ -29,7 +35,9 @@ import com.streamarr.server.jooq.generated.tables.SeriesCompany;
 import com.streamarr.server.jooq.generated.tables.SeriesDirector;
 import com.streamarr.server.jooq.generated.tables.SeriesGenre;
 import com.streamarr.server.jooq.generated.tables.SeriesPerson;
+import com.streamarr.server.jooq.generated.tables.ServerBootstrap;
 import com.streamarr.server.jooq.generated.tables.SessionProgress;
+import com.streamarr.server.jooq.generated.tables.UserAccount;
 import com.streamarr.server.jooq.generated.tables.WatchHistory;
 
 
@@ -38,6 +46,16 @@ import com.streamarr.server.jooq.generated.tables.WatchHistory;
  */
 @SuppressWarnings({ "all", "unchecked", "rawtypes", "this-escape" })
 public class Tables {
+
+    /**
+     * The table <code>public.account_profile</code>.
+     */
+    public static final AccountProfile ACCOUNT_PROFILE = AccountProfile.ACCOUNT_PROFILE;
+
+    /**
+     * The table <code>public.auth_session</code>.
+     */
+    public static final AuthSession AUTH_SESSION = AuthSession.AUTH_SESSION;
 
     /**
      * The table <code>public.base_collectable</code>.
@@ -68,6 +86,16 @@ public class Tables {
      * The table <code>public.genre</code>.
      */
     public static final Genre GENRE = Genre.GENRE;
+
+    /**
+     * The table <code>public.household</code>.
+     */
+    public static final Household HOUSEHOLD = Household.HOUSEHOLD;
+
+    /**
+     * The table <code>public.household_membership</code>.
+     */
+    public static final HouseholdMembership HOUSEHOLD_MEMBERSHIP = HouseholdMembership.HOUSEHOLD_MEMBERSHIP;
 
     /**
      * The table <code>public.image</code>.
@@ -120,9 +148,19 @@ public class Tables {
     public static final Person PERSON = Person.PERSON;
 
     /**
+     * The table <code>public.profile</code>.
+     */
+    public static final Profile PROFILE = Profile.PROFILE;
+
+    /**
      * The table <code>public.rating</code>.
      */
     public static final Rating RATING = Rating.RATING;
+
+    /**
+     * The table <code>public.refresh_token</code>.
+     */
+    public static final RefreshToken REFRESH_TOKEN = RefreshToken.REFRESH_TOKEN;
 
     /**
      * The table <code>public.review</code>.
@@ -165,9 +203,19 @@ public class Tables {
     public static final SeriesPerson SERIES_PERSON = SeriesPerson.SERIES_PERSON;
 
     /**
+     * The table <code>public.server_bootstrap</code>.
+     */
+    public static final ServerBootstrap SERVER_BOOTSTRAP = ServerBootstrap.SERVER_BOOTSTRAP;
+
+    /**
      * The table <code>public.session_progress</code>.
      */
     public static final SessionProgress SESSION_PROGRESS = SessionProgress.SESSION_PROGRESS;
+
+    /**
+     * The table <code>public.user_account</code>.
+     */
+    public static final UserAccount USER_ACCOUNT = UserAccount.USER_ACCOUNT;
 
     /**
      * The table <code>public.watch_history</code>.
