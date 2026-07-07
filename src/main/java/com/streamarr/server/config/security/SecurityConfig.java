@@ -3,15 +3,20 @@ package com.streamarr.server.config.security;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.access.expression.method.DefaultMethodSecurityExpressionHandler;
+import org.springframework.security.authorization.DefaultAuthorizationManagerFactory;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.header.HeaderWriterFilter;
 
 @Configuration
+@EnableMethodSecurity
 @RequiredArgsConstructor
 public class SecurityConfig {
 
@@ -21,22 +26,36 @@ public class SecurityConfig {
   private final RestAccessDeniedHandler accessDeniedHandler;
 
   /**
-   * Transitional authorization: permits everything while the auth surface lands; the enforcement
-   * flip replaces the permit matrix (GraphQL and images require SCOPE_ACCOUNT). Authentication is
-   * already real — presented tokens are decoded, version-checked, and rejected with the machine
-   * codes clients key on.
+   * The permit matrix: pre-auth endpoints and health stay open; streams stay open only until
+   * playback-URL tokens land (the next increment flips them to SCOPE_PLAYBACK); everything else —
+   * GraphQL including introspection, images, future surfaces — demands SCOPE_ACCOUNT, which
+   * household and profile tokens satisfy through the scope hierarchy.
    *
    * <p>CSRF (SPA shape: readable XSRF-TOKEN cookie, Xor handler) protects exactly the
    * cookie-authenticated requests. The filter is wired manually because the resource-server DSL
    * exempts any request its bearer resolver finds a token on — and our resolver reads the access
    * cookie, which is precisely the ambient credential CSRF must cover.
    */
-  @SuppressWarnings("java:S4502")
   @Bean
   SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
     return http.csrf(AbstractHttpConfigurer::disable)
         .addFilterAfter(cookieScopedCsrfFilter(), HeaderWriterFilter.class)
-        .authorizeHttpRequests(authorize -> authorize.anyRequest().permitAll())
+        .authorizeHttpRequests(
+            authorize ->
+                authorize
+                    .requestMatchers(
+                        "/api/auth/status",
+                        "/api/auth/setup",
+                        "/api/auth/login",
+                        "/api/auth/refresh")
+                    .permitAll()
+                    .requestMatchers("/actuator/health/**", "/actuator/health")
+                    .permitAll()
+                    // Transitional: open until playback-URL tokens land (next PR).
+                    .requestMatchers("/api/stream/**")
+                    .permitAll()
+                    .anyRequest()
+                    .hasAuthority("SCOPE_ACCOUNT"))
         .oauth2ResourceServer(
             oauth2 ->
                 oauth2
@@ -51,6 +70,25 @@ public class SecurityConfig {
                     .authenticationEntryPoint(authenticationEntryPoint)
                     .accessDeniedHandler(accessDeniedHandler))
         .build();
+  }
+
+  /**
+   * The scope hierarchy is wired explicitly — a RoleHierarchy bean is never auto-detected. Request
+   * rules get it through this factory; method security through the expression handler below.
+   */
+  @Bean
+  DefaultAuthorizationManagerFactory<RequestAuthorizationContext>
+      requestAuthorizationManagerFactory() {
+    var factory = new DefaultAuthorizationManagerFactory<RequestAuthorizationContext>();
+    factory.setRoleHierarchy(ScopeHierarchy.roleHierarchy());
+    return factory;
+  }
+
+  @Bean
+  static DefaultMethodSecurityExpressionHandler methodSecurityExpressionHandler() {
+    var handler = new DefaultMethodSecurityExpressionHandler();
+    handler.setRoleHierarchy(ScopeHierarchy.roleHierarchy());
+    return handler;
   }
 
   // The XSRF-TOKEN cookie is deliberately script-readable (S3330): its whole purpose is the
