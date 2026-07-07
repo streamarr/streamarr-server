@@ -9,6 +9,7 @@ import com.streamarr.server.domain.auth.AccountProfile;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.HouseholdMembership;
 import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
 import com.streamarr.server.exceptions.ProfileAccessDeniedException;
 import com.streamarr.server.fakes.FakeAccountProfileRepository;
 import com.streamarr.server.fakes.FakeHouseholdMembershipRepository;
@@ -146,6 +147,126 @@ class AccessTokenIssuerTest {
             .session(session)
             .householdId(memberHouseholdId)
             .profileId(foreignProfile.getId())
+            .build();
+
+    assertThatThrownBy(() -> issuer.issue(context))
+        .isInstanceOf(ProfileAccessDeniedException.class);
+  }
+
+  @Test
+  @DisplayName("Should issue account scoped token when no context selected")
+  void shouldIssueAccountScopedTokenWhenNoContextSelected() {
+    var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
+    var session =
+        AuthSession.builder()
+            .id(UUID.randomUUID())
+            .accountId(account.getId())
+            .sessionVersion(2)
+            .build();
+
+    var token = issuer.issue(TokenContext.builder().account(account).session(session).build());
+
+    assertThat(token.scope()).isEqualTo(TokenScope.ACCOUNT);
+
+    var decoded = buildDecoder().decode(token.value());
+    assertThat(decoded.getClaimAsString(TokenClaims.SCOPE)).isEqualTo("account");
+    assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ID)).isNull();
+    assertThat(decoded.getClaimAsString(TokenClaims.PROFILE_ID)).isNull();
+  }
+
+  @Test
+  @DisplayName("Should issue household scoped token when membership exists")
+  void shouldIssueHouseholdScopedTokenWhenMembershipExists() {
+    var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
+    var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
+    var householdId = UUID.randomUUID();
+    membershipRepository.save(
+        HouseholdMembership.builder()
+            .accountId(account.getId())
+            .householdId(householdId)
+            .householdRole(HouseholdRole.PARENT)
+            .version(2)
+            .build());
+
+    var token =
+        issuer.issue(
+            TokenContext.builder()
+                .account(account)
+                .session(session)
+                .householdId(householdId)
+                .build());
+
+    assertThat(token.scope()).isEqualTo(TokenScope.HOUSEHOLD);
+
+    var decoded = buildDecoder().decode(token.value());
+    assertThat(decoded.getClaimAsString(TokenClaims.SCOPE)).isEqualTo("household");
+    assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ID))
+        .isEqualTo(householdId.toString());
+    assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ROLE)).isEqualTo("PARENT");
+    assertThat(decoded.<Long>getClaim(TokenClaims.MEMBERSHIP_VERSION)).isEqualTo(2L);
+    assertThat(decoded.getClaimAsString(TokenClaims.PROFILE_ID)).isNull();
+  }
+
+  @Test
+  @DisplayName("Should reject household token when account not member")
+  void shouldRejectHouseholdTokenWhenAccountNotMember() {
+    var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
+    var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
+
+    var context =
+        TokenContext.builder()
+            .account(account)
+            .session(session)
+            .householdId(UUID.randomUUID())
+            .build();
+
+    assertThatThrownBy(() -> issuer.issue(context))
+        .isInstanceOf(HouseholdAccessDeniedException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject profile token when household not selected")
+  void shouldRejectProfileTokenWhenHouseholdNotSelected() {
+    var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
+    var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
+
+    var context =
+        TokenContext.builder()
+            .account(account)
+            .session(session)
+            .profileId(UUID.randomUUID())
+            .build();
+
+    assertThatThrownBy(() -> issuer.issue(context))
+        .isInstanceOf(ProfileAccessDeniedException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject profile token when profile row missing")
+  void shouldRejectProfileTokenWhenProfileRowMissing() {
+    var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
+    var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
+    var householdId = UUID.randomUUID();
+    var missingProfileId = UUID.randomUUID();
+    membershipRepository.save(
+        HouseholdMembership.builder()
+            .accountId(account.getId())
+            .householdId(householdId)
+            .householdRole(HouseholdRole.OWNER)
+            .build());
+    accountProfileRepository.save(
+        AccountProfile.builder()
+            .accountId(account.getId())
+            .householdId(householdId)
+            .profileId(missingProfileId)
+            .build());
+
+    var context =
+        TokenContext.builder()
+            .account(account)
+            .session(session)
+            .householdId(householdId)
+            .profileId(missingProfileId)
             .build();
 
     assertThatThrownBy(() -> issuer.issue(context))

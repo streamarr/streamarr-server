@@ -96,6 +96,67 @@ class LoginServiceTest {
     assertThat(serviceEncoder.upgradeEncoding(storedHash)).isFalse();
   }
 
+  @Test
+  @DisplayName("Should reject login when email unknown")
+  void shouldRejectLoginWhenEmailUnknown() {
+    var attempt = commandBuilder("ghost@example.com").password(CORRECT_PASSWORD).build();
+
+    assertThatThrownBy(() -> loginService.login(attempt))
+        .isInstanceOf(InvalidCredentialsException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject login when account disabled")
+  void shouldRejectLoginWhenAccountDisabled() {
+    var account =
+        userAccountRepository.save(
+            AccountFixture.defaultAccountBuilder()
+                .passwordHash(serviceEncoder.encode(CORRECT_PASSWORD))
+                .enabled(false)
+                .build());
+
+    var attempt = commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build();
+
+    assertThatThrownBy(() -> loginService.login(attempt))
+        .isInstanceOf(InvalidCredentialsException.class);
+  }
+
+  @Test
+  @DisplayName("Should keep stored hash when no encoding upgrade needed")
+  void shouldKeepStoredHashWhenNoEncodingUpgradeNeeded() {
+    var strongHash = serviceEncoder.encode(CORRECT_PASSWORD);
+    var account = seedAccount(strongHash);
+
+    loginService.login(commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build());
+
+    assertThat(userAccountRepository.findById(account.getId()).orElseThrow().getPasswordHash())
+        .isEqualTo(strongHash);
+  }
+
+  @Test
+  @DisplayName("Should restore throttle budget when login succeeds")
+  void shouldRestoreThrottleBudgetWhenLoginSucceeds() {
+    var account = seedAccount(serviceEncoder.encode(CORRECT_PASSWORD));
+
+    for (int i = 0; i < 4; i++) {
+      var wrongAttempt = commandBuilder(account.getEmail()).password("wrong-" + i).build();
+      assertThatThrownBy(() -> loginService.login(wrongAttempt))
+          .isInstanceOf(InvalidCredentialsException.class);
+    }
+
+    loginService.login(commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build());
+
+    for (int i = 0; i < 5; i++) {
+      var wrongAttempt = commandBuilder(account.getEmail()).password("wrong-again-" + i).build();
+      assertThatThrownBy(() -> loginService.login(wrongAttempt))
+          .isInstanceOf(InvalidCredentialsException.class);
+    }
+
+    var blockedAttempt = commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build();
+    assertThatThrownBy(() -> loginService.login(blockedAttempt))
+        .isInstanceOf(TooManyLoginAttemptsException.class);
+  }
+
   private com.streamarr.server.domain.auth.UserAccount seedAccount(String passwordHash) {
     return userAccountRepository.save(
         AccountFixture.defaultAccountBuilder().passwordHash(passwordHash).build());
