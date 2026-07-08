@@ -14,6 +14,7 @@ import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.RefreshToken;
 import com.streamarr.server.domain.auth.RefreshTokenStatus;
+import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
@@ -59,6 +60,19 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should reject duplicate email when casing differs")
+  void shouldRejectDuplicateEmailWhenCasingDiffers() {
+    userAccountRepository.save(
+        AccountFixture.defaultAccountBuilder().email("Casing@Example.com").build());
+
+    var duplicate = AccountFixture.defaultAccountBuilder().email("casing@example.com").build();
+
+    assertThatThrownBy(() -> userAccountRepository.save(duplicate))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("uq_user_account_email");
+  }
+
+  @Test
   @DisplayName("Should cascade account profile link when membership revoked")
   void shouldCascadeAccountProfileLinkWhenMembershipRevoked() {
     var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
@@ -73,17 +87,21 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
     var profile =
         profileRepository.save(
             ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
-    var link =
-        accountProfileRepository.save(
-            AccountProfile.builder()
-                .accountId(account.getId())
-                .householdId(household.getId())
-                .profileId(profile.getId())
-                .build());
+    accountProfileRepository.linkProfile(
+        AccountProfile.builder()
+            .accountId(account.getId())
+            .householdId(household.getId())
+            .profileId(profile.getId())
+            .build());
+    assertThat(
+            accountProfileRepository.findByAccountIdAndProfileId(account.getId(), profile.getId()))
+        .isPresent();
 
     householdMembershipRepository.delete(membership);
 
-    assertThat(accountProfileRepository.findById(link.getId())).isEmpty();
+    assertThat(
+            accountProfileRepository.findByAccountIdAndProfileId(account.getId(), profile.getId()))
+        .isEmpty();
     assertThat(profileRepository.findById(profile.getId())).isPresent();
     assertThat(userAccountRepository.findById(account.getId())).isPresent();
   }
@@ -113,13 +131,14 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
             .profileId(foreignProfile.getId())
             .build();
 
-    assertThatThrownBy(() -> accountProfileRepository.save(link))
-        .isInstanceOf(DataIntegrityViolationException.class);
+    assertThatThrownBy(() -> accountProfileRepository.linkProfile(link))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("fk_account_profile_profile");
   }
 
   @Test
-  @DisplayName("Should reject session active profile from other household")
-  void shouldRejectSessionActiveProfileFromOtherHousehold() {
+  @DisplayName("Should reject session active profile when profile belongs to other household")
+  void shouldRejectSessionActiveProfileWhenProfileBelongsToOtherHousehold() {
     var seeded = seedLinkedIdentity();
     var otherHousehold =
         householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
@@ -138,7 +157,8 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
             .build();
 
     assertThatThrownBy(() -> authSessionRepository.save(session))
-        .isInstanceOf(DataIntegrityViolationException.class);
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("fk_auth_session_active_profile_household");
   }
 
   @Test
@@ -154,7 +174,8 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
             .build();
 
     assertThatThrownBy(() -> authSessionRepository.save(session))
-        .isInstanceOf(DataIntegrityViolationException.class);
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("fk_auth_session_active_membership");
   }
 
   @Test
@@ -180,7 +201,77 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
             .build();
 
     assertThatThrownBy(() -> authSessionRepository.save(session))
-        .isInstanceOf(DataIntegrityViolationException.class);
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("fk_auth_session_active_account_profile");
+  }
+
+  @Test
+  @DisplayName("Should allow session profile when household not selected")
+  void shouldAllowSessionProfileWhenHouseholdNotSelected() {
+    // Pins a deliberate schema gap: a CHECK forbidding this state would fail the
+    // membership/household delete cascades, which clear the two columns in separate
+    // statements. The profile-requires-household pairing is an application-layer rule.
+    var seeded = seedLinkedIdentity();
+
+    var session =
+        authSessionRepository.save(
+            AuthSession.builder()
+                .accountId(seeded.account().getId())
+                .activeProfileId(seeded.profile().getId())
+                .build());
+
+    var reloaded = authSessionRepository.findById(session.getId()).orElseThrow();
+    assertThat(reloaded.getActiveProfileId()).isEqualTo(seeded.profile().getId());
+    assertThat(reloaded.getActiveHouseholdId()).isNull();
+  }
+
+  @Test
+  @DisplayName("Should reject session revocation reason when timestamp missing")
+  void shouldRejectSessionRevocationReasonWhenTimestampMissing() {
+    var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+
+    var session =
+        AuthSession.builder()
+            .accountId(account.getId())
+            .revokedReason(SessionRevocationReason.LOGOUT)
+            .build();
+
+    assertThatThrownBy(() -> authSessionRepository.save(session))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("chk_auth_session_revocation_pair");
+  }
+
+  @Test
+  @DisplayName("Should reject session revocation timestamp when reason missing")
+  void shouldRejectSessionRevocationTimestampWhenReasonMissing() {
+    var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+
+    var session = AuthSession.builder().accountId(account.getId()).revokedAt(Instant.now()).build();
+
+    assertThatThrownBy(() -> authSessionRepository.save(session))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("chk_auth_session_revocation_pair");
+  }
+
+  @Test
+  @DisplayName("Should persist every revocation reason when session revoked")
+  void shouldPersistEveryRevocationReasonWhenSessionRevoked() {
+    // Round-trips each Java constant through the Postgres enum, so a one-sided
+    // addition to either type fails here instead of in a later consumer.
+    var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+
+    for (var reason : SessionRevocationReason.values()) {
+      var session =
+          authSessionRepository.save(
+              AuthSession.builder()
+                  .accountId(account.getId())
+                  .revokedAt(Instant.now())
+                  .revokedReason(reason)
+                  .build());
+
+      var reloaded = authSessionRepository.findById(session.getId()).orElseThrow();
+      assertThat(reloaded.getRevokedReason()).isEqualTo(reason);
+    }
   }
 
   @Test
@@ -227,6 +318,41 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should keep household scope when profile deleted")
+  void shouldKeepHouseholdScopeWhenProfileDeleted() {
+    var seeded = seedLinkedIdentity();
+    var session =
+        authSessionRepository.save(
+            AuthSession.builder()
+                .accountId(seeded.account().getId())
+                .activeHouseholdId(seeded.household().getId())
+                .activeProfileId(seeded.profile().getId())
+                .build());
+
+    profileRepository.delete(seeded.profile());
+
+    var reloaded = authSessionRepository.findById(session.getId()).orElseThrow();
+    assertThat(reloaded.getActiveProfileId()).isNull();
+    assertThat(reloaded.getActiveHouseholdId()).isEqualTo(seeded.household().getId());
+  }
+
+  @Test
+  @DisplayName("Should cascade sessions and refresh tokens when account deleted")
+  void shouldCascadeSessionsAndRefreshTokensWhenAccountDeleted() {
+    var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    var session =
+        authSessionRepository.save(
+            AuthSession.builder().accountId(account.getId()).deviceName("test-device").build());
+    var token =
+        refreshTokenRepository.save(tokenBuilder(session, RefreshTokenStatus.ACTIVE).build());
+
+    userAccountRepository.delete(account);
+
+    assertThat(authSessionRepository.findById(session.getId())).isEmpty();
+    assertThat(refreshTokenRepository.findById(token.getId())).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should clear active selections when household deleted")
   void shouldClearActiveSelectionsWhenHouseholdDeleted() {
     var seeded = seedLinkedIdentity();
@@ -261,7 +387,7 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
     var profile =
         profileRepository.save(
             ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
-    accountProfileRepository.save(
+    accountProfileRepository.linkProfile(
         AccountProfile.builder()
             .accountId(account.getId())
             .householdId(household.getId())
@@ -271,8 +397,8 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject second bootstrap claim")
-  void shouldRejectSecondBootstrapClaim() {
+  @DisplayName("Should reject bootstrap claim when already claimed")
+  void shouldRejectBootstrapClaimWhenAlreadyClaimed() {
     var admin =
         userAccountRepository.save(
             AccountFixture.defaultAccountBuilder().accountRole(AccountRole.ADMIN).build());
@@ -285,20 +411,58 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject second active refresh token per session")
-  void shouldRejectSecondActiveRefreshTokenPerSession() {
+  @DisplayName("Should preserve winning admin when second bootstrap claim loses")
+  void shouldPreserveWinningAdminWhenSecondBootstrapClaimLoses() {
+    var winner =
+        userAccountRepository.save(
+            AccountFixture.defaultAccountBuilder().accountRole(AccountRole.ADMIN).build());
+    var loser =
+        userAccountRepository.save(
+            AccountFixture.defaultAccountBuilder().accountRole(AccountRole.ADMIN).build());
+
+    serverBootstrapRepository.claim(winner.getId());
+    var losingClaim = serverBootstrapRepository.claim(loser.getId());
+
+    assertThat(losingClaim).isFalse();
+    var claimedAdminId =
+        dsl.select(SERVER_BOOTSTRAP.ADMIN_ACCOUNT_ID)
+            .from(SERVER_BOOTSTRAP)
+            .fetchOne(SERVER_BOOTSTRAP.ADMIN_ACCOUNT_ID);
+    assertThat(claimedAdminId).isEqualTo(winner.getId());
+  }
+
+  @Test
+  @DisplayName("Should reject active refresh token when session already has one")
+  void shouldRejectActiveRefreshTokenWhenSessionAlreadyHasOne() {
     var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
     var session =
         authSessionRepository.save(
             AuthSession.builder().accountId(account.getId()).deviceName("test-device").build());
 
     refreshTokenRepository.save(tokenBuilder(session, RefreshTokenStatus.ACTIVE).build());
-    refreshTokenRepository.save(tokenBuilder(session, RefreshTokenStatus.ROTATED).build());
+    refreshTokenRepository.save(
+        tokenBuilder(session, RefreshTokenStatus.ROTATED).rotatedAt(Instant.now()).build());
 
     var secondActive = tokenBuilder(session, RefreshTokenStatus.ACTIVE).build();
 
     assertThatThrownBy(() -> refreshTokenRepository.save(secondActive))
-        .isInstanceOf(DataIntegrityViolationException.class);
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("uq_refresh_token_active_session");
+  }
+
+  @Test
+  @DisplayName("Should reject rotated token when rotation timestamp missing")
+  void shouldRejectRotatedTokenWhenRotationTimestampMissing() {
+    var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    var session =
+        authSessionRepository.save(
+            AuthSession.builder().accountId(account.getId()).deviceName("test-device").build());
+
+    var rotatedWithoutTimestamp = tokenBuilder(session, RefreshTokenStatus.ROTATED).build();
+
+    assertThatThrownBy(() -> refreshTokenRepository.save(rotatedWithoutTimestamp))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("chk_refresh_token_rotated_at");
   }
 
   private RefreshToken.RefreshTokenBuilder<?, ?> tokenBuilder(

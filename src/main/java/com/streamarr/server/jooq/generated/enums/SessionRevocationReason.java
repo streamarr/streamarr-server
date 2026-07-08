@@ -23,7 +23,7 @@ public enum SessionRevocationReason implements EnumType {
 
     PASSWORD_CHANGE("PASSWORD_CHANGE"),
 
-    ADMIN("ADMIN");
+    ADMIN_REVOCATION("ADMIN_REVOCATION");
 
     private final String literal;
 

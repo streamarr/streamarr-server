@@ -22,6 +22,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
+import org.jooq.Check;
 import org.jooq.Condition;
 import org.jooq.Field;
 import org.jooq.ForeignKey;
@@ -301,6 +302,13 @@ public class AuthSession extends TableImpl<AuthSessionRecord> {
             _refreshToken = new RefreshTokenPath(this, null, Keys.REFRESH_TOKEN__FK_REFRESH_TOKEN_SESSION.getInverseKey());
 
         return _refreshToken;
+    }
+
+    @Override
+    public List<Check<AuthSessionRecord>> getChecks() {
+        return Arrays.asList(
+            Internal.createCheck(this, DSL.name("chk_auth_session_revocation_pair"), "(((revoked_at IS NULL) = (revoked_reason IS NULL)))", true)
+        );
     }
 
     @Override

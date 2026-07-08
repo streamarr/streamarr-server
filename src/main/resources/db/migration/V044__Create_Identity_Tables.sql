@@ -65,6 +65,8 @@ CREATE TABLE profile
     CONSTRAINT fk_profile_household FOREIGN KEY (household_id)
         REFERENCES household (id) ON DELETE CASCADE,
     CONSTRAINT uq_profile_household_name UNIQUE (household_id, name),
+    -- Redundant with the PK for uniqueness; exists as a composite-FK target so referencing
+    -- tables can enforce profile-belongs-to-household.
     CONSTRAINT uq_profile_id_household UNIQUE (id, household_id)
 );
 
@@ -88,6 +90,8 @@ CREATE TABLE account_profile
 
 CREATE INDEX idx_account_profile_profile_household ON account_profile (profile_id, household_id);
 
+-- Boolean PK + CHECK (id) leaves TRUE as the only representable id: at most one bootstrap
+-- row can ever exist.
 CREATE TABLE server_bootstrap
 (
     id               BOOLEAN                  NOT NULL DEFAULT TRUE,

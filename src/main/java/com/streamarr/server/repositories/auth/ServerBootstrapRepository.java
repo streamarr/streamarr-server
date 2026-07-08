@@ -18,6 +18,8 @@ public class ServerBootstrapRepository {
   /**
    * Claims the one-time server bootstrap. Concurrent claims race on the singleton primary key, so
    * exactly one caller wins.
+   *
+   * @return true if this call claimed the bootstrap; false if it was already claimed
    */
   public boolean claim(UUID adminAccountId) {
     var auditUser = auditorAware.getCurrentAuditor().orElse(null);
