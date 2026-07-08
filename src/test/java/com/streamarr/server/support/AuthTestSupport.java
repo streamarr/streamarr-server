@@ -122,7 +122,12 @@ public class AuthTestSupport {
       ProfileRepository profileRepository,
       AccountProfileRepository accountProfileRepository) {
     var cryptoConfig = new TokenCryptoConfig();
-    var pastClock = Clock.fixed(Instant.now().minus(Duration.ofHours(6)), ZoneOffset.UTC);
+    // Rewind past the configured TTL so the minted token is expired even when
+    // AUTH_ACCESS_TOKEN_TTL is raised in the environment running the tests.
+    var pastClock =
+        Clock.fixed(
+            Instant.now().minus(properties.accessTokenTtl()).minus(Duration.ofMinutes(5)),
+            ZoneOffset.UTC);
     return new AccessTokenIssuer(
         cryptoConfig.jwtEncoder(cryptoConfig.authSigningKey(properties)),
         properties,
