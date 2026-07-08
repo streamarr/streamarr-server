@@ -151,6 +151,22 @@ class RefreshTokenServiceTest {
   }
 
   @Test
+  @DisplayName("Should reject redemption when session revoked")
+  void shouldRejectRedemptionWhenSessionRevoked() {
+    var issued = issueSession();
+    sessionRepository.revoke(
+        issued.session().getId(), SessionRevocationReason.LOGOUT, currentTime.get());
+
+    assertThatThrownBy(() -> service.redeem(issued.rawToken()))
+        .isInstanceOf(TokenReuseDetectedException.class);
+
+    // No successor is minted onto a revoked session, and nothing was rotated.
+    assertThat(tokenRepository.findAll()).hasSize(1);
+    assertThat(tokenRepository.findAll())
+        .allSatisfy(token -> assertThat(token.getStatus()).isEqualTo(RefreshTokenStatus.ACTIVE));
+  }
+
+  @Test
   @DisplayName("Should treat grace replay as theft when session revoked")
   void shouldTreatGraceReplayAsTheftWhenSessionRevoked() {
     var issued = issueSession();
@@ -184,31 +200,16 @@ class RefreshTokenServiceTest {
   }
 
   @Test
-  @DisplayName("Should reject redemption when consumed token row missing")
-  void shouldRejectRedemptionWhenConsumedTokenRowMissing() {
-    var vanishingTokens = mock(RefreshTokenRepository.class);
-    when(vanishingTokens.consumeActiveToken(any(), any())).thenReturn(1);
-    when(vanishingTokens.findByDigest(any())).thenReturn(Optional.empty());
-    var vanishingService =
-        new RefreshTokenService(
-            sessionRepository, vanishingTokens, properties, clock, eventPublisher);
-
-    assertThatThrownBy(() -> vanishingService.redeem("raw-token"))
-        .isInstanceOf(InvalidRefreshTokenException.class);
-  }
-
-  @Test
   @DisplayName("Should reject redemption when session row missing")
   void shouldRejectRedemptionWhenSessionRowMissing() {
     var orphanTokens = mock(RefreshTokenRepository.class);
-    when(orphanTokens.consumeActiveToken(any(), any())).thenReturn(1);
     when(orphanTokens.findByDigest(any()))
         .thenReturn(
             Optional.of(
                 RefreshToken.builder()
                     .sessionId(UUID.randomUUID())
                     .digest("digest")
-                    .status(RefreshTokenStatus.ROTATED)
+                    .status(RefreshTokenStatus.ACTIVE)
                     .expiresAt(currentTime.get().plus(Duration.ofDays(30)))
                     .build()));
     var orphanService =

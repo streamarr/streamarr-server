@@ -54,36 +54,42 @@ public class RefreshTokenService {
     var digest = digestOf(rawToken);
     var now = clock.instant();
 
-    // Rotation is a single conditional statement: exactly one caller can consume an ACTIVE token.
-    if (tokenRepository.consumeActiveToken(digest, now) > 0) {
-      return rotate(digest, now);
-    }
-
-    return handleUnconsumedToken(digest, now);
-  }
-
-  private RefreshResult rotate(String consumedDigest, Instant now) {
-    var consumed =
-        tokenRepository.findByDigest(consumedDigest).orElseThrow(InvalidRefreshTokenException::new);
-    var session =
-        sessionRepository
-            .findById(consumed.getSessionId())
+    var sessionId =
+        tokenRepository
+            .findSessionIdByDigest(digest)
             .orElseThrow(InvalidRefreshTokenException::new);
 
+    // Serialize with revocation on the session row before touching tokens (same lock order as
+    // revoke), so a successor can never be inserted onto a session that is being revoked.
+    var session =
+        sessionRepository.lockById(sessionId).orElseThrow(InvalidRefreshTokenException::new);
+
+    if (session.getRevokedAt() != null) {
+      // Redeeming any token of a revoked session — including a successor that raced revocation —
+      // is reuse: never rotate, never mint.
+      throw new TokenReuseDetectedException();
+    }
+
+    // Rotation is a single conditional statement: exactly one caller can consume an ACTIVE token.
+    if (tokenRepository.consumeActiveToken(digest, now) > 0) {
+      return rotate(session, now);
+    }
+
+    return handleUnconsumedToken(digest, session, now);
+  }
+
+  private RefreshResult rotate(AuthSession session, Instant now) {
     var rawToken = generateRawToken();
     tokenRepository.save(buildActiveToken(session, rawToken, now));
 
     return new RefreshResult.Rotated(rawToken, session);
   }
 
-  private RefreshResult handleUnconsumedToken(String digest, Instant now) {
+  private RefreshResult handleUnconsumedToken(String digest, AuthSession session, Instant now) {
     var token = tokenRepository.findByDigest(digest).orElseThrow(InvalidRefreshTokenException::new);
-    var session =
-        sessionRepository
-            .findById(token.getSessionId())
-            .orElseThrow(InvalidRefreshTokenException::new);
 
-    if (isWithinGrace(token, now) && session.getRevokedAt() == null) {
+    // The session is not revoked (guarded above), so grace turns purely on token timing.
+    if (isWithinGrace(token, now)) {
       return new RefreshResult.GraceReplay(session);
     }
 
