@@ -35,7 +35,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 @DisplayName("Continue Watching Resolver Integration Tests")
 class ContinueWatchingResolverIT extends AbstractIntegrationTest {
 
-  private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+  private static final UUID PROFILE_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
   @Autowired private LibraryRepository libraryRepository;
@@ -48,9 +48,11 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
   @BeforeEach
   void setUp() {
     dsl.deleteFrom(Tables.SESSION_PROGRESS)
-        .where(Tables.SESSION_PROGRESS.USER_ID.eq(USER_ID))
+        .where(Tables.SESSION_PROGRESS.PROFILE_ID.eq(PROFILE_ID))
         .execute();
-    dsl.deleteFrom(Tables.WATCH_HISTORY).where(Tables.WATCH_HISTORY.USER_ID.eq(USER_ID)).execute();
+    dsl.deleteFrom(Tables.WATCH_HISTORY)
+        .where(Tables.WATCH_HISTORY.PROFILE_ID.eq(PROFILE_ID))
+        .execute();
   }
 
   @Test
@@ -116,7 +118,7 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
     sessionProgressRepository.saveAndFlush(
         SessionProgress.builder()
             .sessionId(UUID.randomUUID())
-            .userId(USER_ID)
+            .profileId(PROFILE_ID)
             .mediaFileId(episode.getFiles().iterator().next().getId())
             .positionSeconds(900)
             .percentComplete(25.0)
