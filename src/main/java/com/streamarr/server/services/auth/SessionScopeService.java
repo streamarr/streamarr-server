@@ -166,14 +166,16 @@ public class SessionScopeService {
   }
 
   /**
-   * A missing, foreign, or revoked session reads identically as unauthenticated (oracle-free).
-   * Guarding at load closes the revocation race: a session loaded after a concurrent revoke would
-   * otherwise mint a token carrying the bumped session version — which validates — while a revoke
-   * landing after this read leaves the mint on the stale pre-bump version, which fails validation.
+   * A missing, foreign, or revoked session reads identically as unauthenticated (oracle-free). The
+   * row is locked FOR UPDATE so a concurrent revoke cannot interleave between this read and the
+   * selection's write: the revoke has either already committed (revokedAt set — rejected here) or
+   * it blocks until this transaction commits and then applies on top. A plain read would let the
+   * selection's blind JPA flush (AuthSession carries no @Version) overwrite a revocation that
+   * committed in between, silently un-revoking the session and reviving its mintable version.
    */
   private AuthSession loadLiveSession(UUID accountId, UUID sessionId) {
     return sessionRepository
-        .findById(sessionId)
+        .lockById(sessionId)
         .filter(session -> session.getAccountId().equals(accountId))
         .filter(session -> session.getRevokedAt() == null)
         .orElseThrow(AuthenticationRequiredException::new);
