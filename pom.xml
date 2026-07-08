@@ -329,6 +329,13 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <!-- Local runs get the dev profile; the packaged artifact must never
+                         self-activate it (see PackagedConfigurationTest). -->
+                    <profiles>
+                        <profile>dev</profile>
+                    </profiles>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.jacoco</groupId>

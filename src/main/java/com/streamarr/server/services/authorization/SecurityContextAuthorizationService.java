@@ -6,14 +6,21 @@ import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
+import com.streamarr.server.repositories.auth.AccountProfileRepository;
+import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 @Service
+@RequiredArgsConstructor
 public class SecurityContextAuthorizationService implements AuthorizationService {
+
+  private final ProfileRepository profileRepository;
+  private final AccountProfileRepository accountProfileRepository;
 
   @Override
   public AuthenticatedIdentity currentIdentity() {
@@ -70,14 +77,43 @@ public class SecurityContextAuthorizationService implements AuthorizationService
     }
   }
 
+  /**
+   * ADR 0015 activity visibility: a server admin sees all activity, an owner or parent sees the
+   * profiles of their active household, and everyone else sees their own activity plus the profiles
+   * granted to them.
+   */
   @Override
   public boolean canViewActivityOf(UUID profileId) {
     var identity = currentIdentity();
-    if (profileId.equals(identity.profileId())) {
+    if (identity.role() == AccountRole.ADMIN || profileId.equals(identity.profileId())) {
       return true;
     }
+    if (identity.householdId() == null) {
+      return false;
+    }
+    if (managesHouseholdProfiles(identity)) {
+      return profileInHousehold(profileId, identity.householdId());
+    }
+    return profileGrantedTo(identity, profileId);
+  }
+
+  private static boolean managesHouseholdProfiles(AuthenticatedIdentity identity) {
     return identity.householdRole() != null
         && rank(identity.householdRole()) >= rank(HouseholdRole.PARENT);
+  }
+
+  private boolean profileInHousehold(UUID profileId, UUID householdId) {
+    return profileRepository
+        .findById(profileId)
+        .map(profile -> householdId.equals(profile.getHouseholdId()))
+        .orElse(false);
+  }
+
+  private boolean profileGrantedTo(AuthenticatedIdentity identity, UUID profileId) {
+    return accountProfileRepository
+        .findByAccountIdAndHouseholdIdAndProfileId(
+            identity.accountId(), identity.householdId(), profileId)
+        .isPresent();
   }
 
   private static int rank(HouseholdRole role) {

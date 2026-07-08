@@ -25,6 +25,8 @@ import com.streamarr.server.fakes.FakeWatchHistoryRepository;
 import com.streamarr.server.graphql.dataloaders.AggregateWatchProgressDataLoader;
 import com.streamarr.server.graphql.dataloaders.SessionProgressDataLoader;
 import com.streamarr.server.graphql.dataloaders.WatchStatusDataLoader;
+import com.streamarr.server.repositories.auth.AccountProfileRepository;
+import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
@@ -73,6 +75,10 @@ class WatchProgressFieldResolverTest {
   @Autowired private FakeMediaFileRepository mediaFileRepository;
   @Autowired private FakeEpisodeRepository episodeRepository;
   @Autowired private FakeSeasonRepository seasonRepository;
+
+  @MockitoBean private ProfileRepository profileRepository;
+
+  @MockitoBean private AccountProfileRepository accountProfileRepository;
 
   @MockitoBean private MovieService movieService;
   @MockitoBean private SeriesService seriesService;

@@ -3,19 +3,31 @@ package com.streamarr.server.services.auth;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
-import lombok.RequiredArgsConstructor;
+import java.util.UUID;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
-@RequiredArgsConstructor
 public class LoginService {
 
   private final UserAccountRepository userAccountRepository;
   private final RefreshTokenService refreshTokenService;
   private final PasswordEncoder passwordEncoder;
   private final LoginThrottle throttle;
+  private final String timingEqualizerHash;
+
+  public LoginService(
+      UserAccountRepository userAccountRepository,
+      RefreshTokenService refreshTokenService,
+      PasswordEncoder passwordEncoder,
+      LoginThrottle throttle) {
+    this.userAccountRepository = userAccountRepository;
+    this.refreshTokenService = refreshTokenService;
+    this.passwordEncoder = passwordEncoder;
+    this.throttle = throttle;
+    this.timingEqualizerHash = passwordEncoder.encode(UUID.randomUUID().toString());
+  }
 
   @Transactional
   public LoginResult login(LoginCommand command) {
@@ -41,9 +53,13 @@ public class LoginService {
   }
 
   private boolean credentialsValid(UserAccount account, String password) {
-    return account != null
-        && account.isEnabled()
-        && passwordEncoder.matches(password, account.getPasswordHash());
+    if (account == null || !account.isEnabled()) {
+      // Burn the same Argon2 cost as a real comparison so response timing cannot disclose
+      // whether the email exists or the account is enabled.
+      passwordEncoder.matches(password, timingEqualizerHash);
+      return false;
+    }
+    return passwordEncoder.matches(password, account.getPasswordHash());
   }
 
   private void rehashIfUpgradeNeeded(UserAccount account, String rawPassword) {
