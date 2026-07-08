@@ -4,7 +4,9 @@ import static com.streamarr.server.jooq.generated.tables.AccountProfile.ACCOUNT_
 import static com.streamarr.server.jooq.generated.tables.HouseholdMembership.HOUSEHOLD_MEMBERSHIP;
 
 import com.streamarr.server.domain.auth.AccountProfile;
+import com.streamarr.server.services.auth.CounterKind;
 import com.streamarr.server.services.auth.events.CounterBumpedEvent;
+import com.streamarr.server.services.auth.invalidation.CounterNotificationPayload;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.UUID;
@@ -78,17 +80,11 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
     var version = updated.get(HOUSEHOLD_MEMBERSHIP.VERSION);
     eventPublisher.publishEvent(
         CounterBumpedEvent.membership(link.getAccountId(), link.getHouseholdId(), version));
-    publishCounterNotification(
-        "MEMBERSHIP", link.getAccountId() + ":" + link.getHouseholdId(), version);
-  }
-
-  private void publishCounterNotification(String kind, String key, long version) {
-    dsl.select(
-            org.jooq.impl.DSL.function(
-                "pg_notify",
-                String.class,
-                org.jooq.impl.DSL.val("streamarr_counters"),
-                org.jooq.impl.DSL.val(kind + "|" + key + "|" + version)))
-        .fetch();
+    CounterNotificationPublisher.publish(
+        dsl,
+        new CounterNotificationPayload(
+            CounterKind.MEMBERSHIP,
+            CounterBumpedEvent.membershipKey(link.getAccountId(), link.getHouseholdId()),
+            version));
   }
 }

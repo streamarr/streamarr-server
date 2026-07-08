@@ -3,8 +3,18 @@ package com.streamarr.server.services.auth.invalidation;
 import com.streamarr.server.services.auth.CounterKind;
 import java.util.Optional;
 
-/** Payload shape: {@code KIND|key|version}; membership keys keep their inner colon. */
+/**
+ * The wire contract for cross-instance counter notifications: {@code KIND|key|version} published on
+ * {@link #CHANNEL}; membership keys keep their inner colon. Encode and parse live together so
+ * publishers and the listener cannot drift.
+ */
 public record CounterNotificationPayload(CounterKind kind, String key, long version) {
+
+  public static final String CHANNEL = "streamarr_counters";
+
+  public String encode() {
+    return kind + "|" + key + "|" + version;
+  }
 
   public static Optional<CounterNotificationPayload> parse(String payload) {
     if (payload == null) {

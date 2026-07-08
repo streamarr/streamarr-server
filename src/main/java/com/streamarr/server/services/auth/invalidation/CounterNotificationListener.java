@@ -1,6 +1,5 @@
 package com.streamarr.server.services.auth.invalidation;
 
-import com.streamarr.server.services.auth.CounterKind;
 import com.streamarr.server.services.auth.TokenVersionCache;
 import java.security.SecureRandom;
 import java.sql.Connection;
@@ -23,8 +22,6 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component
 public class CounterNotificationListener implements SmartLifecycle {
-
-  public static final String CHANNEL = "streamarr_counters";
 
   private static final int POLL_TIMEOUT_MS = 500;
   private static final long INITIAL_BACKOFF_MS = 1_000;
@@ -73,7 +70,7 @@ public class CounterNotificationListener implements SmartLifecycle {
     while (running) {
       try (var connection = openConnection()) {
         try (var statement = connection.createStatement()) {
-          statement.execute("LISTEN " + CHANNEL);
+          statement.execute("LISTEN " + CounterNotificationPayload.CHANNEL);
         }
         // Anything published while we were away is lost; stale entries must not survive.
         cache.clearAll();
@@ -111,18 +108,11 @@ public class CounterNotificationListener implements SmartLifecycle {
   }
 
   private void apply(String payload) {
-
-    var parts = payload.split("\\|", 3);
-    if (parts.length != 3) {
-      log.warn("Ignoring malformed counter notification: {}", payload);
-      return;
-    }
-
-    try {
-      cache.update(CounterKind.valueOf(parts[0]), parts[1], Long.parseLong(parts[2]));
-    } catch (IllegalArgumentException e) {
-      log.warn("Ignoring unparseable counter notification: {}", payload);
-    }
+    CounterNotificationPayload.parse(payload)
+        .ifPresentOrElse(
+            notification ->
+                cache.update(notification.kind(), notification.key(), notification.version()),
+            () -> log.warn("Ignoring malformed counter notification: {}", payload));
   }
 
   private void sleepWithJitter(long backoffMs) {

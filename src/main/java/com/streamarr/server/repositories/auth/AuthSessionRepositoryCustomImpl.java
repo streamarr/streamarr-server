@@ -3,6 +3,8 @@ package com.streamarr.server.repositories.auth;
 import static com.streamarr.server.jooq.generated.tables.AuthSession.AUTH_SESSION;
 
 import com.streamarr.server.domain.auth.SessionRevocationReason;
+import com.streamarr.server.services.auth.CounterKind;
+import com.streamarr.server.services.auth.invalidation.CounterNotificationPayload;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Optional;
@@ -37,8 +39,7 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
             .fetchOne();
 
     var bumped = Optional.ofNullable(updated).map(row -> row.get(AUTH_SESSION.SESSION_VERSION));
-    bumped.ifPresent(
-        version -> publishCounterNotification("SESSION", sessionId.toString(), version));
+    bumped.ifPresent(version -> publishSessionBump(sessionId, version));
     return bumped;
   }
 
@@ -57,18 +58,12 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
             .fetchOne();
 
     var bumped = Optional.ofNullable(updated).map(row -> row.get(AUTH_SESSION.SESSION_VERSION));
-    bumped.ifPresent(
-        version -> publishCounterNotification("SESSION", sessionId.toString(), version));
+    bumped.ifPresent(version -> publishSessionBump(sessionId, version));
     return bumped;
   }
 
-  private void publishCounterNotification(String kind, String key, long version) {
-    dsl.select(
-            org.jooq.impl.DSL.function(
-                "pg_notify",
-                String.class,
-                org.jooq.impl.DSL.val("streamarr_counters"),
-                org.jooq.impl.DSL.val(kind + "|" + key + "|" + version)))
-        .fetch();
+  private void publishSessionBump(UUID sessionId, long version) {
+    CounterNotificationPublisher.publish(
+        dsl, new CounterNotificationPayload(CounterKind.SESSION, sessionId.toString(), version));
   }
 }
