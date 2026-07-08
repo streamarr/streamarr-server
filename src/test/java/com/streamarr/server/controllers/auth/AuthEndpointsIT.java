@@ -6,6 +6,7 @@ import static com.streamarr.server.jooq.generated.tables.UserAccount.USER_ACCOUN
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -466,6 +467,107 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     assertThat(householdClaims.getClaimAsString("hh"))
         .isEqualTo(secondHousehold.getId().toString());
     assertThat(householdClaims.hasClaim("pf")).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should select profile and upgrade to profile scope")
+  void shouldSelectProfileAndUpgradeToProfileScope() throws Exception {
+    var householdToken = householdScopedTokenWithTwoProfiles();
+
+    var response =
+        mockMvc
+            .perform(
+                post("/api/auth/select-profile")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .header("Authorization", "Bearer " + householdToken)
+                    .content(
+                        "{\"profileId\": \"%s\", \"cookieMode\": false}"
+                            .formatted(profile.getId())))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.scope").value("profile"))
+            .andExpect(jsonPath("$.accessToken").isNotEmpty())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    var claims = decodeToken(objectMapper.readTree(response).get("accessToken").asString());
+    assertThat(claims.getClaimAsString("pf")).isEqualTo(profile.getId().toString());
+    assertThat(claims.getClaimAsString("hh")).isEqualTo(household.getId().toString());
+  }
+
+  @Test
+  @DisplayName("Should set access cookie only when selecting profile in cookie mode")
+  void shouldSetAccessCookieOnlyWhenSelectingProfileInCookieMode() throws Exception {
+    var householdToken = householdScopedTokenWithTwoProfiles();
+
+    mockMvc
+        .perform(
+            post("/api/auth/select-profile")
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("Authorization", "Bearer " + householdToken)
+                .content(
+                    "{\"profileId\": \"%s\", \"cookieMode\": true}".formatted(profile.getId())))
+        .andExpect(status().isOk())
+        .andExpect(cookie().exists("streamarr_access"))
+        .andExpect(cookie().doesNotExist("streamarr_refresh"))
+        .andExpect(jsonPath("$.accessToken").doesNotExist());
+  }
+
+  @Test
+  @DisplayName("Should reject profile selection when profile id missing")
+  void shouldRejectProfileSelectionWhenProfileIdMissing() throws Exception {
+    var householdToken = householdScopedTokenWithTwoProfiles();
+
+    mockMvc
+        .perform(
+            post("/api/auth/select-profile")
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("Authorization", "Bearer " + householdToken)
+                .content("{\"cookieMode\": false}"))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  @DisplayName("Should reject profile selection when profile not linked")
+  void shouldRejectProfileSelectionWhenProfileNotLinked() throws Exception {
+    var householdToken = householdScopedTokenWithTwoProfiles();
+
+    mockMvc
+        .perform(
+            post("/api/auth/select-profile")
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("Authorization", "Bearer " + householdToken)
+                .content(
+                    "{\"profileId\": \"%s\", \"cookieMode\": false}"
+                        .formatted(java.util.UUID.randomUUID())))
+        .andExpect(status().isForbidden());
+  }
+
+  /** A sole household with two profiles: login auto-selects the household but not a profile. */
+  private String householdScopedTokenWithTwoProfiles() throws Exception {
+    seedSingleProfileIdentity();
+    var secondProfile =
+        profileRepository.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+    accountProfileRepository.save(
+        AccountProfile.builder()
+            .accountId(account.getId())
+            .householdId(household.getId())
+            .profileId(secondProfile.getId())
+            .build());
+
+    var response =
+        mockMvc
+            .perform(
+                post("/api/auth/login")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(loginBody(account.getEmail(), PASSWORD)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.scope").value("household"))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return objectMapper.readTree(response).get("accessToken").asString();
   }
 
   @Test
