@@ -4,5 +4,5 @@ public enum SessionRevocationReason {
   LOGOUT,
   TOKEN_REUSE,
   PASSWORD_CHANGE,
-  ADMIN
+  ADMIN_REVOCATION
 }

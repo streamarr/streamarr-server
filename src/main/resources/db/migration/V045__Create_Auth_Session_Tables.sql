@@ -1,4 +1,4 @@
-CREATE TYPE session_revocation_reason AS ENUM ('LOGOUT', 'TOKEN_REUSE', 'PASSWORD_CHANGE', 'ADMIN');
+CREATE TYPE session_revocation_reason AS ENUM ('LOGOUT', 'TOKEN_REUSE', 'PASSWORD_CHANGE', 'ADMIN_REVOCATION');
 CREATE TYPE refresh_token_status AS ENUM ('ACTIVE', 'ROTATED', 'REVOKED');
 
 CREATE TABLE auth_session
