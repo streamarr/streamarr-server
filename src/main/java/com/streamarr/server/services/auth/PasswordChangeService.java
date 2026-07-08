@@ -51,6 +51,10 @@ public class PasswordChangeService {
       if (session.getId().equals(command.sessionId())) {
         continue;
       }
+      // These managed entities are used by id only. The jOOQ revoke below bumps the row's
+      // session_version underneath them, so getSessionVersion()/getRevokedAt() would read stale
+      // first-level-cache state — and mutating them would flush that stale state back over the
+      // jOOQ write. Don't read or set counter/revocation fields on them here (see AGENTS.md).
       sessionRepository
           .revoke(session.getId(), SessionRevocationReason.PASSWORD_CHANGE, now)
           .ifPresent(
