@@ -17,6 +17,7 @@ import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.AccountFixture;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -35,6 +36,8 @@ class LoginServiceTest {
 
   private final PasswordEncoder weakEncoder = encoderWith(4096, 1);
   private final PasswordEncoder serviceEncoder = encoderWith(8192, 2);
+  private final CountingPasswordEncoder countingEncoder =
+      new CountingPasswordEncoder(serviceEncoder);
 
   private final FakeUserAccountRepository userAccountRepository = new FakeUserAccountRepository();
 
@@ -52,7 +55,7 @@ class LoginServiceTest {
                   .build(),
               clock,
               new CapturingEventPublisher()),
-          serviceEncoder,
+          countingEncoder,
           new LoginThrottle(
               AuthThrottleProperties.builder()
                   .maxAttempts(5)
@@ -119,6 +122,35 @@ class LoginServiceTest {
 
     assertThatThrownBy(() -> loginService.login(attempt))
         .isInstanceOf(InvalidCredentialsException.class);
+  }
+
+  @Test
+  @DisplayName("Should burn password verification cost when email unknown")
+  void shouldBurnPasswordVerificationCostWhenEmailUnknown() {
+    var attempt = commandBuilder("ghost@example.com").password(CORRECT_PASSWORD).build();
+
+    assertThatThrownBy(() -> loginService.login(attempt))
+        .isInstanceOf(InvalidCredentialsException.class);
+
+    assertThat(countingEncoder.matchesInvocations()).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("Should burn password verification cost when account disabled")
+  void shouldBurnPasswordVerificationCostWhenAccountDisabled() {
+    var account =
+        userAccountRepository.save(
+            AccountFixture.defaultAccountBuilder()
+                .passwordHash(serviceEncoder.encode(CORRECT_PASSWORD))
+                .enabled(false)
+                .build());
+
+    var attempt = commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build();
+
+    assertThatThrownBy(() -> loginService.login(attempt))
+        .isInstanceOf(InvalidCredentialsException.class);
+
+    assertThat(countingEncoder.matchesInvocations()).isEqualTo(1);
   }
 
   @Test
@@ -204,5 +236,36 @@ class LoginServiceTest {
                 .iterations(iterations)
                 .parallelism(1)
                 .build());
+  }
+
+  /** Observes how many full-cost password verifications a login attempt performs. */
+  private static final class CountingPasswordEncoder implements PasswordEncoder {
+
+    private final PasswordEncoder delegate;
+    private final AtomicInteger matchesInvocations = new AtomicInteger();
+
+    private CountingPasswordEncoder(PasswordEncoder delegate) {
+      this.delegate = delegate;
+    }
+
+    @Override
+    public String encode(CharSequence rawPassword) {
+      return delegate.encode(rawPassword);
+    }
+
+    @Override
+    public boolean matches(CharSequence rawPassword, String encodedPassword) {
+      matchesInvocations.incrementAndGet();
+      return delegate.matches(rawPassword, encodedPassword);
+    }
+
+    @Override
+    public boolean upgradeEncoding(String encodedPassword) {
+      return delegate.upgradeEncoding(encodedPassword);
+    }
+
+    private int matchesInvocations() {
+      return matchesInvocations.get();
+    }
   }
 }
