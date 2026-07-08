@@ -85,6 +85,24 @@ class StreamControllerTest {
     assertThat(result.getResponse().getContentAsString()).contains("#EXT-X-STREAM-INF:");
   }
 
+  @Test
+  @DisplayName("Should embed the validated token in playlists rather than the request parameter")
+  void shouldEmbedValidatedTokenInPlaylistsRatherThanRequestParameter() throws Exception {
+    streamingService.setSession(buildMpegtsSession());
+
+    var result =
+        mockMvc
+            .perform(
+                get("/api/stream/{sessionId}/master.m3u8", SESSION_ID)
+                    .param("t", "spoofed<script>-param"))
+            .andExpect(status().isOk())
+            .andReturn();
+
+    var body = result.getResponse().getContentAsString();
+    assertThat(body).contains("?t=" + VALIDATED_TOKEN);
+    assertThat(body).doesNotContain("spoofed<script>-param");
+  }
+
   @ParameterizedTest
   @ValueSource(strings = {"master.m3u8", "stream.m3u8", "segment0.ts", "init.mp4"})
   @DisplayName("Should return 404 when session not found")

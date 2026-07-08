@@ -17,7 +17,6 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -37,27 +36,25 @@ public class StreamController {
   private final AuthorizationService authorizationService;
 
   @GetMapping("/{sessionId}/master.m3u8")
-  public ResponseEntity<String> getMasterPlaylist(
-      @PathVariable UUID sessionId, @RequestParam("t") String token) {
+  public ResponseEntity<String> getMasterPlaylist(@PathVariable UUID sessionId) {
     var session = findSession(sessionId);
     if (session.isEmpty()) {
       return ResponseEntity.notFound().build();
     }
 
-    var playlist = playlistService.generateMasterPlaylist(session.get(), token);
+    var playlist = playlistService.generateMasterPlaylist(session.get(), playbackToken());
 
     return ResponseEntity.ok().contentType(HLS_MEDIA_TYPE).body(playlist);
   }
 
   @GetMapping("/{sessionId}/stream.m3u8")
-  public ResponseEntity<String> getStreamPlaylist(
-      @PathVariable UUID sessionId, @RequestParam("t") String token) {
+  public ResponseEntity<String> getStreamPlaylist(@PathVariable UUID sessionId) {
     var session = findSession(sessionId);
     if (session.isEmpty()) {
       return ResponseEntity.notFound().build();
     }
 
-    var playlist = playlistService.generateMediaPlaylist(session.get(), token);
+    var playlist = playlistService.generateMediaPlaylist(session.get(), playbackToken());
 
     return ResponseEntity.ok().contentType(HLS_MEDIA_TYPE).body(playlist);
   }
@@ -86,9 +83,7 @@ public class StreamController {
 
   @GetMapping("/{sessionId}/{variantLabel}/stream.m3u8")
   public ResponseEntity<String> getVariantStreamPlaylist(
-      @PathVariable UUID sessionId,
-      @PathVariable String variantLabel,
-      @RequestParam("t") String token) {
+      @PathVariable UUID sessionId, @PathVariable String variantLabel) {
     validatePathSegment(variantLabel);
     var session = findSession(sessionId);
     if (session.isEmpty()) {
@@ -100,7 +95,7 @@ public class StreamController {
       return ResponseEntity.notFound().build();
     }
 
-    var playlist = playlistService.generateMediaPlaylist(s, token);
+    var playlist = playlistService.generateMediaPlaylist(s, playbackToken());
 
     return ResponseEntity.ok().contentType(HLS_MEDIA_TYPE).body(playlist);
   }
@@ -175,6 +170,15 @@ public class StreamController {
 
   private boolean hasNoVariant(StreamSession session, String variantLabel) {
     return session.getVariants().stream().noneMatch(v -> v.label().equals(variantLabel));
+  }
+
+  /**
+   * The token echoed into playlist segment URLs is the signature-verified one from the security
+   * context, never the raw {@code ?t=} parameter — the value written into the response is always
+   * server-validated, and the media player carries the same token it authenticated with.
+   */
+  private String playbackToken() {
+    return authorizationService.currentTokenValue();
   }
 
   /** A playback token is worth exactly the one stream session it was minted for. */
