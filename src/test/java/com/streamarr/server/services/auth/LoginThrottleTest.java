@@ -150,10 +150,27 @@ class LoginThrottleTest {
     throttle.reset(EMAIL, SOURCE);
 
     for (int i = 0; i < MAX_ATTEMPTS; i++) {
-      assertThatCode(() -> throttle.registerAttempt(EMAIL, SOURCE)).doesNotThrowAnyException();
+      var freshSource = "post-src-" + i;
+      assertThatCode(() -> throttle.registerAttempt(EMAIL, freshSource)).doesNotThrowAnyException();
     }
 
-    assertThatThrownBy(() -> throttle.registerAttempt(EMAIL, SOURCE))
+    assertThatThrownBy(() -> throttle.registerAttempt(EMAIL, "post-src-final"))
+        .isInstanceOf(TooManyLoginAttemptsException.class);
+  }
+
+  @Test
+  @DisplayName("Should keep other emails source failures when reset")
+  void shouldKeepOtherEmailsSourceFailuresWhenReset() {
+    for (int i = 0; i < MAX_ATTEMPTS - 1; i++) {
+      throttle.registerAttempt("sprayed-" + i + "@example.com", SOURCE);
+    }
+    throttle.registerAttempt(EMAIL, SOURCE);
+
+    throttle.reset(EMAIL, SOURCE);
+
+    assertThatCode(() -> throttle.registerAttempt("fresh@example.com", SOURCE))
+        .doesNotThrowAnyException();
+    assertThatThrownBy(() -> throttle.registerAttempt("another@example.com", SOURCE))
         .isInstanceOf(TooManyLoginAttemptsException.class);
   }
 

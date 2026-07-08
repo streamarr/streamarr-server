@@ -147,13 +147,43 @@ class LoginServiceTest {
     loginService.login(commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build());
 
     for (int i = 0; i < 5; i++) {
-      var wrongAttempt = commandBuilder(account.getEmail()).password("wrong-again-" + i).build();
+      var wrongAttempt =
+          commandBuilder(account.getEmail())
+              .password("wrong-again-" + i)
+              .source("retry-src-" + i)
+              .build();
       assertThatThrownBy(() -> loginService.login(wrongAttempt))
           .isInstanceOf(InvalidCredentialsException.class);
     }
 
-    var blockedAttempt = commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build();
+    var blockedAttempt =
+        commandBuilder(account.getEmail())
+            .password(CORRECT_PASSWORD)
+            .source("retry-src-final")
+            .build();
     assertThatThrownBy(() -> loginService.login(blockedAttempt))
+        .isInstanceOf(TooManyLoginAttemptsException.class);
+  }
+
+  @Test
+  @DisplayName("Should keep source budget when other account succeeds from same source")
+  void shouldKeepSourceBudgetWhenOtherAccountSucceedsFromSameSource() {
+    var attacker = seedAccount(serviceEncoder.encode(CORRECT_PASSWORD));
+
+    for (int i = 0; i < 4; i++) {
+      var spray = commandBuilder("victim-" + i + "@example.com").password("guess").build();
+      assertThatThrownBy(() -> loginService.login(spray))
+          .isInstanceOf(InvalidCredentialsException.class);
+    }
+
+    loginService.login(commandBuilder(attacker.getEmail()).password(CORRECT_PASSWORD).build());
+
+    var fifthSpray = commandBuilder("victim-4@example.com").password("guess").build();
+    assertThatThrownBy(() -> loginService.login(fifthSpray))
+        .isInstanceOf(InvalidCredentialsException.class);
+
+    var sixthSpray = commandBuilder("victim-5@example.com").password("guess").build();
+    assertThatThrownBy(() -> loginService.login(sixthSpray))
         .isInstanceOf(TooManyLoginAttemptsException.class);
   }
 

@@ -45,9 +45,14 @@ public class LoginThrottle {
     throw new TooManyLoginAttemptsException();
   }
 
+  /**
+   * A successful login proves account ownership, so the email budget clears fully; the source
+   * budget only releases this attempt's own slot — one success must not vouch away a source's
+   * accumulated failures against other accounts.
+   */
   public void reset(String email, String source) {
     removeKey(emailKey(email));
-    removeKey(sourceKey(source));
+    release(sourceKey(source));
   }
 
   /**
