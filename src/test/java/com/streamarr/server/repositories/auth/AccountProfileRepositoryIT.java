@@ -66,7 +66,8 @@ class AccountProfileRepositoryIT extends AbstractIntegrationTest {
     accountProfileRepository.linkProfile(link);
 
     assertThatThrownBy(() -> accountProfileRepository.linkProfile(link))
-        .isInstanceOf(DataIntegrityViolationException.class);
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("uq_account_profile_account_profile");
 
     assertThat(membershipVersionOf(seeded.membership())).isEqualTo(1L);
   }
