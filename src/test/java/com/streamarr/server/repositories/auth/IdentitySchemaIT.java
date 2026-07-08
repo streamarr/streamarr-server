@@ -14,6 +14,7 @@ import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.RefreshToken;
 import com.streamarr.server.domain.auth.RefreshTokenStatus;
+import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
@@ -184,6 +185,54 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should allow session profile when household not selected")
+  void shouldAllowSessionProfileWhenHouseholdNotSelected() {
+    // Pins a deliberate schema gap: a CHECK forbidding this state would fail the
+    // membership/household delete cascades, which clear the two columns in separate
+    // statements. The profile-requires-household pairing is an application-layer rule.
+    var seeded = seedLinkedIdentity();
+
+    var session =
+        authSessionRepository.save(
+            AuthSession.builder()
+                .accountId(seeded.account().getId())
+                .activeProfileId(seeded.profile().getId())
+                .build());
+
+    var reloaded = authSessionRepository.findById(session.getId()).orElseThrow();
+    assertThat(reloaded.getActiveProfileId()).isEqualTo(seeded.profile().getId());
+    assertThat(reloaded.getActiveHouseholdId()).isNull();
+  }
+
+  @Test
+  @DisplayName("Should reject session revocation reason when timestamp missing")
+  void shouldRejectSessionRevocationReasonWhenTimestampMissing() {
+    var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+
+    var session =
+        AuthSession.builder()
+            .accountId(account.getId())
+            .revokedReason(SessionRevocationReason.LOGOUT)
+            .build();
+
+    assertThatThrownBy(() -> authSessionRepository.save(session))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("chk_auth_session_revocation_pair");
+  }
+
+  @Test
+  @DisplayName("Should reject session revocation timestamp when reason missing")
+  void shouldRejectSessionRevocationTimestampWhenReasonMissing() {
+    var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+
+    var session = AuthSession.builder().accountId(account.getId()).revokedAt(Instant.now()).build();
+
+    assertThatThrownBy(() -> authSessionRepository.save(session))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("chk_auth_session_revocation_pair");
+  }
+
+  @Test
   @DisplayName("Should downgrade session to household scope when profile link revoked")
   void shouldDowngradeSessionToHouseholdScopeWhenProfileLinkRevoked() {
     var seeded = seedLinkedIdentity();
@@ -293,12 +342,28 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
             AuthSession.builder().accountId(account.getId()).deviceName("test-device").build());
 
     refreshTokenRepository.save(tokenBuilder(session, RefreshTokenStatus.ACTIVE).build());
-    refreshTokenRepository.save(tokenBuilder(session, RefreshTokenStatus.ROTATED).build());
+    refreshTokenRepository.save(
+        tokenBuilder(session, RefreshTokenStatus.ROTATED).rotatedAt(Instant.now()).build());
 
     var secondActive = tokenBuilder(session, RefreshTokenStatus.ACTIVE).build();
 
     assertThatThrownBy(() -> refreshTokenRepository.save(secondActive))
         .isInstanceOf(DataIntegrityViolationException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject rotated token when rotation timestamp missing")
+  void shouldRejectRotatedTokenWhenRotationTimestampMissing() {
+    var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    var session =
+        authSessionRepository.save(
+            AuthSession.builder().accountId(account.getId()).deviceName("test-device").build());
+
+    var rotatedWithoutTimestamp = tokenBuilder(session, RefreshTokenStatus.ROTATED).build();
+
+    assertThatThrownBy(() -> refreshTokenRepository.save(rotatedWithoutTimestamp))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("chk_refresh_token_rotated_at");
   }
 
   private RefreshToken.RefreshTokenBuilder<?, ?> tokenBuilder(
