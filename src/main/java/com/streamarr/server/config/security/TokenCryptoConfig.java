@@ -41,8 +41,11 @@ import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
  * ES256 token crypto. Only the media server holds the EC private key; verifiers — including the
  * planned transcode service, which scales horizontally and must never hold a minting secret — need
  * only the public keys. Every key carries its RFC 7638 thumbprint as kid, so signing-key rotation
- * is: move the old public key into auth.token.verification-keys, configure the new private key,
- * restart.
+ * is two-phase (full runbook in architecture.adoc): first prepublish the incoming public key
+ * through auth.token.verification-keys and restart, so JWKS advertises it at least one
+ * Cache-Control window before it signs; only then configure the new private key, move the old
+ * public key into verification-keys, and restart. Skipping the prepublish step lets a shared JWKS
+ * cache answer an unknown-kid refetch with the pre-rotation key set and reject newly signed tokens.
  */
 @Slf4j
 @Configuration
