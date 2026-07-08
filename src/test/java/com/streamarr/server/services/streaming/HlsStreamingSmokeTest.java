@@ -290,9 +290,12 @@ class HlsStreamingSmokeTest {
     }
 
     var segmentLines =
-        playlist.lines().filter(l -> l.startsWith("segment") && l.endsWith(".ts")).toList();
+        playlist
+            .lines()
+            .filter(l -> l.startsWith("segment") && l.endsWith(".ts?t=smoke-token"))
+            .toList();
     assertThat(segmentLines).hasSizeGreaterThan(1);
-    assertThat(segmentLines.getFirst()).isEqualTo("segment0.ts");
+    assertThat(segmentLines.getFirst()).isEqualTo("segment0.ts?t=smoke-token");
   }
 
   @Test
