@@ -60,9 +60,10 @@ class AccountProfileRepositoryIT extends AbstractIntegrationTest {
   @DisplayName("Should not bump membership version when duplicate link rejected")
   void shouldNotBumpMembershipVersionWhenDuplicateLinkRejected() {
     var seeded = seedMembershipWithUnlinkedProfile();
-    accountProfileRepository.linkProfile(seeded.link());
+    var link = seeded.link();
+    accountProfileRepository.linkProfile(link);
 
-    assertThatThrownBy(() -> accountProfileRepository.linkProfile(seeded.link()))
+    assertThatThrownBy(() -> accountProfileRepository.linkProfile(link))
         .isInstanceOf(DataIntegrityViolationException.class);
 
     assertThat(membershipVersionOf(seeded.membership())).isEqualTo(1L);
