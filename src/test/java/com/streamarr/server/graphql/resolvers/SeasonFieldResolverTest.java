@@ -101,4 +101,31 @@ class SeasonFieldResolverTest {
 
     assertThat(filepathUri).isEqualTo("/media/shows/Breaking Bad/Season 1/breaking.bad.s01e01.mkv");
   }
+
+  @Test
+  @DisplayName("Should return series not found error when season references missing series")
+  void shouldReturnSeriesNotFoundErrorWhenSeasonReferencesMissingSeries() {
+    var seriesId = UUID.randomUUID();
+    var series = Series.builder().title("Breaking Bad").build();
+    series.setId(seriesId);
+
+    var seasonId = UUID.randomUUID();
+    var season = Season.builder().title("Season 1").seasonNumber(1).series(series).build();
+    season.setId(seasonId);
+
+    when(seriesService.findSeasonById(seasonId)).thenReturn(Optional.of(season));
+    when(seriesService.findById(seriesId)).thenReturn(Optional.empty());
+
+    var result =
+        dgsQueryExecutor.execute(
+            String.format("{ season(id: \"%s\") { series { title } } }", seasonId));
+
+    assertThat(result.getErrors())
+        .singleElement()
+        .satisfies(
+            error ->
+                assertThat(error.getMessage())
+                    .contains("Series not found: " + seriesId)
+                    .contains(seasonId.toString()));
+  }
 }

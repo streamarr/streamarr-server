@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming.local;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -95,7 +96,7 @@ class InMemoryStreamSessionRepositoryTest {
     var session = StreamSessionFixture.buildMpegtsSession();
     repository.save(session);
 
-    session.seek(300);
+    session.updatePlaybackState(300, PlaybackState.PLAYING);
     repository.save(session);
 
     assertThat(repository.count()).isEqualTo(1);

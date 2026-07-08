@@ -405,7 +405,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
       var extraProfile =
           profileRepository.save(
               ProfileFixture.defaultProfileBuilder().householdId(secondHousehold.getId()).build());
-      accountProfileRepository.save(
+      accountProfileRepository.linkProfile(
           AccountProfile.builder()
               .accountId(account.getId())
               .householdId(secondHousehold.getId())
@@ -549,7 +549,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     var secondProfile =
         profileRepository.save(
             ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
-    accountProfileRepository.save(
+    accountProfileRepository.linkProfile(
         AccountProfile.builder()
             .accountId(account.getId())
             .householdId(household.getId())
@@ -695,14 +695,16 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
         .perform(
             post("/api/auth/refresh")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(refreshBody(oldRefreshToken)))
-        .andExpect(status().isUnauthorized());
+                .content(refreshBody(changed.get("refreshToken").asString())))
+        .andExpect(status().isOk());
+    // Last on purpose: replaying the swept pre-change refresh token is reuse detection, which
+    // revokes the caller's session and its fresh family (fail-closed) — nothing works after this.
     mockMvc
         .perform(
             post("/api/auth/refresh")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(refreshBody(changed.get("refreshToken").asString())))
-        .andExpect(status().isOk());
+                .content(refreshBody(oldRefreshToken)))
+        .andExpect(status().isUnauthorized());
   }
 
   @Test
@@ -889,7 +891,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     profile =
         profileRepository.save(
             ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
-    accountProfileRepository.save(
+    accountProfileRepository.linkProfile(
         AccountProfile.builder()
             .accountId(account.getId())
             .householdId(household.getId())

@@ -135,16 +135,16 @@ public class HouseholdMembershipRecord extends UpdatableRecordImpl<HouseholdMemb
     }
 
     /**
-     * Setter for <code>public.household_membership.version</code>.
+     * Setter for <code>public.household_membership.membership_version</code>.
      */
-    public void setVersion(Long value) {
+    public void setMembershipVersion(Long value) {
         set(8, value);
     }
 
     /**
-     * Getter for <code>public.household_membership.version</code>.
+     * Getter for <code>public.household_membership.membership_version</code>.
      */
-    public Long getVersion() {
+    public Long getMembershipVersion() {
         return (Long) get(8);
     }
 
@@ -171,7 +171,7 @@ public class HouseholdMembershipRecord extends UpdatableRecordImpl<HouseholdMemb
     /**
      * Create a detached, initialised HouseholdMembershipRecord
      */
-    public HouseholdMembershipRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, UUID accountId, UUID householdId, HouseholdRole householdRole, Long version) {
+    public HouseholdMembershipRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, UUID accountId, UUID householdId, HouseholdRole householdRole, Long membershipVersion) {
         super(HouseholdMembership.HOUSEHOLD_MEMBERSHIP);
 
         setId(id);
@@ -182,7 +182,7 @@ public class HouseholdMembershipRecord extends UpdatableRecordImpl<HouseholdMemb
         setAccountId(accountId);
         setHouseholdId(householdId);
         setHouseholdRole(householdRole);
-        setVersion(version);
+        setMembershipVersion(membershipVersion);
         resetTouchedOnNotNull();
     }
 }

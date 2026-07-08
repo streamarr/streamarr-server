@@ -31,6 +31,6 @@ public class HouseholdMembership extends BaseAuditableEntity<HouseholdMembership
   @JdbcTypeCode(SqlTypes.NAMED_ENUM)
   private HouseholdRole householdRole;
 
-  // Membership version counter ("mv" claim) — bumped on profile-link changes, not JPA @Version.
-  private long version;
+  // Membership version counter ("mv" claim) — bumped on profile-link changes.
+  private long membershipVersion;
 }

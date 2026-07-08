@@ -90,7 +90,7 @@ public class AccessTokenIssuer {
     claims
         .claim(TokenClaims.HOUSEHOLD_ID, context.householdId().toString())
         .claim(TokenClaims.HOUSEHOLD_ROLE, membership.getHouseholdRole().name())
-        .claim(TokenClaims.MEMBERSHIP_VERSION, membership.getVersion());
+        .claim(TokenClaims.MEMBERSHIP_VERSION, membership.getMembershipVersion());
   }
 
   private void addProfileClaims(JwtClaimsSet.Builder claims, TokenContext context) {

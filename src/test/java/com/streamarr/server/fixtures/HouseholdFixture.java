@@ -8,6 +8,6 @@ public final class HouseholdFixture {
   private HouseholdFixture() {}
 
   public static Household.HouseholdBuilder<?, ?> defaultHouseholdBuilder() {
-    return Household.builder().name("Household-" + UUID.randomUUID()).defaultRatingRegion("US");
+    return Household.builder().name("Household-" + UUID.randomUUID());
   }
 }

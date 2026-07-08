@@ -9,6 +9,7 @@ import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.enums.HouseholdRole;
 import com.streamarr.server.jooq.generated.tables.AccountProfile.AccountProfilePath;
+import com.streamarr.server.jooq.generated.tables.AuthSession.AuthSessionPath;
 import com.streamarr.server.jooq.generated.tables.Household.HouseholdPath;
 import com.streamarr.server.jooq.generated.tables.UserAccount.UserAccountPath;
 import com.streamarr.server.jooq.generated.tables.records.HouseholdMembershipRecord;
@@ -105,9 +106,9 @@ public class HouseholdMembership extends TableImpl<HouseholdMembershipRecord> {
     public final TableField<HouseholdMembershipRecord, HouseholdRole> HOUSEHOLD_ROLE = createField(DSL.name("household_role"), SQLDataType.VARCHAR.nullable(false).asEnumDataType(HouseholdRole.class), this, "");
 
     /**
-     * The column <code>public.household_membership.version</code>.
+     * The column <code>public.household_membership.membership_version</code>.
      */
-    public final TableField<HouseholdMembershipRecord, Long> VERSION = createField(DSL.name("version"), SQLDataType.BIGINT.nullable(false).defaultValue(DSL.field(DSL.raw("0"), SQLDataType.BIGINT)), this, "");
+    public final TableField<HouseholdMembershipRecord, Long> MEMBERSHIP_VERSION = createField(DSL.name("membership_version"), SQLDataType.BIGINT.nullable(false).defaultValue(DSL.field(DSL.raw("0"), SQLDataType.BIGINT)), this, "");
 
     private HouseholdMembership(Name alias, Table<HouseholdMembershipRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
@@ -233,6 +234,19 @@ public class HouseholdMembership extends TableImpl<HouseholdMembershipRecord> {
             _accountProfile = new AccountProfilePath(this, null, Keys.ACCOUNT_PROFILE__FK_ACCOUNT_PROFILE_MEMBERSHIP.getInverseKey());
 
         return _accountProfile;
+    }
+
+    private transient AuthSessionPath _authSession;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.auth_session</code> table
+     */
+    public AuthSessionPath authSession() {
+        if (_authSession == null)
+            _authSession = new AuthSessionPath(this, null, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_MEMBERSHIP.getInverseKey());
+
+        return _authSession;
     }
 
     @Override
