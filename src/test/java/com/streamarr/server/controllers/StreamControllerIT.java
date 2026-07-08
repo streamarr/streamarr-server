@@ -171,6 +171,18 @@ class StreamControllerIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should reject segment request when token blank")
+  void shouldRejectSegmentRequestWhenTokenBlank() throws Exception {
+    var session = StreamSessionFixture.buildMpegtsSession();
+    STUB_SERVICE.addSession(session);
+
+    // An empty ?t= is no credential at all — it must not reach the decoder as one.
+    mockMvc
+        .perform(get("/api/stream/{id}/master.m3u8", session.getSessionId()).param("t", ""))
+        .andExpect(status().isUnauthorized());
+  }
+
+  @Test
   @DisplayName("Should reject playback when token session mismatches path")
   void shouldRejectPlaybackWhenTokenSessionMismatchesPath() throws Exception {
     var sessionA = StreamSessionFixture.buildMpegtsSession();
