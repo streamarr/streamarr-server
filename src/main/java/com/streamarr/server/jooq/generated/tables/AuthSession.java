@@ -8,7 +8,9 @@ import com.streamarr.server.jooq.generated.Indexes;
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.enums.SessionRevocationReason;
+import com.streamarr.server.jooq.generated.tables.AccountProfile.AccountProfilePath;
 import com.streamarr.server.jooq.generated.tables.Household.HouseholdPath;
+import com.streamarr.server.jooq.generated.tables.HouseholdMembership.HouseholdMembershipPath;
 import com.streamarr.server.jooq.generated.tables.Profile.ProfilePath;
 import com.streamarr.server.jooq.generated.tables.RefreshToken.RefreshTokenPath;
 import com.streamarr.server.jooq.generated.tables.UserAccount.UserAccountPath;
@@ -209,7 +211,7 @@ public class AuthSession extends TableImpl<AuthSessionRecord> {
 
     @Override
     public List<ForeignKey<AuthSessionRecord, ?>> getReferences() {
-        return Arrays.asList(Keys.AUTH_SESSION__FK_AUTH_SESSION_ACCOUNT, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_HOUSEHOLD, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_PROFILE, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_PROFILE_HOUSEHOLD);
+        return Arrays.asList(Keys.AUTH_SESSION__FK_AUTH_SESSION_ACCOUNT, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_ACCOUNT_PROFILE, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_HOUSEHOLD, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_MEMBERSHIP, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_PROFILE, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_PROFILE_HOUSEHOLD);
     }
 
     private transient UserAccountPath _userAccount;
@@ -224,6 +226,19 @@ public class AuthSession extends TableImpl<AuthSessionRecord> {
         return _userAccount;
     }
 
+    private transient AccountProfilePath _accountProfile;
+
+    /**
+     * Get the implicit join path to the <code>public.account_profile</code>
+     * table.
+     */
+    public AccountProfilePath accountProfile() {
+        if (_accountProfile == null)
+            _accountProfile = new AccountProfilePath(this, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_ACCOUNT_PROFILE, null);
+
+        return _accountProfile;
+    }
+
     private transient HouseholdPath _household;
 
     /**
@@ -234,6 +249,19 @@ public class AuthSession extends TableImpl<AuthSessionRecord> {
             _household = new HouseholdPath(this, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_HOUSEHOLD, null);
 
         return _household;
+    }
+
+    private transient HouseholdMembershipPath _householdMembership;
+
+    /**
+     * Get the implicit join path to the
+     * <code>public.household_membership</code> table.
+     */
+    public HouseholdMembershipPath householdMembership() {
+        if (_householdMembership == null)
+            _householdMembership = new HouseholdMembershipPath(this, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_MEMBERSHIP, null);
+
+        return _householdMembership;
     }
 
     private transient ProfilePath _fkAuthSessionActiveProfile;

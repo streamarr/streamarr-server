@@ -26,7 +26,16 @@ CREATE TABLE auth_session
     -- MATCH SIMPLE skips the check when either column is NULL, so a selected profile must
     -- belong to the selected household; deleting the profile clears only the profile column.
     CONSTRAINT fk_auth_session_active_profile_household FOREIGN KEY (active_profile_id, active_household_id)
-        REFERENCES profile (id, household_id) ON DELETE SET NULL (active_profile_id)
+        REFERENCES profile (id, household_id) ON DELETE SET NULL (active_profile_id),
+    -- A selected household must be one of the account's memberships (the authorization
+    -- boundary from V044); revoking the membership clears the selection instead of blocking
+    -- the revoke.
+    CONSTRAINT fk_auth_session_active_membership FOREIGN KEY (account_id, active_household_id)
+        REFERENCES household_membership (account_id, household_id) ON DELETE SET NULL (active_household_id),
+    -- A selected profile must be linked to the session's account; revoking the account_profile
+    -- link downgrades the session to household scope at the database level.
+    CONSTRAINT fk_auth_session_active_account_profile FOREIGN KEY (account_id, active_profile_id)
+        REFERENCES account_profile (account_id, profile_id) ON DELETE SET NULL (active_profile_id)
 );
 
 CREATE INDEX idx_auth_session_account_id ON auth_session (account_id);
