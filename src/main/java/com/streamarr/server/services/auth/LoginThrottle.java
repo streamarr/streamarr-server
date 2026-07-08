@@ -88,6 +88,13 @@ public class LoginThrottle {
     return reserved.get();
   }
 
+  /**
+   * Returns one reserved slot. Timestamps within the window are fungible — the deque is an expiring
+   * counter, not a set of identified reservations — so removing the newest entry on behalf of an
+   * older reservation keeps the observable budget (count per window) exactly right under any
+   * interleaving; only the retained entry's expiry shifts, by the microseconds between the
+   * concurrent appends.
+   */
   private void release(String key) {
     if (key == null) {
       return;
