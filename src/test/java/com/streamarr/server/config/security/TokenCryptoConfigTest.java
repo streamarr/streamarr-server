@@ -153,6 +153,50 @@ class TokenCryptoConfigTest {
         .hasMessageContaining("P-256");
   }
 
+  @Test
+  @DisplayName("Should fail fast when retired key not base64")
+  void shouldFailFastWhenRetiredKeyNotBase64() {
+    var properties = properties(KEY_A, List.of("not-valid-base64!!!"));
+
+    assertThatThrownBy(() -> config.tokenSigningKeys(properties))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("AUTH_TOKEN_VERIFICATION_KEYS must be valid base64");
+  }
+
+  @Test
+  @DisplayName("Should fail fast when retired key not EC public key")
+  void shouldFailFastWhenRetiredKeyNotEcPublicKey() {
+    var garbage = Base64.getEncoder().encodeToString("definitely-not-an-spki-key".getBytes());
+    var properties = properties(KEY_A, List.of(garbage));
+
+    assertThatThrownBy(() -> config.tokenSigningKeys(properties))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("SPKI");
+  }
+
+  @Test
+  @DisplayName("Should fail fast when retired key curve not P-256")
+  void shouldFailFastWhenRetiredKeyCurveNotP256() throws Exception {
+    var generator = java.security.KeyPairGenerator.getInstance("EC");
+    generator.initialize(new java.security.spec.ECGenParameterSpec("secp384r1"));
+    var p384Public =
+        Base64.getEncoder().encodeToString(generator.generateKeyPair().getPublic().getEncoded());
+    var properties = properties(KEY_A, List.of(p384Public));
+
+    assertThatThrownBy(() -> config.tokenSigningKeys(properties))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("P-256");
+  }
+
+  @Test
+  @DisplayName("Should ignore blank retired key entries when rotating")
+  void shouldIgnoreBlankRetiredKeyEntriesWhenRotating() {
+    var keys = config.tokenSigningKeys(properties(KEY_A, List.of("")));
+
+    // A blank env entry is configuration noise, not a key: only the current key is served.
+    assertThat(keys.verificationKeys().getKeys()).hasSize(1);
+  }
+
   private String mint(JwtEncoder encoder) {
     var now = Instant.now();
     var claims =
