@@ -118,6 +118,34 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
         .noneMatch(remaining -> profile.getId().equals(remaining.getProfileId()));
   }
 
+  @Test
+  @DisplayName("Should leave membership version unchanged when revoking link that was never made")
+  void shouldLeaveMembershipVersionUnchangedWhenRevokingLinkThatWasNeverMade() {
+    var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    var household = householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    var membership =
+        householdMembershipRepository.save(
+            HouseholdMembership.builder()
+                .accountId(account.getId())
+                .householdId(household.getId())
+                .householdRole(HouseholdRole.OWNER)
+                .build());
+    var profile =
+        profileRepository.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+    var neverLinked =
+        AccountProfile.builder()
+            .accountId(account.getId())
+            .householdId(household.getId())
+            .profileId(profile.getId())
+            .build();
+
+    accountProfileRepository.revokeProfileLink(neverLinked);
+
+    // No grant was removed, so nobody's tokens may be invalidated.
+    assertThat(membershipVersionOf(membership)).isEqualTo(0L);
+  }
+
   private long membershipVersionOf(HouseholdMembership membership) {
     return householdMembershipRepository.findById(membership.getId()).orElseThrow().getVersion();
   }

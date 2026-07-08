@@ -39,6 +39,16 @@ class CounterNotificationPayloadTest {
   }
 
   @Test
+  @DisplayName("Should round-trip every counter kind through encode and parse")
+  void shouldRoundTripEveryCounterKindThroughEncodeAndParse() {
+    for (var kind : CounterKind.values()) {
+      var payload = new CounterNotificationPayload(kind, "left:right", 7L);
+
+      assertThat(CounterNotificationPayload.parse(payload.encode())).contains(payload);
+    }
+  }
+
+  @Test
   @DisplayName("Should reject malformed payloads")
   void shouldRejectMalformedPayloads() {
     assertThat(CounterNotificationPayload.parse(null)).isEmpty();

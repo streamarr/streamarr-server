@@ -16,22 +16,36 @@ import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
 class CounterNotificationListenerTest {
 
   @Test
-  @DisplayName("Should stay running and unlistening when database unreachable")
-  void shouldStayRunningAndUnlisteningWhenDatabaseUnreachable() {
+  @DisplayName("Should keep retrying when database unreachable")
+  void shouldKeepRetryingWhenDatabaseUnreachable() {
     var cache = new TokenVersionCache(new FakeVersionCounterReader());
     var listener = new CounterNotificationListener(cache, unreachableConnectionDetails());
 
     listener.start();
     try {
-      // The reconnect loop must survive connection failures: alive, backing off, never listening.
-      await().atMost(Duration.ofSeconds(5)).until(listener::isRunning);
-      assertThat(listener.isListening()).isFalse();
-      assertThat(listener.isRunning()).isTrue();
+      // Outlasting a full backoff cycle proves the reconnect loop survives repeated connection
+      // failures: alive, backing off, never listening.
+      await()
+          .during(Duration.ofSeconds(2))
+          .atMost(Duration.ofSeconds(5))
+          .until(() -> listener.isRunning() && !listener.isListening());
     } finally {
       listener.stop();
     }
 
     await().atMost(Duration.ofSeconds(5)).until(() -> !listener.isRunning());
+  }
+
+  @Test
+  @DisplayName("Should stay stopped when stopped before start")
+  void shouldStayStoppedWhenStoppedBeforeStart() {
+    var cache = new TokenVersionCache(new FakeVersionCounterReader());
+    var listener = new CounterNotificationListener(cache, unreachableConnectionDetails());
+
+    listener.stop();
+
+    assertThat(listener.isRunning()).isFalse();
+    assertThat(listener.isListening()).isFalse();
   }
 
   private static JdbcConnectionDetails unreachableConnectionDetails() {
