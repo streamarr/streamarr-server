@@ -62,6 +62,10 @@ class StreamarrDataFetcherExceptionHandlerTest {
     assertThat(codeFor(new IllegalStateException("boom"))).isNull();
   }
 
+  // The cause-null arm of unwrap stays untested on purpose: a cause-less CompletionException is
+  // only constructible by hand (CompletableFuture always wraps a cause), and DGS's default
+  // handler recurses infinitely on one — the guard exists to keep our unwrap out of that state.
+
   private String codeFor(Throwable exception) {
     var result = handler.handleException(parameters(exception)).join();
 
