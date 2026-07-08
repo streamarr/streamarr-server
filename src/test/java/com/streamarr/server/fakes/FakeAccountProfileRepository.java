@@ -27,13 +27,21 @@ public class FakeAccountProfileRepository extends FakeJpaRepository<AccountProfi
   }
 
   @Override
+  public Optional<AccountProfile> findByAccountIdAndProfileId(UUID accountId, UUID profileId) {
+    return database.values().stream()
+        .filter(
+            link -> accountId.equals(link.getAccountId()) && profileId.equals(link.getProfileId()))
+        .findFirst();
+  }
+
+  @Override
   public void linkProfile(AccountProfile link) {
     save(link);
     bumpMembershipVersion(link);
   }
 
   @Override
-  public void revokeProfileLink(AccountProfile link) {
+  public boolean revokeProfileLink(AccountProfile link) {
     var removed =
         database
             .entrySet()
@@ -44,10 +52,11 @@ public class FakeAccountProfileRepository extends FakeJpaRepository<AccountProfi
                         && link.getProfileId().equals(entry.getValue().getProfileId()));
 
     if (!removed) {
-      return;
+      return false;
     }
 
     bumpMembershipVersion(link);
+    return true;
   }
 
   private void bumpMembershipVersion(AccountProfile link) {
@@ -56,6 +65,7 @@ public class FakeAccountProfileRepository extends FakeJpaRepository<AccountProfi
             membership ->
                 link.getAccountId().equals(membership.getAccountId())
                     && link.getHouseholdId().equals(membership.getHouseholdId()))
-        .forEach(membership -> membership.setVersion(membership.getVersion() + 1));
+        .forEach(
+            membership -> membership.setMembershipVersion(membership.getMembershipVersion() + 1));
   }
 }

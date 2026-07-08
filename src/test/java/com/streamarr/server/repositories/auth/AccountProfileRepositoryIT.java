@@ -39,8 +39,9 @@ class AccountProfileRepositoryIT extends AbstractIntegrationTest {
 
     assertThat(membershipVersionOf(seeded.membership())).isEqualTo(1L);
 
-    accountProfileRepository.revokeProfileLink(seeded.link());
+    var revoked = accountProfileRepository.revokeProfileLink(seeded.link());
 
+    assertThat(revoked).isTrue();
     assertThat(membershipVersionOf(seeded.membership())).isEqualTo(2L);
     assertThat(accountProfileRepository.findAll())
         .noneMatch(remaining -> seeded.link().getProfileId().equals(remaining.getProfileId()));
@@ -51,8 +52,9 @@ class AccountProfileRepositoryIT extends AbstractIntegrationTest {
   void shouldNotBumpMembershipVersionWhenRevokingAbsentLink() {
     var seeded = seedMembershipWithUnlinkedProfile();
 
-    accountProfileRepository.revokeProfileLink(seeded.link());
+    var revoked = accountProfileRepository.revokeProfileLink(seeded.link());
 
+    assertThat(revoked).isFalse();
     assertThat(membershipVersionOf(seeded.membership())).isZero();
   }
 
@@ -64,7 +66,8 @@ class AccountProfileRepositoryIT extends AbstractIntegrationTest {
     accountProfileRepository.linkProfile(link);
 
     assertThatThrownBy(() -> accountProfileRepository.linkProfile(link))
-        .isInstanceOf(DataIntegrityViolationException.class);
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("uq_account_profile_account_profile");
 
     assertThat(membershipVersionOf(seeded.membership())).isEqualTo(1L);
   }

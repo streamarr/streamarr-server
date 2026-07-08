@@ -172,7 +172,7 @@ class RefreshTokenServiceTest {
     var issued = issueSession();
     service.redeem(issued.rawToken());
     sessionRepository.revoke(
-        issued.session().getId(), SessionRevocationReason.ADMIN, currentTime.get());
+        issued.session().getId(), SessionRevocationReason.ADMIN_REVOCATION, currentTime.get());
 
     advanceClock(Duration.ofSeconds(5));
     var replayedToken = issued.rawToken();

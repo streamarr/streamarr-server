@@ -73,7 +73,7 @@ class AccessTokenIssuerTest {
             .accountId(account.getId())
             .householdId(householdId)
             .householdRole(HouseholdRole.OWNER)
-            .version(3)
+            .membershipVersion(3)
             .build());
     var profile =
         profileRepository.save(
@@ -185,7 +185,7 @@ class AccessTokenIssuerTest {
             .accountId(account.getId())
             .householdId(householdId)
             .householdRole(HouseholdRole.PARENT)
-            .version(2)
+            .membershipVersion(2)
             .build());
 
     var token =

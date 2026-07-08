@@ -36,7 +36,7 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
 
   @Override
   @Transactional
-  public void revokeProfileLink(AccountProfile link) {
+  public boolean revokeProfileLink(AccountProfile link) {
     var auditUser = auditorAware.getCurrentAuditor().orElse(null);
 
     var rowsAffected =
@@ -47,10 +47,11 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
             .execute();
 
     if (rowsAffected == 0) {
-      return;
+      return false;
     }
 
     bumpMembershipVersion(link, auditUser);
+    return true;
   }
 
   private void bumpMembershipVersion(AccountProfile link, UUID auditUser) {

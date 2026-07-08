@@ -27,11 +27,11 @@ public class VersionCounterReaderImpl implements VersionCounterReader {
 
   @Override
   public Optional<Long> membershipVersion(UUID accountId, UUID householdId) {
-    return dsl.select(HOUSEHOLD_MEMBERSHIP.VERSION)
+    return dsl.select(HOUSEHOLD_MEMBERSHIP.MEMBERSHIP_VERSION)
         .from(HOUSEHOLD_MEMBERSHIP)
         .where(HOUSEHOLD_MEMBERSHIP.ACCOUNT_ID.eq(accountId))
         .and(HOUSEHOLD_MEMBERSHIP.HOUSEHOLD_ID.eq(householdId))
-        .fetchOptional(HOUSEHOLD_MEMBERSHIP.VERSION);
+        .fetchOptional(HOUSEHOLD_MEMBERSHIP.MEMBERSHIP_VERSION);
   }
 
   @Override
