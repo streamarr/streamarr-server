@@ -21,6 +21,7 @@ import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
+import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -242,6 +243,69 @@ class SessionScopeServiceTest {
 
     assertThat(context.profileId()).isEqualTo(f.profile.getId());
     assertThat(reloadSession(f).getActiveProfileId()).isEqualTo(f.profile.getId());
+  }
+
+  @Test
+  @DisplayName("Should reject household selection when session revoked")
+  void shouldRejectHouseholdSelectionWhenSessionRevoked() {
+    var f = fixture();
+    f.session.setRevokedAt(Instant.now());
+    sessionRepository.save(f.session);
+    var accountId = f.account.getId();
+    var sessionId = f.session.getId();
+    var householdId = f.household.getId();
+
+    assertThatThrownBy(() -> service.selectHousehold(accountId, sessionId, householdId))
+        .isInstanceOf(AuthenticationRequiredException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject profile selection when session revoked")
+  void shouldRejectProfileSelectionWhenSessionRevoked() {
+    var f = fixture();
+    linkProfile(f);
+    f.session.setActiveHouseholdId(f.household.getId());
+    f.session.setRevokedAt(Instant.now());
+    sessionRepository.save(f.session);
+    var accountId = f.account.getId();
+    var sessionId = f.session.getId();
+    var profileId = f.profile.getId();
+
+    assertThatThrownBy(() -> service.selectProfile(accountId, sessionId, profileId))
+        .isInstanceOf(AuthenticationRequiredException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject household selection when session owned by another account")
+  void shouldRejectHouseholdSelectionWhenSessionOwnedByAnotherAccount() {
+    var f = fixture();
+    var foreignSession =
+        sessionRepository.save(AuthSession.builder().accountId(UUID.randomUUID()).build());
+    var accountId = f.account.getId();
+    var sessionId = foreignSession.getId();
+    var householdId = f.household.getId();
+
+    assertThatThrownBy(() -> service.selectHousehold(accountId, sessionId, householdId))
+        .isInstanceOf(AuthenticationRequiredException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject profile selection when session owned by another account")
+  void shouldRejectProfileSelectionWhenSessionOwnedByAnotherAccount() {
+    var f = fixture();
+    linkProfile(f);
+    var foreignSession =
+        sessionRepository.save(
+            AuthSession.builder()
+                .accountId(UUID.randomUUID())
+                .activeHouseholdId(f.household.getId())
+                .build());
+    var accountId = f.account.getId();
+    var sessionId = foreignSession.getId();
+    var profileId = f.profile.getId();
+
+    assertThatThrownBy(() -> service.selectProfile(accountId, sessionId, profileId))
+        .isInstanceOf(AuthenticationRequiredException.class);
   }
 
   @Test
