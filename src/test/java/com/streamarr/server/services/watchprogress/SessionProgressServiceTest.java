@@ -198,8 +198,7 @@ class SessionProgressServiceTest {
     @Test
     @DisplayName("Should return early when duration is zero")
     void shouldReturnEarlyWhenDurationIsZero() {
-      var session =
-          StreamSessionFixture.zeroDurationSessionBuilder().profileId(PROFILE_ID).build();
+      var session = StreamSessionFixture.zeroDurationSessionBuilder().profileId(PROFILE_ID).build();
       sessionRepository.save(session);
 
       service.reportStreamSessionTimeline(
@@ -218,6 +217,39 @@ class SessionProgressServiceTest {
                   service.reportStreamSessionTimeline(
                       PROFILE_ID, unknownId, 300, PlaybackState.PLAYING))
           .isInstanceOf(SessionNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("Should throw when reporting timeline for session owned by another profile")
+    void shouldThrowWhenReportingTimelineForSessionOwnedByAnotherProfile() {
+      var session = addSession();
+      var otherProfileId = UUID.randomUUID();
+
+      assertThatThrownBy(
+              () ->
+                  service.reportStreamSessionTimeline(
+                      otherProfileId, session.getSessionId(), 300, PlaybackState.PLAYING))
+          .isInstanceOf(SessionNotFoundException.class);
+
+      assertThat(sessionProgressRepository.count()).isZero();
+    }
+
+    @Test
+    @DisplayName("Should not delete owner progress when stop reported by another profile")
+    void shouldNotDeleteOwnerProgressWhenStopReportedByAnotherProfile() {
+      var session = addSession();
+      service.reportStreamSessionTimeline(
+          PROFILE_ID, session.getSessionId(), 3600, PlaybackState.PLAYING);
+
+      // A below-min-threshold STOPPED report would DISCARD the owner's resume point if
+      // ownership were not enforced
+      assertThatThrownBy(
+              () ->
+                  service.reportStreamSessionTimeline(
+                      UUID.randomUUID(), session.getSessionId(), 72, PlaybackState.STOPPED))
+          .isInstanceOf(SessionNotFoundException.class);
+
+      assertThat(sessionProgressRepository.findBySessionId(session.getSessionId())).isPresent();
     }
 
     @Test

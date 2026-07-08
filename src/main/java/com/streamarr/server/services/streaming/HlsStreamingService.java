@@ -94,10 +94,11 @@ public class HlsStreamingService implements StreamingService {
   }
 
   @Override
-  public StreamSession seekSession(UUID sessionId, int positionSeconds) {
+  public StreamSession seekSession(UUID sessionId, UUID profileId, int positionSeconds) {
     var session =
         sessionRepository
             .findById(sessionId)
+            .filter(s -> profileId.equals(s.getProfileId()))
             .orElseThrow(() -> new SessionNotFoundException(sessionId));
 
     transcodeExecutor.stop(sessionId);
@@ -120,6 +121,14 @@ public class HlsStreamingService implements StreamingService {
               segmentStore.deleteSession(sessionId);
               log.info("Destroyed streaming session {}", sessionId);
             });
+  }
+
+  @Override
+  public void destroySession(UUID sessionId, UUID profileId) {
+    sessionRepository
+        .findById(sessionId)
+        .filter(session -> profileId.equals(session.getProfileId()))
+        .ifPresent(session -> destroySession(sessionId));
   }
 
   @Override

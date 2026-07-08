@@ -17,6 +17,7 @@ import com.streamarr.server.services.authorization.SecurityContextAuthorizationS
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.watchprogress.SessionProgressService;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
+import com.streamarr.server.support.security.TestIdentityConstants;
 import com.streamarr.server.support.security.WithProfileContext;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -231,6 +232,39 @@ class StreamingResolverTest {
   }
 
   @Test
+  @DisplayName("Should seek as current profile when seeking session")
+  void shouldSeekAsCurrentProfileWhenSeekingSession() {
+    var sessionId = UUID.randomUUID();
+    STUB_SERVICE.setNextResult(buildSession(sessionId));
+
+    var mutation =
+        String.format(
+            """
+            mutation {
+              seekStreamSession(sessionId: "%s", positionSeconds: 300) {
+                id
+              }
+            }
+            """,
+            sessionId);
+
+    dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.seekStreamSession.id");
+
+    assertThat(STUB_SERVICE.getLastSeekProfileId()).isEqualTo(TestIdentityConstants.PROFILE_ID);
+  }
+
+  @Test
+  @DisplayName("Should destroy as current profile when destroying session")
+  void shouldDestroyAsCurrentProfileWhenDestroyingSession() {
+    var mutation =
+        String.format("mutation { destroyStreamSession(sessionId: \"%s\") }", UUID.randomUUID());
+
+    dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.destroyStreamSession");
+
+    assertThat(STUB_SERVICE.getLastDestroyProfileId()).isEqualTo(TestIdentityConstants.PROFILE_ID);
+  }
+
+  @Test
   @DisplayName("Should return error when seek session ID is invalid")
   void shouldReturnErrorWhenSeekSessionIdIsInvalid() {
     var result =
@@ -293,6 +327,8 @@ class StreamingResolverTest {
 
     private StreamSession nextResult;
     private StreamingOptions lastReceivedOptions;
+    private UUID lastSeekProfileId;
+    private UUID lastDestroyProfileId;
 
     void setNextResult(StreamSession session) {
       this.nextResult = session;
@@ -300,6 +336,14 @@ class StreamingResolverTest {
 
     StreamingOptions getLastReceivedOptions() {
       return lastReceivedOptions;
+    }
+
+    UUID getLastSeekProfileId() {
+      return lastSeekProfileId;
+    }
+
+    UUID getLastDestroyProfileId() {
+      return lastDestroyProfileId;
     }
 
     @Override
@@ -314,13 +358,19 @@ class StreamingResolverTest {
     }
 
     @Override
-    public StreamSession seekSession(UUID sessionId, int positionSeconds) {
+    public StreamSession seekSession(UUID sessionId, UUID profileId, int positionSeconds) {
+      this.lastSeekProfileId = profileId;
       return nextResult;
     }
 
     @Override
     public void destroySession(UUID sessionId) {
       // no-op for test fake
+    }
+
+    @Override
+    public void destroySession(UUID sessionId, UUID profileId) {
+      this.lastDestroyProfileId = profileId;
     }
 
     @Override

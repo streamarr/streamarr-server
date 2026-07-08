@@ -88,8 +88,7 @@ public final class StreamSessionFixture {
     return session;
   }
 
-  public static StreamSession.StreamSessionBuilder sessionWithDurationBuilder(
-      int durationSeconds) {
+  public static StreamSession.StreamSessionBuilder sessionWithDurationBuilder(int durationSeconds) {
     return defaultSessionBuilder()
         .mediaProbe(defaultProbeBuilder().duration(Duration.ofSeconds(durationSeconds)).build());
   }

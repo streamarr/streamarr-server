@@ -131,10 +131,11 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should update seek position when seeking session")
   void shouldUpdateSeekPositionWhenSeekingSession() {
+    var profileId = UUID.randomUUID();
     var session =
-        streamingService.createSession(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
+        streamingService.createSession(savedMediaFile.getId(), profileId, defaultOptions());
 
-    var seeked = streamingService.seekSession(session.getSessionId(), 300);
+    var seeked = streamingService.seekSession(session.getSessionId(), profileId, 300);
 
     assertThat(seeked.getPlaybackSnapshot().positionSeconds()).isEqualTo(300);
     assertThat(seeked.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
@@ -145,7 +146,7 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   void shouldThrowWhenSeekingNonexistentSession() {
     var nonExistentId = UUID.randomUUID();
 
-    assertThatThrownBy(() -> streamingService.seekSession(nonExistentId, 300))
+    assertThatThrownBy(() -> streamingService.seekSession(nonExistentId, UUID.randomUUID(), 300))
         .isInstanceOf(SessionNotFoundException.class);
   }
 
