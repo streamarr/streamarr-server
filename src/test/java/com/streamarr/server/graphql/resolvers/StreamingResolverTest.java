@@ -13,6 +13,8 @@ import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.repositories.auth.AccountProfileRepository;
+import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.watchprogress.SessionProgressService;
@@ -63,6 +65,8 @@ class StreamingResolverTest {
   }
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
+  @MockitoBean private ProfileRepository profileRepository;
+  @MockitoBean private AccountProfileRepository accountProfileRepository;
   @MockitoBean private SessionProgressService sessionProgressService;
   @MockitoBean private WatchStatusService watchStatusService;
 

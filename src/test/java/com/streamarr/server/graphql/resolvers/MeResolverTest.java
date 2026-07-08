@@ -12,6 +12,8 @@ import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.graphql.StreamarrDataFetcherExceptionHandler;
+import com.streamarr.server.repositories.auth.AccountProfileRepository;
+import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.IdentityQueryService;
 import com.streamarr.server.services.auth.TokenScope;
@@ -42,6 +44,8 @@ class MeResolverTest {
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
 
   @MockitoBean private IdentityQueryService identityQueryService;
+  @MockitoBean private ProfileRepository profileRepository;
+  @MockitoBean private AccountProfileRepository accountProfileRepository;
 
   private final UUID accountId = UUID.randomUUID();
 
