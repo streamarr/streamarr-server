@@ -84,9 +84,13 @@ public final class StreamSessionFixture {
   }
 
   public static StreamSession buildSessionWithDuration(int durationSeconds) {
+    return sessionWithDurationBuilder(durationSeconds).build();
+  }
+
+  public static StreamSession.StreamSessionBuilder sessionWithDurationBuilder(
+      int durationSeconds) {
     return defaultSessionBuilder()
-        .mediaProbe(defaultProbeBuilder().duration(Duration.ofSeconds(durationSeconds)).build())
-        .build();
+        .mediaProbe(defaultProbeBuilder().duration(Duration.ofSeconds(durationSeconds)).build());
   }
 
   public static StreamSession buildSessionForMediaFile(UUID mediaFileId) {
@@ -94,6 +98,10 @@ public final class StreamSessionFixture {
   }
 
   public static StreamSession buildZeroDurationSession() {
+    return zeroDurationSessionBuilder().build();
+  }
+
+  public static StreamSession.StreamSessionBuilder zeroDurationSessionBuilder() {
     return defaultSessionBuilder()
         .sourcePath(Path.of("/media/corrupt.mkv"))
         .mediaProbe(
@@ -103,7 +111,6 @@ public final class StreamSessionFixture {
                 .width(0)
                 .height(0)
                 .bitrate(0)
-                .build())
-        .build();
+                .build());
   }
 }
