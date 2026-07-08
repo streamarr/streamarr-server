@@ -113,7 +113,7 @@ link:adr/0013-stream-decision-architecture.adoc[ADR 0013].
 
 == Authentication and Invalidation
 
-Identity, sessions, and token security follow ADR 0015/0016: HMAC-signed access tokens with
+Identity, sessions, and token security follow ADR 0015/0016: signed access tokens with
 nested scopes, digest-only rotating refresh tokens, and per-request version-counter checks that
 fail closed. The browser client is same-origin by construction -- the Vite dev server proxies
 `/graphql` and `/api` in development, and production serves the client from the same origin --
