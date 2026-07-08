@@ -6,6 +6,7 @@ import com.nimbusds.jose.jwk.Curve;
 import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jose.jwk.JWK;
 import com.nimbusds.jose.jwk.JWKSet;
+import com.nimbusds.jose.jwk.KeyUse;
 import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
 import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
 import com.nimbusds.jose.proc.JWSVerificationKeySelector;
@@ -100,6 +101,8 @@ public class TokenCryptoConfig {
     try {
       return new ECKey.Builder(Curve.P_256, derivePublicKey(privateKey))
           .privateKey(privateKey)
+          .keyUse(KeyUse.SIGNATURE)
+          .algorithm(JWSAlgorithm.ES256)
           .keyIDFromThumbprint()
           .build();
     } catch (JOSEException e) {
@@ -109,7 +112,11 @@ public class TokenCryptoConfig {
 
   private ECKey generateEphemeralKey() {
     try {
-      return new ECKeyGenerator(Curve.P_256).keyIDFromThumbprint(true).generate();
+      return new ECKeyGenerator(Curve.P_256)
+          .keyUse(KeyUse.SIGNATURE)
+          .algorithm(JWSAlgorithm.ES256)
+          .keyIDFromThumbprint(true)
+          .generate();
     } catch (JOSEException e) {
       throw new IllegalStateException("Unable to generate an ephemeral EC key pair.", e);
     }
@@ -137,7 +144,11 @@ public class TokenCryptoConfig {
     requireP256(publicKey.getParams(), "AUTH_TOKEN_VERIFICATION_KEYS");
 
     try {
-      return new ECKey.Builder(Curve.P_256, publicKey).keyIDFromThumbprint().build();
+      return new ECKey.Builder(Curve.P_256, publicKey)
+          .keyUse(KeyUse.SIGNATURE)
+          .algorithm(JWSAlgorithm.ES256)
+          .keyIDFromThumbprint()
+          .build();
     } catch (JOSEException e) {
       throw new IllegalStateException("Unable to compute a verification key thumbprint.", e);
     }

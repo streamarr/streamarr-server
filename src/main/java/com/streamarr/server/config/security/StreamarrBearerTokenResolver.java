@@ -8,21 +8,26 @@ import org.springframework.security.oauth2.server.resource.web.BearerTokenResolv
 import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
 
 /**
- * Path-aware token resolution. The permitAll auth endpoints resolve nothing: the Path=/ access
- * cookie rides every same-origin request, and an expired one would otherwise 401 the refresh before
- * the controller runs — deadlocking cookie-mode renewal into logout. Everywhere else the
- * Authorization header wins, falling back to the access cookie.
+ * Path-aware token resolution. The permitAll endpoints resolve nothing: the Path=/ access cookie
+ * rides every same-origin request, and an expired one would otherwise 401 the refresh (or a
+ * public-key fetch) before the controller runs — deadlocking cookie-mode renewal into logout.
+ * Everywhere else the Authorization header wins, falling back to the access cookie.
  */
 public class StreamarrBearerTokenResolver implements BearerTokenResolver {
 
-  private static final Set<String> UNAUTHENTICATED_AUTH_PATHS =
-      Set.of("/api/auth/status", "/api/auth/setup", "/api/auth/login", "/api/auth/refresh");
+  private static final Set<String> UNAUTHENTICATED_PATHS =
+      Set.of(
+          "/api/auth/status",
+          "/api/auth/setup",
+          "/api/auth/login",
+          "/api/auth/refresh",
+          "/.well-known/jwks.json");
 
   private final DefaultBearerTokenResolver headerResolver = new DefaultBearerTokenResolver();
 
   @Override
   public String resolve(HttpServletRequest request) {
-    if (UNAUTHENTICATED_AUTH_PATHS.contains(request.getRequestURI())) {
+    if (UNAUTHENTICATED_PATHS.contains(request.getRequestURI())) {
       return null;
     }
 

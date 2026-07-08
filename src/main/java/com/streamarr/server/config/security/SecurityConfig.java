@@ -48,7 +48,8 @@ public class SecurityConfig {
                         "/api/auth/status",
                         "/api/auth/setup",
                         "/api/auth/login",
-                        "/api/auth/refresh")
+                        "/api/auth/refresh",
+                        "/.well-known/jwks.json")
                     .permitAll()
                     .requestMatchers("/actuator/health/**", "/actuator/health")
                     .permitAll()
