@@ -32,15 +32,15 @@ CREATE TABLE household
 
 CREATE TABLE household_membership
 (
-    id               UUID                     NOT NULL DEFAULT gen_random_uuid(),
-    created_on       TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    created_by       UUID,
-    last_modified_on TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    last_modified_by UUID,
-    account_id       UUID                     NOT NULL,
-    household_id     UUID                     NOT NULL,
-    household_role   household_role           NOT NULL,
-    version          BIGINT                   NOT NULL DEFAULT 0,
+    id                 UUID                     NOT NULL DEFAULT gen_random_uuid(),
+    created_on         TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    created_by         UUID,
+    last_modified_on   TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    last_modified_by   UUID,
+    account_id         UUID                     NOT NULL,
+    household_id       UUID                     NOT NULL,
+    household_role     household_role           NOT NULL,
+    membership_version BIGINT                   NOT NULL DEFAULT 0,
     CONSTRAINT household_membership_pkey PRIMARY KEY (id),
     CONSTRAINT fk_household_membership_account FOREIGN KEY (account_id)
         REFERENCES user_account (id) ON DELETE CASCADE,

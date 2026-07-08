@@ -136,7 +136,7 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 - These rules are enforced by ArchUnit tests (`ArchitectureTest`)
 
 ## Settled Decisions (do not revisit without an ADR)
-- Architectural decisions are recorded in `docs/adr/` — read the relevant ADR before revisiting a decision, and record newly settled ones as ADRs
+- Architectural decisions are recorded in `docs/adr/` — read the relevant ADR before revisiting a decision, and record newly settled ones as ADRs starting from `docs/adr/template.adoc`
 - **Concurrency runtime**: virtual threads (Loom). Akka and Vert.x were each adopted and removed in 2022 — don't reintroduce reactive/actor frameworks.
 - **Outbound HTTP**: Methanol over JDK `HttpClient` with interceptors (retry, rate limit, cache). Don't introduce `RestTemplate`/`RestClient`/`WebClient`.
 - **Delivery protocol**: GraphQL only. A complete REST/JSON:API layer was built and deleted within 24 hours — keep transport experiments on spike branches; extract protocol-agnostic services (`MediaPage`/`PageItem` pattern) but don't merge speculative protocol surfaces.
@@ -145,6 +145,7 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 
 ## Persistence (JPA + jOOQ Hybrid)
 - Spring Data JPA repositories own CRUD; complex or conflict-handling queries use jOOQ via the Spring Data fragment convention: `{Repository}Custom` interface + `{Repository}CustomImpl` class with an injected `DSLContext` — Spring Data auto-discovers the impl by naming convention
+- **No `@Query` JPQL**: every repository query is either a derived method (`findBySeriesIdOrderBySeasonNumber`) or jOOQ on the `{Repository}Custom` fragment. JPQL strings break silently on entity refactors; derived signatures are validated at startup and jOOQ at compile time. Remaining `@Query` usages are legacy (tracked in #193) — don't copy them
 - **Reads**: jOOQ builds the SQL, but execute through `JooqQueryHelper.nativeQuery(…)` (JPA `EntityManager` native query) so results map to JPA entities — don't `context.fetch*()` for entity reads
 - **Writes**: execute jOOQ DSL directly (`context.update(…).returning()`, `INSERT … ON CONFLICT`) and map records to entities manually
 - **First-level-cache staleness (hybrid footgun)**: Hibernate's persistence context is not invalidated by jOOQ DML. Within one transaction, a JPA read of a row you (or a concurrently-committed transaction) mutated via jOOQ returns the *stale managed copy* — Hibernate keeps the first-loaded field state and won't refresh it on re-query, even though the SQL fetched fresh values. `JooqQueryHelper.nativeQuery` does **not** escape this (native entity queries still return the already-managed instance). So don't JPA-load a row you're about to jOOQ-mutate and then JPA-re-read it in the same transaction expecting fresh state — read the discriminating value (id, status) with a jOOQ **scalar** fetch (see `RefreshTokenService.redeem` → `RefreshTokenRepositoryCustom.findSessionIdByDigest`, which avoids caching the token it then rotates via jOOQ), or `em.refresh()` it. Not statically enforceable (temporal data-flow, not structural); the safety net is concurrency ITs (`RefreshRotationConcurrencyIT`, `RefreshRevocationRaceIT`). Single-thread happy paths hide it; it surfaces under concurrency.

@@ -24,13 +24,17 @@
         <sonar.coverage.exclusions>**/pom.xml, **/StreamarrServerApplication.java</sonar.coverage.exclusions>
         <sonar.test.inclusions>**/src/test/**</sonar.test.inclusions>
         <sonar.exclusions>**/jooq/generated/**</sonar.exclusions>
-        <sonar.issue.ignore.multicriteria>e1,e2</sonar.issue.ignore.multicriteria>
+        <sonar.issue.ignore.multicriteria>e1,e2,e3</sonar.issue.ignore.multicriteria>
         <!-- Google Java Format puts static imports first; S8445 wants them last -->
         <sonar.issue.ignore.multicriteria.e1.ruleKey>java:S8445</sonar.issue.ignore.multicriteria.e1.ruleKey>
         <sonar.issue.ignore.multicriteria.e1.resourceKey>**/*.java</sonar.issue.ignore.multicriteria.e1.resourceKey>
         <!-- Flyway requires V{version}__{description} class naming -->
         <sonar.issue.ignore.multicriteria.e2.ruleKey>java:S101</sonar.issue.ignore.multicriteria.e2.ruleKey>
         <sonar.issue.ignore.multicriteria.e2.resourceKey>src/main/java/db/migration/**</sonar.issue.ignore.multicriteria.e2.resourceKey>
+        <!-- Entity equality is id-based, inherited from BaseAuditableEntity; subclass fields
+             deliberately do not participate (Hibernate-safe identity semantics) -->
+        <sonar.issue.ignore.multicriteria.e3.ruleKey>java:S2160</sonar.issue.ignore.multicriteria.e3.ruleKey>
+        <sonar.issue.ignore.multicriteria.e3.resourceKey>src/main/java/com/streamarr/server/domain/**</sonar.issue.ignore.multicriteria.e3.resourceKey>
 
         <apache-commons-lang.version>3.20.0</apache-commons-lang.version>
         <apache-commons-text.version>1.15.0</apache-commons-text.version>

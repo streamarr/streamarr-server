@@ -281,11 +281,6 @@ class SessionReaperTest {
     }
 
     @Override
-    public StreamSession seekSession(UUID sessionId, int positionSeconds) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
     public void destroySession(UUID sessionId) {
       sessions.remove(sessionId);
     }
