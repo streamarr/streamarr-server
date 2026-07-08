@@ -164,7 +164,7 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
     accountProfileRepository.revokeProfileLink(neverLinked);
 
     // No grant was removed, so nobody's tokens may be invalidated.
-    assertThat(membershipVersionOf(membership)).isEqualTo(0L);
+    assertThat(membershipVersionOf(membership)).isZero();
   }
 
   private long membershipVersionOf(HouseholdMembership membership) {
