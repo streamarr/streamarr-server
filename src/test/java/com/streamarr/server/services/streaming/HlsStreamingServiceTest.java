@@ -135,10 +135,11 @@ class HlsStreamingServiceTest {
   @DisplayName("Should throw when media file not found")
   void shouldThrowWhenMediaFileNotFound() {
     var invalidId = UUID.randomUUID();
+    var profileId = UUID.randomUUID();
 
     var options = defaultOptions();
 
-    assertThatThrownBy(() -> service.createSession(invalidId, UUID.randomUUID(), options))
+    assertThatThrownBy(() -> service.createSession(invalidId, profileId, options))
         .isInstanceOf(MediaFileNotFoundException.class);
   }
 
@@ -214,8 +215,9 @@ class HlsStreamingServiceTest {
 
     var oneMore = seedMediaFile();
     var oneMoreId = oneMore.getId();
+    var profileId = UUID.randomUUID();
 
-    assertThatThrownBy(() -> service.createSession(oneMoreId, UUID.randomUUID(), options))
+    assertThatThrownBy(() -> service.createSession(oneMoreId, profileId, options))
         .isInstanceOf(MaxConcurrentTranscodesException.class);
   }
 
@@ -616,8 +618,9 @@ class HlsStreamingServiceTest {
             .build();
     var abrFile = seedMediaFile();
     var abrFileId = abrFile.getId();
+    var profileId = UUID.randomUUID();
 
-    assertThatThrownBy(() -> service.createSession(abrFileId, UUID.randomUUID(), abrOptions))
+    assertThatThrownBy(() -> service.createSession(abrFileId, profileId, abrOptions))
         .isInstanceOf(MaxConcurrentTranscodesException.class);
   }
 

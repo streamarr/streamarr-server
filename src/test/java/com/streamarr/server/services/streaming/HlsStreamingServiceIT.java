@@ -120,10 +120,10 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   @DisplayName("Should throw when media file not found")
   void shouldThrowWhenMediaFileNotFound() {
     var nonExistentId = UUID.randomUUID();
+    var profileId = UUID.randomUUID();
     var options = defaultOptions();
 
-    assertThatThrownBy(
-            () -> streamingService.createSession(nonExistentId, UUID.randomUUID(), options))
+    assertThatThrownBy(() -> streamingService.createSession(nonExistentId, profileId, options))
         .isInstanceOf(MediaFileNotFoundException.class);
   }
 

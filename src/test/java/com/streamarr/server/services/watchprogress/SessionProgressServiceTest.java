@@ -223,12 +223,13 @@ class SessionProgressServiceTest {
     @DisplayName("Should throw when reporting timeline for session owned by another profile")
     void shouldThrowWhenReportingTimelineForSessionOwnedByAnotherProfile() {
       var session = addSession();
+      var sessionId = session.getSessionId();
       var otherProfileId = UUID.randomUUID();
 
       assertThatThrownBy(
               () ->
                   service.reportStreamSessionTimeline(
-                      otherProfileId, session.getSessionId(), 300, PlaybackState.PLAYING))
+                      otherProfileId, sessionId, 300, PlaybackState.PLAYING))
           .isInstanceOf(SessionNotFoundException.class);
 
       assertThat(sessionProgressRepository.count()).isZero();
@@ -243,10 +244,12 @@ class SessionProgressServiceTest {
 
       // A below-min-threshold STOPPED report would DISCARD the owner's resume point if
       // ownership were not enforced
+      var sessionId = session.getSessionId();
+      var otherProfileId = UUID.randomUUID();
       assertThatThrownBy(
               () ->
                   service.reportStreamSessionTimeline(
-                      UUID.randomUUID(), session.getSessionId(), 72, PlaybackState.STOPPED))
+                      otherProfileId, sessionId, 72, PlaybackState.STOPPED))
           .isInstanceOf(SessionNotFoundException.class);
 
       assertThat(sessionProgressRepository.findBySessionId(session.getSessionId())).isPresent();
