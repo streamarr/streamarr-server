@@ -25,6 +25,7 @@ public final class StreamSessionFixture {
     return StreamSession.builder()
         .sessionId(UUID.randomUUID())
         .mediaFileId(UUID.randomUUID())
+        .profileId(UUID.randomUUID())
         .sourcePath(Path.of("/media/movie.mkv"))
         .mediaProbe(defaultProbeBuilder().build())
         .transcodeDecision(remuxMpegtsDecision())
@@ -78,22 +79,22 @@ public final class StreamSessionFixture {
   }
 
   public static StreamSession buildMpegtsSession() {
-    var session = defaultSessionBuilder().build();
+    return buildMpegtsSessionOwnedBy(UUID.randomUUID());
+  }
+
+  public static StreamSession buildMpegtsSessionOwnedBy(UUID profileId) {
+    var session = defaultSessionBuilder().profileId(profileId).build();
     session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
     return session;
   }
 
-  public static StreamSession buildSessionWithDuration(int durationSeconds) {
+  public static StreamSession.StreamSessionBuilder sessionWithDurationBuilder(
+      int durationSeconds) {
     return defaultSessionBuilder()
-        .mediaProbe(defaultProbeBuilder().duration(Duration.ofSeconds(durationSeconds)).build())
-        .build();
+        .mediaProbe(defaultProbeBuilder().duration(Duration.ofSeconds(durationSeconds)).build());
   }
 
-  public static StreamSession buildSessionForMediaFile(UUID mediaFileId) {
-    return defaultSessionBuilder().mediaFileId(mediaFileId).build();
-  }
-
-  public static StreamSession buildZeroDurationSession() {
+  public static StreamSession.StreamSessionBuilder zeroDurationSessionBuilder() {
     return defaultSessionBuilder()
         .sourcePath(Path.of("/media/corrupt.mkv"))
         .mediaProbe(
@@ -103,7 +104,6 @@ public final class StreamSessionFixture {
                 .width(0)
                 .height(0)
                 .bitrate(0)
-                .build())
-        .build();
+                .build());
   }
 }
