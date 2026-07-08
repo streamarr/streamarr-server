@@ -42,6 +42,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 class StreamControllerTest {
 
   private static final UUID SESSION_ID = UUID.randomUUID();
+  private static final String VALIDATED_TOKEN = "validated-context-token";
 
   private MockMvc mockMvc;
   private final AtomicReference<UUID> boundStreamSession = new AtomicReference<>(SESSION_ID);
@@ -378,6 +379,11 @@ class StreamControllerTest {
           .profileId(UUID.randomUUID())
           .streamSessionId(boundStreamSession.get())
           .build();
+    }
+
+    @Override
+    public String currentTokenValue() {
+      return VALIDATED_TOKEN;
     }
 
     @Override
