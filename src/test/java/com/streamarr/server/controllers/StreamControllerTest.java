@@ -42,6 +42,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 class StreamControllerTest {
 
   private static final UUID SESSION_ID = UUID.randomUUID();
+  private static final String VALIDATED_TOKEN = "validated-context-token";
 
   private MockMvc mockMvc;
   private final AtomicReference<UUID> boundStreamSession = new AtomicReference<>(SESSION_ID);
@@ -82,6 +83,24 @@ class StreamControllerTest {
     assertThat(result.getResponse().getContentType()).isEqualTo("application/vnd.apple.mpegurl");
     assertThat(result.getResponse().getContentAsString()).contains("#EXTM3U");
     assertThat(result.getResponse().getContentAsString()).contains("#EXT-X-STREAM-INF:");
+  }
+
+  @Test
+  @DisplayName("Should embed the validated token in playlists rather than the request parameter")
+  void shouldEmbedValidatedTokenInPlaylistsRatherThanRequestParameter() throws Exception {
+    streamingService.setSession(buildMpegtsSession());
+
+    var result =
+        mockMvc
+            .perform(
+                get("/api/stream/{sessionId}/master.m3u8", SESSION_ID)
+                    .param("t", "spoofed<script>-param"))
+            .andExpect(status().isOk())
+            .andReturn();
+
+    var body = result.getResponse().getContentAsString();
+    assertThat(body).contains("?t=" + VALIDATED_TOKEN);
+    assertThat(body).doesNotContain("spoofed<script>-param");
   }
 
   @ParameterizedTest
@@ -378,6 +397,11 @@ class StreamControllerTest {
           .profileId(UUID.randomUUID())
           .streamSessionId(boundStreamSession.get())
           .build();
+    }
+
+    @Override
+    public String currentTokenValue() {
+      return VALIDATED_TOKEN;
     }
 
     @Override
