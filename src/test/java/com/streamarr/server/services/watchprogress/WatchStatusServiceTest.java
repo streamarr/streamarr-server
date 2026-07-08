@@ -297,7 +297,7 @@ class WatchStatusServiceTest {
       episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
       episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
 
-      service.markWatched(USER_ID, season.getId());
+      service.markWatched(PROFILE_ID, season.getId());
 
       assertThat(watchHistoryRepository.count()).isEqualTo(2);
     }
@@ -309,17 +309,17 @@ class WatchStatusServiceTest {
       var first = episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
       var second =
           episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
-      service.markWatched(USER_ID, season.getId(), CollectableScope.SEASON, Instant.now(), 3600);
+      service.markWatched(PROFILE_ID, season.getId(), CollectableScope.SEASON, Instant.now(), 3600);
 
-      service.markUnwatched(USER_ID, season.getId(), CollectableScope.SEASON);
+      service.markUnwatched(PROFILE_ID, season.getId(), CollectableScope.SEASON);
 
       var history =
-          watchHistoryRepository.findByUserIdAndCollectableIdIn(
-              USER_ID, List.of(first.getId(), second.getId()));
+          watchHistoryRepository.findByProfileIdAndCollectableIdIn(
+              PROFILE_ID, List.of(first.getId(), second.getId()));
       assertThat(history)
           .hasSize(2)
           .allSatisfy(entry -> assertThat(entry.getDismissedAt()).isNotNull());
-      assertThat(service.getWatchStatusForSeasons(USER_ID, List.of(season.getId())))
+      assertThat(service.getWatchStatusForSeasons(PROFILE_ID, List.of(season.getId())))
           .containsEntry(season.getId(), WatchStatus.UNWATCHED);
     }
   }
@@ -337,9 +337,9 @@ class WatchStatusServiceTest {
       episodeRepository.save(Episode.builder().episodeNumber(1).season(s1).build());
       episodeRepository.save(Episode.builder().episodeNumber(1).season(s2).build());
 
-      service.markWatched(USER_ID, series.getId(), CollectableScope.SERIES, Instant.now(), 3600);
+      service.markWatched(PROFILE_ID, series.getId(), CollectableScope.SERIES, Instant.now(), 3600);
 
-      var result = service.getWatchStatusForSeries(USER_ID, List.of(series.getId()));
+      var result = service.getWatchStatusForSeries(PROFILE_ID, List.of(series.getId()));
       assertThat(result).containsEntry(series.getId(), WatchStatus.WATCHED);
     }
 
@@ -353,9 +353,9 @@ class WatchStatusServiceTest {
       episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
 
       service.markWatched(
-          USER_ID, watched.getId(), CollectableScope.DIRECT_MEDIA, Instant.now(), 3600);
+          PROFILE_ID, watched.getId(), CollectableScope.DIRECT_MEDIA, Instant.now(), 3600);
 
-      var result = service.getWatchStatusForSeries(USER_ID, List.of(series.getId()));
+      var result = service.getWatchStatusForSeries(PROFILE_ID, List.of(series.getId()));
       assertThat(result).containsEntry(series.getId(), WatchStatus.IN_PROGRESS);
     }
 
@@ -371,7 +371,7 @@ class WatchStatusServiceTest {
       seasonRepository.save(Season.builder().seasonNumber(1).series(empty).build());
 
       var result =
-          service.getWatchStatusForSeries(USER_ID, List.of(populated.getId(), empty.getId()));
+          service.getWatchStatusForSeries(PROFILE_ID, List.of(populated.getId(), empty.getId()));
 
       assertThat(result)
           .containsEntry(populated.getId(), WatchStatus.UNWATCHED)
@@ -387,9 +387,9 @@ class WatchStatusServiceTest {
       var file = mediaFileRepository.save(buildMatchedMediaFile(episode.getId()));
 
       sessionProgressRepository.save(
-          progressBuilder(USER_ID, file.getId()).positionSeconds(0).build());
+          progressBuilder(PROFILE_ID, file.getId()).positionSeconds(0).build());
 
-      var result = service.getWatchStatusForSeasons(USER_ID, List.of(season.getId()));
+      var result = service.getWatchStatusForSeasons(PROFILE_ID, List.of(season.getId()));
       assertThat(result).containsEntry(season.getId(), WatchStatus.UNWATCHED);
     }
 
@@ -401,14 +401,14 @@ class WatchStatusServiceTest {
 
       var stale =
           sessionProgressRepository.save(
-              progressBuilder(USER_ID, file.getId()).positionSeconds(900).build());
+              progressBuilder(PROFILE_ID, file.getId()).positionSeconds(900).build());
       AuditFieldSetter.setLastModifiedOn(stale, Instant.parse("2026-01-01T00:00:00Z"));
       var latest =
           sessionProgressRepository.save(
-              progressBuilder(USER_ID, file.getId()).positionSeconds(0).build());
+              progressBuilder(PROFILE_ID, file.getId()).positionSeconds(0).build());
       AuditFieldSetter.setLastModifiedOn(latest, Instant.parse("2026-02-01T00:00:00Z"));
 
-      var result = service.getWatchStatusForDirectMedia(USER_ID, List.of(movie.getId()));
+      var result = service.getWatchStatusForDirectMedia(PROFILE_ID, List.of(movie.getId()));
       assertThat(result).containsEntry(movie.getId(), WatchStatus.UNWATCHED);
     }
   }
