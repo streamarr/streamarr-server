@@ -63,7 +63,9 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
    * either half of the invariant (ADR 0015 counter propagation).
    */
   private void bumpMembershipVersion(AccountProfile link, UUID auditUser) {
-    var updated =
+    // fetchSingle: fk_account_profile_membership guarantees the membership row exists whenever a
+    // link was inserted or deleted in this transaction.
+    var version =
         dsl.update(HOUSEHOLD_MEMBERSHIP)
             .set(HOUSEHOLD_MEMBERSHIP.VERSION, HOUSEHOLD_MEMBERSHIP.VERSION.plus(1))
             .set(HOUSEHOLD_MEMBERSHIP.LAST_MODIFIED_ON, OffsetDateTime.now(ZoneOffset.UTC))
@@ -71,13 +73,8 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
             .where(HOUSEHOLD_MEMBERSHIP.ACCOUNT_ID.eq(link.getAccountId()))
             .and(HOUSEHOLD_MEMBERSHIP.HOUSEHOLD_ID.eq(link.getHouseholdId()))
             .returning(HOUSEHOLD_MEMBERSHIP.VERSION)
-            .fetchOne();
-
-    if (updated == null) {
-      return;
-    }
-
-    var version = updated.get(HOUSEHOLD_MEMBERSHIP.VERSION);
+            .fetchSingle()
+            .get(HOUSEHOLD_MEMBERSHIP.VERSION);
     eventPublisher.publishEvent(
         CounterBumpedEvent.membership(link.getAccountId(), link.getHouseholdId(), version));
     CounterNotificationPublisher.publish(

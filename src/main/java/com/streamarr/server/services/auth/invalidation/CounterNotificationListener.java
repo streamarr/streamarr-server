@@ -79,11 +79,8 @@ public class CounterNotificationListener implements SmartLifecycle {
 
         var pgConnection = connection.unwrap(PGConnection.class);
         while (running) {
-          var notifications = pgConnection.getNotifications(POLL_TIMEOUT_MS);
-          if (notifications == null) {
-            continue;
-          }
-          for (var notification : notifications) {
+          // getNotifications returns an empty array on poll timeout, never null.
+          for (var notification : pgConnection.getNotifications(POLL_TIMEOUT_MS)) {
             apply(notification.getParameter());
           }
         }
