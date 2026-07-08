@@ -57,6 +57,6 @@ public class DevIdentitySeeder {
             .profileName("Dev")
             .build());
 
-    log.info("Seeded dev identity — log in with {} / {}", adminEmail, adminPassword);
+    log.info("Seeded dev identity — log in with {} and the configured dev password.", adminEmail);
   }
 }
