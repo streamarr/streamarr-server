@@ -37,6 +37,10 @@ public class StreamSession {
   private final AtomicReference<PlaybackSnapshot> playbackSnapshot =
       new AtomicReference<>(new PlaybackSnapshot(0, PlaybackState.STOPPED, Instant.now(), 0));
 
+  public boolean isOwnedBy(UUID candidateProfileId) {
+    return profileId != null && profileId.equals(candidateProfileId);
+  }
+
   public void updatePlaybackState(int positionSeconds, PlaybackState state) {
     playbackSnapshot.updateAndGet(
         current ->

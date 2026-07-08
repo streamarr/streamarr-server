@@ -81,7 +81,7 @@ class SessionProgressServiceTest {
   }
 
   private StreamSession addSession() {
-    var session = StreamSessionFixture.buildMpegtsSession();
+    var session = StreamSessionFixture.defaultSessionBuilder().profileId(PROFILE_ID).build();
     sessionRepository.save(session);
     saveMediaFileForSession(session);
     return session;
@@ -198,7 +198,7 @@ class SessionProgressServiceTest {
     @Test
     @DisplayName("Should return early when duration is zero")
     void shouldReturnEarlyWhenDurationIsZero() {
-      var session = StreamSessionFixture.buildZeroDurationSession();
+      var session = StreamSessionFixture.zeroDurationSessionBuilder().profileId(PROFILE_ID).build();
       sessionRepository.save(session);
 
       service.reportStreamSessionTimeline(
@@ -217,6 +217,22 @@ class SessionProgressServiceTest {
                   service.reportStreamSessionTimeline(
                       PROFILE_ID, unknownId, 300, PlaybackState.PLAYING))
           .isInstanceOf(SessionNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("Should throw when reporting timeline for session owned by another profile")
+    void shouldThrowWhenReportingTimelineForSessionOwnedByAnotherProfile() {
+      var session = addSession();
+      var sessionId = session.getSessionId();
+      var otherProfileId = UUID.randomUUID();
+
+      assertThatThrownBy(
+              () ->
+                  service.reportStreamSessionTimeline(
+                      otherProfileId, sessionId, 300, PlaybackState.PLAYING))
+          .isInstanceOf(SessionNotFoundException.class);
+      assertThat(session.getPlaybackSnapshot().positionSeconds()).isZero();
+      assertThat(sessionProgressRepository.count()).isZero();
     }
 
     @Test
@@ -298,7 +314,10 @@ class SessionProgressServiceTest {
     @DisplayName("Should delete session progress when stopped and watched threshold is met")
     void shouldDeleteSessionProgressWhenWatchedThresholdMet(
         String description, int durationSeconds, int positionSeconds) {
-      var session = StreamSessionFixture.buildSessionWithDuration(durationSeconds);
+      var session =
+          StreamSessionFixture.sessionWithDurationBuilder(durationSeconds)
+              .profileId(PROFILE_ID)
+              .build();
       sessionRepository.save(session);
       saveMediaFileForSession(session);
 
@@ -336,7 +355,10 @@ class SessionProgressServiceTest {
         "Should not mark short content as watched via remaining seconds threshold when duration is below max remaining")
     void
         shouldNotMarkShortContentAsWatchedViaRemainingSecondsThresholdWhenDurationIsBelowMaxRemaining() {
-      var shortSession = StreamSessionFixture.buildSessionWithDuration(120); // 2 min trailer
+      var shortSession =
+          StreamSessionFixture.sessionWithDurationBuilder(120) // 2 min trailer
+              .profileId(PROFILE_ID)
+              .build();
       sessionRepository.save(shortSession);
       saveMediaFileForSession(shortSession);
 
@@ -635,7 +657,11 @@ class SessionProgressServiceTest {
   }
 
   private StreamSession addSessionForMediaFile(UUID mediaFileId) {
-    var session = StreamSessionFixture.buildSessionForMediaFile(mediaFileId);
+    var session =
+        StreamSessionFixture.defaultSessionBuilder()
+            .profileId(PROFILE_ID)
+            .mediaFileId(mediaFileId)
+            .build();
     sessionRepository.save(session);
     return session;
   }

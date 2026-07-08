@@ -45,9 +45,11 @@ public class SessionProgressService {
       return;
     }
 
+    // Unowned reads as missing — a foreign profile must not learn the session exists.
     var session =
         sessionRepository
             .findById(sessionId)
+            .filter(s -> s.isOwnedBy(profileId))
             .orElseThrow(() -> new SessionNotFoundException(sessionId));
 
     session.updatePlaybackState(positionSeconds, state);

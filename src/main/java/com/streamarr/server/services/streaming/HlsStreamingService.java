@@ -94,10 +94,12 @@ public class HlsStreamingService implements StreamingService {
   }
 
   @Override
-  public StreamSession seekSession(UUID sessionId, int positionSeconds) {
+  public StreamSession seekSession(UUID sessionId, UUID profileId, int positionSeconds) {
+    // Unowned reads as missing — a foreign profile must not learn the session exists.
     var session =
         sessionRepository
             .findById(sessionId)
+            .filter(s -> s.isOwnedBy(profileId))
             .orElseThrow(() -> new SessionNotFoundException(sessionId));
 
     transcodeExecutor.stop(sessionId);
@@ -108,6 +110,15 @@ public class HlsStreamingService implements StreamingService {
 
     log.info("Seek-ed session {} to position {}s", sessionId, positionSeconds);
     return session;
+  }
+
+  @Override
+  public void destroySession(UUID sessionId, UUID profileId) {
+    // No-op for unowned sessions, matching the idempotent no-op for missing ones.
+    sessionRepository
+        .findById(sessionId)
+        .filter(session -> session.isOwnedBy(profileId))
+        .ifPresent(session -> destroySession(sessionId));
   }
 
   @Override

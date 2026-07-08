@@ -45,14 +45,16 @@ public class StreamingResolver {
   @DgsMutation
   public StreamSessionDto seekStreamSession(
       @InputArgument String sessionId, @InputArgument int positionSeconds) {
-    var session = streamingService.seekSession(parseUuid(sessionId), positionSeconds);
+    var session =
+        streamingService.seekSession(
+            parseUuid(sessionId), authorizationService.requireProfile(), positionSeconds);
 
     return toDto(session);
   }
 
   @DgsMutation
   public boolean destroyStreamSession(@InputArgument String sessionId) {
-    streamingService.destroySession(parseUuid(sessionId));
+    streamingService.destroySession(parseUuid(sessionId), authorizationService.requireProfile());
 
     return true;
   }

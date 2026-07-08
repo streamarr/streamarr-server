@@ -328,10 +328,11 @@ class HlsStreamingServiceTest {
   @DisplayName("Should update seek position when seeking session")
   void shouldUpdateSeekPositionWhenSeekingSession() {
     var file = seedMediaFile();
-    var session = service.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var profileId = UUID.randomUUID();
+    var session = service.createSession(file.getId(), profileId, defaultOptions());
     var originalSessionId = session.getSessionId();
 
-    var seeked = service.seekSession(originalSessionId, 300);
+    var seeked = service.seekSession(originalSessionId, profileId, 300);
 
     assertThat(seeked.getSessionId()).isEqualTo(originalSessionId);
     assertThat(seeked.getPlaybackSnapshot().positionSeconds()).isEqualTo(300);
@@ -341,9 +342,10 @@ class HlsStreamingServiceTest {
   @DisplayName("Should restart transcode when seeking")
   void shouldRestartTranscodeWhenSeeking() {
     var file = seedMediaFile();
-    var session = service.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var profileId = UUID.randomUUID();
+    var session = service.createSession(file.getId(), profileId, defaultOptions());
 
-    var seeked = service.seekSession(session.getSessionId(), 300);
+    var seeked = service.seekSession(session.getSessionId(), profileId, 300);
 
     assertThat(seeked.getHandle()).isNotNull();
     assertThat(transcodeExecutor.isRunning(session.getSessionId())).isTrue();
@@ -353,9 +355,10 @@ class HlsStreamingServiceTest {
   @DisplayName("Should stop old transcode when seeking to new position")
   void shouldStopOldTranscodeWhenSeekingToNewPosition() {
     var file = seedMediaFile();
-    var session = service.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var profileId = UUID.randomUUID();
+    var session = service.createSession(file.getId(), profileId, defaultOptions());
 
-    service.seekSession(session.getSessionId(), 300);
+    service.seekSession(session.getSessionId(), profileId, 300);
 
     assertThat(transcodeExecutor.getStopped()).contains(session.getSessionId());
   }
@@ -365,8 +368,47 @@ class HlsStreamingServiceTest {
   void shouldThrowWhenSeekingNonexistentSession() {
     var invalidId = UUID.randomUUID();
 
-    assertThatThrownBy(() -> service.seekSession(invalidId, 300))
+    assertThatThrownBy(() -> service.seekSession(invalidId, UUID.randomUUID(), 300))
         .isInstanceOf(SessionNotFoundException.class);
+  }
+
+  @Test
+  @DisplayName("Should throw when seeking session owned by another profile")
+  void shouldThrowWhenSeekingSessionOwnedByAnotherProfile() {
+    var file = seedMediaFile();
+    var session = service.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var sessionId = session.getSessionId();
+    var otherProfileId = UUID.randomUUID();
+
+    assertThatThrownBy(() -> service.seekSession(sessionId, otherProfileId, 300))
+        .isInstanceOf(SessionNotFoundException.class);
+    assertThat(transcodeExecutor.getStopped()).doesNotContain(sessionId);
+    assertThat(transcodeExecutor.isRunning(sessionId)).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should not destroy session when destruction requested by another profile")
+  void shouldNotDestroySessionWhenDestructionRequestedByAnotherProfile() {
+    var file = seedMediaFile();
+    var session = service.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+
+    service.destroySession(session.getSessionId(), UUID.randomUUID());
+
+    assertThat(service.accessSession(session.getSessionId())).isPresent();
+    assertThat(transcodeExecutor.isRunning(session.getSessionId())).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should destroy session when destruction requested by owning profile")
+  void shouldDestroySessionWhenDestructionRequestedByOwningProfile() {
+    var file = seedMediaFile();
+    var profileId = UUID.randomUUID();
+    var session = service.createSession(file.getId(), profileId, defaultOptions());
+
+    service.destroySession(session.getSessionId(), profileId);
+
+    assertThat(service.accessSession(session.getSessionId())).isEmpty();
+    assertThat(transcodeExecutor.isRunning(session.getSessionId())).isFalse();
   }
 
   @Test
@@ -824,9 +866,10 @@ class HlsStreamingServiceTest {
       "Should compute resume position from seek origin and segment index when resuming after seek")
   void shouldComputeResumePositionFromSeekOriginAndSegmentIndexWhenResumingAfterSeek() {
     var file = seedMediaFile();
-    var session = service.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var profileId = UUID.randomUUID();
+    var session = service.createSession(file.getId(), profileId, defaultOptions());
 
-    service.seekSession(session.getSessionId(), 60);
+    service.seekSession(session.getSessionId(), profileId, 60);
 
     session.updatePlaybackState(120, PlaybackState.PLAYING);
     assertThat(session.getSeekOrigin()).isEqualTo(60);
