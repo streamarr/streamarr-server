@@ -41,7 +41,7 @@ public class SessionProgressService {
     var session =
         sessionRepository
             .findById(sessionId)
-            .filter(s -> profileId.equals(s.getProfileId()))
+            .filter(s -> s.isOwnedBy(profileId))
             .orElseThrow(() -> new SessionNotFoundException(sessionId));
 
     session.updatePlaybackState(positionSeconds, state);

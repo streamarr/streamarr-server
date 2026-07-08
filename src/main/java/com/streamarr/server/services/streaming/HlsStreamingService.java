@@ -113,7 +113,7 @@ public class HlsStreamingService implements StreamingService {
   public void destroySession(UUID sessionId, UUID profileId) {
     sessionRepository
         .findById(sessionId)
-        .filter(session -> profileId.equals(session.getProfileId()))
+        .filter(session -> session.isOwnedBy(profileId))
         .ifPresent(session -> destroySession(sessionId));
   }
 
