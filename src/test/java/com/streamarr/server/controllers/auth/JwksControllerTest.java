@@ -39,15 +39,15 @@ class JwksControllerTest {
 
     @SuppressWarnings("unchecked")
     var served = (List<Map<String, Object>>) body.get("keys");
-    assertThat(served).hasSize(2);
     assertThat(served)
+        .hasSize(2)
         .allSatisfy(
             key -> {
-              assertThat(key.get("kid")).isNotNull();
-              assertThat(key.get("use")).isEqualTo("sig");
+              assertThat(key).containsKey("kid");
+              assertThat(key).containsEntry("use", "sig");
               // Signing material never leaves the server, retired or current.
               assertThat(key).doesNotContainKey("d");
             });
-    assertThat(served.get(0).get("kid")).isNotEqualTo(served.get(1).get("kid"));
+    assertThat(served.get(0)).doesNotContainEntry("kid", served.get(1).get("kid"));
   }
 }

@@ -96,9 +96,9 @@ class TokenCryptoConfigTest {
     var foreignKeys = config.tokenSigningKeys(properties(KEY_B, List.of()));
     var token = mint(config.jwtEncoder(foreignKeys));
 
-    var keys = config.tokenSigningKeys(properties(KEY_A, List.of()));
+    var jwtDecoder = decoder(config.tokenSigningKeys(properties(KEY_A, List.of())));
 
-    assertThatThrownBy(() -> decoder(keys).decode(token)).isInstanceOf(BadJwtException.class);
+    assertThatThrownBy(() -> jwtDecoder.decode(token)).isInstanceOf(BadJwtException.class);
   }
 
   @Test
@@ -117,9 +117,9 @@ class TokenCryptoConfigTest {
     hmacToken.sign(new MACSigner(new byte[32]));
     var token = hmacToken.serialize();
 
-    var keys = config.tokenSigningKeys(properties(KEY_A, List.of()));
+    var jwtDecoder = decoder(config.tokenSigningKeys(properties(KEY_A, List.of())));
 
-    assertThatThrownBy(() -> decoder(keys).decode(token)).isInstanceOf(BadJwtException.class);
+    assertThatThrownBy(() -> jwtDecoder.decode(token)).isInstanceOf(BadJwtException.class);
   }
 
   @Test
