@@ -36,7 +36,7 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
             .returning(AUTH_SESSION.SESSION_VERSION)
             .fetchOne();
 
-    return Optional.ofNullable(updated).map(record -> record.get(AUTH_SESSION.SESSION_VERSION));
+    return Optional.ofNullable(updated).map(row -> row.get(AUTH_SESSION.SESSION_VERSION));
   }
 
   @Override
@@ -53,6 +53,6 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
             .returning(AUTH_SESSION.SESSION_VERSION)
             .fetchOne();
 
-    return Optional.ofNullable(updated).map(record -> record.get(AUTH_SESSION.SESSION_VERSION));
+    return Optional.ofNullable(updated).map(row -> row.get(AUTH_SESSION.SESSION_VERSION));
   }
 }

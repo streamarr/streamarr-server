@@ -35,6 +35,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -181,7 +182,10 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   void shouldThrottleLoginWhenFailuresExceedLimit() throws Exception {
     seedSingleProfileIdentity();
     var throttledSource =
-        "10.99." + (int) (Math.random() * 250) + "." + (int) (Math.random() * 250);
+        "10.99."
+            + ThreadLocalRandom.current().nextInt(250)
+            + "."
+            + ThreadLocalRandom.current().nextInt(250);
 
     for (int i = 0; i < 5; i++) {
       mockMvc
