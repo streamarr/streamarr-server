@@ -49,7 +49,9 @@ public class RefreshTokenService {
     return new IssuedRefreshToken(rawToken, session);
   }
 
-  @Transactional
+  // Reuse detection must survive its own exception: the family revocation and version bump
+  // committed here are the security response, and the throw is only the caller's signal.
+  @Transactional(noRollbackFor = TokenReuseDetectedException.class)
   public RefreshResult redeem(String rawToken) {
     var digest = digestOf(rawToken);
     var now = clock.instant();
