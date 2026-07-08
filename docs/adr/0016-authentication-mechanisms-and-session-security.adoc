@@ -47,6 +47,11 @@ In Spring Security terms, each scope becomes a granted authority and the nesting
 Every access token authorizes requests only within the context chain it names, and carries enough account, session, version, and — where selected — household and profile identity for the server to validate the session and the ADR 0015 authorization model.
 This makes access tokens self-contained and server-signed — validating one needs the signing key and the in-memory counters, not a database read — while refresh tokens stay opaque random secrets the server knows only by digest.
 Signing keys are configuration: rotation starts issuing with a new key while old keys remain verification-only until every token they signed has expired, which short access-token TTLs keep brief.
+Tokens are signed asymmetrically (ES256, P-256), each carrying its key's RFC 7638 thumbprint as `kid`: only the media server holds the private key, and verifiers need public keys only.
+This exists for the planned transcode split — horizontally scaled transcode workers verify playback tokens directly and run FFmpeg against untrusted media, so that tier must never hold a token-minting secret.
+Symmetric HMAC signing was rejected for that reason alone; in a single process it would be simpler and equivalent.
+A public key is never sufficient authorization, though: revocation lives in the version counters below, so any external verifier must also consume the counter feed — signature-plus-expiry checking alone silently disables revocation for playback tokens, whose validity rides the stream-session lifetime.
+A JWKS endpoint is deferred until an external verifier exists; the kid-keyed key set makes it additive.
 
 Restriction, membership, password, and session changes propagate through version counters.
 Postgres holds the authoritative session, membership, and profile-policy counters; each instance caches them in memory.
