@@ -133,8 +133,8 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject session active profile from other household")
-  void shouldRejectSessionActiveProfileFromOtherHousehold() {
+  @DisplayName("Should reject session active profile when profile belongs to other household")
+  void shouldRejectSessionActiveProfileWhenProfileBelongsToOtherHousehold() {
     var seeded = seedLinkedIdentity();
     var otherHousehold =
         householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
@@ -372,8 +372,8 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject second bootstrap claim")
-  void shouldRejectSecondBootstrapClaim() {
+  @DisplayName("Should reject bootstrap claim when already claimed")
+  void shouldRejectBootstrapClaimWhenAlreadyClaimed() {
     var admin =
         userAccountRepository.save(
             AccountFixture.defaultAccountBuilder().accountRole(AccountRole.ADMIN).build());
@@ -407,8 +407,8 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject second active refresh token per session")
-  void shouldRejectSecondActiveRefreshTokenPerSession() {
+  @DisplayName("Should reject active refresh token when session already has one")
+  void shouldRejectActiveRefreshTokenWhenSessionAlreadyHasOne() {
     var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
     var session =
         authSessionRepository.save(
