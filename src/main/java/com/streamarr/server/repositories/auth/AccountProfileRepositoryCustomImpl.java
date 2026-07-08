@@ -62,6 +62,8 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
    * either half of the invariant (ADR 0015 counter propagation).
    */
   private void bumpMembershipVersion(AccountProfile link, UUID auditUser) {
+    // The membership row is FK-guaranteed: every account_profile row references it, so the
+    // link being granted or revoked proves it exists in this transaction.
     var updated =
         dsl.update(HOUSEHOLD_MEMBERSHIP)
             .set(
@@ -72,11 +74,7 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
             .where(HOUSEHOLD_MEMBERSHIP.ACCOUNT_ID.eq(link.getAccountId()))
             .and(HOUSEHOLD_MEMBERSHIP.HOUSEHOLD_ID.eq(link.getHouseholdId()))
             .returning(HOUSEHOLD_MEMBERSHIP.MEMBERSHIP_VERSION)
-            .fetchOne();
-
-    if (updated == null) {
-      return;
-    }
+            .fetchSingle();
 
     eventPublisher.publishEvent(
         CounterBumpedEvent.membership(
