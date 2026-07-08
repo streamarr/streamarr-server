@@ -43,6 +43,7 @@ class StreamControllerTest {
 
   private static final UUID SESSION_ID = UUID.randomUUID();
   private static final String VALIDATED_TOKEN = "validated-context-token";
+  private static final String SPOOFED_PARAM = "spoofed<script>-param";
 
   private MockMvc mockMvc;
   private final AtomicReference<UUID> boundStreamSession = new AtomicReference<>(SESSION_ID);
@@ -85,22 +86,41 @@ class StreamControllerTest {
     assertThat(result.getResponse().getContentAsString()).contains("#EXT-X-STREAM-INF:");
   }
 
-  @Test
+  @ParameterizedTest
+  @ValueSource(strings = {"master.m3u8", "stream.m3u8"})
   @DisplayName("Should embed the validated token in playlists rather than the request parameter")
-  void shouldEmbedValidatedTokenInPlaylistsRatherThanRequestParameter() throws Exception {
+  void shouldEmbedValidatedTokenInPlaylistsRatherThanRequestParameter(String path)
+      throws Exception {
     streamingService.setSession(buildMpegtsSession());
 
     var result =
         mockMvc
-            .perform(
-                get("/api/stream/{sessionId}/master.m3u8", SESSION_ID)
-                    .param("t", "spoofed<script>-param"))
+            .perform(get("/api/stream/{sessionId}/" + path, SESSION_ID).param("t", SPOOFED_PARAM))
             .andExpect(status().isOk())
             .andReturn();
 
-    var body = result.getResponse().getContentAsString();
+    assertPlaylistEmbedsValidatedToken(result.getResponse().getContentAsString());
+  }
+
+  @Test
+  @DisplayName("Should embed the validated token in variant playlists rather than the parameter")
+  void shouldEmbedValidatedTokenInVariantPlaylistsRatherThanParameter() throws Exception {
+    streamingService.setSession(buildAbrSession());
+
+    var result =
+        mockMvc
+            .perform(
+                get("/api/stream/{sessionId}/{variantLabel}/stream.m3u8", SESSION_ID, "720p")
+                    .param("t", SPOOFED_PARAM))
+            .andExpect(status().isOk())
+            .andReturn();
+
+    assertPlaylistEmbedsValidatedToken(result.getResponse().getContentAsString());
+  }
+
+  private static void assertPlaylistEmbedsValidatedToken(String body) {
     assertThat(body).contains("?t=" + VALIDATED_TOKEN);
-    assertThat(body).doesNotContain("spoofed<script>-param");
+    assertThat(body).doesNotContain(SPOOFED_PARAM);
   }
 
   @ParameterizedTest
