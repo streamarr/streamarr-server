@@ -82,7 +82,8 @@ class RefreshRevocationRaceIT extends AbstractIntegrationTest {
     revokeAndSweep(issued.session().getId());
 
     // A successor handed out just before revocation must not keep the family alive.
-    assertThatThrownBy(() -> refreshTokenService.redeem(rotated.rawRefreshToken()))
+    var successorToken = rotated.rawRefreshToken();
+    assertThatThrownBy(() -> refreshTokenService.redeem(successorToken))
         .isInstanceOf(TokenReuseDetectedException.class);
     assertThat(activeTokenCountFor(issued.session().getId())).isZero();
   }
@@ -128,9 +129,9 @@ class RefreshRevocationRaceIT extends AbstractIntegrationTest {
       try {
         start.await();
         body.run();
-      } catch (TokenReuseDetectedException | InvalidRefreshTokenException expected) {
+      } catch (TokenReuseDetectedException | InvalidRefreshTokenException _) {
         // The refresh lost the race to revocation — expected, not an error.
-      } catch (InterruptedException e) {
+      } catch (InterruptedException _) {
         Thread.currentThread().interrupt();
       } catch (RuntimeException e) {
         errors.add(e);

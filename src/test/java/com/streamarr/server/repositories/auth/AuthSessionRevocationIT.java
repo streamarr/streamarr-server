@@ -64,10 +64,7 @@ class AuthSessionRevocationIT extends AbstractIntegrationTest {
     account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
     var session = saveSession();
     refreshTokenRepository.save(
-        tokenBuilder(session)
-            .status(RefreshTokenStatus.ROTATED)
-            .rotatedAt(Instant.now())
-            .build());
+        tokenBuilder(session).status(RefreshTokenStatus.ROTATED).rotatedAt(Instant.now()).build());
     refreshTokenRepository.save(tokenBuilder(session).status(RefreshTokenStatus.ACTIVE).build());
 
     refreshTokenRepository.revokeAllForSession(session.getId());

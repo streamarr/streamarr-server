@@ -157,7 +157,8 @@ class RefreshTokenServiceTest {
     sessionRepository.revoke(
         issued.session().getId(), SessionRevocationReason.LOGOUT, currentTime.get());
 
-    assertThatThrownBy(() -> service.redeem(issued.rawToken()))
+    var rawToken = issued.rawToken();
+    assertThatThrownBy(() -> service.redeem(rawToken))
         .isInstanceOf(TokenReuseDetectedException.class);
 
     // No successor is minted onto a revoked session, and nothing was rotated.
