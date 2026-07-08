@@ -7,6 +7,7 @@ package com.streamarr.server.jooq.generated.tables;
 import com.streamarr.server.jooq.generated.Indexes;
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
+import com.streamarr.server.jooq.generated.tables.AuthSession.AuthSessionPath;
 import com.streamarr.server.jooq.generated.tables.HouseholdMembership.HouseholdMembershipPath;
 import com.streamarr.server.jooq.generated.tables.Profile.ProfilePath;
 import com.streamarr.server.jooq.generated.tables.records.AccountProfileRecord;
@@ -212,6 +213,19 @@ public class AccountProfile extends TableImpl<AccountProfileRecord> {
             _profile = new ProfilePath(this, Keys.ACCOUNT_PROFILE__FK_ACCOUNT_PROFILE_PROFILE, null);
 
         return _profile;
+    }
+
+    private transient AuthSessionPath _authSession;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.auth_session</code> table
+     */
+    public AuthSessionPath authSession() {
+        if (_authSession == null)
+            _authSession = new AuthSessionPath(this, null, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_ACCOUNT_PROFILE.getInverseKey());
+
+        return _authSession;
     }
 
     @Override

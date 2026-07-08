@@ -4,6 +4,7 @@ import com.streamarr.server.domain.BaseAuditableEntity;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -20,5 +21,6 @@ public class Household extends BaseAuditableEntity<Household> {
 
   private String name;
 
-  private String defaultRatingRegion;
+  // Mirrors the V044 column default.
+  @Builder.Default private String defaultRatingRegion = "US";
 }

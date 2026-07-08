@@ -13,7 +13,6 @@ public final class AccountFixture {
         .email("user-" + UUID.randomUUID() + "@example.com")
         .displayName("Test User")
         .passwordHash("{noop}not-a-real-hash")
-        .accountRole(AccountRole.USER)
-        .enabled(true);
+        .accountRole(AccountRole.USER);
   }
 }

@@ -98,7 +98,7 @@ class SeriesScanningIT extends AbstractWireMockIntegrationTest {
     assertThat(season.getSeasonNumber()).isEqualTo(1);
     assertThat(season.getTitle()).isEqualTo("Season 1");
 
-    var episodes = episodeRepository.findBySeasonId(season.getId());
+    var episodes = episodeRepository.findBySeasonIdOrderByEpisodeNumber(season.getId());
     assertThat(episodes).hasSize(7);
     assertThat(episodes).extracting("episodeNumber").containsExactlyInAnyOrder(1, 2, 3, 4, 5, 6, 7);
 
@@ -130,7 +130,7 @@ class SeriesScanningIT extends AbstractWireMockIntegrationTest {
     assertThat(seasonRepository.findAll()).hasSize(1);
 
     var season = seasonRepository.findAll().getFirst();
-    assertThat(episodeRepository.findBySeasonId(season.getId())).hasSize(7);
+    assertThat(episodeRepository.findBySeasonIdOrderByEpisodeNumber(season.getId())).hasSize(7);
 
     var mediaFiles = mediaFileRepository.findByLibraryId(library.getId());
     assertThat(mediaFiles).hasSize(2).allMatch(mf -> mf.getStatus() == MediaFileStatus.MATCHED);
@@ -162,8 +162,8 @@ class SeriesScanningIT extends AbstractWireMockIntegrationTest {
 
     var season1 = seasons.stream().filter(s -> s.getSeasonNumber() == 1).findFirst().orElseThrow();
     var season2 = seasons.stream().filter(s -> s.getSeasonNumber() == 2).findFirst().orElseThrow();
-    assertThat(episodeRepository.findBySeasonId(season1.getId())).hasSize(7);
-    assertThat(episodeRepository.findBySeasonId(season2.getId())).hasSize(2);
+    assertThat(episodeRepository.findBySeasonIdOrderByEpisodeNumber(season1.getId())).hasSize(7);
+    assertThat(episodeRepository.findBySeasonIdOrderByEpisodeNumber(season2.getId())).hasSize(2);
   }
 
   @Test
@@ -287,7 +287,7 @@ class SeriesScanningIT extends AbstractWireMockIntegrationTest {
     libraryManagementService.processDiscoveredFile(library.getId(), file);
 
     var season = seasonRepository.findAll().getFirst();
-    var episodes = episodeRepository.findBySeasonId(season.getId());
+    var episodes = episodeRepository.findBySeasonIdOrderByEpisodeNumber(season.getId());
     assertThat(episodes).hasSize(8);
 
     var ep99 = episodeRepository.findBySeasonIdAndEpisodeNumber(season.getId(), 99);

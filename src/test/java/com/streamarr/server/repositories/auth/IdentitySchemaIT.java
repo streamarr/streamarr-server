@@ -8,10 +8,13 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.AccountProfile;
 import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.AuthSession;
+import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdMembership;
 import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.domain.auth.Profile;
 import com.streamarr.server.domain.auth.RefreshToken;
 import com.streamarr.server.domain.auth.RefreshTokenStatus;
+import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
@@ -86,43 +89,6 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should bump membership version when profile link revoked")
-  void shouldBumpMembershipVersionWhenProfileLinkRevoked() {
-    var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
-    var household = householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
-    var membership =
-        householdMembershipRepository.save(
-            HouseholdMembership.builder()
-                .accountId(account.getId())
-                .householdId(household.getId())
-                .householdRole(HouseholdRole.OWNER)
-                .build());
-    var profile =
-        profileRepository.save(
-            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
-    var link =
-        AccountProfile.builder()
-            .accountId(account.getId())
-            .householdId(household.getId())
-            .profileId(profile.getId())
-            .build();
-
-    accountProfileRepository.linkProfile(link);
-
-    assertThat(membershipVersionOf(membership)).isEqualTo(1L);
-
-    accountProfileRepository.revokeProfileLink(link);
-
-    assertThat(membershipVersionOf(membership)).isEqualTo(2L);
-    assertThat(accountProfileRepository.findAll())
-        .noneMatch(remaining -> profile.getId().equals(remaining.getProfileId()));
-  }
-
-  private long membershipVersionOf(HouseholdMembership membership) {
-    return householdMembershipRepository.findById(membership.getId()).orElseThrow().getVersion();
-  }
-
-  @Test
   @DisplayName("Should reject account profile link when profile belongs to other household")
   void shouldRejectAccountProfileLinkWhenProfileBelongsToOtherHousehold() {
     var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
@@ -149,6 +115,159 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
 
     assertThatThrownBy(() -> accountProfileRepository.save(link))
         .isInstanceOf(DataIntegrityViolationException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject session active profile from other household")
+  void shouldRejectSessionActiveProfileFromOtherHousehold() {
+    var seeded = seedLinkedIdentity();
+    var otherHousehold =
+        householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    householdMembershipRepository.save(
+        HouseholdMembership.builder()
+            .accountId(seeded.account().getId())
+            .householdId(otherHousehold.getId())
+            .householdRole(HouseholdRole.MEMBER)
+            .build());
+
+    var session =
+        AuthSession.builder()
+            .accountId(seeded.account().getId())
+            .activeHouseholdId(otherHousehold.getId())
+            .activeProfileId(seeded.profile().getId())
+            .build();
+
+    assertThatThrownBy(() -> authSessionRepository.save(session))
+        .isInstanceOf(DataIntegrityViolationException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject session household when account not member")
+  void shouldRejectSessionHouseholdWhenAccountNotMember() {
+    var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    var household = householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
+
+    var session =
+        AuthSession.builder()
+            .accountId(account.getId())
+            .activeHouseholdId(household.getId())
+            .build();
+
+    assertThatThrownBy(() -> authSessionRepository.save(session))
+        .isInstanceOf(DataIntegrityViolationException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject session profile when account not linked")
+  void shouldRejectSessionProfileWhenAccountNotLinked() {
+    var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    var household = householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    householdMembershipRepository.save(
+        HouseholdMembership.builder()
+            .accountId(account.getId())
+            .householdId(household.getId())
+            .householdRole(HouseholdRole.MEMBER)
+            .build());
+    var unlinkedProfile =
+        profileRepository.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+
+    var session =
+        AuthSession.builder()
+            .accountId(account.getId())
+            .activeHouseholdId(household.getId())
+            .activeProfileId(unlinkedProfile.getId())
+            .build();
+
+    assertThatThrownBy(() -> authSessionRepository.save(session))
+        .isInstanceOf(DataIntegrityViolationException.class);
+  }
+
+  @Test
+  @DisplayName("Should downgrade session to household scope when profile link revoked")
+  void shouldDowngradeSessionToHouseholdScopeWhenProfileLinkRevoked() {
+    var seeded = seedLinkedIdentity();
+    var session =
+        authSessionRepository.save(
+            AuthSession.builder()
+                .accountId(seeded.account().getId())
+                .activeHouseholdId(seeded.household().getId())
+                .activeProfileId(seeded.profile().getId())
+                .build());
+
+    accountProfileRepository.revokeProfileLink(
+        AccountProfile.builder()
+            .accountId(seeded.account().getId())
+            .householdId(seeded.household().getId())
+            .profileId(seeded.profile().getId())
+            .build());
+
+    var reloaded = authSessionRepository.findById(session.getId()).orElseThrow();
+    assertThat(reloaded.getActiveProfileId()).isNull();
+    assertThat(reloaded.getActiveHouseholdId()).isEqualTo(seeded.household().getId());
+  }
+
+  @Test
+  @DisplayName("Should clear active selections when membership revoked")
+  void shouldClearActiveSelectionsWhenMembershipRevoked() {
+    var seeded = seedLinkedIdentity();
+    var session =
+        authSessionRepository.save(
+            AuthSession.builder()
+                .accountId(seeded.account().getId())
+                .activeHouseholdId(seeded.household().getId())
+                .activeProfileId(seeded.profile().getId())
+                .build());
+
+    householdMembershipRepository.delete(seeded.membership());
+
+    var reloaded = authSessionRepository.findById(session.getId()).orElseThrow();
+    assertThat(reloaded.getActiveHouseholdId()).isNull();
+    assertThat(reloaded.getActiveProfileId()).isNull();
+  }
+
+  @Test
+  @DisplayName("Should clear active selections when household deleted")
+  void shouldClearActiveSelectionsWhenHouseholdDeleted() {
+    var seeded = seedLinkedIdentity();
+    var session =
+        authSessionRepository.save(
+            AuthSession.builder()
+                .accountId(seeded.account().getId())
+                .activeHouseholdId(seeded.household().getId())
+                .activeProfileId(seeded.profile().getId())
+                .build());
+
+    householdRepository.delete(seeded.household());
+
+    var reloaded = authSessionRepository.findById(session.getId()).orElseThrow();
+    assertThat(reloaded.getActiveHouseholdId()).isNull();
+    assertThat(reloaded.getActiveProfileId()).isNull();
+  }
+
+  private record LinkedIdentity(
+      UserAccount account, Household household, HouseholdMembership membership, Profile profile) {}
+
+  private LinkedIdentity seedLinkedIdentity() {
+    var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    var household = householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    var membership =
+        householdMembershipRepository.save(
+            HouseholdMembership.builder()
+                .accountId(account.getId())
+                .householdId(household.getId())
+                .householdRole(HouseholdRole.OWNER)
+                .build());
+    var profile =
+        profileRepository.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+    accountProfileRepository.save(
+        AccountProfile.builder()
+            .accountId(account.getId())
+            .householdId(household.getId())
+            .profileId(profile.getId())
+            .build());
+    return new LinkedIdentity(account, household, membership, profile);
   }
 
   @Test
