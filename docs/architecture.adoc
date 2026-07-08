@@ -115,12 +115,27 @@ link:adr/0013-stream-decision-architecture.adoc[ADR 0013].
 
 Identity, sessions, and token security follow
 link:adr/0015-authorization-profiles-and-content-controls.adoc[ADR 0015] and
-link:adr/0016-authentication-mechanisms-and-session-security.adoc[ADR 0016]: signed access
+link:adr/0016-authentication-mechanisms-and-session-security.adoc[ADR 0016]: ES256-signed access
 tokens with nested scopes, digest-only rotating refresh tokens, and per-request version-counter
 checks that fail closed. The browser client is same-origin by construction -- development
 tooling proxies the API paths and production serves the client from the application origin --
 so no CORS configuration exists and none should be added (recorded as a rejected alternative in
 ADR 0016).
+
+Tokens are signed with an EC P-256 key (`AUTH_TOKEN_SIGNING_KEY`, base64 PKCS#8; generate with
+`openssl ecparam -name prime256v1 -genkey -noout | openssl pkcs8 -topk8 -nocrypt -outform DER |
+base64`). Only the media server holds the private key; verifiers need public keys only, chosen
+by the RFC 7638 thumbprint each token carries as `kid`. Rotation: move the old public key
+(base64 SPKI) into `AUTH_TOKEN_VERIFICATION_KEYS`, configure the new private key, restart --
+outstanding tokens keep verifying until they expire. A blank signing key generates an ephemeral
+key pair at startup (tokens die on restart; sessions recover through refresh).
+
+ES256 exists for the planned transcode split: horizontally scaled transcode nodes running
+FFmpeg are the most exposed tier and must never hold a token-minting secret. Signature
+verification alone never authorizes a request, though -- revocation lives in the per-request
+version-counter checks, so when the transcode service extracts, it must also run the counter
+feed (`CounterNotificationListener` + `TokenVersionCache` against the shared database), not
+just a public key. A JWKS endpoint is deferred until that consumer exists.
 
 Cross-instance token invalidation rides PostgreSQL LISTEN/NOTIFY: counter bumps call
 `pg_notify` inside the bumping transaction, and each instance's `CounterNotificationListener`

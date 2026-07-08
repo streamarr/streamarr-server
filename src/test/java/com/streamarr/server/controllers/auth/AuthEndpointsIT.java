@@ -848,12 +848,17 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   private org.springframework.security.oauth2.jwt.Jwt decodeToken(String token) {
-    var keyBytes = java.util.Base64.getDecoder().decode(tokenProperties.signingKey());
-    return org.springframework.security.oauth2.jwt.NimbusJwtDecoder.withSecretKey(
-            new javax.crypto.spec.SecretKeySpec(keyBytes, "HmacSHA256"))
-        .macAlgorithm(org.springframework.security.oauth2.jose.jws.MacAlgorithm.HS256)
-        .build()
-        .decode(token);
+    var keys =
+        new com.streamarr.server.config.security.TokenCryptoConfig()
+            .tokenSigningKeys(tokenProperties);
+    var processor =
+        new com.nimbusds.jwt.proc.DefaultJWTProcessor<com.nimbusds.jose.proc.SecurityContext>();
+    processor.setJWSKeySelector(
+        new com.nimbusds.jose.proc.JWSVerificationKeySelector<>(
+            com.nimbusds.jose.JWSAlgorithm.ES256,
+            new com.nimbusds.jose.jwk.source.ImmutableJWKSet<>(keys.verificationKeys())));
+    processor.setJWTClaimsSetVerifier((claims, context) -> {});
+    return new org.springframework.security.oauth2.jwt.NimbusJwtDecoder(processor).decode(token);
   }
 
   /** Minted against the real identity graph with a fixed past clock — expired but well-formed. */
@@ -863,7 +868,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     var pastClock = Clock.fixed(Instant.now().minus(Duration.ofHours(1)), ZoneOffset.UTC);
     var pastIssuer =
         new AccessTokenIssuer(
-            cryptoConfig.jwtEncoder(cryptoConfig.authSigningKey(tokenProperties)),
+            cryptoConfig.jwtEncoder(cryptoConfig.tokenSigningKeys(tokenProperties)),
             tokenProperties,
             pastClock,
             membershipRepository,

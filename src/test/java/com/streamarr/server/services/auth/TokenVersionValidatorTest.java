@@ -171,7 +171,7 @@ class TokenVersionValidatorTest {
   private Jwt.Builder baseToken(long sessionVersion) {
     var now = Instant.now();
     return Jwt.withTokenValue("test-token")
-        .header("alg", "HS256")
+        .header("alg", "ES256")
         .subject(accountId.toString())
         .issuedAt(now)
         .expiresAt(now.plusSeconds(600))

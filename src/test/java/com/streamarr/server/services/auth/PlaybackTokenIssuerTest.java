@@ -4,6 +4,11 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionB
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
+import com.nimbusds.jose.proc.JWSVerificationKeySelector;
+import com.nimbusds.jose.proc.SecurityContext;
+import com.nimbusds.jwt.proc.DefaultJWTProcessor;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
 import com.streamarr.server.domain.auth.AccountRole;
@@ -15,18 +20,17 @@ import com.streamarr.server.fakes.FakeVersionCounterReader;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.UUID;
-import javax.crypto.spec.SecretKeySpec;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 
 @Tag("UnitTest")
 @DisplayName("Playback Token Issuer Tests")
 class PlaybackTokenIssuerTest {
 
-  private static final String TEST_KEY_BASE64 = "dGVzdC1zaWduaW5nLWtleS0zMi1ieXRlcy1sb25nISE=";
+  private static final String TEST_KEY_BASE64 =
+      "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQga+ZKCbAcyZIb7k2FE8rMPFtIpTdzX2dR/csZ8k6A95uhRANCAAQawOmVKMDLAOsboxKLb9khGsWyxwcIikucXDCfX18ME5X9/kqSS2vdMnFfZ6KR12U/Sy/EwOwnc82xFAyFdNbe";
 
   private final AuthTokenProperties properties =
       AuthTokenProperties.builder()
@@ -41,7 +45,7 @@ class PlaybackTokenIssuerTest {
 
   private final PlaybackTokenIssuer issuer =
       new PlaybackTokenIssuer(
-          cryptoConfig.jwtEncoder(cryptoConfig.authSigningKey(properties)),
+          cryptoConfig.jwtEncoder(cryptoConfig.tokenSigningKeys(properties)),
           Clock.systemUTC(),
           new TokenVersionCache(reader));
 
@@ -195,10 +199,12 @@ class PlaybackTokenIssuerTest {
   }
 
   private org.springframework.security.oauth2.jwt.Jwt decode(String token) {
-    var keyBytes = java.util.Base64.getDecoder().decode(TEST_KEY_BASE64);
-    return NimbusJwtDecoder.withSecretKey(new SecretKeySpec(keyBytes, "HmacSHA256"))
-        .macAlgorithm(MacAlgorithm.HS256)
-        .build()
-        .decode(token);
+    var keys = cryptoConfig.tokenSigningKeys(properties);
+    var processor = new DefaultJWTProcessor<SecurityContext>();
+    processor.setJWSKeySelector(
+        new JWSVerificationKeySelector<>(
+            JWSAlgorithm.ES256, new ImmutableJWKSet<>(keys.verificationKeys())));
+    processor.setJWTClaimsSetVerifier((claims, context) -> {});
+    return new NimbusJwtDecoder(processor).decode(token);
   }
 }

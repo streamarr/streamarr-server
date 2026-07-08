@@ -9,7 +9,7 @@ import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
@@ -85,7 +85,7 @@ public class PlaybackTokenIssuer {
 
     var jwt =
         jwtEncoder.encode(
-            JwtEncoderParameters.from(JwsHeader.with(MacAlgorithm.HS256).build(), claims));
+            JwtEncoderParameters.from(JwsHeader.with(SignatureAlgorithm.ES256).build(), claims));
 
     return AccessToken.builder()
         .value(jwt.getTokenValue())

@@ -51,6 +51,7 @@ dev:
 auth:
   token:
     signing-key: ${AUTH_TOKEN_SIGNING_KEY:}
+    verification-keys: ${AUTH_TOKEN_VERIFICATION_KEYS:}
     access-token-ttl: ${AUTH_ACCESS_TOKEN_TTL:10m}
     refresh-token-ttl: ${AUTH_REFRESH_TOKEN_TTL:30d}
     rotation-grace: ${AUTH_ROTATION_GRACE:30s}

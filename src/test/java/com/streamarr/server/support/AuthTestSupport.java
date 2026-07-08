@@ -129,7 +129,7 @@ public class AuthTestSupport {
             Instant.now().minus(properties.accessTokenTtl()).minus(Duration.ofMinutes(5)),
             ZoneOffset.UTC);
     return new AccessTokenIssuer(
-        cryptoConfig.jwtEncoder(cryptoConfig.authSigningKey(properties)),
+        cryptoConfig.jwtEncoder(cryptoConfig.tokenSigningKeys(properties)),
         properties,
         pastClock,
         membershipRepository,
