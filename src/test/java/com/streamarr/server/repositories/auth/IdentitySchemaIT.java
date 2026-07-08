@@ -254,6 +254,27 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should persist every revocation reason when session revoked")
+  void shouldPersistEveryRevocationReasonWhenSessionRevoked() {
+    // Round-trips each Java constant through the Postgres enum, so a one-sided
+    // addition to either type fails here instead of in a later consumer.
+    var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+
+    for (var reason : SessionRevocationReason.values()) {
+      var session =
+          authSessionRepository.save(
+              AuthSession.builder()
+                  .accountId(account.getId())
+                  .revokedAt(Instant.now())
+                  .revokedReason(reason)
+                  .build());
+
+      var reloaded = authSessionRepository.findById(session.getId()).orElseThrow();
+      assertThat(reloaded.getRevokedReason()).isEqualTo(reason);
+    }
+  }
+
+  @Test
   @DisplayName("Should downgrade session to household scope when profile link revoked")
   void shouldDowngradeSessionToHouseholdScopeWhenProfileLinkRevoked() {
     var seeded = seedLinkedIdentity();
