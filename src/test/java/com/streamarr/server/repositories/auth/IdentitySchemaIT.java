@@ -87,17 +87,21 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
     var profile =
         profileRepository.save(
             ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
-    var link =
-        accountProfileRepository.save(
-            AccountProfile.builder()
-                .accountId(account.getId())
-                .householdId(household.getId())
-                .profileId(profile.getId())
-                .build());
+    accountProfileRepository.linkProfile(
+        AccountProfile.builder()
+            .accountId(account.getId())
+            .householdId(household.getId())
+            .profileId(profile.getId())
+            .build());
+    assertThat(
+            accountProfileRepository.findByAccountIdAndProfileId(account.getId(), profile.getId()))
+        .isPresent();
 
     householdMembershipRepository.delete(membership);
 
-    assertThat(accountProfileRepository.findById(link.getId())).isEmpty();
+    assertThat(
+            accountProfileRepository.findByAccountIdAndProfileId(account.getId(), profile.getId()))
+        .isEmpty();
     assertThat(profileRepository.findById(profile.getId())).isPresent();
     assertThat(userAccountRepository.findById(account.getId())).isPresent();
   }
@@ -127,7 +131,7 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
             .profileId(foreignProfile.getId())
             .build();
 
-    assertThatThrownBy(() -> accountProfileRepository.save(link))
+    assertThatThrownBy(() -> accountProfileRepository.linkProfile(link))
         .isInstanceOf(DataIntegrityViolationException.class)
         .hasMessageContaining("fk_account_profile_profile");
   }
@@ -362,7 +366,7 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
     var profile =
         profileRepository.save(
             ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
-    accountProfileRepository.save(
+    accountProfileRepository.linkProfile(
         AccountProfile.builder()
             .accountId(account.getId())
             .householdId(household.getId())
