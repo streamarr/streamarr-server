@@ -40,7 +40,7 @@ public class LocalTranscodeExecutor implements TranscodeExecutor {
         job.videoEncoder(),
         process.pid());
 
-    return new TranscodeHandle(process.pid(), TranscodeStatus.ACTIVE);
+    return new TranscodeHandle(process.pid(), TranscodeStatus.ACTIVE, request.startNumber());
   }
 
   @Override

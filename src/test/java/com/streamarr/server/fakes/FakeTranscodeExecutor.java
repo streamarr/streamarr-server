@@ -26,7 +26,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     var key = new ProcessKey(request.sessionId(), request.variantLabel());
     running.add(key);
     started.add(key);
-    return new TranscodeHandle(1L, TranscodeStatus.ACTIVE);
+    return new TranscodeHandle(1L, TranscodeStatus.ACTIVE, request.startNumber());
   }
 
   @Override

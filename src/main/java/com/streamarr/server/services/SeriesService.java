@@ -262,7 +262,12 @@ public class SeriesService {
 
   @Transactional(readOnly = true)
   public List<Season> findSeasons(UUID seriesId) {
-    return seasonRepository.findBySeriesId(seriesId);
+    return seasonRepository.findBySeriesIdOrderBySeasonNumber(seriesId);
+  }
+
+  @Transactional(readOnly = true)
+  public Optional<Season> findSeasonById(UUID seasonId) {
+    return seasonRepository.findById(seasonId);
   }
 
   @Transactional(readOnly = true)
@@ -272,7 +277,7 @@ public class SeriesService {
 
   @Transactional(readOnly = true)
   public List<Episode> findEpisodes(UUID seasonId) {
-    return episodeRepository.findBySeasonId(seasonId);
+    return episodeRepository.findBySeasonIdOrderByEpisodeNumber(seasonId);
   }
 
   @Transactional(readOnly = true)
