@@ -19,11 +19,12 @@ public class LoginService {
 
   @Transactional
   public LoginResult login(LoginCommand command) {
-    throttle.ensureAllowed(command.email(), command.source());
+    // Reserve the slot before any password work — recording failures after hashing is a
+    // check-then-act race that lets a concurrent burst overrun the budget.
+    throttle.registerAttempt(command.email(), command.source());
 
     var account = userAccountRepository.findByEmailIgnoreCase(command.email()).orElse(null);
     if (!credentialsValid(account, command.password())) {
-      throttle.recordFailure(command.email(), command.source());
       throw new InvalidCredentialsException();
     }
 

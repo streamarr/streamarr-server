@@ -199,6 +199,34 @@ class StreamControllerIT extends AbstractIntegrationTest {
         .andExpect(status().isOk());
   }
 
+  @Test
+  @DisplayName("Should return 400 when segment name contains parent directory traversal")
+  void shouldReturn400WhenSegmentNameContainsParentDirectoryTraversal() throws Exception {
+    // A valid playback token gets past the token filter so the name validation itself answers.
+    var sessionId = UUID.randomUUID();
+    mockMvc
+        .perform(
+            get("/api/stream/{id}/{segment}", sessionId, "..secret.ts")
+                .param("t", playbackToken(sessionId)))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  @DisplayName("Should return 400 when segment name contains backslash")
+  void shouldReturn400WhenSegmentNameContainsBackslash() throws Exception {
+    mockMvc
+        .perform(get("/api/stream/{id}/{segment}", UUID.randomUUID(), "evil\\name.ts"))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  @DisplayName("Should return 400 when variant label contains parent directory traversal")
+  void shouldReturn400WhenVariantLabelContainsParentDirectoryTraversal() throws Exception {
+    mockMvc
+        .perform(get("/api/stream/{id}/{variant}/stream.m3u8", UUID.randomUUID(), ".."))
+        .andExpect(status().isBadRequest());
+  }
+
   private static class StubStreamingService implements StreamingService {
 
     private final ConcurrentHashMap<UUID, StreamSession> sessions = new ConcurrentHashMap<>();
@@ -218,13 +246,13 @@ class StreamControllerIT extends AbstractIntegrationTest {
     }
 
     @Override
-    public StreamSession seekSession(UUID sessionId, int positionSeconds) {
-      throw new UnsupportedOperationException();
+    public void destroySession(UUID sessionId) {
+      sessions.remove(sessionId);
     }
 
     @Override
-    public void destroySession(UUID sessionId) {
-      sessions.remove(sessionId);
+    public void destroySession(UUID sessionId, UUID profileId) {
+      throw new UnsupportedOperationException();
     }
 
     @Override

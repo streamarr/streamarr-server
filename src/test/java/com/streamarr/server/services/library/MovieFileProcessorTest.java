@@ -155,4 +155,47 @@ class MovieFileProcessorTest {
     assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
         .isEqualTo(MediaFileStatus.UNMATCHED);
   }
+
+  @Test
+  @DisplayName("Should mark metadata parsing failed when filename is blank")
+  void shouldMarkMetadataParsingFailedWhenFilenameIsBlank() {
+    var library = LibraryFixtureCreator.buildFakeLibrary();
+
+    var mediaFile =
+        fakeMediaFileRepository.save(
+            MediaFile.builder()
+                .libraryId(library.getId())
+                .filepathUri("file:///library/unknown/")
+                .filename("")
+                .status(MediaFileStatus.UNMATCHED)
+                .build());
+
+    movieFileProcessor.process(library, mediaFile);
+
+    assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
+        .isEqualTo(MediaFileStatus.METADATA_PARSING_FAILED);
+  }
+
+  @Test
+  @DisplayName("Should mark metadata search failed when provider finds no match")
+  void shouldMarkMetadataSearchFailedWhenProviderFindsNoMatch() {
+    var library = LibraryFixtureCreator.buildFakeLibrary();
+
+    var mediaFile =
+        fakeMediaFileRepository.save(
+            MediaFile.builder()
+                .libraryId(library.getId())
+                .filepathUri("file:///library/Obscure%20Film%20(1999)/Obscure.Film.1999.mkv")
+                .filename("Obscure.Film.1999.mkv")
+                .status(MediaFileStatus.UNMATCHED)
+                .build());
+
+    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+    when(tmdbMovieProvider.search(any(VideoFileParserResult.class))).thenReturn(Optional.empty());
+
+    movieFileProcessor.process(library, mediaFile);
+
+    assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
+        .isEqualTo(MediaFileStatus.METADATA_SEARCH_FAILED);
+  }
 }

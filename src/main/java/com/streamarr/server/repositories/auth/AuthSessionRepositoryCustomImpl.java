@@ -2,7 +2,10 @@ package com.streamarr.server.repositories.auth;
 
 import static com.streamarr.server.jooq.generated.tables.AuthSession.AUTH_SESSION;
 
+import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
+import com.streamarr.server.repositories.JooqQueryHelper;
+import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Optional;
@@ -16,6 +19,7 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
 
   private final DSLContext dsl;
   private final AuditorAware<UUID> auditorAware;
+  private final EntityManager entityManager;
 
   @Override
   public Optional<Long> revoke(UUID sessionId, SessionRevocationReason reason, Instant now) {
@@ -36,7 +40,7 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
             .returning(AUTH_SESSION.SESSION_VERSION)
             .fetchOne();
 
-    return Optional.ofNullable(updated).map(record -> record.get(AUTH_SESSION.SESSION_VERSION));
+    return Optional.ofNullable(updated).map(row -> row.get(AUTH_SESSION.SESSION_VERSION));
   }
 
   @Override
@@ -53,6 +57,14 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
             .returning(AUTH_SESSION.SESSION_VERSION)
             .fetchOne();
 
-    return Optional.ofNullable(updated).map(record -> record.get(AUTH_SESSION.SESSION_VERSION));
+    return Optional.ofNullable(updated).map(row -> row.get(AUTH_SESSION.SESSION_VERSION));
+  }
+
+  @Override
+  public Optional<AuthSession> lockById(UUID sessionId) {
+    var query = dsl.selectFrom(AUTH_SESSION).where(AUTH_SESSION.ID.eq(sessionId)).forUpdate();
+
+    return JooqQueryHelper.nativeQuery(entityManager, query, AuthSession.class).stream()
+        .findFirst();
   }
 }

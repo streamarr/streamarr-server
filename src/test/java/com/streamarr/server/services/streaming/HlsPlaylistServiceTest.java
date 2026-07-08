@@ -428,32 +428,12 @@ class HlsPlaylistServiceTest {
   }
 
   @Test
-  @DisplayName("Should reduce segment count when seek origin is non-zero")
-  void shouldReduceSegmentCountWhenSeekOriginIsNonZero() {
-    // 120s total / 6s segments = 20; seek(60) leaves 60s / 6s = 10 segments
+  @DisplayName("Should keep the full segment count when playback advances")
+  void shouldKeepTheFullSegmentCountWhenPlaybackAdvances() {
+    // The playlist timeline is absolute: 120s / 6s = 20 segments, always.
     var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 120);
-    session.seek(60);
-
-    var playlist = service.generateMediaPlaylist(session, "test-token");
-
-    var segmentLines =
-        playlist
-            .lines()
-            .filter(l -> l.startsWith("segment") && l.endsWith(".ts?t=test-token"))
-            .toList();
-    assertThat(segmentLines).hasSize(10);
-  }
-
-  @Test
-  @DisplayName("Should not change segment count when playback position advances beyond seek origin")
-  void shouldNotChangeSegmentCountWhenPlaybackPositionAdvancesBeyondSeekOrigin() {
-    // seekOrigin stays 60 (updatePlaybackState does not update it), so segments = (120-60)/6 = 10
-    var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 120);
-    session.seek(60);
     session.updatePlaybackState(90, PlaybackState.PLAYING);
 
-    assertThat(session.getSeekOrigin()).isEqualTo(60);
-
     var playlist = service.generateMediaPlaylist(session, "test-token");
 
     var segmentLines =
@@ -461,7 +441,7 @@ class HlsPlaylistServiceTest {
             .lines()
             .filter(l -> l.startsWith("segment") && l.endsWith(".ts?t=test-token"))
             .toList();
-    assertThat(segmentLines).hasSize(10);
+    assertThat(segmentLines).hasSize(20);
   }
 
   @Test

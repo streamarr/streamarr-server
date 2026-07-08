@@ -39,7 +39,7 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
 
   @Override
   @Transactional
-  public void revokeProfileLink(AccountProfile link) {
+  public boolean revokeProfileLink(AccountProfile link) {
     var auditUser = auditorAware.getCurrentAuditor().orElse(null);
 
     var rowsAffected =
@@ -50,10 +50,11 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
             .execute();
 
     if (rowsAffected == 0) {
-      return;
+      return false;
     }
 
     bumpMembershipVersion(link, auditUser);
+    return true;
   }
 
   /**
@@ -61,22 +62,24 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
    * either half of the invariant (ADR 0015 counter propagation).
    */
   private void bumpMembershipVersion(AccountProfile link, UUID auditUser) {
+    // The membership row is FK-guaranteed: every account_profile row references it, so the
+    // link being granted or revoked proves it exists in this transaction.
     var updated =
         dsl.update(HOUSEHOLD_MEMBERSHIP)
-            .set(HOUSEHOLD_MEMBERSHIP.VERSION, HOUSEHOLD_MEMBERSHIP.VERSION.plus(1))
+            .set(
+                HOUSEHOLD_MEMBERSHIP.MEMBERSHIP_VERSION,
+                HOUSEHOLD_MEMBERSHIP.MEMBERSHIP_VERSION.plus(1))
             .set(HOUSEHOLD_MEMBERSHIP.LAST_MODIFIED_ON, OffsetDateTime.now(ZoneOffset.UTC))
             .set(HOUSEHOLD_MEMBERSHIP.LAST_MODIFIED_BY, auditUser)
             .where(HOUSEHOLD_MEMBERSHIP.ACCOUNT_ID.eq(link.getAccountId()))
             .and(HOUSEHOLD_MEMBERSHIP.HOUSEHOLD_ID.eq(link.getHouseholdId()))
-            .returning(HOUSEHOLD_MEMBERSHIP.VERSION)
-            .fetchOne();
-
-    if (updated == null) {
-      return;
-    }
+            .returning(HOUSEHOLD_MEMBERSHIP.MEMBERSHIP_VERSION)
+            .fetchSingle();
 
     eventPublisher.publishEvent(
         CounterBumpedEvent.membership(
-            link.getAccountId(), link.getHouseholdId(), updated.get(HOUSEHOLD_MEMBERSHIP.VERSION)));
+            link.getAccountId(),
+            link.getHouseholdId(),
+            updated.get(HOUSEHOLD_MEMBERSHIP.MEMBERSHIP_VERSION)));
   }
 }

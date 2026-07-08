@@ -94,7 +94,7 @@ class StreamingSessionCleanupListenerTest {
     }
 
     @Override
-    public StreamSession seekSession(UUID sessionId, int positionSeconds) {
+    public void destroySession(UUID sessionId, UUID profileId) {
       throw new UnsupportedOperationException();
     }
 

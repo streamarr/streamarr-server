@@ -1,0 +1,40 @@
+// ADR template — copy to NNNN-short-kebab-title.adoc.
+// Before merging, re-check your NNNN against main: parallel branches collide on
+// numbers the same way the two V039 migrations did; renumber yours if taken.
+// Fullest examples of this shape: 0015 (authorization), 0016 (authentication).
+= ADR NNNN: Title naming the decision, not the topic
+
+== Status
+
+Proposed
+// Proposed | Accepted | Superseded by link:NNNN-title.adoc[ADR NNNN]
+
+== Context
+
+The forces in play and the problem being decided; link related ADRs and issues.
+Write one sentence per line.
+
+== Decision
+
+What we do, in active voice.
+Keep guardrail negatives inline beside the positive they define — "the device code is a correlation handle, not a credential" — never in a far-away section.
+Name contracts here and leave values to configuration when a choice is tunable rather than architectural.
+End with an "Explicitly deferred" bullet list when scope is deliberately cut.
+
+== Consequences
+
+What follows from the decision — obligations created, costs accepted, doors left open or closed.
+
+== Rejected Alternatives
+
+// Optional — delete if empty.
+// Considered-and-declined designs, one line of "why not" each, so future readers
+// can check "did we think of X?" without rereading Decision.
+
+* Alternative — one line on why not.
+
+== References
+
+// Optional — delete if empty.
+
+* https://example.com[Standards, docs, prior art, issues]

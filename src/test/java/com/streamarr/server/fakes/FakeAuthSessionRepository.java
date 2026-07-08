@@ -18,6 +18,12 @@ public class FakeAuthSessionRepository extends FakeJpaRepository<AuthSession>
   }
 
   @Override
+  public Optional<AuthSession> lockById(UUID sessionId) {
+    // Single-JVM fake: the row lock is a no-op; the guard logic is what the unit tests exercise.
+    return findById(sessionId);
+  }
+
+  @Override
   public Optional<Long> revoke(UUID sessionId, SessionRevocationReason reason, Instant now) {
     return findById(sessionId)
         .filter(session -> session.getRevokedAt() == null)

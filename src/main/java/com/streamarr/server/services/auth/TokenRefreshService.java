@@ -28,7 +28,7 @@ public class TokenRefreshService {
 
     var rotatedRefreshToken =
         switch (result) {
-          case RefreshResult.Rotated(String successor, var _) -> successor;
+          case RefreshResult.Rotated(String successor, _) -> successor;
           case RefreshResult.GraceReplay _ -> null;
         };
 

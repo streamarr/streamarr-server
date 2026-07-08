@@ -573,6 +573,7 @@ class WatchProgressFieldResolverTest {
       when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
       when(seriesService.findSeasons(seriesId)).thenReturn(List.of(season));
       when(seriesService.findEpisodes(seasonId)).thenReturn(List.of(episode));
+      when(seriesService.findSeasonById(seasonId)).thenReturn(Optional.of(season));
 
       Integer seasonNumber =
           dgsQueryExecutor.executeAndExtractJsonPath(

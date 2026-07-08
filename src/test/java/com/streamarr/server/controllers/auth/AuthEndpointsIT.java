@@ -6,6 +6,7 @@ import static com.streamarr.server.jooq.generated.tables.UserAccount.USER_ACCOUN
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -35,6 +36,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -181,7 +183,10 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   void shouldThrottleLoginWhenFailuresExceedLimit() throws Exception {
     seedSingleProfileIdentity();
     var throttledSource =
-        "10.99." + (int) (Math.random() * 250) + "." + (int) (Math.random() * 250);
+        "10.99."
+            + ThreadLocalRandom.current().nextInt(250)
+            + "."
+            + ThreadLocalRandom.current().nextInt(250);
 
     for (int i = 0; i < 5; i++) {
       mockMvc
@@ -400,7 +405,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
       var extraProfile =
           profileRepository.save(
               ProfileFixture.defaultProfileBuilder().householdId(secondHousehold.getId()).build());
-      accountProfileRepository.save(
+      accountProfileRepository.linkProfile(
           AccountProfile.builder()
               .accountId(account.getId())
               .householdId(secondHousehold.getId())
@@ -462,6 +467,107 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     assertThat(householdClaims.getClaimAsString("hh"))
         .isEqualTo(secondHousehold.getId().toString());
     assertThat(householdClaims.hasClaim("pf")).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should select profile and upgrade to profile scope")
+  void shouldSelectProfileAndUpgradeToProfileScope() throws Exception {
+    var householdToken = householdScopedTokenWithTwoProfiles();
+
+    var response =
+        mockMvc
+            .perform(
+                post("/api/auth/select-profile")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .header("Authorization", "Bearer " + householdToken)
+                    .content(
+                        "{\"profileId\": \"%s\", \"cookieMode\": false}"
+                            .formatted(profile.getId())))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.scope").value("profile"))
+            .andExpect(jsonPath("$.accessToken").isNotEmpty())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    var claims = decodeToken(objectMapper.readTree(response).get("accessToken").asString());
+    assertThat(claims.getClaimAsString("pf")).isEqualTo(profile.getId().toString());
+    assertThat(claims.getClaimAsString("hh")).isEqualTo(household.getId().toString());
+  }
+
+  @Test
+  @DisplayName("Should set access cookie only when selecting profile in cookie mode")
+  void shouldSetAccessCookieOnlyWhenSelectingProfileInCookieMode() throws Exception {
+    var householdToken = householdScopedTokenWithTwoProfiles();
+
+    mockMvc
+        .perform(
+            post("/api/auth/select-profile")
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("Authorization", "Bearer " + householdToken)
+                .content(
+                    "{\"profileId\": \"%s\", \"cookieMode\": true}".formatted(profile.getId())))
+        .andExpect(status().isOk())
+        .andExpect(cookie().exists("streamarr_access"))
+        .andExpect(cookie().doesNotExist("streamarr_refresh"))
+        .andExpect(jsonPath("$.accessToken").doesNotExist());
+  }
+
+  @Test
+  @DisplayName("Should reject profile selection when profile id missing")
+  void shouldRejectProfileSelectionWhenProfileIdMissing() throws Exception {
+    var householdToken = householdScopedTokenWithTwoProfiles();
+
+    mockMvc
+        .perform(
+            post("/api/auth/select-profile")
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("Authorization", "Bearer " + householdToken)
+                .content("{\"cookieMode\": false}"))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  @DisplayName("Should reject profile selection when profile not linked")
+  void shouldRejectProfileSelectionWhenProfileNotLinked() throws Exception {
+    var householdToken = householdScopedTokenWithTwoProfiles();
+
+    mockMvc
+        .perform(
+            post("/api/auth/select-profile")
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("Authorization", "Bearer " + householdToken)
+                .content(
+                    "{\"profileId\": \"%s\", \"cookieMode\": false}"
+                        .formatted(java.util.UUID.randomUUID())))
+        .andExpect(status().isForbidden());
+  }
+
+  /** A sole household with two profiles: login auto-selects the household but not a profile. */
+  private String householdScopedTokenWithTwoProfiles() throws Exception {
+    seedSingleProfileIdentity();
+    var secondProfile =
+        profileRepository.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+    accountProfileRepository.linkProfile(
+        AccountProfile.builder()
+            .accountId(account.getId())
+            .householdId(household.getId())
+            .profileId(secondProfile.getId())
+            .build());
+
+    var response =
+        mockMvc
+            .perform(
+                post("/api/auth/login")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(loginBody(account.getEmail(), PASSWORD)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.scope").value("household"))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return objectMapper.readTree(response).get("accessToken").asString();
   }
 
   @Test
@@ -589,14 +695,39 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
         .perform(
             post("/api/auth/refresh")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(refreshBody(oldRefreshToken)))
-        .andExpect(status().isUnauthorized());
+                .content(refreshBody(changed.get("refreshToken").asString())))
+        .andExpect(status().isOk());
+    // Last on purpose: replaying the swept pre-change refresh token is reuse detection, which
+    // revokes the caller's session and its fresh family (fail-closed) — nothing works after this.
     mockMvc
         .perform(
             post("/api/auth/refresh")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(refreshBody(changed.get("refreshToken").asString())))
-        .andExpect(status().isOk());
+                .content(refreshBody(oldRefreshToken)))
+        .andExpect(status().isUnauthorized());
+  }
+
+  @Test
+  @DisplayName("Should reject refresh when no token in body or cookie")
+  void shouldRejectRefreshWhenNoTokenInBodyOrCookie() throws Exception {
+    mockMvc
+        .perform(post("/api/auth/refresh"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("INVALID_REFRESH_TOKEN"));
+    mockMvc
+        .perform(
+            post("/api/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"cookieMode\": true}"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("INVALID_REFRESH_TOKEN"));
+    mockMvc
+        .perform(
+            post("/api/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(refreshBody("")))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("INVALID_REFRESH_TOKEN"));
   }
 
   @Test
@@ -783,7 +914,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     profile =
         profileRepository.save(
             ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
-    accountProfileRepository.save(
+    accountProfileRepository.linkProfile(
         AccountProfile.builder()
             .accountId(account.getId())
             .householdId(household.getId())

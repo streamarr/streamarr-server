@@ -90,7 +90,7 @@ class SetupServiceTest {
     assertThat(membership.getAccountId()).isEqualTo(admin.getId());
     assertThat(membership.getHouseholdId()).isEqualTo(household.getId());
     assertThat(membership.getHouseholdRole()).isEqualTo(HouseholdRole.OWNER);
-    assertThat(membership.getVersion()).isEqualTo(1L);
+    assertThat(membership.getMembershipVersion()).isEqualTo(1L);
 
     var profile = profileRepository.findById(result.profile().getId()).orElseThrow();
     assertThat(profile.getHouseholdId()).isEqualTo(household.getId());

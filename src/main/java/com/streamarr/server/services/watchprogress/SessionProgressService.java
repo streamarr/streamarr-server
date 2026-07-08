@@ -3,7 +3,6 @@ package com.streamarr.server.services.watchprogress;
 import com.streamarr.server.config.WatchProgressProperties;
 import com.streamarr.server.domain.streaming.CollectableScope;
 import com.streamarr.server.domain.streaming.PlaybackState;
-import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.exceptions.MediaFileNotFoundException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
@@ -13,7 +12,6 @@ import com.streamarr.server.services.streaming.StreamSessionRepository;
 import com.streamarr.server.services.watchprogress.events.ItemWatchedEvent;
 import com.streamarr.server.services.watchprogress.events.SessionProgressChangedEvent;
 import java.time.Instant;
-import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -33,11 +31,6 @@ public class SessionProgressService {
   private final WatchStatusService watchStatusService;
   private final ApplicationEventPublisher eventPublisher;
 
-  public Optional<SessionProgress> getProgress(UUID profileId, UUID mediaFileId) {
-    return sessionProgressRepository.findMostRecentByProfileIdAndMediaFileId(
-        profileId, mediaFileId);
-  }
-
   @Transactional
   public void reportStreamSessionTimeline(
       UUID profileId, UUID sessionId, int positionSeconds, PlaybackState state) {
@@ -48,6 +41,7 @@ public class SessionProgressService {
     var session =
         sessionRepository
             .findById(sessionId)
+            .filter(s -> profileId.equals(s.getProfileId()))
             .orElseThrow(() -> new SessionNotFoundException(sessionId));
 
     session.updatePlaybackState(positionSeconds, state);

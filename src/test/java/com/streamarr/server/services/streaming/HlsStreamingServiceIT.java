@@ -11,7 +11,6 @@ import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.MediaFileNotFoundException;
-import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
@@ -121,32 +120,11 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   @DisplayName("Should throw when media file not found")
   void shouldThrowWhenMediaFileNotFound() {
     var nonExistentId = UUID.randomUUID();
+    var profileId = UUID.randomUUID();
     var options = defaultOptions();
 
-    assertThatThrownBy(
-            () -> streamingService.createSession(nonExistentId, UUID.randomUUID(), options))
+    assertThatThrownBy(() -> streamingService.createSession(nonExistentId, profileId, options))
         .isInstanceOf(MediaFileNotFoundException.class);
-  }
-
-  @Test
-  @DisplayName("Should update seek position when seeking session")
-  void shouldUpdateSeekPositionWhenSeekingSession() {
-    var session =
-        streamingService.createSession(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
-
-    var seeked = streamingService.seekSession(session.getSessionId(), 300);
-
-    assertThat(seeked.getPlaybackSnapshot().positionSeconds()).isEqualTo(300);
-    assertThat(seeked.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
-  }
-
-  @Test
-  @DisplayName("Should throw when seeking nonexistent session")
-  void shouldThrowWhenSeekingNonexistentSession() {
-    var nonExistentId = UUID.randomUUID();
-
-    assertThatThrownBy(() -> streamingService.seekSession(nonExistentId, 300))
-        .isInstanceOf(SessionNotFoundException.class);
   }
 
   @Test
