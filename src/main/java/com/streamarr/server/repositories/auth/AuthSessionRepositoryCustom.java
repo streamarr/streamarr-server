@@ -1,5 +1,6 @@
 package com.streamarr.server.repositories.auth;
 
+import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import java.time.Instant;
 import java.util.Optional;
@@ -19,4 +20,11 @@ public interface AuthSessionRepositoryCustom {
    * logged in).
    */
   Optional<Long> bumpVersion(UUID sessionId, Instant now);
+
+  /**
+   * Reads the session under a row-level write lock (SELECT … FOR UPDATE). Refresh acquires it
+   * before touching tokens, in the same order revoke() locks, so refresh and revocation serialize
+   * on the session row — a successor can never be inserted onto a just-revoked session.
+   */
+  Optional<AuthSession> lockById(UUID sessionId);
 }

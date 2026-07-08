@@ -70,8 +70,14 @@ class StreamControllerIT extends AbstractIntegrationTest {
             .householdRole(HouseholdRole.OWNER)
             .profileId(identity.profile().getId())
             .build();
+    // Minted against a session the caller owns — the issuer refuses anything else.
+    var ownedSession =
+        StreamSessionFixture.defaultSessionBuilder()
+            .sessionId(streamSessionId)
+            .profileId(identity.profile().getId())
+            .build();
     return playbackTokenIssuer
-        .issue(authenticatedIdentity, streamSessionId, Duration.ofHours(1))
+        .issue(authenticatedIdentity, ownedSession, Duration.ofHours(1))
         .value();
   }
 
@@ -165,6 +171,18 @@ class StreamControllerIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should reject segment request when token blank")
+  void shouldRejectSegmentRequestWhenTokenBlank() throws Exception {
+    var session = StreamSessionFixture.buildMpegtsSession();
+    STUB_SERVICE.addSession(session);
+
+    // An empty ?t= is no credential at all — it must not reach the decoder as one.
+    mockMvc
+        .perform(get("/api/stream/{id}/master.m3u8", session.getSessionId()).param("t", ""))
+        .andExpect(status().isUnauthorized());
+  }
+
+  @Test
   @DisplayName("Should reject playback when token session mismatches path")
   void shouldRejectPlaybackWhenTokenSessionMismatchesPath() throws Exception {
     var sessionA = StreamSessionFixture.buildMpegtsSession();
@@ -199,6 +217,34 @@ class StreamControllerIT extends AbstractIntegrationTest {
         .andExpect(status().isOk());
   }
 
+  @Test
+  @DisplayName("Should return 400 when segment name contains parent directory traversal")
+  void shouldReturn400WhenSegmentNameContainsParentDirectoryTraversal() throws Exception {
+    // A valid playback token gets past the token filter so the name validation itself answers.
+    var sessionId = UUID.randomUUID();
+    mockMvc
+        .perform(
+            get("/api/stream/{id}/{segment}", sessionId, "..secret.ts")
+                .param("t", playbackToken(sessionId)))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  @DisplayName("Should return 400 when segment name contains backslash")
+  void shouldReturn400WhenSegmentNameContainsBackslash() throws Exception {
+    mockMvc
+        .perform(get("/api/stream/{id}/{segment}", UUID.randomUUID(), "evil\\name.ts"))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  @DisplayName("Should return 400 when variant label contains parent directory traversal")
+  void shouldReturn400WhenVariantLabelContainsParentDirectoryTraversal() throws Exception {
+    mockMvc
+        .perform(get("/api/stream/{id}/{variant}/stream.m3u8", UUID.randomUUID(), ".."))
+        .andExpect(status().isBadRequest());
+  }
+
   private static class StubStreamingService implements StreamingService {
 
     private final ConcurrentHashMap<UUID, StreamSession> sessions = new ConcurrentHashMap<>();
@@ -218,13 +264,13 @@ class StreamControllerIT extends AbstractIntegrationTest {
     }
 
     @Override
-    public StreamSession seekSession(UUID sessionId, int positionSeconds) {
-      throw new UnsupportedOperationException();
+    public void destroySession(UUID sessionId) {
+      sessions.remove(sessionId);
     }
 
     @Override
-    public void destroySession(UUID sessionId) {
-      sessions.remove(sessionId);
+    public void destroySession(UUID sessionId, UUID profileId) {
+      throw new UnsupportedOperationException();
     }
 
     @Override

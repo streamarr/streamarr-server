@@ -6,15 +6,16 @@ import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
+import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.MaxConcurrentTranscodesException;
 import com.streamarr.server.exceptions.MediaFileNotFoundException;
-import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.library.FilepathCodec;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.Collections;
@@ -30,6 +31,9 @@ import lombok.extern.slf4j.Slf4j;
 public class HlsStreamingService implements StreamingService {
 
   private static final Pattern SEGMENT_INDEX_PATTERN = Pattern.compile("segment(\\d+)");
+
+  /** Beyond this lead, restarting the encoder beats waiting for it to catch up. */
+  private static final Duration FORWARD_RELOCATION_GAP = Duration.ofSeconds(24);
 
   private final MediaFileRepository mediaFileRepository;
   private final TranscodeExecutor transcodeExecutor;
@@ -94,23 +98,6 @@ public class HlsStreamingService implements StreamingService {
   }
 
   @Override
-  public StreamSession seekSession(UUID sessionId, int positionSeconds) {
-    var session =
-        sessionRepository
-            .findById(sessionId)
-            .orElseThrow(() -> new SessionNotFoundException(sessionId));
-
-    transcodeExecutor.stop(sessionId);
-    segmentStore.deleteSession(sessionId);
-    session.seek(positionSeconds);
-    startTranscodes(session, positionSeconds, 0);
-    sessionRepository.save(session);
-
-    log.info("Seek-ed session {} to position {}s", sessionId, positionSeconds);
-    return session;
-  }
-
-  @Override
   public void destroySession(UUID sessionId) {
     sessionRepository
         .removeById(sessionId)
@@ -120,6 +107,14 @@ public class HlsStreamingService implements StreamingService {
               segmentStore.deleteSession(sessionId);
               log.info("Destroyed streaming session {}", sessionId);
             });
+  }
+
+  @Override
+  public void destroySession(UUID sessionId, UUID profileId) {
+    sessionRepository
+        .findById(sessionId)
+        .filter(session -> session.isOwnedBy(profileId))
+        .ifPresent(session -> destroySession(sessionId));
   }
 
   @Override
@@ -135,7 +130,7 @@ public class HlsStreamingService implements StreamingService {
   @Override
   public void resumeSessionIfNeeded(UUID sessionId, String segmentName) {
     var session = sessionRepository.findById(sessionId).orElse(null);
-    if (session == null || !session.isSuspended()) {
+    if (session == null) {
       return;
     }
 
@@ -143,7 +138,16 @@ public class HlsStreamingService implements StreamingService {
       return;
     }
 
-    resumeWithLock(sessionId, segmentName);
+    if (session.isSuspended()) {
+      resumeWithLock(sessionId, segmentName);
+      return;
+    }
+
+    if (!requiresRelocation(session, segmentName)) {
+      return;
+    }
+
+    relocateWithLock(sessionId, segmentName);
   }
 
   private void resumeWithLock(UUID sessionId, String segmentName) {
@@ -157,6 +161,77 @@ public class HlsStreamingService implements StreamingService {
     }
   }
 
+  /**
+   * A running encoder produces segments sequentially from its start segment. A requested segment
+   * needs the encoder relocated when it lies behind that start (it will never be produced) or so
+   * far ahead of produced output that waiting would stall the player longer than restarting.
+   */
+  private boolean requiresRelocation(StreamSession session, String segmentName) {
+    var requestedIndex = parseSegmentIndex(segmentName);
+    var startNumber = activeStartNumber(session);
+    if (requestedIndex < startNumber) {
+      return true;
+    }
+
+    var probeIndex = requestedIndex - forwardGapSegments();
+    if (probeIndex < startNumber) {
+      return false;
+    }
+
+    return !segmentStore.segmentExists(
+        session.getSessionId(), siblingSegmentName(segmentName, probeIndex));
+  }
+
+  private void relocateWithLock(UUID sessionId, String segmentName) {
+    var lock = resumeMutex.getMutex(sessionId);
+    lock.lock();
+
+    try {
+      doRelocate(sessionId, segmentName);
+    } finally {
+      lock.unlock();
+    }
+  }
+
+  private void doRelocate(UUID sessionId, String segmentName) {
+    var session = sessionRepository.findById(sessionId).orElse(null);
+    if (session == null || !requiresRelocation(session, segmentName)) {
+      return;
+    }
+
+    if (segmentStore.segmentExists(sessionId, segmentName)) {
+      return;
+    }
+
+    var segmentIndex = parseSegmentIndex(segmentName);
+    transcodeExecutor.stop(sessionId);
+    startTranscodes(session, segmentIndex * segmentDurationSeconds(), segmentIndex);
+    session.setLastAccessedAt(Instant.now());
+    sessionRepository.save(session);
+
+    log.info("Relocated transcode for session {} to segment {}", sessionId, segmentIndex);
+  }
+
+  private int activeStartNumber(StreamSession session) {
+    return session.getVariantHandles().values().stream()
+        .mapToInt(TranscodeHandle::startNumber)
+        .max()
+        .orElse(0);
+  }
+
+  private int forwardGapSegments() {
+    var gapSegments = FORWARD_RELOCATION_GAP.toSeconds() / properties.segmentDuration().toSeconds();
+    return Math.max(1, (int) gapSegments);
+  }
+
+  private int segmentDurationSeconds() {
+    return (int) properties.segmentDuration().toSeconds();
+  }
+
+  private static String siblingSegmentName(String segmentName, int index) {
+    return SEGMENT_INDEX_PATTERN.matcher(segmentName).replaceFirst("segment" + index);
+  }
+
   private void doResume(UUID sessionId, String segmentName) {
     var session = sessionRepository.findById(sessionId).orElse(null);
     if (session == null || !session.isSuspended()) {
@@ -164,8 +239,7 @@ public class HlsStreamingService implements StreamingService {
     }
 
     var segmentIndex = parseSegmentIndex(segmentName);
-    var resumeSeek =
-        session.getSeekOrigin() + (segmentIndex * (int) properties.segmentDuration().toSeconds());
+    var resumeSeek = segmentIndex * (int) properties.segmentDuration().toSeconds();
 
     startTranscodes(session, resumeSeek, segmentIndex);
     session.setLastAccessedAt(Instant.now());

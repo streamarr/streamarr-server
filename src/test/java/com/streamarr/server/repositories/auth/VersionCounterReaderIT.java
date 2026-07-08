@@ -59,7 +59,7 @@ class VersionCounterReaderIT extends AbstractIntegrationTest {
             .accountId(account.getId())
             .householdId(householdId)
             .householdRole(HouseholdRole.OWNER)
-            .version(4)
+            .membershipVersion(4)
             .build());
     var profile =
         profileRepository.save(

@@ -37,7 +37,7 @@ public class SecurityConfig {
    * cookie, which is precisely the ambient credential CSRF must cover.
    */
   @Bean
-  SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+  SecurityFilterChain securityFilterChain(HttpSecurity http) {
     return http.csrf(AbstractHttpConfigurer::disable)
         .addFilterAfter(cookieScopedCsrfFilter(), HeaderWriterFilter.class)
         .authorizeHttpRequests(

@@ -43,16 +43,8 @@ public class StreamingResolver {
   }
 
   @DgsMutation
-  public StreamSessionDto seekStreamSession(
-      @InputArgument String sessionId, @InputArgument int positionSeconds) {
-    var session = streamingService.seekSession(parseUuid(sessionId), positionSeconds);
-
-    return toDto(session);
-  }
-
-  @DgsMutation
   public boolean destroyStreamSession(@InputArgument String sessionId) {
-    streamingService.destroySession(parseUuid(sessionId));
+    streamingService.destroySession(parseUuid(sessionId), authorizationService.requireProfile());
 
     return true;
   }
@@ -122,6 +114,8 @@ public class StreamingResolver {
   }
 
   private StreamSessionDto toDto(StreamSession session) {
+    // The issuer refuses to mint for sessions the caller does not own — every DTO carries a
+    // playback token, so the ownership check rides along wherever this is called from.
     return StreamSessionDto.builder()
         .id(session.getSessionId().toString())
         .streamUrl(
@@ -131,7 +125,7 @@ public class StreamingResolver {
                 + playbackTokenIssuer
                     .issue(
                         authorizationService.currentIdentity(),
-                        session.getSessionId(),
+                        session,
                         streamingProperties.sessionRetention())
                     .value())
         .transcodeMode(session.getTranscodeDecision().transcodeMode().name())

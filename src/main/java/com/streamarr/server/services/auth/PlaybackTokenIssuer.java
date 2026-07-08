@@ -1,7 +1,9 @@
 package com.streamarr.server.services.auth;
 
+import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
+import com.streamarr.server.exceptions.SessionNotFoundException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
@@ -33,9 +35,16 @@ public class PlaybackTokenIssuer {
   private final TokenVersionCache versionCache;
 
   public AccessToken issue(
-      AuthenticatedIdentity identity, UUID streamSessionId, Duration validity) {
+      AuthenticatedIdentity identity, StreamSession streamSession, Duration validity) {
     if (identity.profileId() == null || identity.householdId() == null) {
       throw new ProfileRequiredException();
+    }
+
+    // This is the only place playback capability is minted, so ownership is enforced here
+    // rather than trusted to callers: an unowned session must never become a playable token,
+    // and reads as missing (no existence oracle).
+    if (!streamSession.isOwnedBy(identity.profileId())) {
+      throw new SessionNotFoundException(streamSession.getSessionId());
     }
 
     // Versions are read fresh at mint time — the token must reflect current authority.
@@ -71,7 +80,7 @@ public class PlaybackTokenIssuer {
             .claim(TokenClaims.MEMBERSHIP_VERSION, membershipVersion)
             .claim(TokenClaims.PROFILE_ID, identity.profileId().toString())
             .claim(TokenClaims.POLICY_VERSION, policyVersion)
-            .claim(TokenClaims.STREAM_SESSION, streamSessionId.toString())
+            .claim(TokenClaims.STREAM_SESSION, streamSession.getSessionId().toString())
             .build();
 
     var jwt =

@@ -17,6 +17,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
+import org.jooq.Check;
 import org.jooq.Condition;
 import org.jooq.Field;
 import org.jooq.ForeignKey;
@@ -209,6 +210,13 @@ public class RefreshToken extends TableImpl<RefreshTokenRecord> {
             _authSession = new AuthSessionPath(this, Keys.REFRESH_TOKEN__FK_REFRESH_TOKEN_SESSION, null);
 
         return _authSession;
+    }
+
+    @Override
+    public List<Check<RefreshTokenRecord>> getChecks() {
+        return Arrays.asList(
+            Internal.createCheck(this, DSL.name("chk_refresh_token_rotated_at"), "(((status <> 'ROTATED'::refresh_token_status) OR (rotated_at IS NOT NULL)))", true)
+        );
     }
 
     @Override

@@ -72,14 +72,14 @@ class StreamingShutdownHookTest {
     }
 
     @Override
-    public StreamSession seekSession(UUID sessionId, int positionSeconds) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
     public void destroySession(UUID sessionId) {
       sessions.remove(sessionId);
       destroyedIds.add(sessionId);
+    }
+
+    @Override
+    public void destroySession(UUID sessionId, UUID profileId) {
+      throw new UnsupportedOperationException();
     }
 
     @Override

@@ -223,4 +223,48 @@ class SeriesFileProcessorTest {
     assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
         .isEqualTo(MediaFileStatus.ENRICHMENT_FAILED);
   }
+
+  @Test
+  @DisplayName("Should mark metadata parsing failed when path has no episode info")
+  void shouldMarkMetadataParsingFailedWhenPathHasNoEpisodeInfo() {
+    var library = LibraryFixtureCreator.buildFakeSeriesLibrary();
+
+    var mediaFile =
+        fakeMediaFileRepository.save(
+            MediaFile.builder()
+                .libraryId(library.getId())
+                .filepathUri("file:///library/Nature%20Documentary/beach.mkv")
+                .filename("beach.mkv")
+                .status(MediaFileStatus.UNMATCHED)
+                .build());
+
+    seriesFileProcessor.process(library, mediaFile);
+
+    assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
+        .isEqualTo(MediaFileStatus.METADATA_PARSING_FAILED);
+  }
+
+  @Test
+  @DisplayName("Should mark metadata search failed when provider finds no match")
+  void shouldMarkMetadataSearchFailedWhenProviderFindsNoMatch() {
+    var library = LibraryFixtureCreator.buildFakeSeriesLibrary();
+
+    var mediaFile =
+        fakeMediaFileRepository.save(
+            MediaFile.builder()
+                .libraryId(library.getId())
+                .filepathUri("file:///library/Unknown%20Show/Season%2001/Unknown.Show.S01E01.mkv")
+                .filename("Unknown.Show.S01E01.mkv")
+                .status(MediaFileStatus.UNMATCHED)
+                .build());
+
+    when(seriesMetadataProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+    when(seriesMetadataProvider.search(any(VideoFileParserResult.class)))
+        .thenReturn(Optional.empty());
+
+    seriesFileProcessor.process(library, mediaFile);
+
+    assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
+        .isEqualTo(MediaFileStatus.METADATA_SEARCH_FAILED);
+  }
 }

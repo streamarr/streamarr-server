@@ -77,16 +77,19 @@ public class HlsPlaylistService {
     sb.append("\n");
   }
 
+  /**
+   * The playlist always covers the full media duration on an absolute timeline: segment {@code i}
+   * is media time {@code [i * segmentDuration, (i + 1) * segmentDuration)}, so player position and
+   * duration match real media time.
+   */
   public String generateMediaPlaylist(StreamSession session, String token) {
     var decision = session.getTranscodeDecision();
     var container = decision.containerFormat();
     var probe = session.getMediaProbe();
     var segmentDuration = (int) properties.segmentDuration().toSeconds();
     var totalDurationMs = probe.duration().toMillis();
-    var seekOffsetMs = session.getSeekOrigin() * 1000L;
-    var remainingDurationMs = Math.max(0, totalDurationMs - seekOffsetMs);
     var segmentDurationMs = segmentDuration * 1000L;
-    var segmentCount = (int) Math.ceil((double) remainingDurationMs / segmentDurationMs);
+    var segmentCount = (int) Math.ceil((double) totalDurationMs / segmentDurationMs);
     var extension = container.segmentExtension();
 
     var sb = new StringBuilder();
@@ -101,7 +104,7 @@ public class HlsPlaylistService {
     }
 
     for (int i = 0; i < segmentCount; i++) {
-      var remainingMs = remainingDurationMs - (i * segmentDurationMs);
+      var remainingMs = totalDurationMs - (i * segmentDurationMs);
       var durationMs = Math.min(segmentDurationMs, remainingMs);
       sb.append("#EXTINF:").append(String.format("%.6f", durationMs / 1000.0)).append(",\n");
       sb.append("segment").append(i).append(extension).append("?t=").append(token).append("\n");

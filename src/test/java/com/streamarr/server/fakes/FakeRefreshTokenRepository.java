@@ -11,6 +11,11 @@ public class FakeRefreshTokenRepository extends FakeJpaRepository<RefreshToken>
     implements RefreshTokenRepository {
 
   @Override
+  public Optional<UUID> findSessionIdByDigest(String digest) {
+    return findByDigest(digest).map(RefreshToken::getSessionId);
+  }
+
+  @Override
   public Optional<RefreshToken> findByDigest(String digest) {
     return database.values().stream().filter(token -> digest.equals(token.getDigest())).findFirst();
   }

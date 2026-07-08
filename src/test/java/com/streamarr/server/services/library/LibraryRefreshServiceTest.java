@@ -251,11 +251,11 @@ class LibraryRefreshServiceTest {
 
     refreshService.refreshLibrary(library);
 
-    var seasons = seasonRepository.findBySeriesId(series.getId());
+    var seasons = seasonRepository.findBySeriesIdOrderBySeasonNumber(series.getId());
     assertThat(seasons).hasSize(1);
     assertThat(seasons.getFirst().getTitle()).isEqualTo("Season 1");
 
-    var episodes = episodeRepository.findBySeasonId(seasons.getFirst().getId());
+    var episodes = episodeRepository.findBySeasonIdOrderByEpisodeNumber(seasons.getFirst().getId());
     assertThat(episodes).hasSize(1);
     assertThat(episodes.getFirst().getTitle()).isEqualTo("Pilot");
   }
@@ -330,7 +330,7 @@ class LibraryRefreshServiceTest {
 
     refreshService.refreshLibrary(library);
 
-    var seasons = seasonRepository.findBySeriesId(series.getId());
+    var seasons = seasonRepository.findBySeriesIdOrderBySeasonNumber(series.getId());
     assertThat(seasons).hasSize(1);
     assertThat(seasons.getFirst().getTitle()).isEqualTo("Season 2");
   }
@@ -416,7 +416,7 @@ class LibraryRefreshServiceTest {
 
     refreshService.refreshLibrary(library);
 
-    assertThat(seasonRepository.findBySeriesId(series.getId())).isEmpty();
+    assertThat(seasonRepository.findBySeriesIdOrderBySeasonNumber(series.getId())).isEmpty();
   }
 
   private Library buildSeriesLibrary() {

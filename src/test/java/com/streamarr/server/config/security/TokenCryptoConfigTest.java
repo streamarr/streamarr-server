@@ -25,6 +25,24 @@ class TokenCryptoConfigTest {
   }
 
   @Test
+  @DisplayName("Should generate ephemeral key when signing key missing")
+  void shouldGenerateEphemeralKeyWhenSigningKeyMissing() {
+    var key = config.authSigningKey(propertiesWithKey(null));
+
+    assertThat(key.getEncoded()).hasSize(32);
+    assertThat(key.getAlgorithm()).isEqualTo("HmacSHA256");
+  }
+
+  @Test
+  @DisplayName("Should generate distinct ephemeral keys when key not configured")
+  void shouldGenerateDistinctEphemeralKeysWhenKeyNotConfigured() {
+    var first = config.authSigningKey(propertiesWithKey(null));
+    var second = config.authSigningKey(propertiesWithKey(""));
+
+    assertThat(first.getEncoded()).isNotEqualTo(second.getEncoded());
+  }
+
+  @Test
   @DisplayName("Should use configured key when signing key valid")
   void shouldUseConfiguredKeyWhenSigningKeyValid() {
     var keyBytes = "test-signing-key-32-bytes-long!!".getBytes();
