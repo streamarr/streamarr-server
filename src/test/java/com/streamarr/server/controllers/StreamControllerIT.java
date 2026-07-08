@@ -70,8 +70,14 @@ class StreamControllerIT extends AbstractIntegrationTest {
             .householdRole(HouseholdRole.OWNER)
             .profileId(identity.profile().getId())
             .build();
+    // Minted against a session the caller owns — the issuer refuses anything else.
+    var ownedSession =
+        StreamSessionFixture.defaultSessionBuilder()
+            .sessionId(streamSessionId)
+            .profileId(identity.profile().getId())
+            .build();
     return playbackTokenIssuer
-        .issue(authenticatedIdentity, streamSessionId, Duration.ofHours(1))
+        .issue(authenticatedIdentity, ownedSession, Duration.ofHours(1))
         .value();
   }
 

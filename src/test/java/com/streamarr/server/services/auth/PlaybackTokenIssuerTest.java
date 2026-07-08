@@ -1,5 +1,6 @@
 package com.streamarr.server.services.auth;
 
+import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -8,6 +9,7 @@ import com.streamarr.server.config.security.TokenCryptoConfig;
 import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.exceptions.ProfileRequiredException;
+import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.fakes.FakeVersionCounterReader;
 import java.time.Clock;
 import java.time.Duration;
@@ -53,9 +55,10 @@ class PlaybackTokenIssuerTest {
     reader.sessionVersions.put(sessionId, 2L);
     reader.membershipVersions.put(accountId + ":" + householdId, 3L);
     reader.profilePolicyVersions.put(profileId, 4L);
-    var streamSessionId = UUID.randomUUID();
+    var streamSession = defaultSessionBuilder().profileId(profileId).build();
+    var streamSessionId = streamSession.getSessionId();
 
-    var token = issuer.issue(profileIdentity(), streamSessionId, Duration.ofHours(24));
+    var token = issuer.issue(profileIdentity(), streamSession, Duration.ofHours(24));
 
     assertThat(token.scope()).isEqualTo(TokenScope.PLAYBACK);
     var decoded = decode(token.value());
@@ -85,11 +88,27 @@ class PlaybackTokenIssuerTest {
             .sessionId(sessionId)
             .scope(TokenScope.ACCOUNT)
             .build();
-    var streamSessionId = UUID.randomUUID();
+    var streamSession = defaultSessionBuilder().build();
     var ttl = Duration.ofHours(1);
 
-    assertThatThrownBy(() -> issuer.issue(accountScoped, streamSessionId, ttl))
+    assertThatThrownBy(() -> issuer.issue(accountScoped, streamSession, ttl))
         .isInstanceOf(ProfileRequiredException.class);
+  }
+
+  @Test
+  @DisplayName("Should refuse issuance when session not owned by identity")
+  void shouldRefuseIssuanceWhenSessionNotOwnedByIdentity() {
+    reader.sessionVersions.put(sessionId, 2L);
+    reader.membershipVersions.put(accountId + ":" + householdId, 3L);
+    reader.profilePolicyVersions.put(profileId, 4L);
+    var identity = profileIdentity();
+    var foreignSession = defaultSessionBuilder().profileId(UUID.randomUUID()).build();
+    var ttl = Duration.ofHours(1);
+
+    // The issuer is the only authority that mints playback capability: whatever future caller
+    // asks, an unowned session must never become a token, and reads as missing.
+    assertThatThrownBy(() -> issuer.issue(identity, foreignSession, ttl))
+        .isInstanceOf(SessionNotFoundException.class);
   }
 
   private AuthenticatedIdentity profileIdentity() {

@@ -1,12 +1,12 @@
 package com.streamarr.server.graphql.resolvers;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
 
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.config.security.AuthTokenProperties;
+import com.streamarr.server.config.security.TokenCryptoConfig;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.MediaProbe;
@@ -16,9 +16,9 @@ import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoQuality;
-import com.streamarr.server.services.auth.AccessToken;
+import com.streamarr.server.fakes.FakeVersionCounterReader;
 import com.streamarr.server.services.auth.PlaybackTokenIssuer;
-import com.streamarr.server.services.auth.TokenScope;
+import com.streamarr.server.services.auth.TokenVersionCache;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.watchprogress.SessionProgressService;
@@ -34,7 +34,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Stream;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -77,28 +76,44 @@ class StreamingResolverTest {
           .sessionRetention(Duration.ofHours(24))
           .build();
     }
+
+    /** The real issuer, so the resolver tests exercise its ownership refusal end to end. */
+    @Bean
+    PlaybackTokenIssuer playbackTokenIssuer() {
+      var properties =
+          AuthTokenProperties.builder()
+              .signingKey("dGVzdC1zaWduaW5nLWtleS0zMi1ieXRlcy1sb25nISE=")
+              .accessTokenTtl(Duration.ofMinutes(10))
+              .refreshTokenTtl(Duration.ofDays(30))
+              .rotationGrace(Duration.ofSeconds(30))
+              .build();
+      var crypto = new TokenCryptoConfig();
+      var reader = new FakeVersionCounterReader();
+      reader.sessionVersions.put(TestIdentityConstants.SESSION_ID, 1L);
+      reader.membershipVersions.put(
+          TestIdentityConstants.ACCOUNT_ID + ":" + TestIdentityConstants.HOUSEHOLD_ID, 1L);
+      reader.profilePolicyVersions.put(TestIdentityConstants.PROFILE_ID, 1L);
+
+      return new PlaybackTokenIssuer(
+          crypto.jwtEncoder(crypto.authSigningKey(properties)),
+          java.time.Clock.systemUTC(),
+          new TokenVersionCache(reader));
+    }
   }
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
-  @MockitoBean private PlaybackTokenIssuer playbackTokenIssuer;
-
-  @BeforeEach
-  void stubPlaybackTokenIssuer() {
-    when(playbackTokenIssuer.issue(any(), any(), any()))
-        .thenReturn(
-            AccessToken.builder()
-                .value("resolver-token")
-                .expiresAt(Instant.now().plusSeconds(3600))
-                .scope(TokenScope.PLAYBACK)
-                .build());
-  }
 
   @MockitoBean private SessionProgressService sessionProgressService;
   @MockitoBean private WatchStatusService watchStatusService;
 
   private StreamSession buildSession(UUID sessionId) {
+    return buildSessionOwnedBy(sessionId, TestIdentityConstants.PROFILE_ID);
+  }
+
+  private StreamSession buildSessionOwnedBy(UUID sessionId, UUID profileId) {
     return StreamSession.builder()
         .sessionId(sessionId)
+        .profileId(profileId)
         .mediaFileId(UUID.randomUUID())
         .sourcePath(Path.of("/media/movie.mkv"))
         .mediaProbe(
@@ -153,6 +168,32 @@ class StreamingResolverTest {
     assertThat(id).isEqualTo(sessionId.toString());
     assertThat(streamUrl).contains("/api/stream/" + sessionId + "/master.m3u8");
     assertThat(transcodeMode).isEqualTo("REMUX");
+  }
+
+  @Test
+  @DisplayName("Should refuse to mint stream url when session not owned by caller")
+  void shouldRefuseToMintStreamUrlWhenSessionNotOwnedByCaller() {
+    // Simulates a future internal path handing back a foreign session: the resolver must never
+    // turn it into a playable URL, whatever the service layer does.
+    var sessionId = UUID.randomUUID();
+    STUB_SERVICE.setNextResult(buildSessionOwnedBy(sessionId, UUID.randomUUID()));
+
+    var mutation =
+        String.format(
+            """
+            mutation {
+              createStreamSession(mediaFileId: "%s") {
+                id
+                streamUrl
+              }
+            }
+            """,
+            UUID.randomUUID());
+
+    var result = dgsQueryExecutor.execute(mutation);
+
+    assertThat(result.getErrors()).isNotEmpty();
+    assertThat(result.toSpecification().toString()).doesNotContain("?t=");
   }
 
   @Test
