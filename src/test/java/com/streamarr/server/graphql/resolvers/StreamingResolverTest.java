@@ -1,9 +1,12 @@
 package com.streamarr.server.graphql.resolvers;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
+import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.MediaProbe;
@@ -13,6 +16,9 @@ import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.services.auth.AccessToken;
+import com.streamarr.server.services.auth.PlaybackTokenIssuer;
+import com.streamarr.server.services.auth.TokenScope;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.watchprogress.SessionProgressService;
@@ -28,6 +34,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -62,31 +69,27 @@ class StreamingResolverTest {
     }
 
     @Bean
-    com.streamarr.server.config.StreamingProperties streamingProperties() {
-      return com.streamarr.server.config.StreamingProperties.builder()
+    StreamingProperties streamingProperties() {
+      return StreamingProperties.builder()
           .maxConcurrentTranscodes(8)
-          .segmentDuration(java.time.Duration.ofSeconds(6))
-          .sessionTimeout(java.time.Duration.ofSeconds(60))
-          .sessionRetention(java.time.Duration.ofHours(24))
+          .segmentDuration(Duration.ofSeconds(6))
+          .sessionTimeout(Duration.ofSeconds(60))
+          .sessionRetention(Duration.ofHours(24))
           .build();
     }
   }
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
-  @MockitoBean private com.streamarr.server.services.auth.PlaybackTokenIssuer playbackTokenIssuer;
+  @MockitoBean private PlaybackTokenIssuer playbackTokenIssuer;
 
-  @org.junit.jupiter.api.BeforeEach
+  @BeforeEach
   void stubPlaybackTokenIssuer() {
-    org.mockito.Mockito.when(
-            playbackTokenIssuer.issue(
-                org.mockito.ArgumentMatchers.any(),
-                org.mockito.ArgumentMatchers.any(),
-                org.mockito.ArgumentMatchers.any()))
+    when(playbackTokenIssuer.issue(any(), any(), any()))
         .thenReturn(
-            com.streamarr.server.services.auth.AccessToken.builder()
+            AccessToken.builder()
                 .value("resolver-token")
-                .expiresAt(java.time.Instant.now().plusSeconds(3600))
-                .scope(com.streamarr.server.services.auth.TokenScope.PLAYBACK)
+                .expiresAt(Instant.now().plusSeconds(3600))
+                .scope(TokenScope.PLAYBACK)
                 .build());
   }
 

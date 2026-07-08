@@ -86,8 +86,9 @@ class PlaybackTokenIssuerTest {
             .scope(TokenScope.ACCOUNT)
             .build();
     var streamSessionId = UUID.randomUUID();
+    var ttl = Duration.ofHours(1);
 
-    assertThatThrownBy(() -> issuer.issue(accountScoped, streamSessionId, Duration.ofHours(1)))
+    assertThatThrownBy(() -> issuer.issue(accountScoped, streamSessionId, ttl))
         .isInstanceOf(ProfileRequiredException.class);
   }
 

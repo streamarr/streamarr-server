@@ -32,6 +32,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -82,13 +84,14 @@ class StreamControllerTest {
     assertThat(result.getResponse().getContentAsString()).contains("#EXT-X-STREAM-INF:");
   }
 
-  @Test
-  @DisplayName("Should return 404 for master playlist when session not found")
-  void shouldReturn404ForMasterPlaylistWhenSessionNotFound() throws Exception {
+  @ParameterizedTest
+  @ValueSource(strings = {"master.m3u8", "stream.m3u8", "segment0.ts", "init.mp4"})
+  @DisplayName("Should return 404 when session not found")
+  void shouldReturn404WhenSessionNotFound(String path) throws Exception {
     var missingId = UUID.randomUUID();
     boundStreamSession.set(missingId);
     mockMvc
-        .perform(get("/api/stream/{sessionId}/master.m3u8", missingId).param("t", "unit-token"))
+        .perform(get("/api/stream/{sessionId}/" + path, missingId).param("t", "unit-token"))
         .andExpect(status().isNotFound());
   }
 
@@ -108,16 +111,6 @@ class StreamControllerTest {
     assertThat(result.getResponse().getContentAsString()).contains("#EXTM3U");
     assertThat(result.getResponse().getContentAsString()).contains("#EXT-X-TARGETDURATION:");
     assertThat(result.getResponse().getContentAsString()).contains("#EXT-X-ENDLIST");
-  }
-
-  @Test
-  @DisplayName("Should return 404 for media playlist when session not found")
-  void shouldReturn404ForMediaPlaylistWhenSessionNotFound() throws Exception {
-    var missingId = UUID.randomUUID();
-    boundStreamSession.set(missingId);
-    mockMvc
-        .perform(get("/api/stream/{sessionId}/stream.m3u8", missingId).param("t", "unit-token"))
-        .andExpect(status().isNotFound());
   }
 
   @Test
@@ -155,16 +148,6 @@ class StreamControllerTest {
   }
 
   @Test
-  @DisplayName("Should return 404 for segment when session not found")
-  void shouldReturn404ForSegmentWhenSessionNotFound() throws Exception {
-    var missingId = UUID.randomUUID();
-    boundStreamSession.set(missingId);
-    mockMvc
-        .perform(get("/api/stream/{sessionId}/segment0.ts", missingId).param("t", "unit-token"))
-        .andExpect(status().isNotFound());
-  }
-
-  @Test
   @DisplayName("Should return 404 when segment not ready within timeout")
   void shouldReturn404WhenSegmentNotReadyWithinTimeout() throws Exception {
     streamingService.setSession(buildMpegtsSession());
@@ -198,16 +181,6 @@ class StreamControllerTest {
 
     mockMvc
         .perform(get("/api/stream/{sessionId}/init.mp4", SESSION_ID))
-        .andExpect(status().isNotFound());
-  }
-
-  @Test
-  @DisplayName("Should return 404 for init segment when session not found")
-  void shouldReturn404ForInitSegmentWhenSessionNotFound() throws Exception {
-    var missingId = UUID.randomUUID();
-    boundStreamSession.set(missingId);
-    mockMvc
-        .perform(get("/api/stream/{sessionId}/init.mp4", missingId).param("t", "unit-token"))
         .andExpect(status().isNotFound());
   }
 
