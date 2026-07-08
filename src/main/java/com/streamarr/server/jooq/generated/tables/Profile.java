@@ -210,17 +210,32 @@ public class Profile extends TableImpl<ProfileRecord> {
         return _accountProfile;
     }
 
-    private transient AuthSessionPath _authSession;
+    private transient AuthSessionPath _fkAuthSessionActiveProfile;
 
     /**
      * Get the implicit to-many join path to the
-     * <code>public.auth_session</code> table
+     * <code>public.auth_session</code> table, via the
+     * <code>fk_auth_session_active_profile</code> key
      */
-    public AuthSessionPath authSession() {
-        if (_authSession == null)
-            _authSession = new AuthSessionPath(this, null, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_PROFILE.getInverseKey());
+    public AuthSessionPath fkAuthSessionActiveProfile() {
+        if (_fkAuthSessionActiveProfile == null)
+            _fkAuthSessionActiveProfile = new AuthSessionPath(this, null, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_PROFILE.getInverseKey());
 
-        return _authSession;
+        return _fkAuthSessionActiveProfile;
+    }
+
+    private transient AuthSessionPath _fkAuthSessionActiveProfileHousehold;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.auth_session</code> table, via the
+     * <code>fk_auth_session_active_profile_household</code> key
+     */
+    public AuthSessionPath fkAuthSessionActiveProfileHousehold() {
+        if (_fkAuthSessionActiveProfileHousehold == null)
+            _fkAuthSessionActiveProfileHousehold = new AuthSessionPath(this, null, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_PROFILE_HOUSEHOLD.getInverseKey());
+
+        return _fkAuthSessionActiveProfileHousehold;
     }
 
     private transient SessionProgressPath _sessionProgress;

@@ -123,6 +123,30 @@ class SeriesServiceTest {
 
       assertThat(result).isEmpty();
     }
+
+    @Test
+    @DisplayName("Should return seasons ordered by season number when saved out of order")
+    void shouldReturnSeasonsOrderedBySeasonNumberWhenSavedOutOfOrder() {
+      var series = seriesRepository.save(Series.builder().title("Breaking Bad").build());
+      seasonRepository.save(Season.builder().seasonNumber(2).series(series).build());
+      seasonRepository.save(Season.builder().seasonNumber(1).series(series).build());
+
+      var result = seriesService.findSeasons(series.getId());
+
+      assertThat(result).extracting(Season::getSeasonNumber).containsExactly(1, 2);
+    }
+
+    @Test
+    @DisplayName("Should return episodes ordered by episode number when saved out of order")
+    void shouldReturnEpisodesOrderedByEpisodeNumberWhenSavedOutOfOrder() {
+      var season = seasonRepository.save(Season.builder().seasonNumber(1).build());
+      episodeRepository.save(Episode.builder().episodeNumber(2).season(season).build());
+      episodeRepository.save(Episode.builder().episodeNumber(1).season(season).build());
+
+      var result = seriesService.findEpisodes(season.getId());
+
+      assertThat(result).extracting(Episode::getEpisodeNumber).containsExactly(1, 2);
+    }
   }
 
   @Nested
@@ -344,7 +368,7 @@ class SeriesServiceTest {
 
       var season = seriesService.createSeasonWithEpisodes(series, details, library);
 
-      var savedEpisodes = episodeRepository.findBySeasonId(season.getId());
+      var savedEpisodes = episodeRepository.findBySeasonIdOrderByEpisodeNumber(season.getId());
       var episodeEvents =
           eventPublisher.getEventsOfType(MetadataEnrichedEvent.class).stream()
               .filter(e -> e.entityType() == ImageEntityType.EPISODE)
@@ -428,7 +452,7 @@ class SeriesServiceTest {
       assertThat(season.getAirDate()).isEqualTo(java.time.LocalDate.of(2008, 1, 20));
       assertThat(season.getSeries().getId()).isEqualTo(series.getId());
 
-      var episodes = episodeRepository.findBySeasonId(season.getId());
+      var episodes = episodeRepository.findBySeasonIdOrderByEpisodeNumber(season.getId());
       assertThat(episodes).hasSize(2);
       assertThat(episodes).extracting(Episode::getEpisodeNumber).containsExactlyInAnyOrder(1, 2);
       assertThat(episodes)
@@ -458,7 +482,7 @@ class SeriesServiceTest {
 
       assertThat(season.getTitle()).isEqualTo("Specials");
       assertThat(season.getSeasonNumber()).isZero();
-      assertThat(episodeRepository.findBySeasonId(season.getId())).isEmpty();
+      assertThat(episodeRepository.findBySeasonIdOrderByEpisodeNumber(season.getId())).isEmpty();
 
       var events = eventPublisher.getEventsOfType(MetadataEnrichedEvent.class);
       assertThat(events)
@@ -503,7 +527,7 @@ class SeriesServiceTest {
 
       var season = seriesService.createSeasonWithEpisodes(series, details, library);
 
-      var savedEpisodes = episodeRepository.findBySeasonId(season.getId());
+      var savedEpisodes = episodeRepository.findBySeasonIdOrderByEpisodeNumber(season.getId());
       assertThat(savedEpisodes).hasSize(3);
 
       var episodeEvents =
@@ -691,7 +715,7 @@ class SeriesServiceTest {
       assertThat(result.getTitle()).isEqualTo("Season 1");
       assertThat(result.getOverview()).isEqualTo("Updated overview");
       assertThat(result.getAirDate()).isEqualTo(LocalDate.of(2008, 1, 20));
-      assertThat(seasonRepository.findBySeriesId(series.getId())).hasSize(1);
+      assertThat(seasonRepository.findBySeriesIdOrderBySeasonNumber(series.getId())).hasSize(1);
     }
 
     @Test
@@ -758,7 +782,7 @@ class SeriesServiceTest {
 
       seriesService.refreshSeasonWithEpisodes(series, details, library);
 
-      var episodes = episodeRepository.findBySeasonId(season.getId());
+      var episodes = episodeRepository.findBySeasonIdOrderByEpisodeNumber(season.getId());
       assertThat(episodes).hasSize(1);
       assertThat(episodes.getFirst().getId()).isEqualTo(existingEpisode.getId());
       assertThat(episodes.getFirst().getTitle()).isEqualTo("Pilot");
@@ -808,7 +832,7 @@ class SeriesServiceTest {
 
       seriesService.refreshSeasonWithEpisodes(series, details, library);
 
-      var episodes = episodeRepository.findBySeasonId(season.getId());
+      var episodes = episodeRepository.findBySeasonIdOrderByEpisodeNumber(season.getId());
       assertThat(episodes).hasSize(2);
       assertThat(episodes)
           .extracting(Episode::getTitle)

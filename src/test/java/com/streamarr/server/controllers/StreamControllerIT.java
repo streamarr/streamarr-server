@@ -104,6 +104,30 @@ class StreamControllerIT extends AbstractIntegrationTest {
         .andExpect(status().isNotFound());
   }
 
+  @Test
+  @DisplayName("Should return 400 when segment name contains parent directory traversal")
+  void shouldReturn400WhenSegmentNameContainsParentDirectoryTraversal() throws Exception {
+    mockMvc
+        .perform(get("/api/stream/{id}/{segment}", UUID.randomUUID(), "..secret.ts"))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  @DisplayName("Should return 400 when segment name contains backslash")
+  void shouldReturn400WhenSegmentNameContainsBackslash() throws Exception {
+    mockMvc
+        .perform(get("/api/stream/{id}/{segment}", UUID.randomUUID(), "evil\\name.ts"))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  @DisplayName("Should return 400 when variant label contains parent directory traversal")
+  void shouldReturn400WhenVariantLabelContainsParentDirectoryTraversal() throws Exception {
+    mockMvc
+        .perform(get("/api/stream/{id}/{variant}/stream.m3u8", UUID.randomUUID(), ".."))
+        .andExpect(status().isBadRequest());
+  }
+
   private static class StubStreamingService implements StreamingService {
 
     private final ConcurrentHashMap<UUID, StreamSession> sessions = new ConcurrentHashMap<>();
@@ -120,11 +144,6 @@ class StreamControllerIT extends AbstractIntegrationTest {
     @Override
     public Optional<StreamSession> accessSession(UUID sessionId) {
       return Optional.ofNullable(sessions.get(sessionId));
-    }
-
-    @Override
-    public StreamSession seekSession(UUID sessionId, UUID profileId, int positionSeconds) {
-      throw new UnsupportedOperationException();
     }
 
     @Override

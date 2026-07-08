@@ -77,6 +77,72 @@ class TokenVersionValidatorTest {
     assertThat(validator.validate(missingMembershipVersion).hasErrors()).isTrue();
   }
 
+  @Test
+  @DisplayName("Should reject token when session claims missing")
+  void shouldRejectTokenWhenSessionClaimsMissing() {
+    reader.sessionVersions.put(sessionId, 1L);
+
+    var now = Instant.now();
+    var missingSessionId =
+        Jwt.withTokenValue("test-token")
+            .header("alg", "HS256")
+            .subject(accountId.toString())
+            .issuedAt(now)
+            .expiresAt(now.plusSeconds(600))
+            .claim(TokenClaims.SESSION_VERSION, 1L)
+            .claim(TokenClaims.SCOPE, TokenScope.ACCOUNT.claimValue())
+            .build();
+    var missingSessionVersion =
+        Jwt.withTokenValue("test-token")
+            .header("alg", "HS256")
+            .subject(accountId.toString())
+            .issuedAt(now)
+            .expiresAt(now.plusSeconds(600))
+            .claim(TokenClaims.SESSION_ID, sessionId.toString())
+            .claim(TokenClaims.SCOPE, TokenScope.ACCOUNT.claimValue())
+            .build();
+
+    assertThat(validator.validate(missingSessionId).hasErrors()).isTrue();
+    assertThat(validator.validate(missingSessionVersion).hasErrors()).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should reject token when membership counter absent")
+  void shouldRejectTokenWhenMembershipCounterAbsent() {
+    reader.sessionVersions.put(sessionId, 1L);
+
+    assertThat(validator.validate(householdToken(UUID.randomUUID(), 0L)).hasErrors()).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should reject token when policy counter absent")
+  void shouldRejectTokenWhenPolicyCounterAbsent() {
+    var householdId = UUID.randomUUID();
+    reader.sessionVersions.put(sessionId, 1L);
+    reader.membershipVersions.put(accountId + ":" + householdId, 2L);
+
+    assertThat(validator.validate(profileToken(householdId, UUID.randomUUID(), 0L)).hasErrors())
+        .isTrue();
+  }
+
+  @Test
+  @DisplayName("Should reject token when policy claim missing")
+  void shouldRejectTokenWhenPolicyClaimMissing() {
+    var householdId = UUID.randomUUID();
+    reader.sessionVersions.put(sessionId, 1L);
+    reader.membershipVersions.put(accountId + ":" + householdId, 2L);
+
+    var missingPolicyVersion =
+        baseToken(1L)
+            .claim(TokenClaims.HOUSEHOLD_ID, householdId.toString())
+            .claim(TokenClaims.MEMBERSHIP_VERSION, 2L)
+            .claim(TokenClaims.PROFILE_ID, UUID.randomUUID().toString())
+            .claim(TokenClaims.SCOPE, TokenScope.PROFILE.claimValue())
+            .build();
+
+    assertThat(validator.validate(missingPolicyVersion).hasErrors()).isTrue();
+  }
+
   private Jwt tokenWithSessionVersion(long sessionVersion) {
     return baseToken(sessionVersion).build();
   }

@@ -99,11 +99,6 @@ class StreamingSessionCleanupListenerTest {
     }
 
     @Override
-    public StreamSession seekSession(UUID sessionId, UUID profileId, int positionSeconds) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
     public Collection<StreamSession> getAllSessions() {
       return sessions.values();
     }

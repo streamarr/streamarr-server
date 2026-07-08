@@ -389,11 +389,6 @@ class StreamControllerTest {
     }
 
     @Override
-    public StreamSession seekSession(UUID sessionId, UUID profileId, int positionSeconds) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
     public void destroySession(UUID sessionId) {
       // no-op for test fake
     }

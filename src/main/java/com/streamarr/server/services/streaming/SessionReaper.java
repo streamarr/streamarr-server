@@ -63,7 +63,8 @@ public class SessionReaper {
       }
 
       session.setVariantHandle(
-          entry.getKey(), new TranscodeHandle(handle.processId(), TranscodeStatus.SUSPENDED));
+          entry.getKey(),
+          new TranscodeHandle(handle.processId(), TranscodeStatus.SUSPENDED, handle.startNumber()));
     }
     sessionRepository.save(session);
   }
@@ -83,7 +84,8 @@ public class SessionReaper {
 
       log.warn("FFmpeg process died for session {} variant {}", session.getSessionId(), label);
       session.setVariantHandle(
-          label, new TranscodeHandle(handle.processId(), TranscodeStatus.FAILED));
+          label,
+          new TranscodeHandle(handle.processId(), TranscodeStatus.FAILED, handle.startNumber()));
       sessionRepository.save(session);
     }
   }

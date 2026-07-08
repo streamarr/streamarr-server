@@ -208,52 +208,6 @@ class StreamingResolverTest {
   }
 
   @Test
-  @DisplayName("Should return session DTO when seeking session")
-  void shouldReturnSessionDtoWhenSeekingSession() {
-    var sessionId = UUID.randomUUID();
-    var session = buildSession(sessionId);
-    STUB_SERVICE.setNextResult(session);
-
-    var mutation =
-        String.format(
-            """
-            mutation {
-              seekStreamSession(sessionId: "%s", positionSeconds: 300) {
-                id
-                streamUrl
-              }
-            }
-            """,
-            sessionId);
-
-    var id = dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.seekStreamSession.id");
-
-    assertThat(id).isEqualTo(sessionId.toString());
-  }
-
-  @Test
-  @DisplayName("Should seek as current profile when seeking session")
-  void shouldSeekAsCurrentProfileWhenSeekingSession() {
-    var sessionId = UUID.randomUUID();
-    STUB_SERVICE.setNextResult(buildSession(sessionId));
-
-    var mutation =
-        String.format(
-            """
-            mutation {
-              seekStreamSession(sessionId: "%s", positionSeconds: 300) {
-                id
-              }
-            }
-            """,
-            sessionId);
-
-    dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.seekStreamSession.id");
-
-    assertThat(STUB_SERVICE.getLastSeekProfileId()).isEqualTo(TestIdentityConstants.PROFILE_ID);
-  }
-
-  @Test
   @DisplayName("Should destroy as current profile when destroying session")
   void shouldDestroyAsCurrentProfileWhenDestroyingSession() {
     var mutation =
@@ -262,23 +216,6 @@ class StreamingResolverTest {
     dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.destroyStreamSession");
 
     assertThat(STUB_SERVICE.getLastDestroyProfileId()).isEqualTo(TestIdentityConstants.PROFILE_ID);
-  }
-
-  @Test
-  @DisplayName("Should return error when seek session ID is invalid")
-  void shouldReturnErrorWhenSeekSessionIdIsInvalid() {
-    var result =
-        dgsQueryExecutor.execute(
-            """
-            mutation {
-              seekStreamSession(sessionId: "bad-id", positionSeconds: 300) {
-                id
-              }
-            }
-            """);
-
-    assertThat(result.getErrors()).isNotEmpty();
-    assertThat(result.getErrors().getFirst().getMessage()).contains("Invalid ID format");
   }
 
   @ParameterizedTest(name = "{0}")
@@ -327,7 +264,6 @@ class StreamingResolverTest {
 
     private StreamSession nextResult;
     private StreamingOptions lastReceivedOptions;
-    private UUID lastSeekProfileId;
     private UUID lastDestroyProfileId;
 
     void setNextResult(StreamSession session) {
@@ -336,10 +272,6 @@ class StreamingResolverTest {
 
     StreamingOptions getLastReceivedOptions() {
       return lastReceivedOptions;
-    }
-
-    UUID getLastSeekProfileId() {
-      return lastSeekProfileId;
     }
 
     UUID getLastDestroyProfileId() {
@@ -355,12 +287,6 @@ class StreamingResolverTest {
     @Override
     public Optional<StreamSession> accessSession(UUID sessionId) {
       return Optional.ofNullable(nextResult);
-    }
-
-    @Override
-    public StreamSession seekSession(UUID sessionId, UUID profileId, int positionSeconds) {
-      this.lastSeekProfileId = profileId;
-      return nextResult;
     }
 
     @Override

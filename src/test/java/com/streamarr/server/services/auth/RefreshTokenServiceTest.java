@@ -2,19 +2,29 @@ package com.streamarr.server.services.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.when;
 
 import com.streamarr.server.config.security.AuthTokenProperties;
+import com.streamarr.server.domain.auth.RefreshToken;
 import com.streamarr.server.domain.auth.RefreshTokenStatus;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
+import com.streamarr.server.exceptions.InvalidRefreshTokenException;
 import com.streamarr.server.exceptions.TokenReuseDetectedException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeRefreshTokenRepository;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.AccountFixture;
+import com.streamarr.server.repositories.auth.RefreshTokenRepository;
 import com.streamarr.server.services.auth.events.CounterBumpedEvent;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
@@ -32,18 +42,19 @@ class RefreshTokenServiceTest {
   private final FakeRefreshTokenRepository tokenRepository = new FakeRefreshTokenRepository();
   private final CapturingEventPublisher eventPublisher = new CapturingEventPublisher();
 
+  private final AuthTokenProperties properties =
+      AuthTokenProperties.builder()
+          .signingKey("")
+          .accessTokenTtl(Duration.ofMinutes(10))
+          .refreshTokenTtl(Duration.ofDays(30))
+          .rotationGrace(Duration.ofSeconds(30))
+          .build();
+
+  private final MutableClock clock = new MutableClock(currentTime);
+
   private final RefreshTokenService service =
       new RefreshTokenService(
-          sessionRepository,
-          tokenRepository,
-          AuthTokenProperties.builder()
-              .signingKey("")
-              .accessTokenTtl(Duration.ofMinutes(10))
-              .refreshTokenTtl(Duration.ofDays(30))
-              .rotationGrace(Duration.ofSeconds(30))
-              .build(),
-          new MutableClock(currentTime),
-          eventPublisher);
+          sessionRepository, tokenRepository, properties, clock, eventPublisher);
 
   @Test
   @DisplayName("Should rotate when active token redeemed")
@@ -114,6 +125,114 @@ class RefreshTokenServiceTest {
               assertThat(event.key()).isEqualTo(session.getId().toString());
               assertThat(event.version()).isEqualTo(1L);
             });
+  }
+
+  @Test
+  @DisplayName("Should reject redemption when token unknown")
+  void shouldRejectRedemptionWhenTokenUnknown() {
+    assertThatThrownBy(() -> service.redeem("never-issued-token"))
+        .isInstanceOf(InvalidRefreshTokenException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject redemption without revocation when active token expired")
+  void shouldRejectRedemptionWithoutRevocationWhenActiveTokenExpired() {
+    var issued = issueSession();
+
+    advanceClock(Duration.ofDays(31));
+    var expiredToken = issued.rawToken();
+
+    assertThatThrownBy(() -> service.redeem(expiredToken))
+        .isInstanceOf(InvalidRefreshTokenException.class);
+
+    var session = sessionRepository.findById(issued.session().getId()).orElseThrow();
+    assertThat(session.getRevokedAt()).isNull();
+    assertThat(eventPublisher.getEventsOfType(CounterBumpedEvent.class)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should reject redemption when session revoked")
+  void shouldRejectRedemptionWhenSessionRevoked() {
+    var issued = issueSession();
+    sessionRepository.revoke(
+        issued.session().getId(), SessionRevocationReason.LOGOUT, currentTime.get());
+
+    var rawToken = issued.rawToken();
+    assertThatThrownBy(() -> service.redeem(rawToken))
+        .isInstanceOf(TokenReuseDetectedException.class);
+
+    // No successor is minted onto a revoked session, and nothing was rotated.
+    assertThat(tokenRepository.findAll()).hasSize(1);
+    assertThat(tokenRepository.findAll())
+        .allSatisfy(token -> assertThat(token.getStatus()).isEqualTo(RefreshTokenStatus.ACTIVE));
+  }
+
+  @Test
+  @DisplayName("Should treat grace replay as theft when session revoked")
+  void shouldTreatGraceReplayAsTheftWhenSessionRevoked() {
+    var issued = issueSession();
+    service.redeem(issued.rawToken());
+    sessionRepository.revoke(
+        issued.session().getId(), SessionRevocationReason.ADMIN_REVOCATION, currentTime.get());
+
+    advanceClock(Duration.ofSeconds(5));
+    var replayedToken = issued.rawToken();
+
+    assertThatThrownBy(() -> service.redeem(replayedToken))
+        .isInstanceOf(TokenReuseDetectedException.class);
+
+    // The session was already revoked, so the reuse path finds no version to bump: no event.
+    assertThat(eventPublisher.getEventsOfType(CounterBumpedEvent.class)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should treat rotated token without rotation timestamp as theft")
+  void shouldTreatRotatedTokenWithoutRotationTimestampAsTheft() {
+    var issued = issueSession();
+    service.redeem(issued.rawToken());
+    tokenRepository.findAll().stream()
+        .filter(token -> token.getStatus() == RefreshTokenStatus.ROTATED)
+        .forEach(token -> token.setRotatedAt(null));
+
+    var replayedToken = issued.rawToken();
+
+    assertThatThrownBy(() -> service.redeem(replayedToken))
+        .isInstanceOf(TokenReuseDetectedException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject redemption when session row missing")
+  void shouldRejectRedemptionWhenSessionRowMissing() {
+    var orphanTokens = mock(RefreshTokenRepository.class);
+    when(orphanTokens.findByDigest(any()))
+        .thenReturn(
+            Optional.of(
+                RefreshToken.builder()
+                    .sessionId(UUID.randomUUID())
+                    .digest("digest")
+                    .status(RefreshTokenStatus.ACTIVE)
+                    .expiresAt(currentTime.get().plus(Duration.ofDays(30)))
+                    .build()));
+    var orphanService =
+        new RefreshTokenService(
+            new FakeAuthSessionRepository(), orphanTokens, properties, clock, eventPublisher);
+
+    assertThatThrownBy(() -> orphanService.redeem("raw-token"))
+        .isInstanceOf(InvalidRefreshTokenException.class);
+  }
+
+  @Test
+  @DisplayName("Should fail fast when SHA-256 unavailable")
+  void shouldFailFastWhenSha256Unavailable() {
+    try (var digests = mockStatic(MessageDigest.class)) {
+      digests
+          .when(() -> MessageDigest.getInstance("SHA-256"))
+          .thenThrow(new NoSuchAlgorithmException("unavailable"));
+
+      assertThatThrownBy(() -> service.redeem("raw-token"))
+          .isInstanceOf(IllegalStateException.class)
+          .hasMessageContaining("SHA-256");
+    }
   }
 
   private IssuedRefreshToken issueSession() {

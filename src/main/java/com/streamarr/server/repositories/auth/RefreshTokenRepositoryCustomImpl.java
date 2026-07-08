@@ -5,6 +5,7 @@ import static com.streamarr.server.jooq.generated.tables.RefreshToken.REFRESH_TO
 import com.streamarr.server.jooq.generated.enums.RefreshTokenStatus;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
@@ -29,6 +30,14 @@ public class RefreshTokenRepositoryCustomImpl implements RefreshTokenRepositoryC
         .and(REFRESH_TOKEN.STATUS.eq(RefreshTokenStatus.ACTIVE))
         .and(REFRESH_TOKEN.EXPIRES_AT.gt(nowOffset))
         .execute();
+  }
+
+  @Override
+  public Optional<UUID> findSessionIdByDigest(String digest) {
+    return dsl.select(REFRESH_TOKEN.SESSION_ID)
+        .from(REFRESH_TOKEN)
+        .where(REFRESH_TOKEN.DIGEST.eq(digest))
+        .fetchOptional(REFRESH_TOKEN.SESSION_ID);
   }
 
   @Override

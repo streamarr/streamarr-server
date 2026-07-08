@@ -32,15 +32,15 @@ CREATE TABLE household
 
 CREATE TABLE household_membership
 (
-    id               UUID                     NOT NULL DEFAULT gen_random_uuid(),
-    created_on       TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    created_by       UUID,
-    last_modified_on TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    last_modified_by UUID,
-    account_id       UUID                     NOT NULL,
-    household_id     UUID                     NOT NULL,
-    household_role   household_role           NOT NULL,
-    version          BIGINT                   NOT NULL DEFAULT 0,
+    id                 UUID                     NOT NULL DEFAULT gen_random_uuid(),
+    created_on         TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    created_by         UUID,
+    last_modified_on   TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    last_modified_by   UUID,
+    account_id         UUID                     NOT NULL,
+    household_id       UUID                     NOT NULL,
+    household_role     household_role           NOT NULL,
+    membership_version BIGINT                   NOT NULL DEFAULT 0,
     CONSTRAINT household_membership_pkey PRIMARY KEY (id),
     CONSTRAINT fk_household_membership_account FOREIGN KEY (account_id)
         REFERENCES user_account (id) ON DELETE CASCADE,
@@ -65,6 +65,8 @@ CREATE TABLE profile
     CONSTRAINT fk_profile_household FOREIGN KEY (household_id)
         REFERENCES household (id) ON DELETE CASCADE,
     CONSTRAINT uq_profile_household_name UNIQUE (household_id, name),
+    -- Redundant with the PK for uniqueness; exists as a composite-FK target so referencing
+    -- tables can enforce profile-belongs-to-household.
     CONSTRAINT uq_profile_id_household UNIQUE (id, household_id)
 );
 
@@ -88,6 +90,8 @@ CREATE TABLE account_profile
 
 CREATE INDEX idx_account_profile_profile_household ON account_profile (profile_id, household_id);
 
+-- Boolean PK + CHECK (id) leaves TRUE as the only representable id: at most one bootstrap
+-- row can ever exist.
 CREATE TABLE server_bootstrap
 (
     id               BOOLEAN                  NOT NULL DEFAULT TRUE,
