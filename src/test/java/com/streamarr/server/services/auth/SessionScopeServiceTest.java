@@ -165,9 +165,11 @@ class SessionScopeServiceTest {
   @DisplayName("Should reject household selection when account not member")
   void shouldRejectHouseholdSelectionWhenAccountNotMember() {
     var f = fixture();
+    var accountId = f.account.getId();
+    var sessionId = f.session.getId();
+    var foreignHouseholdId = UUID.randomUUID();
 
-    assertThatThrownBy(
-            () -> service.selectHousehold(f.account.getId(), f.session.getId(), UUID.randomUUID()))
+    assertThatThrownBy(() -> service.selectHousehold(accountId, sessionId, foreignHouseholdId))
         .isInstanceOf(HouseholdAccessDeniedException.class);
   }
 
@@ -206,9 +208,11 @@ class SessionScopeServiceTest {
   @DisplayName("Should require household before profile selection")
   void shouldRequireHouseholdBeforeProfileSelection() {
     var f = fixture();
+    var accountId = f.account.getId();
+    var sessionId = f.session.getId();
+    var profileId = UUID.randomUUID();
 
-    assertThatThrownBy(
-            () -> service.selectProfile(f.account.getId(), f.session.getId(), UUID.randomUUID()))
+    assertThatThrownBy(() -> service.selectProfile(accountId, sessionId, profileId))
         .isInstanceOf(HouseholdRequiredException.class);
   }
 
@@ -218,9 +222,11 @@ class SessionScopeServiceTest {
     var f = fixture();
     f.session.setActiveHouseholdId(f.household.getId());
     sessionRepository.save(f.session);
+    var accountId = f.account.getId();
+    var sessionId = f.session.getId();
+    var profileId = f.profile.getId();
 
-    assertThatThrownBy(
-            () -> service.selectProfile(f.account.getId(), f.session.getId(), f.profile.getId()))
+    assertThatThrownBy(() -> service.selectProfile(accountId, sessionId, profileId))
         .isInstanceOf(ProfileAccessDeniedException.class);
   }
 
@@ -243,9 +249,11 @@ class SessionScopeServiceTest {
   void shouldRejectSelectionWhenAccountMissing() {
     var session =
         sessionRepository.save(AuthSession.builder().accountId(UUID.randomUUID()).build());
+    var unknownAccountId = UUID.randomUUID();
+    var sessionId = session.getId();
+    var profileId = UUID.randomUUID();
 
-    assertThatThrownBy(
-            () -> service.selectProfile(UUID.randomUUID(), session.getId(), UUID.randomUUID()))
+    assertThatThrownBy(() -> service.selectProfile(unknownAccountId, sessionId, profileId))
         .isInstanceOf(AuthenticationRequiredException.class);
   }
 
@@ -253,9 +261,11 @@ class SessionScopeServiceTest {
   @DisplayName("Should reject selection when session missing")
   void shouldRejectSelectionWhenSessionMissing() {
     var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    var accountId = account.getId();
+    var unknownSessionId = UUID.randomUUID();
+    var profileId = UUID.randomUUID();
 
-    assertThatThrownBy(
-            () -> service.selectProfile(account.getId(), UUID.randomUUID(), UUID.randomUUID()))
+    assertThatThrownBy(() -> service.selectProfile(accountId, unknownSessionId, profileId))
         .isInstanceOf(AuthenticationRequiredException.class);
   }
 

@@ -708,6 +708,15 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should reject refresh when no token in body or cookie")
+  void shouldRejectRefreshWhenNoTokenInBodyOrCookie() throws Exception {
+    mockMvc
+        .perform(post("/api/auth/refresh"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("INVALID_REFRESH_TOKEN"));
+  }
+
+  @Test
   @DisplayName("Should reject password change when current password wrong")
   void shouldRejectPasswordChangeWhenCurrentPasswordWrong() throws Exception {
     seedSingleProfileIdentity();

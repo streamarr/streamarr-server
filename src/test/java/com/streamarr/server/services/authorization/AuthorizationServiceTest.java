@@ -63,6 +63,8 @@ class AuthorizationServiceTest {
         .isInstanceOf(HouseholdRequiredException.class);
     assertThatThrownBy(authorizationService::requireProfile)
         .isInstanceOf(ProfileRequiredException.class);
+    assertThatThrownBy(() -> authorizationService.requireHouseholdRole(HouseholdRole.MEMBER))
+        .isInstanceOf(HouseholdRequiredException.class);
   }
 
   @Test
