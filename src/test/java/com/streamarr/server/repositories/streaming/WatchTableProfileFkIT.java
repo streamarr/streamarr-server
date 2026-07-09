@@ -52,10 +52,10 @@ class WatchTableProfileFkIT extends AbstractIntegrationTest {
     seedMediaFile();
 
     // A real media file isolates the profile FK: it is the only constraint left to violate.
-    assertThatThrownBy(
-            () ->
-                sessionProgressRepository.saveAndFlush(
-                    SessionProgressFixture.progressBuilder(UUID.randomUUID(), mediaFileId).build()))
+    var sessionProgress =
+        SessionProgressFixture.progressBuilder(UUID.randomUUID(), mediaFileId).build();
+
+    assertThatThrownBy(() -> sessionProgressRepository.saveAndFlush(sessionProgress))
         .isInstanceOf(DataIntegrityViolationException.class)
         .hasMessageContaining("fk_session_progress_profile");
   }
@@ -63,15 +63,15 @@ class WatchTableProfileFkIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should reject watch history when profile does not exist")
   void shouldRejectWatchHistoryWhenProfileDoesNotExist() {
-    assertThatThrownBy(
-            () ->
-                watchHistoryRepository.saveAndFlush(
-                    WatchHistory.builder()
-                        .profileId(UUID.randomUUID())
-                        .collectableId(UUID.randomUUID())
-                        .watchedAt(Instant.now())
-                        .durationSeconds(3600)
-                        .build()))
+    var watchHistory =
+        WatchHistory.builder()
+            .profileId(UUID.randomUUID())
+            .collectableId(UUID.randomUUID())
+            .watchedAt(Instant.now())
+            .durationSeconds(3600)
+            .build();
+
+    assertThatThrownBy(() -> watchHistoryRepository.saveAndFlush(watchHistory))
         .isInstanceOf(DataIntegrityViolationException.class)
         .hasMessageContaining("fk_watch_history_profile");
   }
