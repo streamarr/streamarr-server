@@ -56,6 +56,15 @@ public class CounterNotificationListener implements SmartLifecycle {
   }
 
   private void listenLoop() {
+    try {
+      reconnectLoop();
+    } finally {
+      // No exit path — not even an Error — may strand the flag at true on a dead worker.
+      listening = false;
+    }
+  }
+
+  private void reconnectLoop() {
     var backoffMs = INITIAL_BACKOFF_MS;
 
     while (running) {
@@ -72,19 +81,32 @@ public class CounterNotificationListener implements SmartLifecycle {
           }
         }
       } catch (CounterNotificationConnectionException e) {
-        listening = false;
-        // Bumps are invisible while the feed is down; clearing on every failed attempt keeps
-        // lookups reading through, bounding staleness to one backoff interval.
-        cache.clearAll();
-        if (!running) {
+        if (disconnected()) {
           return;
         }
         log.warn("Counter notification connection failed; reconnecting.", e);
-        backoff.sleep(backoffMs);
-        backoffMs = Math.min(backoffMs * 2, MAX_BACKOFF_MS);
+        backoffMs = sleepAndGrow(backoffMs);
+      } catch (RuntimeException e) {
+        if (disconnected()) {
+          return;
+        }
+        log.error("Unexpected counter notification listener failure; reconnecting.", e);
+        backoffMs = sleepAndGrow(backoffMs);
       }
     }
+  }
+
+  private boolean disconnected() {
     listening = false;
+    // Bumps are invisible while the feed is down; clearing on every failed attempt keeps
+    // lookups reading through, bounding staleness to one backoff interval.
+    cache.clearAll();
+    return !running;
+  }
+
+  private long sleepAndGrow(long backoffMs) {
+    backoff.sleep(backoffMs);
+    return Math.min(backoffMs * 2, MAX_BACKOFF_MS);
   }
 
   private void apply(String payload) {

@@ -142,6 +142,48 @@ class CounterNotificationListenerTest {
   }
 
   @Test
+  @DisplayName("Should reconnect when applying a notification fails unexpectedly")
+  void shouldReconnectWhenApplyingANotificationFailsUnexpectedly() {
+    var sessionId = UUID.randomUUID();
+    var poisonedSessionId = UUID.randomUUID();
+    var cache =
+        new TokenVersionCache(new FakeVersionCounterReader()) {
+          @Override
+          public void update(CounterKind kind, String key, long version) {
+            if (key.equals(poisonedSessionId.toString())) {
+              throw new IllegalStateException("poisoned update");
+            }
+            super.update(kind, key, version);
+          }
+        };
+    var connectionSource = new ScriptedCounterNotificationConnectionSource();
+    var listener = new CounterNotificationListener(cache, connectionSource, _ -> {});
+
+    listener.start();
+    try {
+      connectionSource.awaitListenCount(1);
+      connectionSource.publish(sessionPayload(poisonedSessionId, 5L));
+
+      // An unexpected failure must not kill the worker; it reconnects and keeps applying.
+      connectionSource.awaitListenCount(2);
+      connectionSource.publish(sessionPayload(sessionId, 7L));
+
+      await()
+          .atMost(Duration.ofSeconds(1))
+          .untilAsserted(() -> assertThat(cache.sessionVersion(sessionId)).contains(7L));
+    } finally {
+      listener.stop();
+    }
+
+    await().atMost(Duration.ofSeconds(1)).until(() -> !listener.isListening());
+  }
+
+  private static String sessionPayload(UUID sessionId, long version) {
+    return new CounterNotificationPayload(CounterKind.SESSION, sessionId.toString(), version)
+        .encode();
+  }
+
+  @Test
   @DisplayName("Should stop listening when stopped while connected")
   void shouldStopListeningWhenStoppedWhileConnected() {
     var cache = new TokenVersionCache(new FakeVersionCounterReader());
