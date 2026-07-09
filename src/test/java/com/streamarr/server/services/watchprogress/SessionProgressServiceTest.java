@@ -256,6 +256,45 @@ class SessionProgressServiceTest {
     }
 
     @Test
+    @DisplayName("Should not mark watched when stopped above watched threshold by another profile")
+    void shouldNotMarkWatchedWhenStoppedAboveWatchedThresholdByAnotherProfile() {
+      var session = addSession();
+      service.reportStreamSessionTimeline(
+          PROFILE_ID, session.getSessionId(), 3600, PlaybackState.PLAYING);
+
+      var sessionId = session.getSessionId();
+      var otherProfileId = UUID.randomUUID();
+      assertThatThrownBy(
+              () ->
+                  service.reportStreamSessionTimeline(
+                      otherProfileId, sessionId, 6840, PlaybackState.STOPPED))
+          .isInstanceOf(SessionNotFoundException.class);
+
+      assertThat(sessionProgressRepository.findBySessionId(session.getSessionId())).isPresent();
+      assertThat(watchHistoryRepository.count()).isZero();
+      assertThat(eventPublisher.getEventsOfType(ItemWatchedEvent.class)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should treat session without owner profile as not found")
+    void shouldTreatSessionWithoutOwnerProfileAsNotFound() {
+      var session = StreamSessionFixture.buildMpegtsSessionOwnedBy(null);
+      sessionRepository.save(session);
+      saveMediaFileForSession(session);
+
+      var sessionId = session.getSessionId();
+      assertThatThrownBy(
+              () ->
+                  service.reportStreamSessionTimeline(
+                      PROFILE_ID, sessionId, 6840, PlaybackState.STOPPED))
+          .isInstanceOf(SessionNotFoundException.class);
+
+      assertThat(sessionProgressRepository.count()).isZero();
+      assertThat(watchHistoryRepository.count()).isZero();
+      assertThat(eventPublisher.getEventsOfType(ItemWatchedEvent.class)).isEmpty();
+    }
+
+    @Test
     @DisplayName("Should not persist progress when position seconds is negative")
     void shouldNotPersistProgressWhenPositionSecondsIsNegative() {
       var session = addSession();

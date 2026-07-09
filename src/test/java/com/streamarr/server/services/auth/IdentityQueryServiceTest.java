@@ -44,7 +44,7 @@ class IdentityQueryServiceTest {
   @Test
   @DisplayName("Should reject me view when account missing")
   void shouldRejectMeViewWhenAccountMissing() {
-    var identity = identityFor(UUID.randomUUID(), null, TokenScope.ACCOUNT);
+    var identity = accountScopedIdentity(UUID.randomUUID());
 
     assertThatThrownBy(() -> service.meView(identity))
         .isInstanceOf(AuthenticationRequiredException.class);
@@ -54,7 +54,7 @@ class IdentityQueryServiceTest {
   @DisplayName("Should return account with no memberships when none exist")
   void shouldReturnAccountWithNoMembershipsWhenNoneExist() {
     var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
-    var identity = identityFor(account.getId(), null, TokenScope.ACCOUNT);
+    var identity = accountScopedIdentity(account.getId());
 
     var view = service.meView(identity);
 
@@ -64,15 +64,15 @@ class IdentityQueryServiceTest {
   }
 
   @Test
-  @DisplayName("Should mark the active profile within a membership")
-  void shouldMarkTheActiveProfileWithinAMembership() {
+  @DisplayName("Should mark the active profile when within a membership")
+  void shouldMarkActiveProfileWhenWithinMembership() {
     var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
     var householdId = saveHousehold("Smith Family");
     saveMembership(account.getId(), householdId, HouseholdRole.OWNER);
     var active = linkProfile(account.getId(), householdId);
     var other = linkProfile(account.getId(), householdId);
 
-    var identity = identityFor(account.getId(), active.getId(), TokenScope.PROFILE);
+    var identity = profileScopedIdentity(account.getId(), active);
 
     var view = service.meView(identity);
 
@@ -91,8 +91,8 @@ class IdentityQueryServiceTest {
   }
 
   @Test
-  @DisplayName("Should skip links whose profile row is gone")
-  void shouldSkipLinksWhoseProfileRowIsGone() {
+  @DisplayName("Should skip links when the profile row is gone")
+  void shouldSkipLinksWhenProfileRowIsGone() {
     var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
     var householdId = saveHousehold("Household");
     saveMembership(account.getId(), householdId, HouseholdRole.MEMBER);
@@ -103,9 +103,16 @@ class IdentityQueryServiceTest {
             .profileId(UUID.randomUUID())
             .build());
 
-    var view = service.meView(identityFor(account.getId(), null, TokenScope.HOUSEHOLD));
+    var view = service.meView(householdScopedIdentity(account.getId()));
 
-    assertThat(view.memberships().getFirst().profiles()).isEmpty();
+    assertThat(view.memberships())
+        .singleElement()
+        .satisfies(
+            membership -> {
+              assertThat(membership.householdName()).isEqualTo("Household");
+              assertThat(membership.householdRole()).isEqualTo(HouseholdRole.MEMBER);
+              assertThat(membership.profiles()).isEmpty();
+            });
   }
 
   @Test
@@ -114,18 +121,34 @@ class IdentityQueryServiceTest {
     var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
     saveMembership(account.getId(), UUID.randomUUID(), HouseholdRole.MEMBER);
 
-    var identity = identityFor(account.getId(), null, TokenScope.ACCOUNT);
+    var identity = accountScopedIdentity(account.getId());
 
     assertThatThrownBy(() -> service.meView(identity))
         .isInstanceOf(AuthenticationRequiredException.class);
   }
 
-  private AuthenticatedIdentity identityFor(UUID accountId, UUID profileId, TokenScope scope) {
+  private AuthenticatedIdentity accountScopedIdentity(UUID accountId) {
     return AuthenticatedIdentity.builder()
         .accountId(accountId)
         .sessionId(UUID.randomUUID())
-        .scope(scope)
-        .profileId(profileId)
+        .scope(TokenScope.ACCOUNT)
+        .build();
+  }
+
+  private AuthenticatedIdentity householdScopedIdentity(UUID accountId) {
+    return AuthenticatedIdentity.builder()
+        .accountId(accountId)
+        .sessionId(UUID.randomUUID())
+        .scope(TokenScope.HOUSEHOLD)
+        .build();
+  }
+
+  private AuthenticatedIdentity profileScopedIdentity(UUID accountId, Profile profile) {
+    return AuthenticatedIdentity.builder()
+        .accountId(accountId)
+        .sessionId(UUID.randomUUID())
+        .scope(TokenScope.PROFILE)
+        .profileId(profile.getId())
         .build();
   }
 

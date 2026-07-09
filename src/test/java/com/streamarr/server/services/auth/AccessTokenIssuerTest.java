@@ -119,8 +119,8 @@ class AccessTokenIssuerTest {
   }
 
   @Test
-  @DisplayName("Should reject profile outside household")
-  void shouldRejectProfileOutsideHousehold() {
+  @DisplayName("Should reject profile when outside household")
+  void shouldRejectProfileWhenOutsideHousehold() {
     var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
     var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
     var memberHouseholdId = UUID.randomUUID();

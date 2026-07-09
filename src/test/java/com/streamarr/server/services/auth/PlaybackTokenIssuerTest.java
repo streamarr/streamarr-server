@@ -8,6 +8,7 @@ import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
 import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.fakes.FakeVersionCounterReader;
@@ -140,6 +141,45 @@ class PlaybackTokenIssuerTest {
     // asks, an unowned session must never become a token, and reads as missing.
     assertThatThrownBy(() -> issuer.issue(identity, foreignSession, ttl))
         .isInstanceOf(SessionNotFoundException.class);
+  }
+
+  @Test
+  @DisplayName("Should require current auth session version when issuing")
+  void shouldRequireCurrentAuthSessionVersionWhenIssuing() {
+    reader.membershipVersions.put(accountId + ":" + householdId, 3L);
+    reader.profilePolicyVersions.put(profileId, 4L);
+    var identity = profileIdentity();
+    var streamSession = defaultSessionBuilder().profileId(profileId).build();
+    var ttl = Duration.ofHours(1);
+
+    assertThatThrownBy(() -> issuer.issue(identity, streamSession, ttl))
+        .isInstanceOf(AuthenticationRequiredException.class);
+  }
+
+  @Test
+  @DisplayName("Should require current membership version when issuing")
+  void shouldRequireCurrentMembershipVersionWhenIssuing() {
+    reader.sessionVersions.put(sessionId, 2L);
+    reader.profilePolicyVersions.put(profileId, 4L);
+    var identity = profileIdentity();
+    var streamSession = defaultSessionBuilder().profileId(profileId).build();
+    var ttl = Duration.ofHours(1);
+
+    assertThatThrownBy(() -> issuer.issue(identity, streamSession, ttl))
+        .isInstanceOf(ProfileRequiredException.class);
+  }
+
+  @Test
+  @DisplayName("Should require current profile policy version when issuing")
+  void shouldRequireCurrentProfilePolicyVersionWhenIssuing() {
+    reader.sessionVersions.put(sessionId, 2L);
+    reader.membershipVersions.put(accountId + ":" + householdId, 3L);
+    var identity = profileIdentity();
+    var streamSession = defaultSessionBuilder().profileId(profileId).build();
+    var ttl = Duration.ofHours(1);
+
+    assertThatThrownBy(() -> issuer.issue(identity, streamSession, ttl))
+        .isInstanceOf(ProfileRequiredException.class);
   }
 
   private AuthenticatedIdentity profileIdentity() {

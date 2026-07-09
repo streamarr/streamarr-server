@@ -48,9 +48,9 @@ class MovieResolverIT extends AbstractIntegrationTest {
   @Autowired private MediaFileRepository mediaFileRepository;
 
   @Test
-  @DisplayName("Should resolve all movie relationships from movie query")
+  @DisplayName("Should resolve all movie relationships when the movie is queried")
   @SuppressWarnings("unchecked")
-  void shouldResolveAllMovieRelationshipsFromMovieQuery() {
+  void shouldResolveAllMovieRelationshipsWhenMovieQueried() {
     var movie = createMovieWithRelationships();
 
     var result =

@@ -2,13 +2,9 @@ package com.streamarr.server.services.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
-import static org.mockito.Mockito.when;
 
 import com.streamarr.server.config.security.AuthTokenProperties;
-import com.streamarr.server.domain.auth.RefreshToken;
 import com.streamarr.server.domain.auth.RefreshTokenStatus;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.exceptions.InvalidRefreshTokenException;
@@ -18,13 +14,11 @@ import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeRefreshTokenRepository;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.AccountFixture;
-import com.streamarr.server.repositories.auth.RefreshTokenRepository;
 import com.streamarr.server.services.auth.events.CounterBumpedEvent;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
@@ -186,8 +180,8 @@ class RefreshTokenServiceTest {
   }
 
   @Test
-  @DisplayName("Should treat rotated token without rotation timestamp as theft")
-  void shouldTreatRotatedTokenWithoutRotationTimestampAsTheft() {
+  @DisplayName("Should treat rotated token as theft when rotation timestamp missing")
+  void shouldTreatRotatedTokenAsTheftWhenRotationTimestampMissing() {
     var issued = issueSession();
     service.redeem(issued.rawToken());
     tokenRepository.findAll().stream()
@@ -203,22 +197,17 @@ class RefreshTokenServiceTest {
   @Test
   @DisplayName("Should reject redemption when session row missing")
   void shouldRejectRedemptionWhenSessionRowMissing() {
-    var orphanTokens = mock(RefreshTokenRepository.class);
-    when(orphanTokens.findByDigest(any()))
-        .thenReturn(
-            Optional.of(
-                RefreshToken.builder()
-                    .sessionId(UUID.randomUUID())
-                    .digest("digest")
-                    .status(RefreshTokenStatus.ACTIVE)
-                    .expiresAt(currentTime.get().plus(Duration.ofDays(30)))
-                    .build()));
-    var orphanService =
-        new RefreshTokenService(
-            new FakeAuthSessionRepository(), orphanTokens, properties, clock, eventPublisher);
+    var issued = issueSession();
+    sessionRepository.deleteById(issued.session().getId());
+    var rawToken = issued.rawToken();
 
-    assertThatThrownBy(() -> orphanService.redeem("raw-token"))
+    assertThatThrownBy(() -> service.redeem(rawToken))
         .isInstanceOf(InvalidRefreshTokenException.class);
+
+    assertThat(tokenRepository.findAll())
+        .singleElement()
+        .satisfies(token -> assertThat(token.getStatus()).isEqualTo(RefreshTokenStatus.ACTIVE));
+    assertThat(eventPublisher.getEventsOfType(CounterBumpedEvent.class)).isEmpty();
   }
 
   @Test

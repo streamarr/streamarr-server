@@ -73,8 +73,8 @@ class RefreshRevocationRaceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject redeeming a successor minted before revocation")
-  void shouldRejectRedeemingASuccessorMintedBeforeRevocation() {
+  @DisplayName("Should reject redeeming a successor when minted before revocation")
+  void shouldRejectRedeemingSuccessorWhenMintedBeforeRevocation() {
     account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
     var issued = refreshTokenService.createSession(account, "sequential-device");
 
