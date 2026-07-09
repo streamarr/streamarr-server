@@ -92,6 +92,20 @@ class RefreshTokenServiceTest {
   }
 
   @Test
+  @DisplayName("Should treat exact rotation grace boundary as grace replay")
+  void shouldTreatExactRotationGraceBoundaryAsGraceReplay() {
+    var issued = issueSession();
+    service.redeem(issued.rawToken());
+
+    advanceClock(properties.rotationGrace());
+    var replay = service.redeem(issued.rawToken());
+
+    assertThat(replay).isInstanceOf(RefreshResult.GraceReplay.class);
+    assertThat(replay.session().getRevokedAt()).isNull();
+    assertThat(eventPublisher.getEventsOfType(CounterBumpedEvent.class)).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should revoke family when consumed token redeemed after grace")
   void shouldRevokeFamilyWhenConsumedTokenRedeemedAfterGrace() {
     var issued = issueSession();
