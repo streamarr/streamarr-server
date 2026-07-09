@@ -29,15 +29,19 @@ class ScopeHierarchyTest {
   }
 
   @Test
-  @DisplayName("Should deny nested scopes when authority outside hierarchy")
-  void shouldDenyNestedScopesWhenAuthorityOutsideHierarchy() {
+  @DisplayName("Should keep playback scope outside API hierarchy")
+  void shouldKeepPlaybackScopeOutsideApiHierarchy() {
     var accountCheck = factory.hasAuthority("SCOPE_ACCOUNT");
-    var profileCheck = factory.hasAuthority("SCOPE_PROFILE");
 
-    // Playback is isolated: it never inherits into the API scopes...
     assertThat(accountCheck.authorize(() -> authWith("SCOPE_PLAYBACK"), new Object()).isGranted())
         .isFalse();
-    // ...and broader scopes never satisfy narrower checks.
+  }
+
+  @Test
+  @DisplayName("Should deny narrower scope when authority points the wrong direction")
+  void shouldDenyNarrowerScopeWhenAuthorityPointsWrongDirection() {
+    var profileCheck = factory.hasAuthority("SCOPE_PROFILE");
+
     assertThat(profileCheck.authorize(() -> authWith("SCOPE_ACCOUNT"), new Object()).isGranted())
         .isFalse();
   }
