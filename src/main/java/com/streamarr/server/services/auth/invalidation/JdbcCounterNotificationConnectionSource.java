@@ -1,5 +1,6 @@
 package com.streamarr.server.services.auth.invalidation;
 
+import com.streamarr.server.config.security.CounterListenerProperties;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
@@ -24,25 +25,33 @@ class JdbcCounterNotificationConnectionSource implements CounterNotificationConn
   private static final int CONNECT_TIMEOUT_SECONDS = 10;
 
   private final JdbcConnectionDetails connectionDetails;
+  private final CounterListenerProperties listenerProperties;
 
   @Override
   public CounterNotificationConnection open() {
     try {
       return new JdbcCounterNotificationConnection(
-          DriverManager.getConnection(connectionDetails.getJdbcUrl(), connectionProperties()));
+          DriverManager.getConnection(jdbcUrl(), connectionProperties()));
     } catch (SQLException e) {
       throw new CounterNotificationConnectionException(
           "Failed to open counter notification connection.", e);
     }
   }
 
+  private String jdbcUrl() {
+    return firstNonBlank(listenerProperties.jdbcUrl(), connectionDetails.getJdbcUrl());
+  }
+
   private Properties connectionProperties() {
+    var username = firstNonBlank(listenerProperties.username(), connectionDetails.getUsername());
+    var password = firstNonBlank(listenerProperties.password(), connectionDetails.getPassword());
+
     var properties = new Properties();
-    if (connectionDetails.getUsername() != null) {
-      PGProperty.USER.set(properties, connectionDetails.getUsername());
+    if (username != null) {
+      PGProperty.USER.set(properties, username);
     }
-    if (connectionDetails.getPassword() != null) {
-      PGProperty.PASSWORD.set(properties, connectionDetails.getPassword());
+    if (password != null) {
+      PGProperty.PASSWORD.set(properties, password);
     }
     // A LISTEN connection idles for its lifetime; keepalive and bounded timeouts turn a
     // black-holed socket into an error instead of eternal silence.
@@ -50,6 +59,13 @@ class JdbcCounterNotificationConnectionSource implements CounterNotificationConn
     PGProperty.SOCKET_TIMEOUT.set(properties, SOCKET_TIMEOUT_SECONDS);
     PGProperty.CONNECT_TIMEOUT.set(properties, CONNECT_TIMEOUT_SECONDS);
     return properties;
+  }
+
+  private static String firstNonBlank(String override, String fallback) {
+    if (override != null && !override.isBlank()) {
+      return override;
+    }
+    return fallback;
   }
 
   private record JdbcCounterNotificationConnection(Connection connection)

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.config.security.CounterListenerProperties;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.VersionCounterReader;
@@ -73,7 +74,9 @@ class NotificationFeedLivenessIT extends AbstractIntegrationTest {
     secondInstanceListener =
         new CounterNotificationListener(
             secondInstanceCache,
-            new JdbcCounterNotificationConnectionSource(proxy.proxiedDetails(connectionDetails)),
+            new JdbcCounterNotificationConnectionSource(
+                proxy.proxiedDetails(connectionDetails),
+                CounterListenerProperties.builder().build()),
             backoff);
     secondInstanceListener.start();
     await().atMost(Duration.ofSeconds(10)).until(secondInstanceListener::isListening);

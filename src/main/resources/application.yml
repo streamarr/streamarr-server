@@ -61,6 +61,10 @@ auth:
   throttle:
     max-attempts: ${AUTH_THROTTLE_MAX_ATTEMPTS:5}
     window: ${AUTH_THROTTLE_WINDOW:15m}
+  counter-listener:
+    jdbc-url: ${AUTH_COUNTER_LISTENER_JDBC_URL:}
+    username: ${AUTH_COUNTER_LISTENER_JDBC_USERNAME:}
+    password: ${AUTH_COUNTER_LISTENER_JDBC_PASSWORD:}
 
 otel:
   sdk:
