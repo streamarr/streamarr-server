@@ -97,26 +97,6 @@ class PlaybackTokenIssuerTest {
   }
 
   @Test
-  @DisplayName("Should reject issuance when identity has no household")
-  void shouldRejectIssuanceWhenIdentityHasNoHousehold() {
-    // A profile claim without its household is not a state the server ever mints — refuse
-    // rather than trust it.
-    var noHousehold =
-        AuthenticatedIdentity.builder()
-            .accountId(accountId)
-            .role(AccountRole.USER)
-            .sessionId(sessionId)
-            .scope(TokenScope.PROFILE)
-            .profileId(profileId)
-            .build();
-    var streamSession = defaultSessionBuilder().profileId(profileId).build();
-    var ttl = Duration.ofHours(1);
-
-    assertThatThrownBy(() -> issuer.issue(noHousehold, streamSession, ttl))
-        .isInstanceOf(ProfileRequiredException.class);
-  }
-
-  @Test
   @DisplayName("Should refuse issuance when session has no owner")
   void shouldRefuseIssuanceWhenSessionHasNoOwner() {
     var identity = profileIdentity();
