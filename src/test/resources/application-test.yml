@@ -1,7 +1,8 @@
 spring:
   datasource:
     hikari:
-      maximum-pool-size: 10
+      maximum-pool-size: 4
+      minimum-idle: 0
 
 auth:
   token:
