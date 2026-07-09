@@ -24,8 +24,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 
 @Tag("UnitTest")
 @DisplayName("Authorization Service Tests")
@@ -85,6 +87,67 @@ class AuthorizationServiceTest {
         .isInstanceOf(AuthenticationRequiredException.class);
     assertThatThrownBy(authorizationService::currentIdentity)
         .isInstanceOf(AuthenticationRequiredException.class);
+    assertThatThrownBy(authorizationService::currentTokenValue)
+        .isInstanceOf(AuthenticationRequiredException.class);
+  }
+
+  @Test
+  @DisplayName("Should return the validated token value when authenticated with a JWT credential")
+  void shouldReturnValidatedTokenValueWhenAuthenticated() {
+    var jwt =
+        Jwt.withTokenValue("signed.jwt.value")
+            .header("typ", "JWT")
+            .subject(accountId.toString())
+            .build();
+    authenticateWith(profileScopedIdentity(HouseholdRole.MEMBER, AccountRole.USER), jwt);
+
+    assertThat(authorizationService.currentTokenValue()).isEqualTo("signed.jwt.value");
+  }
+
+  @Test
+  @DisplayName("Should reject the token value when our token carries no JWT credential")
+  void shouldRejectTokenValueWhenStreamarrTokenCarriesNoJwt() {
+    authenticateWith(profileScopedIdentity(HouseholdRole.MEMBER, AccountRole.USER));
+
+    assertThatThrownBy(authorizationService::currentTokenValue)
+        .isInstanceOf(AuthenticationRequiredException.class);
+  }
+
+  @Test
+  @DisplayName("Should refuse the facade when a foreign authentication type carries a JWT")
+  void shouldRefuseFacadeWhenForeignAuthenticationCarriesJwt() {
+    var jwt =
+        Jwt.withTokenValue("attacker.controlled.jwt")
+            .header("typ", "JWT")
+            .subject(UUID.randomUUID().toString())
+            .build();
+    SecurityContextHolder.getContext()
+        .setAuthentication(
+            new UsernamePasswordAuthenticationToken(
+                "principal", jwt, List.of(new SimpleGrantedAuthority("SCOPE_PROFILE"))));
+
+    assertThatThrownBy(authorizationService::currentIdentity)
+        .isInstanceOf(AuthenticationRequiredException.class);
+    assertThatThrownBy(authorizationService::currentTokenValue)
+        .isInstanceOf(AuthenticationRequiredException.class);
+  }
+
+  @Test
+  @DisplayName(
+      "Should deny viewing a same-household profile when the household claim carries no role")
+  void shouldDenyViewingSameHouseholdProfileWhenHouseholdClaimHasNoRole() {
+    var sameHousehold = saveProfile(householdId);
+    authenticateWith(
+        AuthenticatedIdentity.builder()
+            .accountId(accountId)
+            .role(AccountRole.USER)
+            .sessionId(UUID.randomUUID())
+            .scope(TokenScope.PROFILE)
+            .householdId(householdId)
+            .profileId(profileId)
+            .build());
+
+    assertThat(authorizationService.canViewActivityOf(sameHousehold.getId())).isFalse();
   }
 
   @Test
@@ -191,8 +254,12 @@ class AuthorizationServiceTest {
   }
 
   private void authenticateWith(AuthenticatedIdentity identity) {
+    authenticateWith(identity, null);
+  }
+
+  private void authenticateWith(AuthenticatedIdentity identity, Jwt token) {
     var authorities = List.of(new SimpleGrantedAuthority("SCOPE_" + identity.scope().name()));
     SecurityContextHolder.getContext()
-        .setAuthentication(new StreamarrAuthenticationToken(identity, null, authorities));
+        .setAuthentication(new StreamarrAuthenticationToken(identity, token, authorities));
   }
 }
