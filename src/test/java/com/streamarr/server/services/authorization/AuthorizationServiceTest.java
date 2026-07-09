@@ -235,6 +235,14 @@ class AuthorizationServiceTest {
   }
 
   @Test
+  @DisplayName("Should deny viewing activity when target profile id missing")
+  void shouldDenyViewingActivityWhenTargetProfileIdMissing() {
+    authenticateWith(profileScopedIdentity(HouseholdRole.MEMBER, AccountRole.USER));
+
+    assertThat(authorizationService.canViewActivityOf(null)).isFalse();
+  }
+
+  @Test
   @DisplayName("Should allow server admin viewing any profile activity")
   void shouldAllowServerAdminViewingAnyProfileActivity() {
     var foreign = saveProfile(UUID.randomUUID());
