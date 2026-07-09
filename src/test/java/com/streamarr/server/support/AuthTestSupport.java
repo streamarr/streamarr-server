@@ -3,6 +3,7 @@ package com.streamarr.server.support;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
 import com.streamarr.server.domain.auth.AccountProfile;
+import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdMembership;
@@ -51,9 +52,18 @@ public class AuthTestSupport {
   private final PasswordEncoder passwordEncoder;
 
   public TestIdentity createIdentity() {
+    return createIdentity(AccountRole.USER);
+  }
+
+  public TestIdentity createAdminIdentity() {
+    return createIdentity(AccountRole.ADMIN);
+  }
+
+  private TestIdentity createIdentity(AccountRole role) {
     var account =
         userAccountRepository.save(
             AccountFixture.defaultAccountBuilder()
+                .accountRole(role)
                 .passwordHash(passwordEncoder.encode(PASSWORD))
                 .build());
     var household = householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
