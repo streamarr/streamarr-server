@@ -41,6 +41,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 @DisplayName("Me Resolver Tests")
 class MeResolverTest {
 
+  private static final boolean INACTIVE_PROFILE = false;
+
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
 
   @MockitoBean private IdentityQueryService identityQueryService;
@@ -72,7 +74,7 @@ class MeResolverTest {
                         HouseholdRole.OWNER,
                         List.of(
                             new IdentityQueryService.SelectableProfileView(
-                                profileId, "Andrew", false))))));
+                                profileId, "Andrew", INACTIVE_PROFILE))))));
 
     var householdName =
         dgsQueryExecutor.executeAndExtractJsonPath(
