@@ -1,6 +1,7 @@
 package com.streamarr.server.services.auth.invalidation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 
 import com.streamarr.server.services.auth.CounterKind;
 import java.util.UUID;
@@ -66,6 +67,36 @@ class CounterNotificationPayloadTest {
         "SESSION|key|not-a-number",
         "SESSION|key|",
         "SESSION||1",
-        "SESSION|key|1|extra");
+        "SESSION|key|1|extra",
+        "SESSION|key|-1");
+  }
+
+  @Test
+  @DisplayName("Should reject construction when kind is missing")
+  void shouldRejectConstructionWhenKindIsMissing() {
+    assertThatIllegalArgumentException()
+        .isThrownBy(() -> new CounterNotificationPayload(null, "key", 1L));
+  }
+
+  @Test
+  @DisplayName("Should reject construction when key is blank")
+  void shouldRejectConstructionWhenKeyIsBlank() {
+    assertThatIllegalArgumentException()
+        .isThrownBy(() -> new CounterNotificationPayload(CounterKind.SESSION, " ", 1L));
+  }
+
+  @Test
+  @DisplayName("Should reject construction when key contains the delimiter")
+  void shouldRejectConstructionWhenKeyContainsTheDelimiter() {
+    // A piped key would encode to a payload every listener silently drops.
+    assertThatIllegalArgumentException()
+        .isThrownBy(() -> new CounterNotificationPayload(CounterKind.SESSION, "left|right", 1L));
+  }
+
+  @Test
+  @DisplayName("Should reject construction when version is negative")
+  void shouldRejectConstructionWhenVersionIsNegative() {
+    assertThatIllegalArgumentException()
+        .isThrownBy(() -> new CounterNotificationPayload(CounterKind.SESSION, "key", -1L));
   }
 }

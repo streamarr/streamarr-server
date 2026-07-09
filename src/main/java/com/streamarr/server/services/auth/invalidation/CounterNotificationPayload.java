@@ -12,6 +12,22 @@ public record CounterNotificationPayload(CounterKind kind, String key, long vers
 
   public static final String CHANNEL = "streamarr_counters";
 
+  public CounterNotificationPayload {
+    if (kind == null) {
+      throw new IllegalArgumentException("Counter notification kind must be present.");
+    }
+    if (key == null || key.isBlank()) {
+      throw new IllegalArgumentException("Counter notification key must not be blank.");
+    }
+    if (key.contains("|")) {
+      throw new IllegalArgumentException(
+          "Counter notification key must not contain the '|' delimiter.");
+    }
+    if (version < 0) {
+      throw new IllegalArgumentException("Counter notification version must not be negative.");
+    }
+  }
+
   public String encode() {
     return kind.name() + "|" + key + "|" + version;
   }
@@ -23,9 +39,6 @@ public record CounterNotificationPayload(CounterKind kind, String key, long vers
 
     var parts = payload.split("\\|", 3);
     if (parts.length != 3) {
-      return Optional.empty();
-    }
-    if (parts[1].isEmpty()) {
       return Optional.empty();
     }
 
