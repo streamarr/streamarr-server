@@ -51,9 +51,13 @@ class RefreshTokenServiceTest {
 
   private final MutableClock clock = new MutableClock(currentTime);
 
+  private final TokenReuseRevoker tokenReuseRevoker =
+      new TokenReuseRevoker(
+          new TokenReuseRevocationWriter(sessionRepository, tokenRepository, eventPublisher));
+
   private final RefreshTokenService service =
       new RefreshTokenService(
-          sessionRepository, tokenRepository, properties, clock, eventPublisher);
+          sessionRepository, tokenRepository, properties, clock, tokenReuseRevoker, eventPublisher);
 
   @Test
   @DisplayName("Should rotate when active token redeemed")
@@ -93,6 +97,20 @@ class RefreshTokenServiceTest {
     assertThat(tokenRepository.findAll())
         .filteredOn(token -> token.getStatus() == RefreshTokenStatus.ACTIVE)
         .hasSize(1);
+    assertThat(eventPublisher.getEventsOfType(CounterBumpedEvent.class)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should treat exact rotation grace boundary as grace replay")
+  void shouldTreatExactRotationGraceBoundaryAsGraceReplay() {
+    var issued = issueSession();
+    service.redeem(issued.rawToken());
+
+    advanceClock(properties.rotationGrace());
+    var replay = service.redeem(issued.rawToken());
+
+    assertThat(replay).isInstanceOf(RefreshResult.GraceReplay.class);
+    assertThat(replay.session().getRevokedAt()).isNull();
     assertThat(eventPublisher.getEventsOfType(CounterBumpedEvent.class)).isEmpty();
   }
 

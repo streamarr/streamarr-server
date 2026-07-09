@@ -140,6 +140,43 @@ class SetupServiceConcurrencyIT extends AbstractIntegrationTest {
         .isFalse();
   }
 
+  @Test
+  @DisplayName("Should report setup completed when identical setup requests race")
+  void shouldReportSetupCompletedWhenIdenticalSetupRequestsRace() {
+    var suffix = String.valueOf(System.nanoTime());
+    var command = commandBuilder(suffix, "same").build();
+    var commands = List.of(command, command);
+    var executor = Executors.newFixedThreadPool(commands.size());
+    var startLatch = new CountDownLatch(1);
+    var doneLatch = new CountDownLatch(commands.size());
+    var exceptions = new CopyOnWriteArrayList<Exception>();
+
+    for (var repeatedCommand : commands) {
+      executor.submit(
+          () -> {
+            try {
+              startLatch.await();
+              completedSetups.add(setupService.setup(repeatedCommand));
+            } catch (Exception e) {
+              exceptions.add(e);
+            } finally {
+              doneLatch.countDown();
+            }
+          });
+    }
+
+    startLatch.countDown();
+
+    await()
+        .atMost(Duration.ofSeconds(10))
+        .untilAsserted(() -> assertThat(doneLatch.getCount()).isZero());
+
+    executor.shutdown();
+
+    assertThat(completedSetups).hasSize(1);
+    assertThat(exceptions).singleElement().isInstanceOf(SetupAlreadyCompletedException.class);
+  }
+
   private SetupCommand.SetupCommandBuilder commandBuilder(String suffix, String marker) {
     return SetupCommand.builder()
         .email("setup-" + marker + "-" + suffix + "@example.com")

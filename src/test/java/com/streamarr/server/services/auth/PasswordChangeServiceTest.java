@@ -31,6 +31,7 @@ class PasswordChangeServiceTest {
   private final FakeRefreshTokenRepository tokenRepository = new FakeRefreshTokenRepository();
   private final PasswordEncoder passwordEncoder = new TestPasswordEncoder();
   private final Clock clock = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC);
+  private final CapturingEventPublisher eventPublisher = new CapturingEventPublisher();
   private final RefreshTokenService refreshTokenService =
       new RefreshTokenService(
           sessionRepository,
@@ -40,7 +41,9 @@ class PasswordChangeServiceTest {
               .rotationGrace(Duration.ofSeconds(30))
               .build(),
           clock,
-          new CapturingEventPublisher());
+          new TokenReuseRevoker(
+              new TokenReuseRevocationWriter(sessionRepository, tokenRepository, eventPublisher)),
+          eventPublisher);
   private final PasswordChangeService service =
       new PasswordChangeService(
           accountRepository,
@@ -49,7 +52,7 @@ class PasswordChangeServiceTest {
           refreshTokenService,
           passwordEncoder,
           clock,
-          new CapturingEventPublisher());
+          eventPublisher);
 
   @Test
   @DisplayName("Should fail closed without issuing a token when account is missing")

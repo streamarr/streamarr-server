@@ -2,8 +2,19 @@ package com.streamarr.server.services.auth.events;
 
 import com.streamarr.server.services.auth.CounterKind;
 import java.util.UUID;
+import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Value;
+import lombok.experimental.Accessors;
 
-public record CounterBumpedEvent(CounterKind kind, String key, long version) {
+@Value
+@Accessors(fluent = true)
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
+public class CounterBumpedEvent {
+
+  CounterKind kind;
+  String key;
+  long version;
 
   public static CounterBumpedEvent session(UUID sessionId, long version) {
     return new CounterBumpedEvent(CounterKind.SESSION, sessionId.toString(), version);

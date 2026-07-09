@@ -24,8 +24,8 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-@Service
 @Slf4j
+@Service
 @RequiredArgsConstructor
 public class RefreshTokenService {
 
@@ -35,6 +35,7 @@ public class RefreshTokenService {
   private final RefreshTokenRepository tokenRepository;
   private final AuthTokenProperties properties;
   private final Clock clock;
+  private final TokenReuseRevoker tokenReuseRevoker;
   private final ApplicationEventPublisher eventPublisher;
 
   private final SecureRandom secureRandom = new SecureRandom();
@@ -138,14 +139,12 @@ public class RefreshTokenService {
   }
 
   private void revokeSessionForReuse(AuthSession session, Instant now) {
-    var bumpedVersion =
-        sessionRepository.revoke(session.getId(), SessionRevocationReason.TOKEN_REUSE, now);
-    tokenRepository.revokeAllForSession(session.getId());
+    log.warn(
+        "Refresh token reuse detected — revoking session {} for account {}",
+        session.getId(),
+        session.getAccountId());
 
-    bumpedVersion.ifPresent(
-        version ->
-            eventPublisher.publishEvent(CounterBumpedEvent.session(session.getId(), version)));
-    logTokenReuse(session);
+    tokenReuseRevoker.revokeAfterCompletion(session.getId(), now);
   }
 
   private static void logTokenReuse(AuthSession session) {
