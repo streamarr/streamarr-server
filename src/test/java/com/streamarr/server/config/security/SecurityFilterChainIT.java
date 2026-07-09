@@ -56,8 +56,8 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject stream endpoints without playback token")
-  void shouldRejectStreamEndpointsWithoutPlaybackToken() throws Exception {
+  @DisplayName("Should reject stream endpoints when the playback token is missing")
+  void shouldRejectStreamEndpointsWhenPlaybackTokenMissing() throws Exception {
     // Streams demand SCOPE_PLAYBACK carried in the ?t= parameter — headers and cookies never
     // reach them, and API tokens never authorize playback.
     mockMvc
@@ -66,8 +66,8 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should permit auth and health endpoints")
-  void shouldPermitAuthAndHealthEndpoints() throws Exception {
+  @DisplayName("Should permit requests when targeting auth or health endpoints")
+  void shouldPermitRequestsWhenTargetingAuthOrHealthEndpoints() throws Exception {
     mockMvc.perform(get("/api/auth/status")).andExpect(status().isOk());
     // The contract is reachability, not health: a DOWN indicator answers 503, never 401/403.
     mockMvc

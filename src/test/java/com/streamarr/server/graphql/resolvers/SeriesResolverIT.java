@@ -45,9 +45,9 @@ class SeriesResolverIT extends AbstractIntegrationTest {
   @Autowired private GenreRepository genreRepository;
 
   @Test
-  @DisplayName("Should resolve series scalar fields from season query")
+  @DisplayName("Should resolve series scalar fields when the season is queried")
   @SuppressWarnings("unchecked")
-  void shouldResolveSeriesScalarFieldsFromSeasonQuery() {
+  void shouldResolveSeriesScalarFieldsWhenSeasonQueried() {
     var season = createSeason();
 
     var result =
@@ -76,9 +76,9 @@ class SeriesResolverIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should return seasons ordered by season number from series query")
+  @DisplayName("Should return seasons ordered by season number when the series is queried")
   @SuppressWarnings("unchecked")
-  void shouldReturnSeasonsOrderedBySeasonNumberFromSeriesQuery() {
+  void shouldReturnSeasonsOrderedBySeasonNumberWhenSeriesQueried() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
     var series = createSeries(library);
     seasonRepository.saveAllAndFlush(
@@ -115,9 +115,9 @@ class SeriesResolverIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should return episodes ordered by episode number from season query")
+  @DisplayName("Should return episodes ordered by episode number when the season is queried")
   @SuppressWarnings("unchecked")
-  void shouldReturnEpisodesOrderedByEpisodeNumberFromSeasonQuery() {
+  void shouldReturnEpisodesOrderedByEpisodeNumberWhenSeasonQueried() {
     var season = createSeason();
     var library = season.getLibrary();
     episodeRepository.saveAllAndFlush(
@@ -151,9 +151,9 @@ class SeriesResolverIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should resolve studios cast directors and genres from series query")
+  @DisplayName("Should resolve studios cast directors and genres when the series is queried")
   @SuppressWarnings("unchecked")
-  void shouldResolveStudiosCastDirectorsAndGenresFromSeriesQuery() {
+  void shouldResolveStudiosCastDirectorsAndGenresWhenSeriesQueried() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
     var actor =
         personRepository.save(

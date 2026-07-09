@@ -186,8 +186,8 @@ class RefreshTokenServiceTest {
   }
 
   @Test
-  @DisplayName("Should treat rotated token without rotation timestamp as theft")
-  void shouldTreatRotatedTokenWithoutRotationTimestampAsTheft() {
+  @DisplayName("Should treat rotated token as theft when rotation timestamp missing")
+  void shouldTreatRotatedTokenAsTheftWhenRotationTimestampMissing() {
     var issued = issueSession();
     service.redeem(issued.rawToken());
     tokenRepository.findAll().stream()

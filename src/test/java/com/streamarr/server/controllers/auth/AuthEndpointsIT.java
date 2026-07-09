@@ -470,8 +470,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should select profile and upgrade to profile scope")
-  void shouldSelectProfileAndUpgradeToProfileScope() throws Exception {
+  @DisplayName("Should upgrade to profile scope when profile selected")
+  void shouldUpgradeToProfileScopeWhenProfileSelected() throws Exception {
     var householdToken = householdScopedTokenWithTwoProfiles();
 
     var response =
@@ -571,8 +571,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject cookie authenticated post without csrf token")
-  void shouldRejectCookieAuthenticatedPostWithoutCsrfToken() throws Exception {
+  @DisplayName("Should reject cookie authenticated post when csrf token missing")
+  void shouldRejectCookieAuthenticatedPostWhenCsrfTokenMissing() throws Exception {
     seedSingleProfileIdentity();
     var accessCookie = cookieModeLogin().getCookie("streamarr_access");
 
@@ -587,8 +587,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should accept bearer post without csrf token")
-  void shouldAcceptBearerPostWithoutCsrfToken() throws Exception {
+  @DisplayName("Should accept bearer post when csrf token absent")
+  void shouldAcceptBearerPostWhenCsrfTokenAbsent() throws Exception {
     seedSingleProfileIdentity();
     var accessToken = loginAndReadField("accessToken");
 
@@ -749,8 +749,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should report setup completion state on status")
-  void shouldReportSetupCompletionStateOnStatus() throws Exception {
+  @DisplayName("Should report setup completion state when status queried")
+  void shouldReportSetupCompletionStateWhenStatusQueried() throws Exception {
     mockMvc
         .perform(get("/api/auth/status"))
         .andExpect(status().isOk())
@@ -766,8 +766,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should revoke session and clear cookies on logout")
-  void shouldRevokeSessionAndClearCookiesOnLogout() throws Exception {
+  @DisplayName("Should revoke session and clear cookies when logging out")
+  void shouldRevokeSessionAndClearCookiesWhenLoggingOut() throws Exception {
     seedSingleProfileIdentity();
     var login = objectMapper.readTree(loginResponseBody());
     var accessToken = login.get("accessToken").asString();
