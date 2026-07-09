@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -136,6 +137,35 @@ class CounterNotificationListenerTest {
       await()
           .atMost(Duration.ofSeconds(1))
           .untilAsserted(() -> assertThat(cache.sessionVersion(sessionId)).contains(7L));
+    } finally {
+      listener.stop();
+    }
+
+    await().atMost(Duration.ofSeconds(1)).until(() -> !listener.isListening());
+  }
+
+  @Test
+  @DisplayName("Should back off exponentially to the cap and reset after reconnecting")
+  void shouldBackOffExponentiallyToTheCapAndResetAfterReconnecting() {
+    var recordedSleeps = new CopyOnWriteArrayList<Long>();
+    var cache = new TokenVersionCache(new FakeVersionCounterReader());
+    var connectionSource = new ScriptedCounterNotificationConnectionSource();
+    for (var i = 0; i < 6; i++) {
+      connectionSource.failNextOpen();
+    }
+    var listener = new CounterNotificationListener(cache, connectionSource, recordedSleeps::add);
+
+    listener.start();
+    try {
+      // Six failed opens precede the successful connect, so every sleep is already recorded.
+      connectionSource.awaitListenCount(1);
+      assertThat(recordedSleeps).containsExactly(1_000L, 2_000L, 4_000L, 8_000L, 16_000L, 30_000L);
+
+      // A reconnect after a healthy connection starts the schedule over.
+      connectionSource.failActiveConnection();
+      connectionSource.awaitListenCount(2);
+      assertThat(recordedSleeps)
+          .containsExactly(1_000L, 2_000L, 4_000L, 8_000L, 16_000L, 30_000L, 1_000L);
     } finally {
       listener.stop();
     }
