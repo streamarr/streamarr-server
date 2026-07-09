@@ -136,23 +136,26 @@ public class AuthController {
   @PostMapping("/refresh")
   public ResponseEntity<AuthTokensResponse> refresh(
       @RequestBody(required = false) RefreshRequest request, HttpServletRequest httpRequest) {
-    var cookieMode = request != null && request.cookieMode() || hasRefreshCookie(httpRequest);
-    var rawToken = resolveRefreshToken(request, httpRequest);
+    var carrier = resolveRefreshCarrier(request, httpRequest);
 
-    var refreshed = tokenRefreshService.refresh(rawToken);
+    var refreshed = tokenRefreshService.refresh(carrier.rawToken());
 
     // Only a genuine rotation carries a successor refresh token; a grace replay never does —
     // exactly one refresh cookie per grace episode, so late responses cannot poison the jar.
     if (refreshed.rotated()) {
       return respond(
-          HttpStatus.OK, refreshed.accessToken(), refreshed.rotatedRefreshToken(), cookieMode);
+          HttpStatus.OK,
+          refreshed.accessToken(),
+          refreshed.rotatedRefreshToken(),
+          carrier.cookieMode());
     }
-    return respondAccessOnly(refreshed.accessToken(), cookieMode);
+    return respondAccessOnly(refreshed.accessToken(), carrier.cookieMode());
   }
 
-  private String resolveRefreshToken(RefreshRequest request, HttpServletRequest httpRequest) {
+  private RefreshCarrier resolveRefreshCarrier(
+      RefreshRequest request, HttpServletRequest httpRequest) {
     if (request != null && request.refreshToken() != null && !request.refreshToken().isBlank()) {
-      return request.refreshToken();
+      return new RefreshCarrier(request.refreshToken(), request.cookieMode());
     }
 
     var cookies = httpRequest.getCookies();
@@ -164,16 +167,8 @@ public class AuthController {
         .filter(cookie -> AuthCookieWriter.REFRESH_COOKIE.equals(cookie.getName()))
         .map(jakarta.servlet.http.Cookie::getValue)
         .findFirst()
+        .map(rawToken -> new RefreshCarrier(rawToken, true))
         .orElseThrow(InvalidRefreshTokenException::new);
-  }
-
-  private static boolean hasRefreshCookie(HttpServletRequest httpRequest) {
-    var cookies = httpRequest.getCookies();
-    if (cookies == null) {
-      return false;
-    }
-    return Arrays.stream(cookies)
-        .anyMatch(cookie -> AuthCookieWriter.REFRESH_COOKIE.equals(cookie.getName()));
   }
 
   private static String deviceNameOf(HttpServletRequest httpRequest) {
@@ -214,4 +209,6 @@ public class AuthController {
         .header(HttpHeaders.SET_COOKIE, cookieWriter.accessCookie(accessToken.value()).toString())
         .body(body.build());
   }
+
+  private record RefreshCarrier(String rawToken, boolean cookieMode) {}
 }

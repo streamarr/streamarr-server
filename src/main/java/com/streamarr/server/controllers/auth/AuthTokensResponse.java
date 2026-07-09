@@ -7,4 +7,11 @@ import lombok.Builder;
 @Builder
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record AuthTokensResponse(
-    String accessToken, Instant accessTokenExpiresAt, String scope, String refreshToken) {}
+    String accessToken, Instant accessTokenExpiresAt, String scope, String refreshToken) {
+
+  @Override
+  public String toString() {
+    return "AuthTokensResponse[accessToken=REDACTED, accessTokenExpiresAt=%s, scope=%s,"
+        + " refreshToken=REDACTED]".formatted(accessTokenExpiresAt, scope);
+  }
+}

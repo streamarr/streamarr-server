@@ -19,11 +19,13 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Base64;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class RefreshTokenService {
 
@@ -93,6 +95,7 @@ public class RefreshTokenService {
     if (session.getRevokedAt() != null) {
       // Redeeming any token of a revoked session — including a successor that raced revocation —
       // is reuse: never rotate, never mint.
+      logTokenReuse(session);
       throw new TokenReuseDetectedException();
     }
 
@@ -142,6 +145,11 @@ public class RefreshTokenService {
     bumpedVersion.ifPresent(
         version ->
             eventPublisher.publishEvent(CounterBumpedEvent.session(session.getId(), version)));
+    logTokenReuse(session);
+  }
+
+  private static void logTokenReuse(AuthSession session) {
+    log.warn("Refresh token reuse detected for sessionId={}", session.getId());
   }
 
   private RefreshToken buildActiveToken(AuthSession session, String rawToken, Instant now) {

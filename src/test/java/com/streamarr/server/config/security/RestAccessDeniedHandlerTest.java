@@ -1,6 +1,7 @@
 package com.streamarr.server.config.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.UnsupportedEncodingException;
@@ -40,5 +41,18 @@ class RestAccessDeniedHandlerTest {
     handler.handle(new MockHttpServletRequest(), response, new AccessDeniedException("denied"));
 
     assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_FORBIDDEN);
+  }
+
+  @Test
+  @DisplayName("Should propagate unexpected response writer runtime failures")
+  void shouldPropagateUnexpectedResponseWriterRuntimeFailures() {
+    var response = new RestAuthenticationEntryPointTest.RuntimeFailingResponse();
+
+    assertThatThrownBy(
+            () ->
+                handler.handle(
+                    new MockHttpServletRequest(), response, new AccessDeniedException("denied")))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("response already committed");
   }
 }

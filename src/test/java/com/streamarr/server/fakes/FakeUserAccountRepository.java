@@ -8,6 +8,14 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
     implements UserAccountRepository {
 
   @Override
+  public boolean lockIfCredentialsUnchanged(java.util.UUID accountId, String expectedPasswordHash) {
+    return findById(accountId)
+        .filter(UserAccount::isEnabled)
+        .filter(account -> account.getPasswordHash().equals(expectedPasswordHash))
+        .isPresent();
+  }
+
+  @Override
   public Optional<UserAccount> findByEmailIgnoreCase(String email) {
     return database.values().stream()
         .filter(account -> account.getEmail().equalsIgnoreCase(email))

@@ -39,6 +39,10 @@ public class LoginService {
     if (!credentialsValid(account, command.password())) {
       throw new InvalidCredentialsException();
     }
+    if (!userAccountRepository.lockIfCredentialsUnchanged(
+        account.getId(), account.getPasswordHash())) {
+      throw new InvalidCredentialsException();
+    }
 
     throttle.reset(command.email(), command.source());
     rehashIfUpgradeNeeded(account, command.password());

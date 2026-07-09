@@ -1,6 +1,7 @@
 package com.streamarr.server.config.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import jakarta.servlet.ServletOutputStream;
 import jakarta.servlet.http.HttpServletResponse;
@@ -106,6 +107,17 @@ class RestAuthenticationEntryPointTest {
     assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_UNAUTHORIZED);
   }
 
+  @Test
+  @DisplayName("Should propagate unexpected response writer runtime failures")
+  void shouldPropagateUnexpectedResponseWriterRuntimeFailures() {
+    var response = new RuntimeFailingResponse();
+    var exception = new OAuth2AuthenticationException(new OAuth2Error("invalid_token"));
+
+    assertThatThrownBy(() -> entryPoint.commence(new MockHttpServletRequest(), response, exception))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("response already committed");
+  }
+
   static class WriterlessResponse extends MockHttpServletResponse {
     @Override
     public PrintWriter getWriter() throws UnsupportedEncodingException {
@@ -115,6 +127,13 @@ class RestAuthenticationEntryPointTest {
     @Override
     public ServletOutputStream getOutputStream() {
       throw new IllegalStateException("client went away");
+    }
+  }
+
+  static class RuntimeFailingResponse extends MockHttpServletResponse {
+    @Override
+    public PrintWriter getWriter() {
+      throw new IllegalStateException("response already committed");
     }
   }
 }
