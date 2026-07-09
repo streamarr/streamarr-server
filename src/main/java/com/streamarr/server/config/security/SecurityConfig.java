@@ -52,7 +52,7 @@ public class SecurityConfig {
                     .permitAll()
                     .requestMatchers("/actuator/health/**", "/actuator/health")
                     .permitAll()
-                    .requestMatchers("/api/stream/**")
+                    .requestMatchers(SecurityRequestMatchers.STREAM_PATHS)
                     .hasAuthority(TokenScope.PLAYBACK.authority())
                     .anyRequest()
                     .hasAuthority(TokenScope.ACCOUNT.authority()))

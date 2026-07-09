@@ -50,7 +50,7 @@ Signing keys are configuration: rotation starts issuing with a new key while old
 Tokens are signed asymmetrically (ES256, P-256), each carrying its key's RFC 7638 thumbprint as `kid`: only the media server holds the private key, and verifiers need public keys only.
 This exists for the planned transcode split — horizontally scaled transcode workers verify playback tokens directly and run FFmpeg against untrusted media, so that tier must never hold a token-minting secret.
 Symmetric HMAC signing was rejected for that reason alone; in a single process it would be simpler and equivalent.
-A public key is never sufficient authorization, though: revocation lives in the version counters below, so any external verifier must also consume the counter feed — signature-plus-expiry checking alone silently disables revocation for playback tokens, whose validity rides the stream-session lifetime.
+A public key is never sufficient authorization, though: revocation lives in the version counters below, so any external verifier must also consume the counter feed — signature-plus-expiry checking alone silently disables revocation for playback tokens, whose validity spans a media traversal plus a retention window.
 A JWKS endpoint is deferred until an external verifier exists; the kid-keyed key set makes it additive.
 
 Restriction, membership, password, and session changes propagate through version counters.
@@ -71,7 +71,8 @@ That narrows XSS rather than eliminating it: an injected script can still ride t
 Streaming is the third carrier: playlist-driven players — AVPlayer above all — cannot attach headers to the segment requests a playlist spawns, so issued manifest, playlist, and segment URLs embed a short-lived, playback-scoped profile token the server validates exactly like a header token.
 Same tokens, different carrier, not a weaker channel: playback-URL tokens authorize nothing but playback, and the server redacts them from its own request logs and traces.
 Logs the server does not own — a reverse proxy in front of a self-hosted install — will record these URLs, which is exactly why the tokens' short TTL and playback-only scope bound what a captured URL is worth.
-Playback-token validity rides the stream-session lifetime rather than a fixed minutes-scale TTL — VOD players fetch playlists once and then request segments for hours — while revocation stays instant through the same per-request version check, and session reaping bounds residual exposure.
+Playback-token validity is the probed media duration plus the configured session-retention window — one full traversal plus a bounded cumulative budget for pauses and slow playback, rather than a fixed minutes-scale TTL.
+VOD players fetch playlists once and then request segments for hours, so the token is not renewed from its own authority; the absolute expiry remains the captured-URL exposure backstop, while revocation stays instant through the same per-request version check and idle session reaping may end playback sooner.
 
 Renewal is a server contract before it is client code.
 The server never slides an access token or re-issues one on its own authority; renewal always passes through the refresh endpoint.

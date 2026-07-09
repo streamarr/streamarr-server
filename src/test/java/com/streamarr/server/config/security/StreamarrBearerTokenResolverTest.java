@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 
 @Tag("UnitTest")
 @DisplayName("Streamarr Bearer Token Resolver Tests")
@@ -48,6 +49,19 @@ class StreamarrBearerTokenResolverTest {
   @DisplayName("Should resolve nothing when request carries no cookies")
   void shouldResolveNothingWhenRequestCarriesNoCookies() {
     assertThat(resolver.resolve(requestFor("/api/images/some-id"))).isNull();
+  }
+
+  @Test
+  @DisplayName("Should resolve playback query token when application has context path")
+  void shouldResolvePlaybackQueryTokenWhenApplicationHasContextPath() {
+    var request = requestFor("/streamarr/api/stream/some-id/master.m3u8");
+    request.setContextPath("/streamarr");
+    request.setServletPath("/api/stream/some-id/master.m3u8");
+    request.setParameter("t", "playback-token");
+    var streamMatcher = PathPatternRequestMatcher.withDefaults().matcher("/api/stream/**");
+
+    assertThat(streamMatcher.matches(request)).isTrue();
+    assertThat(resolver.resolve(request)).isEqualTo("playback-token");
   }
 
   @ParameterizedTest(name = "Should suppress bearer resolution on {0}")

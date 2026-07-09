@@ -7,7 +7,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.fixtures.StreamSessionFixture;
+import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.support.AuthTestSupport;
+import java.time.Duration;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -15,6 +19,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.web.servlet.MockMvc;
 
 /** The permit/deny matrix as executable specification — changes here are contract changes. */
@@ -27,6 +32,8 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   @Autowired private MockMvc mockMvc;
 
   @Autowired private AuthTestSupport authTestSupport;
+  @Autowired private PlaybackTokenIssuer playbackTokenIssuer;
+  @Autowired private JwtDecoder jwtDecoder;
 
   private AuthTestSupport.TestIdentity identity;
 
@@ -63,6 +70,21 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
     mockMvc
         .perform(get("/api/stream/{id}/master.m3u8", UUID.randomUUID()))
         .andExpect(status().isUnauthorized());
+  }
+
+  @Test
+  @DisplayName("Should reject graphql when playback scoped")
+  void shouldRejectGraphQlWhenPlaybackScoped() throws Exception {
+    identity = authTestSupport.createIdentity();
+
+    mockMvc
+        .perform(
+            post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(LIBRARIES_QUERY)
+                .with(bearer(playbackBearer(UUID.randomUUID()))))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("FORBIDDEN"));
   }
 
   @Test
@@ -106,5 +128,18 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
                 .with(bearer(authTestSupport.profileBearer(identity))))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist());
+  }
+
+  private String playbackBearer(UUID streamSessionId) {
+    var authenticatedIdentity =
+        AuthenticatedIdentity.fromJwt(jwtDecoder.decode(authTestSupport.profileBearer(identity)));
+    var ownedSession =
+        StreamSessionFixture.defaultSessionBuilder()
+            .sessionId(streamSessionId)
+            .profileId(identity.profile().getId())
+            .build();
+    return playbackTokenIssuer
+        .issue(authenticatedIdentity, ownedSession, Duration.ofHours(1))
+        .value();
   }
 }

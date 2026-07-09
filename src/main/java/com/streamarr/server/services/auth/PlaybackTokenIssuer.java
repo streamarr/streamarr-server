@@ -21,8 +21,9 @@ import org.springframework.stereotype.Service;
  * Signed with the same key and validated by the same decoder as API tokens, carrying the full
  * identity and version claims — password, membership, and policy changes all kill playback — plus
  * the stream-session binding. Scope is playback: outside the hierarchy, these tokens authorize
- * nothing but stream paths. Validity rides the stream-session lifetime; revocation stays instant
- * through the per-request version check.
+ * nothing but stream paths. Validity covers one media traversal plus the configured retention
+ * window for pause and slow-playback slack; revocation stays instant through the per-request
+ * version check.
  */
 @Service
 @RequiredArgsConstructor
@@ -47,19 +48,10 @@ public class PlaybackTokenIssuer {
       throw new SessionNotFoundException(streamSession.getSessionId());
     }
 
-    // Versions are read fresh at mint time — the token must reflect current authority.
-    var sessionVersion =
-        versionCache
-            .sessionVersion(identity.sessionId())
-            .orElseThrow(AuthenticationRequiredException::new);
-    var membershipVersion =
-        versionCache
-            .membershipVersion(identity.accountId(), identity.householdId())
-            .orElseThrow(ProfileRequiredException::new);
-    var policyVersion =
-        versionCache
-            .profilePolicyVersion(identity.profileId())
-            .orElseThrow(ProfileRequiredException::new);
+    // A derived credential cannot acquire authority newer than the source request proved.
+    var sessionVersion = requireCurrentSessionVersion(identity);
+    var membershipVersion = requireCurrentMembershipVersion(identity);
+    var policyVersion = requireCurrentPolicyVersion(identity);
 
     var now = clock.instant().truncatedTo(ChronoUnit.SECONDS);
     var expiresAt = now.plus(validity);
@@ -92,5 +84,41 @@ public class PlaybackTokenIssuer {
         .expiresAt(expiresAt)
         .scope(TokenScope.PLAYBACK)
         .build();
+  }
+
+  private long requireCurrentSessionVersion(AuthenticatedIdentity identity) {
+    var sourceVersion = identity.sessionVersion();
+    if (sourceVersion == null) {
+      throw new AuthenticationRequiredException();
+    }
+
+    return versionCache
+        .sessionVersion(identity.sessionId())
+        .filter(sourceVersion::equals)
+        .orElseThrow(AuthenticationRequiredException::new);
+  }
+
+  private long requireCurrentMembershipVersion(AuthenticatedIdentity identity) {
+    var sourceVersion = identity.membershipVersion();
+    if (sourceVersion == null) {
+      throw new ProfileRequiredException();
+    }
+
+    return versionCache
+        .membershipVersion(identity.accountId(), identity.householdId())
+        .filter(sourceVersion::equals)
+        .orElseThrow(ProfileRequiredException::new);
+  }
+
+  private long requireCurrentPolicyVersion(AuthenticatedIdentity identity) {
+    var sourceVersion = identity.policyVersion();
+    if (sourceVersion == null) {
+      throw new ProfileRequiredException();
+    }
+
+    return versionCache
+        .profilePolicyVersion(identity.profileId())
+        .filter(sourceVersion::equals)
+        .orElseThrow(ProfileRequiredException::new);
   }
 }
