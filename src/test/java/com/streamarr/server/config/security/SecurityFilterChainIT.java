@@ -1,6 +1,7 @@
 package com.streamarr.server.config.security;
 
 import static com.streamarr.server.support.AuthTestSupport.bearer;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -18,7 +19,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationContext;
 import org.springframework.http.MediaType;
+import org.springframework.security.access.hierarchicalroles.RoleHierarchy;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -34,6 +37,8 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private PlaybackTokenIssuer playbackTokenIssuer;
   @Autowired private JwtDecoder jwtDecoder;
+
+  @Autowired private ApplicationContext applicationContext;
 
   private AuthTestSupport.TestIdentity identity;
 
@@ -101,6 +106,18 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should deny non-health actuator endpoints when account scoped")
+  void shouldDenyNonHealthActuatorEndpointsWhenAccountScoped() throws Exception {
+    identity = authTestSupport.createIdentity();
+
+    // Operational surfaces (metrics, info) are not for ordinary accounts; the observability
+    // profile exposes them, so the chain refuses everything under /actuator except health.
+    mockMvc
+        .perform(get("/actuator/metrics").with(bearer(authTestSupport.accountBearer(identity))))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
   @DisplayName("Should permit graphql when account scoped")
   void shouldPermitGraphQlWhenAccountScoped() throws Exception {
     identity = authTestSupport.createIdentity();
@@ -128,6 +145,12 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
                 .with(bearer(authTestSupport.profileBearer(identity))))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist());
+  }
+
+  @Test
+  @DisplayName("Should publish scope hierarchy for security auto detection")
+  void shouldPublishScopeHierarchyForSecurityAutoDetection() {
+    assertThat(applicationContext.getBeanProvider(RoleHierarchy.class).getIfUnique()).isNotNull();
   }
 
   private String playbackBearer(UUID streamSessionId) {

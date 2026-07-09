@@ -10,6 +10,7 @@ import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.HouseholdMembershipRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import java.time.Clock;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -27,6 +28,7 @@ public class SessionScopeService {
   private final AccountProfileRepository accountProfileRepository;
   private final AuthSessionRepository sessionRepository;
   private final UserAccountRepository userAccountRepository;
+  private final Clock clock;
 
   /**
    * ADR 0016 auto-selection: a sole household is selected automatically, then a sole selectable
@@ -48,7 +50,7 @@ public class SessionScopeService {
       session.setActiveProfileId(links.getFirst().getProfileId());
     }
 
-    sessionRepository.save(session);
+    persistSelection(session);
 
     return TokenContext.builder()
         .account(account)
@@ -194,7 +196,13 @@ public class SessionScopeService {
     }
 
     if (dirty) {
-      sessionRepository.save(session);
+      persistSelection(session);
+    }
+  }
+
+  private void persistSelection(AuthSession session) {
+    if (!sessionRepository.updateSelectionIfLive(session, clock.instant())) {
+      throw new AuthenticationRequiredException();
     }
   }
 }

@@ -20,6 +20,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
 @DisplayName("Refresh Token Reuse Revocation Integration Tests")
@@ -32,6 +34,8 @@ class RefreshTokenReuseRevocationIT extends AbstractIntegrationTest {
   @Autowired private AuthSessionRepository authSessionRepository;
 
   @Autowired private RefreshTokenRepository refreshTokenRepository;
+
+  @Autowired private PlatformTransactionManager transactionManager;
 
   private UserAccount account;
 
@@ -61,6 +65,32 @@ class RefreshTokenReuseRevocationIT extends AbstractIntegrationTest {
     assertThat(session.getRevokedReason()).isEqualTo(SessionRevocationReason.TOKEN_REUSE);
     assertThat(session.getSessionVersion()).isEqualTo(1L);
 
+    assertThat(refreshTokenRepository.findAll())
+        .filteredOn(token -> sessionId.equals(token.getSessionId()))
+        .isNotEmpty()
+        .allSatisfy(token -> assertThat(token.getStatus()).isEqualTo(RefreshTokenStatus.REVOKED));
+  }
+
+  @Test
+  @DisplayName("Should persist reuse revocation when redemption joins outer transaction")
+  void shouldPersistReuseRevocationWhenRedemptionJoinsOuterTransaction() {
+    account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    var issued = refreshTokenService.createSession(account, "nested-transaction-device");
+    var sessionId = issued.session().getId();
+
+    refreshTokenService.redeem(issued.rawToken());
+    backdateRotatedTokenPastGrace(sessionId);
+
+    var transaction = new TransactionTemplate(transactionManager);
+    var replayedToken = issued.rawToken();
+    assertThatThrownBy(
+            () -> transaction.executeWithoutResult(_ -> refreshTokenService.redeem(replayedToken)))
+        .isInstanceOf(TokenReuseDetectedException.class);
+
+    var session = authSessionRepository.findById(sessionId).orElseThrow();
+    assertThat(session.getRevokedAt()).isNotNull();
+    assertThat(session.getRevokedReason()).isEqualTo(SessionRevocationReason.TOKEN_REUSE);
+    assertThat(session.getSessionVersion()).isEqualTo(1L);
     assertThat(refreshTokenRepository.findAll())
         .filteredOn(token -> sessionId.equals(token.getSessionId()))
         .isNotEmpty()

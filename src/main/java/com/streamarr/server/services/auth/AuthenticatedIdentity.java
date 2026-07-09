@@ -3,6 +3,7 @@ package com.streamarr.server.services.auth;
 import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.UUID;
 import lombok.Builder;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -21,6 +22,28 @@ public record AuthenticatedIdentity(
     UUID profileId,
     Long policyVersion,
     UUID streamSessionId) {
+
+  public AuthenticatedIdentity {
+    Objects.requireNonNull(accountId, "accountId is required");
+    Objects.requireNonNull(role, "role is required");
+    Objects.requireNonNull(sessionId, "sessionId is required");
+    Objects.requireNonNull(scope, "scope is required");
+
+    if (scope == TokenScope.ACCOUNT
+        && (householdId != null || householdRole != null || profileId != null)) {
+      throw new IllegalArgumentException(
+          "Account scope cannot carry household or profile identity");
+    }
+    if (scope != TokenScope.ACCOUNT && (householdId == null || householdRole == null)) {
+      throw new IllegalArgumentException("Scoped identity requires household id and role");
+    }
+    if (scope == TokenScope.HOUSEHOLD && profileId != null) {
+      throw new IllegalArgumentException("Household scope cannot carry profile identity");
+    }
+    if (scope == TokenScope.PROFILE && profileId == null) {
+      throw new IllegalArgumentException("Profile scope requires profile identity");
+    }
+  }
 
   public static AuthenticatedIdentity fromJwt(Jwt jwt) {
     return AuthenticatedIdentity.builder()

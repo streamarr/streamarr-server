@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
+import com.streamarr.server.exceptions.SessionNotFoundException;
 import graphql.Scalars;
 import graphql.execution.DataFetcherExceptionHandlerParameters;
 import graphql.execution.ExecutionStepInfo;
@@ -12,6 +13,7 @@ import graphql.execution.MergedField;
 import graphql.execution.ResultPath;
 import graphql.language.Field;
 import graphql.schema.DataFetchingEnvironmentImpl;
+import java.util.UUID;
 import java.util.concurrent.CompletionException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -47,6 +49,15 @@ class StreamarrDataFetcherExceptionHandlerTest {
   @DisplayName("Should map access denied to forbidden when authorization fails")
   void shouldMapAccessDeniedToForbiddenWhenAuthorizationFails() {
     assertThat(codeFor(new AccessDeniedException("denied"))).isEqualTo("FORBIDDEN");
+  }
+
+  @Test
+  @DisplayName("Should map session not found to code when session missing")
+  void shouldMapSessionNotFoundToCodeWhenSessionMissing() {
+    // Routine, not internal: the reaper retires idle sessions and ownership misses read as
+    // missing — clients key the recreate-session path on this code.
+    assertThat(codeFor(new SessionNotFoundException(UUID.randomUUID())))
+        .isEqualTo("SESSION_NOT_FOUND");
   }
 
   @Test

@@ -8,4 +8,12 @@ public record SetupRequest(
     @NotBlank String password,
     @NotBlank String householdName,
     @NotBlank String profileName,
-    boolean cookieMode) {}
+    boolean cookieMode) {
+
+  @Override
+  public String toString() {
+    return "SetupRequest[email=%s, displayName=%s, password=REDACTED, householdName=%s,"
+        + " profileName=%s, cookieMode=%s]"
+            .formatted(email, displayName, householdName, profileName, cookieMode);
+  }
+}

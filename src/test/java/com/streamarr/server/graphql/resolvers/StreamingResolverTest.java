@@ -197,6 +197,7 @@ class StreamingResolverTest {
     assertThat(id).isEqualTo(sessionId.toString());
     assertThat(streamUrl).contains("/api/stream/" + sessionId + "/master.m3u8");
     assertThat(transcodeMode).isEqualTo("REMUX");
+    assertThat(STUB_SERVICE.getLastCreateProfileId()).isEqualTo(TestIdentityConstants.PROFILE_ID);
   }
 
   @Test
@@ -425,11 +426,13 @@ class StreamingResolverTest {
 
     private StreamSession nextResult;
     private StreamingOptions lastReceivedOptions;
+    private UUID lastCreateProfileId;
     private UUID lastDestroyProfileId;
 
     void reset() {
       nextResult = null;
       lastReceivedOptions = null;
+      lastCreateProfileId = null;
       lastDestroyProfileId = null;
     }
 
@@ -441,6 +444,10 @@ class StreamingResolverTest {
       return lastReceivedOptions;
     }
 
+    UUID getLastCreateProfileId() {
+      return lastCreateProfileId;
+    }
+
     UUID getLastDestroyProfileId() {
       return lastDestroyProfileId;
     }
@@ -448,6 +455,7 @@ class StreamingResolverTest {
     @Override
     public StreamSession createSession(UUID mediaFileId, UUID profileId, StreamingOptions options) {
       this.lastReceivedOptions = options;
+      this.lastCreateProfileId = profileId;
       return nextResult;
     }
 

@@ -36,6 +36,7 @@ class CursorUtilTest {
     void shouldPreserveCursorIdAndAllFilterDimensionsWhenRoundTrippingEncodeAndDecode() {
       var cursorId = UUID.randomUUID();
       var libraryId = UUID.randomUUID();
+      var profileId = UUID.randomUUID();
       var genreId = UUID.randomUUID();
       var studioId = UUID.randomUUID();
       var directorId = UUID.randomUUID();
@@ -44,6 +45,7 @@ class CursorUtilTest {
       var filter =
           MediaFilter.builder()
               .libraryId(libraryId)
+              .profileId(profileId)
               .sortBy(OrderMediaBy.RELEASE_DATE)
               .sortDirection(SortOrder.DESC)
               .genreIds(List.of(genreId))
@@ -80,6 +82,7 @@ class CursorUtilTest {
 
       assertThat(decoded.getCursorId()).contains(cursorId);
       assertThat(decoded.getMediaFilter().getLibraryId()).isEqualTo(libraryId);
+      assertThat(decoded.getMediaFilter().getProfileId()).isEqualTo(profileId);
       assertThat(decoded.getMediaFilter().getSortBy()).isEqualTo(OrderMediaBy.RELEASE_DATE);
       assertThat(decoded.getMediaFilter().getSortDirection()).isEqualTo(SortOrder.DESC);
       assertThat(decoded.getMediaFilter().getGenreIds()).containsExactly(genreId);

@@ -7,4 +7,11 @@ import lombok.Builder;
 
 @Builder
 public record TokenContext(
-    UserAccount account, AuthSession session, UUID householdId, UUID profileId) {}
+    UserAccount account, AuthSession session, UUID householdId, UUID profileId) {
+
+  public TokenContext {
+    if (profileId != null && householdId == null) {
+      throw new IllegalArgumentException("Profile context requires a household");
+    }
+  }
+}

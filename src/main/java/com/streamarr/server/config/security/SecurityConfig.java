@@ -4,14 +4,12 @@ import com.streamarr.server.services.auth.TokenScope;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.access.expression.method.DefaultMethodSecurityExpressionHandler;
-import org.springframework.security.authorization.DefaultAuthorizationManagerFactory;
+import org.springframework.security.access.hierarchicalroles.RoleHierarchy;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.header.HeaderWriterFilter;
@@ -27,10 +25,10 @@ public class SecurityConfig {
   private final RestAccessDeniedHandler accessDeniedHandler;
 
   /**
-   * The permit matrix: pre-auth endpoints and health stay open; streams demand SCOPE_PLAYBACK
-   * carried in the playback-URL token (outside the hierarchy); everything else — GraphQL including
-   * introspection, images, future surfaces — demands SCOPE_ACCOUNT, which household and profile
-   * tokens satisfy through the scope hierarchy.
+   * The permit matrix: pre-auth endpoints and health stay open; non-health actuator endpoints are
+   * refused for everyone; streams demand SCOPE_PLAYBACK carried in the playback-URL token (outside
+   * the hierarchy); everything else — GraphQL including introspection, images, future surfaces —
+   * demands SCOPE_ACCOUNT, which household and profile tokens satisfy through the scope hierarchy.
    *
    * <p>CSRF (SPA shape: readable XSRF-TOKEN cookie, Xor handler) protects exactly the
    * cookie-authenticated requests. The filter is wired manually because the resource-server DSL
@@ -52,6 +50,8 @@ public class SecurityConfig {
                     .permitAll()
                     .requestMatchers("/actuator/health/**", "/actuator/health")
                     .permitAll()
+                    .requestMatchers("/actuator/**")
+                    .denyAll()
                     .requestMatchers(SecurityRequestMatchers.STREAM_PATHS)
                     .hasAuthority(TokenScope.PLAYBACK.authority())
                     .anyRequest()
@@ -72,23 +72,9 @@ public class SecurityConfig {
         .build();
   }
 
-  /**
-   * The scope hierarchy is wired explicitly — a RoleHierarchy bean is never auto-detected. Request
-   * rules get it through this factory; method security through the expression handler below.
-   */
   @Bean
-  DefaultAuthorizationManagerFactory<RequestAuthorizationContext>
-      requestAuthorizationManagerFactory() {
-    var factory = new DefaultAuthorizationManagerFactory<RequestAuthorizationContext>();
-    factory.setRoleHierarchy(ScopeHierarchy.roleHierarchy());
-    return factory;
-  }
-
-  @Bean
-  static DefaultMethodSecurityExpressionHandler methodSecurityExpressionHandler() {
-    var handler = new DefaultMethodSecurityExpressionHandler();
-    handler.setRoleHierarchy(ScopeHierarchy.roleHierarchy());
-    return handler;
+  static RoleHierarchy roleHierarchy() {
+    return ScopeHierarchy.roleHierarchy();
   }
 
   // The XSRF-TOKEN cookie is deliberately script-readable (S3330): its whole purpose is the

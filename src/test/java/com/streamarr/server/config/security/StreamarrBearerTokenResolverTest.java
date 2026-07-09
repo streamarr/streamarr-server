@@ -75,6 +75,17 @@ class StreamarrBearerTokenResolverTest {
     assertThat(resolver.resolve(request)).isNull();
   }
 
+  @Test
+  @DisplayName("Should suppress auth cookie on unauthenticated auth path below a context path")
+  void shouldSuppressAuthCookieOnUnauthenticatedAuthPathBelowContextPath() {
+    var request = requestFor("/streamarr/api/auth/refresh");
+    request.setContextPath("/streamarr");
+    request.setServletPath("/api/auth/refresh");
+    request.setCookies(new Cookie(AuthCookies.ACCESS_COOKIE, "cookie-token"));
+
+    assertThat(resolver.resolve(request)).isNull();
+  }
+
   private static MockHttpServletRequest requestFor(String uri) {
     var request = new MockHttpServletRequest("GET", uri);
     request.setRequestURI(uri);

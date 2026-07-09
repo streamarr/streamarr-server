@@ -18,6 +18,7 @@ import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,8 +29,8 @@ public class SetupService {
 
   /**
    * Identity every watch row was written against before real profiles existed. Setup remaps those
-   * rows to the first profile; the constant (and its twin in graphql.CurrentUser) disappears at the
-   * enforcement flip.
+   * rows to the first profile; the constant disappears when the V047 profile FK is validated and
+   * the placeholder era ends.
    */
   private static final UUID LEGACY_PLACEHOLDER_PROFILE_ID =
       UUID.fromString("00000000-0000-0000-0000-000000000001");
@@ -52,17 +53,15 @@ public class SetupService {
 
   @Transactional
   public SetupResult setup(SetupCommand command) {
+    // Fast-path guard only — the atomic claim below stays the arbiter. Without it, every
+    // post-setup call burns full Argon2 work and a flushed insert before failing.
+    if (serverBootstrapRepository.isClaimed()) {
+      throw new SetupAlreadyCompletedException();
+    }
+
     // saveAndFlush before each jOOQ statement: Hibernate defers JPA inserts until flush, but
     // the claim and link run as direct SQL against those rows' foreign keys.
-    var admin =
-        userAccountRepository.saveAndFlush(
-            UserAccount.builder()
-                .email(command.email())
-                .displayName(command.displayName())
-                .passwordHash(passwordEncoder.encode(command.password()))
-                .accountRole(AccountRole.ADMIN)
-                .enabled(true)
-                .build());
+    var admin = createAdminAccount(command);
 
     if (!serverBootstrapRepository.claim(admin.getId())) {
       throw new SetupAlreadyCompletedException();
@@ -97,5 +96,23 @@ public class SetupService {
     watchHistoryRepository.reassignProfile(LEGACY_PLACEHOLDER_PROFILE_ID, profile.getId());
 
     return SetupResult.builder().admin(admin).household(household).profile(profile).build();
+  }
+
+  private UserAccount createAdminAccount(SetupCommand command) {
+    // Accounts only exist once setup has won, so a duplicate email before the claim can only
+    // be a competing setup that already flushed — report the domain conflict, not the
+    // constraint violation.
+    try {
+      return userAccountRepository.saveAndFlush(
+          UserAccount.builder()
+              .email(command.email())
+              .displayName(command.displayName())
+              .passwordHash(passwordEncoder.encode(command.password()))
+              .accountRole(AccountRole.ADMIN)
+              .enabled(true)
+              .build());
+    } catch (DataIntegrityViolationException _) {
+      throw new SetupAlreadyCompletedException();
+    }
   }
 }
