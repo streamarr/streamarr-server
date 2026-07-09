@@ -97,9 +97,9 @@ class JdbcCounterNotificationConnectionSource implements CounterNotificationConn
     }
 
     /**
-     * getNotifications only reads already-buffered socket data, so a half-open connection reports
-     * nothing forever. This round trip forces the failure to surface, bounded by socketTimeout —
-     * pgjdbc's documented LISTEN pattern.
+     * getNotifications performs a timed socket read but sends no request, so a half-open connection
+     * can report nothing forever. This round trip forces the failure to surface, bounded by
+     * socketTimeout — pgjdbc's documented LISTEN pattern.
      */
     private void probeLiveness() {
       try (var statement = connection.createStatement()) {

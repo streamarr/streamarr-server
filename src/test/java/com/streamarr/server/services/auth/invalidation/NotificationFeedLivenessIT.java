@@ -28,9 +28,9 @@ import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
 
 /**
  * A LISTEN connection can die without ever erroring: a NAT idle-drop or non-RST failover leaves the
- * socket open while delivering nothing, and pgjdbc's getNotifications only reads buffered data. The
- * listener must detect that on its own and reconverge — otherwise this instance serves revoked
- * sessions until restart.
+ * socket open while delivering nothing, and pgjdbc's getNotifications sends no request that proves
+ * the server is reachable. The listener must detect that on its own and reconverge — otherwise this
+ * instance serves revoked sessions until restart.
  */
 @Tag("IntegrationTest")
 @DisplayName("Notification Feed Liveness Integration Tests")

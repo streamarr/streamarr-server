@@ -1,6 +1,7 @@
 package com.streamarr.server.services.auth.invalidation;
 
 import com.streamarr.server.services.auth.TokenVersionCache;
+import java.util.concurrent.atomic.AtomicInteger;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.SmartLifecycle;
@@ -32,7 +33,7 @@ public class CounterNotificationListener implements SmartLifecycle {
 
   private volatile boolean running;
   private volatile boolean listening;
-  private volatile int consecutiveFailures;
+  private final AtomicInteger consecutiveFailures = new AtomicInteger();
   private Thread worker;
 
   @Override
@@ -59,7 +60,7 @@ public class CounterNotificationListener implements SmartLifecycle {
   }
 
   public int consecutiveConnectionFailures() {
-    return consecutiveFailures;
+    return consecutiveFailures.get();
   }
 
   private void listenLoop() {
@@ -81,13 +82,8 @@ public class CounterNotificationListener implements SmartLifecycle {
         cache.clearAll();
         listening = true;
         backoffMs = INITIAL_BACKOFF_MS;
-        consecutiveFailures = 0;
-
-        while (running) {
-          for (var payload : connection.notifications(POLL_TIMEOUT_MS)) {
-            apply(payload);
-          }
-        }
+        consecutiveFailures.set(0);
+        consumeNotifications(connection);
       } catch (CounterNotificationConnectionException e) {
         if (disconnected()) {
           return;
@@ -106,7 +102,7 @@ public class CounterNotificationListener implements SmartLifecycle {
 
   private boolean disconnected() {
     listening = false;
-    consecutiveFailures++;
+    consecutiveFailures.incrementAndGet();
     // Bumps are invisible while the feed is down; clearing on every failed attempt keeps
     // lookups reading through, bounding staleness to one backoff interval.
     cache.clearAll();
@@ -114,15 +110,24 @@ public class CounterNotificationListener implements SmartLifecycle {
   }
 
   private void logConnectionFailure(CounterNotificationConnectionException e) {
-    if (consecutiveFailures >= ERROR_ESCALATION_ATTEMPTS) {
+    var failureCount = consecutiveFailures.get();
+    if (failureCount >= ERROR_ESCALATION_ATTEMPTS) {
       log.error(
           "Counter notifications unavailable after {} consecutive attempts;"
               + " caches serve read-through until reconnected.",
-          consecutiveFailures,
+          failureCount,
           e);
       return;
     }
     log.warn("Counter notification connection failed; reconnecting.", e);
+  }
+
+  private void consumeNotifications(CounterNotificationConnection connection) {
+    while (running) {
+      for (var payload : connection.notifications(POLL_TIMEOUT_MS)) {
+        apply(payload);
+      }
+    }
   }
 
   private long sleepAndGrow(long backoffMs) {
