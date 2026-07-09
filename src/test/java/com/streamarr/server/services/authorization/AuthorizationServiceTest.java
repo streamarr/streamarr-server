@@ -151,8 +151,8 @@ class AuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should enforce household role minimums")
-  void shouldEnforceHouseholdRoleMinimums() {
+  @DisplayName("Should pass a household role check only when the caller rank meets the minimum")
+  void shouldPassHouseholdRoleCheckOnlyWhenRankMeetsMinimum() {
     authenticateWith(profileScopedIdentity(HouseholdRole.PARENT, AccountRole.USER));
 
     authorizationService.requireHouseholdRole(HouseholdRole.MEMBER);
@@ -162,8 +162,8 @@ class AuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should gate server admin checks on account role")
-  void shouldGateServerAdminChecksOnAccountRole() {
+  @DisplayName("Should grant server admin access only when the account role is admin")
+  void shouldGrantServerAdminOnlyWhenAccountRoleIsAdmin() {
     authenticateWith(profileScopedIdentity(HouseholdRole.MEMBER, AccountRole.ADMIN));
 
     assertThat(authorizationService.isServerAdmin()).isTrue();
@@ -207,8 +207,8 @@ class AuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should allow parent viewing activity of profile in active household")
-  void shouldAllowParentViewingActivityOfProfileInActiveHousehold() {
+  @DisplayName("Should allow a parent to view activity when the profile is in the active household")
+  void shouldAllowParentToViewActivityWhenProfileInActiveHousehold() {
     var managed = saveProfile(householdId);
     authenticateWith(profileScopedIdentity(HouseholdRole.PARENT, AccountRole.USER));
 
@@ -216,8 +216,9 @@ class AuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should deny parent viewing activity of profile outside active household")
-  void shouldDenyParentViewingActivityOfProfileOutsideActiveHousehold() {
+  @DisplayName(
+      "Should deny a parent from viewing activity when the profile is outside the active household")
+  void shouldDenyParentFromViewingActivityWhenProfileOutsideActiveHousehold() {
     var foreign = saveProfile(UUID.randomUUID());
     authenticateWith(profileScopedIdentity(HouseholdRole.PARENT, AccountRole.USER));
 
@@ -226,8 +227,8 @@ class AuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should allow server admin viewing any profile activity")
-  void shouldAllowServerAdminViewingAnyProfileActivity() {
+  @DisplayName("Should allow viewing any profile activity when the caller is a server admin")
+  void shouldAllowViewingAnyProfileActivityWhenServerAdmin() {
     var foreign = saveProfile(UUID.randomUUID());
     authenticateWith(profileScopedIdentity(HouseholdRole.MEMBER, AccountRole.ADMIN));
 
