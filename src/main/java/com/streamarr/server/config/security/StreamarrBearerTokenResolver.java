@@ -22,7 +22,7 @@ public class StreamarrBearerTokenResolver implements BearerTokenResolver {
 
   @Override
   public String resolve(HttpServletRequest request) {
-    if (UNAUTHENTICATED_AUTH_PATHS.contains(request.getRequestURI())) {
+    if (UNAUTHENTICATED_AUTH_PATHS.contains(pathWithinApplication(request))) {
       return null;
     }
 
@@ -32,6 +32,10 @@ public class StreamarrBearerTokenResolver implements BearerTokenResolver {
     }
 
     return accessCookieValue(request);
+  }
+
+  private static String pathWithinApplication(HttpServletRequest request) {
+    return request.getRequestURI().substring(request.getContextPath().length());
   }
 
   private static String accessCookieValue(HttpServletRequest request) {

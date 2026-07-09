@@ -36,6 +36,10 @@ public class PasswordChangeService {
         userAccountRepository
             .findById(command.accountId())
             .orElseThrow(AuthenticationRequiredException::new);
+    if (!userAccountRepository.lockIfCredentialsUnchanged(
+        account.getId(), account.getPasswordHash())) {
+      throw new AuthenticationRequiredException();
+    }
 
     // NIST re-authentication for a security action: the current password is required.
     if (!passwordEncoder.matches(command.currentPassword(), account.getPasswordHash())) {

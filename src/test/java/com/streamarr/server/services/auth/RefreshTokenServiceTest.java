@@ -4,6 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mockStatic;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.domain.auth.RefreshTokenStatus;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
@@ -24,6 +28,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 @Tag("UnitTest")
 @DisplayName("Refresh Token Service Tests")
@@ -46,9 +51,13 @@ class RefreshTokenServiceTest {
 
   private final MutableClock clock = new MutableClock(currentTime);
 
+  private final TokenReuseRevoker tokenReuseRevoker =
+      new TokenReuseRevoker(
+          new TokenReuseRevocationWriter(sessionRepository, tokenRepository, eventPublisher));
+
   private final RefreshTokenService service =
       new RefreshTokenService(
-          sessionRepository, tokenRepository, properties, clock, eventPublisher);
+          sessionRepository, tokenRepository, properties, clock, tokenReuseRevoker, eventPublisher);
 
   @Test
   @DisplayName("Should rotate when active token redeemed")
@@ -92,6 +101,20 @@ class RefreshTokenServiceTest {
   }
 
   @Test
+  @DisplayName("Should treat exact rotation grace boundary as grace replay")
+  void shouldTreatExactRotationGraceBoundaryAsGraceReplay() {
+    var issued = issueSession();
+    service.redeem(issued.rawToken());
+
+    advanceClock(properties.rotationGrace());
+    var replay = service.redeem(issued.rawToken());
+
+    assertThat(replay).isInstanceOf(RefreshResult.GraceReplay.class);
+    assertThat(replay.session().getRevokedAt()).isNull();
+    assertThat(eventPublisher.getEventsOfType(CounterBumpedEvent.class)).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should revoke family when consumed token redeemed after grace")
   void shouldRevokeFamilyWhenConsumedTokenRedeemedAfterGrace() {
     var issued = issueSession();
@@ -118,6 +141,36 @@ class RefreshTokenServiceTest {
               assertThat(event.kind()).isEqualTo(CounterKind.SESSION);
               assertThat(event.key()).isEqualTo(session.getId().toString());
               assertThat(event.version()).isEqualTo(1L);
+            });
+  }
+
+  @Test
+  @DisplayName("Should log token reuse with a safe session identifier")
+  void shouldLogTokenReuseWithSafeSessionIdentifier() {
+    var issued = issueSession();
+    service.redeem(issued.rawToken());
+    advanceClock(Duration.ofSeconds(31));
+    var replayedToken = issued.rawToken();
+    var logger = (Logger) LoggerFactory.getLogger(RefreshTokenService.class);
+    var appender = new ListAppender<ILoggingEvent>();
+    appender.start();
+    logger.addAppender(appender);
+
+    try {
+      assertThatThrownBy(() -> service.redeem(replayedToken))
+          .isInstanceOf(TokenReuseDetectedException.class);
+    } finally {
+      logger.detachAppender(appender);
+    }
+
+    assertThat(appender.list)
+        .singleElement()
+        .satisfies(
+            event -> {
+              assertThat(event.getLevel()).isEqualTo(Level.WARN);
+              assertThat(event.getFormattedMessage())
+                  .contains(issued.session().getId().toString())
+                  .doesNotContain(replayedToken);
             });
   }
 

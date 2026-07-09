@@ -46,4 +46,17 @@ public class FakeAuthSessionRepository extends FakeJpaRepository<AuthSession>
               return session.getSessionVersion();
             });
   }
+
+  @Override
+  public boolean updateSelectionIfLive(AuthSession session, Instant now) {
+    return findById(session.getId())
+        .filter(stored -> stored.getRevokedAt() == null)
+        .map(
+            stored -> {
+              stored.setActiveHouseholdId(session.getActiveHouseholdId());
+              stored.setActiveProfileId(session.getActiveProfileId());
+              return true;
+            })
+        .orElse(false);
+  }
 }

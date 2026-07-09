@@ -21,6 +21,7 @@ import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -40,7 +41,11 @@ class SessionScopeServiceTest {
 
   private final SessionScopeService service =
       new SessionScopeService(
-          membershipRepository, accountProfileRepository, sessionRepository, userAccountRepository);
+          membershipRepository,
+          accountProfileRepository,
+          sessionRepository,
+          userAccountRepository,
+          Clock.systemUTC());
 
   // --- autoSelectContext ---
 

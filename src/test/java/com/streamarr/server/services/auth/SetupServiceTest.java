@@ -7,6 +7,7 @@ import com.streamarr.server.config.security.Argon2Properties;
 import com.streamarr.server.config.security.PasswordEncoderConfig;
 import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.domain.streaming.WatchHistory;
 import com.streamarr.server.exceptions.SetupAlreadyCompletedException;
 import com.streamarr.server.fakes.FakeAccountProfileRepository;
@@ -20,9 +21,11 @@ import com.streamarr.server.fakes.FakeWatchHistoryRepository;
 import com.streamarr.server.fixtures.SessionProgressFixture;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 @Tag("UnitTest")
 @DisplayName("Setup Service Tests")
@@ -44,6 +47,11 @@ class SetupServiceTest {
       new FakeSessionProgressRepository();
   private final FakeWatchHistoryRepository watchHistoryRepository =
       new FakeWatchHistoryRepository();
+  private final CountingPasswordEncoder passwordEncoder =
+      new CountingPasswordEncoder(
+          new PasswordEncoderConfig()
+              .passwordEncoder(
+                  Argon2Properties.builder().memoryKib(4096).iterations(1).parallelism(1).build()));
 
   private final SetupService setupService =
       new SetupService(
@@ -55,9 +63,7 @@ class SetupServiceTest {
           bootstrapRepository,
           sessionProgressRepository,
           watchHistoryRepository,
-          new PasswordEncoderConfig()
-              .passwordEncoder(
-                  Argon2Properties.builder().memoryKib(4096).iterations(1).parallelism(1).build()));
+          passwordEncoder);
 
   @Test
   @DisplayName("Should create admin household and profile when bootstrap unclaimed")
@@ -122,6 +128,35 @@ class SetupServiceTest {
         .isInstanceOf(SetupAlreadyCompletedException.class);
   }
 
+  @Test
+  @DisplayName("Should report setup completed when a competing setup already inserted the email")
+  void shouldReportSetupCompletedWhenCompetingSetupAlreadyInsertedTheEmail() {
+    userAccountRepository.save(
+        UserAccount.builder()
+            .email("admin@example.com")
+            .displayName("Competing Setup Winner")
+            .passwordHash("{argon2id}competing")
+            .accountRole(AccountRole.ADMIN)
+            .enabled(true)
+            .build());
+    var command = defaultCommandBuilder().build();
+
+    assertThatThrownBy(() -> setupService.setup(command))
+        .isInstanceOf(SetupAlreadyCompletedException.class);
+  }
+
+  @Test
+  @DisplayName("Should skip password encoding when bootstrap already claimed")
+  void shouldSkipPasswordEncodingWhenBootstrapAlreadyClaimed() {
+    bootstrapRepository.claim(UUID.randomUUID());
+
+    var command = defaultCommandBuilder().build();
+
+    assertThatThrownBy(() -> setupService.setup(command))
+        .isInstanceOf(SetupAlreadyCompletedException.class);
+    assertThat(passwordEncoder.encodeInvocations()).isZero();
+  }
+
   private SetupCommand.SetupCommandBuilder defaultCommandBuilder() {
     return SetupCommand.builder()
         .email("admin@example.com")
@@ -129,5 +164,35 @@ class SetupServiceTest {
         .password("correct horse battery staple")
         .householdName("Home")
         .profileName("Andrew");
+  }
+
+  private static final class CountingPasswordEncoder implements PasswordEncoder {
+
+    private final PasswordEncoder delegate;
+    private final AtomicInteger encodeInvocations = new AtomicInteger();
+
+    private CountingPasswordEncoder(PasswordEncoder delegate) {
+      this.delegate = delegate;
+    }
+
+    @Override
+    public String encode(CharSequence rawPassword) {
+      encodeInvocations.incrementAndGet();
+      return delegate.encode(rawPassword);
+    }
+
+    @Override
+    public boolean matches(CharSequence rawPassword, String encodedPassword) {
+      return delegate.matches(rawPassword, encodedPassword);
+    }
+
+    @Override
+    public boolean upgradeEncoding(String encodedPassword) {
+      return delegate.upgradeEncoding(encodedPassword);
+    }
+
+    private int encodeInvocations() {
+      return encodeInvocations.get();
+    }
   }
 }

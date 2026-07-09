@@ -6,4 +6,11 @@ import lombok.Builder;
 
 @Builder
 public record PasswordChangeResult(
-    UserAccount account, AuthSession session, String rawRefreshToken) {}
+    UserAccount account, AuthSession session, String rawRefreshToken) {
+
+  @Override
+  public String toString() {
+    return "PasswordChangeResult[account=%s, session=%s, rawRefreshToken=REDACTED]"
+        .formatted(account, session);
+  }
+}

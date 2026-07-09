@@ -76,12 +76,23 @@ class MeResolverTest {
                             new IdentityQueryService.SelectableProfileView(
                                 profileId, "Andrew", INACTIVE_PROFILE))))));
 
-    var householdName =
+    var query =
+        "{ me { email role scope memberships { householdName householdRole profiles { name active } } } }";
+    String scope = dgsQueryExecutor.executeAndExtractJsonPath(query, "data.me.scope");
+    String role = dgsQueryExecutor.executeAndExtractJsonPath(query, "data.me.role");
+    String householdName =
+        dgsQueryExecutor.executeAndExtractJsonPath(query, "data.me.memberships[0].householdName");
+    String householdRole =
+        dgsQueryExecutor.executeAndExtractJsonPath(query, "data.me.memberships[0].householdRole");
+    Boolean profileActive =
         dgsQueryExecutor.executeAndExtractJsonPath(
-            "{ me { email scope memberships { householdName householdRole profiles { name active } } } }",
-            "data.me.memberships[0].householdName");
+            query, "data.me.memberships[0].profiles[0].active");
 
+    assertThat(scope).isEqualTo("account");
+    assertThat(role).isEqualTo("USER");
     assertThat(householdName).isEqualTo("Home");
+    assertThat(householdRole).isEqualTo("OWNER");
+    assertThat(profileActive).isFalse();
   }
 
   @Test
