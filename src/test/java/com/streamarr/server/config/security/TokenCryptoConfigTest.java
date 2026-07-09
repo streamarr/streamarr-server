@@ -67,6 +67,19 @@ class TokenCryptoConfigTest {
   }
 
   @Test
+  @DisplayName("Should reject ES256 token when signature bytes are tampered")
+  void shouldRejectEs256TokenWhenSignatureBytesAreTampered() {
+    var keys = config.tokenSigningKeys(properties(KEY_A, List.of()));
+    var token = mint(config.jwtEncoder(keys));
+    var jwtDecoder = decoder(keys);
+    assertThat(jwtDecoder.decode(token).getSubject()).isEqualTo(accountId.toString());
+
+    var tamperedToken = tamperSignature(token);
+
+    assertThatThrownBy(() -> jwtDecoder.decode(tamperedToken)).isInstanceOf(BadJwtException.class);
+  }
+
+  @Test
   @DisplayName("Should generate ephemeral key pair when signing key blank")
   void shouldGenerateEphemeralKeyPairWhenSigningKeyBlank() {
     var keys = config.tokenSigningKeys(properties("", List.of()));
@@ -79,6 +92,27 @@ class TokenCryptoConfigTest {
   }
 
   @Test
+  @DisplayName("Should generate ephemeral key pair when signing key missing")
+  void shouldGenerateEphemeralKeyPairWhenSigningKeyMissing() {
+    var keys = config.tokenSigningKeys(properties(null, List.of()));
+
+    assertThat(keys.signingKey().getCurve()).isEqualTo(Curve.P_256);
+    assertThat(keys.signingKey().getKeyID()).isNotBlank();
+
+    var token = mint(config.jwtEncoder(keys));
+    assertThat(decoder(keys).decode(token).getSubject()).isEqualTo(accountId.toString());
+  }
+
+  @Test
+  @DisplayName("Should generate distinct ephemeral key pairs when key not configured")
+  void shouldGenerateDistinctEphemeralKeyPairsWhenKeyNotConfigured() {
+    var first = config.tokenSigningKeys(properties(null, List.of()));
+    var second = config.tokenSigningKeys(properties("", List.of()));
+
+    assertThat(first.signingKey().getKeyID()).isNotEqualTo(second.signingKey().getKeyID());
+  }
+
+  @Test
   @DisplayName("Should verify token signed with retired key")
   void shouldVerifyTokenSignedWithRetiredKey() {
     var retiredKeys = config.tokenSigningKeys(properties(KEY_A, List.of()));
@@ -88,6 +122,17 @@ class TokenCryptoConfigTest {
 
     var decoded = decoder(rotatedKeys).decode(token);
     assertThat(decoded.getSubject()).isEqualTo(accountId.toString());
+  }
+
+  @Test
+  @DisplayName("Should verify with current key when verification keys missing")
+  void shouldVerifyWithCurrentKeyWhenVerificationKeysMissing() {
+    var keys = config.tokenSigningKeys(properties(KEY_A, null));
+
+    assertThat(keys.verificationKeys().getKeys()).hasSize(1);
+
+    var token = mint(config.jwtEncoder(keys));
+    assertThat(decoder(keys).decode(token).getSubject()).isEqualTo(accountId.toString());
   }
 
   @Test
@@ -216,6 +261,14 @@ class TokenCryptoConfigTest {
   private JwtDecoder decoder(TokenSigningKeys keys) {
     reader.sessionVersions.put(sessionId, 0L);
     return config.jwtDecoder(keys, new TokenVersionValidator(new TokenVersionCache(reader)));
+  }
+
+  private static String tamperSignature(String token) {
+    var parts = token.split("\\.", -1);
+    var signature = Base64.getUrlDecoder().decode(parts[2]);
+    signature[0] = (byte) (signature[0] ^ 1);
+    parts[2] = Base64.getUrlEncoder().withoutPadding().encodeToString(signature);
+    return String.join(".", parts);
   }
 
   private static AuthTokenProperties properties(String signingKey, List<String> verificationKeys) {
