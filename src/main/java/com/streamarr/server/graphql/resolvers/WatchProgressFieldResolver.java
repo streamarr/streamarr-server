@@ -87,13 +87,13 @@ public class WatchProgressFieldResolver {
 
   private CompletableFuture<WatchProgressDto> loadProgress(
       DataFetchingEnvironment dfe, List<MediaFile> files) {
+    var profileId = authorizationService.requireProfile();
     if (files.isEmpty()) {
       return CompletableFuture.completedFuture(null);
     }
 
     DataLoader<SessionProgressLoaderKey, WatchProgressDto> loader =
         dfe.getDataLoader(WATCH_PROGRESS_LOADER);
-    var profileId = authorizationService.requireProfile();
     var keys =
         files.stream().map(file -> new SessionProgressLoaderKey(profileId, file.getId())).toList();
 
