@@ -25,6 +25,9 @@ public record CounterNotificationPayload(CounterKind kind, String key, long vers
     if (parts.length != 3) {
       return Optional.empty();
     }
+    if (parts[1].isEmpty()) {
+      return Optional.empty();
+    }
 
     try {
       return Optional.of(

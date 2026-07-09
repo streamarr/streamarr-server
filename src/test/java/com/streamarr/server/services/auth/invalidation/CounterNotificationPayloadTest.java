@@ -4,9 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.services.auth.CounterKind;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
 @DisplayName("Counter Notification Payload Tests")
@@ -38,23 +42,30 @@ class CounterNotificationPayloadTest {
         .contains(new CounterNotificationPayload(CounterKind.SESSION, sessionId.toString(), 3L));
   }
 
-  @Test
+  @ParameterizedTest(name = "Should round-trip {0} through encode and parse")
+  @EnumSource(CounterKind.class)
   @DisplayName("Should round-trip every counter kind through encode and parse")
-  void shouldRoundTripEveryCounterKindThroughEncodeAndParse() {
-    for (var kind : CounterKind.values()) {
-      var payload = new CounterNotificationPayload(kind, "left:right", 7L);
+  void shouldRoundTripEveryCounterKindThroughEncodeAndParse(CounterKind kind) {
+    var payload = new CounterNotificationPayload(kind, "left:right", 7L);
 
-      assertThat(CounterNotificationPayload.parse(payload.encode())).contains(payload);
-    }
+    assertThat(CounterNotificationPayload.parse(payload.encode())).contains(payload);
   }
 
-  @Test
-  @DisplayName("Should reject malformed payloads")
-  void shouldRejectMalformedPayloads() {
-    assertThat(CounterNotificationPayload.parse(null)).isEmpty();
-    assertThat(CounterNotificationPayload.parse("")).isEmpty();
-    assertThat(CounterNotificationPayload.parse("SESSION|missing-version")).isEmpty();
-    assertThat(CounterNotificationPayload.parse("NOT_A_KIND|key|1")).isEmpty();
-    assertThat(CounterNotificationPayload.parse("SESSION|key|not-a-number")).isEmpty();
+  @ParameterizedTest(name = "Should reject malformed payload [{0}]")
+  @MethodSource("malformedPayloads")
+  void shouldRejectMalformedPayloads(String payload) {
+    assertThat(CounterNotificationPayload.parse(payload)).isEmpty();
+  }
+
+  private static Stream<String> malformedPayloads() {
+    return Stream.<String>of(
+        null,
+        "",
+        "SESSION|missing-version",
+        "NOT_A_KIND|key|1",
+        "SESSION|key|not-a-number",
+        "SESSION|key|",
+        "SESSION||1",
+        "SESSION|key|1|extra");
   }
 }
