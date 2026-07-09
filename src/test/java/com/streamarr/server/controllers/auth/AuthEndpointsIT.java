@@ -149,31 +149,42 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should create identity on first setup and conflict on second")
-  void shouldCreateIdentityOnFirstSetupAndConflictOnSecond() throws Exception {
+  @DisplayName("Should create identity when setup is first")
+  void shouldCreateIdentityWhenSetupIsFirst() throws Exception {
     var suffix = UUID.randomUUID();
     setupEmail = "setup-" + suffix + "@example.com";
     setupHouseholdName = "Home-" + suffix;
-    var setupBody =
-        """
-        {"email": "%s", "displayName": "Admin", "password": "%s", \
-        "householdName": "%s", "profileName": "Andrew", "cookieMode": false}
-        """
-            .formatted(setupEmail, PASSWORD, setupHouseholdName);
 
     mockMvc
-        .perform(post("/api/auth/setup").contentType(MediaType.APPLICATION_JSON).content(setupBody))
+        .perform(
+            post("/api/auth/setup")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(setupBody(setupEmail)))
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.accessToken").isNotEmpty())
         .andExpect(jsonPath("$.refreshToken").isNotEmpty())
         .andExpect(jsonPath("$.accessTokenExpiresAt").exists())
         .andExpect(jsonPath("$.scope").value("profile"));
+  }
 
-    var secondBody = setupBody.replace(setupEmail, "second-" + suffix + "@example.com");
+  @Test
+  @DisplayName("Should reject setup when already completed")
+  void shouldRejectSetupWhenAlreadyCompleted() throws Exception {
+    var suffix = UUID.randomUUID();
+    setupEmail = "setup-" + suffix + "@example.com";
+    setupHouseholdName = "Home-" + suffix;
+    mockMvc
+        .perform(
+            post("/api/auth/setup")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(setupBody(setupEmail)))
+        .andExpect(status().isCreated());
 
     mockMvc
         .perform(
-            post("/api/auth/setup").contentType(MediaType.APPLICATION_JSON).content(secondBody))
+            post("/api/auth/setup")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(setupBody("second-" + suffix + "@example.com")))
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.code").value("SETUP_ALREADY_COMPLETED"));
   }
@@ -218,39 +229,26 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should rotate refresh token over http and grace replay without rotation")
-  void shouldRotateRefreshTokenOverHttpAndGraceReplayWithoutRotation() throws Exception {
+  @DisplayName("Should rotate refresh token when redeemed over http")
+  void shouldRotateRefreshTokenWhenRedeemedOverHttp() throws Exception {
     seedSingleProfileIdentity();
+    var firstRefreshToken = loginAndReturnRefreshToken();
 
-    var loginResponse =
-        mockMvc
-            .perform(
-                post("/api/auth/login")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(loginBody(account.getEmail(), PASSWORD)))
-            .andExpect(status().isOk())
-            .andReturn()
-            .getResponse()
-            .getContentAsString();
-    var firstRefreshToken = objectMapper.readTree(loginResponse).get("refreshToken").asString();
+    var successor = redeemAndReturnRefreshToken(firstRefreshToken);
 
-    var rotated =
-        mockMvc
-            .perform(
-                post("/api/auth/refresh")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(refreshBody(firstRefreshToken)))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.accessToken").isNotEmpty())
-            .andExpect(jsonPath("$.refreshToken").isNotEmpty())
-            .andExpect(jsonPath("$.scope").value("profile"))
-            .andReturn()
-            .getResponse()
-            .getContentAsString();
-    var rotatedRefreshToken = objectMapper.readTree(rotated).get("refreshToken").asString();
-    assertThat(rotatedRefreshToken).isNotEqualTo(firstRefreshToken);
+    assertThat(successor).isNotBlank();
+    assertThat(successor).isNotEqualTo(firstRefreshToken);
+  }
 
-    // Replaying the consumed token inside the grace window yields access only — no rotation.
+  @Test
+  @DisplayName(
+      "Should return access without rotation when consumed token replayed within grace over http")
+  void shouldReturnAccessWithoutRotationWhenConsumedTokenReplayedWithinGraceOverHttp()
+      throws Exception {
+    seedSingleProfileIdentity();
+    var firstRefreshToken = loginAndReturnRefreshToken();
+    redeemAndReturnRefreshToken(firstRefreshToken);
+
     mockMvc
         .perform(
             post("/api/auth/refresh")
@@ -896,6 +894,42 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
         {"refreshToken": "%s", "cookieMode": false}
         """
         .formatted(refreshToken);
+  }
+
+  private String setupBody(String email) {
+    return """
+        {"email": "%s", "displayName": "Admin", "password": "%s", \
+        "householdName": "%s", "profileName": "Andrew", "cookieMode": false}
+        """
+        .formatted(email, PASSWORD, setupHouseholdName);
+  }
+
+  private String loginAndReturnRefreshToken() throws Exception {
+    var response =
+        mockMvc
+            .perform(
+                post("/api/auth/login")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(loginBody(account.getEmail(), PASSWORD)))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return objectMapper.readTree(response).get("refreshToken").asString();
+  }
+
+  private String redeemAndReturnRefreshToken(String refreshToken) throws Exception {
+    var response =
+        mockMvc
+            .perform(
+                post("/api/auth/refresh")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(refreshBody(refreshToken)))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return objectMapper.readTree(response).get("refreshToken").asString();
   }
 
   private void seedSingleProfileIdentity() {

@@ -91,8 +91,9 @@ class StreamControllerTest {
 
   @ParameterizedTest
   @ValueSource(strings = {"master.m3u8", "stream.m3u8"})
-  @DisplayName("Should embed the validated token in playlists rather than the request parameter")
-  void shouldEmbedValidatedTokenInPlaylistsRatherThanRequestParameter(String path)
+  @DisplayName(
+      "Should embed the validated token in playlists when the request parameter is spoofed")
+  void shouldEmbedValidatedTokenInPlaylistsWhenRequestParameterIsSpoofed(String path)
       throws Exception {
     streamingService.setSession(buildMpegtsSession());
 
@@ -106,8 +107,9 @@ class StreamControllerTest {
   }
 
   @Test
-  @DisplayName("Should embed the validated token in variant playlists rather than the parameter")
-  void shouldEmbedValidatedTokenInVariantPlaylistsRatherThanParameter() throws Exception {
+  @DisplayName(
+      "Should embed the validated token in variant playlists when the request parameter is spoofed")
+  void shouldEmbedValidatedTokenInVariantPlaylistsWhenRequestParameterIsSpoofed() throws Exception {
     streamingService.setSession(buildAbrSession());
 
     var result =
