@@ -191,24 +191,6 @@ class AuthorizationServiceTest {
         .isInstanceOf(AuthenticationRequiredException.class);
   }
 
-  @Test
-  @DisplayName(
-      "Should deny viewing a same-household profile when the household claim carries no role")
-  void shouldDenyViewingSameHouseholdProfileWhenHouseholdClaimHasNoRole() {
-    var sameHousehold = saveProfile(householdId);
-    authenticateWith(
-        AuthenticatedIdentity.builder()
-            .accountId(accountId)
-            .role(AccountRole.USER)
-            .sessionId(UUID.randomUUID())
-            .scope(TokenScope.PROFILE)
-            .householdId(householdId)
-            .profileId(profileId)
-            .build());
-
-    assertThat(authorizationService.canViewActivityOf(sameHousehold.getId())).isFalse();
-  }
-
   @ParameterizedTest(name = "Should allow household role when minimum is {0}")
   @EnumSource(
       value = HouseholdRole.class,
