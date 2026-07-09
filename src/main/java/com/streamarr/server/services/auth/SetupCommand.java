@@ -8,7 +8,7 @@ public record SetupCommand(
 
   @Override
   public String toString() {
-    return "SetupCommand[email=%s, displayName=%s, password=[REDACTED], householdName=%s, profileName=%s]"
+    return "SetupCommand[email=%s, displayName=%s, householdName=%s, profileName=%s]"
         .formatted(email, displayName, householdName, profileName);
   }
 }

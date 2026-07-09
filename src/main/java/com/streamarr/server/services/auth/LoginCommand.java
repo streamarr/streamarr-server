@@ -7,7 +7,6 @@ public record LoginCommand(String email, String password, String deviceName, Str
 
   @Override
   public String toString() {
-    return "LoginCommand[email=%s, password=[REDACTED], deviceName=%s, source=%s]"
-        .formatted(email, deviceName, source);
+    return "LoginCommand[email=%s, deviceName=%s, source=%s]".formatted(email, deviceName, source);
   }
 }

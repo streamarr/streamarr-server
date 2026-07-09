@@ -139,8 +139,9 @@ class SetupServiceTest {
             .accountRole(AccountRole.ADMIN)
             .enabled(true)
             .build());
+    var command = defaultCommandBuilder().build();
 
-    assertThatThrownBy(() -> setupService.setup(defaultCommandBuilder().build()))
+    assertThatThrownBy(() -> setupService.setup(command))
         .isInstanceOf(SetupAlreadyCompletedException.class);
   }
 

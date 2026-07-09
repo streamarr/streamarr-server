@@ -57,9 +57,10 @@ class AuthSecurityEventLoggingTest {
     var issued = service.createSession(account, "security-log-test");
     service.redeem(issued.rawToken());
     currentTime.updateAndGet(instant -> instant.plusSeconds(31));
+    var replayedToken = issued.rawToken();
 
     try (var logs = LogCapture.forClass(RefreshTokenService.class)) {
-      assertThatThrownBy(() -> service.redeem(issued.rawToken()))
+      assertThatThrownBy(() -> service.redeem(replayedToken))
           .isInstanceOf(TokenReuseDetectedException.class);
 
       assertThat(logs.events()).anyMatch(event -> event.getLevel().isGreaterOrEqual(Level.WARN));

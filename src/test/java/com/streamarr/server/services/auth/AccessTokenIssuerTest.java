@@ -229,14 +229,11 @@ class AccessTokenIssuerTest {
   void shouldRejectProfileContextWhenHouseholdNotSelected() {
     var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
     var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
+    var profileId = UUID.randomUUID();
+    var contextBuilder =
+        TokenContext.builder().account(account).session(session).profileId(profileId);
 
-    assertThatThrownBy(
-            () ->
-                TokenContext.builder()
-                    .account(account)
-                    .session(session)
-                    .profileId(UUID.randomUUID())
-                    .build())
+    assertThatThrownBy(contextBuilder::build)
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Profile context requires a household");
   }

@@ -29,6 +29,8 @@ class SecretRecordToStringTest {
                 .build()
                 .toString());
 
-    assertThat(renderedValues).allSatisfy(rendered -> assertThat(rendered).doesNotContain(secret));
+    assertThat(renderedValues)
+        .hasSize(5)
+        .allSatisfy(rendered -> assertThat(rendered).doesNotContain(secret));
   }
 }
