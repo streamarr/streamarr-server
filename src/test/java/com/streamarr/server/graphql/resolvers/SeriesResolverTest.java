@@ -19,15 +19,24 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import com.streamarr.server.repositories.auth.AccountProfileRepository;
+import com.streamarr.server.repositories.auth.ProfileRepository;
+import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
+import com.streamarr.server.support.security.WithProfileContext;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @Tag("UnitTest")
 @EnableDgsTest
-@SpringBootTest(classes = {SeriesResolver.class})
+@WithProfileContext
+@SpringBootTest(classes = {SeriesResolver.class, SecurityContextAuthorizationService.class})
 @DisplayName("Series Resolver Tests")
 class SeriesResolverTest {
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
+
+  @MockitoBean private ProfileRepository profileRepository;
+
+  @MockitoBean private AccountProfileRepository accountProfileRepository;
 
   @MockitoBean private SeriesService seriesService;
 

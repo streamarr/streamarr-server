@@ -6,6 +6,7 @@ import static org.assertj.core.groups.Tuple.tuple;
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.support.security.WithProfileContext;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
@@ -35,6 +36,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 @Tag("IntegrationTest")
 @EnableDgsTest
 @DisplayName("Movie Resolver Integration Tests")
+@WithProfileContext
 class MovieResolverIT extends AbstractIntegrationTest {
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;

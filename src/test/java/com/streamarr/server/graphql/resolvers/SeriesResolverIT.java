@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.support.security.WithProfileContext;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.Season;
@@ -33,6 +34,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 @Tag("IntegrationTest")
 @EnableDgsTest
 @DisplayName("Series Resolver Integration Tests")
+@WithProfileContext
 class SeriesResolverIT extends AbstractIntegrationTest {
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
