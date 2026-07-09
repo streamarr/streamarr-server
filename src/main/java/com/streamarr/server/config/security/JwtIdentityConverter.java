@@ -19,7 +19,7 @@ public class JwtIdentityConverter implements Converter<Jwt, AbstractAuthenticati
   @Override
   public AbstractAuthenticationToken convert(Jwt jwt) {
     var identity = AuthenticatedIdentity.fromJwt(jwt);
-    var authorities = List.of(new SimpleGrantedAuthority("SCOPE_" + identity.scope().name()));
+    var authorities = List.of(new SimpleGrantedAuthority(identity.scope().authority()));
     return new StreamarrAuthenticationToken(identity, jwt, authorities);
   }
 }

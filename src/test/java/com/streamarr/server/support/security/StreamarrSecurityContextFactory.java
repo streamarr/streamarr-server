@@ -29,7 +29,7 @@ final class StreamarrSecurityContextFactory {
     var context = SecurityContextHolder.createEmptyContext();
     context.setAuthentication(
         new StreamarrAuthenticationToken(
-            identity, null, List.of(new SimpleGrantedAuthority("SCOPE_" + scope.name()))));
+            identity, null, List.of(new SimpleGrantedAuthority(scope.authority()))));
     return context;
   }
 }

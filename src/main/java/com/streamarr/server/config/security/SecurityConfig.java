@@ -1,5 +1,6 @@
 package com.streamarr.server.config.security;
 
+import com.streamarr.server.services.auth.TokenScope;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -52,9 +53,9 @@ public class SecurityConfig {
                     .requestMatchers("/actuator/health/**", "/actuator/health")
                     .permitAll()
                     .requestMatchers("/api/stream/**")
-                    .hasAuthority("SCOPE_PLAYBACK")
+                    .hasAuthority(TokenScope.PLAYBACK.authority())
                     .anyRequest()
-                    .hasAuthority("SCOPE_ACCOUNT"))
+                    .hasAuthority(TokenScope.ACCOUNT.authority()))
         .oauth2ResourceServer(
             oauth2 ->
                 oauth2
