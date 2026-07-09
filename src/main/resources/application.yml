@@ -1,4 +1,6 @@
 spring:
+  jpa:
+    open-in-view: false
   flyway:
     table: schema_history
     enabled: true

@@ -70,6 +70,21 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
   }
 
   @Override
+  public boolean updateSelectionIfLive(AuthSession session, Instant now) {
+    var nowOffset = now.atOffset(ZoneOffset.UTC);
+
+    return dsl.update(AUTH_SESSION)
+            .set(AUTH_SESSION.ACTIVE_HOUSEHOLD_ID, session.getActiveHouseholdId())
+            .set(AUTH_SESSION.ACTIVE_PROFILE_ID, session.getActiveProfileId())
+            .set(AUTH_SESSION.LAST_MODIFIED_ON, nowOffset)
+            .set(AUTH_SESSION.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
+            .where(AUTH_SESSION.ID.eq(session.getId()))
+            .and(AUTH_SESSION.REVOKED_AT.isNull())
+            .execute()
+        > 0;
+  }
+
+  @Override
   public Optional<AuthSession> lockById(UUID sessionId) {
     var query = dsl.selectFrom(AUTH_SESSION).where(AUTH_SESSION.ID.eq(sessionId)).forUpdate();
 

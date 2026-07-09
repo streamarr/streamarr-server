@@ -12,6 +12,7 @@ import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
 import com.nimbusds.jose.proc.JWSVerificationKeySelector;
 import com.nimbusds.jose.proc.SecurityContext;
 import com.nimbusds.jwt.proc.DefaultJWTProcessor;
+import com.streamarr.server.services.auth.TokenIdentityValidator;
 import com.streamarr.server.services.auth.TokenVersionValidator;
 import java.security.KeyFactory;
 import java.security.NoSuchAlgorithmException;
@@ -70,11 +71,15 @@ public class TokenCryptoConfig {
   }
 
   /**
-   * Version validation runs inside the decoder, so a stale token never becomes an Authentication.
-   * The key selector is pinned to ES256: HMAC or unsigned tokens never reach validation.
+   * Identity and version validation run inside the decoder, so malformed or stale tokens never
+   * become an Authentication. The key selector is pinned to ES256: HMAC or unsigned tokens never
+   * reach validation.
    */
   @Bean
-  public JwtDecoder jwtDecoder(TokenSigningKeys keys, TokenVersionValidator versionValidator) {
+  public JwtDecoder jwtDecoder(
+      TokenSigningKeys keys,
+      TokenIdentityValidator identityValidator,
+      TokenVersionValidator versionValidator) {
     var processor = new DefaultJWTProcessor<SecurityContext>();
     processor.setJWSKeySelector(
         new JWSVerificationKeySelector<>(
@@ -85,7 +90,8 @@ public class TokenCryptoConfig {
 
     var decoder = new NimbusJwtDecoder(processor);
     decoder.setJwtValidator(
-        new DelegatingOAuth2TokenValidator<>(JwtValidators.createDefault(), versionValidator));
+        new DelegatingOAuth2TokenValidator<>(
+            JwtValidators.createDefault(), identityValidator, versionValidator));
     return decoder;
   }
 

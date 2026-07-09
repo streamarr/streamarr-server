@@ -14,6 +14,7 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
 import com.streamarr.server.domain.auth.AccountProfile;
+import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.Household;
 import com.streamarr.server.domain.auth.HouseholdMembership;
 import com.streamarr.server.domain.auth.HouseholdRole;
@@ -29,6 +30,7 @@ import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AccessTokenIssuer;
 import com.streamarr.server.services.auth.RefreshTokenService;
+import com.streamarr.server.services.auth.TokenClaims;
 import com.streamarr.server.services.auth.TokenContext;
 import jakarta.servlet.http.Cookie;
 import java.time.Clock;
@@ -37,6 +39,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Consumer;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -45,6 +48,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
+import org.springframework.security.oauth2.jwt.JwsHeader;
+import org.springframework.security.oauth2.jwt.JwtClaimsSet;
+import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.ObjectMapper;
 
@@ -52,7 +60,7 @@ import tools.jackson.databind.ObjectMapper;
 @DisplayName("Auth Endpoints Integration Tests")
 class AuthEndpointsIT extends AbstractIntegrationTest {
 
-  private static final String PASSWORD = "correct horse battery staple";
+  private static final String PASSWORD = UUID.randomUUID().toString();
 
   @Autowired private MockMvc mockMvc;
 
@@ -75,6 +83,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   @Autowired private AuthTokenProperties tokenProperties;
 
   @Autowired private RefreshTokenService refreshTokenService;
+
+  @Autowired private JwtEncoder jwtEncoder;
 
   @Autowired
   private com.streamarr.server.repositories.auth.ServerBootstrapRepository
@@ -138,6 +148,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     assertThat(accessCookie.getSecure()).isTrue();
     assertThat(sameSiteOf(accessCookie)).isEqualTo("Strict");
     assertThat(accessCookie.getValue()).isNotBlank();
+    assertThat(accessCookie.getMaxAge())
+        .isEqualTo(Math.toIntExact(tokenProperties.refreshTokenTtl().toSeconds()));
 
     var refreshCookie = response.getCookie("streamarr_refresh");
     assertThat(refreshCookie).isNotNull();
@@ -146,6 +158,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     assertThat(refreshCookie.getSecure()).isTrue();
     assertThat(sameSiteOf(refreshCookie)).isEqualTo("Strict");
     assertThat(refreshCookie.getValue()).isNotBlank();
+    assertThat(refreshCookie.getMaxAge())
+        .isEqualTo(Math.toIntExact(tokenProperties.refreshTokenTtl().toSeconds()));
   }
 
   @Test
@@ -259,6 +273,29 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should keep explicit body refresh in body mode when auth cookies are present")
+  void shouldKeepExplicitBodyRefreshInBodyModeWhenAuthCookiesPresent() throws Exception {
+    seedSingleProfileIdentity();
+    var bodyRefreshToken = loginAndReadField("refreshToken");
+    var cookieLogin = cookieModeLogin();
+    var refreshCookie = cookieLogin.getCookie("streamarr_refresh");
+    var csrfCookie = cookieLogin.getCookie("XSRF-TOKEN");
+
+    mockMvc
+        .perform(
+            post("/api/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(refreshBody(bodyRefreshToken))
+                .cookie(refreshCookie, csrfCookie)
+                .header("X-XSRF-TOKEN", csrfCookie.getValue()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.accessToken").isNotEmpty())
+        .andExpect(jsonPath("$.refreshToken").isNotEmpty())
+        .andExpect(cookie().doesNotExist("streamarr_access"))
+        .andExpect(cookie().doesNotExist("streamarr_refresh"));
+  }
+
+  @Test
   @DisplayName("Should reject existing profile token when profile link revoked")
   void shouldRejectExistingProfileTokenWhenProfileLinkRevoked() throws Exception {
     seedSingleProfileIdentity();
@@ -311,6 +348,37 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should return invalid token when a signed identity claim is malformed")
+  void shouldReturnInvalidTokenWhenSignedIdentityClaimMalformed() throws Exception {
+    seedSingleProfileIdentity();
+    var session = refreshTokenService.createSession(account, "malformed-identity-test").session();
+    var malformedToken = signedAccessToken(session, claims -> claims.subject("not-a-uuid"));
+
+    mockMvc
+        .perform(
+            get("/api/images/{id}", UUID.randomUUID())
+                .header("Authorization", "Bearer " + malformedToken))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("INVALID_TOKEN"));
+  }
+
+  @Test
+  @DisplayName("Should return invalid token when signed scope and identity claims disagree")
+  void shouldReturnInvalidTokenWhenSignedScopeAndIdentityClaimsDisagree() throws Exception {
+    seedSingleProfileIdentity();
+    var session = refreshTokenService.createSession(account, "incoherent-identity-test").session();
+    var incoherentToken =
+        signedAccessToken(session, claims -> claims.claim(TokenClaims.SCOPE, "profile"));
+
+    mockMvc
+        .perform(
+            get("/api/images/{id}", UUID.randomUUID())
+                .header("Authorization", "Bearer " + incoherentToken))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("INVALID_TOKEN"));
+  }
+
+  @Test
   @DisplayName("Should refresh when access cookie expired but refresh cookie valid")
   void shouldRefreshWhenAccessCookieExpiredButRefreshCookieValid() throws Exception {
     seedSingleProfileIdentity();
@@ -333,18 +401,38 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
 
     // Browsers attach the Path=/ access cookie to every request — including refresh. An expired
     // access credential must never deadlock renewal into logout.
-    mockMvc
-        .perform(
-            post("/api/auth/refresh")
-                .cookie(
-                    new Cookie("streamarr_access", expiredAccessToken()), refreshCookie, csrfCookie)
-                .header("X-XSRF-TOKEN", csrfCookie.getValue()))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.accessTokenExpiresAt").exists())
-        .andExpect(jsonPath("$.scope").value("profile"))
-        .andReturn()
-        .getResponse()
-        .getCookies();
+    var rotated =
+        mockMvc
+            .perform(
+                post("/api/auth/refresh")
+                    .cookie(
+                        new Cookie("streamarr_access", expiredAccessToken()),
+                        refreshCookie,
+                        csrfCookie)
+                    .header("X-XSRF-TOKEN", csrfCookie.getValue()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.accessTokenExpiresAt").exists())
+            .andExpect(jsonPath("$.scope").value("profile"))
+            .andReturn()
+            .getResponse();
+
+    assertThat(rotated.getCookie("streamarr_access")).isNotNull();
+    assertThat(rotated.getCookie("streamarr_refresh")).isNotNull();
+    assertThat(rotated.getCookie("streamarr_refresh").getValue())
+        .isNotEqualTo(refreshCookie.getValue());
+
+    var graceReplay =
+        mockMvc
+            .perform(
+                post("/api/auth/refresh")
+                    .cookie(refreshCookie, csrfCookie)
+                    .header("X-XSRF-TOKEN", csrfCookie.getValue()))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse();
+
+    assertThat(graceReplay.getCookie("streamarr_access")).isNotNull();
+    assertThat(graceReplay.getCookie("streamarr_refresh")).isNull();
   }
 
   @Test
@@ -746,8 +834,47 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should report setup completion state when status queried")
-  void shouldReportSetupCompletionStateWhenStatusQueried() throws Exception {
+  @DisplayName("Should reject authenticated auth mutations when no identity is present")
+  void shouldRejectAuthenticatedAuthMutationsWhenNoIdentityPresent() throws Exception {
+    var passwordMarker = UUID.randomUUID().toString();
+
+    mockMvc
+        .perform(post("/api/auth/logout"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+    mockMvc
+        .perform(
+            post("/api/auth/change-password")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"currentPassword": "%s", "newPassword": "%s", "cookieMode": false}
+                    """
+                        .formatted(passwordMarker, UUID.randomUUID())))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+    mockMvc
+        .perform(
+            post("/api/auth/select-household")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    "{\"householdId\": \"%s\", \"cookieMode\": false}"
+                        .formatted(UUID.randomUUID())))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+    mockMvc
+        .perform(
+            post("/api/auth/select-profile")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    "{\"profileId\": \"%s\", \"cookieMode\": false}".formatted(UUID.randomUUID())))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+  }
+
+  @Test
+  @DisplayName("Should report setup completion state on status")
+  void shouldReportSetupCompletionStateOnStatus() throws Exception {
     mockMvc
         .perform(get("/api/auth/status"))
         .andExpect(status().isOk())
@@ -859,6 +986,29 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
             new com.nimbusds.jose.jwk.source.ImmutableJWKSet<>(keys.verificationKeys())));
     processor.setJWTClaimsSetVerifier((claims, context) -> {});
     return new org.springframework.security.oauth2.jwt.NimbusJwtDecoder(processor).decode(token);
+  }
+
+  private String signedAccessToken(
+      AuthSession session, Consumer<JwtClaimsSet.Builder> customizeClaims) {
+    var now = Instant.now();
+    var claims =
+        JwtClaimsSet.builder()
+            .issuer("streamarr")
+            .subject(account.getId().toString())
+            .issuedAt(now)
+            .expiresAt(now.plus(Duration.ofMinutes(10)))
+            .id(UUID.randomUUID().toString())
+            .claim(TokenClaims.ROLE, account.getAccountRole().name())
+            .claim(TokenClaims.SESSION_ID, session.getId().toString())
+            .claim(TokenClaims.SESSION_VERSION, session.getSessionVersion())
+            .claim(TokenClaims.SCOPE, "account");
+    customizeClaims.accept(claims);
+
+    return jwtEncoder
+        .encode(
+            JwtEncoderParameters.from(
+                JwsHeader.with(SignatureAlgorithm.ES256).build(), claims.build()))
+        .getTokenValue();
   }
 
   /** Minted against the real identity graph with a fixed past clock — expired but well-formed. */

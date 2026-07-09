@@ -27,13 +27,13 @@ public class StreamarrBearerTokenResolver implements BearerTokenResolver {
 
   @Override
   public String resolve(HttpServletRequest request) {
-    if (UNAUTHENTICATED_PATHS.contains(request.getRequestURI())) {
+    if (UNAUTHENTICATED_PATHS.contains(pathWithinApplication(request))) {
       return null;
     }
 
     // Stream paths resolve ONLY the ?t= parameter: a stale Path=/ access cookie must never 401
     // playback mid-movie, and even a valid one fails there (streams demand SCOPE_PLAYBACK).
-    if (request.getRequestURI().startsWith("/api/stream/")) {
+    if (SecurityRequestMatchers.STREAM_PATHS.matches(request)) {
       var queryToken = request.getParameter("t");
       return queryToken != null && !queryToken.isBlank() ? queryToken : null;
     }
@@ -44,6 +44,10 @@ public class StreamarrBearerTokenResolver implements BearerTokenResolver {
     }
 
     return accessCookieValue(request);
+  }
+
+  private static String pathWithinApplication(HttpServletRequest request) {
+    return request.getRequestURI().substring(request.getContextPath().length());
   }
 
   private static String accessCookieValue(HttpServletRequest request) {

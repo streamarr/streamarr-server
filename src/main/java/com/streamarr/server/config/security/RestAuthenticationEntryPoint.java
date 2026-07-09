@@ -2,6 +2,7 @@ package com.streamarr.server.config.security;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
 import java.util.Locale;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.AuthenticationException;
@@ -28,7 +29,7 @@ public class RestAuthenticationEntryPoint implements AuthenticationEntryPoint {
       response
           .getWriter()
           .write("{\"code\":\"" + code + "\",\"message\":\"Authentication is required.\"}");
-    } catch (Exception _) {
+    } catch (IOException _) {
       // The status code alone still carries the contract.
     }
   }

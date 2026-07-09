@@ -28,7 +28,11 @@ public class TokenVersionValidator implements OAuth2TokenValidator<Jwt> {
       }
       return staleTokenFailure();
     } catch (RuntimeException e) {
-      log.warn("Version counter lookup failed; rejecting token (fail closed).", e);
+      log.warn(
+          "Version counter lookup failed for account {} and session {}; rejecting token (fail closed).",
+          token.getSubject(),
+          token.getClaimAsString(TokenClaims.SESSION_ID),
+          e);
       return staleTokenFailure();
     }
   }

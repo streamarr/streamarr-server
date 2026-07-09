@@ -5,6 +5,7 @@ import com.streamarr.server.services.auth.events.CounterBumpedEvent;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -47,7 +48,7 @@ public class TokenVersionCache {
   }
 
   private Optional<Long> lookup(
-      CounterKind kind, String key, java.util.function.Supplier<Optional<Long>> readThrough) {
+      CounterKind kind, String key, Supplier<Optional<Long>> readThrough) {
     var cacheKey = new CacheKey(kind, key);
 
     var cached = cache.get(cacheKey);

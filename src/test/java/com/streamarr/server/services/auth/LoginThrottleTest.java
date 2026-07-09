@@ -141,6 +141,24 @@ class LoginThrottleTest {
   }
 
   @Test
+  @DisplayName("Should not extend lockout window when blocked attempts continue")
+  void shouldNotExtendLockoutWindowWhenBlockedAttemptsContinue() {
+    for (int i = 0; i < MAX_ATTEMPTS; i++) {
+      throttle.registerAttempt(EMAIL, SOURCE);
+    }
+
+    currentTime.updateAndGet(instant -> instant.plus(WINDOW).minusSeconds(1));
+    for (int i = 0; i < MAX_ATTEMPTS; i++) {
+      assertThatThrownBy(() -> throttle.registerAttempt(EMAIL, SOURCE))
+          .isInstanceOf(TooManyLoginAttemptsException.class);
+    }
+
+    currentTime.updateAndGet(instant -> instant.plusSeconds(2));
+
+    assertThatCode(() -> throttle.registerAttempt(EMAIL, SOURCE)).doesNotThrowAnyException();
+  }
+
+  @Test
   @DisplayName("Should restore full budget when reset after failures")
   void shouldRestoreFullBudgetWhenResetAfterFailures() {
     for (int i = 0; i < MAX_ATTEMPTS - 1; i++) {

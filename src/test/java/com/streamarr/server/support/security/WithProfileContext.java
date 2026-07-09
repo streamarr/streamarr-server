@@ -12,11 +12,13 @@ import org.springframework.security.test.context.support.WithSecurityContextFact
 @WithSecurityContext(factory = WithProfileContext.Factory.class)
 public @interface WithProfileContext {
 
+  AccountRole role() default AccountRole.USER;
+
   class Factory implements WithSecurityContextFactory<WithProfileContext> {
 
     @Override
     public SecurityContext createSecurityContext(WithProfileContext annotation) {
-      return StreamarrSecurityContextFactory.contextFor(TokenScope.PROFILE, AccountRole.USER);
+      return StreamarrSecurityContextFactory.contextFor(TokenScope.PROFILE, annotation.role());
     }
   }
 }

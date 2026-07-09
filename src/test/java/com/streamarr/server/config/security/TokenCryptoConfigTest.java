@@ -9,8 +9,11 @@ import com.nimbusds.jose.crypto.MACSigner;
 import com.nimbusds.jose.jwk.Curve;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
+import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.fakes.FakeVersionCounterReader;
 import com.streamarr.server.services.auth.TokenClaims;
+import com.streamarr.server.services.auth.TokenIdentityValidator;
+import com.streamarr.server.services.auth.TokenScope;
 import com.streamarr.server.services.auth.TokenVersionCache;
 import com.streamarr.server.services.auth.TokenVersionValidator;
 import java.time.Duration;
@@ -250,8 +253,10 @@ class TokenCryptoConfigTest {
             .subject(accountId.toString())
             .issuedAt(now)
             .expiresAt(now.plusSeconds(600))
+            .claim(TokenClaims.ROLE, AccountRole.USER.name())
             .claim(TokenClaims.SESSION_ID, sessionId.toString())
             .claim(TokenClaims.SESSION_VERSION, 0L)
+            .claim(TokenClaims.SCOPE, TokenScope.ACCOUNT.claimValue())
             .build();
     return encoder
         .encode(JwtEncoderParameters.from(JwsHeader.with(SignatureAlgorithm.ES256).build(), claims))
@@ -260,7 +265,10 @@ class TokenCryptoConfigTest {
 
   private JwtDecoder decoder(TokenSigningKeys keys) {
     reader.sessionVersions.put(sessionId, 0L);
-    return config.jwtDecoder(keys, new TokenVersionValidator(new TokenVersionCache(reader)));
+    return config.jwtDecoder(
+        keys,
+        new TokenIdentityValidator(),
+        new TokenVersionValidator(new TokenVersionCache(reader)));
   }
 
   private static String tamperSignature(String token) {

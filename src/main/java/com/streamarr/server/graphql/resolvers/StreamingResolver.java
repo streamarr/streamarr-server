@@ -16,6 +16,7 @@ import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.watchprogress.SessionProgressService;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
+import java.time.Duration;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -126,10 +127,14 @@ public class StreamingResolver {
                     .issue(
                         authorizationService.currentIdentity(),
                         session,
-                        streamingProperties.sessionRetention())
+                        playbackTokenValidity(session))
                     .value())
         .transcodeMode(session.getTranscodeDecision().transcodeMode().name())
         .build();
+  }
+
+  private Duration playbackTokenValidity(StreamSession session) {
+    return session.getMediaProbe().duration().plus(streamingProperties.sessionRetention());
   }
 
   private UUID parseUuid(String id) {

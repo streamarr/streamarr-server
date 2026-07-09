@@ -2,19 +2,19 @@ package com.streamarr.server.controllers;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.AbstractIntegrationTest;
-import com.streamarr.server.domain.auth.AccountRole;
-import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.CounterKind;
 import com.streamarr.server.services.auth.PlaybackTokenIssuer;
-import com.streamarr.server.services.auth.TokenScope;
+import com.streamarr.server.services.auth.TokenVersionCache;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
@@ -30,6 +30,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.bean.override.convention.TestBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -44,8 +45,11 @@ class StreamControllerIT extends AbstractIntegrationTest {
   @Autowired private MockMvc mockMvc;
 
   @Autowired private PlaybackTokenIssuer playbackTokenIssuer;
+  @Autowired private TokenVersionCache tokenVersionCache;
 
   @Autowired private AuthTestSupport authTestSupport;
+
+  @Autowired private JwtDecoder jwtDecoder;
 
   private AuthTestSupport.TestIdentity identity;
 
@@ -61,15 +65,7 @@ class StreamControllerIT extends AbstractIntegrationTest {
 
   private String playbackToken(java.util.UUID streamSessionId) {
     var authenticatedIdentity =
-        AuthenticatedIdentity.builder()
-            .accountId(identity.account().getId())
-            .role(AccountRole.USER)
-            .sessionId(identity.session().getId())
-            .scope(TokenScope.PROFILE)
-            .householdId(identity.household().getId())
-            .householdRole(HouseholdRole.OWNER)
-            .profileId(identity.profile().getId())
-            .build();
+        AuthenticatedIdentity.fromJwt(jwtDecoder.decode(authTestSupport.profileBearer(identity)));
     // Minted against a session the caller owns — the issuer refuses anything else.
     var ownedSession =
         StreamSessionFixture.defaultSessionBuilder()
@@ -196,6 +192,23 @@ class StreamControllerIT extends AbstractIntegrationTest {
             get("/api/stream/{id}/master.m3u8", sessionB.getSessionId())
                 .param("t", playbackToken(sessionA.getSessionId())))
         .andExpect(status().isForbidden());
+  }
+
+  @Test
+  @DisplayName("Should reject playback on stream path after session version bumped")
+  void shouldRejectPlaybackOnStreamPathAfterSessionVersionBumped() throws Exception {
+    var session = StreamSessionFixture.buildMpegtsSession();
+    STUB_SERVICE.addSession(session);
+    var token = playbackToken(session.getSessionId());
+    tokenVersionCache.update(
+        CounterKind.SESSION,
+        identity.session().getId().toString(),
+        identity.session().getSessionVersion() + 1);
+
+    mockMvc
+        .perform(get("/api/stream/{id}/master.m3u8", session.getSessionId()).param("t", token))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("INVALID_TOKEN"));
   }
 
   @Test

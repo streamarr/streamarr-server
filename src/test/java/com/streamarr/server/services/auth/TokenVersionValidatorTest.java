@@ -31,6 +31,15 @@ class TokenVersionValidatorTest {
   }
 
   @Test
+  @DisplayName("Should reject stale token after older counter event arrives out of order")
+  void shouldRejectStaleTokenAfterOlderCounterEventArrivesOutOfOrder() {
+    cache.update(CounterKind.SESSION, sessionId.toString(), 4L);
+    cache.update(CounterKind.SESSION, sessionId.toString(), 3L);
+
+    assertThat(validator.validate(tokenWithSessionVersion(3L)).hasErrors()).isTrue();
+  }
+
+  @Test
   @DisplayName("Should reject token when counter unreadable")
   void shouldRejectTokenWhenCounterUnreadable() {
     // Absent counter row: fail closed.

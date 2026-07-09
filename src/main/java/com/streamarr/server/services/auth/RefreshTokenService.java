@@ -19,10 +19,12 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Base64;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class RefreshTokenService {
@@ -33,6 +35,7 @@ public class RefreshTokenService {
   private final RefreshTokenRepository tokenRepository;
   private final AuthTokenProperties properties;
   private final Clock clock;
+  private final TokenReuseRevoker tokenReuseRevoker;
   private final ApplicationEventPublisher eventPublisher;
 
   private final SecureRandom secureRandom = new SecureRandom();
@@ -93,6 +96,7 @@ public class RefreshTokenService {
     if (session.getRevokedAt() != null) {
       // Redeeming any token of a revoked session — including a successor that raced revocation —
       // is reuse: never rotate, never mint.
+      logTokenReuse(session);
       throw new TokenReuseDetectedException();
     }
 
@@ -135,13 +139,16 @@ public class RefreshTokenService {
   }
 
   private void revokeSessionForReuse(AuthSession session, Instant now) {
-    var bumpedVersion =
-        sessionRepository.revoke(session.getId(), SessionRevocationReason.TOKEN_REUSE, now);
-    tokenRepository.revokeAllForSession(session.getId());
+    log.warn(
+        "Refresh token reuse detected — revoking session {} for account {}",
+        session.getId(),
+        session.getAccountId());
 
-    bumpedVersion.ifPresent(
-        version ->
-            eventPublisher.publishEvent(CounterBumpedEvent.session(session.getId(), version)));
+    tokenReuseRevoker.revokeAfterCompletion(session.getId(), now);
+  }
+
+  private static void logTokenReuse(AuthSession session) {
+    log.warn("Refresh token reuse detected for sessionId={}", session.getId());
   }
 
   private RefreshToken buildActiveToken(AuthSession session, String rawToken, Instant now) {

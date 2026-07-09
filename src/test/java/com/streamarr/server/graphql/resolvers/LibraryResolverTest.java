@@ -14,6 +14,7 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
 import com.streamarr.server.domain.LibraryMetadata;
 import com.streamarr.server.domain.LibraryStatus;
+import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Series;
@@ -137,6 +138,7 @@ class LibraryResolverTest {
 
   @Nested
   @DisplayName("Library Mutations")
+  @WithProfileContext(role = AccountRole.ADMIN)
   class LibraryMutations {
 
     @Test

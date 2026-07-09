@@ -101,26 +101,6 @@ class PlaybackTokenIssuerTest {
   }
 
   @Test
-  @DisplayName("Should reject issuance when identity has no household")
-  void shouldRejectIssuanceWhenIdentityHasNoHousehold() {
-    // A profile claim without its household is not a state the server ever mints — refuse
-    // rather than trust it.
-    var noHousehold =
-        AuthenticatedIdentity.builder()
-            .accountId(accountId)
-            .role(AccountRole.USER)
-            .sessionId(sessionId)
-            .scope(TokenScope.PROFILE)
-            .profileId(profileId)
-            .build();
-    var streamSession = defaultSessionBuilder().profileId(profileId).build();
-    var ttl = Duration.ofHours(1);
-
-    assertThatThrownBy(() -> issuer.issue(noHousehold, streamSession, ttl))
-        .isInstanceOf(ProfileRequiredException.class);
-  }
-
-  @Test
   @DisplayName("Should refuse issuance when session has no owner")
   void shouldRefuseIssuanceWhenSessionHasNoOwner() {
     var identity = profileIdentity();
@@ -150,6 +130,7 @@ class PlaybackTokenIssuerTest {
   @Test
   @DisplayName("Should require current auth session version when issuing")
   void shouldRequireCurrentAuthSessionVersionWhenIssuing() {
+    reader.sessionVersions.put(sessionId, 3L);
     reader.membershipVersions.put(accountId + ":" + householdId, 3L);
     reader.profilePolicyVersions.put(profileId, 4L);
     var identity = profileIdentity();
@@ -164,6 +145,7 @@ class PlaybackTokenIssuerTest {
   @DisplayName("Should require current membership version when issuing")
   void shouldRequireCurrentMembershipVersionWhenIssuing() {
     reader.sessionVersions.put(sessionId, 2L);
+    reader.membershipVersions.put(accountId + ":" + householdId, 4L);
     reader.profilePolicyVersions.put(profileId, 4L);
     var identity = profileIdentity();
     var streamSession = defaultSessionBuilder().profileId(profileId).build();
@@ -178,6 +160,7 @@ class PlaybackTokenIssuerTest {
   void shouldRequireCurrentProfilePolicyVersionWhenIssuing() {
     reader.sessionVersions.put(sessionId, 2L);
     reader.membershipVersions.put(accountId + ":" + householdId, 3L);
+    reader.profilePolicyVersions.put(profileId, 5L);
     var identity = profileIdentity();
     var streamSession = defaultSessionBuilder().profileId(profileId).build();
     var ttl = Duration.ofHours(1);
@@ -191,10 +174,13 @@ class PlaybackTokenIssuerTest {
         .accountId(accountId)
         .role(AccountRole.USER)
         .sessionId(sessionId)
+        .sessionVersion(2L)
         .scope(TokenScope.PROFILE)
         .householdId(householdId)
         .householdRole(HouseholdRole.MEMBER)
+        .membershipVersion(3L)
         .profileId(profileId)
+        .policyVersion(4L)
         .build();
   }
 

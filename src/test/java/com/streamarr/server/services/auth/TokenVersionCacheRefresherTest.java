@@ -48,4 +48,27 @@ class TokenVersionCacheRefresherTest {
     reader.sessionVersions.put(sessionId, 8L);
     assertThat(cache.sessionVersion(sessionId)).contains(8L);
   }
+
+  @Test
+  @DisplayName("Should retain newer version when older event arrives")
+  void shouldRetainNewerVersionWhenOlderEventArrives() {
+    var sessionId = UUID.randomUUID();
+
+    refresher.onCounterBumped(CounterBumpedEvent.session(sessionId, 8));
+    refresher.onCounterBumped(CounterBumpedEvent.session(sessionId, 7));
+
+    assertThat(cache.sessionVersion(sessionId)).contains(8L);
+  }
+
+  @Test
+  @DisplayName("Should memoize present version read from repository")
+  void shouldMemoizePresentVersionReadFromRepository() {
+    var sessionId = UUID.randomUUID();
+    reader.sessionVersions.put(sessionId, 8L);
+
+    assertThat(cache.sessionVersion(sessionId)).contains(8L);
+
+    reader.sessionVersions.put(sessionId, 9L);
+    assertThat(cache.sessionVersion(sessionId)).contains(8L);
+  }
 }

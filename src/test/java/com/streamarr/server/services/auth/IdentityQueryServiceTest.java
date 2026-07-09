@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.auth.AccountProfile;
+import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.HouseholdMembership;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.Profile;
@@ -103,7 +104,8 @@ class IdentityQueryServiceTest {
             .profileId(UUID.randomUUID())
             .build());
 
-    var view = service.meView(householdScopedIdentity(account.getId()));
+    var view =
+        service.meView(householdScopedIdentity(account.getId(), householdId, HouseholdRole.MEMBER));
 
     assertThat(view.memberships())
         .singleElement()
@@ -130,24 +132,32 @@ class IdentityQueryServiceTest {
   private AuthenticatedIdentity accountScopedIdentity(UUID accountId) {
     return AuthenticatedIdentity.builder()
         .accountId(accountId)
+        .role(AccountRole.USER)
         .sessionId(UUID.randomUUID())
         .scope(TokenScope.ACCOUNT)
         .build();
   }
 
-  private AuthenticatedIdentity householdScopedIdentity(UUID accountId) {
+  private AuthenticatedIdentity householdScopedIdentity(
+      UUID accountId, UUID householdId, HouseholdRole householdRole) {
     return AuthenticatedIdentity.builder()
         .accountId(accountId)
+        .role(AccountRole.USER)
         .sessionId(UUID.randomUUID())
         .scope(TokenScope.HOUSEHOLD)
+        .householdId(householdId)
+        .householdRole(householdRole)
         .build();
   }
 
   private AuthenticatedIdentity profileScopedIdentity(UUID accountId, Profile profile) {
     return AuthenticatedIdentity.builder()
         .accountId(accountId)
+        .role(AccountRole.USER)
         .sessionId(UUID.randomUUID())
         .scope(TokenScope.PROFILE)
+        .householdId(profile.getHouseholdId())
+        .householdRole(HouseholdRole.OWNER)
         .profileId(profile.getId())
         .build();
   }
