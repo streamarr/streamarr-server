@@ -78,6 +78,18 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should deny non-health actuator endpoints when account scoped")
+  void shouldDenyNonHealthActuatorEndpointsWhenAccountScoped() throws Exception {
+    identity = authTestSupport.createIdentity();
+
+    // Operational surfaces (metrics, info) are not for ordinary accounts; the observability
+    // profile exposes them, so the chain refuses everything under /actuator except health.
+    mockMvc
+        .perform(get("/actuator/metrics").with(bearer(authTestSupport.accountBearer(identity))))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
   @DisplayName("Should permit graphql when account scoped")
   void shouldPermitGraphQlWhenAccountScoped() throws Exception {
     identity = authTestSupport.createIdentity();
