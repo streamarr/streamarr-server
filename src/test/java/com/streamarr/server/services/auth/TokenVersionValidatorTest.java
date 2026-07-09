@@ -82,25 +82,8 @@ class TokenVersionValidatorTest {
   void shouldRejectTokenWhenSessionClaimsMissing() {
     reader.sessionVersions.put(sessionId, 1L);
 
-    var now = Instant.now();
-    var missingSessionId =
-        Jwt.withTokenValue("test-token")
-            .header("alg", "HS256")
-            .subject(accountId.toString())
-            .issuedAt(now)
-            .expiresAt(now.plusSeconds(600))
-            .claim(TokenClaims.SESSION_VERSION, 1L)
-            .claim(TokenClaims.SCOPE, TokenScope.ACCOUNT.claimValue())
-            .build();
-    var missingSessionVersion =
-        Jwt.withTokenValue("test-token")
-            .header("alg", "HS256")
-            .subject(accountId.toString())
-            .issuedAt(now)
-            .expiresAt(now.plusSeconds(600))
-            .claim(TokenClaims.SESSION_ID, sessionId.toString())
-            .claim(TokenClaims.SCOPE, TokenScope.ACCOUNT.claimValue())
-            .build();
+    var missingSessionId = tokenMissingSessionClaim(TokenClaims.SESSION_ID);
+    var missingSessionVersion = tokenMissingSessionClaim(TokenClaims.SESSION_VERSION);
 
     assertThat(validator.validate(missingSessionId).hasErrors()).isTrue();
     assertThat(validator.validate(missingSessionVersion).hasErrors()).isTrue();
@@ -145,6 +128,26 @@ class TokenVersionValidatorTest {
 
   private Jwt tokenWithSessionVersion(long sessionVersion) {
     return baseToken(sessionVersion).build();
+  }
+
+  private Jwt tokenMissingSessionClaim(String claimName) {
+    var now = Instant.now();
+    var builder =
+        Jwt.withTokenValue("test-token")
+            .header("alg", "HS256")
+            .subject(accountId.toString())
+            .issuedAt(now)
+            .expiresAt(now.plusSeconds(600))
+            .claim(TokenClaims.SCOPE, TokenScope.ACCOUNT.claimValue());
+
+    if (!TokenClaims.SESSION_ID.equals(claimName)) {
+      builder.claim(TokenClaims.SESSION_ID, sessionId.toString());
+    }
+    if (!TokenClaims.SESSION_VERSION.equals(claimName)) {
+      builder.claim(TokenClaims.SESSION_VERSION, 1L);
+    }
+
+    return builder.build();
   }
 
   private Jwt householdToken(UUID householdId, long membershipVersion) {
