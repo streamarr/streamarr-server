@@ -11,8 +11,8 @@ import org.springframework.context.ApplicationContext;
 
 /**
  * The other half of the known-credential safeguard: PackagedConfigurationTest proves the packaged
- * artifact never self-activates the dev profile; this pins that without it, the seeder bean —
- * and its default admin credential — does not exist at all.
+ * artifact never self-activates the dev profile; this pins that without it, the seeder bean — and
+ * its default admin credential — does not exist at all.
  */
 @Tag("IntegrationTest")
 @DisplayName("Dev Identity Seeder Profile Integration Tests")

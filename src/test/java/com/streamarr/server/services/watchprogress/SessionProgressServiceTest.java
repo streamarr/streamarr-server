@@ -1,9 +1,5 @@
 package com.streamarr.server.services.watchprogress;
 
-import ch.qos.logback.classic.Level;
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildMatchedMediaFile;
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildSeries;
 import static com.streamarr.server.fixtures.SessionProgressFixture.progressBuilder;
@@ -11,6 +7,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.streamarr.server.config.WatchProgressProperties;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.Season;
@@ -29,7 +29,6 @@ import com.streamarr.server.services.watchprogress.events.ItemWatchedEvent;
 import com.streamarr.server.services.watchprogress.events.SessionProgressChangedEvent;
 import com.streamarr.server.services.watchprogress.events.WatchStatusChangedEvent;
 import java.util.UUID;
-import org.slf4j.LoggerFactory;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -40,6 +39,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.slf4j.LoggerFactory;
 
 @Tag("UnitTest")
 @DisplayName("Session Progress Service Tests")

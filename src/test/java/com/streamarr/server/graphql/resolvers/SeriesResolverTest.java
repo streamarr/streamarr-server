@@ -10,7 +10,11 @@ import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.repositories.auth.AccountProfileRepository;
+import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.SeriesService;
+import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
+import com.streamarr.server.support.security.WithProfileContext;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -19,10 +23,6 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import com.streamarr.server.repositories.auth.AccountProfileRepository;
-import com.streamarr.server.repositories.auth.ProfileRepository;
-import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
-import com.streamarr.server.support.security.WithProfileContext;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @Tag("UnitTest")

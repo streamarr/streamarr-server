@@ -20,8 +20,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 
 /**
- * V047's NOT VALID profile FKs tolerate legacy placeholder rows but must reject every new write
- * for a profile that does not exist — the enforcement half of the data-integrity contract.
+ * V047's NOT VALID profile FKs tolerate legacy placeholder rows but must reject every new write for
+ * a profile that does not exist — the enforcement half of the data-integrity contract.
  */
 @Tag("IntegrationTest")
 @DisplayName("Watch Table Profile FK Integration Tests")

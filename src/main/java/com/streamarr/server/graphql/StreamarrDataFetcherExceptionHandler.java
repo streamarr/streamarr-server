@@ -16,9 +16,9 @@ import org.springframework.stereotype.Component;
 
 /**
  * Maps identity/authorization failures and routine session misses to machine codes in
- * extensions.code — the GraphQL side of the client contract (PROFILE_REQUIRED routes to the
- * picker, SESSION_NOT_FOUND to session recreation — not an error page). Everything else falls
- * through to the DGS default.
+ * extensions.code — the GraphQL side of the client contract (PROFILE_REQUIRED routes to the picker,
+ * SESSION_NOT_FOUND to session recreation — not an error page). Everything else falls through to
+ * the DGS default.
  */
 @Component
 public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptionHandler {

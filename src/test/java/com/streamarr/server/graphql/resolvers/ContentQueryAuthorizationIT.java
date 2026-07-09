@@ -19,12 +19,12 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
 
 /**
- * Content is profile-scoped (ADR 0015: account- and household-scoped tokens cannot reach content)
- * — direct content queries demand a selected profile and answer PROFILE_REQUIRED otherwise.
+ * Content is profile-scoped (ADR 0015: account- and household-scoped tokens cannot reach content) —
+ * direct content queries demand a selected profile and answer PROFILE_REQUIRED otherwise.
  */
 @Tag("IntegrationTest")
 @DisplayName("Content Query Authorization Integration Tests")

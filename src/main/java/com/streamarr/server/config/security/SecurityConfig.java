@@ -27,12 +27,12 @@ public class SecurityConfig {
 
   /**
    * The permit matrix: pre-auth endpoints and health stay open; streams stay open only until
-   * playback-URL tokens land (the next increment flips them to SCOPE_PLAYBACK); non-health
-   * actuator endpoints (metrics, info — exposed by the observability profile) are refused for
-   * everyone, since operational surfaces are not for ordinary accounts and role checks live in the
-   * domain, not in token authorities; everything else — GraphQL including introspection, images,
-   * future surfaces — demands SCOPE_ACCOUNT, which household and profile tokens satisfy through
-   * the scope hierarchy.
+   * playback-URL tokens land (the next increment flips them to SCOPE_PLAYBACK); non-health actuator
+   * endpoints (metrics, info — exposed by the observability profile) are refused for everyone,
+   * since operational surfaces are not for ordinary accounts and role checks live in the domain,
+   * not in token authorities; everything else — GraphQL including introspection, images, future
+   * surfaces — demands SCOPE_ACCOUNT, which household and profile tokens satisfy through the scope
+   * hierarchy.
    *
    * <p>CSRF (SPA shape: readable XSRF-TOKEN cookie, Xor handler) protects exactly the
    * cookie-authenticated requests. The filter is wired manually because the resource-server DSL
