@@ -10,9 +10,10 @@ import org.springframework.stereotype.Component;
  * Cross-instance invalidation: counter bumps publish through pg_notify inside their transaction
  * (commit-bound atomicity for free), and this listener applies them to the local version cache. It
  * holds one dedicated JDBC connection — never a Hikari lease — on a virtual thread, and clears the
- * whole cache on every (re)connect: notifications missed while disconnected would otherwise leave
- * stale entries, and a cleared cache lazily refills. PgBouncer transaction pooling does not carry
- * LISTEN/NOTIFY; see docs/architecture.adoc.
+ * whole cache on every (re)connect and on every connection loss: notifications missed while
+ * disconnected must not leave stale entries, so lookups read through until the feed is back, and a
+ * cleared cache lazily refills. PgBouncer transaction pooling does not carry LISTEN/NOTIFY; see
+ * docs/architecture.adoc.
  */
 @Slf4j
 @Component
@@ -72,6 +73,9 @@ public class CounterNotificationListener implements SmartLifecycle {
         }
       } catch (CounterNotificationConnectionException e) {
         listening = false;
+        // Bumps are invisible while the feed is down; clearing on every failed attempt keeps
+        // lookups reading through, bounding staleness to one backoff interval.
+        cache.clearAll();
         if (!running) {
           return;
         }

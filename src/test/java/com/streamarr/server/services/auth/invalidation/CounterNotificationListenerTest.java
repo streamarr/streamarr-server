@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
@@ -72,6 +73,48 @@ class CounterNotificationListenerTest {
     }
 
     await().atMost(Duration.ofSeconds(1)).until(() -> !listener.isListening());
+  }
+
+  @Test
+  @DisplayName("Should stop serving stale versions when notification connection is lost")
+  void shouldStopServingStaleVersionsWhenNotificationConnectionLost() {
+    var sessionId = UUID.randomUUID();
+    var reader = new FakeVersionCounterReader();
+    reader.sessionVersions.put(sessionId, 1L);
+    var cache = new TokenVersionCache(reader);
+    var connectionSource = new ScriptedCounterNotificationConnectionSource();
+    var reconnectGate = new CountDownLatch(1);
+    var listener =
+        new CounterNotificationListener(
+            cache, connectionSource, _ -> awaitReconnectGate(reconnectGate));
+
+    listener.start();
+    try {
+      await().atMost(Duration.ofSeconds(1)).until(listener::isListening);
+      assertThat(cache.sessionVersion(sessionId)).contains(1L);
+
+      reader.sessionVersions.put(sessionId, 2L);
+      assertThat(cache.sessionVersion(sessionId)).contains(1L);
+
+      connectionSource.failActiveConnection();
+
+      await()
+          .atMost(Duration.ofSeconds(2))
+          .untilAsserted(() -> assertThat(cache.sessionVersion(sessionId)).contains(2L));
+    } finally {
+      reconnectGate.countDown();
+      listener.stop();
+    }
+
+    await().atMost(Duration.ofSeconds(1)).until(() -> !listener.isListening());
+  }
+
+  private static void awaitReconnectGate(CountDownLatch gate) {
+    try {
+      gate.await();
+    } catch (InterruptedException _) {
+      Thread.currentThread().interrupt();
+    }
   }
 
   @Test
