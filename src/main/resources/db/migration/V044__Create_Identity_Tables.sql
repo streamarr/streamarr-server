@@ -102,6 +102,8 @@ CREATE TABLE server_bootstrap
     admin_account_id UUID                     NOT NULL,
     CONSTRAINT server_bootstrap_pkey PRIMARY KEY (id),
     CONSTRAINT chk_server_bootstrap_singleton CHECK (id),
+    -- No ON DELETE action: deleting the claiming admin is blocked while the bootstrap
+    -- record exists.
     CONSTRAINT fk_server_bootstrap_admin_account FOREIGN KEY (admin_account_id)
         REFERENCES user_account (id)
 );

@@ -84,6 +84,18 @@ class CursorValidatorTest {
     }
 
     @Test
+    @DisplayName("Should throw when profileId changes between queries")
+    void shouldThrowWhenProfileIdChangesBetweenQueries() {
+      var cursorFilter = MediaFilter.builder().profileId(UUID.randomUUID()).build();
+      var currentFilter = MediaFilter.builder().profileId(UUID.randomUUID()).build();
+      var decoded = MediaPaginationOptions.builder().mediaFilter(cursorFilter).build();
+
+      assertThatThrownBy(() -> cursorValidator.validateCursorAgainstFilter(decoded, currentFilter))
+          .isInstanceOf(InvalidCursorException.class)
+          .hasMessageContaining("profileId");
+    }
+
+    @Test
     @DisplayName("Should throw when sortBy changes between queries")
     void shouldThrowWhenSortByChangesBetweenQueries() {
       var cursorFilter = MediaFilter.builder().sortBy(OrderMediaBy.TITLE).build();
