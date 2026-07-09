@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.auth.AccountProfile;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
+import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.VersionCounterReader;
 import com.streamarr.server.services.auth.CounterKind;
@@ -35,6 +37,8 @@ class SessionInvalidationIT extends AbstractIntegrationTest {
   @Autowired private AuthTestSupport authTestSupport;
 
   @Autowired private AuthSessionRepository sessionRepository;
+
+  @Autowired private AccountProfileRepository accountProfileRepository;
 
   @Autowired private VersionCounterReader versionCounterReader;
 
@@ -87,6 +91,37 @@ class SessionInvalidationIT extends AbstractIntegrationTest {
         .atMost(Duration.ofSeconds(10))
         .untilAsserted(
             () -> assertThat(secondInstanceCache.sessionVersion(sessionId)).contains(1L));
+  }
+
+  @Test
+  @DisplayName("Should converge membership version on second instance when link revoked on first")
+  void shouldConvergeMembershipVersionOnSecondInstanceWhenLinkRevokedOnFirst() {
+    identity = authTestSupport.createIdentity();
+    var accountId = identity.account().getId();
+    var householdId = identity.household().getId();
+
+    var secondInstanceCache = new TokenVersionCache(versionCounterReader);
+    secondInstanceListener =
+        new CounterNotificationListener(secondInstanceCache, connectionSource, backoff);
+    secondInstanceListener.start();
+    await().atMost(Duration.ofSeconds(10)).until(secondInstanceListener::isListening);
+
+    // createIdentity's linkProfile bumped the membership to 1; warm the stale value.
+    assertThat(secondInstanceCache.membershipVersion(accountId, householdId)).contains(1L);
+
+    accountProfileRepository.revokeProfileLink(
+        AccountProfile.builder()
+            .accountId(accountId)
+            .householdId(householdId)
+            .profileId(identity.profile().getId())
+            .build());
+
+    await()
+        .atMost(Duration.ofSeconds(10))
+        .untilAsserted(
+            () ->
+                assertThat(secondInstanceCache.membershipVersion(accountId, householdId))
+                    .contains(2L));
   }
 
   @Test
