@@ -184,8 +184,9 @@ class RefreshTokenServiceTest {
   void shouldRejectRedemptionWhenSessionRowMissing() {
     var issued = issueSession();
     sessionRepository.deleteById(issued.session().getId());
+    var rawToken = issued.rawToken();
 
-    assertThatThrownBy(() -> service.redeem(issued.rawToken()))
+    assertThatThrownBy(() -> service.redeem(rawToken))
         .isInstanceOf(InvalidRefreshTokenException.class);
 
     assertThat(tokenRepository.findAll())
