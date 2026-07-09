@@ -12,8 +12,13 @@ public interface StreamingService {
 
   Optional<StreamSession> accessSession(UUID sessionId);
 
+  /** System destroy — no caller identity; reserved for the reaper, cleanup, and shutdown. */
   void destroySession(UUID sessionId);
 
+  /**
+   * Owner-checked destroy. A wrong-owner call is a silent no-op by design: an unowned session
+   * must be indistinguishable from a missing one (no existence oracle).
+   */
   void destroySession(UUID sessionId, UUID profileId);
 
   Collection<StreamSession> getAllSessions();

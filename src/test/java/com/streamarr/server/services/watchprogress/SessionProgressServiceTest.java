@@ -1,5 +1,9 @@
 package com.streamarr.server.services.watchprogress;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildMatchedMediaFile;
 import static com.streamarr.server.fixtures.MediaEntityFixture.buildSeries;
 import static com.streamarr.server.fixtures.SessionProgressFixture.progressBuilder;
@@ -25,6 +29,7 @@ import com.streamarr.server.services.watchprogress.events.ItemWatchedEvent;
 import com.streamarr.server.services.watchprogress.events.SessionProgressChangedEvent;
 import com.streamarr.server.services.watchprogress.events.WatchStatusChangedEvent;
 import java.util.UUID;
+import org.slf4j.LoggerFactory;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -233,6 +238,33 @@ class SessionProgressServiceTest {
           .isInstanceOf(SessionNotFoundException.class);
 
       assertThat(sessionProgressRepository.count()).isZero();
+    }
+
+    @Test
+    @DisplayName("Should log ownership miss when timeline reported by another profile")
+    void shouldLogOwnershipMissWhenTimelineReportedByAnotherProfile() {
+      var session = addSession();
+      var sessionId = session.getSessionId();
+      var otherProfileId = UUID.randomUUID();
+
+      var logger = (Logger) LoggerFactory.getLogger(SessionProgressService.class);
+      var appender = new ListAppender<ILoggingEvent>();
+      appender.start();
+      logger.addAppender(appender);
+      try {
+        assertThatThrownBy(
+                () ->
+                    service.reportStreamSessionTimeline(
+                        otherProfileId, sessionId, 300, PlaybackState.PLAYING))
+            .isInstanceOf(SessionNotFoundException.class);
+      } finally {
+        logger.detachAppender(appender);
+      }
+
+      assertThat(appender.list)
+          .filteredOn(event -> event.getLevel() == Level.WARN)
+          .extracting(ILoggingEvent::getFormattedMessage)
+          .anyMatch(message -> message.contains(sessionId.toString()));
     }
 
     @Test

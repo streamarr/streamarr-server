@@ -111,10 +111,17 @@ public class HlsStreamingService implements StreamingService {
 
   @Override
   public void destroySession(UUID sessionId, UUID profileId) {
-    sessionRepository
-        .findById(sessionId)
-        .filter(session -> profileId.equals(session.getProfileId()))
-        .ifPresent(session -> destroySession(sessionId));
+    var session = sessionRepository.findById(sessionId);
+    if (session.isEmpty()) {
+      return;
+    }
+    // The caller still sees a plain no-op (no existence oracle); the miss is logged so
+    // cross-profile attempts and wrong-owner stamping stay diagnosable server-side.
+    if (!profileId.equals(session.get().getProfileId())) {
+      log.warn("Destroy for session {} rejected: profile {} does not own it", sessionId, profileId);
+      return;
+    }
+    destroySession(sessionId);
   }
 
   @Override
