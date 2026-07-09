@@ -23,6 +23,8 @@ public class CounterNotificationListener implements SmartLifecycle {
   private static final int POLL_TIMEOUT_MS = 500;
   private static final long INITIAL_BACKOFF_MS = 1_000;
   private static final long MAX_BACKOFF_MS = 30_000;
+  // Five failed attempts is past the exponential ramp (1+2+4+8+16s): no longer a blip.
+  private static final int ERROR_ESCALATION_ATTEMPTS = 5;
 
   private final TokenVersionCache cache;
   private final CounterNotificationConnectionSource connectionSource;
@@ -30,6 +32,7 @@ public class CounterNotificationListener implements SmartLifecycle {
 
   private volatile boolean running;
   private volatile boolean listening;
+  private volatile int consecutiveFailures;
   private Thread worker;
 
   @Override
@@ -55,6 +58,10 @@ public class CounterNotificationListener implements SmartLifecycle {
     return listening;
   }
 
+  public int consecutiveConnectionFailures() {
+    return consecutiveFailures;
+  }
+
   private void listenLoop() {
     try {
       reconnectLoop();
@@ -74,6 +81,7 @@ public class CounterNotificationListener implements SmartLifecycle {
         cache.clearAll();
         listening = true;
         backoffMs = INITIAL_BACKOFF_MS;
+        consecutiveFailures = 0;
 
         while (running) {
           for (var payload : connection.notifications(POLL_TIMEOUT_MS)) {
@@ -84,7 +92,7 @@ public class CounterNotificationListener implements SmartLifecycle {
         if (disconnected()) {
           return;
         }
-        log.warn("Counter notification connection failed; reconnecting.", e);
+        logConnectionFailure(e);
         backoffMs = sleepAndGrow(backoffMs);
       } catch (RuntimeException e) {
         if (disconnected()) {
@@ -98,10 +106,23 @@ public class CounterNotificationListener implements SmartLifecycle {
 
   private boolean disconnected() {
     listening = false;
+    consecutiveFailures++;
     // Bumps are invisible while the feed is down; clearing on every failed attempt keeps
     // lookups reading through, bounding staleness to one backoff interval.
     cache.clearAll();
     return !running;
+  }
+
+  private void logConnectionFailure(CounterNotificationConnectionException e) {
+    if (consecutiveFailures >= ERROR_ESCALATION_ATTEMPTS) {
+      log.error(
+          "Counter notifications unavailable after {} consecutive attempts;"
+              + " caches serve read-through until reconnected.",
+          consecutiveFailures,
+          e);
+      return;
+    }
+    log.warn("Counter notification connection failed; reconnecting.", e);
   }
 
   private long sleepAndGrow(long backoffMs) {
