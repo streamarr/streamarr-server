@@ -12,4 +12,8 @@ public enum TokenScope {
   public String claimValue() {
     return name().toLowerCase(Locale.ROOT);
   }
+
+  public String authority() {
+    return "SCOPE_" + name();
+  }
 }

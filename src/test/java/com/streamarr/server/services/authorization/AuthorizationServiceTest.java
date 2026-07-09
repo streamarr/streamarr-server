@@ -181,7 +181,9 @@ class AuthorizationServiceTest {
     SecurityContextHolder.getContext()
         .setAuthentication(
             new UsernamePasswordAuthenticationToken(
-                "principal", jwt, List.of(new SimpleGrantedAuthority("SCOPE_PROFILE"))));
+                "principal",
+                jwt,
+                List.of(new SimpleGrantedAuthority(TokenScope.PROFILE.authority()))));
 
     assertThatThrownBy(authorizationService::currentIdentity)
         .isInstanceOf(AuthenticationRequiredException.class);
@@ -353,7 +355,7 @@ class AuthorizationServiceTest {
   }
 
   private void authenticateWith(AuthenticatedIdentity identity, Jwt token) {
-    var authorities = List.of(new SimpleGrantedAuthority("SCOPE_" + identity.scope().name()));
+    var authorities = List.of(new SimpleGrantedAuthority(identity.scope().authority()));
     SecurityContextHolder.getContext()
         .setAuthentication(new StreamarrAuthenticationToken(identity, token, authorities));
   }
