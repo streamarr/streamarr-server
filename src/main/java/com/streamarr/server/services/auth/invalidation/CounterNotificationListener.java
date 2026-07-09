@@ -1,13 +1,9 @@
 package com.streamarr.server.services.auth.invalidation;
 
 import com.streamarr.server.services.auth.TokenVersionCache;
-import java.security.SecureRandom;
-import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.SQLException;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.postgresql.PGConnection;
-import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.stereotype.Component;
 
@@ -21,6 +17,7 @@ import org.springframework.stereotype.Component;
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class CounterNotificationListener implements SmartLifecycle {
 
   private static final int POLL_TIMEOUT_MS = 500;
@@ -28,18 +25,12 @@ public class CounterNotificationListener implements SmartLifecycle {
   private static final long MAX_BACKOFF_MS = 30_000;
 
   private final TokenVersionCache cache;
-  private final JdbcConnectionDetails connectionDetails;
-  private final SecureRandom jitterSource = new SecureRandom();
+  private final CounterNotificationConnectionSource connectionSource;
+  private final CounterNotificationBackoff backoff;
 
   private volatile boolean running;
   private volatile boolean listening;
   private Thread worker;
-
-  public CounterNotificationListener(
-      TokenVersionCache cache, JdbcConnectionDetails connectionDetails) {
-    this.cache = cache;
-    this.connectionDetails = connectionDetails;
-  }
 
   @Override
   public void start() {
@@ -68,20 +59,16 @@ public class CounterNotificationListener implements SmartLifecycle {
     var backoffMs = INITIAL_BACKOFF_MS;
 
     while (running) {
-      try (var connection = openConnection()) {
-        try (var statement = connection.createStatement()) {
-          statement.execute("LISTEN " + CounterNotificationPayload.CHANNEL);
-        }
+      try (var connection = connectionSource.open()) {
+        connection.listen(CounterNotificationPayload.CHANNEL);
         // Anything published while we were away is lost; stale entries must not survive.
         cache.clearAll();
         listening = true;
         backoffMs = INITIAL_BACKOFF_MS;
 
-        var pgConnection = connection.unwrap(PGConnection.class);
         while (running) {
-          // getNotifications returns an empty array on poll timeout, never null.
-          for (var notification : pgConnection.getNotifications(POLL_TIMEOUT_MS)) {
-            apply(notification.getParameter());
+          for (var payload : connection.notifications(POLL_TIMEOUT_MS)) {
+            apply(payload);
           }
         }
       } catch (SQLException e) {
@@ -90,18 +77,11 @@ public class CounterNotificationListener implements SmartLifecycle {
           return;
         }
         log.warn("Counter notification connection failed; reconnecting.", e);
-        sleepWithJitter(backoffMs);
+        backoff.sleep(backoffMs);
         backoffMs = Math.min(backoffMs * 2, MAX_BACKOFF_MS);
       }
     }
     listening = false;
-  }
-
-  private Connection openConnection() throws SQLException {
-    return DriverManager.getConnection(
-        connectionDetails.getJdbcUrl(),
-        connectionDetails.getUsername(),
-        connectionDetails.getPassword());
   }
 
   private void apply(String payload) {
@@ -110,13 +90,5 @@ public class CounterNotificationListener implements SmartLifecycle {
             notification ->
                 cache.update(notification.kind(), notification.key(), notification.version()),
             () -> log.warn("Ignoring malformed counter notification: {}", payload));
-  }
-
-  private void sleepWithJitter(long backoffMs) {
-    try {
-      Thread.sleep(backoffMs + jitterSource.nextLong(backoffMs / 2 + 1));
-    } catch (InterruptedException _) {
-      Thread.currentThread().interrupt();
-    }
   }
 }

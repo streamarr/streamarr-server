@@ -4,66 +4,206 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.fakes.FakeVersionCounterReader;
+import com.streamarr.server.services.auth.CounterKind;
 import com.streamarr.server.services.auth.TokenVersionCache;
+import java.sql.SQLException;
 import java.time.Duration;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
 
 @Tag("UnitTest")
 @DisplayName("Counter Notification Listener Tests")
 class CounterNotificationListenerTest {
 
   @Test
-  @DisplayName("Should keep retrying when database unreachable")
-  void shouldKeepRetryingWhenDatabaseUnreachable() {
+  @DisplayName("Should retry after notification connection failure")
+  void shouldRetryAfterNotificationConnectionFailure() {
     var cache = new TokenVersionCache(new FakeVersionCounterReader());
-    var listener = new CounterNotificationListener(cache, unreachableConnectionDetails());
+    var connectionSource = new ScriptedCounterNotificationConnectionSource();
+    connectionSource.failNextOpen();
+    var listener = new CounterNotificationListener(cache, connectionSource, _ -> {});
 
     listener.start();
     try {
-      // Outlasting a full backoff cycle proves the reconnect loop survives repeated connection
-      // failures: alive, backing off, never listening.
-      await()
-          .during(Duration.ofSeconds(2))
-          .atMost(Duration.ofSeconds(5))
-          .until(() -> listener.isRunning() && !listener.isListening());
+      connectionSource.awaitOpenAttempts(2);
+      connectionSource.awaitListenCount(1);
+      assertThat(listener.isRunning()).isTrue();
+      assertThat(listener.isListening()).isTrue();
     } finally {
       listener.stop();
     }
 
-    await().atMost(Duration.ofSeconds(5)).until(() -> !listener.isRunning());
+    await().atMost(Duration.ofSeconds(1)).until(() -> !listener.isListening());
   }
 
   @Test
-  @DisplayName("Should stay stopped when stopped before start")
-  void shouldStayStoppedWhenStoppedBeforeStart() {
+  @DisplayName("Should clear stale cache entries whenever notification connection opens")
+  void shouldClearStaleCacheEntriesWheneverNotificationConnectionOpens() {
+    var sessionId = UUID.randomUUID();
+    var reader = new FakeVersionCounterReader();
+    reader.sessionVersions.put(sessionId, 1L);
+    var cache = new TokenVersionCache(reader);
+    var connectionSource = new ScriptedCounterNotificationConnectionSource();
+    var listener = new CounterNotificationListener(cache, connectionSource, _ -> {});
+
+    assertThat(cache.sessionVersion(sessionId)).contains(1L);
+    reader.sessionVersions.put(sessionId, 2L);
+
+    listener.start();
+    try {
+      connectionSource.awaitListenCount(1);
+      assertThat(cache.sessionVersion(sessionId)).contains(2L);
+
+      reader.sessionVersions.put(sessionId, 3L);
+      assertThat(cache.sessionVersion(sessionId)).contains(2L);
+
+      connectionSource.failActiveConnection();
+      connectionSource.awaitListenCount(2);
+
+      assertThat(cache.sessionVersion(sessionId)).contains(3L);
+    } finally {
+      listener.stop();
+    }
+
+    await().atMost(Duration.ofSeconds(1)).until(() -> !listener.isListening());
+  }
+
+  @Test
+  @DisplayName("Should apply valid notification payloads to the cache")
+  void shouldApplyValidNotificationPayloadsToTheCache() {
+    var sessionId = UUID.randomUUID();
     var cache = new TokenVersionCache(new FakeVersionCounterReader());
-    var listener = new CounterNotificationListener(cache, unreachableConnectionDetails());
+    var connectionSource = new ScriptedCounterNotificationConnectionSource();
+    var listener = new CounterNotificationListener(cache, connectionSource, _ -> {});
+
+    listener.start();
+    try {
+      connectionSource.awaitListenCount(1);
+      connectionSource.publish(
+          new CounterNotificationPayload(CounterKind.SESSION, sessionId.toString(), 7L).encode());
+
+      await()
+          .atMost(Duration.ofSeconds(1))
+          .untilAsserted(() -> assertThat(cache.sessionVersion(sessionId)).contains(7L));
+    } finally {
+      listener.stop();
+    }
+
+    await().atMost(Duration.ofSeconds(1)).until(() -> !listener.isListening());
+  }
+
+  @Test
+  @DisplayName("Should stop listening when stopped while connected")
+  void shouldStopListeningWhenStoppedWhileConnected() {
+    var cache = new TokenVersionCache(new FakeVersionCounterReader());
+    var connectionSource = new ScriptedCounterNotificationConnectionSource();
+    var listener = new CounterNotificationListener(cache, connectionSource, _ -> {});
+
+    listener.start();
+    connectionSource.awaitListenCount(1);
 
     listener.stop();
 
     assertThat(listener.isRunning()).isFalse();
-    assertThat(listener.isListening()).isFalse();
+    await().atMost(Duration.ofSeconds(1)).until(() -> !listener.isListening());
+    assertThat(connectionSource.openAttempts()).isEqualTo(1);
   }
 
-  private static JdbcConnectionDetails unreachableConnectionDetails() {
-    return new JdbcConnectionDetails() {
+  private static final class ScriptedCounterNotificationConnectionSource
+      implements CounterNotificationConnectionSource {
+
+    private final AtomicInteger openAttempts = new AtomicInteger();
+    private final AtomicInteger listenCount = new AtomicInteger();
+    private final ConcurrentLinkedQueue<SQLException> openFailures = new ConcurrentLinkedQueue<>();
+    private final BlockingQueue<PollResult> pollResults = new LinkedBlockingQueue<>();
+
+    void failNextOpen() {
+      openFailures.add(new StacklessSqlException("connection failed"));
+    }
+
+    void failActiveConnection() {
+      pollResults.add(new Failure(new StacklessSqlException("connection lost")));
+    }
+
+    void publish(String payload) {
+      pollResults.add(new Notifications(List.of(payload)));
+    }
+
+    void awaitOpenAttempts(int expected) {
+      await()
+          .atMost(Duration.ofSeconds(1))
+          .untilAsserted(() -> assertThat(openAttempts()).isEqualTo(expected));
+    }
+
+    void awaitListenCount(int expected) {
+      await()
+          .atMost(Duration.ofSeconds(1))
+          .untilAsserted(() -> assertThat(listenCount.get()).isEqualTo(expected));
+    }
+
+    int openAttempts() {
+      return openAttempts.get();
+    }
+
+    @Override
+    public CounterNotificationConnection open() throws SQLException {
+      openAttempts.incrementAndGet();
+      var failure = openFailures.poll();
+      if (failure != null) {
+        throw failure;
+      }
+      return new ScriptedCounterNotificationConnection();
+    }
+
+    private final class ScriptedCounterNotificationConnection
+        implements CounterNotificationConnection {
+
       @Override
-      public String getJdbcUrl() {
-        return "jdbc:postgresql://127.0.0.1:1/unreachable?connectTimeout=1&socketTimeout=1";
+      public void listen(String channel) {
+        assertThat(channel).isEqualTo(CounterNotificationPayload.CHANNEL);
+        listenCount.incrementAndGet();
       }
 
       @Override
-      public String getUsername() {
-        return "nobody";
+      public List<String> notifications(int pollTimeoutMs) throws SQLException {
+        try {
+          return switch (pollResults.take()) {
+            case Notifications(var payloads) -> payloads;
+            case Failure(var exception) -> throw exception;
+          };
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+          throw new SQLException("interrupted", e);
+        }
       }
 
       @Override
-      public String getPassword() {
-        return "nothing";
-      }
-    };
+      public void close() {}
+    }
+  }
+
+  private sealed interface PollResult permits Notifications, Failure {}
+
+  private record Notifications(List<String> payloads) implements PollResult {}
+
+  private record Failure(SQLException exception) implements PollResult {}
+
+  private static final class StacklessSqlException extends SQLException {
+
+    private StacklessSqlException(String reason) {
+      super(reason);
+    }
+
+    @Override
+    public synchronized Throwable fillInStackTrace() {
+      return this;
+    }
   }
 }

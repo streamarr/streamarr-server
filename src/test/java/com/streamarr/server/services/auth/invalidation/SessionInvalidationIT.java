@@ -21,7 +21,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
 
 /**
  * The two-cache convergence proof: a counter bumped through one instance's repository must
@@ -38,7 +37,9 @@ class SessionInvalidationIT extends AbstractIntegrationTest {
 
   @Autowired private VersionCounterReader versionCounterReader;
 
-  @Autowired private JdbcConnectionDetails connectionDetails;
+  @Autowired private CounterNotificationConnectionSource connectionSource;
+
+  @Autowired private CounterNotificationBackoff backoff;
 
   @Autowired private DSLContext dsl;
 
@@ -64,7 +65,7 @@ class SessionInvalidationIT extends AbstractIntegrationTest {
     // A second application instance: its own cache, its own listener, same database.
     var secondInstanceCache = new TokenVersionCache(versionCounterReader);
     secondInstanceListener =
-        new CounterNotificationListener(secondInstanceCache, connectionDetails);
+        new CounterNotificationListener(secondInstanceCache, connectionSource, backoff);
     secondInstanceListener.start();
     await().atMost(Duration.ofSeconds(10)).until(secondInstanceListener::isListening);
 
@@ -89,7 +90,7 @@ class SessionInvalidationIT extends AbstractIntegrationTest {
 
     var secondInstanceCache = new TokenVersionCache(versionCounterReader);
     secondInstanceListener =
-        new CounterNotificationListener(secondInstanceCache, connectionDetails);
+        new CounterNotificationListener(secondInstanceCache, connectionSource, backoff);
     secondInstanceListener.start();
     await().atMost(Duration.ofSeconds(10)).until(secondInstanceListener::isListening);
 
@@ -133,7 +134,8 @@ class SessionInvalidationIT extends AbstractIntegrationTest {
             super.update(kind, key, version);
           }
         };
-    secondInstanceListener = new CounterNotificationListener(holdingCache, connectionDetails);
+    secondInstanceListener =
+        new CounterNotificationListener(holdingCache, connectionSource, backoff);
     secondInstanceListener.start();
     await().atMost(Duration.ofSeconds(10)).until(secondInstanceListener::isListening);
 
@@ -155,7 +157,7 @@ class SessionInvalidationIT extends AbstractIntegrationTest {
   void shouldStopListeningWhenStoppedWhileConnected() {
     var secondInstanceCache = new TokenVersionCache(versionCounterReader);
     secondInstanceListener =
-        new CounterNotificationListener(secondInstanceCache, connectionDetails);
+        new CounterNotificationListener(secondInstanceCache, connectionSource, backoff);
     secondInstanceListener.start();
     await().atMost(Duration.ofSeconds(10)).until(secondInstanceListener::isListening);
 
