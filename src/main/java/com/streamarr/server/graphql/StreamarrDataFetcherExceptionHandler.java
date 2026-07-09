@@ -3,6 +3,7 @@ package com.streamarr.server.graphql;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
+import com.streamarr.server.exceptions.SessionNotFoundException;
 import graphql.GraphqlErrorBuilder;
 import graphql.execution.DataFetcherExceptionHandler;
 import graphql.execution.DataFetcherExceptionHandlerParameters;
@@ -14,9 +15,10 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Component;
 
 /**
- * Maps identity/authorization failures to machine codes in extensions.code — the GraphQL side of
- * the client contract (PROFILE_REQUIRED routes to the picker, not an error page). Everything else
- * falls through to the DGS default.
+ * Maps identity/authorization failures and routine session misses to machine codes in
+ * extensions.code — the GraphQL side of the client contract (PROFILE_REQUIRED routes to the
+ * picker, SESSION_NOT_FOUND to session recreation — not an error page). Everything else falls
+ * through to the DGS default.
  */
 @Component
 public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptionHandler {
@@ -57,6 +59,7 @@ public class StreamarrDataFetcherExceptionHandler implements DataFetcherExceptio
       case HouseholdRequiredException _ -> "HOUSEHOLD_REQUIRED";
       case AuthenticationRequiredException _ -> "AUTHENTICATION_REQUIRED";
       case AccessDeniedException _ -> "FORBIDDEN";
+      case SessionNotFoundException _ -> "SESSION_NOT_FOUND";
       default -> null;
     };
   }
