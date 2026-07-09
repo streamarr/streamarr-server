@@ -78,8 +78,10 @@ public class SecurityConfig {
   }
 
   /**
-   * The scope hierarchy is wired explicitly — a RoleHierarchy bean is never auto-detected. Request
-   * rules get it through this factory; method security through the expression handler below.
+   * The scope hierarchy is wired explicitly into both authorization paths so it has exactly one
+   * construction site. (Spring Security would also auto-detect a published RoleHierarchy bean;
+   * explicit wiring is a choice, not a requirement.) Request rules get it through this factory;
+   * method security through the expression handler below.
    */
   @Bean
   DefaultAuthorizationManagerFactory<RequestAuthorizationContext>
