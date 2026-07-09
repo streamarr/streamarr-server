@@ -15,6 +15,7 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
 import org.springframework.data.domain.AuditorAware;
+import org.springframework.transaction.annotation.Transactional;
 
 @RequiredArgsConstructor
 public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCustom {
@@ -24,6 +25,7 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
   private final EntityManager entityManager;
 
   @Override
+  @Transactional
   public Optional<Long> revoke(UUID sessionId, SessionRevocationReason reason, Instant now) {
     var nowOffset = now.atOffset(ZoneOffset.UTC);
 
@@ -48,6 +50,7 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
   }
 
   @Override
+  @Transactional
   public Optional<Long> bumpVersion(UUID sessionId, Instant now) {
     var nowOffset = now.atOffset(ZoneOffset.UTC);
 

@@ -21,6 +21,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * The two-cache convergence proof: a counter bumped through one instance's repository must
@@ -43,7 +44,10 @@ class SessionInvalidationIT extends AbstractIntegrationTest {
 
   @Autowired private DSLContext dsl;
 
+  @Autowired private TransactionTemplate transactionTemplate;
+
   private AuthTestSupport.TestIdentity identity;
+  private AuthTestSupport.TestIdentity sentinelIdentity;
   private CounterNotificationListener secondInstanceListener;
 
   @AfterEach
@@ -53,6 +57,9 @@ class SessionInvalidationIT extends AbstractIntegrationTest {
     }
     if (identity != null) {
       authTestSupport.deleteIdentity(identity);
+    }
+    if (sentinelIdentity != null) {
+      authTestSupport.deleteIdentity(sentinelIdentity);
     }
   }
 
@@ -80,6 +87,42 @@ class SessionInvalidationIT extends AbstractIntegrationTest {
         .atMost(Duration.ofSeconds(10))
         .untilAsserted(
             () -> assertThat(secondInstanceCache.sessionVersion(sessionId)).contains(1L));
+  }
+
+  @Test
+  @DisplayName("Should not notify other instances when the bumping transaction rolls back")
+  void shouldNotNotifyOtherInstancesWhenBumpingTransactionRollsBack() {
+    identity = authTestSupport.createIdentity();
+    sentinelIdentity = authTestSupport.createIdentity();
+    var rolledBackSessionId = identity.session().getId();
+    var sentinelSessionId = sentinelIdentity.session().getId();
+
+    var secondInstanceCache = new TokenVersionCache(versionCounterReader);
+    secondInstanceListener =
+        new CounterNotificationListener(secondInstanceCache, connectionSource, backoff);
+    secondInstanceListener.start();
+    await().atMost(Duration.ofSeconds(10)).until(secondInstanceListener::isListening);
+
+    assertThat(secondInstanceCache.sessionVersion(rolledBackSessionId)).contains(0L);
+    assertThat(secondInstanceCache.sessionVersion(sentinelSessionId)).contains(0L);
+
+    // A notification for this revoke must never leave the database: the transaction rolls back.
+    transactionTemplate.executeWithoutResult(
+        status -> {
+          sessionRepository.revoke(
+              rolledBackSessionId, SessionRevocationReason.LOGOUT, Instant.now());
+          status.setRollbackOnly();
+        });
+
+    // NOTIFY delivers in commit order: once the sentinel's bump lands, a notification from the
+    // rolled-back revoke would already have arrived.
+    sessionRepository.revoke(sentinelSessionId, SessionRevocationReason.LOGOUT, Instant.now());
+    await()
+        .atMost(Duration.ofSeconds(10))
+        .untilAsserted(
+            () -> assertThat(secondInstanceCache.sessionVersion(sentinelSessionId)).contains(1L));
+
+    assertThat(secondInstanceCache.sessionVersion(rolledBackSessionId)).contains(0L);
   }
 
   @Test

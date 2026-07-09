@@ -5,8 +5,9 @@ import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 
 /**
- * Publishes a counter bump through pg_notify on the caller's connection, so the notification is
- * bound to the bumping transaction's commit.
+ * Publishes a counter bump through pg_notify on the caller's connection, binding the notification
+ * to the bumping transaction's commit. The binding only exists inside that transaction — the
+ * bumping fragment methods are {@code @Transactional} so it holds on every call path.
  */
 final class CounterNotificationPublisher {
 
