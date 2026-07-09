@@ -236,8 +236,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
 
     var successor = redeemAndReturnRefreshToken(firstRefreshToken);
 
-    assertThat(successor).isNotBlank();
-    assertThat(successor).isNotEqualTo(firstRefreshToken);
+    assertThat(successor).isNotBlank().isNotEqualTo(firstRefreshToken);
   }
 
   @Test
