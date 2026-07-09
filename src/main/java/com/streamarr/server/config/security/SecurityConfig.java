@@ -3,14 +3,12 @@ package com.streamarr.server.config.security;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.access.expression.method.DefaultMethodSecurityExpressionHandler;
-import org.springframework.security.authorization.DefaultAuthorizationManagerFactory;
+import org.springframework.security.access.hierarchicalroles.RoleHierarchy;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.header.HeaderWriterFilter;
@@ -77,25 +75,9 @@ public class SecurityConfig {
         .build();
   }
 
-  /**
-   * The scope hierarchy is wired explicitly into both authorization paths so it has exactly one
-   * construction site. (Spring Security would also auto-detect a published RoleHierarchy bean;
-   * explicit wiring is a choice, not a requirement.) Request rules get it through this factory;
-   * method security through the expression handler below.
-   */
   @Bean
-  DefaultAuthorizationManagerFactory<RequestAuthorizationContext>
-      requestAuthorizationManagerFactory() {
-    var factory = new DefaultAuthorizationManagerFactory<RequestAuthorizationContext>();
-    factory.setRoleHierarchy(ScopeHierarchy.roleHierarchy());
-    return factory;
-  }
-
-  @Bean
-  static DefaultMethodSecurityExpressionHandler methodSecurityExpressionHandler() {
-    var handler = new DefaultMethodSecurityExpressionHandler();
-    handler.setRoleHierarchy(ScopeHierarchy.roleHierarchy());
-    return handler;
+  static RoleHierarchy roleHierarchy() {
+    return ScopeHierarchy.roleHierarchy();
   }
 
   // The XSRF-TOKEN cookie is deliberately script-readable (S3330): its whole purpose is the

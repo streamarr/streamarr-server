@@ -1,6 +1,7 @@
 package com.streamarr.server.config.security;
 
 import static com.streamarr.server.support.AuthTestSupport.bearer;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -14,7 +15,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationContext;
 import org.springframework.http.MediaType;
+import org.springframework.security.access.hierarchicalroles.RoleHierarchy;
 import org.springframework.test.web.servlet.MockMvc;
 
 /** The permit/deny matrix as executable specification — changes here are contract changes. */
@@ -27,6 +30,8 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   @Autowired private MockMvc mockMvc;
 
   @Autowired private AuthTestSupport authTestSupport;
+
+  @Autowired private ApplicationContext applicationContext;
 
   private AuthTestSupport.TestIdentity identity;
 
@@ -117,5 +122,11 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
                 .with(bearer(authTestSupport.profileBearer(identity))))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist());
+  }
+
+  @Test
+  @DisplayName("Should publish scope hierarchy for security auto detection")
+  void shouldPublishScopeHierarchyForSecurityAutoDetection() {
+    assertThat(applicationContext.getBeanProvider(RoleHierarchy.class).getIfUnique()).isNotNull();
   }
 }
