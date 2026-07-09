@@ -17,7 +17,8 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 class JdbcCounterNotificationConnectionSource implements CounterNotificationConnectionSource {
 
-  private static final String LISTEN_COUNTER_CHANNEL_SQL = "LISTEN streamarr_counters";
+  private static final String LISTEN_COUNTER_CHANNEL_SQL =
+      "LISTEN " + CounterNotificationPayload.CHANNEL;
   private static final String LIVENESS_PROBE_SQL = "SELECT 1";
   private static final int SOCKET_TIMEOUT_SECONDS = 10;
   private static final int CONNECT_TIMEOUT_SECONDS = 10;

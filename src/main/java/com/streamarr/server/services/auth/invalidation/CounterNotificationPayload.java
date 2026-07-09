@@ -13,7 +13,7 @@ public record CounterNotificationPayload(CounterKind kind, String key, long vers
   public static final String CHANNEL = "streamarr_counters";
 
   public String encode() {
-    return kind + "|" + key + "|" + version;
+    return kind.name() + "|" + key + "|" + version;
   }
 
   public static Optional<CounterNotificationPayload> parse(String payload) {
