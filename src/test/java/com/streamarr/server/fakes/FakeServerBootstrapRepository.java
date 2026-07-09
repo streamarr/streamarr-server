@@ -12,4 +12,9 @@ public class FakeServerBootstrapRepository implements ServerBootstrapRepository 
   public boolean claim(UUID adminAccountId) {
     return claimedBy.compareAndSet(null, adminAccountId);
   }
+
+  @Override
+  public boolean isClaimed() {
+    return claimedBy.get() != null;
+  }
 }

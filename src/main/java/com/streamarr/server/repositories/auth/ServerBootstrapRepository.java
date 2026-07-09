@@ -11,4 +11,6 @@ public interface ServerBootstrapRepository {
    * @return true if this call claimed the bootstrap; false if it was already claimed
    */
   boolean claim(UUID adminAccountId);
+
+  boolean isClaimed();
 }
