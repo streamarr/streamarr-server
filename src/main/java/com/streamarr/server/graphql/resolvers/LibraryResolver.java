@@ -51,6 +51,7 @@ public class LibraryResolver {
 
   @DgsMutation
   public Library addLibrary(@InputArgument AddLibraryInput input) {
+    authorizationService.requireServerAdmin();
     var library =
         Library.builder()
             .name(input.name())
@@ -68,18 +69,21 @@ public class LibraryResolver {
 
   @DgsMutation
   public boolean removeLibrary(String id) {
+    authorizationService.requireServerAdmin();
     libraryManagementService.removeLibrary(parseUuid(id));
     return true;
   }
 
   @DgsMutation
   public boolean scanLibrary(String id) {
+    authorizationService.requireServerAdmin();
     libraryManagementService.triggerAsyncScan(parseUuid(id));
     return true;
   }
 
   @DgsMutation
   public boolean refreshLibrary(String id) {
+    authorizationService.requireServerAdmin();
     libraryManagementService.triggerAsyncRefresh(parseUuid(id));
     return true;
   }

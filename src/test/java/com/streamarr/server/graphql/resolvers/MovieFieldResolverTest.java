@@ -11,7 +11,11 @@ import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
 import com.streamarr.server.domain.metadata.Rating;
 import com.streamarr.server.domain.metadata.Review;
+import com.streamarr.server.repositories.auth.AccountProfileRepository;
+import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.MovieService;
+import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
+import com.streamarr.server.support.security.WithProfileContext;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -24,11 +28,21 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @Tag("UnitTest")
 @EnableDgsTest
-@SpringBootTest(classes = {MovieFieldResolver.class, MovieResolver.class})
+@WithProfileContext
+@SpringBootTest(
+    classes = {
+      MovieFieldResolver.class,
+      MovieResolver.class,
+      SecurityContextAuthorizationService.class
+    })
 @DisplayName("Movie Field Resolver Tests")
 class MovieFieldResolverTest {
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
+
+  @MockitoBean private ProfileRepository profileRepository;
+
+  @MockitoBean private AccountProfileRepository accountProfileRepository;
 
   @MockitoBean private MovieService movieService;
 

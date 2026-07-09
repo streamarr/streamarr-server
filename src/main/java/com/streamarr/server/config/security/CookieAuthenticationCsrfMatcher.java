@@ -8,9 +8,8 @@ import org.springframework.security.web.util.matcher.RequestMatcher;
 
 /**
  * CSRF protection applies only to requests that could ride ambient cookie credentials: an unsafe
- * method, no Authorization header, and any Streamarr auth cookie present. The refresh cookie counts
- * — browsers drop the expired access cookie, and a matcher keyed on it alone would exempt the
- * refresh call exactly when it authenticates by ambient cookie. SameSite=Strict already blocks
+ * method, no bearer Authorization credential, and any Streamarr auth cookie present. Every ambient
+ * auth cookie that can authenticate requires CSRF protection. SameSite=Strict already blocks
  * cross-site sends; CSRF stays correct independently as the second layer.
  */
 public class CookieAuthenticationCsrfMatcher implements RequestMatcher {
@@ -22,10 +21,18 @@ public class CookieAuthenticationCsrfMatcher implements RequestMatcher {
     if (SAFE_METHODS.contains(request.getMethod())) {
       return false;
     }
-    if (request.getHeader(HttpHeaders.AUTHORIZATION) != null) {
+    if (hasBearerAuthorization(request)) {
       return false;
     }
     return hasStreamarrAuthCookie(request);
+  }
+
+  private static boolean hasBearerAuthorization(HttpServletRequest request) {
+    var authorization = request.getHeader(HttpHeaders.AUTHORIZATION);
+    var prefix = "Bearer ";
+    return authorization != null
+        && authorization.regionMatches(true, 0, prefix, 0, prefix.length())
+        && !authorization.substring(prefix.length()).isBlank();
   }
 
   private static boolean hasStreamarrAuthCookie(HttpServletRequest request) {

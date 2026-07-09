@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 
 @Tag("UnitTest")
 @DisplayName("Streamarr Bearer Token Resolver Tests")
@@ -50,12 +51,36 @@ class StreamarrBearerTokenResolverTest {
     assertThat(resolver.resolve(requestFor("/api/images/some-id"))).isNull();
   }
 
+  @Test
+  @DisplayName("Should resolve playback query token when application has context path")
+  void shouldResolvePlaybackQueryTokenWhenApplicationHasContextPath() {
+    var request = requestFor("/streamarr/api/stream/some-id/master.m3u8");
+    request.setContextPath("/streamarr");
+    request.setServletPath("/api/stream/some-id/master.m3u8");
+    request.setParameter("t", "playback-token");
+    var streamMatcher = PathPatternRequestMatcher.withDefaults().matcher("/api/stream/**");
+
+    assertThat(streamMatcher.matches(request)).isTrue();
+    assertThat(resolver.resolve(request)).isEqualTo("playback-token");
+  }
+
   @ParameterizedTest(name = "Should suppress bearer resolution on {0}")
   @ValueSource(
       strings = {"/api/auth/status", "/api/auth/setup", "/api/auth/login", "/api/auth/refresh"})
   void shouldSuppressBearerResolutionOnUnauthenticatedAuthPath(String uri) {
     var request = requestFor(uri);
     request.addHeader("Authorization", "Bearer header-token");
+    request.setCookies(new Cookie(AuthCookies.ACCESS_COOKIE, "cookie-token"));
+
+    assertThat(resolver.resolve(request)).isNull();
+  }
+
+  @Test
+  @DisplayName("Should suppress auth cookie on unauthenticated auth path below a context path")
+  void shouldSuppressAuthCookieOnUnauthenticatedAuthPathBelowContextPath() {
+    var request = requestFor("/streamarr/api/auth/refresh");
+    request.setContextPath("/streamarr");
+    request.setServletPath("/api/auth/refresh");
     request.setCookies(new Cookie(AuthCookies.ACCESS_COOKIE, "cookie-token"));
 
     assertThat(resolver.resolve(request)).isNull();

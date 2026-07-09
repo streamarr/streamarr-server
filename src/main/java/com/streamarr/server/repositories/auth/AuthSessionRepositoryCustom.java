@@ -15,11 +15,18 @@ public interface AuthSessionRepositoryCustom {
   Optional<Long> revoke(UUID sessionId, SessionRevocationReason reason, Instant now);
 
   /**
-   * Bumps an unrevoked session's version counter without revoking it — every outstanding token dies
-   * while the session itself stays alive for fresh issuance (password change keeps the caller
-   * logged in).
+   * Bumps an unrevoked session's version counter without revoking it — every outstanding access
+   * token dies while the session and refresh-token family stay alive for fresh issuance (password
+   * change keeps the caller logged in).
    */
   Optional<Long> bumpVersion(UUID sessionId, Instant now);
+
+  /**
+   * Persists only the remembered household/profile selection when the session is still live.
+   * Returns false when the session is missing or revoked; revocation and version fields are never
+   * written from the supplied entity.
+   */
+  boolean updateSelectionIfLive(AuthSession session, Instant now);
 
   /**
    * Reads the session under a row-level write lock (SELECT … FOR UPDATE). Refresh acquires it

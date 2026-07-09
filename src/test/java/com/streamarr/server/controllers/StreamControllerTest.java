@@ -128,15 +128,19 @@ class StreamControllerTest {
     assertThat(body).doesNotContain(SPOOFED_PARAM);
   }
 
-  @Test
-  @DisplayName("Should reject playlist when token is bound to another stream session")
-  void shouldRejectPlaylistWhenTokenIsBoundToAnotherStreamSession() {
+  @ParameterizedTest
+  @ValueSource(strings = {"master.m3u8", "stream.m3u8", "segment0.ts", "init.mp4"})
+  @DisplayName("Should reject stream request when token is bound to another stream session")
+  void shouldRejectStreamRequestWhenTokenIsBoundToAnotherStreamSession(String path)
+      throws Exception {
     streamingService.setSession(buildMpegtsSession());
     boundStreamSession.set(UUID.randomUUID());
 
-    assertThatThrownBy(() -> controller.getMasterPlaylist(SESSION_ID))
-        .isInstanceOf(AccessDeniedException.class)
-        .hasMessage("Playback token is not valid for this stream session.");
+    assertThatThrownBy(
+            () ->
+                mockMvc.perform(
+                    get("/api/stream/{sessionId}/" + path, SESSION_ID).param("t", "unit-token")))
+        .hasCauseInstanceOf(AccessDeniedException.class);
   }
 
   @ParameterizedTest

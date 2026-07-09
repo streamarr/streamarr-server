@@ -41,6 +41,17 @@ class ScopeHierarchyTest {
         .isFalse();
   }
 
+  @ParameterizedTest(name = "Should deny playback scope when authority is {0}")
+  @EnumSource(
+      value = TokenScope.class,
+      names = {"ACCOUNT", "HOUSEHOLD", "PROFILE"})
+  void shouldDenyPlaybackScopeWhenAuthorityIsApiScoped(TokenScope scope) {
+    var playbackCheck = factory.hasAuthority(TokenScope.PLAYBACK.authority());
+
+    assertThat(playbackCheck.authorize(() -> authWith(scope.authority()), new Object()).isGranted())
+        .isFalse();
+  }
+
   @Test
   @DisplayName("Should deny narrower scope when authority points the wrong direction")
   void shouldDenyNarrowerScopeWhenAuthorityPointsWrongDirection() {

@@ -20,6 +20,7 @@ import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
+import com.streamarr.server.support.security.WithProfileContext;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -33,6 +34,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 @Tag("IntegrationTest")
 @EnableDgsTest
 @DisplayName("Series Resolver Integration Tests")
+@WithProfileContext
 class SeriesResolverIT extends AbstractIntegrationTest {
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;

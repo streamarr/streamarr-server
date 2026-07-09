@@ -7,6 +7,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.streamarr.server.config.WatchProgressProperties;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.Season;
@@ -35,6 +39,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.slf4j.LoggerFactory;
 
 @Tag("UnitTest")
 @DisplayName("Session Progress Service Tests")
@@ -233,6 +238,33 @@ class SessionProgressServiceTest {
           .isInstanceOf(SessionNotFoundException.class);
 
       assertThat(sessionProgressRepository.count()).isZero();
+    }
+
+    @Test
+    @DisplayName("Should log ownership miss when timeline reported by another profile")
+    void shouldLogOwnershipMissWhenTimelineReportedByAnotherProfile() {
+      var session = addSession();
+      var sessionId = session.getSessionId();
+      var otherProfileId = UUID.randomUUID();
+
+      var logger = (Logger) LoggerFactory.getLogger(SessionProgressService.class);
+      var appender = new ListAppender<ILoggingEvent>();
+      appender.start();
+      logger.addAppender(appender);
+      try {
+        assertThatThrownBy(
+                () ->
+                    service.reportStreamSessionTimeline(
+                        otherProfileId, sessionId, 300, PlaybackState.PLAYING))
+            .isInstanceOf(SessionNotFoundException.class);
+      } finally {
+        logger.detachAppender(appender);
+      }
+
+      assertThat(appender.list)
+          .filteredOn(event -> event.getLevel() == Level.WARN)
+          .extracting(ILoggingEvent::getFormattedMessage)
+          .anyMatch(message -> message.contains(sessionId.toString()));
     }
 
     @Test

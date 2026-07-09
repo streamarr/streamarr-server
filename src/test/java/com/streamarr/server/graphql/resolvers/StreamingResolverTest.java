@@ -79,7 +79,7 @@ class StreamingResolverTest {
           .maxConcurrentTranscodes(8)
           .segmentDuration(Duration.ofSeconds(6))
           .sessionTimeout(Duration.ofSeconds(60))
-          .sessionRetention(Duration.ofHours(24))
+          .sessionRetention(Duration.ofHours(1))
           .build();
     }
 
@@ -128,6 +128,7 @@ class StreamingResolverTest {
   }
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
+  @Autowired private StreamingProperties streamingProperties;
 
   @BeforeEach
   void resetStubService() {
@@ -196,6 +197,7 @@ class StreamingResolverTest {
     assertThat(id).isEqualTo(sessionId.toString());
     assertThat(streamUrl).contains("/api/stream/" + sessionId + "/master.m3u8");
     assertThat(transcodeMode).isEqualTo("REMUX");
+    assertThat(STUB_SERVICE.getLastCreateProfileId()).isEqualTo(TestIdentityConstants.PROFILE_ID);
   }
 
   @Test
@@ -220,6 +222,41 @@ class StreamingResolverTest {
 
     assertThat(streamUrl).startsWith("/api/stream/" + sessionId + "/master.m3u8?t=");
     assertThat(streamUrl.substring(streamUrl.indexOf("?t=") + 3)).matches("[A-Za-z0-9._-]+");
+  }
+
+  @Test
+  @DisplayName("Should mint playback token for media duration plus session retention")
+  void shouldMintPlaybackTokenForMediaDurationPlusSessionRetention() {
+    var sessionId = UUID.randomUUID();
+    var session = buildSession(sessionId);
+    STUB_SERVICE.setNextResult(session);
+
+    var mutation =
+        String.format(
+            """
+            mutation {
+              createStreamSession(mediaFileId: "%s") {
+                streamUrl
+              }
+            }
+            """,
+            UUID.randomUUID());
+
+    String streamUrl =
+        dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.createStreamSession.streamUrl");
+    var token = streamUrl.substring(streamUrl.indexOf("?t=") + 3);
+    var keyBytes =
+        java.util.Base64.getDecoder().decode("dGVzdC1zaWduaW5nLWtleS0zMi1ieXRlcy1sb25nISE=");
+    var decoded =
+        org.springframework.security.oauth2.jwt.NimbusJwtDecoder.withSecretKey(
+                new javax.crypto.spec.SecretKeySpec(keyBytes, "HmacSHA256"))
+            .macAlgorithm(org.springframework.security.oauth2.jose.jws.MacAlgorithm.HS256)
+            .build()
+            .decode(token);
+    var tokenLifetime = Duration.between(decoded.getIssuedAt(), decoded.getExpiresAt());
+
+    assertThat(tokenLifetime)
+        .isEqualTo(session.getMediaProbe().duration().plus(streamingProperties.sessionRetention()));
   }
 
   @Test
@@ -389,11 +426,13 @@ class StreamingResolverTest {
 
     private StreamSession nextResult;
     private StreamingOptions lastReceivedOptions;
+    private UUID lastCreateProfileId;
     private UUID lastDestroyProfileId;
 
     void reset() {
       nextResult = null;
       lastReceivedOptions = null;
+      lastCreateProfileId = null;
       lastDestroyProfileId = null;
     }
 
@@ -405,6 +444,10 @@ class StreamingResolverTest {
       return lastReceivedOptions;
     }
 
+    UUID getLastCreateProfileId() {
+      return lastCreateProfileId;
+    }
+
     UUID getLastDestroyProfileId() {
       return lastDestroyProfileId;
     }
@@ -412,6 +455,7 @@ class StreamingResolverTest {
     @Override
     public StreamSession createSession(UUID mediaFileId, UUID profileId, StreamingOptions options) {
       this.lastReceivedOptions = options;
+      this.lastCreateProfileId = profileId;
       return nextResult;
     }
 
