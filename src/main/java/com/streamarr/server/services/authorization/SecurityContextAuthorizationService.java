@@ -96,6 +96,9 @@ public class SecurityContextAuthorizationService implements AuthorizationService
   @Override
   public boolean canViewActivityOf(UUID profileId) {
     var identity = currentIdentity();
+    if (profileId == null) {
+      return false;
+    }
     if (identity.role() == AccountRole.ADMIN || profileId.equals(identity.profileId())) {
       return true;
     }

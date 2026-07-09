@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.authorization.DefaultAuthorizationManagerFactory;
 import org.springframework.security.core.Authentication;
@@ -15,29 +17,29 @@ class ScopeHierarchyTest {
 
   private final DefaultAuthorizationManagerFactory<Object> factory = buildFactory();
 
-  @Test
-  @DisplayName("Should grant account scope when profile scoped authority present")
-  void shouldGrantAccountScopeWhenProfileScopedAuthorityPresent() {
+  @ParameterizedTest(name = "Should grant account scope when authority is {0}")
+  @ValueSource(strings = {"SCOPE_PROFILE", "SCOPE_HOUSEHOLD", "SCOPE_ACCOUNT"})
+  void shouldGrantAccountScopeWhenAuthorityAtOrAboveAccount(String authority) {
     var accountCheck = factory.hasAuthority("SCOPE_ACCOUNT");
 
-    assertThat(accountCheck.authorize(() -> authWith("SCOPE_PROFILE"), new Object()).isGranted())
-        .isTrue();
-    assertThat(accountCheck.authorize(() -> authWith("SCOPE_HOUSEHOLD"), new Object()).isGranted())
-        .isTrue();
-    assertThat(accountCheck.authorize(() -> authWith("SCOPE_ACCOUNT"), new Object()).isGranted())
+    assertThat(accountCheck.authorize(() -> authWith(authority), new Object()).isGranted())
         .isTrue();
   }
 
   @Test
-  @DisplayName("Should deny nested scopes when authority outside hierarchy")
-  void shouldDenyNestedScopesWhenAuthorityOutsideHierarchy() {
+  @DisplayName("Should keep playback scope outside API hierarchy")
+  void shouldKeepPlaybackScopeOutsideApiHierarchy() {
     var accountCheck = factory.hasAuthority("SCOPE_ACCOUNT");
-    var profileCheck = factory.hasAuthority("SCOPE_PROFILE");
 
-    // Playback is isolated: it never inherits into the API scopes...
     assertThat(accountCheck.authorize(() -> authWith("SCOPE_PLAYBACK"), new Object()).isGranted())
         .isFalse();
-    // ...and broader scopes never satisfy narrower checks.
+  }
+
+  @Test
+  @DisplayName("Should deny narrower scope when authority points the wrong direction")
+  void shouldDenyNarrowerScopeWhenAuthorityPointsWrongDirection() {
+    var profileCheck = factory.hasAuthority("SCOPE_PROFILE");
+
     assertThat(profileCheck.authorize(() -> authWith("SCOPE_ACCOUNT"), new Object()).isGranted())
         .isFalse();
   }

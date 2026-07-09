@@ -10,6 +10,7 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.authentication.InsufficientAuthenticationException;
@@ -35,7 +36,9 @@ class RestAuthenticationEntryPointTest {
     entryPoint.commence(new MockHttpServletRequest(), response, exception);
 
     assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_UNAUTHORIZED);
-    assertThat(response.getContentAsString()).contains("EXPIRED_TOKEN");
+    assertThat(response.getContentType()).isEqualTo(MediaType.APPLICATION_JSON_VALUE);
+    assertThat(response.getContentAsString())
+        .isEqualTo("{\"code\":\"EXPIRED_TOKEN\",\"message\":\"Authentication is required.\"}");
   }
 
   @Test
@@ -52,7 +55,26 @@ class RestAuthenticationEntryPointTest {
     entryPoint.commence(new MockHttpServletRequest(), response, exception);
 
     assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_UNAUTHORIZED);
-    assertThat(response.getContentAsString()).contains("EXPIRED_TOKEN");
+    assertThat(response.getContentType()).isEqualTo(MediaType.APPLICATION_JSON_VALUE);
+    assertThat(response.getContentAsString())
+        .isEqualTo("{\"code\":\"EXPIRED_TOKEN\",\"message\":\"Authentication is required.\"}");
+  }
+
+  @Test
+  @DisplayName("Should report invalid token when token exception does not mention expiry")
+  void shouldReportInvalidTokenWhenTokenExceptionDoesNotMentionExpiry()
+      throws UnsupportedEncodingException {
+    var response = new MockHttpServletResponse();
+    var exception =
+        new OAuth2AuthenticationException(
+            new OAuth2Error("invalid_token", "Jwt signature invalid", null));
+
+    entryPoint.commence(new MockHttpServletRequest(), response, exception);
+
+    assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_UNAUTHORIZED);
+    assertThat(response.getContentType()).isEqualTo(MediaType.APPLICATION_JSON_VALUE);
+    assertThat(response.getContentAsString())
+        .isEqualTo("{\"code\":\"INVALID_TOKEN\",\"message\":\"Authentication is required.\"}");
   }
 
   @Test
@@ -67,7 +89,10 @@ class RestAuthenticationEntryPointTest {
         new InsufficientAuthenticationException("no credentials"));
 
     assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_UNAUTHORIZED);
-    assertThat(response.getContentAsString()).contains("AUTHENTICATION_REQUIRED");
+    assertThat(response.getContentType()).isEqualTo(MediaType.APPLICATION_JSON_VALUE);
+    assertThat(response.getContentAsString())
+        .isEqualTo(
+            "{\"code\":\"AUTHENTICATION_REQUIRED\",\"message\":\"Authentication is required.\"}");
   }
 
   @Test

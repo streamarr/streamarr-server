@@ -40,6 +40,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -127,6 +128,11 @@ class StreamingResolverTest {
   }
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
+
+  @BeforeEach
+  void resetStubService() {
+    STUB_SERVICE.reset();
+  }
 
   private StreamSession buildSession(UUID sessionId) {
     return buildSessionOwnedBy(sessionId, TestIdentityConstants.PROFILE_ID);
@@ -384,6 +390,12 @@ class StreamingResolverTest {
     private StreamSession nextResult;
     private StreamingOptions lastReceivedOptions;
     private UUID lastDestroyProfileId;
+
+    void reset() {
+      nextResult = null;
+      lastReceivedOptions = null;
+      lastDestroyProfileId = null;
+    }
 
     void setNextResult(StreamSession session) {
       this.nextResult = session;
