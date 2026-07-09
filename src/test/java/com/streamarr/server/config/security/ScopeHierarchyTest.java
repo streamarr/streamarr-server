@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.authorization.DefaultAuthorizationManagerFactory;
 import org.springframework.security.core.Authentication;
@@ -15,16 +17,12 @@ class ScopeHierarchyTest {
 
   private final DefaultAuthorizationManagerFactory<Object> factory = buildFactory();
 
-  @Test
-  @DisplayName("Should grant account scope when profile scoped authority present")
-  void shouldGrantAccountScopeWhenProfileScopedAuthorityPresent() {
+  @ParameterizedTest(name = "Should grant account scope when authority is {0}")
+  @ValueSource(strings = {"SCOPE_PROFILE", "SCOPE_HOUSEHOLD", "SCOPE_ACCOUNT"})
+  void shouldGrantAccountScopeWhenAuthorityAtOrAboveAccount(String authority) {
     var accountCheck = factory.hasAuthority("SCOPE_ACCOUNT");
 
-    assertThat(accountCheck.authorize(() -> authWith("SCOPE_PROFILE"), new Object()).isGranted())
-        .isTrue();
-    assertThat(accountCheck.authorize(() -> authWith("SCOPE_HOUSEHOLD"), new Object()).isGranted())
-        .isTrue();
-    assertThat(accountCheck.authorize(() -> authWith("SCOPE_ACCOUNT"), new Object()).isGranted())
+    assertThat(accountCheck.authorize(() -> authWith(authority), new Object()).isGranted())
         .isTrue();
   }
 

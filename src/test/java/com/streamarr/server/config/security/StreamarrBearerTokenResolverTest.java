@@ -6,6 +6,8 @@ import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.mock.web.MockHttpServletRequest;
 
 @Tag("UnitTest")
@@ -46,6 +48,17 @@ class StreamarrBearerTokenResolverTest {
   @DisplayName("Should resolve nothing when request carries no cookies")
   void shouldResolveNothingWhenRequestCarriesNoCookies() {
     assertThat(resolver.resolve(requestFor("/api/images/some-id"))).isNull();
+  }
+
+  @ParameterizedTest(name = "Should suppress bearer resolution on {0}")
+  @ValueSource(
+      strings = {"/api/auth/status", "/api/auth/setup", "/api/auth/login", "/api/auth/refresh"})
+  void shouldSuppressBearerResolutionOnUnauthenticatedAuthPath(String uri) {
+    var request = requestFor(uri);
+    request.addHeader("Authorization", "Bearer header-token");
+    request.setCookies(new Cookie(AuthCookies.ACCESS_COOKIE, "cookie-token"));
+
+    assertThat(resolver.resolve(request)).isNull();
   }
 
   private static MockHttpServletRequest requestFor(String uri) {

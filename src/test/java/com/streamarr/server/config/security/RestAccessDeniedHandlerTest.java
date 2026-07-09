@@ -7,6 +7,7 @@ import java.io.UnsupportedEncodingException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.access.AccessDeniedException;
@@ -25,7 +26,10 @@ class RestAccessDeniedHandlerTest {
     handler.handle(new MockHttpServletRequest(), response, new AccessDeniedException("denied"));
 
     assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_FORBIDDEN);
-    assertThat(response.getContentAsString()).contains("FORBIDDEN");
+    assertThat(response.getContentType()).isEqualTo(MediaType.APPLICATION_JSON_VALUE);
+    assertThat(response.getContentAsString())
+        .isEqualTo(
+            "{\"code\":\"FORBIDDEN\",\"message\":\"You do not have access to this resource.\"}");
   }
 
   @Test
