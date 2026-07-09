@@ -6,7 +6,6 @@ import static org.awaitility.Awaitility.await;
 import com.streamarr.server.fakes.FakeVersionCounterReader;
 import com.streamarr.server.services.auth.CounterKind;
 import com.streamarr.server.services.auth.TokenVersionCache;
-import java.sql.SQLException;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
@@ -121,15 +120,16 @@ class CounterNotificationListenerTest {
 
     private final AtomicInteger openAttempts = new AtomicInteger();
     private final AtomicInteger listenCount = new AtomicInteger();
-    private final ConcurrentLinkedQueue<SQLException> openFailures = new ConcurrentLinkedQueue<>();
+    private final ConcurrentLinkedQueue<CounterNotificationConnectionException> openFailures =
+        new ConcurrentLinkedQueue<>();
     private final BlockingQueue<PollResult> pollResults = new LinkedBlockingQueue<>();
 
     void failNextOpen() {
-      openFailures.add(new StacklessSqlException("connection failed"));
+      openFailures.add(new StacklessConnectionException("connection failed"));
     }
 
     void failActiveConnection() {
-      pollResults.add(new Failure(new StacklessSqlException("connection lost")));
+      pollResults.add(new Failure(new StacklessConnectionException("connection lost")));
     }
 
     void publish(String payload) {
@@ -153,7 +153,7 @@ class CounterNotificationListenerTest {
     }
 
     @Override
-    public CounterNotificationConnection open() throws SQLException {
+    public CounterNotificationConnection open() {
       openAttempts.incrementAndGet();
       var failure = openFailures.poll();
       if (failure != null) {
@@ -166,13 +166,12 @@ class CounterNotificationListenerTest {
         implements CounterNotificationConnection {
 
       @Override
-      public void listen(String channel) {
-        assertThat(channel).isEqualTo(CounterNotificationPayload.CHANNEL);
+      public void listen() {
         listenCount.incrementAndGet();
       }
 
       @Override
-      public List<String> notifications(int pollTimeoutMs) throws SQLException {
+      public List<String> notifications(int pollTimeoutMs) {
         try {
           return switch (pollResults.take()) {
             case Notifications(var payloads) -> payloads;
@@ -180,12 +179,14 @@ class CounterNotificationListenerTest {
           };
         } catch (InterruptedException e) {
           Thread.currentThread().interrupt();
-          throw new SQLException("interrupted", e);
+          throw new CounterNotificationConnectionException("interrupted", e);
         }
       }
 
       @Override
-      public void close() {}
+      public void close() {
+        // The scripted fake has no external resource to release.
+      }
     }
   }
 
@@ -193,12 +194,13 @@ class CounterNotificationListenerTest {
 
   private record Notifications(List<String> payloads) implements PollResult {}
 
-  private record Failure(SQLException exception) implements PollResult {}
+  private record Failure(CounterNotificationConnectionException exception) implements PollResult {}
 
-  private static final class StacklessSqlException extends SQLException {
+  private static final class StacklessConnectionException
+      extends CounterNotificationConnectionException {
 
-    private StacklessSqlException(String reason) {
-      super(reason);
+    private StacklessConnectionException(String reason) {
+      super(reason, null);
     }
 
     @Override

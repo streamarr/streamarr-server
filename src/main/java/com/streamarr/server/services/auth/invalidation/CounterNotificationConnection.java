@@ -1,14 +1,13 @@
 package com.streamarr.server.services.auth.invalidation;
 
-import java.sql.SQLException;
 import java.util.List;
 
 interface CounterNotificationConnection extends AutoCloseable {
 
-  void listen(String channel) throws SQLException;
+  void listen();
 
-  List<String> notifications(int pollTimeoutMs) throws SQLException;
+  List<String> notifications(int pollTimeoutMs);
 
   @Override
-  void close() throws SQLException;
+  void close();
 }

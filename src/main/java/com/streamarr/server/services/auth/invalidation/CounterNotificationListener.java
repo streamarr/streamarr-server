@@ -1,7 +1,6 @@
 package com.streamarr.server.services.auth.invalidation;
 
 import com.streamarr.server.services.auth.TokenVersionCache;
-import java.sql.SQLException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.SmartLifecycle;
@@ -60,7 +59,7 @@ public class CounterNotificationListener implements SmartLifecycle {
 
     while (running) {
       try (var connection = connectionSource.open()) {
-        connection.listen(CounterNotificationPayload.CHANNEL);
+        connection.listen();
         // Anything published while we were away is lost; stale entries must not survive.
         cache.clearAll();
         listening = true;
@@ -71,7 +70,7 @@ public class CounterNotificationListener implements SmartLifecycle {
             apply(payload);
           }
         }
-      } catch (SQLException e) {
+      } catch (CounterNotificationConnectionException e) {
         listening = false;
         if (!running) {
           return;
