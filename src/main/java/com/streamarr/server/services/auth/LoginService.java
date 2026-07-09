@@ -6,7 +6,6 @@ import com.streamarr.server.repositories.auth.UserAccountRepository;
 import java.util.UUID;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class LoginService {
@@ -29,7 +28,9 @@ public class LoginService {
     this.timingEqualizerHash = passwordEncoder.encode(UUID.randomUUID().toString());
   }
 
-  @Transactional
+  // Deliberately not @Transactional: a method-level transaction would pin a pooled connection
+  // across the Argon2 work (the documented Hikari-exhaustion pattern). Each write inside —
+  // the rehash save and createSession — owns its own transaction.
   public LoginResult login(LoginCommand command) {
     // Reserve the slot before any password work — recording failures after hashing is a
     // check-then-act race that lets a concurrent burst overrun the budget.
