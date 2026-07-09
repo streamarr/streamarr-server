@@ -10,6 +10,7 @@ import java.util.Locale;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
@@ -20,6 +21,7 @@ import org.springframework.stereotype.Component;
  * single-JVM posture as MutexFactory; database-backed throttling is the documented fast-follow if
  * multi-instance deployment materialises.
  */
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class LoginThrottle {
@@ -35,6 +37,7 @@ public class LoginThrottle {
     var sourceKey = sourceKey(source);
 
     if (!reserve(emailKey)) {
+      log.warn("Login throttled: attempt budget exhausted for {}", emailKey);
       throw new TooManyLoginAttemptsException();
     }
     if (reserve(sourceKey)) {
@@ -42,6 +45,7 @@ public class LoginThrottle {
     }
 
     release(emailKey);
+    log.warn("Login throttled: attempt budget exhausted for {}", sourceKey);
     throw new TooManyLoginAttemptsException();
   }
 

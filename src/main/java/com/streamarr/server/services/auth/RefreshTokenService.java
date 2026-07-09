@@ -19,10 +19,12 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Base64;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class RefreshTokenService {
@@ -111,6 +113,11 @@ public class RefreshTokenService {
   }
 
   private void revokeSessionForReuse(AuthSession session, Instant now) {
+    log.warn(
+        "Refresh token reuse detected — revoking session {} for account {}",
+        session.getId(),
+        session.getAccountId());
+
     var bumpedVersion =
         sessionRepository.revoke(session.getId(), SessionRevocationReason.TOKEN_REUSE, now);
     tokenRepository.revokeAllForSession(session.getId());
