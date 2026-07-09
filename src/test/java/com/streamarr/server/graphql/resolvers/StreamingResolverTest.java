@@ -88,7 +88,8 @@ class StreamingResolverTest {
     PlaybackTokenIssuer playbackTokenIssuer() {
       var properties =
           AuthTokenProperties.builder()
-              .signingKey("dGVzdC1zaWduaW5nLWtleS0zMi1ieXRlcy1sb25nISE=")
+              .signingKey("")
+              .verificationKeys(List.of())
               .accessTokenTtl(Duration.ofMinutes(10))
               .refreshTokenTtl(Duration.ofDays(30))
               .rotationGrace(Duration.ofSeconds(30))
@@ -101,7 +102,7 @@ class StreamingResolverTest {
       reader.profilePolicyVersions.put(TestIdentityConstants.PROFILE_ID, 1L);
 
       return new PlaybackTokenIssuer(
-          crypto.jwtEncoder(crypto.authSigningKey(properties)),
+          crypto.jwtEncoder(crypto.tokenSigningKeys(properties)),
           java.time.Clock.systemUTC(),
           new TokenVersionCache(reader));
     }
