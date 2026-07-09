@@ -148,10 +148,11 @@ class PlaybackTokenIssuerTest {
   void shouldRequireCurrentAuthSessionVersionWhenIssuing() {
     reader.membershipVersions.put(accountId + ":" + householdId, 3L);
     reader.profilePolicyVersions.put(profileId, 4L);
+    var identity = profileIdentity();
     var streamSession = defaultSessionBuilder().profileId(profileId).build();
     var ttl = Duration.ofHours(1);
 
-    assertThatThrownBy(() -> issuer.issue(profileIdentity(), streamSession, ttl))
+    assertThatThrownBy(() -> issuer.issue(identity, streamSession, ttl))
         .isInstanceOf(AuthenticationRequiredException.class);
   }
 
@@ -160,10 +161,11 @@ class PlaybackTokenIssuerTest {
   void shouldRequireCurrentMembershipVersionWhenIssuing() {
     reader.sessionVersions.put(sessionId, 2L);
     reader.profilePolicyVersions.put(profileId, 4L);
+    var identity = profileIdentity();
     var streamSession = defaultSessionBuilder().profileId(profileId).build();
     var ttl = Duration.ofHours(1);
 
-    assertThatThrownBy(() -> issuer.issue(profileIdentity(), streamSession, ttl))
+    assertThatThrownBy(() -> issuer.issue(identity, streamSession, ttl))
         .isInstanceOf(ProfileRequiredException.class);
   }
 
@@ -172,10 +174,11 @@ class PlaybackTokenIssuerTest {
   void shouldRequireCurrentProfilePolicyVersionWhenIssuing() {
     reader.sessionVersions.put(sessionId, 2L);
     reader.membershipVersions.put(accountId + ":" + householdId, 3L);
+    var identity = profileIdentity();
     var streamSession = defaultSessionBuilder().profileId(profileId).build();
     var ttl = Duration.ofHours(1);
 
-    assertThatThrownBy(() -> issuer.issue(profileIdentity(), streamSession, ttl))
+    assertThatThrownBy(() -> issuer.issue(identity, streamSession, ttl))
         .isInstanceOf(ProfileRequiredException.class);
   }
 

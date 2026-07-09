@@ -442,7 +442,9 @@ class StreamingResolverTest {
 
     @Override
     public void reportStreamSessionTimeline(
-        UUID profileId, UUID sessionId, int positionSeconds, PlaybackState state) {}
+        UUID profileId, UUID sessionId, int positionSeconds, PlaybackState state) {
+      // no-op for test fake
+    }
   }
 
   private static class NoopWatchStatusService extends WatchStatusService {
@@ -452,10 +454,14 @@ class StreamingResolverTest {
     }
 
     @Override
-    public void markWatched(UUID profileId, UUID collectableId) {}
+    public void markWatched(UUID profileId, UUID collectableId) {
+      // no-op for test fake
+    }
 
     @Override
-    public void markUnwatched(UUID profileId, UUID collectableId) {}
+    public void markUnwatched(UUID profileId, UUID collectableId) {
+      // no-op for test fake
+    }
   }
 
   @Test
