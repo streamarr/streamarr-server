@@ -60,8 +60,9 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
   }
 
   /**
-   * The bump and its cache-refresh event live here so no future grant/revoke endpoint can forget
-   * either half of the invariant (ADR 0015 counter propagation).
+   * The bump, its local cache event, and the cross-instance notify live here so no future
+   * grant/revoke endpoint can forget any leg of the invariant (ADR 0015 requirement, ADR 0016
+   * propagation).
    */
   private void bumpMembershipVersion(AccountProfile link, UUID auditUser) {
     // The membership row is FK-guaranteed: every account_profile row references it, so the

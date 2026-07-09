@@ -55,7 +55,7 @@ A JWKS endpoint is deferred until an external verifier exists; the kid-keyed key
 
 Restriction, membership, password, and session changes propagate through version counters.
 Postgres holds the authoritative session, membership, and profile-policy counters; each instance caches them in memory.
-When an instance changes one, it bumps the Postgres counter and publishes a `LISTEN`/`NOTIFY` event so every other instance evicts and refreshes that counter.
+When an instance changes one, it bumps the Postgres counter and publishes the new version through `LISTEN`/`NOTIFY`; every other instance applies it to its cached counter monotonically (highest version wins), so duplicate or out-of-order delivery cannot regress state.
 The `LISTEN` subscriber holds its own dedicated Postgres connection, separate from the transactional Hikari pool.
 That connection must reach Postgres directly or through a session-mode pooler: `LISTEN` does not survive transaction-mode pooling, so PgBouncer in transaction mode silently breaks notifications.
 On instance start the counter cache is empty and fills from Postgres on first touch; when an authoritative counter cannot be read, validation fails closed rather than trusting a token's embedded versions.
@@ -135,6 +135,7 @@ Explicitly deferred from v1:
 * Spring Security's default `DelegatingPasswordEncoder` id — it still encodes with bcrypt, OWASP puts Argon2id first, and the delegating mechanism makes the stronger default free.
 * An application-managed salt column — the encoded password string already carries algorithm, parameters, and salt; a separate column invites custom crypto handling.
 * Redis or any shared cache for cross-instance invalidation — Postgres version counters with `LISTEN`/`NOTIFY` cover v1 without new infrastructure.
+* CORS configuration for the browser client — the client is same-origin by construction (development tooling proxies API paths; production serves the client from the application origin), so no CORS policy exists and adding one would only widen the attack surface.
 * Sliding or self-renewing access tokens — re-issuing near expiry on the access token's own authority makes the short-lived credential immortal for whoever holds it, yields no rotation theft signal, lets active clients outrun the TTL backstop for missed invalidations, and skips the refresh endpoint's authoritative database checkpoint.
 * Script-readable browser token storage (`localStorage` or plain cookies) — `httpOnly` cookies plus CSRF protection confine XSS to riding a session rather than stealing it.
 * `Authorization` headers on streaming segment requests — playlist-driven players cannot attach them, so playback URLs carry the token instead.

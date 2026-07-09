@@ -30,6 +30,8 @@ class JdbcCounterNotificationConnectionSource implements CounterNotificationConn
   @Override
   public CounterNotificationConnection open() {
     try {
+      // Deliberately DriverManager, not the Hikari DataSource: this connection is held open
+      // for LISTEN and must reach PostgreSQL directly (ADR 0016).
       return new JdbcCounterNotificationConnection(
           DriverManager.getConnection(jdbcUrl(), connectionProperties()));
     } catch (SQLException e) {
