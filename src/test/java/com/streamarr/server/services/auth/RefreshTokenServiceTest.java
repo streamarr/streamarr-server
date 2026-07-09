@@ -46,9 +46,13 @@ class RefreshTokenServiceTest {
 
   private final MutableClock clock = new MutableClock(currentTime);
 
+  private final TokenReuseRevoker tokenReuseRevoker =
+      new TokenReuseRevoker(
+          new TokenReuseRevocationWriter(sessionRepository, tokenRepository, eventPublisher));
+
   private final RefreshTokenService service =
       new RefreshTokenService(
-          sessionRepository, tokenRepository, properties, clock, eventPublisher);
+          sessionRepository, tokenRepository, properties, clock, tokenReuseRevoker);
 
   @Test
   @DisplayName("Should rotate when active token redeemed")

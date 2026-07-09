@@ -14,15 +14,18 @@ import com.streamarr.server.exceptions.TooManyLoginAttemptsException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeRefreshTokenRepository;
+import com.streamarr.server.fakes.FakeVersionCounterReader;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.AccountFixture;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.oauth2.jwt.Jwt;
 
 @Tag("UnitTest")
 @DisplayName("Authentication Security Event Logging Tests")
@@ -33,10 +36,13 @@ class AuthSecurityEventLoggingTest {
   void shouldLogWarningWhenRefreshTokenReuseRevokesSession() {
     var currentTime = new AtomicReference<>(Instant.parse("2026-01-01T00:00:00Z"));
     var clock = new MutableClock(currentTime);
+    var sessionRepository = new FakeAuthSessionRepository();
+    var tokenRepository = new FakeRefreshTokenRepository();
+    var eventPublisher = new CapturingEventPublisher();
     var service =
         new RefreshTokenService(
-            new FakeAuthSessionRepository(),
-            new FakeRefreshTokenRepository(),
+            sessionRepository,
+            tokenRepository,
             AuthTokenProperties.builder()
                 .signingKey("")
                 .accessTokenTtl(Duration.ofMinutes(10))
@@ -44,7 +50,9 @@ class AuthSecurityEventLoggingTest {
                 .rotationGrace(Duration.ofSeconds(30))
                 .build(),
             clock,
-            new CapturingEventPublisher());
+            new TokenReuseRevoker(
+                new TokenReuseRevocationWriter(
+                    sessionRepository, tokenRepository, eventPublisher)));
     var account = AccountFixture.defaultAccountBuilder().build();
     var issued = service.createSession(account, "security-log-test");
     service.redeem(issued.rawToken());
@@ -73,6 +81,39 @@ class AuthSecurityEventLoggingTest {
           .isInstanceOf(TooManyLoginAttemptsException.class);
 
       assertThat(logs.events()).anyMatch(event -> event.getLevel().isGreaterOrEqual(Level.WARN));
+    }
+  }
+
+  @Test
+  @DisplayName("Should correlate version lookup failure without logging token")
+  void shouldCorrelateVersionLookupFailureWithoutLoggingToken() {
+    var accountId = UUID.randomUUID();
+    var sessionId = UUID.randomUUID();
+    var reader = new FakeVersionCounterReader();
+    reader.sessionVersions.put(sessionId, 0L);
+    reader.failWith(new IllegalStateException("database unavailable"));
+    var validator = new TokenVersionValidator(new TokenVersionCache(reader));
+    var now = Instant.now();
+    var token =
+        Jwt.withTokenValue("sensitive-token")
+            .header("alg", "HS256")
+            .subject(accountId.toString())
+            .issuedAt(now)
+            .expiresAt(now.plusSeconds(600))
+            .claim(TokenClaims.SESSION_ID, sessionId.toString())
+            .claim(TokenClaims.SESSION_VERSION, 0L)
+            .claim(TokenClaims.SCOPE, TokenScope.ACCOUNT.claimValue())
+            .build();
+
+    try (var logs = LogCapture.forClass(TokenVersionValidator.class)) {
+      assertThat(validator.validate(token).hasErrors()).isTrue();
+
+      assertThat(logs.events())
+          .anySatisfy(
+              event ->
+                  assertThat(event.getFormattedMessage())
+                      .contains(accountId.toString(), sessionId.toString())
+                      .doesNotContain("sensitive-token"));
     }
   }
 

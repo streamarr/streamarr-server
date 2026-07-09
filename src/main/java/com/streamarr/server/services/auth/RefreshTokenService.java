@@ -4,13 +4,11 @@ import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.RefreshToken;
 import com.streamarr.server.domain.auth.RefreshTokenStatus;
-import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidRefreshTokenException;
 import com.streamarr.server.exceptions.TokenReuseDetectedException;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.RefreshTokenRepository;
-import com.streamarr.server.services.auth.events.CounterBumpedEvent;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -20,7 +18,6 @@ import java.time.Instant;
 import java.util.Base64;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,7 +32,7 @@ public class RefreshTokenService {
   private final RefreshTokenRepository tokenRepository;
   private final AuthTokenProperties properties;
   private final Clock clock;
-  private final ApplicationEventPublisher eventPublisher;
+  private final TokenReuseRevoker tokenReuseRevoker;
 
   private final SecureRandom secureRandom = new SecureRandom();
 
@@ -118,13 +115,7 @@ public class RefreshTokenService {
         session.getId(),
         session.getAccountId());
 
-    var bumpedVersion =
-        sessionRepository.revoke(session.getId(), SessionRevocationReason.TOKEN_REUSE, now);
-    tokenRepository.revokeAllForSession(session.getId());
-
-    bumpedVersion.ifPresent(
-        version ->
-            eventPublisher.publishEvent(CounterBumpedEvent.session(session.getId(), version)));
+    tokenReuseRevoker.revokeAfterCompletion(session.getId(), now);
   }
 
   private RefreshToken buildActiveToken(AuthSession session, String rawToken, Instant now) {

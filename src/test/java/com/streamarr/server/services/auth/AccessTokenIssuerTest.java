@@ -225,20 +225,20 @@ class AccessTokenIssuerTest {
   }
 
   @Test
-  @DisplayName("Should reject profile token when household not selected")
-  void shouldRejectProfileTokenWhenHouseholdNotSelected() {
+  @DisplayName("Should reject profile context when household not selected")
+  void shouldRejectProfileContextWhenHouseholdNotSelected() {
     var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
     var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
 
-    var context =
-        TokenContext.builder()
-            .account(account)
-            .session(session)
-            .profileId(UUID.randomUUID())
-            .build();
-
-    assertThatThrownBy(() -> issuer.issue(context))
-        .isInstanceOf(ProfileAccessDeniedException.class);
+    assertThatThrownBy(
+            () ->
+                TokenContext.builder()
+                    .account(account)
+                    .session(session)
+                    .profileId(UUID.randomUUID())
+                    .build())
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Profile context requires a household");
   }
 
   @Test
