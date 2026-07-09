@@ -17,6 +17,7 @@ public abstract class AbstractIntegrationTest {
           .withDatabaseName("streamarr")
           .withUsername("test")
           .withPassword("test")
+          .withCommand("postgres", "-c", "max_connections=300")
           .withReuse(true);
 
   static {
