@@ -193,6 +193,30 @@ class StreamingResolverTest {
   }
 
   @Test
+  @DisplayName("Should return stream URL with URL-safe playback token when creating session")
+  void shouldReturnStreamUrlWithUrlSafePlaybackTokenWhenCreatingSession() {
+    var sessionId = UUID.randomUUID();
+    STUB_SERVICE.setNextResult(buildSession(sessionId));
+
+    var mutation =
+        String.format(
+            """
+            mutation {
+              createStreamSession(mediaFileId: "%s") {
+                streamUrl
+              }
+            }
+            """,
+            UUID.randomUUID());
+
+    String streamUrl =
+        dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.createStreamSession.streamUrl");
+
+    assertThat(streamUrl).startsWith("/api/stream/" + sessionId + "/master.m3u8?t=");
+    assertThat(streamUrl.substring(streamUrl.indexOf("?t=") + 3)).matches("[A-Za-z0-9._-]+");
+  }
+
+  @Test
   @DisplayName("Should refuse to mint stream url when session not owned by caller")
   void shouldRefuseToMintStreamUrlWhenSessionNotOwnedByCaller() {
     // Simulates a future internal path handing back a foreign session: the resolver must never
@@ -214,7 +238,9 @@ class StreamingResolverTest {
 
     var result = dgsQueryExecutor.execute(mutation);
 
-    assertThat(result.getErrors()).isNotEmpty();
+    assertThat(result.getErrors()).hasSize(1);
+    assertThat(result.getErrors().getFirst().getMessage())
+        .contains("Streaming session not found: " + sessionId);
     assertThat(result.toSpecification().toString()).doesNotContain("?t=");
   }
 

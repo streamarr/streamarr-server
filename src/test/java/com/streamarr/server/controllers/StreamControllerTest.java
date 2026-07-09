@@ -6,6 +6,7 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.defaultVariantB
 import static com.streamarr.server.fixtures.StreamSessionFixture.fullTranscodeDecision;
 import static com.streamarr.server.fixtures.StreamSessionFixture.withActiveVariantHandles;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -34,6 +35,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -50,6 +52,7 @@ class StreamControllerTest {
   private StubStreamingService streamingService;
   private FakeSegmentStore segmentStore;
   private HlsPlaylistService playlistService;
+  private StreamController controller;
 
   @BeforeEach
   void setUp() {
@@ -63,7 +66,7 @@ class StreamControllerTest {
                 .sessionTimeout(Duration.ofSeconds(60))
                 .build());
     boundStreamSession.set(SESSION_ID);
-    var controller =
+    controller =
         new StreamController(
             streamingService, playlistService, segmentStore, new BoundAuthorizationService());
     mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
@@ -121,6 +124,17 @@ class StreamControllerTest {
   private static void assertPlaylistEmbedsValidatedToken(String body) {
     assertThat(body).contains("?t=" + VALIDATED_TOKEN);
     assertThat(body).doesNotContain(SPOOFED_PARAM);
+  }
+
+  @Test
+  @DisplayName("Should reject playlist when token is bound to another stream session")
+  void shouldRejectPlaylistWhenTokenIsBoundToAnotherStreamSession() {
+    streamingService.setSession(buildMpegtsSession());
+    boundStreamSession.set(UUID.randomUUID());
+
+    assertThatThrownBy(() -> controller.getMasterPlaylist(SESSION_ID))
+        .isInstanceOf(AccessDeniedException.class)
+        .hasMessage("Playback token is not valid for this stream session.");
   }
 
   @ParameterizedTest
