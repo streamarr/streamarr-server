@@ -10,12 +10,16 @@ import com.streamarr.server.config.security.TokenCryptoConfig;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.fakes.FakeAccountProfileRepository;
+import com.streamarr.server.fakes.FakeHouseholdMembershipRepository;
+import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeVersionCounterReader;
 import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
@@ -46,7 +50,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @Tag("UnitTest")
 @EnableDgsTest
@@ -101,14 +104,29 @@ class StreamingResolverTest {
           java.time.Clock.systemUTC(),
           new TokenVersionCache(reader));
     }
+
+    @Bean
+    ProfileRepository profileRepository() {
+      return new FakeProfileRepository();
+    }
+
+    @Bean
+    AccountProfileRepository accountProfileRepository() {
+      return new FakeAccountProfileRepository(new FakeHouseholdMembershipRepository());
+    }
+
+    @Bean
+    SessionProgressService sessionProgressService() {
+      return new NoopSessionProgressService();
+    }
+
+    @Bean
+    WatchStatusService watchStatusService() {
+      return new NoopWatchStatusService();
+    }
   }
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
-
-  @MockitoBean private ProfileRepository profileRepository;
-  @MockitoBean private AccountProfileRepository accountProfileRepository;
-  @MockitoBean private SessionProgressService sessionProgressService;
-  @MockitoBean private WatchStatusService watchStatusService;
 
   private StreamSession buildSession(UUID sessionId) {
     return buildSessionOwnedBy(sessionId, TestIdentityConstants.PROFILE_ID);
@@ -388,6 +406,30 @@ class StreamingResolverTest {
     public void resumeSessionIfNeeded(UUID sessionId, String segmentName) {
       // no-op for test fake
     }
+  }
+
+  private static class NoopSessionProgressService extends SessionProgressService {
+
+    NoopSessionProgressService() {
+      super(null, null, null, null, null, null);
+    }
+
+    @Override
+    public void reportStreamSessionTimeline(
+        UUID profileId, UUID sessionId, int positionSeconds, PlaybackState state) {}
+  }
+
+  private static class NoopWatchStatusService extends WatchStatusService {
+
+    NoopWatchStatusService() {
+      super(null, null, null, null, null, null);
+    }
+
+    @Override
+    public void markWatched(UUID profileId, UUID collectableId) {}
+
+    @Override
+    public void markUnwatched(UUID profileId, UUID collectableId) {}
   }
 
   @Test
