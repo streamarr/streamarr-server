@@ -33,9 +33,9 @@ class CounterNotificationListenerTest {
     listener.start();
     try {
       connectionSource.awaitOpenAttempts(2);
-      connectionSource.awaitListenCount(1);
+      // The fake counts listen() before the listener flips its flag; await the observable state.
+      await().atMost(Duration.ofSeconds(1)).until(listener::isListening);
       assertThat(listener.isRunning()).isTrue();
-      assertThat(listener.isListening()).isTrue();
     } finally {
       listener.stop();
     }
@@ -58,7 +58,7 @@ class CounterNotificationListenerTest {
 
     listener.start();
     try {
-      connectionSource.awaitListenCount(1);
+      await().atMost(Duration.ofSeconds(1)).until(listener::isListening);
       assertThat(cache.sessionVersion(sessionId)).contains(2L);
 
       reader.sessionVersions.put(sessionId, 3L);
@@ -67,7 +67,9 @@ class CounterNotificationListenerTest {
       connectionSource.failActiveConnection();
       connectionSource.awaitListenCount(2);
 
-      assertThat(cache.sessionVersion(sessionId)).contains(3L);
+      await()
+          .atMost(Duration.ofSeconds(1))
+          .untilAsserted(() -> assertThat(cache.sessionVersion(sessionId)).contains(3L));
     } finally {
       listener.stop();
     }
