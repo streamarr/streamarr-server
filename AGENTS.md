@@ -106,6 +106,20 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 - Validate inputs at the API boundary; trust internal code
 - Use Optional for values that may be absent — never return null
 
+### Plaintext Secret Handling
+- Passwords and raw tokens are short-lived boundary values: consume them synchronously, then
+  release every application reference. Never persist, cache, publish in events, log, trace, or
+  include them in exception messages or diagnostic context.
+- Use the framework-native `String`/`CharSequence` path at Spring/Jackson boundaries. Do not
+  convert one layer to `char[]` or `byte[]` and claim secure erasure while another layer retains
+  or recreates a `String`.
+- Secret-bearing records must override `toString()` to omit raw secrets. Treat generated builder
+  `toString()` methods as a separate leakage surface; never log builders carrying secrets.
+- Mutable password buffers are justified only as an end-to-end design in which the boundary,
+  validation, and hashing APIs avoid immutable copies and every owned buffer is cleared. Revisit
+  [ADR 0016](docs/adr/0016-authentication-mechanisms-and-session-security.adoc) before introducing
+  that pipeline.
+
 ### Code Style
 - Google Java Format enforced via Spotless (runs on build)
 - Checkstyle also runs at `validate` and fails the build (`checkstyle.xml`)
