@@ -80,12 +80,18 @@ class TokenReuseRevokerTest {
     }
 
     @Override
-    protected void doBegin(Object transaction, TransactionDefinition definition) {}
+    protected void doBegin(Object transaction, TransactionDefinition definition) {
+      // No resource to begin — only the synchronization lifecycle matters here.
+    }
 
     @Override
-    protected void doCommit(DefaultTransactionStatus status) {}
+    protected void doCommit(DefaultTransactionStatus status) {
+      // No resource to commit.
+    }
 
     @Override
-    protected void doRollback(DefaultTransactionStatus status) {}
+    protected void doRollback(DefaultTransactionStatus status) {
+      // No resource to roll back.
+    }
   }
 }
