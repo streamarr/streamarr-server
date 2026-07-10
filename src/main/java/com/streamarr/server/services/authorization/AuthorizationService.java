@@ -6,9 +6,10 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * The one place request identity is read (ADR 0015). Resolvers and controllers resolve identity
- * through this facade on the request thread and pass explicit ids down — services and batch loaders
- * never touch the SecurityContext.
+ * The one place request identity is read for authorization decisions (ADR 0015); auditing reads the
+ * SecurityContext separately for audit columns. Resolvers and controllers resolve identity through
+ * this facade on the request thread and pass explicit ids down — services and batch loaders never
+ * touch the SecurityContext.
  */
 public interface AuthorizationService {
 

@@ -11,8 +11,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Public verification keys for external verifiers — the transcode tier scales horizontally and must
- * never hold a minting secret. Serving keys is not authorization: a consumer must also run the
- * version-counter feed, or revocation silently stops applying to it (ADR 0016). Unknown-kid refetch
+ * never hold a minting secret. Serving keys is not authorization: a consumer must also check the
+ * revocation authority — the version-counter feed during the transition, the ADR 0017 joint
+ * authority after it — or revocation silently stops applying to it (ADR 0016). Unknown-kid refetch
  * plus two-phase prepublication is the rotation mechanism (runbook in architecture.adoc); the cache
  * header paces polling and bounds how long a shared cache can hide a prepublished key.
  */

@@ -6,7 +6,7 @@ Accepted
 
 === Implementation status
 
-* This lifecycle is implemented by issue #211 (PR-A); atomic revocation integration follows in PR-B1 and the version-counter retirement in PR-B2 (issue #213).
+* Nothing in this ADR is built yet: the lifecycle will be implemented by issue #211 (PR-A), atomic revocation integration follows in PR-B1, and the version-counter retirement completes the transition in PR-B2 (issue #213). PR-A/PR-B1/PR-B2 name the sequential delivery increments of those issues.
 * The single-streaming-instance boundary holds until the distributed control plane (issue #76); `PROVISIONING` here is a local admission state, not #76's distributed capacity reservation.
 * Media-deletion choreography and its restrictive foreign key land together in PR-A2 — a `RESTRICT` constraint never ships ahead of the deletion workflow that satisfies it.
 

@@ -13,8 +13,9 @@ import org.springframework.security.oauth2.jwt.Jwt;
  * timestamp validator's clock skew and missing-{@code exp} tolerance would silently extend it.
  *
  * <p>The failure descriptions are load-bearing: {@code RestAuthenticationEntryPoint} maps
- * descriptions containing "expired" to EXPIRED_TOKEN (refresh-and-retry) and everything else to
- * INVALID_TOKEN (route to login), so only the past-expiry failure may mention expiry.
+ * descriptions containing the substring "expired" (case-insensitive) to EXPIRED_TOKEN
+ * (refresh-and-retry) and everything else to INVALID_TOKEN (route to login), so only the
+ * past-expiry failure — here or in any other validator in the chain — may contain that substring.
  */
 public class StrictJwtExpiryValidator implements OAuth2TokenValidator<Jwt> {
 
