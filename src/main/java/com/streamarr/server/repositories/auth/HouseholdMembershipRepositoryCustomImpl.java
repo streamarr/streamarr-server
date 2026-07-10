@@ -1,6 +1,7 @@
 package com.streamarr.server.repositories.auth;
 
 import static com.streamarr.server.jooq.generated.Sequences.HOUSEHOLD_MEMBERSHIP_VERSION_SEQ;
+import static com.streamarr.server.jooq.generated.tables.Household.HOUSEHOLD;
 import static com.streamarr.server.jooq.generated.tables.HouseholdMembership.HOUSEHOLD_MEMBERSHIP;
 
 import com.streamarr.server.domain.auth.HouseholdMembership;
@@ -27,6 +28,7 @@ public class HouseholdMembershipRepositoryCustomImpl
   @Override
   @Transactional
   public MembershipVersionChange grantMembership(HouseholdMembership membership) {
+    lockHousehold(membership.getHouseholdId());
     membership.setMembershipVersion(nextMembershipVersion());
     entityManager.persist(membership);
     entityManager.flush();
@@ -58,6 +60,7 @@ public class HouseholdMembershipRepositoryCustomImpl
   @Override
   @Transactional
   public Optional<MembershipVersionChange> revokeMembership(UUID accountId, UUID householdId) {
+    lockHousehold(householdId);
     var versionChange =
         dsl.update(HOUSEHOLD_MEMBERSHIP)
             .set(
@@ -93,5 +96,13 @@ public class HouseholdMembershipRepositoryCustomImpl
 
   private long nextMembershipVersion() {
     return dsl.select(HOUSEHOLD_MEMBERSHIP_VERSION_SEQ.nextval()).fetchSingle().value1();
+  }
+
+  private void lockHousehold(UUID householdId) {
+    dsl.select(HOUSEHOLD.ID)
+        .from(HOUSEHOLD)
+        .where(HOUSEHOLD.ID.eq(householdId))
+        .forUpdate()
+        .fetchOptional();
   }
 }
