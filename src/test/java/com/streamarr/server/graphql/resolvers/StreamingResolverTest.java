@@ -31,6 +31,8 @@ import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.services.auth.TokenVersionCache;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
+import com.streamarr.server.services.streaming.DefaultPlaybackSessionCreationService;
+import com.streamarr.server.services.streaming.PlaybackSessionCreationService;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.watchprogress.SessionProgressService;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
@@ -106,6 +108,15 @@ class StreamingResolverTest {
           crypto.jwtEncoder(crypto.tokenSigningKeys(tokenProperties())),
           java.time.Clock.systemUTC(),
           new TokenVersionCache(reader));
+    }
+
+    @Bean
+    PlaybackSessionCreationService playbackSessionCreationService(
+        StreamingService streamingService,
+        PlaybackTokenIssuer playbackTokenIssuer,
+        StreamingProperties streamingProperties) {
+      return new DefaultPlaybackSessionCreationService(
+          streamingService, playbackTokenIssuer, streamingProperties);
     }
 
     @Bean

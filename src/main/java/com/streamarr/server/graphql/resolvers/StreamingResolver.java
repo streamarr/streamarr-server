@@ -3,20 +3,19 @@ package com.streamarr.server.graphql.resolvers;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
-import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.PlaybackState;
-import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.InvalidIdException;
 import com.streamarr.server.graphql.dto.StreamSessionDto;
 import com.streamarr.server.graphql.dto.StreamingOptionsInput;
-import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.services.authorization.AuthorizationService;
+import com.streamarr.server.services.streaming.CreatePlaybackSessionCommand;
+import com.streamarr.server.services.streaming.CreatedPlaybackSession;
+import com.streamarr.server.services.streaming.PlaybackSessionCreationService;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.watchprogress.SessionProgressService;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
-import java.time.Duration;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -27,8 +26,7 @@ public class StreamingResolver {
 
   private final StreamingService streamingService;
   private final AuthorizationService authorizationService;
-  private final PlaybackTokenIssuer playbackTokenIssuer;
-  private final StreamingProperties streamingProperties;
+  private final PlaybackSessionCreationService playbackSessionCreationService;
   private final SessionProgressService sessionProgressService;
   private final WatchStatusService watchStatusService;
 
@@ -36,16 +34,17 @@ public class StreamingResolver {
   public StreamSessionDto createStreamSession(
       @InputArgument String mediaFileId, @InputArgument StreamingOptionsInput options) {
     var opts = mapOptions(options);
+    var parsedMediaFileId = parseUuid(mediaFileId);
+    authorizationService.requireProfile();
     var session =
-        streamingService.createSession(
-            parseUuid(mediaFileId), authorizationService.requireProfile(), opts);
+        playbackSessionCreationService.create(
+            CreatePlaybackSessionCommand.builder()
+                .mediaFileId(parsedMediaFileId)
+                .options(opts)
+                .sourceIdentity(authorizationService.currentIdentity())
+                .build());
 
-    try {
-      return toDto(session);
-    } catch (RuntimeException exception) {
-      streamingService.destroySession(session.getSessionId());
-      throw exception;
-    }
+    return toDto(session);
   }
 
   @DgsMutation
@@ -119,27 +118,16 @@ public class StreamingResolver {
         .build();
   }
 
-  private StreamSessionDto toDto(StreamSession session) {
-    // The issuer refuses to mint for sessions the caller does not own — every DTO carries a
-    // playback token, so the ownership check rides along wherever this is called from.
+  private StreamSessionDto toDto(CreatedPlaybackSession session) {
     return StreamSessionDto.builder()
-        .id(session.getSessionId().toString())
+        .id(session.sessionId().toString())
         .streamUrl(
             "/api/stream/"
-                + session.getSessionId()
+                + session.sessionId()
                 + "/master.m3u8?t="
-                + playbackTokenIssuer
-                    .issue(
-                        authorizationService.currentIdentity(),
-                        session,
-                        playbackTokenValidity(session))
-                    .value())
-        .transcodeMode(session.getTranscodeDecision().transcodeMode().name())
+                + session.playbackToken().value())
+        .transcodeMode(session.transcodeMode().name())
         .build();
-  }
-
-  private Duration playbackTokenValidity(StreamSession session) {
-    return session.getMediaProbe().duration().plus(streamingProperties.sessionRetention());
   }
 
   private UUID parseUuid(String id) {

@@ -1,9 +1,12 @@
 package com.streamarr.server.config;
 
 import com.streamarr.server.repositories.media.MediaFileRepository;
+import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
+import com.streamarr.server.services.streaming.DefaultPlaybackSessionCreationService;
 import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.server.services.streaming.HlsStreamingService;
+import com.streamarr.server.services.streaming.PlaybackSessionCreationService;
 import com.streamarr.server.services.streaming.QualityLadderService;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.StreamSessionRepository;
@@ -111,5 +114,14 @@ public class StreamingConfig {
         properties,
         streamSessionRepository,
         mutexFactoryProvider.getMutexFactory());
+  }
+
+  @Bean
+  public PlaybackSessionCreationService playbackSessionCreationService(
+      StreamingService streamingService,
+      PlaybackTokenIssuer playbackTokenIssuer,
+      StreamingProperties streamingProperties) {
+    return new DefaultPlaybackSessionCreationService(
+        streamingService, playbackTokenIssuer, streamingProperties);
   }
 }
