@@ -55,4 +55,14 @@ class ArchitectureTest {
           .dependOnClassesThat()
           .resideInAnyPackage("..graphql..")
           .as("Services must not depend on graphql");
+
+  @ArchTest
+  static final ArchRule authRepositoriesMustNotDependOnAuthServices =
+      noClasses()
+          .that()
+          .resideInAPackage("..repositories.auth..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAPackage("..services.auth..")
+          .as("Auth repositories must remain below auth services in the dependency direction");
 }

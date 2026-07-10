@@ -6,13 +6,11 @@ import static com.streamarr.server.jooq.generated.tables.HouseholdMembership.HOU
 
 import com.streamarr.server.domain.auth.AccountProfile;
 import com.streamarr.server.domain.auth.MembershipVersionChange;
-import com.streamarr.server.services.auth.events.CounterBumpedEvent;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.AuditorAware;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,7 +19,7 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
 
   private final DSLContext dsl;
   private final AuditorAware<UUID> auditorAware;
-  private final ApplicationEventPublisher eventPublisher;
+  private final CounterChangePublisher counterChangePublisher;
 
   @Override
   @Transactional
@@ -37,7 +35,7 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
         .execute();
 
     var versionChange = bumpMembershipVersion(link, auditUser);
-    publishVersionChange(versionChange);
+    counterChangePublisher.publishMembership(versionChange);
   }
 
   @Override
@@ -57,7 +55,7 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
     }
 
     var versionChange = bumpMembershipVersion(link, auditUser);
-    publishVersionChange(versionChange);
+    counterChangePublisher.publishMembership(versionChange);
     return true;
   }
 
@@ -73,11 +71,5 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
             .returning(HOUSEHOLD_MEMBERSHIP.MEMBERSHIP_VERSION)
             .fetchSingle(HOUSEHOLD_MEMBERSHIP.MEMBERSHIP_VERSION);
     return new MembershipVersionChange(link.getAccountId(), link.getHouseholdId(), version);
-  }
-
-  private void publishVersionChange(MembershipVersionChange versionChange) {
-    eventPublisher.publishEvent(
-        CounterBumpedEvent.membership(
-            versionChange.accountId(), versionChange.householdId(), versionChange.version()));
   }
 }
