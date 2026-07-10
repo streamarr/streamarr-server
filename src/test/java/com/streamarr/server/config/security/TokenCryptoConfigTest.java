@@ -177,9 +177,9 @@ class TokenCryptoConfigTest {
   void shouldRejectTokenFromForeignIssuer() {
     var keys = config.tokenSigningKeys(properties(KEY_A, List.of()));
     var token = mint(config.jwtEncoder(keys), "foreign-issuer");
+    var jwtDecoder = decoder(keys);
 
-    assertThatThrownBy(() -> decoder(keys).decode(token))
-        .isInstanceOf(JwtValidationException.class);
+    assertThatThrownBy(() -> jwtDecoder.decode(token)).isInstanceOf(JwtValidationException.class);
   }
 
   @Test
