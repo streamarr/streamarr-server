@@ -5,11 +5,14 @@ import static com.streamarr.server.jooq.generated.tables.AccountProfile.ACCOUNT_
 import static com.streamarr.server.jooq.generated.tables.HouseholdMembership.HOUSEHOLD_MEMBERSHIP;
 
 import com.streamarr.server.domain.auth.AccountProfile;
+import com.streamarr.server.domain.auth.MembershipVersionChange;
+import com.streamarr.server.services.auth.events.CounterBumpedEvent;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.AuditorAware;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,6 +21,7 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
 
   private final DSLContext dsl;
   private final AuditorAware<UUID> auditorAware;
+  private final ApplicationEventPublisher eventPublisher;
 
   @Override
   @Transactional
@@ -32,7 +36,8 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
         .set(ACCOUNT_PROFILE.LAST_MODIFIED_BY, auditUser)
         .execute();
 
-    bumpMembershipVersion(link, auditUser);
+    var versionChange = bumpMembershipVersion(link, auditUser);
+    publishVersionChange(versionChange);
   }
 
   @Override
@@ -51,17 +56,28 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
       return false;
     }
 
-    bumpMembershipVersion(link, auditUser);
+    var versionChange = bumpMembershipVersion(link, auditUser);
+    publishVersionChange(versionChange);
     return true;
   }
 
-  private void bumpMembershipVersion(AccountProfile link, UUID auditUser) {
-    dsl.update(HOUSEHOLD_MEMBERSHIP)
-        .set(HOUSEHOLD_MEMBERSHIP.MEMBERSHIP_VERSION, HOUSEHOLD_MEMBERSHIP_VERSION_SEQ.nextval())
-        .set(HOUSEHOLD_MEMBERSHIP.LAST_MODIFIED_ON, OffsetDateTime.now(ZoneOffset.UTC))
-        .set(HOUSEHOLD_MEMBERSHIP.LAST_MODIFIED_BY, auditUser)
-        .where(HOUSEHOLD_MEMBERSHIP.ACCOUNT_ID.eq(link.getAccountId()))
-        .and(HOUSEHOLD_MEMBERSHIP.HOUSEHOLD_ID.eq(link.getHouseholdId()))
-        .execute();
+  private MembershipVersionChange bumpMembershipVersion(AccountProfile link, UUID auditUser) {
+    var version =
+        dsl.update(HOUSEHOLD_MEMBERSHIP)
+            .set(
+                HOUSEHOLD_MEMBERSHIP.MEMBERSHIP_VERSION, HOUSEHOLD_MEMBERSHIP_VERSION_SEQ.nextval())
+            .set(HOUSEHOLD_MEMBERSHIP.LAST_MODIFIED_ON, OffsetDateTime.now(ZoneOffset.UTC))
+            .set(HOUSEHOLD_MEMBERSHIP.LAST_MODIFIED_BY, auditUser)
+            .where(HOUSEHOLD_MEMBERSHIP.ACCOUNT_ID.eq(link.getAccountId()))
+            .and(HOUSEHOLD_MEMBERSHIP.HOUSEHOLD_ID.eq(link.getHouseholdId()))
+            .returning(HOUSEHOLD_MEMBERSHIP.MEMBERSHIP_VERSION)
+            .fetchSingle(HOUSEHOLD_MEMBERSHIP.MEMBERSHIP_VERSION);
+    return new MembershipVersionChange(link.getAccountId(), link.getHouseholdId(), version);
+  }
+
+  private void publishVersionChange(MembershipVersionChange versionChange) {
+    eventPublisher.publishEvent(
+        CounterBumpedEvent.membership(
+            versionChange.accountId(), versionChange.householdId(), versionChange.version()));
   }
 }

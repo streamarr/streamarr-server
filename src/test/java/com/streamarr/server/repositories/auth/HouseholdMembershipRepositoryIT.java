@@ -9,6 +9,7 @@ import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
+import com.streamarr.server.services.auth.TokenVersionCache;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -27,6 +28,8 @@ class HouseholdMembershipRepositoryIT extends AbstractIntegrationTest {
   @Autowired private ProfileRepository profileRepository;
 
   @Autowired private AccountProfileRepository accountProfileRepository;
+
+  @Autowired private TokenVersionCache tokenVersionCache;
 
   @Test
   @DisplayName("Should advance version when membership revoked")
@@ -48,6 +51,28 @@ class HouseholdMembershipRepositoryIT extends AbstractIntegrationTest {
     assertThat(
             membershipRepository.findByAccountIdAndHouseholdId(account.getId(), household.getId()))
         .isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should refresh warmed version cache when membership revoked")
+  void shouldRefreshWarmedVersionCacheWhenMembershipRevoked() {
+    var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    var household = householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    var granted =
+        membershipRepository.grantMembership(
+            HouseholdMembership.builder()
+                .accountId(account.getId())
+                .householdId(household.getId())
+                .householdRole(HouseholdRole.MEMBER)
+                .build());
+    assertThat(tokenVersionCache.membershipVersion(account.getId(), household.getId()))
+        .contains(granted.version());
+
+    var revoked =
+        membershipRepository.revokeMembership(account.getId(), household.getId()).orElseThrow();
+
+    assertThat(tokenVersionCache.membershipVersion(account.getId(), household.getId()))
+        .contains(revoked.version());
   }
 
   @Test
@@ -117,6 +142,35 @@ class HouseholdMembershipRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should refresh warmed version cache when household role changed")
+  void shouldRefreshWarmedVersionCacheWhenHouseholdRoleChanged() {
+    var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    var household = householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
+    var granted =
+        membershipRepository.grantMembership(
+            HouseholdMembership.builder()
+                .accountId(account.getId())
+                .householdId(household.getId())
+                .householdRole(HouseholdRole.MEMBER)
+                .build());
+    assertThat(tokenVersionCache.membershipVersion(account.getId(), household.getId()))
+        .contains(granted.version());
+
+    var roleChanged =
+        membershipRepository
+            .changeRole(
+                HouseholdMembership.builder()
+                    .accountId(account.getId())
+                    .householdId(household.getId())
+                    .householdRole(HouseholdRole.PARENT)
+                    .build())
+            .orElseThrow();
+
+    assertThat(tokenVersionCache.membershipVersion(account.getId(), household.getId()))
+        .contains(roleChanged.version());
+  }
+
+  @Test
   @DisplayName("Should not reuse version when membership revoked and regranted")
   void shouldNotReuseVersionWhenMembershipRevokedAndRegranted() {
     var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
@@ -128,8 +182,12 @@ class HouseholdMembershipRepositoryIT extends AbstractIntegrationTest {
             .householdRole(HouseholdRole.MEMBER)
             .build();
     var firstGrant = membershipRepository.grantMembership(membership);
+    assertThat(tokenVersionCache.membershipVersion(account.getId(), household.getId()))
+        .contains(firstGrant.version());
     var revoked =
         membershipRepository.revokeMembership(account.getId(), household.getId()).orElseThrow();
+    assertThat(tokenVersionCache.membershipVersion(account.getId(), household.getId()))
+        .contains(revoked.version());
 
     var regranted =
         membershipRepository.grantMembership(
@@ -141,5 +199,7 @@ class HouseholdMembershipRepositoryIT extends AbstractIntegrationTest {
 
     assertThat(revoked.version()).isGreaterThan(firstGrant.version());
     assertThat(regranted.version()).isGreaterThan(revoked.version());
+    assertThat(tokenVersionCache.membershipVersion(account.getId(), household.getId()))
+        .contains(regranted.version());
   }
 }
