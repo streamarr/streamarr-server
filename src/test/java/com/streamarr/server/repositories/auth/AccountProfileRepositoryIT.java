@@ -91,7 +91,7 @@ class AccountProfileRepositoryIT extends AbstractIntegrationTest {
     var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
     var household = householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
     var membership =
-        householdMembershipRepository.save(
+        grantMembership(
             HouseholdMembership.builder()
                 .accountId(account.getId())
                 .householdId(household.getId())
@@ -114,5 +114,12 @@ class AccountProfileRepositoryIT extends AbstractIntegrationTest {
         .findById(membership.getId())
         .orElseThrow()
         .getMembershipVersion();
+  }
+
+  private HouseholdMembership grantMembership(HouseholdMembership membership) {
+    householdMembershipRepository.grantMembership(membership);
+    return householdMembershipRepository
+        .findByAccountIdAndHouseholdId(membership.getAccountId(), membership.getHouseholdId())
+        .orElseThrow();
   }
 }
