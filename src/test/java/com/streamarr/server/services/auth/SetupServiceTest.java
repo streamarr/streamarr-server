@@ -19,12 +19,15 @@ import com.streamarr.server.fakes.FakeSessionProgressRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
 import com.streamarr.server.fakes.FakeWatchHistoryRepository;
 import com.streamarr.server.fixtures.SessionProgressFixture;
+import java.sql.SQLException;
 import java.time.Instant;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 @Tag("UnitTest")
@@ -167,6 +170,39 @@ class SetupServiceTest {
 
     assertThatThrownBy(() -> setupService.setup(command))
         .isInstanceOf(SetupAlreadyCompletedException.class);
+  }
+
+  @Test
+  @DisplayName("Should surface integrity violation when constraint is not the admin email")
+  void shouldSurfaceIntegrityViolationWhenConstraintIsNotTheAdminEmail() {
+    var message = "duplicate key value violates unique constraint \"uq_other_constraint\"";
+    var foreignViolation =
+        new DataIntegrityViolationException(
+            message,
+            new ConstraintViolationException(
+                message, new SQLException(message, "23505"), "uq_other_constraint"));
+    var throwingRepository =
+        new FakeUserAccountRepository() {
+          @Override
+          public <S extends UserAccount> S saveAndFlush(S entity) {
+            throw foreignViolation;
+          }
+        };
+    var service =
+        new SetupService(
+            throwingRepository,
+            householdRepository,
+            membershipRepository,
+            profileRepository,
+            accountProfileRepository,
+            bootstrapRepository,
+            sessionProgressRepository,
+            watchHistoryRepository,
+            passwordEncoder);
+
+    var command = defaultCommandBuilder().build();
+
+    assertThatThrownBy(() -> service.setup(command)).isSameAs(foreignViolation);
   }
 
   @Test

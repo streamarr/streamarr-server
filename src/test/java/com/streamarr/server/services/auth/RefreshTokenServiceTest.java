@@ -28,6 +28,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import javax.crypto.Mac;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -307,6 +308,22 @@ class RefreshTokenServiceTest {
       assertThatThrownBy(() -> service.redeem("raw-token"))
           .isInstanceOf(IllegalStateException.class)
           .hasMessageContaining("SHA-256");
+    }
+  }
+
+  @Test
+  @DisplayName("Should fail fast when HMAC unavailable")
+  void shouldFailFastWhenHmacUnavailable() {
+    var issued = issueSession();
+
+    try (var macs = mockStatic(Mac.class)) {
+      macs.when(() -> Mac.getInstance("HmacSHA256"))
+          .thenThrow(new NoSuchAlgorithmException("unavailable"));
+
+      var rawToken = issued.rawToken();
+      assertThatThrownBy(() -> service.redeem(rawToken))
+          .isInstanceOf(IllegalStateException.class)
+          .hasMessageContaining("HMAC-SHA256");
     }
   }
 
