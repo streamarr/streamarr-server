@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -15,7 +16,7 @@ class SecretRecordToStringTest {
   @Test
   @DisplayName("Should not expose plaintext secrets in builder string representations")
   void shouldNotExposePlaintextSecretsInBuilderStringRepresentations() {
-    var secret = "builder-secret-value";
+    var secret = UUID.randomUUID().toString();
     var renderedValues =
         List.of(
             LoginCommand.builder().password(secret).toString(),
