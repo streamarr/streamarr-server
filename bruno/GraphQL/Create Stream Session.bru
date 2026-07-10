@@ -1,13 +1,13 @@
 meta {
   name: Create Stream Session
   type: graphql
-  seq: 2
+  seq: 6
 }
 
 post {
   url: {{BASE_URL}}/graphql
   body: graphql
-  auth: none
+  auth: inherit
 }
 
 body:graphql {
@@ -22,6 +22,14 @@ body:graphql {
 
 body:graphql:vars {
   {
-    "mediaFileId": ""
+    "mediaFileId": "{{MEDIA_FILE_ID}}"
   }
+}
+
+tests {
+  test("Should create a stream session", function() {
+    expect(res.status).to.equal(200);
+    expect(res.body).to.not.have.property("errors");
+    expect(res.body.data.createStreamSession.streamUrl).to.be.a("string");
+  });
 }

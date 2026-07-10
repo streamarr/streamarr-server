@@ -1,0 +1,47 @@
+meta {
+  name: Create Library
+  type: graphql
+  seq: 3
+}
+
+post {
+  url: {{BASE_URL}}/graphql
+  body: graphql
+  auth: inherit
+}
+
+body:graphql {
+  mutation AddLibrary($input: AddLibraryInput!) {
+    addLibrary(input: $input) {
+      id
+      name
+      status
+    }
+  }
+}
+
+body:graphql:vars {
+  {
+    "input": {
+      "name": "{{LIBRARY_NAME}}",
+      "filepath": "{{LIBRARY_PATH}}",
+      "type": "MOVIE",
+      "backend": "LOCAL",
+      "externalAgentStrategy": "TMDB"
+    }
+  }
+}
+
+script:post-response {
+  if (res.status === 200 && res.body.data?.addLibrary?.id) {
+    bru.setVar("LIBRARY_ID", res.body.data.addLibrary.id);
+  }
+}
+
+tests {
+  test("Should create a library", function() {
+    expect(res.status).to.equal(200);
+    expect(res.body).to.not.have.property("errors");
+    expect(res.body.data.addLibrary.id).to.be.a("string");
+  });
+}

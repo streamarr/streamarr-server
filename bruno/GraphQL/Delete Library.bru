@@ -1,0 +1,34 @@
+meta {
+  name: Delete Library
+  type: graphql
+  seq: 7
+  tags: [
+    destructive
+  ]
+}
+
+post {
+  url: {{BASE_URL}}/graphql
+  body: graphql
+  auth: inherit
+}
+
+body:graphql {
+  mutation DeleteLibrary($id: ID!) {
+    removeLibrary(id: $id)
+  }
+}
+
+body:graphql:vars {
+  {
+    "id": "{{LIBRARY_ID}}"
+  }
+}
+
+tests {
+  test("Should delete a library", function() {
+    expect(res.status).to.equal(200);
+    expect(res.body).to.not.have.property("errors");
+    expect(res.body.data.removeLibrary).to.equal(true);
+  });
+}

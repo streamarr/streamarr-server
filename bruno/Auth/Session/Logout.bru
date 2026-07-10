@@ -1,0 +1,28 @@
+meta {
+  name: Logout
+  type: http
+  seq: 4
+  tags: [
+    manual
+    stateful
+  ]
+}
+
+post {
+  url: {{BASE_URL}}/api/auth/logout
+  body: none
+  auth: inherit
+}
+
+script:post-response {
+  if (res.status === 204) {
+    bru.deleteVar("ACCESS_TOKEN");
+    bru.deleteVar("REFRESH_TOKEN");
+  }
+}
+
+tests {
+  test("Should revoke the authenticated session", function() {
+    expect(res.status).to.equal(204);
+  });
+}

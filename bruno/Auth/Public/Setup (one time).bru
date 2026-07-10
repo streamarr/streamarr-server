@@ -1,0 +1,46 @@
+meta {
+  name: Setup (one time)
+  type: http
+  seq: 5
+  tags: [
+    manual
+    stateful
+    public
+  ]
+}
+
+post {
+  url: {{BASE_URL}}/api/auth/setup
+  body: json
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}
+
+body:json {
+  {
+    "email": "{{AUTH_EMAIL}}",
+    "displayName": "{{AUTH_DISPLAY_NAME}}",
+    "password": "{{AUTH_PASSWORD}}",
+    "householdName": "{{AUTH_HOUSEHOLD_NAME}}",
+    "profileName": "{{AUTH_PROFILE_NAME}}",
+    "cookieMode": false
+  }
+}
+
+script:post-response {
+  if (res.status === 201 && res.body.accessToken && res.body.refreshToken) {
+    bru.setVar("ACCESS_TOKEN", res.body.accessToken);
+    bru.setVar("REFRESH_TOKEN", res.body.refreshToken);
+  }
+}
+
+tests {
+  test("Should create the initial admin session", function() {
+    expect(res.status).to.equal(201);
+    expect(res.body.accessToken).to.be.a("string");
+    expect(res.body.refreshToken).to.be.a("string");
+  });
+}
