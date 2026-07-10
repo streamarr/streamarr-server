@@ -58,6 +58,16 @@ class ArchitectureTest {
           .resideInAnyPackage("..graphql..")
           .as("Services must not depend on graphql");
 
+  @ArchTest
+  static final ArchRule authServicesMustNotDependOnJooq =
+      noClasses()
+          .that()
+          .resideInAPackage("..services.auth..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAPackage("org.jooq..")
+          .as("Auth services must not depend on jOOQ; DSLContext stays in repositories");
+
   // Transaction boundaries belong in services. A transactional controller/resolver would run
   // several service calls in one persistence context, where a JPA read can return Hibernate's
   // stale first-level-cache copy of a row a jOOQ write already changed (see AGENTS.md,

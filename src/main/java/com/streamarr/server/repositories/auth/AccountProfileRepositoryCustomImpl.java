@@ -5,7 +5,6 @@ import static com.streamarr.server.jooq.generated.tables.AccountProfile.ACCOUNT_
 import static com.streamarr.server.jooq.generated.tables.HouseholdMembership.HOUSEHOLD_MEMBERSHIP;
 
 import com.streamarr.server.domain.auth.AccountProfile;
-import com.streamarr.server.domain.auth.CounterKind;
 import com.streamarr.server.domain.auth.MembershipVersionChange;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -36,7 +35,7 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
         .execute();
 
     var versionChange = bumpMembershipVersion(link, auditUser);
-    publishVersionChange(versionChange);
+    counterChangePublisher.publishMembership(versionChange);
   }
 
   @Override
@@ -56,14 +55,13 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
     }
 
     var versionChange = bumpMembershipVersion(link, auditUser);
-    publishVersionChange(versionChange);
+    counterChangePublisher.publishMembership(versionChange);
     return true;
   }
 
   /**
-   * The globally allocated bump, its local cache event, and the cross-instance notify live here so
-   * no future profile-link path can forget any leg of the invariant (ADR 0015 requirement, ADR 0016
-   * propagation).
+   * Returns the globally allocated bump so each profile-link path can dispatch the local cache
+   * event and cross-instance notification together (ADR 0015 requirement, ADR 0016 propagation).
    */
   private MembershipVersionChange bumpMembershipVersion(AccountProfile link, UUID auditUser) {
     // The membership row is FK-guaranteed: every account_profile row references it, so the
@@ -79,15 +77,5 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
             .returning(HOUSEHOLD_MEMBERSHIP.MEMBERSHIP_VERSION)
             .fetchSingle(HOUSEHOLD_MEMBERSHIP.MEMBERSHIP_VERSION);
     return new MembershipVersionChange(link.getAccountId(), link.getHouseholdId(), version);
-  }
-
-  private void publishVersionChange(MembershipVersionChange versionChange) {
-    counterChangePublisher.publishMembership(versionChange);
-    CounterNotificationPublisher.publish(
-        dsl,
-        new CounterNotificationPayload(
-            CounterKind.MEMBERSHIP,
-            versionChange.accountId() + ":" + versionChange.householdId(),
-            versionChange.version()));
   }
 }

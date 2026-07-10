@@ -3,7 +3,6 @@ package com.streamarr.server.repositories.auth;
 import static com.streamarr.server.jooq.generated.Sequences.HOUSEHOLD_MEMBERSHIP_VERSION_SEQ;
 import static com.streamarr.server.jooq.generated.tables.HouseholdMembership.HOUSEHOLD_MEMBERSHIP;
 
-import com.streamarr.server.domain.auth.CounterKind;
 import com.streamarr.server.domain.auth.HouseholdMembership;
 import com.streamarr.server.domain.auth.MembershipVersionChange;
 import com.streamarr.server.jooq.generated.tables.records.HouseholdMembershipRecord;
@@ -33,7 +32,7 @@ public class HouseholdMembershipRepositoryCustomImpl
     entityManager.persist(membership);
     entityManager.flush();
     var versionChange = changeFrom(membership);
-    publishVersionChange(versionChange);
+    counterChangePublisher.publishMembership(versionChange);
     return versionChange;
   }
 
@@ -60,7 +59,7 @@ public class HouseholdMembershipRepositoryCustomImpl
                 HOUSEHOLD_MEMBERSHIP.MEMBERSHIP_VERSION)
             .fetchOptional(this::changeFrom);
 
-    versionChange.ifPresent(this::publishVersionChange);
+    versionChange.ifPresent(counterChangePublisher::publishMembership);
     return versionChange;
   }
 
@@ -88,7 +87,7 @@ public class HouseholdMembershipRepositoryCustomImpl
         .where(HOUSEHOLD_MEMBERSHIP.ACCOUNT_ID.eq(accountId))
         .and(HOUSEHOLD_MEMBERSHIP.HOUSEHOLD_ID.eq(householdId))
         .execute();
-    publishVersionChange(changed);
+    counterChangePublisher.publishMembership(changed);
     return versionChange;
   }
 
@@ -104,15 +103,5 @@ public class HouseholdMembershipRepositoryCustomImpl
 
   private long nextMembershipVersion() {
     return dsl.select(HOUSEHOLD_MEMBERSHIP_VERSION_SEQ.nextval()).fetchSingle().value1();
-  }
-
-  private void publishVersionChange(MembershipVersionChange versionChange) {
-    counterChangePublisher.publishMembership(versionChange);
-    CounterNotificationPublisher.publish(
-        dsl,
-        new CounterNotificationPayload(
-            CounterKind.MEMBERSHIP,
-            versionChange.accountId() + ":" + versionChange.householdId(),
-            versionChange.version()));
   }
 }

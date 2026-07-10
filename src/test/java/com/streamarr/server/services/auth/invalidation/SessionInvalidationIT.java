@@ -19,6 +19,7 @@ import com.streamarr.server.support.AuthTestSupport;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import org.jooq.DSLContext;
@@ -48,6 +49,8 @@ class SessionInvalidationIT extends AbstractIntegrationTest {
   @Autowired private HouseholdMembershipRepository membershipRepository;
 
   @Autowired private VersionCounterReader versionCounterReader;
+
+  @Autowired private TokenVersionCache localVersionCache;
 
   @Autowired private CounterNotificationConnectionSource connectionSource;
 
@@ -232,8 +235,8 @@ class SessionInvalidationIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should not notify other instances when membership mutation rolls back")
-  void shouldNotNotifyOtherInstancesWhenMembershipMutationRollsBack() {
+  @DisplayName("Should suppress local and remote invalidation when membership mutation rolls back")
+  void shouldSuppressLocalAndRemoteInvalidationWhenMembershipMutationRollsBack() {
     identity = authTestSupport.createIdentity();
     sentinelIdentity = authTestSupport.createIdentity();
     var accountId = identity.account().getId();
@@ -256,6 +259,7 @@ class SessionInvalidationIT extends AbstractIntegrationTest {
         .contains(staleVersion);
     assertThat(secondInstanceCache.membershipVersion(sentinelAccountId, sentinelHouseholdId))
         .contains(sentinelStaleVersion);
+    assertThat(localVersionCache.membershipVersion(accountId, householdId)).contains(staleVersion);
 
     var rolledBackVersion = new AtomicLong();
     transactionTemplate.executeWithoutResult(
@@ -296,11 +300,12 @@ class SessionInvalidationIT extends AbstractIntegrationTest {
         .contains(staleVersion);
     assertThat(secondInstanceCache.membershipVersion(accountId, householdId))
         .contains(staleVersion);
+    assertThat(localVersionCache.membershipVersion(accountId, householdId)).contains(staleVersion);
   }
 
   @Test
-  @DisplayName("Should not notify other instances when the bumping transaction rolls back")
-  void shouldNotNotifyOtherInstancesWhenBumpingTransactionRollsBack() {
+  @DisplayName("Should suppress local and remote invalidation when bumping transaction rolls back")
+  void shouldSuppressLocalAndRemoteInvalidationWhenBumpingTransactionRollsBack() {
     identity = authTestSupport.createIdentity();
     sentinelIdentity = authTestSupport.createIdentity();
     var rolledBackSessionId = identity.session().getId();
@@ -314,6 +319,7 @@ class SessionInvalidationIT extends AbstractIntegrationTest {
 
     assertThat(secondInstanceCache.sessionVersion(rolledBackSessionId)).contains(0L);
     assertThat(secondInstanceCache.sessionVersion(sentinelSessionId)).contains(0L);
+    assertThat(localVersionCache.sessionVersion(rolledBackSessionId)).contains(0L);
 
     // A notification for this revoke must never leave the database: the transaction rolls back.
     transactionTemplate.executeWithoutResult(
@@ -332,6 +338,64 @@ class SessionInvalidationIT extends AbstractIntegrationTest {
             () -> assertThat(secondInstanceCache.sessionVersion(sentinelSessionId)).contains(1L));
 
     assertThat(secondInstanceCache.sessionVersion(rolledBackSessionId)).contains(0L);
+    assertThat(localVersionCache.sessionVersion(rolledBackSessionId)).contains(0L);
+  }
+
+  @Test
+  @DisplayName("Should deliver session notification only after bumping transaction commits")
+  void shouldDeliverSessionNotificationOnlyAfterBumpingTransactionCommits() throws Exception {
+    identity = authTestSupport.createIdentity();
+    sentinelIdentity = authTestSupport.createIdentity();
+    var sessionId = identity.session().getId();
+    var sentinelSessionId = sentinelIdentity.session().getId();
+
+    var secondInstanceCache = new TokenVersionCache(versionCounterReader);
+    secondInstanceListener =
+        new CounterNotificationListener(secondInstanceCache, connectionSource, backoff);
+    secondInstanceListener.start();
+    await().atMost(Duration.ofSeconds(10)).until(secondInstanceListener::isListening);
+
+    assertThat(secondInstanceCache.sessionVersion(sessionId)).contains(0L);
+    assertThat(secondInstanceCache.sessionVersion(sentinelSessionId)).contains(0L);
+
+    var bumpWritten = new CountDownLatch(1);
+    var allowCommit = new CountDownLatch(1);
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var committedVersion =
+          executor.submit(
+              () ->
+                  transactionTemplate.execute(
+                      _ -> {
+                        var version =
+                            sessionRepository.bumpVersion(sessionId, Instant.now()).orElseThrow();
+                        bumpWritten.countDown();
+                        awaitLatch(allowCommit);
+                        return version;
+                      }));
+
+      try {
+        assertThat(bumpWritten.await(10, TimeUnit.SECONDS)).isTrue();
+
+        // A committed sentinel proves the listener drained everything deliverable while the
+        // target transaction remained open. The target notification must still be invisible.
+        sessionRepository.revoke(sentinelSessionId, SessionRevocationReason.LOGOUT, Instant.now());
+        await()
+            .atMost(Duration.ofSeconds(10))
+            .untilAsserted(
+                () ->
+                    assertThat(secondInstanceCache.sessionVersion(sentinelSessionId)).contains(1L));
+        assertThat(secondInstanceCache.sessionVersion(sessionId)).contains(0L);
+      } finally {
+        allowCommit.countDown();
+      }
+
+      assertThat(committedVersion.get(10, TimeUnit.SECONDS)).isEqualTo(1L);
+    }
+
+    await()
+        .atMost(Duration.ofSeconds(10))
+        .untilAsserted(
+            () -> assertThat(secondInstanceCache.sessionVersion(sessionId)).contains(1L));
   }
 
   @Test
@@ -427,5 +491,16 @@ class SessionInvalidationIT extends AbstractIntegrationTest {
                 DSL.val(CounterNotificationPayload.CHANNEL),
                 DSL.val(payload)))
         .fetch();
+  }
+
+  private static void awaitLatch(CountDownLatch latch) {
+    try {
+      if (!latch.await(10, TimeUnit.SECONDS)) {
+        throw new AssertionError("transaction was not released before the timeout");
+      }
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new AssertionError(e);
+    }
   }
 }

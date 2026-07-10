@@ -11,7 +11,6 @@ import com.streamarr.server.config.security.AuthThrottleProperties;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.exceptions.TokenReuseDetectedException;
 import com.streamarr.server.exceptions.TooManyLoginAttemptsException;
-import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeRefreshTokenRepository;
 import com.streamarr.server.fakes.FakeVersionCounterReader;
@@ -38,7 +37,6 @@ class AuthSecurityEventLoggingTest {
     var clock = new MutableClock(currentTime);
     var sessionRepository = new FakeAuthSessionRepository();
     var tokenRepository = new FakeRefreshTokenRepository();
-    var eventPublisher = new CapturingEventPublisher();
     var service =
         new RefreshTokenService(
             sessionRepository,
@@ -51,8 +49,7 @@ class AuthSecurityEventLoggingTest {
                 .build(),
             clock,
             new TokenReuseRevoker(
-                new TokenReuseRevocationWriter(sessionRepository, tokenRepository, eventPublisher)),
-            eventPublisher);
+                new TokenReuseRevocationWriter(sessionRepository, tokenRepository)));
     var account = AccountFixture.defaultAccountBuilder().build();
     var issued = service.createSession(account, "security-log-test");
     service.redeem(issued.rawToken());
