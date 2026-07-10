@@ -70,7 +70,7 @@ public class SetupService {
                 .defaultRatingRegion(DEFAULT_RATING_REGION)
                 .build());
 
-    membershipRepository.save(
+    membershipRepository.grantMembership(
         HouseholdMembership.builder()
             .accountId(admin.getId())
             .householdId(household.getId())

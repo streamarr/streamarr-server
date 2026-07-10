@@ -1,13 +1,20 @@
 package com.streamarr.server.repositories.auth;
 
 import com.streamarr.server.domain.auth.HouseholdMembership;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.stereotype.Repository;
+import org.springframework.data.repository.Repository;
 
-@Repository
-public interface HouseholdMembershipRepository extends JpaRepository<HouseholdMembership, UUID> {
+/**
+ * Deliberately narrowed so membership grants and revocations cannot bypass version invalidation.
+ */
+public interface HouseholdMembershipRepository
+    extends Repository<HouseholdMembership, UUID>, HouseholdMembershipRepositoryCustom {
+
+  Optional<HouseholdMembership> findById(UUID id);
 
   Optional<HouseholdMembership> findByAccountIdAndHouseholdId(UUID accountId, UUID householdId);
+
+  List<HouseholdMembership> findByAccountId(UUID accountId);
 }
