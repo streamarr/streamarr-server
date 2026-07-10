@@ -1,5 +1,6 @@
 package com.streamarr.server.controllers.auth;
 
+import com.streamarr.server.config.security.StreamarrBearerTokenResolver;
 import com.streamarr.server.exceptions.InvalidRefreshTokenException;
 import com.streamarr.server.services.auth.AccessToken;
 import com.streamarr.server.services.auth.AccessTokenIssuer;
@@ -58,7 +59,7 @@ public class AuthController {
 
   @PostMapping("/change-password")
   public ResponseEntity<AuthTokensResponse> changePassword(
-      @Valid @RequestBody ChangePasswordRequest request) {
+      @Valid @RequestBody ChangePasswordRequest request, HttpServletRequest httpRequest) {
     var identity = authorizationService.currentIdentity();
     var result =
         passwordChangeService.changePassword(
@@ -72,27 +73,35 @@ public class AuthController {
     var context = sessionScopeService.revalidateStoredContext(result.account(), result.session());
     var accessToken = accessTokenIssuer.issue(context);
 
-    return respond(HttpStatus.OK, accessToken, result.rawRefreshToken(), request.cookieMode());
+    return respond(
+        HttpStatus.OK,
+        accessToken,
+        result.rawRefreshToken(),
+        StreamarrBearerTokenResolver.usedAccessCookie(httpRequest));
   }
 
   @PostMapping("/select-household")
   public ResponseEntity<AuthTokensResponse> selectHousehold(
-      @Valid @RequestBody SelectHouseholdRequest request) {
+      @Valid @RequestBody SelectHouseholdRequest request, HttpServletRequest httpRequest) {
     var identity = authorizationService.currentIdentity();
     var context =
         sessionScopeService.selectHousehold(
             identity.accountId(), identity.sessionId(), request.householdId());
-    return respondAccessOnly(accessTokenIssuer.issue(context), request.cookieMode());
+    return respondAccessOnly(
+        accessTokenIssuer.issue(context),
+        StreamarrBearerTokenResolver.usedAccessCookie(httpRequest));
   }
 
   @PostMapping("/select-profile")
   public ResponseEntity<AuthTokensResponse> selectProfile(
-      @Valid @RequestBody SelectProfileRequest request) {
+      @Valid @RequestBody SelectProfileRequest request, HttpServletRequest httpRequest) {
     var identity = authorizationService.currentIdentity();
     var context =
         sessionScopeService.selectProfile(
             identity.accountId(), identity.sessionId(), request.profileId());
-    return respondAccessOnly(accessTokenIssuer.issue(context), request.cookieMode());
+    return respondAccessOnly(
+        accessTokenIssuer.issue(context),
+        StreamarrBearerTokenResolver.usedAccessCookie(httpRequest));
   }
 
   @PostMapping("/setup")

@@ -584,17 +584,50 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should set access cookie only when selecting profile in cookie mode")
-  void shouldSetAccessCookieOnlyWhenSelectingProfileInCookieMode() throws Exception {
+  @DisplayName("Should prefer bearer response when profile selection also carries access cookie")
+  void shouldPreferBearerResponseWhenProfileSelectionAlsoCarriesAccessCookie() throws Exception {
     var householdToken = householdScopedTokenWithTwoProfiles();
+    var accessCookie = cookieModeLogin().getCookie("streamarr_access");
 
     mockMvc
         .perform(
             post("/api/auth/select-profile")
                 .contentType(MediaType.APPLICATION_JSON)
                 .header("Authorization", "Bearer " + householdToken)
+                .cookie(accessCookie)
                 .content(
                     "{\"profileId\": \"%s\", \"cookieMode\": true}".formatted(profile.getId())))
+        .andExpect(status().isOk())
+        .andExpect(cookie().doesNotExist("streamarr_access"))
+        .andExpect(cookie().doesNotExist("streamarr_refresh"))
+        .andExpect(jsonPath("$.accessToken").isNotEmpty());
+  }
+
+  @Test
+  @DisplayName("Should never expose access token body to cookie authenticated browser")
+  void shouldNeverExposeAccessTokenBodyToCookieAuthenticatedBrowser() throws Exception {
+    seedSingleProfileIdentity();
+    var secondProfile =
+        profileRepository.save(
+            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+    accountProfileRepository.linkProfile(
+        AccountProfile.builder()
+            .accountId(account.getId())
+            .householdId(household.getId())
+            .profileId(secondProfile.getId())
+            .build());
+    var loginResponse = cookieModeLogin();
+    var accessCookie = loginResponse.getCookie("streamarr_access");
+    var csrfCookie = loginResponse.getCookie("XSRF-TOKEN");
+
+    mockMvc
+        .perform(
+            post("/api/auth/select-profile")
+                .contentType(MediaType.APPLICATION_JSON)
+                .cookie(accessCookie, csrfCookie)
+                .header("X-XSRF-TOKEN", csrfCookie.getValue())
+                .content(
+                    "{\"profileId\": \"%s\", \"cookieMode\": false}".formatted(profile.getId())))
         .andExpect(status().isOk())
         .andExpect(cookie().exists("streamarr_access"))
         .andExpect(cookie().doesNotExist("streamarr_refresh"))
@@ -672,6 +705,29 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
                 .content(
                     "{\"householdId\": \"%s\", \"cookieMode\": true}".formatted(household.getId())))
         .andExpect(status().isForbidden());
+  }
+
+  @Test
+  @DisplayName("Should keep cookie authenticated household selection in cookie response")
+  void shouldKeepCookieAuthenticatedHouseholdSelectionInCookieResponse() throws Exception {
+    seedSingleProfileIdentity();
+    var loginResponse = cookieModeLogin();
+    var accessCookie = loginResponse.getCookie("streamarr_access");
+    var csrfCookie = loginResponse.getCookie("XSRF-TOKEN");
+
+    mockMvc
+        .perform(
+            post("/api/auth/select-household")
+                .contentType(MediaType.APPLICATION_JSON)
+                .cookie(accessCookie, csrfCookie)
+                .header("X-XSRF-TOKEN", csrfCookie.getValue())
+                .content(
+                    "{\"householdId\": \"%s\", \"cookieMode\": false}"
+                        .formatted(household.getId())))
+        .andExpect(status().isOk())
+        .andExpect(cookie().exists("streamarr_access"))
+        .andExpect(cookie().doesNotExist("streamarr_refresh"))
+        .andExpect(jsonPath("$.accessToken").doesNotExist());
   }
 
   @Test
@@ -793,6 +849,32 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(refreshBody(oldRefreshToken)))
         .andExpect(status().isUnauthorized());
+  }
+
+  @Test
+  @DisplayName("Should keep cookie authenticated password change in cookie response")
+  void shouldKeepCookieAuthenticatedPasswordChangeInCookieResponse() throws Exception {
+    seedSingleProfileIdentity();
+    var loginResponse = cookieModeLogin();
+    var accessCookie = loginResponse.getCookie("streamarr_access");
+    var csrfCookie = loginResponse.getCookie("XSRF-TOKEN");
+
+    mockMvc
+        .perform(
+            post("/api/auth/change-password")
+                .contentType(MediaType.APPLICATION_JSON)
+                .cookie(accessCookie, csrfCookie)
+                .header("X-XSRF-TOKEN", csrfCookie.getValue())
+                .content(
+                    """
+                    {"currentPassword": "%s", "newPassword": "%s", "cookieMode": false}
+                    """
+                        .formatted(PASSWORD, "a brand new passphrase!")))
+        .andExpect(status().isOk())
+        .andExpect(cookie().exists("streamarr_access"))
+        .andExpect(cookie().exists("streamarr_refresh"))
+        .andExpect(jsonPath("$.accessToken").doesNotExist())
+        .andExpect(jsonPath("$.refreshToken").doesNotExist());
   }
 
   @Test

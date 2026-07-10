@@ -15,6 +15,9 @@ import org.springframework.security.oauth2.server.resource.web.DefaultBearerToke
  */
 public class StreamarrBearerTokenResolver implements BearerTokenResolver {
 
+  private static final String CARRIER_ATTRIBUTE =
+      StreamarrBearerTokenResolver.class.getName() + ".carrier";
+
   private static final Set<String> UNAUTHENTICATED_AUTH_PATHS =
       Set.of("/api/auth/status", "/api/auth/setup", "/api/auth/login", "/api/auth/refresh");
 
@@ -28,10 +31,19 @@ public class StreamarrBearerTokenResolver implements BearerTokenResolver {
 
     var headerToken = headerResolver.resolve(request);
     if (headerToken != null) {
+      request.setAttribute(CARRIER_ATTRIBUTE, CredentialCarrier.HEADER);
       return headerToken;
     }
 
-    return accessCookieValue(request);
+    var cookieToken = accessCookieValue(request);
+    if (cookieToken != null) {
+      request.setAttribute(CARRIER_ATTRIBUTE, CredentialCarrier.COOKIE);
+    }
+    return cookieToken;
+  }
+
+  public static boolean usedAccessCookie(HttpServletRequest request) {
+    return request.getAttribute(CARRIER_ATTRIBUTE) == CredentialCarrier.COOKIE;
   }
 
   private static String pathWithinApplication(HttpServletRequest request) {
@@ -50,5 +62,10 @@ public class StreamarrBearerTokenResolver implements BearerTokenResolver {
         .filter(value -> !value.isBlank())
         .findFirst()
         .orElse(null);
+  }
+
+  private enum CredentialCarrier {
+    HEADER,
+    COOKIE
   }
 }
