@@ -15,6 +15,7 @@ public class SecurityConfig {
    * <p>CSRF protects unsafe requests carrying the auth-cookie names reserved for the next PR while
    * leaving the current non-cookie API behavior unchanged.
    */
+  @SuppressWarnings("java:S4502")
   @Bean
   SecurityFilterChain securityFilterChain(HttpSecurity http) {
     return http.csrf(
