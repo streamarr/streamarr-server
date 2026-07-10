@@ -1,6 +1,6 @@
 interface BaseCollectable {
     id: ID!
-    createdBy: String!
+    createdBy: String
     createdOn: String!
     lastModifiedBy: String
     lastModifiedOn: String!

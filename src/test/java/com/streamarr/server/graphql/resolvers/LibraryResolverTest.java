@@ -19,6 +19,7 @@ import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.streaming.WatchStatus;
+import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
 import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.CursorValidator;
@@ -34,8 +35,10 @@ import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PageItem;
 import com.streamarr.server.services.pagination.PaginationService;
+import com.streamarr.server.support.security.WithAccountContext;
 import com.streamarr.server.support.security.WithProfileContext;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
@@ -70,6 +73,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 class LibraryResolverTest {
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
+
+  @Autowired private LibraryResolver libraryResolver;
 
   @MockitoBean private ProfileRepository profileRepository;
 
@@ -133,6 +138,26 @@ class LibraryResolverTest {
               "{ libraries { name } }", "data.libraries[*].name");
 
       assertThat(names).containsExactly("Movies", "TV Shows");
+    }
+
+    @Test
+    @DisplayName("Should return background-created library when creator absent")
+    void shouldReturnBackgroundCreatedLibraryWhenCreatorAbsent() {
+      var libraryId = UUID.randomUUID();
+      var library = buildMovieLibrary(libraryId);
+
+      when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
+
+      var result =
+          dgsQueryExecutor.execute(
+              String.format("{ library(id: \"%s\") { name createdBy } }", libraryId));
+
+      assertThat(result.getErrors()).isEmpty();
+      var data = result.<Map<String, Object>>getData();
+      var libraryData = (Map<?, ?>) data.get("library");
+      assertThat(libraryData.get("name")).isEqualTo("Movies");
+      assertThat(libraryData.containsKey("createdBy")).isTrue();
+      assertThat(libraryData.get("createdBy")).isNull();
     }
   }
 
@@ -472,6 +497,14 @@ class LibraryResolverTest {
   @Nested
   @DisplayName("Alphabet Index")
   class AlphabetIndexTests {
+
+    @Test
+    @WithAccountContext
+    @DisplayName("Should require profile scope when resolving alphabet index")
+    void shouldRequireProfileScopeWhenResolvingAlphabetIndex() {
+      assertThatThrownBy(() -> libraryResolver.alphabetIndex(null))
+          .isInstanceOf(ProfileRequiredException.class);
+    }
 
     @Test
     @DisplayName("Should return alphabet index when library exists")

@@ -27,8 +27,9 @@ public class SecurityConfig {
   /**
    * The permit matrix: pre-auth endpoints and health stay open; non-health actuator endpoints are
    * refused for everyone; streams demand SCOPE_PLAYBACK carried in the playback-URL token (outside
-   * the hierarchy); everything else — GraphQL including introspection, images, future surfaces —
-   * demands SCOPE_ACCOUNT, which household and profile tokens satisfy through the scope hierarchy.
+   * the hierarchy); images demand SCOPE_PROFILE; everything else — GraphQL including introspection
+   * and future surfaces — demands SCOPE_ACCOUNT, which household and profile tokens satisfy through
+   * the scope hierarchy.
    *
    * <p>CSRF (SPA shape: readable XSRF-TOKEN cookie, Xor handler) protects exactly the
    * cookie-authenticated requests. The filter is wired manually because the resource-server DSL
@@ -54,6 +55,8 @@ public class SecurityConfig {
                     .denyAll()
                     .requestMatchers(SecurityRequestMatchers.STREAM_PATHS)
                     .hasAuthority(TokenScope.PLAYBACK.authority())
+                    .requestMatchers("/api/images/**")
+                    .hasAuthority(TokenScope.PROFILE.authority())
                     .anyRequest()
                     .hasAuthority(TokenScope.ACCOUNT.authority()))
         .oauth2ResourceServer(

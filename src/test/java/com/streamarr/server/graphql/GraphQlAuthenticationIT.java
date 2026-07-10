@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.support.AuthTestSupport;
+import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -47,5 +48,36 @@ class GraphQlAuthenticationIT extends AbstractIntegrationTest {
                 .with(bearer(authTestSupport.expiredProfileBearer(identity))))
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.code").value("EXPIRED_TOKEN"));
+  }
+
+  @Test
+  @DisplayName("Should require profile scope when querying libraries")
+  void shouldRequireProfileScopeWhenQueryingLibraries() throws Exception {
+    identity = authTestSupport.createIdentity();
+
+    mockMvc
+        .perform(
+            post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"query\": \"{ libraries { id } }\"}")
+                .with(bearer(authTestSupport.accountBearer(identity))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors[0].extensions.code").value("PROFILE_REQUIRED"));
+  }
+
+  @Test
+  @DisplayName("Should require profile scope when querying a library")
+  void shouldRequireProfileScopeWhenQueryingLibrary() throws Exception {
+    identity = authTestSupport.createIdentity();
+    var query = "{ library(id: \"%s\") { id } }".formatted(UUID.randomUUID());
+
+    mockMvc
+        .perform(
+            post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"query\": \"" + query.replace("\"", "\\\"") + "\"}")
+                .with(bearer(authTestSupport.accountBearer(identity))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors[0].extensions.code").value("PROFILE_REQUIRED"));
   }
 }
