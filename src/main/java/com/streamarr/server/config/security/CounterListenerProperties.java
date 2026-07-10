@@ -10,4 +10,18 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  */
 @Builder
 @ConfigurationProperties(prefix = "auth.counter-listener")
-public record CounterListenerProperties(String jdbcUrl, String username, String password) {}
+public record CounterListenerProperties(String jdbcUrl, String username, String password) {
+
+  public static class CounterListenerPropertiesBuilder {
+
+    @Override
+    public String toString() {
+      return "CounterListenerPropertiesBuilder[REDACTED]";
+    }
+  }
+
+  @Override
+  public String toString() {
+    return "CounterListenerProperties[REDACTED]";
+  }
+}
