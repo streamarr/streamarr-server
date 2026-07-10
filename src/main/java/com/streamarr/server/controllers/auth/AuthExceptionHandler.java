@@ -17,6 +17,10 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice(assignableTypes = AuthController.class)
 public class AuthExceptionHandler {
 
+  // One body for unknown, expired, and reused tokens: the response must not reveal whether a
+  // presented refresh token was ever valid.
+  private static final String REFRESH_TOKEN_REJECTED = "The refresh token is unknown or expired.";
+
   @ExceptionHandler(SetupAlreadyCompletedException.class)
   public ResponseEntity<AuthErrorResponse> handleSetupAlreadyCompleted(
       SetupAlreadyCompletedException e) {
@@ -34,8 +38,8 @@ public class AuthExceptionHandler {
   }
 
   @ExceptionHandler({InvalidRefreshTokenException.class, TokenReuseDetectedException.class})
-  public ResponseEntity<AuthErrorResponse> handleInvalidRefresh(RuntimeException e) {
-    return respond(HttpStatus.UNAUTHORIZED, "INVALID_REFRESH_TOKEN", e);
+  public ResponseEntity<AuthErrorResponse> handleInvalidRefresh() {
+    return respond(HttpStatus.UNAUTHORIZED, "INVALID_REFRESH_TOKEN", REFRESH_TOKEN_REJECTED);
   }
 
   @ExceptionHandler(AuthenticationRequiredException.class)
@@ -61,6 +65,11 @@ public class AuthExceptionHandler {
 
   private static ResponseEntity<AuthErrorResponse> respond(
       HttpStatus status, String code, RuntimeException e) {
-    return ResponseEntity.status(status).body(new AuthErrorResponse(code, e.getMessage()));
+    return respond(status, code, e.getMessage());
+  }
+
+  private static ResponseEntity<AuthErrorResponse> respond(
+      HttpStatus status, String code, String message) {
+    return ResponseEntity.status(status).body(new AuthErrorResponse(code, message));
   }
 }

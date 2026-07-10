@@ -6,10 +6,8 @@ import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
 import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
-import com.streamarr.server.exceptions.InvalidRefreshTokenException;
 import com.streamarr.server.exceptions.ProfileAccessDeniedException;
 import com.streamarr.server.exceptions.SetupAlreadyCompletedException;
-import com.streamarr.server.exceptions.TokenReuseDetectedException;
 import com.streamarr.server.exceptions.TooManyLoginAttemptsException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -57,28 +55,17 @@ class AuthExceptionHandlerTest {
   }
 
   @Test
-  @DisplayName("Should respond 401 invalid refresh token when refresh token rejected")
-  void shouldRespond401InvalidRefreshTokenWhenRefreshTokenRejected() {
-    var response = handler.handleInvalidRefresh(new InvalidRefreshTokenException());
+  @DisplayName("Should respond 401 with one body when any refresh token rejected")
+  void shouldRespond401WithOneBodyWhenAnyRefreshTokenRejected() {
+    // Reuse detection and unknown/expired tokens share one handler with no exception
+    // parameter, so the body cannot reveal whether a presented token was ever valid.
+    var response = handler.handleInvalidRefresh();
 
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
     assertThat(response.getBody())
         .isEqualTo(
             new AuthErrorResponse(
                 "INVALID_REFRESH_TOKEN", "The refresh token is unknown or expired."));
-  }
-
-  @Test
-  @DisplayName("Should respond 401 invalid refresh token when reuse detected")
-  void shouldRespond401InvalidRefreshTokenWhenReuseDetected() {
-    var response = handler.handleInvalidRefresh(new TokenReuseDetectedException());
-
-    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
-    assertThat(response.getBody())
-        .isEqualTo(
-            new AuthErrorResponse(
-                "INVALID_REFRESH_TOKEN",
-                "Refresh token reuse detected; the session has been revoked."));
   }
 
   @Test
