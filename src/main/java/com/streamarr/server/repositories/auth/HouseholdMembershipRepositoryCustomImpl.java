@@ -6,7 +6,6 @@ import static com.streamarr.server.jooq.generated.tables.HouseholdMembership.HOU
 import com.streamarr.server.domain.auth.HouseholdMembership;
 import com.streamarr.server.domain.auth.MembershipVersionChange;
 import com.streamarr.server.jooq.generated.tables.records.HouseholdMembershipRecord;
-import com.streamarr.server.services.auth.events.CounterBumpedEvent;
 import jakarta.persistence.EntityManager;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -14,7 +13,6 @@ import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.AuditorAware;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,7 +23,7 @@ public class HouseholdMembershipRepositoryCustomImpl
   private final EntityManager entityManager;
   private final DSLContext dsl;
   private final AuditorAware<UUID> auditorAware;
-  private final ApplicationEventPublisher eventPublisher;
+  private final CounterChangePublisher counterChangePublisher;
 
   @Override
   @Transactional
@@ -34,7 +32,7 @@ public class HouseholdMembershipRepositoryCustomImpl
     entityManager.persist(membership);
     entityManager.flush();
     var versionChange = changeFrom(membership);
-    publishVersionChange(versionChange);
+    counterChangePublisher.publishMembership(versionChange);
     return versionChange;
   }
 
@@ -61,7 +59,7 @@ public class HouseholdMembershipRepositoryCustomImpl
                 HOUSEHOLD_MEMBERSHIP.MEMBERSHIP_VERSION)
             .fetchOptional(this::changeFrom);
 
-    versionChange.ifPresent(this::publishVersionChange);
+    versionChange.ifPresent(counterChangePublisher::publishMembership);
     return versionChange;
   }
 
@@ -85,7 +83,7 @@ public class HouseholdMembershipRepositoryCustomImpl
     }
 
     var changed = versionChange.orElseThrow();
-    publishVersionChange(changed);
+    counterChangePublisher.publishMembership(changed);
     dsl.deleteFrom(HOUSEHOLD_MEMBERSHIP)
         .where(HOUSEHOLD_MEMBERSHIP.ACCOUNT_ID.eq(accountId))
         .and(HOUSEHOLD_MEMBERSHIP.HOUSEHOLD_ID.eq(householdId))
@@ -105,11 +103,5 @@ public class HouseholdMembershipRepositoryCustomImpl
 
   private long nextMembershipVersion() {
     return dsl.select(HOUSEHOLD_MEMBERSHIP_VERSION_SEQ.nextval()).fetchSingle().value1();
-  }
-
-  private void publishVersionChange(MembershipVersionChange versionChange) {
-    eventPublisher.publishEvent(
-        CounterBumpedEvent.membership(
-            versionChange.accountId(), versionChange.householdId(), versionChange.version()));
   }
 }

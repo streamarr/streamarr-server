@@ -140,8 +140,9 @@ public class RefreshTokenService {
       return new RefreshResult.SupersededReplay(session);
     }
 
-    if (token.getStatus() == RefreshTokenStatus.ACTIVE) {
-      // Active but past expiry — stale, not theft.
+    if (token.getStatus() != RefreshTokenStatus.ROTATED) {
+      // An expired ACTIVE token is stale. A REVOKED token may have lost a race to intentional
+      // family reissue. Only a past-grace ROTATED token proves reuse.
       throw new InvalidRefreshTokenException();
     }
 
