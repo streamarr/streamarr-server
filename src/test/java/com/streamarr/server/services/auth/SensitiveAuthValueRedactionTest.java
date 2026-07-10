@@ -14,6 +14,7 @@ import java.util.UUID;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -35,6 +36,23 @@ class SensitiveAuthValueRedactionTest {
   @DisplayName("Should omit password fields from auth value string representations")
   void shouldOmitPasswordFieldsFromAuthValueStringRepresentations(Object value) {
     assertThat(value.toString()).doesNotContainIgnoringCase("password=");
+  }
+
+  @Test
+  @DisplayName("Should include safe metadata when rendering token response")
+  void shouldIncludeSafeMetadataWhenRenderingTokenResponse() {
+    var expiresAt = Instant.parse("2026-07-10T12:00:00Z");
+    var response =
+        AuthTokensResponse.builder()
+            .accessToken(SECRET_MARKER)
+            .accessTokenExpiresAt(expiresAt)
+            .scope("profile")
+            .refreshToken(SECRET_MARKER)
+            .build();
+
+    assertThat(response.toString())
+        .contains("accessTokenExpiresAt=" + expiresAt, "scope=profile")
+        .doesNotContain(SECRET_MARKER, "%s");
   }
 
   private static Stream<Object> secretBearingValues() {
