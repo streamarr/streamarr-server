@@ -61,7 +61,9 @@ public class PlaybackTokenQueryRedactionFilter extends OncePerRequestFilter {
       try {
         return "t".equals(URLDecoder.decode(encodedName, StandardCharsets.UTF_8));
       } catch (IllegalArgumentException _) {
-        return false;
+        // Fail closed: a name we cannot decode is redacted rather than risk leaking a token into
+        // access logs and traces. Dropping an unclassifiable parameter is the safe direction.
+        return true;
       }
     }
   }
