@@ -75,7 +75,6 @@ public class FakeAccountProfileRepository extends FakeJpaRepository<AccountProfi
             membership ->
                 link.getAccountId().equals(membership.getAccountId())
                     && link.getHouseholdId().equals(membership.getHouseholdId()))
-        .forEach(
-            membership -> membership.setMembershipVersion(membership.getMembershipVersion() + 1));
+        .forEach(membershipRepository::bumpVersion);
   }
 }

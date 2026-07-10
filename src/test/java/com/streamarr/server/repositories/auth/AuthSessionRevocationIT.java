@@ -93,6 +93,34 @@ class AuthSessionRevocationIT extends AbstractIntegrationTest {
         .isEqualTo(RefreshTokenStatus.ACTIVE);
   }
 
+  @Test
+  @DisplayName("Should not report active token when expired")
+  void shouldNotReportActiveTokenWhenExpired() {
+    account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    var expiredSession = saveSession();
+    var currentSession = saveSession();
+    var now = Instant.parse("2026-01-01T00:00:02Z");
+    var expired =
+        refreshTokenRepository.save(
+            tokenBuilder(expiredSession)
+                .status(RefreshTokenStatus.ACTIVE)
+                .expiresAt(now.minusSeconds(1))
+                .build());
+    var current =
+        refreshTokenRepository.save(
+            tokenBuilder(currentSession)
+                .status(RefreshTokenStatus.ACTIVE)
+                .expiresAt(now.plusSeconds(1))
+                .build());
+
+    assertThat(
+            refreshTokenRepository.isActiveToken(expiredSession.getId(), expired.getDigest(), now))
+        .isFalse();
+    assertThat(
+            refreshTokenRepository.isActiveToken(currentSession.getId(), current.getDigest(), now))
+        .isTrue();
+  }
+
   private AuthSession saveSession() {
     return authSessionRepository.save(
         AuthSession.builder().accountId(account.getId()).deviceName("revocation-test").build());

@@ -83,15 +83,15 @@ class RefreshTokenServiceTest {
   }
 
   @Test
-  @DisplayName("Should issue access without rotation when rotated token redeemed within grace")
-  void shouldIssueAccessWithoutRotationWhenRotatedTokenRedeemedWithinGrace() {
+  @DisplayName("Should return same successor when rotated token redeemed within grace")
+  void shouldReturnSameSuccessorWhenRotatedTokenRedeemedWithinGrace() {
     var issued = issueSession();
-    service.redeem(issued.rawToken());
+    var rotation = (RefreshResult.Rotated) service.redeem(issued.rawToken());
 
     advanceClock(Duration.ofSeconds(10));
-    var replay = service.redeem(issued.rawToken());
+    var replay = (RefreshResult.Replayed) service.redeem(issued.rawToken());
 
-    assertThat(replay).isInstanceOf(RefreshResult.GraceReplay.class);
+    assertThat(replay.rawRefreshToken()).isEqualTo(rotation.rawRefreshToken());
     assertThat(replay.session().getId()).isEqualTo(issued.session().getId());
     assertThat(replay.session().getRevokedAt()).isNull();
     assertThat(tokenRepository.findAll())
@@ -109,9 +109,47 @@ class RefreshTokenServiceTest {
     advanceClock(properties.rotationGrace());
     var replay = service.redeem(issued.rawToken());
 
-    assertThat(replay).isInstanceOf(RefreshResult.GraceReplay.class);
+    assertThat(replay).isInstanceOf(RefreshResult.Replayed.class);
     assertThat(replay.session().getRevokedAt()).isNull();
     assertThat(eventPublisher.getEventsOfType(CounterBumpedEvent.class)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should not return stale successor when earlier token replayed within grace")
+  void shouldNotReturnStaleSuccessorWhenEarlierTokenReplayedWithinGrace() {
+    var issued = issueSession();
+    var firstRotation = (RefreshResult.Rotated) service.redeem(issued.rawToken());
+    service.redeem(firstRotation.rawRefreshToken());
+
+    var replay = service.redeem(issued.rawToken());
+
+    assertThat(replay).isInstanceOf(RefreshResult.SupersededReplay.class);
+    assertThat(replay.session().getId()).isEqualTo(issued.session().getId());
+    assertThat(replay.session().getRevokedAt()).isNull();
+  }
+
+  @Test
+  @DisplayName("Should classify expired successor as superseded replay within grace")
+  void shouldClassifyExpiredSuccessorAsSupersededReplayWithinGrace() {
+    var shortLivedService =
+        serviceWith(
+            AuthTokenProperties.builder()
+                .signingKey("")
+                .accessTokenTtl(Duration.ofMinutes(10))
+                .refreshTokenTtl(Duration.ofSeconds(1))
+                .rotationGrace(Duration.ofSeconds(10))
+                .build());
+    var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
+    var issued = shortLivedService.createSession(account, "test-device");
+    var rotation = (RefreshResult.Rotated) shortLivedService.redeem(issued.rawToken());
+
+    advanceClock(Duration.ofSeconds(2));
+    var replay = shortLivedService.redeem(issued.rawToken());
+
+    assertThat(replay).isInstanceOf(RefreshResult.SupersededReplay.class);
+    assertThat(replay.session().getRevokedAt()).isNull();
+    assertThatThrownBy(() -> shortLivedService.redeem(rotation.rawRefreshToken()))
+        .isInstanceOf(InvalidRefreshTokenException.class);
   }
 
   @Test
@@ -269,5 +307,15 @@ class RefreshTokenServiceTest {
 
   private void advanceClock(Duration duration) {
     currentTime.updateAndGet(instant -> instant.plus(duration));
+  }
+
+  private RefreshTokenService serviceWith(AuthTokenProperties tokenProperties) {
+    return new RefreshTokenService(
+        sessionRepository,
+        tokenRepository,
+        tokenProperties,
+        clock,
+        tokenReuseRevoker,
+        eventPublisher);
   }
 }

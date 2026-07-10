@@ -24,6 +24,7 @@ class StreamarrBearerTokenResolverTest {
     request.setCookies(new Cookie(AuthCookies.ACCESS_COOKIE, "cookie-token"));
 
     assertThat(resolver.resolve(request)).isEqualTo("header-token");
+    assertThat(StreamarrBearerTokenResolver.usedAccessCookie(request)).isFalse();
   }
 
   @Test
@@ -33,6 +34,7 @@ class StreamarrBearerTokenResolverTest {
     request.setCookies(new Cookie(AuthCookies.ACCESS_COOKIE, "cookie-token"));
 
     assertThat(resolver.resolve(request)).isEqualTo("cookie-token");
+    assertThat(StreamarrBearerTokenResolver.usedAccessCookie(request)).isTrue();
   }
 
   @Test

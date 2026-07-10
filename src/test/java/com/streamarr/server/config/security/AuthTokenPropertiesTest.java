@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
 import java.time.Duration;
+import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -58,6 +59,24 @@ class AuthTokenPropertiesTest {
     assertThat(VALIDATOR.validate(properties))
         .extracting(violation -> violation.getPropertyPath().toString())
         .containsExactly("rotationGrace");
+  }
+
+  @Test
+  @DisplayName("Should not expose signing key in string representation")
+  void shouldNotExposeSigningKeyInStringRepresentation() {
+    var secret = UUID.randomUUID().toString();
+    var properties = validProperties().signingKey(secret).build();
+
+    assertThat(properties.toString()).doesNotContain(secret);
+  }
+
+  @Test
+  @DisplayName("Should not expose signing key in builder string representation")
+  void shouldNotExposeSigningKeyInBuilderStringRepresentation() {
+    var secret = UUID.randomUUID().toString();
+    var propertiesBuilder = validProperties().signingKey(secret);
+
+    assertThat(propertiesBuilder.toString()).doesNotContain(secret);
   }
 
   private static AuthTokenProperties.AuthTokenPropertiesBuilder validProperties() {
