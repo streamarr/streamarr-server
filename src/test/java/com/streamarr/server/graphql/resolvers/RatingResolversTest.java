@@ -56,6 +56,7 @@ class RatingResolversTest {
 
   @Test
   @DisplayName("Should return background-created rating when creator absent")
+  @SuppressWarnings("unchecked")
   void shouldReturnBackgroundCreatedRatingWhenCreatorAbsent() {
     var ratingId = UUID.randomUUID();
     var rating = Rating.builder().source("TMDB").value("7.5").build();
@@ -69,10 +70,8 @@ class RatingResolversTest {
 
     assertThat(result.getErrors()).isEmpty();
     var data = result.<Map<String, Object>>getData();
-    var ratingData = (Map<?, ?>) data.get("rating");
-    assertThat(ratingData.get("source")).isEqualTo("TMDB");
-    assertThat(ratingData.containsKey("createdBy")).isTrue();
-    assertThat(ratingData.get("createdBy")).isNull();
+    var ratingData = (Map<String, Object>) data.get("rating");
+    assertThat(ratingData).containsEntry("source", "TMDB").containsEntry("createdBy", null);
   }
 
   @Test
