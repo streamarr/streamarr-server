@@ -89,6 +89,40 @@ class LoginServiceTest {
   }
 
   @Test
+  @DisplayName("Should not burn password verification cost when throttled")
+  void shouldNotBurnPasswordVerificationCostWhenThrottled() {
+    var account = seedAccount(serviceEncoder.encode(CORRECT_PASSWORD));
+
+    for (int i = 0; i < 5; i++) {
+      var wrongAttempt = commandBuilder(account.getEmail()).password("wrong-" + i).build();
+      assertThatThrownBy(() -> loginService.login(wrongAttempt))
+          .isInstanceOf(InvalidCredentialsException.class);
+    }
+    var burnsBeforeThrottle = countingEncoder.completedVerifications();
+
+    var throttledAttempt = commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build();
+    assertThatThrownBy(() -> loginService.login(throttledAttempt))
+        .isInstanceOf(TooManyLoginAttemptsException.class);
+
+    assertThat(countingEncoder.completedVerifications()).isEqualTo(burnsBeforeThrottle);
+  }
+
+  @Test
+  @DisplayName("Should reject credentials when stored hash unreadable")
+  void shouldRejectCredentialsWhenStoredHashUnreadable() {
+    // A real hash stripped of its {id} prefix — the corruption a migration bug would produce.
+    var unreadableHash = serviceEncoder.encode(CORRECT_PASSWORD).replace("{argon2id}", "");
+    var account = seedAccount(unreadableHash);
+
+    var attempt = commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build();
+
+    assertThatThrownBy(() -> loginService.login(attempt))
+        .isInstanceOf(InvalidCredentialsException.class);
+    // Exactly one equalizer burn — timing stays flat with every other rejection path.
+    assertThat(countingEncoder.completedVerifications()).isEqualTo(1);
+  }
+
+  @Test
   @DisplayName("Should rehash password when encoding upgrade needed")
   void shouldRehashPasswordWhenEncodingUpgradeNeeded() {
     var weakHash = weakEncoder.encode(CORRECT_PASSWORD);
@@ -140,7 +174,7 @@ class LoginServiceTest {
     assertThatThrownBy(() -> loginService.login(attempt))
         .isInstanceOf(InvalidCredentialsException.class);
 
-    assertThat(countingEncoder.matchesInvocations()).isEqualTo(1);
+    assertThat(countingEncoder.completedVerifications()).isEqualTo(1);
   }
 
   @Test
@@ -158,7 +192,7 @@ class LoginServiceTest {
     assertThatThrownBy(() -> loginService.login(attempt))
         .isInstanceOf(InvalidCredentialsException.class);
 
-    assertThat(countingEncoder.matchesInvocations()).isEqualTo(1);
+    assertThat(countingEncoder.completedVerifications()).isEqualTo(1);
   }
 
   @Test
@@ -246,11 +280,14 @@ class LoginServiceTest {
                 .build());
   }
 
-  /** Observes how many full-cost password verifications a login attempt performs. */
+  /**
+   * Counts password verifications that run to completion. A verification that throws — an
+   * unreadable stored hash — performs no hash work and must not count as a burn.
+   */
   private static final class CountingPasswordEncoder implements PasswordEncoder {
 
     private final PasswordEncoder delegate;
-    private final AtomicInteger matchesInvocations = new AtomicInteger();
+    private final AtomicInteger completedVerifications = new AtomicInteger();
 
     private CountingPasswordEncoder(PasswordEncoder delegate) {
       this.delegate = delegate;
@@ -263,8 +300,9 @@ class LoginServiceTest {
 
     @Override
     public boolean matches(CharSequence rawPassword, String encodedPassword) {
-      matchesInvocations.incrementAndGet();
-      return delegate.matches(rawPassword, encodedPassword);
+      var matched = delegate.matches(rawPassword, encodedPassword);
+      completedVerifications.incrementAndGet();
+      return matched;
     }
 
     @Override
@@ -272,8 +310,8 @@ class LoginServiceTest {
       return delegate.upgradeEncoding(encodedPassword);
     }
 
-    private int matchesInvocations() {
-      return matchesInvocations.get();
+    private int completedVerifications() {
+      return completedVerifications.get();
     }
   }
 }

@@ -2,7 +2,9 @@ package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import java.sql.SQLException;
 import java.util.Optional;
+import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 
 public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
@@ -27,8 +29,12 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
                         && account.getEmail().equalsIgnoreCase(entity.getEmail()));
 
     if (duplicateEmail) {
+      // Mirrors Spring's Hibernate translation: the constraint name rides the cause chain.
+      var message = "duplicate key value violates unique constraint \"uq_user_account_email\"";
       throw new DataIntegrityViolationException(
-          "duplicate key value violates unique constraint \"uq_user_account_email\"");
+          message,
+          new ConstraintViolationException(
+              message, new SQLException(message, "23505"), "uq_user_account_email"));
     }
 
     return super.save(entity);

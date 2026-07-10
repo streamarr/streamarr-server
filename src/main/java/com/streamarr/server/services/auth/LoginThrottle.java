@@ -18,7 +18,7 @@ import org.springframework.stereotype.Component;
  * reserves its slot atomically before any password work, so a concurrent burst cannot overrun the
  * budget; blocked attempts reserve nothing, so hostile traffic cannot extend a victim's lockout.
  * Restart resets the counters and N instances multiply the attempt budget by N — the same
- * single-JVM posture as MutexFactory; database-backed throttling is the documented fast-follow if
+ * single-JVM posture as MutexFactory; database-backed throttling is the fast-follow if
  * multi-instance deployment materialises.
  */
 @Slf4j

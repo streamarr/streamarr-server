@@ -74,10 +74,11 @@ public class RefreshTokenService {
    */
   @Transactional
   public IssuedRefreshToken reissueFor(AuthSession session) {
-    tokenRepository.revokeAllForSession(session.getId());
+    var now = clock.instant();
+    tokenRepository.revokeAllForSession(session.getId(), now);
 
     var rawToken = generateRawToken();
-    tokenRepository.save(buildActiveToken(session, rawToken, clock.instant()));
+    tokenRepository.save(buildActiveToken(session, rawToken, now));
 
     return new IssuedRefreshToken(rawToken, session);
   }
@@ -151,8 +152,8 @@ public class RefreshTokenService {
   }
 
   private boolean isWithinGrace(RefreshToken token, Instant now) {
+    // consumeActiveToken stamps rotatedAt atomically with ROTATED, so ROTATED implies non-null.
     return token.getStatus() == RefreshTokenStatus.ROTATED
-        && token.getRotatedAt() != null
         && !now.isAfter(token.getRotatedAt().plus(properties.rotationGrace()));
   }
 

@@ -25,11 +25,5 @@ public sealed interface RefreshResult {
   }
 
   /** A grace replay whose derived successor has already been superseded. */
-  record SupersededReplay(AuthSession session) implements RefreshResult {
-
-    @Override
-    public String toString() {
-      return "SupersededReplay[session=%s]".formatted(session);
-    }
-  }
+  record SupersededReplay(AuthSession session) implements RefreshResult {}
 }
