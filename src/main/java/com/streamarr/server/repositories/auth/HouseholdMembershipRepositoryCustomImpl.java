@@ -89,9 +89,11 @@ public class HouseholdMembershipRepositoryCustomImpl
         membership.getAccountId(), membership.getHouseholdId(), membership.getMembershipVersion());
   }
 
-  private MembershipVersionChange changeFrom(HouseholdMembershipRecord record) {
+  private MembershipVersionChange changeFrom(HouseholdMembershipRecord membershipRecord) {
     return new MembershipVersionChange(
-        record.getAccountId(), record.getHouseholdId(), record.getMembershipVersion());
+        membershipRecord.getAccountId(),
+        membershipRecord.getHouseholdId(),
+        membershipRecord.getMembershipVersion());
   }
 
   private long nextMembershipVersion() {
