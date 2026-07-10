@@ -72,7 +72,7 @@ class SecurityConfigTest {
   void shouldNotRequireCsrfWhenBearerCredentialAccompaniesAuthCookie() throws Exception {
     mockMvc
         .perform(
-            post("/csrf-probe")
+            post("/api/auth/login")
                 .cookie(new Cookie(AuthCookies.ACCESS_COOKIE, "ambient-credential"))
                 .header("Authorization", "Bearer opaque-token"))
         .andExpect(status().isNoContent());
@@ -83,7 +83,7 @@ class SecurityConfigTest {
   void shouldNotRequireCsrfWhenBearerSchemeCasedDifferently() throws Exception {
     mockMvc
         .perform(
-            post("/csrf-probe")
+            post("/api/auth/login")
                 .cookie(new Cookie(AuthCookies.ACCESS_COOKIE, "ambient-credential"))
                 .header("Authorization", "bearer opaque-token"))
         .andExpect(status().isNoContent());
@@ -94,7 +94,7 @@ class SecurityConfigTest {
   void shouldRequireCsrfWhenBearerValueBlank() throws Exception {
     mockMvc
         .perform(
-            post("/csrf-probe")
+            post("/api/auth/login")
                 .cookie(new Cookie(AuthCookies.ACCESS_COOKIE, "ambient-credential"))
                 .header("Authorization", "Bearer   "))
         .andExpect(status().isForbidden());
@@ -105,7 +105,7 @@ class SecurityConfigTest {
   void shouldRequireCsrfWhenAuthorizationSchemeNotBearer() throws Exception {
     mockMvc
         .perform(
-            post("/csrf-probe")
+            post("/api/auth/login")
                 .cookie(new Cookie(AuthCookies.ACCESS_COOKIE, "ambient-credential"))
                 .header("Authorization", "Basic dXNlcjpwYXNz"))
         .andExpect(status().isForbidden());
@@ -116,7 +116,7 @@ class SecurityConfigTest {
   void shouldRequireCsrfWhenOnlyRefreshCookiePresent() throws Exception {
     mockMvc
         .perform(
-            post("/csrf-probe")
+            post("/api/auth/login")
                 .cookie(new Cookie(AuthCookies.REFRESH_COOKIE, "ambient-credential")))
         .andExpect(status().isForbidden());
   }
