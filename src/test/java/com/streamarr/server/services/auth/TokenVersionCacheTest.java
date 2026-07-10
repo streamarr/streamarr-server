@@ -52,6 +52,37 @@ class TokenVersionCacheTest {
   }
 
   @Test
+  @DisplayName("Should read through every lookup while caching is suspended")
+  void shouldReadThroughEveryLookupWhileCachingSuspended() {
+    var sessionId = UUID.randomUUID();
+    var reader = new FakeVersionCounterReader();
+    reader.sessionVersions.put(sessionId, 1L);
+    var cache = new TokenVersionCache(reader);
+
+    assertThat(cache.sessionVersion(sessionId)).contains(1L);
+    cache.suspendCaching();
+
+    reader.sessionVersions.put(sessionId, 2L);
+    assertThat(cache.sessionVersion(sessionId)).contains(2L);
+    reader.sessionVersions.put(sessionId, 3L);
+    assertThat(cache.sessionVersion(sessionId)).contains(3L);
+  }
+
+  @Test
+  @DisplayName("Should not seed a suspended cache from a counter update")
+  void shouldNotSeedSuspendedCacheFromCounterUpdate() {
+    var sessionId = UUID.randomUUID();
+    var reader = new FakeVersionCounterReader();
+    reader.sessionVersions.put(sessionId, 7L);
+    var cache = new TokenVersionCache(reader);
+
+    cache.suspendCaching();
+    cache.update(CounterKind.SESSION, sessionId.toString(), 6L);
+
+    assertThat(cache.sessionVersion(sessionId)).contains(7L);
+  }
+
+  @Test
   @DisplayName("Should retry read when cache cleared during lookup")
   void shouldRetryReadWhenCacheClearedDuringLookup() throws Exception {
     var sessionId = UUID.randomUUID();
@@ -68,6 +99,32 @@ class TokenVersionCacheTest {
       assertThat(firstLookup.get(10, TimeUnit.SECONDS)).contains(2L);
 
       assertThat(cache.sessionVersion(sessionId)).contains(2L);
+    }
+  }
+
+  @Test
+  @DisplayName("Should fence in-flight read when caching is suspended")
+  void shouldFenceInFlightReadWhenCachingSuspended() throws Exception {
+    var sessionId = UUID.randomUUID();
+    var reader = new PausingVersionCounterReader();
+    var cache = new TokenVersionCache(reader);
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var lookup = executor.submit(() -> cache.sessionVersion(sessionId));
+      reader.awaitPausedReads();
+
+      reader.version.set(2L);
+      cache.suspendCaching();
+      reader.releasePausedReads();
+
+      assertThat(lookup.get(10, TimeUnit.SECONDS)).contains(2L);
+      assertThat(reader.readCount).hasValue(2);
+
+      reader.version.set(3L);
+      assertThat(cache.sessionVersion(sessionId)).contains(3L);
+      assertThat(reader.readCount).hasValue(3);
+    } finally {
+      reader.releasePausedReads();
     }
   }
 
@@ -89,6 +146,61 @@ class TokenVersionCacheTest {
       assertThat(firstLookup.get(10, TimeUnit.SECONDS)).contains(2L);
       assertThat(reader.readCount).hasValue(2);
       assertThat(cache.sessionVersion(sessionId)).contains(2L);
+    }
+  }
+
+  @Test
+  @DisplayName("Should retry suspended read when counter update arrives during cache miss")
+  void shouldRetrySuspendedReadWhenCounterUpdateArrivesDuringCacheMiss() throws Exception {
+    var sessionId = UUID.randomUUID();
+    var reader = new PausingVersionCounterReader();
+    var cache = new TokenVersionCache(reader);
+    cache.suspendCaching();
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var lookup = executor.submit(() -> cache.sessionVersion(sessionId));
+      reader.awaitPausedReads();
+
+      reader.version.set(2L);
+      cache.update(CounterKind.SESSION, sessionId.toString(), 2L);
+      reader.releasePausedReads();
+
+      assertThat(lookup.get(10, TimeUnit.SECONDS)).contains(2L);
+      assertThat(reader.readCount).hasValue(2);
+
+      reader.version.set(3L);
+      assertThat(cache.sessionVersion(sessionId)).contains(3L);
+      assertThat(reader.readCount).hasValue(3);
+    } finally {
+      reader.releasePausedReads();
+    }
+  }
+
+  @Test
+  @DisplayName("Should fence suspended read and restore warm updates when caching resumes")
+  void shouldFenceSuspendedReadAndRestoreWarmUpdatesWhenCachingResumes() throws Exception {
+    var sessionId = UUID.randomUUID();
+    var reader = new PausingVersionCounterReader();
+    var cache = new TokenVersionCache(reader);
+    cache.suspendCaching();
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var lookup = executor.submit(() -> cache.sessionVersion(sessionId));
+      reader.awaitPausedReads();
+
+      reader.version.set(2L);
+      cache.resumeCaching();
+      reader.releasePausedReads();
+
+      assertThat(lookup.get(10, TimeUnit.SECONDS)).contains(2L);
+      assertThat(reader.readCount).hasValue(2);
+
+      reader.version.set(3L);
+      cache.update(CounterKind.SESSION, sessionId.toString(), 3L);
+      assertThat(cache.sessionVersion(sessionId)).contains(3L);
+      assertThat(reader.readCount).hasValue(2);
+    } finally {
+      reader.releasePausedReads();
     }
   }
 

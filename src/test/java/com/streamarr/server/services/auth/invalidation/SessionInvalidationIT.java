@@ -425,8 +425,8 @@ class SessionInvalidationIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should finish applying an in-flight notification when stopped mid-apply")
-  void shouldFinishApplyingAnInFlightNotificationWhenStoppedMidApply() throws Exception {
+  @DisplayName("Should reject revoked session when stopped mid-notification apply")
+  void shouldRejectRevokedSessionWhenStoppedMidNotificationApply() throws Exception {
     identity = authTestSupport.createIdentity();
     var sessionId = identity.session().getId();
 
@@ -455,7 +455,7 @@ class SessionInvalidationIT extends AbstractIntegrationTest {
     secondInstanceListener.start();
     await().atMost(Duration.ofSeconds(10)).until(secondInstanceListener::isListening);
 
-    // Warm the cache with the stale version so only the in-flight update can move it to 1.
+    // Warm the cache with the stale version before holding its revocation notification in-flight.
     assertThat(holdingCache.sessionVersion(sessionId)).contains(0L);
 
     sessionRepository.revoke(sessionId, SessionRevocationReason.LOGOUT, Instant.now());
@@ -465,7 +465,9 @@ class SessionInvalidationIT extends AbstractIntegrationTest {
     stopRequested.countDown();
 
     await().atMost(Duration.ofSeconds(10)).until(() -> !secondInstanceListener.isListening());
-    assertThat(holdingCache.sessionVersion(sessionId)).contains(1L);
+    // Stopping suspends caching. The authoritative reader excludes revoked sessions, so rejection
+    // no longer depends on the in-flight notification becoming a warm cache entry.
+    assertThat(holdingCache.sessionVersion(sessionId)).isEmpty();
   }
 
   @Test

@@ -8,6 +8,7 @@ import com.streamarr.server.fakes.FakeVersionCounterReader;
 import com.streamarr.server.repositories.auth.CounterNotificationPayload;
 import com.streamarr.server.services.auth.TokenVersionCache;
 import java.time.Duration;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -100,6 +101,48 @@ class CounterNotificationListenerTest {
       await()
           .atMost(Duration.ofSeconds(2))
           .untilAsserted(() -> assertThat(cache.sessionVersion(sessionId)).contains(2L));
+    } finally {
+      reconnectGate.countDown();
+      listener.stop();
+    }
+
+    await().atMost(Duration.ofSeconds(1)).until(() -> !listener.isListening());
+  }
+
+  @Test
+  @DisplayName("Should keep reading through while notification connection is unavailable")
+  void shouldKeepReadingThroughWhileNotificationConnectionIsUnavailable() {
+    var sessionId = UUID.randomUUID();
+    var reader = new FakeVersionCounterReader();
+    reader.sessionVersions.put(sessionId, 1L);
+    var cache = new TokenVersionCache(reader);
+    var connectionSource = new ScriptedCounterNotificationConnectionSource();
+    var backoffEntered = new CountDownLatch(1);
+    var reconnectGate = new CountDownLatch(1);
+    var listener =
+        new CounterNotificationListener(
+            cache,
+            connectionSource,
+            _ -> {
+              backoffEntered.countDown();
+              awaitReconnectGate(reconnectGate);
+            });
+
+    listener.start();
+    try {
+      await().atMost(Duration.ofSeconds(1)).until(listener::isListening);
+      assertThat(cache.sessionVersion(sessionId)).contains(1L);
+
+      connectionSource.failActiveConnection();
+      awaitReconnectGate(backoffEntered);
+
+      reader.sessionVersions.put(sessionId, 2L);
+      assertThat(cache.sessionVersion(sessionId)).contains(2L);
+
+      // This remote bump is missed while disconnected. The next lookup must still reach the
+      // authoritative reader instead of using the value returned by the previous lookup.
+      reader.sessionVersions.put(sessionId, 3L);
+      assertThat(cache.sessionVersion(sessionId)).contains(3L);
     } finally {
       reconnectGate.countDown();
       listener.stop();
@@ -236,5 +279,90 @@ class CounterNotificationListenerTest {
     assertThat(listener.isRunning()).isFalse();
     await().atMost(Duration.ofSeconds(1)).until(() -> !listener.isListening());
     assertThat(connectionSource.openAttempts()).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("Should keep caching suspended when stopped during listen")
+  void shouldKeepCachingSuspendedWhenStoppedDuringListen() {
+    var sessionId = UUID.randomUUID();
+    var reader = new FakeVersionCounterReader();
+    reader.sessionVersions.put(sessionId, 1L);
+    var cache = new TokenVersionCache(reader);
+    var connectionSource = new PausingListenConnectionSource();
+    var listener = new CounterNotificationListener(cache, connectionSource, _ -> {});
+
+    listener.start();
+    connectionSource.awaitListen();
+    listener.stop();
+    connectionSource.releaseListen();
+    connectionSource.awaitCloseStarted();
+
+    try {
+      reader.sessionVersions.put(sessionId, 2L);
+      assertThat(cache.sessionVersion(sessionId)).contains(2L);
+      reader.sessionVersions.put(sessionId, 3L);
+      assertThat(cache.sessionVersion(sessionId)).contains(3L);
+    } finally {
+      connectionSource.releaseClose();
+    }
+
+    await().atMost(Duration.ofSeconds(1)).until(() -> !listener.isListening());
+  }
+
+  private static final class PausingListenConnectionSource
+      implements CounterNotificationConnectionSource {
+
+    private final CountDownLatch listenEntered = new CountDownLatch(1);
+    private final CountDownLatch releaseListen = new CountDownLatch(1);
+    private final CountDownLatch closeStarted = new CountDownLatch(1);
+    private final CountDownLatch releaseClose = new CountDownLatch(1);
+
+    @Override
+    public CounterNotificationConnection open() {
+      return new CounterNotificationConnection() {
+        @Override
+        public void listen() {
+          listenEntered.countDown();
+          awaitIgnoringInterrupts(releaseListen);
+        }
+
+        @Override
+        public List<String> notifications(int pollTimeoutMs) {
+          return List.of();
+        }
+
+        @Override
+        public void close() {
+          closeStarted.countDown();
+          awaitIgnoringInterrupts(releaseClose);
+        }
+      };
+    }
+
+    private void awaitListen() {
+      awaitReconnectGate(listenEntered);
+    }
+
+    private void releaseListen() {
+      releaseListen.countDown();
+    }
+
+    private void awaitCloseStarted() {
+      awaitReconnectGate(closeStarted);
+    }
+
+    private void releaseClose() {
+      releaseClose.countDown();
+    }
+
+    private static void awaitIgnoringInterrupts(CountDownLatch latch) {
+      while (latch.getCount() > 0) {
+        try {
+          latch.await();
+        } catch (InterruptedException _) {
+          // A real JDBC LISTEN can finish normally after stop races it; preserve that boundary.
+        }
+      }
+    }
   }
 }

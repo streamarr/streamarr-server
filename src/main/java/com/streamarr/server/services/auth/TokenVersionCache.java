@@ -17,8 +17,9 @@ import org.springframework.stereotype.Component;
 /**
  * Per-instance memo of version counters. Misses read through to the database; absence is never
  * cached (a just-created session must not be rejected forever). Local bumps advance warm entries
- * and fence in-flight reads, while cold entries always refill from Postgres. A clear falls back to
- * lazy refill (ADR 0016 cold start).
+ * and fence in-flight reads, while cold entries always refill from Postgres. Caching is suspended
+ * whenever the notification feed is unavailable so every lookup remains authoritative until the
+ * feed resumes (ADR 0016 cold start).
  */
 @Component
 @RequiredArgsConstructor
@@ -30,6 +31,7 @@ public class TokenVersionCache {
   private final Map<CacheKey, InFlightReads> inFlightReads = new HashMap<>();
   private final AtomicLong generation = new AtomicLong();
   private final ReentrantReadWriteLock invalidationLock = new ReentrantReadWriteLock();
+  private volatile boolean cachingEnabled = true;
 
   public Optional<Long> sessionVersion(UUID sessionId) {
     return lookup(
@@ -57,7 +59,9 @@ public class TokenVersionCache {
       if (reads != null) {
         inFlightReads.put(cacheKey, reads.bumpEpoch());
       }
-      cache.computeIfPresent(cacheKey, (_, current) -> Math.max(current, version));
+      if (cachingEnabled) {
+        cache.computeIfPresent(cacheKey, (_, current) -> Math.max(current, version));
+      }
     } finally {
       lock.unlock();
     }
@@ -67,8 +71,29 @@ public class TokenVersionCache {
     var lock = invalidationLock.writeLock();
     lock.lock();
     try {
-      generation.incrementAndGet();
-      cache.clear();
+      resetWhileLocked();
+    } finally {
+      lock.unlock();
+    }
+  }
+
+  public void suspendCaching() {
+    var lock = invalidationLock.writeLock();
+    lock.lock();
+    try {
+      cachingEnabled = false;
+      resetWhileLocked();
+    } finally {
+      lock.unlock();
+    }
+  }
+
+  public void resumeCaching() {
+    var lock = invalidationLock.writeLock();
+    lock.lock();
+    try {
+      resetWhileLocked();
+      cachingEnabled = true;
     } finally {
       lock.unlock();
     }
@@ -78,9 +103,9 @@ public class TokenVersionCache {
       CounterKind kind, String key, Supplier<Optional<Long>> readThrough) {
     var cacheKey = new CacheKey(kind, key);
 
-    var cached = cache.get(cacheKey);
-    if (cached != null) {
-      return Optional.of(cached);
+    var cached = cachedVersion(cacheKey);
+    if (cached.isPresent()) {
+      return cached;
     }
 
     while (true) {
@@ -125,11 +150,7 @@ public class TokenVersionCache {
 
       var invalidated =
           generation.get() != attempt.generation() || reads.epoch() != attempt.epoch();
-      if (!invalidated) {
-        read.ifPresent(version -> cache.merge(cacheKey, version, Math::max));
-      }
-
-      var resolved = Optional.ofNullable(cache.get(cacheKey));
+      var resolved = resolve(cacheKey, read, invalidated);
       unregisterWhileLocked(cacheKey, reads);
       return new LookupCompletion(invalidated && resolved.isEmpty(), resolved);
     } finally {
@@ -156,6 +177,35 @@ public class TokenVersionCache {
       return;
     }
     inFlightReads.put(cacheKey, reads.removeReader());
+  }
+
+  private Optional<Long> resolve(
+      CacheKey cacheKey, Optional<Long> authoritativeVersion, boolean invalidated) {
+    if (invalidated) {
+      return cachingEnabled ? Optional.ofNullable(cache.get(cacheKey)) : Optional.empty();
+    }
+    if (!cachingEnabled) {
+      return authoritativeVersion;
+    }
+    authoritativeVersion.ifPresent(version -> cache.merge(cacheKey, version, Math::max));
+    return Optional.ofNullable(cache.get(cacheKey));
+  }
+
+  private Optional<Long> cachedVersion(CacheKey cacheKey) {
+    var observedGeneration = generation.get();
+    if (!cachingEnabled) {
+      return Optional.empty();
+    }
+    var cached = cache.get(cacheKey);
+    if (!cachingEnabled || generation.get() != observedGeneration) {
+      return Optional.empty();
+    }
+    return Optional.ofNullable(cached);
+  }
+
+  private void resetWhileLocked() {
+    generation.incrementAndGet();
+    cache.clear();
   }
 
   private record CacheKey(CounterKind kind, String key) {}
