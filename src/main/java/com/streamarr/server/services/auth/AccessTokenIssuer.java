@@ -7,6 +7,7 @@ import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.HouseholdMembershipRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -29,10 +30,13 @@ public class AccessTokenIssuer {
   private final AccountProfileRepository accountProfileRepository;
 
   public AccessToken issue(TokenContext context) {
-    var scope = resolveScope(context);
     // JWT timestamps carry whole seconds; truncate so expiresAt matches the encoded exp claim.
     var now = clock.instant().truncatedTo(ChronoUnit.SECONDS);
-    var expiresAt = now.plus(properties.accessTokenTtl());
+    return mint(context, now, now.plus(properties.accessTokenTtl()));
+  }
+
+  private AccessToken mint(TokenContext context, Instant now, Instant expiresAt) {
+    var scope = resolveScope(context);
 
     var claims =
         JwtClaimsSet.builder()
