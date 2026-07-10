@@ -58,4 +58,11 @@ public class FakeWatchHistoryRepository extends FakeJpaRepository<WatchHistory>
                     && wh.getDismissedAt() == null)
         .forEach(wh -> wh.setDismissedAt(now));
   }
+
+  @Override
+  public void reassignProfile(UUID fromProfileId, UUID toProfileId) {
+    database.values().stream()
+        .filter(wh -> fromProfileId.equals(wh.getProfileId()))
+        .forEach(wh -> wh.setProfileId(toProfileId));
+  }
 }

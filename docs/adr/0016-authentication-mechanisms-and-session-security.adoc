@@ -28,8 +28,17 @@ Argon2id parameters are configuration, not architecture.
 They must meet or exceed the current OWASP Argon2id minimum, be benchmarked on the target hardware, and keep login and setup latency practical for a self-hosted server — expensive enough to resist offline guessing, cheap enough for everyday login.
 When `PasswordEncoder.upgradeEncoding` reports stronger parameters, rehash the password on the next successful login.
 
-Password login is throttled: failed attempts are rate-limited per account and per source with backoff, as NIST SP 800-63B requires for online guessing.
-Spring Security publishes authentication failure events but ships no limiter, so this throttle is Streamarr code driven by those events — the same posture as the profile-PIN limiter.
+Plaintext passwords follow the framework-native `String`/`CharSequence` path across the Spring and Jackson request boundary and exist only for the synchronous setup, verification, or rehash operation that consumes them.
+They are never persisted, cached, published in application events, logged, traced, included in exceptions, or retained by asynchronous work.
+Every password-bearing request or command defines a safe string representation that omits the password, and generated builders are treated as secret-bearing objects that must never be logged.
+This is a deliberate acceptance of best-effort JVM memory lifecycle, not a claim that immutable strings can be erased.
+
+Copying a password into `char[]` or `byte[]` at only one application layer does not provide secure erasure when Jackson, Spring Security, or the password encoder has already created or will recreate an immutable `String`.
+Streamarr adopts mutable password buffers only if the complete input-to-hasher path owns those buffers, avoids immutable copies, clears every owned intermediate in `finally`, and the threat model justifies the added custom security code.
+Such a change replaces part of the Spring Security password-encoding boundary and therefore requires revisiting this ADR.
+
+Password login is throttled: failed attempts are rate-limited per account and per source within a sliding window, as NIST SP 800-63B requires for online guessing.
+Spring Security ships no login rate limiter, so this throttle is Streamarr code invoked inline before any password verification — reserving budget up front, rather than recording failure events afterwards, keeps a concurrent burst from overrunning it; the profile-PIN limiter shares this posture.
 
 Account/device sessions use long-lived, revocable refresh tokens, scoped to the account and device rather than to a household or profile.
 Refresh tokens rotate on every use: redeeming one consumes it and issues a successor, the server stores only a digest of the active token, and redemption of an already-consumed token is treated as theft and revokes the session's whole token family.
@@ -45,21 +54,25 @@ A client therefore holds one access token at a time and upgrades it by selecting
 The selected context is session state, not client state: the session row remembers the active household and profile, login auto-selection and the selection endpoints write it, and refresh re-derives scope from it only after a single account-profile lookup revalidates (account, stored household, stored profile) — selecting or switching a household always clears the stored profile first, so a stale selection can never mint a mismatched household/profile token, and failed revalidation downgrades to the highest valid scope.
 In Spring Security terms, each scope becomes a granted authority and the nesting is a declared authority hierarchy — `RoleHierarchyImpl.fromHierarchy` wired explicitly into the `AuthorizationManagerFactory` and the method-security expression handler, since a `RoleHierarchy` bean is not auto-detected — so request and method rules demand only the minimum scope.
 Every access token authorizes requests only within the context chain it names, and carries enough account, session, version, and — where selected — household and profile identity for the server to validate the session and the ADR 0015 authorization model.
-This makes access tokens self-contained and server-signed — validating one needs the signing key and the in-memory counters, not a database read — while refresh tokens stay opaque random secrets the server knows only by digest.
+This makes access tokens self-contained and server-signed — validating one needs the public verification key set and the in-memory counters, not a database read — while refresh tokens stay opaque random secrets the server knows only by digest.
 Signing keys are configuration: rotation starts issuing with a new key while old keys remain verification-only until every token they signed has expired, which short access-token TTLs keep brief.
 Tokens are signed asymmetrically (ES256, P-256), each carrying its key's RFC 7638 thumbprint as `kid`: only the media server holds the private key, and verifiers need public keys only.
 This exists for the planned transcode split — horizontally scaled transcode workers verify playback tokens directly and run FFmpeg against untrusted media, so that tier must never hold a token-minting secret.
 Symmetric HMAC signing was rejected for that reason alone; in a single process it would be simpler and equivalent.
-A public key is never sufficient authorization, though: revocation lives in the version counters below, so any external verifier must also consume the counter feed — signature-plus-expiry checking alone silently disables revocation for playback tokens, whose validity rides the stream-session lifetime.
-A JWKS endpoint is deferred until an external verifier exists; the kid-keyed key set makes it additive.
+A public key is never sufficient authorization, though: revocation lives in the version counters below, so any external verifier must also consume the counter feed — signature-plus-expiry checking alone silently disables revocation for playback tokens, whose validity spans a media traversal plus a retention window.
+The public verification keys are served at `/.well-known/jwks.json` (revisiting an earlier deferral: shipping ES256 without its discovery surface left the design incomplete, and the endpoint is pure public data).
+It serves only public JWKs — current plus retired, each carrying `kid`, `use: sig`, and `alg: ES256` so verifier key selectors need no out-of-band knowledge; private material never appears in a response, and a test pins that.
+The endpoint is permitAll and cookie-blind like the pre-auth endpoints (a stale `Path=/` access cookie must not 401 a key fetch); `Cache-Control: max-age` paces polling, and refetch-on-unknown-`kid` remains the rotation mechanism — which makes rotation two-phase: the incoming public key is prepublished through `AUTH_TOKEN_VERIFICATION_KEYS` at least one cache window before it starts signing, because a shared cache may answer an unknown-`kid` refetch with the pre-rotation key set (runbook in architecture.adoc).
+Serving keys grants no authority: the previous paragraph's counter-feed requirement is the condition for *using* them, and it binds every JWKS consumer.
 
 Restriction, membership, password, and session changes propagate through version counters.
 Postgres holds the authoritative session, membership, and profile-policy counters; each instance caches them in memory.
-When an instance changes one, it bumps the Postgres counter and publishes a `LISTEN`/`NOTIFY` event so every other instance evicts and refreshes that counter.
+When an instance changes one, it bumps the Postgres counter and publishes the new version through `LISTEN`/`NOTIFY`; every other instance applies it to its cached counter monotonically (highest version wins), so duplicate or out-of-order delivery cannot regress state.
 The `LISTEN` subscriber holds its own dedicated Postgres connection, separate from the transactional Hikari pool.
 That connection must reach Postgres directly or through a session-mode pooler: `LISTEN` does not survive transaction-mode pooling, so PgBouncer in transaction mode silently breaks notifications.
-On instance start the counter cache is empty and fills from Postgres on first touch; when an authoritative counter cannot be read, validation fails closed rather than trusting a token's embedded versions.
-Each request checks its token's embedded versions against the in-memory cache, so the hot path needs no database round-trip; short token TTLs only backstop a missed notification.
+On instance start and whenever the notification connection is unavailable, caching is suspended and every counter lookup reads through to Postgres; successful reads are not installed until `LISTEN` succeeds again, so a missed notification cannot strand a stale refill.
+Once the feed is listening, the empty cache fills from Postgres on first touch and each request checks its token's embedded versions against the in-memory value, so the healthy hot path needs no database round-trip.
+When an authoritative counter cannot be read, validation fails closed rather than trusting a token's embedded versions; short token TTLs only backstop an undetected notification-feed failure.
 A password change invalidates every token for the account; a membership or restriction change invalidates the affected household- and profile-scoped tokens through the corresponding counter.
 
 How a client presents tokens depends on what it can protect.
@@ -71,13 +84,19 @@ That narrows XSS rather than eliminating it: an injected script can still ride t
 Streaming is the third carrier: playlist-driven players — AVPlayer above all — cannot attach headers to the segment requests a playlist spawns, so issued manifest, playlist, and segment URLs embed a short-lived, playback-scoped profile token the server validates exactly like a header token.
 Same tokens, different carrier, not a weaker channel: playback-URL tokens authorize nothing but playback, and the server redacts them from its own request logs and traces.
 Logs the server does not own — a reverse proxy in front of a self-hosted install — will record these URLs, which is exactly why the tokens' short TTL and playback-only scope bound what a captured URL is worth.
-Playback-token validity rides the stream-session lifetime rather than a fixed minutes-scale TTL — VOD players fetch playlists once and then request segments for hours — while revocation stays instant through the same per-request version check, and session reaping bounds residual exposure.
+Playback-token validity is the probed media duration plus the configured session-retention window — one full traversal plus a bounded cumulative budget for pauses and slow playback, rather than a fixed minutes-scale TTL.
+VOD players fetch playlists once and then request segments for hours, so the token is not renewed from its own authority; the absolute expiry remains the captured-URL exposure backstop, while revocation stays instant through the same per-request version check and idle session reaping may end playback sooner.
 
 Renewal is a server contract before it is client code.
 The server never slides an access token or re-issues one on its own authority; renewal always passes through the refresh endpoint.
 Redeeming a refresh token at the dedicated refresh endpoint rotates it, sets the successor cookies where cookies are the carrier, and — like login — returns the access token's expiry in the response body, since script cannot read an `httpOnly` cookie to schedule ahead.
 An expired access token fails with a machine-readable expired-token code distinct from other authentication failures, so a client knows refresh-and-retry is worthwhile.
-Rotation's theft rule tolerates one honest race: every tab of a browser shares one cookie jar, so concurrent refreshes can innocently redeem the same token, and within a short grace window — judged from the persisted rotation timestamp, so it survives restarts — the server honors the redemption with a fresh access token without advancing rotation: no successor refresh token is issued and no refresh cookie is set on that path, so exactly one genuine rotation happens per grace episode and a late-arriving response can never write an already-consumed token into the browser's jar — reuse outside the window stays theft.
+Rotation's theft rule tolerates one honest race: every tab of a browser shares one cookie jar, so concurrent refreshes can innocently redeem the same token.
+Each rotation's successor is deterministic but secret: the server derives it with HMAC-SHA-256 keyed by the presented 256-bit predecessor over a domain label and that predecessor's internal refresh-token row UUID, then stores only the successor's digest.
+Within a short grace window — judged from the persisted rotation timestamp, so it survives restarts and works across instances — the server derives the same successor again and returns it only while its digest still names the session's active, unexpired token.
+This makes a lost successful rotation response recoverable without storing plaintext, while concurrent responses can only write the same active successor into the browser's cookie jar.
+If that successor has already rotated, the older predecessor is superseded: its grace replay may receive a fresh access token but no refresh token, so it cannot overwrite the current cookie with a consumed credential.
+Exactly one genuine rotation happens per predecessor, and reuse outside the window stays theft.
 On the web, a service worker owns renewal: one worker serves every tab of the origin, making it the natural single-flight point — it intercepts the app's API fetches, refreshes once when expiry nears or an expired-token response arrives, queues intercepted requests, and replays them once the successor cookies land.
 The worker coordinates timing but never handles the tokens themselves; the cookies stay `httpOnly` and ride its fetches automatically, and the page supplies the script-readable CSRF token the refresh `POST` needs, since workers cannot read `document.cookie`.
 Browsers kill idle workers and a first visit precedes registration, so correctness never rests on the worker: the grace window and expired-token retry keep a workerless tab correct, and the worker's job is making renewal invisible.
@@ -121,11 +140,13 @@ Explicitly deferred from v1:
 * Password-hashing choices stay behind Spring Security's `PasswordEncoder`, so algorithm and work-factor upgrades need no schema change.
 * Rainbow-table resistance comes from the encoder's per-password salts, not custom code.
 * Argon2id work factors live in configuration or a security runbook, not this ADR.
+* Plaintext passwords may remain in JVM memory until garbage collection; minimizing their lifetime and preventing logging, tracing, diagnostic capture, and asynchronous retention are the controls for the accepted framework-native path.
+* A redacted `toString()` prevents accidental disclosure but does not erase a password from memory.
 * MFA and device pairing are account/session concerns; profile selection stays a viewing-context concern.
 * Refresh-token revocation, rotation with reuse detection, digest-at-rest storage, and profile-token invalidation are required server features, not optional client behavior.
 * One token model has three carriers — bearer headers for native apps, `httpOnly` cookies plus CSRF protection for browsers, short-lived playback-URL tokens for streaming — and no carrier weakens validation.
 * Refresh races are resolved on the server — the rotation grace window — and merely smoothed by the web client's service worker, so a browser without a live worker degrades to slower renewal, never to spurious logout.
-* Login and PIN throttling are Streamarr code driven by Spring Security's authentication events, not framework features.
+* Login and PIN throttling are Streamarr code that reserves budget inline before password verification, not framework features.
 * Cross-instance invalidation rides Postgres version counters and `LISTEN`/`NOTIFY`, adding no Redis or other new infrastructure in v1.
 * The invalidation listener must never borrow and hold a connection from the transactional Hikari pool, even while reconnecting or backing off.
 * OAuth providers are authentication inputs to local accounts, not replacements for the account/profile/household model.
@@ -134,8 +155,11 @@ Explicitly deferred from v1:
 
 * Spring Security's default `DelegatingPasswordEncoder` id — it still encodes with bcrypt, OWASP puts Argon2id first, and the delegating mechanism makes the stronger default free.
 * An application-managed salt column — the encoded password string already carries algorithm, parameters, and salt; a separate column invites custom crypto handling.
+* Converting only service-layer passwords to `char[]` or `byte[]` — surrounding framework layers retain or recreate immutable strings, adding copies without delivering end-to-end erasure.
 * Redis or any shared cache for cross-instance invalidation — Postgres version counters with `LISTEN`/`NOTIFY` cover v1 without new infrastructure.
+* CORS configuration for the browser client — the client is same-origin by construction (development tooling proxies API paths; production serves the client from the application origin), so no CORS policy exists and adding one would only widen the attack surface.
 * Sliding or self-renewing access tokens — re-issuing near expiry on the access token's own authority makes the short-lived credential immortal for whoever holds it, yields no rotation theft signal, lets active clients outrun the TTL backstop for missed invalidations, and skips the refresh endpoint's authoritative database checkpoint.
+* Short access-token TTLs as the sole revocation mechanism — bounded staleness would be tolerable on API surfaces, but playback-URL tokens have no refresh channel: playlist-driven players fetch segment URLs once and replay them for hours, so playback validity must ride the stream-session lifetime and only the per-request version check can revoke it mid-stream; TTL stays a backstop, never the guard.
 * Script-readable browser token storage (`localStorage` or plain cookies) — `httpOnly` cookies plus CSRF protection confine XSS to riding a session rather than stealing it.
 * `Authorization` headers on streaming segment requests — playlist-driven players cannot attach them, so playback URLs carry the token instead.
 * Profile PINs as an authentication or MFA factor — low-entropy convenience gates guard viewing context, never accounts.
@@ -147,11 +171,15 @@ Explicitly deferred from v1:
 * https://github.com/streamarr/streamarr-server/issues/41[Issue #41: Authentication & User Management]
 * https://github.com/streamarr/streamarr-server/issues/163[Issue #163: Replace placeholder user ID with authenticated user from Spring Security]
 * https://docs.spring.io/spring-security/reference/features/authentication/password-storage.html[Spring Security: Password Storage]
+* https://github.com/spring-projects/spring-security/blob/7.1.0/crypto/src/main/java/org/springframework/security/crypto/password/AbstractValidatingPasswordEncoder.java[Spring Security: `CharSequence` to `String` conversion]
+* https://github.com/spring-projects/spring-security/blob/7.1.0/crypto/src/main/java/org/springframework/security/crypto/argon2/Argon2PasswordEncoder.java[Spring Security: Argon2 password handling]
 * https://docs.spring.io/spring-security/reference/servlet/authentication/mfa.html[Spring Security: Multi-Factor Authentication]
 * https://docs.spring.io/spring-security/reference/servlet/authentication/onetimetoken.html[Spring Security: One-Time Token Login]
 * https://docs.spring.io/spring-security/reference/servlet/authentication/passkeys.html[Spring Security: Passkeys/WebAuthn]
 * https://docs.spring.io/spring-authorization-server/reference/protocol-endpoints.html[Spring Authorization Server: Protocol Endpoints]
 * https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html[OWASP Password Storage Cheat Sheet]
+* https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html#handling-secrets-in-memory[OWASP: Handling Secrets in Memory]
+* https://docs.oracle.com/en/java/javase/25/docs/api/java.base/javax/crypto/spec/PBEKeySpec.html[Java `PBEKeySpec`: Mutable Password Storage]
 * https://cheatsheetseries.owasp.org/cheatsheets/Multifactor_Authentication_Cheat_Sheet.html[OWASP Multifactor Authentication Cheat Sheet]
 * https://pages.nist.gov/800-63-4/sp800-63b.html[NIST SP 800-63B]
 * https://www.rfc-editor.org/rfc/rfc9106.html[RFC 9106: Argon2]

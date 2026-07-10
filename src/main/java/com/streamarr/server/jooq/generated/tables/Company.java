@@ -74,7 +74,7 @@ public class Company extends TableImpl<CompanyRecord> {
     /**
      * The column <code>public.company.created_by</code>.
      */
-    public final TableField<CompanyRecord, UUID> CREATED_BY = createField(DSL.name("created_by"), SQLDataType.UUID.nullable(false), this, "");
+    public final TableField<CompanyRecord, UUID> CREATED_BY = createField(DSL.name("created_by"), SQLDataType.UUID, this, "");
 
     /**
      * The column <code>public.company.last_modified_on</code>.

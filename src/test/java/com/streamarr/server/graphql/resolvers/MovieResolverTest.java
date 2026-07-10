@@ -7,7 +7,12 @@ import static org.mockito.Mockito.when;
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.repositories.auth.AccountProfileRepository;
+import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.MovieService;
+import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
+import com.streamarr.server.support.security.WithProfileContext;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -19,11 +24,16 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @Tag("UnitTest")
 @EnableDgsTest
-@SpringBootTest(classes = {MovieResolver.class})
+@WithProfileContext
+@SpringBootTest(classes = {MovieResolver.class, SecurityContextAuthorizationService.class})
 @DisplayName("Movie Resolver Tests")
 class MovieResolverTest {
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
+
+  @MockitoBean private ProfileRepository profileRepository;
+
+  @MockitoBean private AccountProfileRepository accountProfileRepository;
 
   @MockitoBean private MovieService movieService;
 
@@ -42,6 +52,28 @@ class MovieResolverTest {
             String.format("{ movie(id: \"%s\") { title tagline } }", movieId), "data.movie.title");
 
     assertThat(title).isEqualTo("Inception");
+  }
+
+  @Test
+  @DisplayName("Should return background-created movie when creator absent")
+  @SuppressWarnings("unchecked")
+  void shouldReturnBackgroundCreatedMovieWhenCreatorAbsent() {
+    var movieId = UUID.randomUUID();
+    var movie = Movie.builder().title("Background Movie").build();
+    movie.setId(movieId);
+
+    when(movieService.findById(movieId)).thenReturn(Optional.of(movie));
+
+    var result =
+        dgsQueryExecutor.execute(
+            String.format("{ movie(id: \"%s\") { title createdBy } }", movieId));
+
+    assertThat(result.getErrors()).isEmpty();
+    var data = result.<Map<String, Object>>getData();
+    var movieData = (Map<String, Object>) data.get("movie");
+    assertThat(movieData)
+        .containsEntry("title", "Background Movie")
+        .containsEntry("createdBy", null);
   }
 
   @Test

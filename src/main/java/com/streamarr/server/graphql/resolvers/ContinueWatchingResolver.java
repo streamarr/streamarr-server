@@ -6,7 +6,7 @@ import com.netflix.graphql.dgs.DgsTypeResolver;
 import com.streamarr.server.domain.BaseCollectable;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.Movie;
-import com.streamarr.server.graphql.CurrentUser;
+import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.pagination.PaginationService;
 import com.streamarr.server.services.watchprogress.ContinueWatchingService;
 import graphql.schema.DataFetchingEnvironment;
@@ -18,13 +18,15 @@ import lombok.RequiredArgsConstructor;
 public class ContinueWatchingResolver {
 
   private final ContinueWatchingService continueWatchingService;
+  private final AuthorizationService authorizationService;
   private final PaginationService paginationService;
 
   @DgsQuery
   public List<BaseCollectable<?>> continueWatching(DataFetchingEnvironment dfe) {
     int first = dfe.getArgumentOrDefault("first", 20);
     var limit = paginationService.getPaginationOptions(first, null, 0, null).getLimit();
-    return continueWatchingService.getContinueWatching(CurrentUser.id(), limit);
+    return continueWatchingService.getContinueWatching(
+        authorizationService.requireProfile(), limit);
   }
 
   @DgsTypeResolver(name = "ContinueWatchingMedia")

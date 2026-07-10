@@ -14,23 +14,31 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryBackend;
 import com.streamarr.server.domain.LibraryMetadata;
 import com.streamarr.server.domain.LibraryStatus;
+import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.media.MediaType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.streaming.WatchStatus;
+import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
 import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.CursorValidator;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.repositories.auth.AccountProfileRepository;
+import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
+import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.services.library.LibraryManagementService;
 import com.streamarr.server.services.pagination.MediaPage;
 import com.streamarr.server.services.pagination.MediaPaginationOptions;
 import com.streamarr.server.services.pagination.PageItem;
 import com.streamarr.server.services.pagination.PaginationService;
+import com.streamarr.server.support.security.WithAccountContext;
+import com.streamarr.server.support.security.WithProfileContext;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
@@ -50,6 +58,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @Tag("UnitTest")
 @EnableDgsTest
+@WithProfileContext
 @SpringBootTest(
     classes = {
       LibraryResolver.class,
@@ -57,12 +66,19 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
       CursorUtil.class,
       CursorValidator.class,
       RelayConnectionAdapter.class,
-      JacksonAutoConfiguration.class
+      JacksonAutoConfiguration.class,
+      SecurityContextAuthorizationService.class
     })
 @DisplayName("Library Resolver Tests")
 class LibraryResolverTest {
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
+
+  @Autowired private LibraryResolver libraryResolver;
+
+  @MockitoBean private ProfileRepository profileRepository;
+
+  @MockitoBean private AccountProfileRepository accountProfileRepository;
 
   @MockitoBean private LibraryRepository libraryRepository;
 
@@ -123,10 +139,30 @@ class LibraryResolverTest {
 
       assertThat(names).containsExactly("Movies", "TV Shows");
     }
+
+    @Test
+    @DisplayName("Should return background-created library when creator absent")
+    @SuppressWarnings("unchecked")
+    void shouldReturnBackgroundCreatedLibraryWhenCreatorAbsent() {
+      var libraryId = UUID.randomUUID();
+      var library = buildMovieLibrary(libraryId);
+
+      when(libraryRepository.findById(libraryId)).thenReturn(Optional.of(library));
+
+      var result =
+          dgsQueryExecutor.execute(
+              String.format("{ library(id: \"%s\") { name createdBy } }", libraryId));
+
+      assertThat(result.getErrors()).isEmpty();
+      var data = result.<Map<String, Object>>getData();
+      var libraryData = (Map<String, Object>) data.get("library");
+      assertThat(libraryData).containsEntry("name", "Movies").containsEntry("createdBy", null);
+    }
   }
 
   @Nested
   @DisplayName("Library Mutations")
+  @WithProfileContext(role = AccountRole.ADMIN)
   class LibraryMutations {
 
     @Test
@@ -447,7 +483,7 @@ class LibraryResolverTest {
     @Test
     @DisplayName("Should throw with simple class name when unsupported media type in type resolver")
     void shouldThrowWithSimpleClassNameWhenUnsupportedMediaTypeInTypeResolver() {
-      var resolver = new LibraryResolver(null, null, null, null, null, null, null, null);
+      var resolver = new LibraryResolver(null, null, null, null, null, null, null, null, null);
 
       var unsupportedMedia = new Object();
 
@@ -460,6 +496,14 @@ class LibraryResolverTest {
   @Nested
   @DisplayName("Alphabet Index")
   class AlphabetIndexTests {
+
+    @Test
+    @WithAccountContext
+    @DisplayName("Should require profile scope when resolving alphabet index")
+    void shouldRequireProfileScopeWhenResolvingAlphabetIndex() {
+      assertThatThrownBy(() -> libraryResolver.alphabetIndex(null))
+          .isInstanceOf(ProfileRequiredException.class);
+    }
 
     @Test
     @DisplayName("Should return alphabet index when library exists")

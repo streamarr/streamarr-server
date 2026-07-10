@@ -8,6 +8,7 @@ import com.streamarr.server.domain.metadata.Rating;
 import com.streamarr.server.exceptions.InvalidIdException;
 import com.streamarr.server.graphql.dto.RatingInput;
 import com.streamarr.server.repositories.RatingRepository;
+import com.streamarr.server.services.authorization.AuthorizationService;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -17,9 +18,11 @@ import lombok.RequiredArgsConstructor;
 public class RatingResolvers {
 
   private final RatingRepository ratingRepository;
+  private final AuthorizationService authorizationService;
 
   @DgsMutation
   public Rating addRating(@InputArgument("input") RatingInput ratingInput) {
+    authorizationService.requireProfile();
     return ratingRepository.save(
         Rating.builder()
             .createdBy(parseUuid(ratingInput.getUserId()))
@@ -30,6 +33,7 @@ public class RatingResolvers {
 
   @DgsQuery
   public Optional<Rating> rating(String id) {
+    authorizationService.requireProfile();
     return ratingRepository.findById(parseUuid(id));
   }
 

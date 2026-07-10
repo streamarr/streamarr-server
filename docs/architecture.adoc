@@ -111,6 +111,54 @@ See link:adr/0007-transcode-first-with-smart-remux.adoc[ADR 0007],
 link:adr/0009-h264-plus-av1-codec-strategy.adoc[ADR 0009],
 link:adr/0013-stream-decision-architecture.adoc[ADR 0013].
 
+== Authentication and Invalidation
+
+Identity, sessions, and token security follow
+link:adr/0015-authorization-profiles-and-content-controls.adoc[ADR 0015] and
+link:adr/0016-authentication-mechanisms-and-session-security.adoc[ADR 0016]: ES256-signed access
+tokens with nested scopes, digest-only rotating refresh tokens, and per-request version-counter
+checks that fail closed. The browser client is same-origin by construction -- development
+tooling proxies the API paths and production serves the client from the application origin --
+so no CORS configuration exists and none should be added (recorded as a rejected alternative in
+ADR 0016).
+
+Tokens are signed with an EC P-256 key (`AUTH_TOKEN_SIGNING_KEY`, base64 PKCS#8; generate with
+`openssl ecparam -name prime256v1 -genkey -noout | openssl pkcs8 -topk8 -nocrypt -outform DER |
+base64`). Only the media server holds the private key; verifiers need public keys only, chosen
+by the RFC 7638 thumbprint each token carries as `kid`. Rotation is two-phase so an HTTP cache
+can never hide the incoming key: first add the new public key (base64 SPKI) to
+`AUTH_TOKEN_VERIFICATION_KEYS` and restart -- it is prepublished in JWKS while the old key
+keeps signing; then, after at least the JWKS `Cache-Control` window (5 minutes), configure the
+new private key, replace the prepublished entry with the old public key, and restart --
+outstanding tokens keep verifying until they expire. Skipping the prepublish wait risks
+verifiers behind a shared cache rejecting newly signed tokens for up to the cache window,
+because a refetch on unknown `kid` can be answered with the cached pre-rotation key set. A
+blank signing key generates an ephemeral key pair at startup (tokens die on restart; sessions
+recover through refresh).
+
+ES256 exists for the planned transcode split: horizontally scaled transcode nodes running
+FFmpeg are the most exposed tier and must never hold a token-minting secret. Signature
+verification alone never authorizes a request, though -- revocation lives in the per-request
+version-counter checks, so when the transcode service extracts, it must also run the counter
+feed (`CounterNotificationListener` + `TokenVersionCache` against the shared database), not
+just a public key. The public verification keys are served at `/.well-known/jwks.json`
+(ADR 0016).
+
+Cross-instance token invalidation rides PostgreSQL LISTEN/NOTIFY: counter bumps call
+`pg_notify` inside the bumping transaction, and each instance's `CounterNotificationListener`
+applies them to its local version cache over one dedicated (non-Hikari) connection. The listener
+suspends caching on startup and every connection loss, so every counter lookup reads through to
+PostgreSQL while notifications might be missed; caching resumes from an empty state only after
+`LISTEN` succeeds. A `SELECT 1` liveness probe per poll (with TCP keepalive and a bounded socket
+timeout) turns a silently dead connection into a reconnect, and a health indicator reports the
+feed's state.
+
+CAUTION: PgBouncer in transaction-pooling mode does not deliver LISTEN/NOTIFY. The listener's
+dedicated connection must reach PostgreSQL directly (or through session-mode pooling), even when
+application traffic goes through a transaction-mode pooler -- set
+`AUTH_COUNTER_LISTENER_JDBC_URL` (and credentials, if they differ) to give the listener its own
+endpoint.
+
 == Key Design Decisions
 
 See link:adr/[Architecture Decision Records] for detailed rationale. Summary:

@@ -5,13 +5,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
 import com.streamarr.server.config.LibraryWatcherProperties;
+import com.streamarr.server.fakes.MutableClock;
 import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Clock;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -204,28 +203,5 @@ class PollingFileStabilityCheckerTest {
     var properties =
         new LibraryWatcherProperties(stabilizationSeconds, pollSeconds, maxWaitSeconds);
     return new PollingFileStabilityChecker(new MutableClock(currentTime), properties, sleeper);
-  }
-
-  private static class MutableClock extends Clock {
-    private final AtomicReference<Instant> currentTime;
-
-    MutableClock(AtomicReference<Instant> currentTime) {
-      this.currentTime = currentTime;
-    }
-
-    @Override
-    public java.time.ZoneId getZone() {
-      return ZoneOffset.UTC;
-    }
-
-    @Override
-    public Clock withZone(java.time.ZoneId zone) {
-      return this;
-    }
-
-    @Override
-    public Instant instant() {
-      return currentTime.get();
-    }
   }
 }

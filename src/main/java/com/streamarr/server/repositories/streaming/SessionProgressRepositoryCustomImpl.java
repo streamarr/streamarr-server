@@ -80,4 +80,14 @@ public class SessionProgressRepositoryCustomImpl implements SessionProgressRepos
         .and(SESSION_PROGRESS.MEDIA_FILE_ID.in(mediaFileIds))
         .execute();
   }
+
+  @Override
+  public void reassignProfile(UUID fromProfileId, UUID toProfileId) {
+    dsl.update(SESSION_PROGRESS)
+        .set(SESSION_PROGRESS.PROFILE_ID, toProfileId)
+        .set(SESSION_PROGRESS.LAST_MODIFIED_ON, OffsetDateTime.now(ZoneOffset.UTC))
+        .set(SESSION_PROGRESS.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
+        .where(SESSION_PROGRESS.PROFILE_ID.eq(fromProfileId))
+        .execute();
+  }
 }

@@ -7,6 +7,7 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.exceptions.InvalidIdException;
 import com.streamarr.server.services.MovieService;
+import com.streamarr.server.services.authorization.AuthorizationService;
 import graphql.schema.DataFetchingEnvironment;
 import java.util.List;
 import java.util.Optional;
@@ -18,9 +19,11 @@ import lombok.RequiredArgsConstructor;
 public class MovieResolver {
 
   private final MovieService movieService;
+  private final AuthorizationService authorizationService;
 
   @DgsQuery
   public Optional<Movie> movie(String id) {
+    authorizationService.requireProfile();
     return movieService.findById(parseUuid(id));
   }
 

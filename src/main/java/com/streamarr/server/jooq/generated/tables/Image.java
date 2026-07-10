@@ -72,7 +72,7 @@ public class Image extends TableImpl<ImageRecord> {
     /**
      * The column <code>public.image.created_by</code>.
      */
-    public final TableField<ImageRecord, UUID> CREATED_BY = createField(DSL.name("created_by"), SQLDataType.UUID.nullable(false), this, "");
+    public final TableField<ImageRecord, UUID> CREATED_BY = createField(DSL.name("created_by"), SQLDataType.UUID, this, "");
 
     /**
      * The column <code>public.image.last_modified_on</code>.

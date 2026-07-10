@@ -246,7 +246,7 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
             .quality(VideoQuality.AUTO)
             .supportedCodecs(List.of("h264"))
             .build();
-    var session = streamingService.createSession(mediaFile.getId(), options);
+    var session = streamingService.createSession(mediaFile.getId(), UUID.randomUUID(), options);
 
     assertThat(streamingService.getActiveSessionCount()).isEqualTo(1);
 
