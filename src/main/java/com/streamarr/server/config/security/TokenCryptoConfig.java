@@ -1,6 +1,7 @@
 package com.streamarr.server.config.security;
 
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
+import com.streamarr.server.services.auth.TokenContract;
 import com.streamarr.server.services.auth.TokenIdentityValidator;
 import com.streamarr.server.services.auth.TokenVersionValidator;
 import java.security.SecureRandom;
@@ -72,7 +73,9 @@ public class TokenCryptoConfig {
         NimbusJwtDecoder.withSecretKey(authSigningKey).macAlgorithm(MacAlgorithm.HS256).build();
     decoder.setJwtValidator(
         new DelegatingOAuth2TokenValidator<>(
-            JwtValidators.createDefault(), identityValidator, versionValidator));
+            JwtValidators.createDefaultWithIssuer(TokenContract.ISSUER),
+            identityValidator,
+            versionValidator));
     return decoder;
   }
 }
