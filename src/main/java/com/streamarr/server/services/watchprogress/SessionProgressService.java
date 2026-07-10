@@ -44,7 +44,7 @@ public class SessionProgressService {
             .orElseThrow(() -> new SessionNotFoundException(sessionId));
     // Unowned reads as missing — same SessionNotFound as a vanished session, never an
     // ownership error (no existence oracle); the warn keeps the miss visible to operators.
-    if (!profileId.equals(session.getProfileId())) {
+    if (!session.isOwnedBy(profileId)) {
       log.warn(
           "Timeline report for session {} rejected: profile {} does not own it",
           sessionId,

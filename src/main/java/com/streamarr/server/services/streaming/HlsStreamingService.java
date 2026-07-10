@@ -117,7 +117,7 @@ public class HlsStreamingService implements StreamingService {
     }
     // The caller still sees a plain no-op (no existence oracle); the miss is logged so
     // cross-profile attempts and wrong-owner stamping stay diagnosable server-side.
-    if (!profileId.equals(session.get().getProfileId())) {
+    if (!session.get().isOwnedBy(profileId)) {
       log.warn("Destroy for session {} rejected: profile {} does not own it", sessionId, profileId);
       return;
     }

@@ -1,5 +1,6 @@
 package com.streamarr.server.config.security;
 
+import com.streamarr.server.services.auth.TokenScope;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -24,13 +25,11 @@ public class SecurityConfig {
   private final RestAccessDeniedHandler accessDeniedHandler;
 
   /**
-   * The permit matrix: pre-auth endpoints and health stay open; streams stay open only until
-   * playback-URL tokens land (the next increment flips them to SCOPE_PLAYBACK); non-health actuator
-   * endpoints (metrics, info — exposed by the observability profile) are refused for everyone,
-   * since operational surfaces are not for ordinary accounts and role checks live in the domain,
-   * not in token authorities; everything else — GraphQL including introspection, images, future
-   * surfaces — demands SCOPE_ACCOUNT, which household and profile tokens satisfy through the scope
-   * hierarchy.
+   * The permit matrix: pre-auth endpoints and health stay open; non-health actuator endpoints are
+   * refused for everyone; streams demand SCOPE_PLAYBACK carried in the playback-URL token (outside
+   * the hierarchy); images demand SCOPE_PROFILE; everything else — GraphQL including introspection
+   * and future surfaces — demands SCOPE_ACCOUNT, which household and profile tokens satisfy through
+   * the scope hierarchy.
    *
    * <p>CSRF (SPA shape: readable XSRF-TOKEN cookie, Xor handler) protects exactly the
    * cookie-authenticated requests. The filter is wired manually because the resource-server DSL
@@ -48,19 +47,19 @@ public class SecurityConfig {
                         "/api/auth/status",
                         "/api/auth/setup",
                         "/api/auth/login",
-                        "/api/auth/refresh")
+                        "/api/auth/refresh",
+                        "/.well-known/jwks.json")
                     .permitAll()
                     .requestMatchers("/actuator/health/**", "/actuator/health")
                     .permitAll()
                     .requestMatchers("/actuator/**")
                     .denyAll()
-                    // Transitional: open until playback-URL tokens land (next PR).
-                    .requestMatchers("/api/stream/**")
-                    .permitAll()
+                    .requestMatchers(SecurityRequestMatchers.STREAM_PATHS)
+                    .hasAuthority(TokenScope.PLAYBACK.authority())
                     .requestMatchers("/api/images/**")
-                    .hasAuthority("SCOPE_PROFILE")
+                    .hasAuthority(TokenScope.PROFILE.authority())
                     .anyRequest()
-                    .hasAuthority("SCOPE_ACCOUNT"))
+                    .hasAuthority(TokenScope.ACCOUNT.authority()))
         .oauth2ResourceServer(
             oauth2 ->
                 oauth2

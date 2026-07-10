@@ -11,6 +11,7 @@ public final class TokenClaims {
   public static final String MEMBERSHIP_VERSION = "mv";
   public static final String PROFILE_ID = "pf";
   public static final String POLICY_VERSION = "pv";
+  public static final String STREAM_SESSION = "stream";
 
   private TokenClaims() {}
 }

@@ -49,7 +49,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
@@ -164,31 +164,42 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should create identity on first setup and conflict on second")
-  void shouldCreateIdentityOnFirstSetupAndConflictOnSecond() throws Exception {
+  @DisplayName("Should create identity when setup is first")
+  void shouldCreateIdentityWhenSetupIsFirst() throws Exception {
     var suffix = UUID.randomUUID();
     setupEmail = "setup-" + suffix + "@example.com";
     setupHouseholdName = "Home-" + suffix;
-    var setupBody =
-        """
-        {"email": "%s", "displayName": "Admin", "password": "%s", \
-        "householdName": "%s", "profileName": "Andrew", "cookieMode": false}
-        """
-            .formatted(setupEmail, PASSWORD, setupHouseholdName);
 
     mockMvc
-        .perform(post("/api/auth/setup").contentType(MediaType.APPLICATION_JSON).content(setupBody))
+        .perform(
+            post("/api/auth/setup")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(setupBody(setupEmail)))
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.accessToken").isNotEmpty())
         .andExpect(jsonPath("$.refreshToken").isNotEmpty())
         .andExpect(jsonPath("$.accessTokenExpiresAt").exists())
         .andExpect(jsonPath("$.scope").value("profile"));
+  }
 
-    var secondBody = setupBody.replace(setupEmail, "second-" + suffix + "@example.com");
+  @Test
+  @DisplayName("Should reject setup when already completed")
+  void shouldRejectSetupWhenAlreadyCompleted() throws Exception {
+    var suffix = UUID.randomUUID();
+    setupEmail = "setup-" + suffix + "@example.com";
+    setupHouseholdName = "Home-" + suffix;
+    mockMvc
+        .perform(
+            post("/api/auth/setup")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(setupBody(setupEmail)))
+        .andExpect(status().isCreated());
 
     mockMvc
         .perform(
-            post("/api/auth/setup").contentType(MediaType.APPLICATION_JSON).content(secondBody))
+            post("/api/auth/setup")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(setupBody("second-" + suffix + "@example.com")))
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.code").value("SETUP_ALREADY_COMPLETED"));
   }
@@ -236,51 +247,16 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   @DisplayName("Should recover same refresh token when rotation response lost")
   void shouldRecoverSameRefreshTokenWhenRotationResponseLost() throws Exception {
     seedSingleProfileIdentity();
+    var firstRefreshToken = loginAndReturnRefreshToken();
 
-    var loginResponse =
-        mockMvc
-            .perform(
-                post("/api/auth/login")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(loginBody(account.getEmail(), PASSWORD)))
-            .andExpect(status().isOk())
-            .andReturn()
-            .getResponse()
-            .getContentAsString();
-    var firstRefreshToken = objectMapper.readTree(loginResponse).get("refreshToken").asString();
-
-    var rotated =
-        mockMvc
-            .perform(
-                post("/api/auth/refresh")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(refreshBody(firstRefreshToken)))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.accessToken").isNotEmpty())
-            .andExpect(jsonPath("$.refreshToken").isNotEmpty())
-            .andExpect(jsonPath("$.scope").value("profile"))
-            .andReturn()
-            .getResponse()
-            .getContentAsString();
-    var rotatedRefreshToken = objectMapper.readTree(rotated).get("refreshToken").asString();
-    assertThat(rotatedRefreshToken).isNotEqualTo(firstRefreshToken);
+    var rotatedRefreshToken = redeemAndReturnRefreshToken(firstRefreshToken);
 
     // Treat the first rotation response as lost. Retrying the consumed predecessor inside the
     // grace window must recover that exact successor rather than strand the client on A.
-    var replay =
-        mockMvc
-            .perform(
-                post("/api/auth/refresh")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(refreshBody(firstRefreshToken)))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.accessToken").isNotEmpty())
-            .andExpect(jsonPath("$.refreshToken").isNotEmpty())
-            .andReturn()
-            .getResponse()
-            .getContentAsString();
-    assertThat(objectMapper.readTree(replay).get("refreshToken").asString())
-        .isEqualTo(rotatedRefreshToken);
+    var replayedRefreshToken = redeemAndReturnRefreshToken(firstRefreshToken);
+
+    assertThat(rotatedRefreshToken).isNotBlank().isNotEqualTo(firstRefreshToken);
+    assertThat(replayedRefreshToken).isEqualTo(rotatedRefreshToken);
   }
 
   @Test
@@ -609,8 +585,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should select profile and upgrade to profile scope")
-  void shouldSelectProfileAndUpgradeToProfileScope() throws Exception {
+  @DisplayName("Should upgrade to profile scope when profile selected")
+  void shouldUpgradeToProfileScopeWhenProfileSelected() throws Exception {
     var householdToken = householdScopedTokenWithTwoProfiles();
 
     var response =
@@ -743,8 +719,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject cookie authenticated post without csrf token")
-  void shouldRejectCookieAuthenticatedPostWithoutCsrfToken() throws Exception {
+  @DisplayName("Should reject cookie authenticated post when csrf token missing")
+  void shouldRejectCookieAuthenticatedPostWhenCsrfTokenMissing() throws Exception {
     seedSingleProfileIdentity();
     var accessCookie = cookieModeLogin().getCookie("streamarr_access");
 
@@ -782,8 +758,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should accept bearer post without csrf token")
-  void shouldAcceptBearerPostWithoutCsrfToken() throws Exception {
+  @DisplayName("Should accept bearer post when csrf token absent")
+  void shouldAcceptBearerPostWhenCsrfTokenAbsent() throws Exception {
     seedSingleProfileIdentity();
     var accessToken = loginAndReadField("accessToken");
 
@@ -1026,8 +1002,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should revoke session and clear cookies on logout")
-  void shouldRevokeSessionAndClearCookiesOnLogout() throws Exception {
+  @DisplayName("Should revoke session and clear cookies when logging out")
+  void shouldRevokeSessionAndClearCookiesWhenLoggingOut() throws Exception {
     seedSingleProfileIdentity();
     var login = objectMapper.readTree(loginResponseBody());
     var accessToken = login.get("accessToken").asString();
@@ -1111,12 +1087,17 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   private org.springframework.security.oauth2.jwt.Jwt decodeToken(String token) {
-    var keyBytes = java.util.Base64.getDecoder().decode(tokenProperties.signingKey());
-    return org.springframework.security.oauth2.jwt.NimbusJwtDecoder.withSecretKey(
-            new javax.crypto.spec.SecretKeySpec(keyBytes, "HmacSHA256"))
-        .macAlgorithm(org.springframework.security.oauth2.jose.jws.MacAlgorithm.HS256)
-        .build()
-        .decode(token);
+    var keys =
+        new com.streamarr.server.config.security.TokenCryptoConfig()
+            .tokenSigningKeys(tokenProperties);
+    var processor =
+        new com.nimbusds.jwt.proc.DefaultJWTProcessor<com.nimbusds.jose.proc.SecurityContext>();
+    processor.setJWSKeySelector(
+        new com.nimbusds.jose.proc.JWSVerificationKeySelector<>(
+            com.nimbusds.jose.JWSAlgorithm.ES256,
+            new com.nimbusds.jose.jwk.source.ImmutableJWKSet<>(keys.verificationKeys())));
+    processor.setJWTClaimsSetVerifier((claims, context) -> {});
+    return new org.springframework.security.oauth2.jwt.NimbusJwtDecoder(processor).decode(token);
   }
 
   private String signedAccessToken(
@@ -1137,7 +1118,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
 
     return jwtEncoder
         .encode(
-            JwtEncoderParameters.from(JwsHeader.with(MacAlgorithm.HS256).build(), claims.build()))
+            JwtEncoderParameters.from(
+                JwsHeader.with(SignatureAlgorithm.ES256).build(), claims.build()))
         .getTokenValue();
   }
 
@@ -1148,7 +1130,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     var pastClock = Clock.fixed(Instant.now().minus(Duration.ofHours(1)), ZoneOffset.UTC);
     var pastIssuer =
         new AccessTokenIssuer(
-            cryptoConfig.jwtEncoder(cryptoConfig.authSigningKey(tokenProperties)),
+            cryptoConfig.jwtEncoder(cryptoConfig.tokenSigningKeys(tokenProperties)),
             tokenProperties,
             pastClock,
             membershipRepository,
@@ -1178,6 +1160,45 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
         {"refreshToken": "%s", "cookieMode": false}
         """
         .formatted(refreshToken);
+  }
+
+  private String setupBody(String email) {
+    return """
+        {"email": "%s", "displayName": "Admin", "password": "%s", \
+        "householdName": "%s", "profileName": "Andrew", "cookieMode": false}
+        """
+        .formatted(email, PASSWORD, setupHouseholdName);
+  }
+
+  private String loginAndReturnRefreshToken() throws Exception {
+    var response =
+        mockMvc
+            .perform(
+                post("/api/auth/login")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(loginBody(account.getEmail(), PASSWORD)))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return objectMapper.readTree(response).get("refreshToken").asString();
+  }
+
+  private String redeemAndReturnRefreshToken(String refreshToken) throws Exception {
+    var response =
+        mockMvc
+            .perform(
+                post("/api/auth/refresh")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(refreshBody(refreshToken)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.accessToken").isNotEmpty())
+            .andExpect(jsonPath("$.refreshToken").isNotEmpty())
+            .andExpect(jsonPath("$.scope").value("profile"))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return objectMapper.readTree(response).get("refreshToken").asString();
   }
 
   private void seedSingleProfileIdentity() {

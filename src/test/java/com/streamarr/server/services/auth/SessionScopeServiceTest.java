@@ -211,8 +211,8 @@ class SessionScopeServiceTest {
   // --- selectProfile ---
 
   @Test
-  @DisplayName("Should require household before profile selection")
-  void shouldRequireHouseholdBeforeProfileSelection() {
+  @DisplayName("Should require household when selecting profile")
+  void shouldRequireHouseholdWhenSelectingProfile() {
     var f = fixture();
     var accountId = f.account.getId();
     var sessionId = f.session.getId();

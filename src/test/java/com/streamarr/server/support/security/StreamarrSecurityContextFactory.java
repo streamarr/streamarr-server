@@ -20,16 +20,19 @@ final class StreamarrSecurityContextFactory {
             .accountId(TestIdentityConstants.ACCOUNT_ID)
             .role(role)
             .sessionId(TestIdentityConstants.SESSION_ID)
+            .sessionVersion(1L)
             .scope(scope)
             .householdId(scope == TokenScope.ACCOUNT ? null : TestIdentityConstants.HOUSEHOLD_ID)
             .householdRole(scope == TokenScope.ACCOUNT ? null : HouseholdRole.OWNER)
+            .membershipVersion(scope == TokenScope.ACCOUNT ? null : 1L)
             .profileId(scope == TokenScope.PROFILE ? TestIdentityConstants.PROFILE_ID : null)
+            .policyVersion(scope == TokenScope.PROFILE ? 1L : null)
             .build();
 
     var context = SecurityContextHolder.createEmptyContext();
     context.setAuthentication(
         new StreamarrAuthenticationToken(
-            identity, null, List.of(new SimpleGrantedAuthority("SCOPE_" + scope.name()))));
+            identity, null, List.of(new SimpleGrantedAuthority(scope.authority()))));
     return context;
   }
 }

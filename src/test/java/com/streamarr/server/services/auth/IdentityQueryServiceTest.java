@@ -65,8 +65,8 @@ class IdentityQueryServiceTest {
   }
 
   @Test
-  @DisplayName("Should mark the active profile within a membership")
-  void shouldMarkTheActiveProfileWithinAMembership() {
+  @DisplayName("Should mark the active profile when within a membership")
+  void shouldMarkActiveProfileWhenWithinMembership() {
     var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
     var householdId = saveHousehold("Smith Family");
     saveMembership(account.getId(), householdId, HouseholdRole.OWNER);
@@ -92,8 +92,8 @@ class IdentityQueryServiceTest {
   }
 
   @Test
-  @DisplayName("Should skip links whose profile row is gone")
-  void shouldSkipLinksWhoseProfileRowIsGone() {
+  @DisplayName("Should skip links when the profile row is gone")
+  void shouldSkipLinksWhenProfileRowIsGone() {
     var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
     var householdId = saveHousehold("Household");
     saveMembership(account.getId(), householdId, HouseholdRole.MEMBER);
