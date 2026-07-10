@@ -7,7 +7,13 @@ public sealed interface RefreshResult {
   AuthSession session();
 
   /** A genuine rotation: the caller receives the one new refresh token for this session. */
-  record Rotated(String rawRefreshToken, AuthSession session) implements RefreshResult {}
+  record Rotated(String rawRefreshToken, AuthSession session) implements RefreshResult {
+
+    @Override
+    public String toString() {
+      return "Rotated[session=%s]".formatted(session);
+    }
+  }
 
   /**
    * An honest race inside the rotation grace window: the caller gets a fresh access token but no

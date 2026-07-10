@@ -13,6 +13,22 @@ import org.junit.jupiter.api.Test;
 class SecretRecordToStringTest {
 
   @Test
+  @DisplayName("Should not expose plaintext secrets in builder string representations")
+  void shouldNotExposePlaintextSecretsInBuilderStringRepresentations() {
+    var secret = "builder-secret-value";
+    var renderedValues =
+        List.of(
+            LoginCommand.builder().password(secret).toString(),
+            SetupCommand.builder().password(secret).toString(),
+            LoginResult.builder().rawRefreshToken(secret).toString(),
+            AccessToken.builder().value(secret).toString());
+
+    assertThat(renderedValues)
+        .hasSize(4)
+        .allSatisfy(rendered -> assertThat(rendered).doesNotContain(secret));
+  }
+
+  @Test
   @DisplayName("Should not expose plaintext secrets in string representations")
   void shouldNotExposePlaintextSecretsInStringRepresentations() {
     var secret = "review-secret-value";
@@ -22,6 +38,7 @@ class SecretRecordToStringTest {
             SetupCommand.builder().password(secret).build().toString(),
             LoginResult.builder().rawRefreshToken(secret).build().toString(),
             new IssuedRefreshToken(secret, null).toString(),
+            new RefreshResult.Rotated(secret, null).toString(),
             AccessToken.builder()
                 .value(secret)
                 .expiresAt(Instant.EPOCH)
@@ -30,7 +47,7 @@ class SecretRecordToStringTest {
                 .toString());
 
     assertThat(renderedValues)
-        .hasSize(5)
+        .hasSize(6)
         .allSatisfy(rendered -> assertThat(rendered).doesNotContain(secret));
   }
 }
