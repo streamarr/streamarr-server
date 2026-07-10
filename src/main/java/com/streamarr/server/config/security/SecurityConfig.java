@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configurers.CsrfConfigurer;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
@@ -28,19 +29,12 @@ public class SecurityConfig {
    * <p>CSRF (SPA shape: readable XSRF-TOKEN cookie, Xor handler) protects exactly the
    * cookie-authenticated requests. The filter is wired manually because the resource-server DSL
    * exempts any request its bearer resolver finds a token on — and our resolver reads the access
-   * cookie, which is precisely the ambient credential CSRF must cover. Built-in CSRF remains
-   * enabled for the framework's normal filter-chain contract; both filters share the cookie SPA
-   * shape and the same request matcher.
+   * cookie, which is precisely the ambient credential CSRF must cover.
    */
-  @SuppressWarnings("java:S4502")
   @Bean
   SecurityFilterChain securityFilterChain(HttpSecurity http) {
-    return http.csrf(
-            csrf ->
-                csrf.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
-                    .csrfTokenRequestHandler(new SpaCookieCsrfTokenRequestHandler())
-                    .requireCsrfProtectionMatcher(new CookieAuthenticationCsrfMatcher()))
-        .addFilterAfter(cookieScopedCsrfFilter(), HeaderWriterFilter.class)
+    http.removeConfigurer(CsrfConfigurer.class);
+    return http.addFilterAfter(cookieScopedCsrfFilter(), HeaderWriterFilter.class)
         .authorizeHttpRequests(authorize -> authorize.anyRequest().permitAll())
         .oauth2ResourceServer(
             oauth2 ->

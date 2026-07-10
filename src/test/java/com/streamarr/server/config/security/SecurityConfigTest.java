@@ -1,6 +1,8 @@
 package com.streamarr.server.config.security;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -19,6 +21,7 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -65,6 +68,21 @@ class SecurityConfigTest {
     mockMvc.perform(post("/api/auth/login")).andExpect(status().isNoContent());
   }
 
+  @Test
+  @DisplayName("Should accept cookie authenticated request when csrf cookie is echoed")
+  void shouldAcceptCookieAuthenticatedRequestWhenCsrfCookieIsEchoed() throws Exception {
+    var tokenCookie =
+        mockMvc.perform(get("/api/auth/login")).andReturn().getResponse().getCookie("XSRF-TOKEN");
+
+    assertThat(tokenCookie).isNotNull();
+    mockMvc
+        .perform(
+            post("/api/auth/login")
+                .cookie(new Cookie(AuthCookies.ACCESS_COOKIE, "ambient-credential"), tokenCookie)
+                .header("X-XSRF-TOKEN", tokenCookie.getValue()))
+        .andExpect(status().isNoContent());
+  }
+
   @Configuration(proxyBeanMethods = false)
   @EnableWebSecurity
   @Import({
@@ -85,6 +103,10 @@ class SecurityConfigTest {
 
   @RestController
   static class CsrfProbeController {
+
+    @GetMapping("/api/auth/login")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void get() {}
 
     @PostMapping("/api/auth/login")
     @ResponseStatus(HttpStatus.NO_CONTENT)
