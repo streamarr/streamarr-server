@@ -1,0 +1,49 @@
+meta {
+  name: Get Me
+  type: graphql
+  seq: 8
+}
+
+post {
+  url: {{BASE_URL}}/graphql
+  body: graphql
+  auth: inherit
+}
+
+body:graphql {
+  query {
+    me {
+      accountId
+      email
+      scope
+      memberships {
+        householdId
+        householdName
+        householdRole
+        profiles {
+          id
+          name
+          active
+        }
+      }
+    }
+  }
+}
+
+script:post-response {
+  if (res.status === 200 && res.body.data?.me?.memberships?.length) {
+    const membership = res.body.data.me.memberships[0];
+    bru.setVar("HOUSEHOLD_ID", membership.householdId);
+    if (membership.profiles.length) {
+      bru.setVar("PROFILE_ID", membership.profiles[0].id);
+    }
+  }
+}
+
+tests {
+  test("Should return the authenticated identity and memberships", function() {
+    expect(res.status).to.equal(200);
+    expect(res.body).to.not.have.property("errors");
+    expect(res.body.data.me.accountId).to.be.a("string");
+  });
+}
