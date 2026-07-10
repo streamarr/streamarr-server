@@ -12,8 +12,8 @@ public record SetupRequest(
 
   @Override
   public String toString() {
-    return "SetupRequest[email=%s, displayName=%s, password=REDACTED, householdName=%s,"
-        + " profileName=%s, cookieMode=%s]"
-            .formatted(email, displayName, householdName, profileName, cookieMode);
+    return ("SetupRequest[email=%s, displayName=%s, householdName=%s, profileName=%s,"
+            + " cookieMode=%s]")
+        .formatted(email, displayName, householdName, profileName, cookieMode);
   }
 }

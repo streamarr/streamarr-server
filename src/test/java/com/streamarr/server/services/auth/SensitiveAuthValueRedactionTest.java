@@ -23,11 +23,18 @@ class SensitiveAuthValueRedactionTest {
 
   private static final String SECRET_MARKER = UUID.randomUUID().toString();
 
-  @ParameterizedTest(name = "Should redact secret-bearing auth value {index}")
+  @ParameterizedTest(name = "Should not expose secret-bearing auth value {index}")
   @MethodSource("secretBearingValues")
-  @DisplayName("Should redact secrets from auth value string representations")
-  void shouldRedactSecretsFromAuthValueStringRepresentations(Object value) {
-    assertThat(value.toString()).doesNotContain(SECRET_MARKER).contains("REDACTED");
+  @DisplayName("Should not expose secrets in auth value string representations")
+  void shouldNotExposeSecretsInAuthValueStringRepresentations(Object value) {
+    assertThat(value.toString()).doesNotContain(SECRET_MARKER);
+  }
+
+  @ParameterizedTest(name = "Should omit password field labels from auth value {index}")
+  @MethodSource("passwordBearingValues")
+  @DisplayName("Should omit password fields from auth value string representations")
+  void shouldOmitPasswordFieldsFromAuthValueStringRepresentations(Object value) {
+    assertThat(value.toString()).doesNotContainIgnoringCase("password=");
   }
 
   private static Stream<Object> secretBearingValues() {
@@ -59,6 +66,19 @@ class SensitiveAuthValueRedactionTest {
             .accessTokenExpiresAt(Instant.now())
             .scope("account")
             .refreshToken(SECRET_MARKER)
+            .build());
+  }
+
+  private static Stream<Object> passwordBearingValues() {
+    return Stream.of(
+        new LoginRequest("user@example.com", SECRET_MARKER, "device", false),
+        new SetupRequest("user@example.com", "User", SECRET_MARKER, "Home", "Profile", false),
+        new ChangePasswordRequest(SECRET_MARKER, SECRET_MARKER, false),
+        ChangePasswordCommand.builder()
+            .accountId(UUID.randomUUID())
+            .sessionId(UUID.randomUUID())
+            .currentPassword(SECRET_MARKER)
+            .newPassword(SECRET_MARKER)
             .build());
   }
 }

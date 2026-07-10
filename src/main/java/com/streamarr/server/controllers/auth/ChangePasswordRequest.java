@@ -7,7 +7,6 @@ public record ChangePasswordRequest(
 
   @Override
   public String toString() {
-    return "ChangePasswordRequest[currentPassword=REDACTED, newPassword=REDACTED, cookieMode=%s]"
-        .formatted(cookieMode);
+    return "ChangePasswordRequest[cookieMode=%s]".formatted(cookieMode);
   }
 }
