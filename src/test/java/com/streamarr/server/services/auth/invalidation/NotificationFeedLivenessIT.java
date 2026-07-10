@@ -91,6 +91,10 @@ class NotificationFeedLivenessIT extends AbstractIntegrationTest {
     proxy.heal();
     await().atMost(Duration.ofSeconds(15)).until(secondInstanceListener::isListening);
 
+    // Reconnection clears the memo. Refill from the authoritative live row before proving the
+    // restored feed advances this warm entry when revocation commits.
+    assertThat(secondInstanceCache.sessionVersion(sessionId)).contains(0L);
+
     sessionRepository.revoke(sessionId, SessionRevocationReason.LOGOUT, Instant.now());
     await()
         .atMost(Duration.ofSeconds(10))
