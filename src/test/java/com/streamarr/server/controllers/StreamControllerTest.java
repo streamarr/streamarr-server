@@ -23,6 +23,7 @@ import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
 import com.streamarr.server.services.streaming.StreamingService;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -441,6 +442,11 @@ class StreamControllerTest {
     @Override
     public String currentTokenValue() {
       return VALIDATED_TOKEN;
+    }
+
+    @Override
+    public Instant currentTokenExpiry() {
+      throw new UnsupportedOperationException();
     }
 
     @Override

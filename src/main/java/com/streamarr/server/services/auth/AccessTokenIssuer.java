@@ -35,6 +35,19 @@ public class AccessTokenIssuer {
     return mint(context, now, now.plus(properties.accessTokenTtl()));
   }
 
+  /**
+   * Mints a scope-change token whose lifetime is capped by the token that authorized the change:
+   * {@code expiresAt = min(now + TTL, sourceExpiresAt)}. Selection changes context, never authority
+   * — an uncapped reissue would let repeated selection extend access indefinitely. Only setup,
+   * login, refresh, and successful password reauthentication start a fresh TTL.
+   */
+  public AccessToken issueDerived(TokenContext context, Instant sourceExpiresAt) {
+    var now = clock.instant().truncatedTo(ChronoUnit.SECONDS);
+    var freshExpiry = now.plus(properties.accessTokenTtl());
+    var cappedExpiry = sourceExpiresAt.isBefore(freshExpiry) ? sourceExpiresAt : freshExpiry;
+    return mint(context, now, cappedExpiry);
+  }
+
   private AccessToken mint(TokenContext context, Instant now, Instant expiresAt) {
     var scope = resolveScope(context);
 

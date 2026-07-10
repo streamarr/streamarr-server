@@ -2,6 +2,7 @@ package com.streamarr.server.services.authorization;
 
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -19,6 +20,14 @@ public interface AuthorizationService {
    * URLs) reflect only server-validated input.
    */
   String currentTokenValue();
+
+  /**
+   * Expiry of the signature-verified token that authenticated this request. Sourced from the
+   * validated token, never reparsed from the raw value, so derived credentials (scope-change
+   * tokens) cap their lifetime against trusted input. Never null: the strict expiry validator
+   * rejects tokens without an exp claim before they authenticate.
+   */
+  Instant currentTokenExpiry();
 
   UUID requireAccountId();
 

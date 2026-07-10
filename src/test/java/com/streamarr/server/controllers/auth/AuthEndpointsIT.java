@@ -41,6 +41,7 @@ import java.time.ZoneOffset;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
+import org.awaitility.Awaitility;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -692,6 +693,41 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   /** A sole household with two profiles: login auto-selects the household but not a profile. */
+  @Test
+  @DisplayName("Should not advance expiry when selection repeated")
+  void shouldNotAdvanceExpiryWhenSelectionRepeated() throws Exception {
+    var sourceToken = householdScopedTokenWithTwoProfiles();
+
+    var firstToken = selectHouseholdToken(sourceToken);
+    var firstExpiry = decodeToken(firstToken).getExpiresAt();
+
+    // JWT timestamps carry whole seconds; cross a second boundary so an uncapped reissue would
+    // visibly advance the expiry. Selection derives authority — it must never extend it.
+    Awaitility.await().pollDelay(Duration.ofMillis(1100)).until(() -> true);
+
+    var secondToken = selectHouseholdToken(firstToken);
+    var secondExpiry = decodeToken(secondToken).getExpiresAt();
+
+    assertThat(secondExpiry).isEqualTo(firstExpiry);
+  }
+
+  private String selectHouseholdToken(String bearerToken) throws Exception {
+    var response =
+        mockMvc
+            .perform(
+                post("/api/auth/select-household")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .header("Authorization", "Bearer " + bearerToken)
+                    .content(
+                        "{\"householdId\": \"%s\", \"cookieMode\": false}"
+                            .formatted(household.getId())))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return objectMapper.readTree(response).get("accessToken").asString();
+  }
+
   private String householdScopedTokenWithTwoProfiles() throws Exception {
     seedSingleProfileIdentity();
     var secondProfile =

@@ -88,7 +88,7 @@ public class AuthController {
         sessionScopeService.selectHousehold(
             identity.accountId(), identity.sessionId(), request.householdId());
     return respondAccessOnly(
-        accessTokenIssuer.issue(context),
+        accessTokenIssuer.issueDerived(context, authorizationService.currentTokenExpiry()),
         StreamarrBearerTokenResolver.usedAccessCookie(httpRequest));
   }
 
@@ -100,7 +100,7 @@ public class AuthController {
         sessionScopeService.selectProfile(
             identity.accountId(), identity.sessionId(), request.profileId());
     return respondAccessOnly(
-        accessTokenIssuer.issue(context),
+        accessTokenIssuer.issueDerived(context, authorizationService.currentTokenExpiry()),
         StreamarrBearerTokenResolver.usedAccessCookie(httpRequest));
   }
 

@@ -23,6 +23,8 @@ import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -179,6 +181,53 @@ class AccessTokenIssuerTest {
     assertThat(decoded.getClaimAsString(TokenClaims.SCOPE)).isEqualTo("account");
     assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ID)).isNull();
     assertThat(decoded.getClaimAsString(TokenClaims.PROFILE_ID)).isNull();
+  }
+
+  @Test
+  @DisplayName("Should cap derived expiry when source expires sooner")
+  void shouldCapDerivedExpiryWhenSourceExpiresSooner() {
+    var now = Instant.parse("2026-07-10T12:00:00Z");
+    var fixedIssuer = issuerAt(now);
+    var sourceExpiry = now.plus(Duration.ofMinutes(3));
+
+    var token = fixedIssuer.issueDerived(accountContext(), sourceExpiry);
+
+    assertThat(token.expiresAt()).isEqualTo(sourceExpiry);
+  }
+
+  @Test
+  @DisplayName("Should use configured ttl when source expires later")
+  void shouldUseConfiguredTtlWhenSourceExpiresLater() {
+    var now = Instant.parse("2026-07-10T12:00:00Z");
+    var fixedIssuer = issuerAt(now);
+    var sourceExpiry = now.plus(Duration.ofMinutes(30));
+
+    var token = fixedIssuer.issueDerived(accountContext(), sourceExpiry);
+
+    // A derived token never outlives its source, but a source with generous remaining
+    // lifetime still yields only the configured TTL.
+    assertThat(token.expiresAt()).isEqualTo(now.plus(Duration.ofMinutes(10)));
+  }
+
+  private AccessTokenIssuer issuerAt(Instant now) {
+    return new AccessTokenIssuer(
+        cryptoConfig.jwtEncoder(cryptoConfig.tokenSigningKeys(properties)),
+        properties,
+        Clock.fixed(now, ZoneOffset.UTC),
+        membershipRepository,
+        profileRepository,
+        accountProfileRepository);
+  }
+
+  private TokenContext accountContext() {
+    var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
+    var session =
+        AuthSession.builder()
+            .id(UUID.randomUUID())
+            .accountId(account.getId())
+            .sessionVersion(1)
+            .build();
+    return TokenContext.builder().account(account).session(session).build();
   }
 
   @Test

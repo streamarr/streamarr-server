@@ -9,6 +9,7 @@ import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import java.time.Instant;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
@@ -38,6 +39,17 @@ public class SecurityContextAuthorizationService implements AuthorizationService
     if (authentication instanceof StreamarrAuthenticationToken token
         && token.getCredentials() instanceof Jwt jwt) {
       return jwt.getTokenValue();
+    }
+    throw new AuthenticationRequiredException();
+  }
+
+  @Override
+  public Instant currentTokenExpiry() {
+    var authentication = SecurityContextHolder.getContext().getAuthentication();
+    if (authentication instanceof StreamarrAuthenticationToken token
+        && token.getCredentials() instanceof Jwt jwt
+        && jwt.getExpiresAt() != null) {
+      return jwt.getExpiresAt();
     }
     throw new AuthenticationRequiredException();
   }

@@ -25,6 +25,7 @@ import java.util.Base64;
 import java.util.Date;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -338,15 +339,12 @@ class TokenCryptoConfigTest {
     return mint(encoder, issuer, customizer -> {});
   }
 
-  private String mint(
-      JwtEncoder encoder, java.util.function.Consumer<JwtClaimsSet.Builder> customizer) {
+  private String mint(JwtEncoder encoder, Consumer<JwtClaimsSet.Builder> customizer) {
     return mint(encoder, TokenContract.ISSUER, customizer);
   }
 
   private String mint(
-      JwtEncoder encoder,
-      String issuer,
-      java.util.function.Consumer<JwtClaimsSet.Builder> customizer) {
+      JwtEncoder encoder, String issuer, Consumer<JwtClaimsSet.Builder> customizer) {
     var now = Instant.now();
     var claims =
         JwtClaimsSet.builder()
