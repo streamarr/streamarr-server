@@ -7,7 +7,7 @@ public record LoginRequest(
 
   @Override
   public String toString() {
-    return "LoginRequest[email=%s, password=REDACTED, deviceName=%s, cookieMode=%s]"
+    return "LoginRequest[email=%s, deviceName=%s, cookieMode=%s]"
         .formatted(email, deviceName, cookieMode);
   }
 }
