@@ -1,9 +1,9 @@
 package com.streamarr.server.controllers.auth;
 
-public record RefreshRequest(String refreshToken, boolean cookieMode) {
+public record RefreshRequest(String refreshToken) {
 
   @Override
   public String toString() {
-    return "RefreshRequest[refreshToken=REDACTED, cookieMode=%s]".formatted(cookieMode);
+    return "RefreshRequest[refreshToken=REDACTED]";
   }
 }

@@ -45,7 +45,7 @@ class SensitiveAuthValueRedactionTest {
         new LoginRequest("user@example.com", SECRET_MARKER, "device", false),
         new SetupRequest("user@example.com", "User", SECRET_MARKER, "Home", "Profile", false),
         new ChangePasswordRequest(SECRET_MARKER, SECRET_MARKER),
-        new RefreshRequest(SECRET_MARKER, false),
+        new RefreshRequest(SECRET_MARKER),
         new TokenRefreshService.RefreshedTokens(null, SECRET_MARKER),
         ChangePasswordCommand.builder().currentPassword(SECRET_MARKER).newPassword(SECRET_MARKER),
         PasswordChangeResult.builder().rawRefreshToken(SECRET_MARKER),

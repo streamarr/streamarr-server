@@ -29,13 +29,14 @@ public class TokenRefreshService {
     var rotatedRefreshToken =
         switch (result) {
           case RefreshResult.Rotated(String successor, _) -> successor;
-          case RefreshResult.Replayed _, RefreshResult.SupersededReplay _ -> null;
+          case RefreshResult.Replayed(String successor, _) -> successor;
+          case RefreshResult.SupersededReplay _ -> null;
         };
 
     return new RefreshedTokens(accessToken, rotatedRefreshToken);
   }
 
-  /** rotatedRefreshToken is null on a grace replay — access only, never a second rotation. */
+  /** rotatedRefreshToken is absent only when a recovered successor has already been superseded. */
   public record RefreshedTokens(AccessToken accessToken, String rotatedRefreshToken) {
 
     public boolean rotated() {

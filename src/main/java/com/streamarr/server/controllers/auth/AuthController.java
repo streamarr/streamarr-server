@@ -149,8 +149,6 @@ public class AuthController {
 
     var refreshed = tokenRefreshService.refresh(carrier.refreshToken());
 
-    // Only a genuine rotation carries a successor refresh token; a grace replay never does —
-    // exactly one refresh cookie per grace episode, so late responses cannot poison the jar.
     if (refreshed.rotated()) {
       return respond(
           HttpStatus.OK,
@@ -161,10 +159,10 @@ public class AuthController {
     return respondAccessOnly(refreshed.accessToken(), carrier.cookieMode());
   }
 
-  private RefreshRequest resolveRefreshCarrier(
+  private RefreshCarrier resolveRefreshCarrier(
       RefreshRequest request, HttpServletRequest httpRequest) {
     if (request != null && request.refreshToken() != null && !request.refreshToken().isBlank()) {
-      return request;
+      return new RefreshCarrier(request.refreshToken(), false);
     }
 
     var cookies = httpRequest.getCookies();
@@ -176,9 +174,11 @@ public class AuthController {
         .filter(cookie -> AuthCookieWriter.REFRESH_COOKIE.equals(cookie.getName()))
         .map(jakarta.servlet.http.Cookie::getValue)
         .findFirst()
-        .map(rawToken -> new RefreshRequest(rawToken, true))
+        .map(rawToken -> new RefreshCarrier(rawToken, true))
         .orElseThrow(InvalidRefreshTokenException::new);
   }
+
+  private record RefreshCarrier(String refreshToken, boolean cookieMode) {}
 
   private static String deviceNameOf(HttpServletRequest httpRequest) {
     return httpRequest.getHeader(HttpHeaders.USER_AGENT);
@@ -202,7 +202,7 @@ public class AuthController {
         .body(body.build());
   }
 
-  /** Grace replays refresh the access credential only; the refresh cookie is never rewritten. */
+  /** Writes only the access credential for scope changes or a superseded refresh replay. */
   private ResponseEntity<AuthTokensResponse> respondAccessOnly(
       AccessToken accessToken, boolean cookieMode) {
     var body =

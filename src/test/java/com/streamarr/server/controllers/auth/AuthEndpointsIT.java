@@ -232,8 +232,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should rotate refresh token over http and grace replay without rotation")
-  void shouldRotateRefreshTokenOverHttpAndGraceReplayWithoutRotation() throws Exception {
+  @DisplayName("Should recover same refresh token when rotation response lost")
+  void shouldRecoverSameRefreshTokenWhenRotationResponseLost() throws Exception {
     seedSingleProfileIdentity();
 
     var loginResponse =
@@ -264,15 +264,63 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     var rotatedRefreshToken = objectMapper.readTree(rotated).get("refreshToken").asString();
     assertThat(rotatedRefreshToken).isNotEqualTo(firstRefreshToken);
 
-    // Replaying the consumed token inside the grace window yields access only — no rotation.
-    mockMvc
-        .perform(
-            post("/api/auth/refresh")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(refreshBody(firstRefreshToken)))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.accessToken").isNotEmpty())
-        .andExpect(jsonPath("$.refreshToken").doesNotExist());
+    // Treat the first rotation response as lost. Retrying the consumed predecessor inside the
+    // grace window must recover that exact successor rather than strand the client on A.
+    var replay =
+        mockMvc
+            .perform(
+                post("/api/auth/refresh")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(refreshBody(firstRefreshToken)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.accessToken").isNotEmpty())
+            .andExpect(jsonPath("$.refreshToken").isNotEmpty())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    assertThat(objectMapper.readTree(replay).get("refreshToken").asString())
+        .isEqualTo(rotatedRefreshToken);
+  }
+
+  @Test
+  @DisplayName("Should recover same refresh cookie when rotation response lost")
+  void shouldRecoverSameRefreshCookieWhenRotationResponseLost() throws Exception {
+    seedSingleProfileIdentity();
+    var loginResponse = cookieModeLogin();
+    var predecessor = loginResponse.getCookie("streamarr_refresh");
+    var csrfCookie = loginResponse.getCookie("XSRF-TOKEN");
+
+    var rotated =
+        mockMvc
+            .perform(
+                post("/api/auth/refresh")
+                    .cookie(predecessor, csrfCookie)
+                    .header("X-XSRF-TOKEN", csrfCookie.getValue()))
+            .andExpect(status().isOk())
+            .andExpect(cookie().exists("streamarr_access"))
+            .andExpect(cookie().exists("streamarr_refresh"))
+            .andExpect(jsonPath("$.accessToken").doesNotExist())
+            .andExpect(jsonPath("$.refreshToken").doesNotExist())
+            .andReturn()
+            .getResponse()
+            .getCookie("streamarr_refresh");
+
+    var replayed =
+        mockMvc
+            .perform(
+                post("/api/auth/refresh")
+                    .cookie(predecessor, csrfCookie)
+                    .header("X-XSRF-TOKEN", csrfCookie.getValue()))
+            .andExpect(status().isOk())
+            .andExpect(cookie().exists("streamarr_access"))
+            .andExpect(cookie().exists("streamarr_refresh"))
+            .andExpect(jsonPath("$.accessToken").doesNotExist())
+            .andExpect(jsonPath("$.refreshToken").doesNotExist())
+            .andReturn()
+            .getResponse()
+            .getCookie("streamarr_refresh");
+
+    assertThat(replayed.getValue()).isEqualTo(rotated.getValue());
   }
 
   @Test
@@ -288,7 +336,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
         .perform(
             post("/api/auth/refresh")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(refreshBody(bodyRefreshToken))
+                .content(
+                    "{\"refreshToken\": \"%s\", \"cookieMode\": true}".formatted(bodyRefreshToken))
                 .cookie(refreshCookie, csrfCookie)
                 .header("X-XSRF-TOKEN", csrfCookie.getValue()))
         .andExpect(status().isOk())
@@ -421,8 +470,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
 
     assertThat(rotated.getCookie("streamarr_access")).isNotNull();
     assertThat(rotated.getCookie("streamarr_refresh")).isNotNull();
-    assertThat(rotated.getCookie("streamarr_refresh").getValue())
-        .isNotEqualTo(refreshCookie.getValue());
+    var successor = rotated.getCookie("streamarr_refresh").getValue();
+    assertThat(successor).isNotEqualTo(refreshCookie.getValue());
 
     var graceReplay =
         mockMvc
@@ -435,7 +484,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
             .getResponse();
 
     assertThat(graceReplay.getCookie("streamarr_access")).isNotNull();
-    assertThat(graceReplay.getCookie("streamarr_refresh")).isNull();
+    assertThat(graceReplay.getCookie("streamarr_refresh")).isNotNull();
+    assertThat(graceReplay.getCookie("streamarr_refresh").getValue()).isEqualTo(successor);
   }
 
   @Test
