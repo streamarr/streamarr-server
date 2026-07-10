@@ -101,9 +101,8 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "Should reject an old-password login when password change completes after credential lock")
-  void shouldRejectOldPasswordLoginWhenPasswordChangeCompletesAfterCredentialLock()
-      throws Exception {
+      "Should reject an old-password login when password change completes after upgrade check")
+  void shouldRejectOldPasswordLoginWhenPasswordChangeCompletesAfterUpgradeCheck() throws Exception {
     var oldPassword = UUID.randomUUID().toString();
     var newPassword = UUID.randomUUID().toString();
     account =
