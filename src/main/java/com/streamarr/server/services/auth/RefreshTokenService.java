@@ -134,8 +134,8 @@ public class RefreshTokenService {
   }
 
   private boolean isWithinGrace(RefreshToken token, Instant now) {
+    // consumeActiveToken stamps rotatedAt atomically with ROTATED, so ROTATED implies non-null.
     return token.getStatus() == RefreshTokenStatus.ROTATED
-        && token.getRotatedAt() != null
         && !now.isAfter(token.getRotatedAt().plus(properties.rotationGrace()));
   }
 

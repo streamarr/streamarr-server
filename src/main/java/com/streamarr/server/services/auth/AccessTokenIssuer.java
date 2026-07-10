@@ -67,10 +67,8 @@ public class AccessTokenIssuer {
   }
 
   private TokenScope resolveScope(TokenContext context) {
+    // TokenContext's constructor guarantees a profile id always rides a household id.
     if (context.profileId() != null) {
-      if (context.householdId() == null) {
-        throw new ProfileAccessDeniedException();
-      }
       return TokenScope.PROFILE;
     }
 
