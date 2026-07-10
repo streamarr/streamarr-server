@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
+import com.nimbusds.jose.crypto.ECDSASigner;
 import com.nimbusds.jose.crypto.MACSigner;
 import com.nimbusds.jose.jwk.Curve;
 import com.nimbusds.jwt.JWTClaimsSet;
@@ -193,6 +194,58 @@ class TokenCryptoConfigTest {
   }
 
   @Test
+  @DisplayName("Should reject token when past expiry within default skew")
+  void shouldRejectTokenWhenPastExpiryWithinDefaultSkew() {
+    var keys = config.tokenSigningKeys(properties(KEY_A, List.of()));
+    var now = Instant.now();
+    var token =
+        mint(
+            config.jwtEncoder(keys),
+            claims -> claims.issuedAt(now.minusSeconds(120)).expiresAt(now.minusSeconds(1)));
+    var jwtDecoder = decoder(keys);
+
+    assertThatThrownBy(() -> jwtDecoder.decode(token))
+        .isInstanceOf(JwtValidationException.class)
+        .hasMessageContaining("expired");
+  }
+
+  @Test
+  @DisplayName("Should reject token when expiry claim missing")
+  void shouldRejectTokenWhenExpiryClaimMissing() throws Exception {
+    var keys = config.tokenSigningKeys(properties(KEY_A, List.of()));
+    var expiryFreeToken =
+        new SignedJWT(
+            new JWSHeader.Builder(JWSAlgorithm.ES256).keyID(keys.signingKey().getKeyID()).build(),
+            new JWTClaimsSet.Builder()
+                .issuer(TokenContract.ISSUER)
+                .subject(accountId.toString())
+                .issueTime(Date.from(Instant.now()))
+                .claim(TokenClaims.ROLE, AccountRole.USER.name())
+                .claim(TokenClaims.SESSION_ID, sessionId.toString())
+                .claim(TokenClaims.SESSION_VERSION, 0L)
+                .claim(TokenClaims.SCOPE, TokenScope.ACCOUNT.claimValue())
+                .build());
+    expiryFreeToken.sign(new ECDSASigner(keys.signingKey()));
+    var token = expiryFreeToken.serialize();
+    var jwtDecoder = decoder(keys);
+
+    assertThatThrownBy(() -> jwtDecoder.decode(token))
+        .isInstanceOf(JwtValidationException.class)
+        .hasMessageContaining("expiry");
+  }
+
+  @Test
+  @DisplayName("Should reject token when not yet valid")
+  void shouldRejectTokenWhenNotYetValid() {
+    var keys = config.tokenSigningKeys(properties(KEY_A, List.of()));
+    var now = Instant.now();
+    var token = mint(config.jwtEncoder(keys), claims -> claims.notBefore(now.plusSeconds(300)));
+    var jwtDecoder = decoder(keys);
+
+    assertThatThrownBy(() -> jwtDecoder.decode(token)).isInstanceOf(JwtValidationException.class);
+  }
+
+  @Test
   @DisplayName("Should reject token when issuer is foreign")
   void shouldRejectTokenFromForeignIssuer() {
     var keys = config.tokenSigningKeys(properties(KEY_A, List.of()));
@@ -282,6 +335,18 @@ class TokenCryptoConfigTest {
   }
 
   private String mint(JwtEncoder encoder, String issuer) {
+    return mint(encoder, issuer, customizer -> {});
+  }
+
+  private String mint(
+      JwtEncoder encoder, java.util.function.Consumer<JwtClaimsSet.Builder> customizer) {
+    return mint(encoder, TokenContract.ISSUER, customizer);
+  }
+
+  private String mint(
+      JwtEncoder encoder,
+      String issuer,
+      java.util.function.Consumer<JwtClaimsSet.Builder> customizer) {
     var now = Instant.now();
     var claims =
         JwtClaimsSet.builder()
@@ -292,10 +357,12 @@ class TokenCryptoConfigTest {
             .claim(TokenClaims.ROLE, AccountRole.USER.name())
             .claim(TokenClaims.SESSION_ID, sessionId.toString())
             .claim(TokenClaims.SESSION_VERSION, 0L)
-            .claim(TokenClaims.SCOPE, TokenScope.ACCOUNT.claimValue())
-            .build();
+            .claim(TokenClaims.SCOPE, TokenScope.ACCOUNT.claimValue());
+    customizer.accept(claims);
     return encoder
-        .encode(JwtEncoderParameters.from(JwsHeader.with(SignatureAlgorithm.ES256).build(), claims))
+        .encode(
+            JwtEncoderParameters.from(
+                JwsHeader.with(SignatureAlgorithm.ES256).build(), claims.build()))
         .getTokenValue();
   }
 

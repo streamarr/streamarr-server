@@ -62,6 +62,40 @@ class RestAuthenticationEntryPointTest {
   }
 
   @Test
+  @DisplayName("Should report expired token when strict expiry validation fails")
+  void shouldReportExpiredTokenWhenStrictExpiryValidationFails()
+      throws UnsupportedEncodingException {
+    var response = new MockHttpServletResponse();
+    var validation =
+        new JwtValidationException(
+            "An error occurred while attempting to decode the Jwt",
+            List.of(new OAuth2Error("invalid_token", "Token is expired.", null)));
+    var exception = new OAuth2AuthenticationException(new OAuth2Error("invalid_token"), validation);
+
+    entryPoint.commence(new MockHttpServletRequest(), response, exception);
+
+    assertThat(response.getContentAsString())
+        .isEqualTo("{\"code\":\"EXPIRED_TOKEN\",\"message\":\"Authentication is required.\"}");
+  }
+
+  @Test
+  @DisplayName("Should report invalid token when expiry claim missing")
+  void shouldReportInvalidTokenWhenExpiryClaimMissing() throws UnsupportedEncodingException {
+    var response = new MockHttpServletResponse();
+    var validation =
+        new JwtValidationException(
+            "An error occurred while attempting to decode the Jwt",
+            List.of(new OAuth2Error("invalid_token", "Token has no expiry claim.", null)));
+    var exception = new OAuth2AuthenticationException(new OAuth2Error("invalid_token"), validation);
+
+    entryPoint.commence(new MockHttpServletRequest(), response, exception);
+
+    // Missing expiry is a malformed token, not a refresh-and-retry signal.
+    assertThat(response.getContentAsString())
+        .isEqualTo("{\"code\":\"INVALID_TOKEN\",\"message\":\"Authentication is required.\"}");
+  }
+
+  @Test
   @DisplayName("Should report invalid token when token exception does not mention expiry")
   void shouldReportInvalidTokenWhenTokenExceptionDoesNotMentionExpiry()
       throws UnsupportedEncodingException {

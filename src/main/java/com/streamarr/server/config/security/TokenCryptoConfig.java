@@ -12,6 +12,7 @@ import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
 import com.nimbusds.jose.proc.JWSVerificationKeySelector;
 import com.nimbusds.jose.proc.SecurityContext;
 import com.nimbusds.jwt.proc.DefaultJWTProcessor;
+import com.streamarr.server.services.auth.StrictJwtExpiryValidator;
 import com.streamarr.server.services.auth.TokenContract;
 import com.streamarr.server.services.auth.TokenIdentityValidator;
 import com.streamarr.server.services.auth.TokenVersionValidator;
@@ -25,6 +26,7 @@ import java.security.spec.ECPublicKeySpec;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
@@ -90,9 +92,12 @@ public class TokenCryptoConfig {
     processor.setJWTClaimsSetVerifier((claims, context) -> {});
 
     var decoder = new NimbusJwtDecoder(processor);
+    // The default chain keeps issuer and nbf validation; the strict validator makes exp
+    // mandatory with zero leeway, overriding the default 60s-skew expiry tolerance.
     decoder.setJwtValidator(
         new DelegatingOAuth2TokenValidator<>(
             JwtValidators.createDefaultWithIssuer(TokenContract.ISSUER),
+            new StrictJwtExpiryValidator(Clock.systemUTC()),
             identityValidator,
             versionValidator));
     return decoder;
