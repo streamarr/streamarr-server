@@ -28,8 +28,6 @@ class PlaybackTokenQueryRedactionFilterTest {
   @Test
   @DisplayName("Should drop an undecodable parameter from a stream request query string")
   void shouldDropUndecodableParameterFromStreamRequestQueryString() throws Exception {
-    // Fail closed: a parameter name the URL decoder rejects cannot be classified, so it is dropped
-    // rather than risk surfacing a credential in access logs or traces.
     var observedQuery = redactedQueryOf("%zz=leaked&quality=auto");
 
     assertThat(observedQuery).isEqualTo("quality=auto");

@@ -17,8 +17,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice(assignableTypes = AuthController.class)
 public class AuthExceptionHandler {
 
-  // One body for unknown, expired, and reused tokens: the response must not reveal whether a
-  // presented refresh token was ever valid.
+  // Do not reveal whether a rejected refresh token was ever valid.
   private static final String REFRESH_TOKEN_REJECTED = "The refresh token is unknown or expired.";
 
   @ExceptionHandler(SetupAlreadyCompletedException.class)

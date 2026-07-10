@@ -275,7 +275,6 @@ class RefreshTokenServiceTest {
     assertThatThrownBy(() -> service.redeem(replayedToken))
         .isInstanceOf(TokenReuseDetectedException.class);
 
-    // The revocation, not the exception, is the security response — pin that it actually happens.
     var session = sessionRepository.findById(issued.session().getId()).orElseThrow();
     assertThat(session.getRevokedAt()).isNotNull();
     assertThat(session.getRevokedReason()).isEqualTo(SessionRevocationReason.TOKEN_REUSE);

@@ -2,6 +2,10 @@ package com.streamarr.server.repositories.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.domain.auth.AccountRole;
+import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.domain.auth.RefreshTokenStatus;
+import com.streamarr.server.domain.auth.SessionRevocationReason;
 import java.util.Arrays;
 import java.util.List;
 import org.jooq.EnumType;
@@ -9,11 +13,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
-/**
- * The jOOQ ↔ Java enum bridge resolves by name, so a Java enum value added without the matching
- * ALTER TYPE migration and jOOQ regen would fail at runtime (a write of that value — e.g. session
- * revocation — would throw). These pin every bridged pair so one-sided drift fails here instead.
- */
+/** Prevents the name-based jOOQ ↔ Java enum bridge from drifting. */
 @Tag("UnitTest")
 @DisplayName("Auth Enum Parity Tests")
 class AuthEnumParityTest {
@@ -22,7 +22,7 @@ class AuthEnumParityTest {
   @DisplayName("Should keep session revocation reason literals in sync")
   void shouldKeepSessionRevocationReasonInSync() {
     assertParity(
-        names(com.streamarr.server.domain.auth.SessionRevocationReason.values()),
+        names(SessionRevocationReason.values()),
         literals(com.streamarr.server.jooq.generated.enums.SessionRevocationReason.values()));
   }
 
@@ -30,7 +30,7 @@ class AuthEnumParityTest {
   @DisplayName("Should keep refresh token status literals in sync")
   void shouldKeepRefreshTokenStatusInSync() {
     assertParity(
-        names(com.streamarr.server.domain.auth.RefreshTokenStatus.values()),
+        names(RefreshTokenStatus.values()),
         literals(com.streamarr.server.jooq.generated.enums.RefreshTokenStatus.values()));
   }
 
@@ -38,7 +38,7 @@ class AuthEnumParityTest {
   @DisplayName("Should keep account role literals in sync")
   void shouldKeepAccountRoleInSync() {
     assertParity(
-        names(com.streamarr.server.domain.auth.AccountRole.values()),
+        names(AccountRole.values()),
         literals(com.streamarr.server.jooq.generated.enums.AccountRole.values()));
   }
 
@@ -46,7 +46,7 @@ class AuthEnumParityTest {
   @DisplayName("Should keep household role literals in sync")
   void shouldKeepHouseholdRoleInSync() {
     assertParity(
-        names(com.streamarr.server.domain.auth.HouseholdRole.values()),
+        names(HouseholdRole.values()),
         literals(com.streamarr.server.jooq.generated.enums.HouseholdRole.values()));
   }
 

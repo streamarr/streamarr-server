@@ -208,12 +208,11 @@ class CounterNotificationListenerTest {
       assertThat(cache.sessionVersion(sessionId)).contains(5L);
       assertThat(cache.sessionVersion(fenceId)).contains(1L);
 
-      // A bump this instance misses because the payload is malformed (a format evolution puts an
-      // extra field in the version slot).
+      // Simulate a missed bump carried by a forward-incompatible payload.
       reader.sessionVersions.put(sessionId, 9L);
       connectionSource.publish("SESSION|" + sessionId + "|9|EXTRA");
 
-      // Once the well-formed fence is applied, the malformed payload has been processed.
+      // The well-formed fence proves the malformed payload was processed first.
       reader.sessionVersions.put(fenceId, 2L);
       connectionSource.publish(
           new CounterNotificationPayload(CounterKind.SESSION, fenceId.toString(), 2L).encode());
@@ -221,8 +220,6 @@ class CounterNotificationListenerTest {
           .atMost(Duration.ofSeconds(1))
           .untilAsserted(() -> assertThat(cache.sessionVersion(fenceId)).contains(2L));
 
-      // The malformed payload cleared the cache, so the stale entry is gone and the lookup reads
-      // through to the current database value.
       assertThat(cache.sessionVersion(sessionId)).contains(9L);
     } finally {
       listener.stop();

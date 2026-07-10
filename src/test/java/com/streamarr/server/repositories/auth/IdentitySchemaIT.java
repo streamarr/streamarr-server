@@ -484,8 +484,7 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should block deleting the claiming admin while the bootstrap record exists")
   void shouldBlockDeletingClaimingAdminWhileBootstrapRecordExists() {
-    // fk_server_bootstrap_admin_account is the only auth FK with no ON DELETE action: it must keep
-    // the one-time claim from being re-opened by deleting the admin who won it.
+    // The restrictive FK prevents deleting the admin from reopening the one-time claim.
     var admin =
         userAccountRepository.save(
             AccountFixture.defaultAccountBuilder().accountRole(AccountRole.ADMIN).build());

@@ -412,14 +412,11 @@ class SessionInvalidationIT extends AbstractIntegrationTest {
 
     assertThat(secondInstanceCache.sessionVersion(sessionId)).contains(0L);
 
-    // A malformed notification clears the warm entry rather than leaving it stale, so the missed
-    // revoke can no longer be served from cache. The listener must survive the garbage.
+    // Malformed payloads must evict warm entries without killing the listener.
     publishRawNotification("garbage-with-no-delimiters");
     publishRawNotification("SESSION|" + sessionId + "|not-a-number");
     sessionRepository.revoke(sessionId, SessionRevocationReason.LOGOUT, Instant.now());
 
-    // The revoked session reads through as empty, so its tokens are rejected on the second
-    // instance — the malformed payload cannot leave a stale version alive.
     await()
         .atMost(Duration.ofSeconds(10))
         .untilAsserted(() -> assertThat(secondInstanceCache.sessionVersion(sessionId)).isEmpty());

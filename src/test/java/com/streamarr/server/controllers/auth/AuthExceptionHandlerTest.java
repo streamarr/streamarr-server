@@ -57,8 +57,6 @@ class AuthExceptionHandlerTest {
   @Test
   @DisplayName("Should respond 401 with one body when any refresh token rejected")
   void shouldRespond401WithOneBodyWhenAnyRefreshTokenRejected() {
-    // Reuse detection and unknown/expired tokens share one handler with no exception
-    // parameter, so the body cannot reveal whether a presented token was ever valid.
     var response = handler.handleInvalidRefresh();
 
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
