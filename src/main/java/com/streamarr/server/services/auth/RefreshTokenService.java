@@ -147,8 +147,10 @@ public class RefreshTokenService {
   }
 
   private boolean isWithinGrace(RefreshToken token, Instant now) {
-    // consumeActiveToken stamps rotatedAt atomically with ROTATED, so ROTATED implies non-null.
+    // A ROTATED row missing its timestamp is anomalous state no writer produces; refuse grace so
+    // it lands on the theft path rather than an error.
     return token.getStatus() == RefreshTokenStatus.ROTATED
+        && token.getRotatedAt() != null
         && !now.isAfter(token.getRotatedAt().plus(properties.rotationGrace()));
   }
 
