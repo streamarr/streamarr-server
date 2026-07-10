@@ -21,5 +21,6 @@ public interface RefreshTokenRepositoryCustom {
    */
   Optional<UUID> findSessionIdByDigest(String digest);
 
-  boolean isActiveToken(UUID sessionId, String digest);
+  /** Returns whether the digest names an ACTIVE token that expires strictly after {@code now}. */
+  boolean isActiveToken(UUID sessionId, String digest, Instant now);
 }

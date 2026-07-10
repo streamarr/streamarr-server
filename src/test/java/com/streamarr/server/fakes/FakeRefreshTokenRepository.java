@@ -21,13 +21,14 @@ public class FakeRefreshTokenRepository extends FakeJpaRepository<RefreshToken>
   }
 
   @Override
-  public boolean isActiveToken(UUID sessionId, String digest) {
+  public boolean isActiveToken(UUID sessionId, String digest, Instant now) {
     return database.values().stream()
         .anyMatch(
             token ->
                 sessionId.equals(token.getSessionId())
                     && digest.equals(token.getDigest())
-                    && token.getStatus() == RefreshTokenStatus.ACTIVE);
+                    && token.getStatus() == RefreshTokenStatus.ACTIVE
+                    && token.getExpiresAt().isAfter(now));
   }
 
   /** Mirrors the conditional single-statement consume contract of the jOOQ implementation. */
