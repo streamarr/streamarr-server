@@ -115,6 +115,32 @@ class AuthSecurityEventLoggingTest {
     }
   }
 
+  @Test
+  @DisplayName("Should log warning when identity claims rejected")
+  void shouldLogWarningWhenIdentityClaimsRejected() {
+    var accountId = UUID.randomUUID();
+    var validator = new TokenIdentityValidator();
+    var malformedToken =
+        Jwt.withTokenValue("sensitive-token")
+            .header("alg", "ES256")
+            .subject(accountId.toString())
+            .claim(TokenClaims.SCOPE, "not-a-real-scope")
+            .build();
+
+    // Fail closed AND loud: a systemic issuer/parser mismatch would otherwise reject every
+    // token in the fleet with zero server-side signal.
+    try (var logs = LogCapture.forClass(TokenIdentityValidator.class)) {
+      assertThat(validator.validate(malformedToken).hasErrors()).isTrue();
+
+      assertThat(logs.events())
+          .anySatisfy(
+              event ->
+                  assertThat(event.getFormattedMessage())
+                      .contains(accountId.toString())
+                      .doesNotContain("sensitive-token"));
+    }
+  }
+
   private record LogCapture(Logger logger, ListAppender<ILoggingEvent> appender)
       implements AutoCloseable {
 

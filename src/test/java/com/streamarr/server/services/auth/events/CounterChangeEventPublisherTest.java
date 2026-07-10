@@ -1,6 +1,7 @@
 package com.streamarr.server.services.auth.events;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.auth.CounterKind;
 import com.streamarr.server.domain.auth.MembershipVersionChange;
@@ -55,6 +56,24 @@ class CounterChangeEventPublisherTest {
                 CounterKind.MEMBERSHIP,
                 CounterBumpedEvent.membershipKey(change.accountId(), change.householdId()),
                 change.version()));
+  }
+
+  @Test
+  @DisplayName("Should propagate writer failure when notification cannot be written")
+  void shouldPropagateWriterFailureWhenNotificationCannotBeWritten() {
+    var publisher =
+        new CounterChangeEventPublisher(
+            new CapturingEventPublisher(),
+            _ -> {
+              throw new IllegalStateException("Injected notify failure");
+            });
+    var sessionId = UUID.randomUUID();
+
+    // The pg_notify write shares the counter-bumping transaction: swallowing its failure
+    // would commit a bump other instances never hear, so revoked tokens would stay accepted
+    // remotely forever. Propagation rolls the bump back with the failure.
+    assertThatThrownBy(() -> publisher.publishSession(sessionId, 3L))
+        .isInstanceOf(IllegalStateException.class);
   }
 
   private static final class RecordingCounterNotificationWriter

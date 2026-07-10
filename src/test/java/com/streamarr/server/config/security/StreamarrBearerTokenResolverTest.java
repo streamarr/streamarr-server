@@ -107,6 +107,27 @@ class StreamarrBearerTokenResolverTest {
     assertThat(StreamarrBearerTokenResolver.usedAccessCookie(request)).isTrue();
   }
 
+  @Test
+  @DisplayName("Should ignore query token when path is not a stream path")
+  void shouldIgnoreQueryTokenWhenPathIsNotAStreamPath() {
+    var request = requestFor("/graphql");
+    request.setParameter("t", "some-access-token");
+
+    // The ?t= carrier exists only because playlist-driven players cannot attach headers.
+    // Accepting it anywhere else would let ordinary access tokens authenticate from URLs —
+    // logs, browser history, and referrers would all become credential carriers.
+    assertThat(resolver.resolve(request)).isNull();
+  }
+
+  @Test
+  @DisplayName("Should ignore query token when path is an api path")
+  void shouldIgnoreQueryTokenWhenPathIsAnApiPath() {
+    var request = requestFor("/api/images/some-image");
+    request.setParameter("t", "some-access-token");
+
+    assertThat(resolver.resolve(request)).isNull();
+  }
+
   private static MockHttpServletRequest requestFor(String uri) {
     var request = new MockHttpServletRequest("GET", uri);
     request.setRequestURI(uri);

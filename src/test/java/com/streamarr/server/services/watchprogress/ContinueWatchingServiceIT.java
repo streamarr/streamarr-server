@@ -205,6 +205,38 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("Should not include another profiles progress when querying")
+    void shouldNotIncludeAnotherProfilesProgressWhenQuerying() {
+      var otherIdentity = authTestSupport.createIdentity();
+      var otherProfileId = otherIdentity.profile().getId();
+      var otherMovie = createMovieWithFile("Other Profile Movie");
+      var otherFileId = otherMovie.getFiles().iterator().next().getId();
+      try {
+        sessionProgressRepository.saveAndFlush(
+            SessionProgress.builder()
+                .sessionId(UUID.randomUUID())
+                .profileId(otherProfileId)
+                .mediaFileId(otherFileId)
+                .positionSeconds(600)
+                .percentComplete(20.0)
+                .durationSeconds(3000)
+                .build());
+
+        // Profile isolation here is a raw jOOQ predicate, not an active guard: this pin
+        // fails if the profile filter is ever dropped from the continue-watching query.
+        var results = continueWatchingService.getContinueWatching(profileId, 20);
+        assertThat(results).extracting(BaseCollectable::getId).doesNotContain(otherMovie.getId());
+
+        var otherResults = continueWatchingService.getContinueWatching(otherProfileId, 20);
+        assertThat(otherResults)
+            .extracting(BaseCollectable::getId)
+            .containsExactly(otherMovie.getId());
+      } finally {
+        authTestSupport.deleteIdentity(otherIdentity);
+      }
+    }
+
+    @Test
     @DisplayName("Should not include the watched movie when querying")
     void shouldNotIncludeTheWatchedMovieWhenQuerying() {
       var results = continueWatchingService.getContinueWatching(profileId, 20);
