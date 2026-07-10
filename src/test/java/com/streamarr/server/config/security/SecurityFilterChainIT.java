@@ -145,6 +145,13 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should serve jwks unauthenticated")
+  void shouldServeJwksUnauthenticated() throws Exception {
+    // Public verification keys are public: the transcode tier fetches them with no credentials.
+    mockMvc.perform(get("/.well-known/jwks.json")).andExpect(status().isOk());
+  }
+
+  @Test
   @DisplayName("Should permit health when stale access cookie attached")
   void shouldPermitHealthWhenStaleAccessCookieAttached() throws Exception {
     mockMvc
