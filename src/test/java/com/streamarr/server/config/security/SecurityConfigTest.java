@@ -68,6 +68,60 @@ class SecurityConfigTest {
   }
 
   @Test
+  @DisplayName("Should not require csrf when bearer credential accompanies auth cookie")
+  void shouldNotRequireCsrfWhenBearerCredentialAccompaniesAuthCookie() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/auth/login")
+                .cookie(new Cookie(AuthCookies.ACCESS_COOKIE, "ambient-credential"))
+                .header("Authorization", "Bearer opaque-token"))
+        .andExpect(status().isNoContent());
+  }
+
+  @Test
+  @DisplayName("Should not require csrf when bearer scheme cased differently")
+  void shouldNotRequireCsrfWhenBearerSchemeCasedDifferently() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/auth/login")
+                .cookie(new Cookie(AuthCookies.ACCESS_COOKIE, "ambient-credential"))
+                .header("Authorization", "bearer opaque-token"))
+        .andExpect(status().isNoContent());
+  }
+
+  @Test
+  @DisplayName("Should require csrf when bearer value blank")
+  void shouldRequireCsrfWhenBearerValueBlank() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/auth/login")
+                .cookie(new Cookie(AuthCookies.ACCESS_COOKIE, "ambient-credential"))
+                .header("Authorization", "Bearer   "))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  @DisplayName("Should require csrf when authorization scheme not bearer")
+  void shouldRequireCsrfWhenAuthorizationSchemeNotBearer() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/auth/login")
+                .cookie(new Cookie(AuthCookies.ACCESS_COOKIE, "ambient-credential"))
+                .header("Authorization", "Basic dXNlcjpwYXNz"))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  @DisplayName("Should require csrf when only refresh cookie present")
+  void shouldRequireCsrfWhenOnlyRefreshCookiePresent() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/auth/login")
+                .cookie(new Cookie(AuthCookies.REFRESH_COOKIE, "ambient-credential")))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
   @DisplayName("Should accept cookie authenticated request when csrf cookie is echoed")
   void shouldAcceptCookieAuthenticatedRequestWhenCsrfCookieIsEchoed() throws Exception {
     var tokenCookie =

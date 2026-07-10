@@ -20,6 +20,6 @@ public class TokenReuseRevocationWriter {
   @Transactional(propagation = Propagation.REQUIRES_NEW)
   public void revoke(UUID sessionId, Instant detectedAt) {
     sessionRepository.revoke(sessionId, SessionRevocationReason.TOKEN_REUSE, detectedAt);
-    tokenRepository.revokeAllForSession(sessionId);
+    tokenRepository.revokeAllForSession(sessionId, detectedAt);
   }
 }

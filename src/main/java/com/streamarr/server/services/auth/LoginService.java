@@ -5,9 +5,11 @@ import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+@Slf4j
 @Service
 public class LoginService {
 
@@ -38,6 +40,10 @@ public class LoginService {
     throttle.registerAttempt(command.email(), command.source());
 
     var account = userAccountRepository.findByEmailIgnoreCase(command.email()).orElse(null);
+    if (account == null) {
+      burnTimingEqualizer(command.password());
+      throw new InvalidCredentialsException();
+    }
     if (!credentialsValid(account, command.password())) {
       throw new InvalidCredentialsException();
     }
@@ -55,13 +61,27 @@ public class LoginService {
   }
 
   private boolean credentialsValid(UserAccount account, String password) {
-    if (account == null || !account.isEnabled()) {
-      // Burn the same Argon2 cost as a real comparison so response timing cannot disclose
-      // whether the email exists or the account is enabled.
-      passwordEncoder.matches(password, timingEqualizerHash);
+    if (!account.isEnabled()) {
+      burnTimingEqualizer(password);
       return false;
     }
-    return passwordEncoder.matches(password, account.getPasswordHash());
+    try {
+      return passwordEncoder.matches(password, account.getPasswordHash());
+    } catch (IllegalArgumentException e) {
+      // An unreadable stored hash must fail like a wrong password, not escape as a raw error
+      // that marks the account's broken state.
+      log.error("Stored password hash for account {} is unreadable.", account.getId(), e);
+      burnTimingEqualizer(password);
+      return false;
+    }
+  }
+
+  /**
+   * Burns the same Argon2 cost as a real comparison so response timing cannot disclose whether the
+   * email exists, the account is enabled, or its stored hash is readable.
+   */
+  private void burnTimingEqualizer(String password) {
+    passwordEncoder.matches(password, timingEqualizerHash);
   }
 
   private Optional<String> upgradedPasswordHash(UserAccount account, String rawPassword) {

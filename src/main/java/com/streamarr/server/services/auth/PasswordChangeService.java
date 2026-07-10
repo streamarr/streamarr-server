@@ -57,7 +57,7 @@ public class PasswordChangeService {
       // first-level-cache state — and mutating them would flush that stale state back over the
       // jOOQ write. Don't read or set counter/revocation fields on them here (see AGENTS.md).
       sessionRepository.revoke(session.getId(), SessionRevocationReason.PASSWORD_CHANGE, now);
-      tokenRepository.revokeAllForSession(session.getId());
+      tokenRepository.revokeAllForSession(session.getId(), now);
     }
 
     var callerSession =

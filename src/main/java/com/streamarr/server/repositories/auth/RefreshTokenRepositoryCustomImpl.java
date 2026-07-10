@@ -54,10 +54,10 @@ public class RefreshTokenRepositoryCustomImpl implements RefreshTokenRepositoryC
   }
 
   @Override
-  public void revokeAllForSession(UUID sessionId) {
+  public void revokeAllForSession(UUID sessionId, Instant now) {
     dsl.update(REFRESH_TOKEN)
         .set(REFRESH_TOKEN.STATUS, RefreshTokenStatus.REVOKED)
-        .set(REFRESH_TOKEN.LAST_MODIFIED_ON, Instant.now().atOffset(ZoneOffset.UTC))
+        .set(REFRESH_TOKEN.LAST_MODIFIED_ON, now.atOffset(ZoneOffset.UTC))
         .set(REFRESH_TOKEN.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
         .where(REFRESH_TOKEN.SESSION_ID.eq(sessionId))
         .and(REFRESH_TOKEN.STATUS.ne(RefreshTokenStatus.REVOKED))
