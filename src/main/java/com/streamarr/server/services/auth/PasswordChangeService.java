@@ -65,7 +65,7 @@ public class PasswordChangeService {
               version ->
                   eventPublisher.publishEvent(
                       CounterBumpedEvent.session(session.getId(), version)));
-      tokenRepository.revokeAllForSession(session.getId());
+      tokenRepository.revokeAllForSession(session.getId(), now);
     }
 
     var callerSession =
