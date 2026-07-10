@@ -1,5 +1,6 @@
 CREATE TYPE account_role AS ENUM ('ADMIN', 'USER');
 CREATE TYPE household_role AS ENUM ('OWNER', 'PARENT', 'MEMBER');
+CREATE SEQUENCE household_membership_version_seq AS BIGINT START WITH 1 NO CYCLE;
 
 CREATE TABLE user_account
 (
@@ -40,7 +41,7 @@ CREATE TABLE household_membership
     account_id         UUID                     NOT NULL,
     household_id       UUID                     NOT NULL,
     household_role     household_role           NOT NULL,
-    membership_version BIGINT                   NOT NULL DEFAULT 0,
+    membership_version BIGINT                   NOT NULL DEFAULT nextval('household_membership_version_seq'),
     CONSTRAINT household_membership_pkey PRIMARY KEY (id),
     CONSTRAINT fk_household_membership_account FOREIGN KEY (account_id)
         REFERENCES user_account (id) ON DELETE CASCADE,
