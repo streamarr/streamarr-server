@@ -17,9 +17,13 @@ import com.streamarr.server.domain.media.ImageSize;
 import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.graphql.dataloaders.ImageDataLoader;
+import com.streamarr.server.repositories.auth.AccountProfileRepository;
+import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.media.ImageRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
+import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
+import com.streamarr.server.support.security.WithProfileContext;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -33,6 +37,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @Tag("UnitTest")
 @EnableDgsTest
+@WithProfileContext
 @SpringBootTest(
     classes = {
       ImageFieldResolver.class,
@@ -41,11 +46,16 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
       SeriesResolver.class,
       SeriesFieldResolver.class,
       SeasonFieldResolver.class,
+      SecurityContextAuthorizationService.class,
     })
 @DisplayName("Image Field Resolver Tests")
 class ImageFieldResolverTest {
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
+
+  @MockitoBean private ProfileRepository profileRepository;
+
+  @MockitoBean private AccountProfileRepository accountProfileRepository;
 
   @MockitoBean private ImageRepository imageRepository;
   @MockitoBean private MovieService movieService;

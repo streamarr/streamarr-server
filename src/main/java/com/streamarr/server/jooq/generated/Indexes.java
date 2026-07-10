@@ -4,10 +4,13 @@
 package com.streamarr.server.jooq.generated;
 
 
+import com.streamarr.server.jooq.generated.tables.AccountProfile;
+import com.streamarr.server.jooq.generated.tables.AuthSession;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable;
 import com.streamarr.server.jooq.generated.tables.Episode;
 import com.streamarr.server.jooq.generated.tables.ExternalIdentifier;
 import com.streamarr.server.jooq.generated.tables.FileProcessingTask;
+import com.streamarr.server.jooq.generated.tables.HouseholdMembership;
 import com.streamarr.server.jooq.generated.tables.Image;
 import com.streamarr.server.jooq.generated.tables.Library;
 import com.streamarr.server.jooq.generated.tables.MediaFile;
@@ -17,6 +20,7 @@ import com.streamarr.server.jooq.generated.tables.MovieDirector;
 import com.streamarr.server.jooq.generated.tables.MovieGenre;
 import com.streamarr.server.jooq.generated.tables.MoviePerson;
 import com.streamarr.server.jooq.generated.tables.Rating;
+import com.streamarr.server.jooq.generated.tables.RefreshToken;
 import com.streamarr.server.jooq.generated.tables.Review;
 import com.streamarr.server.jooq.generated.tables.SchemaHistory;
 import com.streamarr.server.jooq.generated.tables.Season;
@@ -47,12 +51,17 @@ public class Indexes {
     public static final Index EXTERNAL_IDENTIFIER_ID_IDX = Internal.createIndex(DSL.name("external_identifier_id_idx"), ExternalIdentifier.EXTERNAL_IDENTIFIER, new OrderField[] { ExternalIdentifier.EXTERNAL_IDENTIFIER.ID }, true);
     public static final Index FILE_PROCESSING_TASK_CLAIMABLE_IDX = Internal.createIndex(DSL.name("file_processing_task_claimable_idx"), FileProcessingTask.FILE_PROCESSING_TASK, new OrderField[] { FileProcessingTask.FILE_PROCESSING_TASK.STATUS }, false);
     public static final Index FILE_PROCESSING_TASK_FILEPATH_URI_ACTIVE_IDX = Internal.createIndex(DSL.name("file_processing_task_filepath_uri_active_idx"), FileProcessingTask.FILE_PROCESSING_TASK, new OrderField[] { FileProcessingTask.FILE_PROCESSING_TASK.FILEPATH_URI }, true);
+    public static final Index IDX_ACCOUNT_PROFILE_PROFILE_HOUSEHOLD = Internal.createIndex(DSL.name("idx_account_profile_profile_household"), AccountProfile.ACCOUNT_PROFILE, new OrderField[] { AccountProfile.ACCOUNT_PROFILE.PROFILE_ID, AccountProfile.ACCOUNT_PROFILE.HOUSEHOLD_ID }, false);
+    public static final Index IDX_AUTH_SESSION_ACCOUNT_ID = Internal.createIndex(DSL.name("idx_auth_session_account_id"), AuthSession.AUTH_SESSION, new OrderField[] { AuthSession.AUTH_SESSION.ACCOUNT_ID }, false);
+    public static final Index IDX_AUTH_SESSION_ACTIVE_HOUSEHOLD_ID = Internal.createIndex(DSL.name("idx_auth_session_active_household_id"), AuthSession.AUTH_SESSION, new OrderField[] { AuthSession.AUTH_SESSION.ACTIVE_HOUSEHOLD_ID }, false);
+    public static final Index IDX_AUTH_SESSION_ACTIVE_PROFILE_ID = Internal.createIndex(DSL.name("idx_auth_session_active_profile_id"), AuthSession.AUTH_SESSION, new OrderField[] { AuthSession.AUTH_SESSION.ACTIVE_PROFILE_ID }, false);
     public static final Index IDX_BASE_COLLECTABLE_LIBRARY_CREATED_ID = Internal.createIndex(DSL.name("idx_base_collectable_library_created_id"), BaseCollectable.BASE_COLLECTABLE, new OrderField[] { BaseCollectable.BASE_COLLECTABLE.LIBRARY_ID, BaseCollectable.BASE_COLLECTABLE.CREATED_ON, BaseCollectable.BASE_COLLECTABLE.ID }, false);
     public static final Index IDX_BASE_COLLECTABLE_LIBRARY_ID = Internal.createIndex(DSL.name("idx_base_collectable_library_id"), BaseCollectable.BASE_COLLECTABLE, new OrderField[] { BaseCollectable.BASE_COLLECTABLE.LIBRARY_ID }, false);
     public static final Index IDX_BASE_COLLECTABLE_LIBRARY_TITLE_ID = Internal.createIndex(DSL.name("idx_base_collectable_library_title_id"), BaseCollectable.BASE_COLLECTABLE, new OrderField[] { BaseCollectable.BASE_COLLECTABLE.LIBRARY_ID, BaseCollectable.BASE_COLLECTABLE.TITLE, BaseCollectable.BASE_COLLECTABLE.ID }, false);
     public static final Index IDX_BASE_COLLECTABLE_LIBRARY_TITLESORT_ID = Internal.createIndex(DSL.name("idx_base_collectable_library_titlesort_id"), BaseCollectable.BASE_COLLECTABLE, new OrderField[] { BaseCollectable.BASE_COLLECTABLE.LIBRARY_ID, BaseCollectable.BASE_COLLECTABLE.TITLE_SORT, BaseCollectable.BASE_COLLECTABLE.ID }, false);
     public static final Index IDX_EPISODE_SEASON_ID = Internal.createIndex(DSL.name("idx_episode_season_id"), Episode.EPISODE, new OrderField[] { Episode.EPISODE.SEASON_ID }, false);
     public static final Index IDX_EXTERNAL_IDENTIFIER_ENTITY_ID = Internal.createIndex(DSL.name("idx_external_identifier_entity_id"), ExternalIdentifier.EXTERNAL_IDENTIFIER, new OrderField[] { ExternalIdentifier.EXTERNAL_IDENTIFIER.ENTITY_ID }, false);
+    public static final Index IDX_HOUSEHOLD_MEMBERSHIP_HOUSEHOLD_ID = Internal.createIndex(DSL.name("idx_household_membership_household_id"), HouseholdMembership.HOUSEHOLD_MEMBERSHIP, new OrderField[] { HouseholdMembership.HOUSEHOLD_MEMBERSHIP.HOUSEHOLD_ID }, false);
     public static final Index IDX_MEDIA_FILE_LIBRARY_ID = Internal.createIndex(DSL.name("idx_media_file_library_id"), MediaFile.MEDIA_FILE, new OrderField[] { MediaFile.MEDIA_FILE.LIBRARY_ID }, false);
     public static final Index IDX_MEDIA_FILE_MEDIA_ID = Internal.createIndex(DSL.name("idx_media_file_media_id"), MediaFile.MEDIA_FILE, new OrderField[] { MediaFile.MEDIA_FILE.MEDIA_ID }, false);
     public static final Index IDX_MOVIE_COMPANY_COMPANY_ID = Internal.createIndex(DSL.name("idx_movie_company_company_id"), MovieCompany.MOVIE_COMPANY, new OrderField[] { MovieCompany.MOVIE_COMPANY.COMPANY_ID }, false);
@@ -68,6 +77,7 @@ public class Indexes {
     public static final Index IDX_MOVIE_RUNTIME_DESC_ID = Internal.createIndex(DSL.name("idx_movie_runtime_desc_id"), Movie.MOVIE, new OrderField[] { Movie.MOVIE.RUNTIME.desc(), Movie.MOVIE.ID.desc() }, false);
     public static final Index IDX_MOVIE_RUNTIME_ID = Internal.createIndex(DSL.name("idx_movie_runtime_id"), Movie.MOVIE, new OrderField[] { Movie.MOVIE.RUNTIME, Movie.MOVIE.ID }, false);
     public static final Index IDX_RATING_MOVIE_ID = Internal.createIndex(DSL.name("idx_rating_movie_id"), Rating.RATING, new OrderField[] { Rating.RATING.MOVIE_ID }, false);
+    public static final Index IDX_REFRESH_TOKEN_SESSION_ID = Internal.createIndex(DSL.name("idx_refresh_token_session_id"), RefreshToken.REFRESH_TOKEN, new OrderField[] { RefreshToken.REFRESH_TOKEN.SESSION_ID }, false);
     public static final Index IDX_REVIEW_MOVIE_ID = Internal.createIndex(DSL.name("idx_review_movie_id"), Review.REVIEW, new OrderField[] { Review.REVIEW.MOVIE_ID }, false);
     public static final Index IDX_SEASON_SERIES_ID = Internal.createIndex(DSL.name("idx_season_series_id"), Season.SEASON, new OrderField[] { Season.SEASON.SERIES_ID }, false);
     public static final Index IDX_SERIES_COMPANY_COMPANY_ID = Internal.createIndex(DSL.name("idx_series_company_company_id"), SeriesCompany.SERIES_COMPANY, new OrderField[] { SeriesCompany.SERIES_COMPANY.COMPANY_ID }, false);
@@ -83,12 +93,13 @@ public class Indexes {
     public static final Index IDX_SERIES_RUNTIME_DESC_ID = Internal.createIndex(DSL.name("idx_series_runtime_desc_id"), Series.SERIES, new OrderField[] { Series.SERIES.RUNTIME.desc(), Series.SERIES.ID.desc() }, false);
     public static final Index IDX_SERIES_RUNTIME_ID = Internal.createIndex(DSL.name("idx_series_runtime_id"), Series.SERIES, new OrderField[] { Series.SERIES.RUNTIME, Series.SERIES.ID }, false);
     public static final Index IDX_SESSION_PROGRESS_MEDIA_FILE_ID = Internal.createIndex(DSL.name("idx_session_progress_media_file_id"), SessionProgress.SESSION_PROGRESS, new OrderField[] { SessionProgress.SESSION_PROGRESS.MEDIA_FILE_ID }, false);
-    public static final Index IDX_SESSION_PROGRESS_RESUME = Internal.createIndex(DSL.name("idx_session_progress_resume"), SessionProgress.SESSION_PROGRESS, new OrderField[] { SessionProgress.SESSION_PROGRESS.USER_ID, SessionProgress.SESSION_PROGRESS.MEDIA_FILE_ID, SessionProgress.SESSION_PROGRESS.LAST_MODIFIED_ON.desc() }, false);
-    public static final Index IDX_SESSION_PROGRESS_USER_ID = Internal.createIndex(DSL.name("idx_session_progress_user_id"), SessionProgress.SESSION_PROGRESS, new OrderField[] { SessionProgress.SESSION_PROGRESS.USER_ID }, false);
-    public static final Index IDX_WATCH_HISTORY_USER_COLLECTABLE = Internal.createIndex(DSL.name("idx_watch_history_user_collectable"), WatchHistory.WATCH_HISTORY, new OrderField[] { WatchHistory.WATCH_HISTORY.USER_ID, WatchHistory.WATCH_HISTORY.COLLECTABLE_ID, WatchHistory.WATCH_HISTORY.WATCHED_AT.desc() }, false);
+    public static final Index IDX_SESSION_PROGRESS_PROFILE_ID = Internal.createIndex(DSL.name("idx_session_progress_profile_id"), SessionProgress.SESSION_PROGRESS, new OrderField[] { SessionProgress.SESSION_PROGRESS.PROFILE_ID }, false);
+    public static final Index IDX_SESSION_PROGRESS_RESUME = Internal.createIndex(DSL.name("idx_session_progress_resume"), SessionProgress.SESSION_PROGRESS, new OrderField[] { SessionProgress.SESSION_PROGRESS.PROFILE_ID, SessionProgress.SESSION_PROGRESS.MEDIA_FILE_ID, SessionProgress.SESSION_PROGRESS.LAST_MODIFIED_ON.desc() }, false);
+    public static final Index IDX_WATCH_HISTORY_PROFILE_COLLECTABLE = Internal.createIndex(DSL.name("idx_watch_history_profile_collectable"), WatchHistory.WATCH_HISTORY, new OrderField[] { WatchHistory.WATCH_HISTORY.PROFILE_ID, WatchHistory.WATCH_HISTORY.COLLECTABLE_ID, WatchHistory.WATCH_HISTORY.WATCHED_AT.desc() }, false);
     public static final Index IMAGE_ENTITY_ID_IMAGE_TYPE_VARIANT_IDX = Internal.createIndex(DSL.name("image_entity_id_image_type_variant_idx"), Image.IMAGE, new OrderField[] { Image.IMAGE.ENTITY_ID, Image.IMAGE.IMAGE_TYPE, Image.IMAGE.VARIANT }, true);
     public static final Index IMAGE_ENTITY_TYPE_ENTITY_ID_IDX = Internal.createIndex(DSL.name("image_entity_type_entity_id_idx"), Image.IMAGE, new OrderField[] { Image.IMAGE.ENTITY_TYPE, Image.IMAGE.ENTITY_ID }, false);
     public static final Index LIBRARY_FILEPATH_URI_IDX = Internal.createIndex(DSL.name("library_filepath_uri_idx"), Library.LIBRARY, new OrderField[] { Library.LIBRARY.FILEPATH_URI }, true);
     public static final Index MEDIA_FILE_FILEPATH_URI_IDX = Internal.createIndex(DSL.name("media_file_filepath_uri_idx"), MediaFile.MEDIA_FILE, new OrderField[] { MediaFile.MEDIA_FILE.FILEPATH_URI }, true);
     public static final Index SCHEMA_HISTORY_S_IDX = Internal.createIndex(DSL.name("schema_history_s_idx"), SchemaHistory.SCHEMA_HISTORY, new OrderField[] { SchemaHistory.SCHEMA_HISTORY.SUCCESS }, false);
+    public static final Index UQ_REFRESH_TOKEN_ACTIVE_SESSION = Internal.createIndex(DSL.name("uq_refresh_token_active_session"), RefreshToken.REFRESH_TOKEN, new OrderField[] { RefreshToken.REFRESH_TOKEN.SESSION_ID }, true);
 }

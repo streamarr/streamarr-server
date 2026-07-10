@@ -1,4 +1,6 @@
 spring:
+  jpa:
+    open-in-view: false
   flyway:
     table: schema_history
     enabled: true
@@ -8,9 +10,6 @@ spring:
     password: pass
     hikari:
       maximum-pool-size: ${HIKARI_MAXIMUM_POOL_SIZE:30}
-
-  profiles:
-    active: dev
 
   threads:
     virtual:
@@ -22,6 +21,14 @@ dgs:
       enabled: false
     introspection:
       enabled: false
+
+# Web-exposed actuator endpoints are an explicit allowlist: health only. Heap dumps and other
+# diagnostics stay off the wire — ADR 0016's in-memory secret handling depends on it.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
 
 tmdb:
   api:
@@ -45,6 +52,35 @@ streaming:
     min-played-percent: ${STREAMING_WATCH_PROGRESS_MIN_RESUME_PERCENT:5.0}
     max-played-percent: ${STREAMING_WATCH_PROGRESS_MAX_RESUME_PERCENT:90.0}
     max-remaining-seconds: ${STREAMING_WATCH_PROGRESS_MAX_REMAINING_SECONDS:300}
+
+dev:
+  seed-identity: ${DEV_SEED_IDENTITY:true}
+  admin-email: ${DEV_ADMIN_EMAIL:admin@dev.local}
+  admin-password: ${DEV_ADMIN_PASSWORD:streamarr-dev}
+
+server:
+  # Opt-in for reverse-proxied deployments: NATIVE/FRAMEWORK make the login throttle's
+  # per-source signal reflect real client addresses instead of the proxy's.
+  forward-headers-strategy: ${SERVER_FORWARD_HEADERS_STRATEGY:none}
+
+auth:
+  token:
+    signing-key: ${AUTH_TOKEN_SIGNING_KEY:}
+    verification-keys: ${AUTH_TOKEN_VERIFICATION_KEYS:}
+    access-token-ttl: ${AUTH_ACCESS_TOKEN_TTL:10m}
+    refresh-token-ttl: ${AUTH_REFRESH_TOKEN_TTL:30d}
+    rotation-grace: ${AUTH_ROTATION_GRACE:30s}
+  argon2:
+    memory-kib: ${AUTH_ARGON2_MEMORY_KIB:19456}
+    iterations: ${AUTH_ARGON2_ITERATIONS:2}
+    parallelism: ${AUTH_ARGON2_PARALLELISM:1}
+  throttle:
+    max-attempts: ${AUTH_THROTTLE_MAX_ATTEMPTS:5}
+    window: ${AUTH_THROTTLE_WINDOW:15m}
+  counter-listener:
+    jdbc-url: ${AUTH_COUNTER_LISTENER_JDBC_URL:}
+    username: ${AUTH_COUNTER_LISTENER_JDBC_USERNAME:}
+    password: ${AUTH_COUNTER_LISTENER_JDBC_PASSWORD:}
 
 otel:
   sdk:

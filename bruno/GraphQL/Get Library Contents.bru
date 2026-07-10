@@ -1,0 +1,87 @@
+meta {
+  name: Get Library Contents
+  type: graphql
+  seq: 2
+}
+
+post {
+  url: {{BASE_URL}}/graphql
+  body: graphql
+  auth: inherit
+}
+
+body:graphql {
+  query GetLibraryContents($id: ID!, $first: Int) {
+    library(id: $id) {
+      name
+      items(first: $first) {
+        edges {
+          node {
+            ... on Movie {
+              id
+              titleSort
+              title
+              studios {
+                name
+              }
+              files {
+                filename
+                filepathUri
+                size
+              }
+              images {
+                imageType
+                blurHash
+                aspectRatio
+                variants {
+                  id
+                  size
+                  width
+                  height
+                  url
+                }
+              }
+              cast {
+                name
+                images {
+                  imageType
+                  blurHash
+                  aspectRatio
+                  variants {
+                    id
+                    size
+                    width
+                    height
+                    url
+                  }
+                }
+              }
+            }
+          }
+          cursor
+        }
+        pageInfo {
+          hasNextPage
+          hasPreviousPage
+          startCursor
+          endCursor
+        }
+      }
+    }
+  }
+}
+
+body:graphql:vars {
+  {
+    "id": "{{LIBRARY_ID}}",
+    "first": 10
+  }
+}
+
+tests {
+  test("Should return library contents", function() {
+    expect(res.status).to.equal(200);
+    expect(res.body).to.not.have.property("errors");
+    expect(res.body.data.library.items.edges).to.be.an("array");
+  });
+}

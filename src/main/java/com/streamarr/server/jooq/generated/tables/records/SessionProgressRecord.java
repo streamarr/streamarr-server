@@ -106,16 +106,16 @@ public class SessionProgressRecord extends UpdatableRecordImpl<SessionProgressRe
     }
 
     /**
-     * Setter for <code>public.session_progress.user_id</code>.
+     * Setter for <code>public.session_progress.profile_id</code>.
      */
-    public void setUserId(UUID value) {
+    public void setProfileId(UUID value) {
         set(6, value);
     }
 
     /**
-     * Getter for <code>public.session_progress.user_id</code>.
+     * Getter for <code>public.session_progress.profile_id</code>.
      */
-    public UUID getUserId() {
+    public UUID getProfileId() {
         return (UUID) get(6);
     }
 
@@ -198,7 +198,7 @@ public class SessionProgressRecord extends UpdatableRecordImpl<SessionProgressRe
     /**
      * Create a detached, initialised SessionProgressRecord
      */
-    public SessionProgressRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, UUID sessionId, UUID userId, UUID mediaFileId, Integer positionSeconds, Double percentComplete, Integer durationSeconds) {
+    public SessionProgressRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, UUID sessionId, UUID profileId, UUID mediaFileId, Integer positionSeconds, Double percentComplete, Integer durationSeconds) {
         super(SessionProgress.SESSION_PROGRESS);
 
         setId(id);
@@ -207,7 +207,7 @@ public class SessionProgressRecord extends UpdatableRecordImpl<SessionProgressRe
         setLastModifiedOn(lastModifiedOn);
         setLastModifiedBy(lastModifiedBy);
         setSessionId(sessionId);
-        setUserId(userId);
+        setProfileId(profileId);
         setMediaFileId(mediaFileId);
         setPositionSeconds(positionSeconds);
         setPercentComplete(percentComplete);

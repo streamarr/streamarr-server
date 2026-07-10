@@ -13,7 +13,6 @@ import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.exceptions.InvalidIdException;
 import com.streamarr.server.exceptions.UnsupportedMediaTypeException;
-import com.streamarr.server.graphql.CurrentUser;
 import com.streamarr.server.graphql.cursor.CursorUtil;
 import com.streamarr.server.graphql.cursor.CursorValidator;
 import com.streamarr.server.graphql.cursor.RelayConnectionAdapter;
@@ -24,6 +23,7 @@ import com.streamarr.server.graphql.inputs.MediaSortInput;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
+import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.library.LibraryManagementService;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.MediaPaginationOptionsResolver;
@@ -40,6 +40,7 @@ import lombok.RequiredArgsConstructor;
 public class LibraryResolver {
 
   private final LibraryRepository libraryRepository;
+  private final AuthorizationService authorizationService;
   private final LibraryManagementService libraryManagementService;
   private final MovieService movieService;
   private final SeriesService seriesService;
@@ -50,6 +51,7 @@ public class LibraryResolver {
 
   @DgsMutation
   public Library addLibrary(@InputArgument AddLibraryInput input) {
+    authorizationService.requireServerAdmin();
     var library =
         Library.builder()
             .name(input.name())
@@ -67,29 +69,34 @@ public class LibraryResolver {
 
   @DgsMutation
   public boolean removeLibrary(String id) {
+    authorizationService.requireServerAdmin();
     libraryManagementService.removeLibrary(parseUuid(id));
     return true;
   }
 
   @DgsMutation
   public boolean scanLibrary(String id) {
+    authorizationService.requireServerAdmin();
     libraryManagementService.triggerAsyncScan(parseUuid(id));
     return true;
   }
 
   @DgsMutation
   public boolean refreshLibrary(String id) {
+    authorizationService.requireServerAdmin();
     libraryManagementService.triggerAsyncRefresh(parseUuid(id));
     return true;
   }
 
   @DgsQuery
   public List<Library> libraries() {
+    authorizationService.requireProfile();
     return libraryRepository.findAll();
   }
 
   @DgsQuery
   public Optional<Library> library(String id) {
+    authorizationService.requireProfile();
     return libraryRepository.findById(parseUuid(id));
   }
 
@@ -104,7 +111,10 @@ public class LibraryResolver {
     int last = dfe.getArgumentOrDefault("last", 0);
     String before = dfe.getArgument("before");
 
-    var builder = MediaFilter.builder().libraryId(library.getId()).userId(CurrentUser.id());
+    var builder =
+        MediaFilter.builder()
+            .libraryId(library.getId())
+            .profileId(authorizationService.requireProfile());
 
     applySortOptions(builder, sort);
 
@@ -142,6 +152,7 @@ public class LibraryResolver {
 
   @DgsData(parentType = "Library")
   public List<AlphabetIndexDto> alphabetIndex(DataFetchingEnvironment dfe) {
+    authorizationService.requireProfile();
     Library library = dfe.getSource();
     return libraryManagementService.getAlphabetIndex(library.getId()).stream()
         .map(m -> new AlphabetIndexDto(m.getLetter(), m.getItemCount()))

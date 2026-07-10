@@ -84,7 +84,7 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
   }
 
   @Override
-  public Map<UUID, Instant> findLastWatchedBySeriesIds(UUID userId, Collection<UUID> seriesIds) {
+  public Map<UUID, Instant> findLastWatchedBySeriesIds(UUID profileId, Collection<UUID> seriesIds) {
     throw new UnsupportedOperationException("LAST_WATCHED not yet implemented in fake");
   }
 

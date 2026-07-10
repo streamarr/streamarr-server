@@ -1,4 +1,5 @@
 type Query {
+    me: Me!
     movie(id: ID!): Movie
     series(id: ID!): Series
     season(id: ID!): Season

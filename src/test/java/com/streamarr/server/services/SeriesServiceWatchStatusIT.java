@@ -24,6 +24,7 @@ import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
 import com.streamarr.server.services.pagination.MediaFilter;
 import com.streamarr.server.services.pagination.OrderMediaBy;
+import com.streamarr.server.support.AuthTestSupport;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -32,6 +33,7 @@ import java.util.UUID;
 import java.util.stream.Stream;
 import org.jooq.DSLContext;
 import org.jooq.SortOrder;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -46,6 +48,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
 
   @Autowired private SeriesRepository seriesRepository;
+  @Autowired private AuthTestSupport authTestSupport;
   @Autowired private SeasonRepository seasonRepository;
   @Autowired private EpisodeRepository episodeRepository;
   @Autowired private LibraryRepository libraryRepository;
@@ -54,12 +57,15 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
   @Autowired private SeriesService seriesService;
   @Autowired private DSLContext dsl;
 
-  private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+  private AuthTestSupport.TestIdentity identity;
+  private UUID profileId;
 
   private Library library;
 
   @BeforeAll
   void setup() {
+    identity = authTestSupport.createIdentity();
+    profileId = identity.profile().getId();
     library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
 
     // Watched Series: all episodes in watch_history
@@ -67,7 +73,7 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
     for (var episodeId : watched.episodeIds()) {
       watchHistoryRepository.saveAndFlush(
           WatchHistory.builder()
-              .userId(USER_ID)
+              .profileId(profileId)
               .collectableId(episodeId)
               .watchedAt(Instant.now())
               .durationSeconds(3600)
@@ -80,7 +86,7 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
     for (var episodeId : watchedWithProgress.episodeIds()) {
       watchHistoryRepository.saveAndFlush(
           WatchHistory.builder()
-              .userId(USER_ID)
+              .profileId(profileId)
               .collectableId(episodeId)
               .watchedAt(Instant.now())
               .durationSeconds(3600)
@@ -89,7 +95,7 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
     sessionProgressRepository.saveAndFlush(
         SessionProgress.builder()
             .sessionId(UUID.randomUUID())
-            .userId(USER_ID)
+            .profileId(profileId)
             .mediaFileId(watchedWithProgress.firstEpisodeFileId())
             .positionSeconds(60)
             .percentComplete(2.0)
@@ -101,7 +107,7 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
     sessionProgressRepository.saveAndFlush(
         SessionProgress.builder()
             .sessionId(UUID.randomUUID())
-            .userId(USER_ID)
+            .profileId(profileId)
             .mediaFileId(sessionInProgress.firstEpisodeFileId())
             .positionSeconds(900)
             .percentComplete(25.0)
@@ -113,7 +119,7 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
     var partiallyWatched = createSeriesWithEpisodes("Partially Watched Series", 2);
     watchHistoryRepository.saveAndFlush(
         WatchHistory.builder()
-            .userId(USER_ID)
+            .profileId(profileId)
             .collectableId(partiallyWatched.episodeIds().getFirst())
             .watchedAt(Instant.now())
             .durationSeconds(3600)
@@ -144,7 +150,7 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
       var filter =
           MediaFilter.builder()
               .libraryId(library.getId())
-              .userId(USER_ID)
+              .profileId(profileId)
               .watchStatus(WatchStatus.WATCHED)
               .build();
 
@@ -163,7 +169,7 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
       var filter =
           MediaFilter.builder()
               .libraryId(library.getId())
-              .userId(USER_ID)
+              .profileId(profileId)
               .watchStatus(WatchStatus.IN_PROGRESS)
               .build();
 
@@ -180,7 +186,7 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
       var filter =
           MediaFilter.builder()
               .libraryId(library.getId())
-              .userId(USER_ID)
+              .profileId(profileId)
               .watchStatus(WatchStatus.UNWATCHED)
               .build();
 
@@ -229,7 +235,7 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
       var filter =
           MediaFilter.builder()
               .libraryId(sortLibrary.getId())
-              .userId(USER_ID)
+              .profileId(profileId)
               .sortBy(OrderMediaBy.LAST_WATCHED)
               .sortDirection(SortOrder.DESC)
               .build();
@@ -258,7 +264,7 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
       var filter =
           MediaFilter.builder()
               .libraryId(paginationLibrary.getId())
-              .userId(USER_ID)
+              .profileId(profileId)
               .sortBy(OrderMediaBy.LAST_WATCHED)
               .sortDirection(SortOrder.DESC)
               .build();
@@ -303,7 +309,7 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
       sessionProgressRepository.saveAndFlush(
           SessionProgress.builder()
               .sessionId(UUID.randomUUID())
-              .userId(USER_ID)
+              .profileId(profileId)
               .mediaFileId(fixture.firstEpisodeFileId())
               .positionSeconds(600)
               .percentComplete(25.0)
@@ -351,5 +357,10 @@ class SeriesServiceWatchStatusIT extends AbstractIntegrationTest {
     }
 
     return new SeriesFixture(series.getId(), episodeIds, firstFileId);
+  }
+
+  @AfterAll
+  void deleteIdentitySeed() {
+    authTestSupport.deleteIdentity(identity);
   }
 }

@@ -22,7 +22,7 @@ import lombok.experimental.SuperBuilder;
 public class SessionProgress extends BaseAuditableEntity<SessionProgress> {
 
   private UUID sessionId;
-  private UUID userId;
+  private UUID profileId;
   private UUID mediaFileId;
   private int positionSeconds;
   private double percentComplete;

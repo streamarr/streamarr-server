@@ -25,7 +25,7 @@ class SessionProgressDataLoaderTest {
   private FakeSessionProgressRepository sessionProgressRepository;
   private SessionProgressDataLoader dataLoader;
 
-  private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+  private static final UUID PROFILE_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
   @BeforeEach
   void setUp() {
@@ -44,16 +44,16 @@ class SessionProgressDataLoaderTest {
   @Test
   @DisplayName("Should return progress for each media file ID when batch loading")
   void shouldReturnProgressForEachMediaFileIdWhenBatchLoading() throws Exception {
-    var key1 = new SessionProgressLoaderKey(USER_ID, UUID.randomUUID());
-    var key2 = new SessionProgressLoaderKey(USER_ID, UUID.randomUUID());
+    var key1 = new SessionProgressLoaderKey(PROFILE_ID, UUID.randomUUID());
+    var key2 = new SessionProgressLoaderKey(PROFILE_ID, UUID.randomUUID());
     sessionProgressRepository.save(
-        progressBuilder(USER_ID, key1.mediaFileId())
+        progressBuilder(PROFILE_ID, key1.mediaFileId())
             .positionSeconds(300)
             .percentComplete(50.0)
             .durationSeconds(600)
             .build());
     sessionProgressRepository.save(
-        progressBuilder(USER_ID, key2.mediaFileId())
+        progressBuilder(PROFILE_ID, key2.mediaFileId())
             .positionSeconds(600)
             .percentComplete(75.0)
             .durationSeconds(800)
@@ -76,9 +76,9 @@ class SessionProgressDataLoaderTest {
   void shouldScopeProgressToEachUserWhenKeysSpanMultipleUsers() throws Exception {
     var mediaFileId = UUID.randomUUID();
     sessionProgressRepository.save(
-        progressBuilder(USER_ID, mediaFileId).positionSeconds(300).build());
+        progressBuilder(PROFILE_ID, mediaFileId).positionSeconds(300).build());
 
-    var mine = new SessionProgressLoaderKey(USER_ID, mediaFileId);
+    var mine = new SessionProgressLoaderKey(PROFILE_ID, mediaFileId);
     var theirs = new SessionProgressLoaderKey(UUID.randomUUID(), mediaFileId);
 
     var result = dataLoader.load(Set.of(mine, theirs)).toCompletableFuture().get();
@@ -93,7 +93,7 @@ class SessionProgressDataLoaderTest {
   void shouldResolveNullWhenMediaFileHasNoProgress() throws Exception {
     var loader = DataLoaderFactory.newMappedDataLoader(dataLoader);
 
-    var future = loader.load(new SessionProgressLoaderKey(USER_ID, UUID.randomUUID()));
+    var future = loader.load(new SessionProgressLoaderKey(PROFILE_ID, UUID.randomUUID()));
     loader.dispatch();
 
     assertThat(future.get()).isNull();

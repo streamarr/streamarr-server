@@ -25,9 +25,15 @@ import com.streamarr.server.fakes.FakeWatchHistoryRepository;
 import com.streamarr.server.graphql.dataloaders.AggregateWatchProgressDataLoader;
 import com.streamarr.server.graphql.dataloaders.SessionProgressDataLoader;
 import com.streamarr.server.graphql.dataloaders.WatchStatusDataLoader;
+import com.streamarr.server.repositories.auth.AccountProfileRepository;
+import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
+import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
+import com.streamarr.server.support.security.TestIdentityConstants;
+import com.streamarr.server.support.security.WithAccountContext;
+import com.streamarr.server.support.security.WithProfileContext;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -45,6 +51,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @Tag("UnitTest")
 @EnableDgsTest
+@WithProfileContext
 @SpringBootTest(
     classes = {
       WatchProgressFieldResolver.class,
@@ -56,18 +63,23 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
       SeriesFieldResolver.class,
       SeasonFieldResolver.class,
       EpisodeFieldResolver.class,
-      WatchProgressFieldResolverTest.TestConfig.class
+      WatchProgressFieldResolverTest.TestConfig.class,
+      SecurityContextAuthorizationService.class
     })
 @DisplayName("Watch Progress Field Resolver Tests")
 class WatchProgressFieldResolverTest {
 
-  private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+  private static final UUID PROFILE_ID = TestIdentityConstants.PROFILE_ID;
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
   @Autowired private FakeSessionProgressRepository sessionProgressRepository;
   @Autowired private FakeMediaFileRepository mediaFileRepository;
   @Autowired private FakeEpisodeRepository episodeRepository;
   @Autowired private FakeSeasonRepository seasonRepository;
+
+  @MockitoBean private ProfileRepository profileRepository;
+
+  @MockitoBean private AccountProfileRepository accountProfileRepository;
 
   @MockitoBean private MovieService movieService;
   @MockitoBean private SeriesService seriesService;
@@ -145,7 +157,7 @@ class WatchProgressFieldResolverTest {
       when(movieService.findMediaFiles(movie.getId())).thenReturn(List.of(mediaFile));
 
       sessionProgressRepository.save(
-          progressBuilder(USER_ID, mediaFile.getId())
+          progressBuilder(PROFILE_ID, mediaFile.getId())
               .positionSeconds(1800)
               .percentComplete(50.0)
               .durationSeconds(3600)
@@ -175,6 +187,22 @@ class WatchProgressFieldResolverTest {
               "data.movie.watchProgress");
 
       assertThat(watchProgress).isNull();
+    }
+
+    @Test
+    @DisplayName("Should require profile when movie has no files")
+    @WithAccountContext
+    void shouldRequireProfileWhenMovieHasNoFiles() {
+      var movie = setupMovie();
+      when(movieService.findMediaFiles(movie.getId())).thenReturn(List.of());
+
+      var result =
+          dgsQueryExecutor.execute(
+              String.format(
+                  "{ movie(id: \"%s\") { watchProgress { positionSeconds } } }", movie.getId()));
+
+      assertThat(result.getErrors()).isNotEmpty();
+      assertThat(result.getErrors().getFirst().getMessage()).contains("profile must be selected");
     }
 
     @Test
@@ -211,7 +239,7 @@ class WatchProgressFieldResolverTest {
       when(movieService.findMediaFiles(movie.getId())).thenReturn(List.of(mediaFile));
 
       sessionProgressRepository.save(
-          progressBuilder(USER_ID, mediaFile.getId()).positionSeconds(300).build());
+          progressBuilder(PROFILE_ID, mediaFile.getId()).positionSeconds(300).build());
 
       String status =
           dgsQueryExecutor.executeAndExtractJsonPath(
@@ -236,7 +264,7 @@ class WatchProgressFieldResolverTest {
       when(seriesService.findMediaFiles(graph.episode().getId())).thenReturn(List.of(mediaFile));
 
       sessionProgressRepository.save(
-          progressBuilder(USER_ID, mediaFile.getId())
+          progressBuilder(PROFILE_ID, mediaFile.getId())
               .positionSeconds(600)
               .percentComplete(25.0)
               .durationSeconds(2400)
@@ -272,7 +300,7 @@ class WatchProgressFieldResolverTest {
       mediaFileRepository.save(mediaFile);
 
       sessionProgressRepository.save(
-          progressBuilder(USER_ID, mediaFile.getId()).positionSeconds(1200).build());
+          progressBuilder(PROFILE_ID, mediaFile.getId()).positionSeconds(1200).build());
 
       String status =
           dgsQueryExecutor.executeAndExtractJsonPath(
@@ -302,7 +330,7 @@ class WatchProgressFieldResolverTest {
       mediaFileRepository.save(mediaFile);
 
       sessionProgressRepository.save(
-          progressBuilder(USER_ID, mediaFile.getId()).positionSeconds(300).build());
+          progressBuilder(PROFILE_ID, mediaFile.getId()).positionSeconds(300).build());
 
       String status =
           dgsQueryExecutor.executeAndExtractJsonPath(
@@ -351,7 +379,7 @@ class WatchProgressFieldResolverTest {
 
       var olderProgress =
           sessionProgressRepository.save(
-              progressBuilder(USER_ID, olderFile.getId())
+              progressBuilder(PROFILE_ID, olderFile.getId())
                   .positionSeconds(300)
                   .percentComplete(10.0)
                   .durationSeconds(3000)
@@ -360,7 +388,7 @@ class WatchProgressFieldResolverTest {
 
       var newerProgress =
           sessionProgressRepository.save(
-              progressBuilder(USER_ID, newerFile.getId())
+              progressBuilder(PROFILE_ID, newerFile.getId())
                   .positionSeconds(900)
                   .percentComplete(75.0)
                   .durationSeconds(1200)
@@ -424,7 +452,7 @@ class WatchProgressFieldResolverTest {
       mediaFileRepository.save(mediaFile);
 
       sessionProgressRepository.save(
-          progressBuilder(USER_ID, mediaFile.getId()).positionSeconds(300).build());
+          progressBuilder(PROFILE_ID, mediaFile.getId()).positionSeconds(300).build());
 
       // IN_PROGRESS requires the resolver to wire SERIES scope; a misrouted scope
       // would fall back to UNWATCHED
@@ -477,7 +505,7 @@ class WatchProgressFieldResolverTest {
 
       var olderProgress =
           sessionProgressRepository.save(
-              progressBuilder(USER_ID, olderFile.getId())
+              progressBuilder(PROFILE_ID, olderFile.getId())
                   .positionSeconds(300)
                   .percentComplete(10.0)
                   .durationSeconds(3000)
@@ -486,7 +514,7 @@ class WatchProgressFieldResolverTest {
 
       var newerProgress =
           sessionProgressRepository.save(
-              progressBuilder(USER_ID, newerFile.getId())
+              progressBuilder(PROFILE_ID, newerFile.getId())
                   .positionSeconds(900)
                   .percentComplete(25.0)
                   .durationSeconds(3600)

@@ -30,11 +30,12 @@ public class WatchStatusDataLoader implements MappedBatchLoader<WatchStatusLoade
   private Map<WatchStatusLoaderKey, WatchStatus> loadStatuses(Set<WatchStatusLoaderKey> keys) {
     var result = new HashMap<WatchStatusLoaderKey, WatchStatus>();
     var keysByBatch =
-        keys.stream().collect(Collectors.groupingBy(key -> new Batch(key.userId(), key.scope())));
+        keys.stream()
+            .collect(Collectors.groupingBy(key -> new Batch(key.profileId(), key.scope())));
 
     for (var entry : keysByBatch.entrySet()) {
       var entityIds = entry.getValue().stream().map(WatchStatusLoaderKey::entityId).toList();
-      var statusMap = loadByScope(entry.getKey().userId(), entry.getKey().scope(), entityIds);
+      var statusMap = loadByScope(entry.getKey().profileId(), entry.getKey().scope(), entityIds);
 
       for (var key : entry.getValue()) {
         result.put(key, statusMap.getOrDefault(key.entityId(), WatchStatus.UNWATCHED));
@@ -44,14 +45,14 @@ public class WatchStatusDataLoader implements MappedBatchLoader<WatchStatusLoade
     return result;
   }
 
-  private record Batch(UUID userId, CollectableScope scope) {}
+  private record Batch(UUID profileId, CollectableScope scope) {}
 
   private Map<UUID, WatchStatus> loadByScope(
-      UUID userId, CollectableScope scope, List<UUID> entityIds) {
+      UUID profileId, CollectableScope scope, List<UUID> entityIds) {
     return switch (scope) {
-      case DIRECT_MEDIA -> watchStatusService.getWatchStatusForDirectMedia(userId, entityIds);
-      case SEASON -> watchStatusService.getWatchStatusForSeasons(userId, entityIds);
-      case SERIES -> watchStatusService.getWatchStatusForSeries(userId, entityIds);
+      case DIRECT_MEDIA -> watchStatusService.getWatchStatusForDirectMedia(profileId, entityIds);
+      case SEASON -> watchStatusService.getWatchStatusForSeasons(profileId, entityIds);
+      case SERIES -> watchStatusService.getWatchStatusForSeries(profileId, entityIds);
     };
   }
 }

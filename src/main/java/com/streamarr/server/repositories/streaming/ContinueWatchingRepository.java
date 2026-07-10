@@ -5,5 +5,5 @@ import java.util.UUID;
 
 public interface ContinueWatchingRepository {
 
-  List<UUID> findCollectableIds(UUID userId, int limit);
+  List<UUID> findCollectableIds(UUID profileId, int limit);
 }

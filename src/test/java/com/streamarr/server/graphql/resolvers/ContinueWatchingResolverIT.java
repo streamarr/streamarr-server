@@ -1,9 +1,10 @@
 package com.streamarr.server.graphql.resolvers;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import static com.streamarr.server.support.AuthTestSupport.bearer;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.netflix.graphql.dgs.DgsQueryExecutor;
-import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.Episode;
@@ -13,81 +14,63 @@ import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
-import com.streamarr.server.jooq.generated.Tables;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
-import java.util.List;
-import java.util.Map;
+import com.streamarr.server.support.AuthTestSupport;
 import java.util.Set;
 import java.util.UUID;
-import org.jooq.DSLContext;
-import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
 
 @Tag("IntegrationTest")
-@EnableDgsTest
 @DisplayName("Continue Watching Resolver Integration Tests")
 class ContinueWatchingResolverIT extends AbstractIntegrationTest {
 
-  private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
-
-  @Autowired private DgsQueryExecutor dgsQueryExecutor;
+  @Autowired private MockMvc mockMvc;
+  @Autowired private AuthTestSupport authTestSupport;
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private SeriesRepository seriesRepository;
   @Autowired private SeasonRepository seasonRepository;
   @Autowired private EpisodeRepository episodeRepository;
   @Autowired private SessionProgressRepository sessionProgressRepository;
-  @Autowired private DSLContext dsl;
 
-  @BeforeEach
-  void setUp() {
-    dsl.deleteFrom(Tables.SESSION_PROGRESS)
-        .where(Tables.SESSION_PROGRESS.USER_ID.eq(USER_ID))
-        .execute();
-    dsl.deleteFrom(Tables.WATCH_HISTORY).where(Tables.WATCH_HISTORY.USER_ID.eq(USER_ID)).execute();
+  private AuthTestSupport.TestIdentity identity;
+
+  @AfterEach
+  void deleteIdentity() {
+    if (identity != null) {
+      authTestSupport.deleteIdentity(identity);
+    }
   }
 
   @Test
   @DisplayName("Should resolve episode season details when continue watching returns an episode")
-  @SuppressWarnings("unchecked")
-  void shouldResolveEpisodeSeasonDetailsWhenContinueWatchingReturnsAnEpisode() {
+  void shouldResolveEpisodeSeasonDetailsWhenContinueWatchingReturnsAnEpisode() throws Exception {
+    identity = authTestSupport.createIdentity();
     var episode = createEpisodeWithProgress();
 
-    var result =
-        dgsQueryExecutor.execute(
-            """
-            {
-              continueWatching(first: 1) {
-                ... on Episode {
-                  title
-                  season {
-                    seasonNumber
-                    series {
-                      title
-                    }
-                  }
-                }
-              }
-            }
-            """);
-
-    assertThat(result.getErrors()).isEmpty();
-
-    Map<String, Object> data = result.getData();
-    var items = (List<Map<String, Object>>) data.get("continueWatching");
-    var item = items.getFirst();
-    var season = (Map<String, Object>) item.get("season");
-    var series = (Map<String, Object>) season.get("series");
-
-    assertThat(item).containsEntry("title", episode.getTitle());
-    assertThat(season).containsEntry("seasonNumber", 1);
-    assertThat(series).containsEntry("title", "Test Series");
+    mockMvc
+        .perform(
+            post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"query": "{ continueWatching(first: 1) { ... on Episode { title season \
+                    { seasonNumber series { title } } } } }"}""")
+                .with(bearer(authTestSupport.profileBearer(identity))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.errors").doesNotExist())
+        .andExpect(jsonPath("$.data.continueWatching[0].title").value(episode.getTitle()))
+        .andExpect(jsonPath("$.data.continueWatching[0].season.seasonNumber").value(1))
+        .andExpect(jsonPath("$.data.continueWatching[0].season.series.title").value("Test Series"));
   }
 
   private Episode createEpisodeWithProgress() {
@@ -116,7 +99,7 @@ class ContinueWatchingResolverIT extends AbstractIntegrationTest {
     sessionProgressRepository.saveAndFlush(
         SessionProgress.builder()
             .sessionId(UUID.randomUUID())
-            .userId(USER_ID)
+            .profileId(identity.profile().getId())
             .mediaFileId(episode.getFiles().iterator().next().getId())
             .positionSeconds(900)
             .percentComplete(25.0)

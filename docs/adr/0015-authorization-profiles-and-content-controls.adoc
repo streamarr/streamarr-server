@@ -11,7 +11,7 @@ It commonly runs for a single household, but the identity model must support sev
 
 This ADR covers the authorization, profile, household, and content-visibility model.
 Authentication mechanisms and session security are decided separately in link:0016-authentication-mechanisms-and-session-security.adoc[ADR 0016].
-The authentication foundation should be implemented first, but its first increment must carry the account, household, profile, session, and version identity this ADR needs.
+The authentication foundation should be implemented first, but its first increment must carry the account, household, profile, and session identity this ADR needs.
 
 Issue https://github.com/streamarr/streamarr-server/issues/41[#41] defines the broad authentication and user-management need; issue https://github.com/streamarr/streamarr-server/issues/163[#163] tracks replacing the placeholder user id with an authenticated identity.
 
@@ -55,8 +55,8 @@ Unrestricted is itself a profile policy value, never inherited from an account r
 Model roles as first-class values, not booleans, and route every role and permission check through the authorization facade so future roles, groups, or delegated-admin tiers never require scattered `isAdmin` checks.
 
 Authenticated requests carry account, session, and — once selected — household and profile identity, scoped and validated as link:0016-authentication-mechanisms-and-session-security.adoc[ADR 0016] specifies.
-Each access token authorizes only the context it names and carries version identity for validation against the current session, membership, and profile-policy counters.
-Profile restriction, household membership, and profile membership changes propagate through the version-counter invalidation in ADR 0016; short token lifetimes are a backstop, not the primary guard.
+Each access token authorizes only the context it names and is validated per request as ADR 0016 specifies.
+Profile restriction, household membership, and profile membership changes take effect through ADR 0016's revocation model: once link:0017-playback-enforcement-lifecycle.adoc[ADR 0017] lands, playback terminates through its persisted enforcement authority, while API-surface claims retain at most one bounded access-token lifetime of staleness — during the counter transition the version-counter invalidation provides instant effect on both surfaces.
 
 .Access-token scopes
 [cols="1,2,3,2",options="header"]
@@ -92,7 +92,7 @@ Profile switching is distinct from authentication.
 Authenticating a TV device proves the account/device session (ADR 0016) but authorizes no profile on it.
 Switching into a PIN-protected profile requires a server-verified PIN; any profile may be PIN-protected, and once restricted profiles exist, every profile with a less restrictive policy — unrestricted ones above all — must be PIN-protected.
 A verified profile PIN issues a fresh profile token but does not authenticate an account, register a device, or satisfy MFA.
-Changing a profile's restrictions invalidates its existing tokens through profile-policy versioning.
+Changing a profile's restrictions takes effect through ADR 0016's revocation model: instant through policy versioning while the counter transition lasts, then through the stream-session enforcement authority for active playback with API-surface staleness bounded by the access-token lifetime. Content-policy enforcement against authoritative state remains a deferred obligation of the content-control work.
 
 Store membership separately from accounts.
 `household_memberships` links accounts to households; `profiles` carry a household foreign key; and `account_profiles` links an account to a profile only when the account already belongs to that profile's household.
@@ -128,7 +128,7 @@ Every future search adapter must translate that same typed policy into its nativ
 An adapter that cannot express the full policy must fail closed for restricted profiles.
 
 Stream, manifest, and playback-URL issuance is profile-bound and re-evaluates the same visibility policy.
-Active stream and transcode sessions join session invalidation, so a policy or membership change can deny or terminate playback server-side.
+Active stream and transcode sessions join session invalidation — through version counters during the transition, through the ADR 0017 enforcement lifecycle once it lands — so a policy or membership change can deny or terminate playback server-side.
 
 Store every raw certification a title carries, preserving its rating system, value, country, and media type.
 A profile sets a single `maximumAllowedRatingAge` — parents pick an age ceiling, not per-system knobs.

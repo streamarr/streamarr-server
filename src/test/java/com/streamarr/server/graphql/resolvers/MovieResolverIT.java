@@ -23,6 +23,7 @@ import com.streamarr.server.repositories.RatingRepository;
 import com.streamarr.server.repositories.ReviewRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
+import com.streamarr.server.support.security.WithProfileContext;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -35,6 +36,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 @Tag("IntegrationTest")
 @EnableDgsTest
 @DisplayName("Movie Resolver Integration Tests")
+@WithProfileContext
 class MovieResolverIT extends AbstractIntegrationTest {
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
@@ -48,9 +50,9 @@ class MovieResolverIT extends AbstractIntegrationTest {
   @Autowired private MediaFileRepository mediaFileRepository;
 
   @Test
-  @DisplayName("Should resolve all movie relationships from movie query")
+  @DisplayName("Should resolve all movie relationships when the movie is queried")
   @SuppressWarnings("unchecked")
-  void shouldResolveAllMovieRelationshipsFromMovieQuery() {
+  void shouldResolveAllMovieRelationshipsWhenMovieQueried() {
     var movie = createMovieWithRelationships();
 
     var result =

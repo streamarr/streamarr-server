@@ -1,0 +1,317 @@
+package com.streamarr.server.services.auth;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.streamarr.server.config.security.Argon2Properties;
+import com.streamarr.server.config.security.AuthThrottleProperties;
+import com.streamarr.server.config.security.AuthTokenProperties;
+import com.streamarr.server.config.security.PasswordEncoderConfig;
+import com.streamarr.server.exceptions.InvalidCredentialsException;
+import com.streamarr.server.exceptions.TooManyLoginAttemptsException;
+import com.streamarr.server.fakes.FakeAuthSessionRepository;
+import com.streamarr.server.fakes.FakeRefreshTokenRepository;
+import com.streamarr.server.fakes.FakeUserAccountRepository;
+import com.streamarr.server.fakes.MutableClock;
+import com.streamarr.server.fixtures.AccountFixture;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.springframework.security.crypto.password.PasswordEncoder;
+
+@Tag("UnitTest")
+@DisplayName("Login Service Tests")
+class LoginServiceTest {
+
+  private static final String CORRECT_PASSWORD = "correct horse battery staple";
+
+  private final AtomicReference<Instant> currentTime =
+      new AtomicReference<>(Instant.parse("2026-01-01T00:00:00Z"));
+  private final MutableClock clock = new MutableClock(currentTime);
+
+  private final PasswordEncoder weakEncoder = encoderWith(4096, 1);
+  private final PasswordEncoder serviceEncoder = encoderWith(8192, 2);
+  private final CountingPasswordEncoder countingEncoder =
+      new CountingPasswordEncoder(serviceEncoder);
+
+  private final FakeUserAccountRepository userAccountRepository = new FakeUserAccountRepository();
+
+  private final FakeAuthSessionRepository sessionRepository = new FakeAuthSessionRepository();
+  private final FakeRefreshTokenRepository tokenRepository = new FakeRefreshTokenRepository();
+  private final RefreshTokenService refreshTokenService =
+      new RefreshTokenService(
+          sessionRepository,
+          tokenRepository,
+          AuthTokenProperties.builder()
+              .signingKey("")
+              .accessTokenTtl(Duration.ofMinutes(10))
+              .refreshTokenTtl(Duration.ofDays(30))
+              .rotationGrace(Duration.ofSeconds(30))
+              .build(),
+          clock,
+          new TokenReuseRevoker(
+              new TokenReuseRevocationWriter(sessionRepository, tokenRepository)));
+
+  private final LoginService loginService =
+      new LoginService(
+          userAccountRepository,
+          new LoginCompletionService(userAccountRepository, refreshTokenService),
+          countingEncoder,
+          new LoginThrottle(
+              AuthThrottleProperties.builder()
+                  .maxAttempts(5)
+                  .window(Duration.ofMinutes(15))
+                  .build(),
+              clock));
+
+  @Test
+  @DisplayName("Should throttle when failures exceed limit")
+  void shouldThrottleWhenFailuresExceedLimit() {
+    var account = seedAccount(serviceEncoder.encode(CORRECT_PASSWORD));
+
+    for (int i = 0; i < 5; i++) {
+      var wrongAttempt = commandBuilder(account.getEmail()).password("wrong-" + i).build();
+      assertThatThrownBy(() -> loginService.login(wrongAttempt))
+          .isInstanceOf(InvalidCredentialsException.class);
+    }
+
+    var correctAttempt = commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build();
+
+    assertThatThrownBy(() -> loginService.login(correctAttempt))
+        .isInstanceOf(TooManyLoginAttemptsException.class);
+  }
+
+  @Test
+  @DisplayName("Should not burn password verification cost when throttled")
+  void shouldNotBurnPasswordVerificationCostWhenThrottled() {
+    var account = seedAccount(serviceEncoder.encode(CORRECT_PASSWORD));
+
+    for (int i = 0; i < 5; i++) {
+      var wrongAttempt = commandBuilder(account.getEmail()).password("wrong-" + i).build();
+      assertThatThrownBy(() -> loginService.login(wrongAttempt))
+          .isInstanceOf(InvalidCredentialsException.class);
+    }
+    var burnsBeforeThrottle = countingEncoder.completedVerifications();
+
+    var throttledAttempt = commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build();
+    assertThatThrownBy(() -> loginService.login(throttledAttempt))
+        .isInstanceOf(TooManyLoginAttemptsException.class);
+
+    assertThat(countingEncoder.completedVerifications()).isEqualTo(burnsBeforeThrottle);
+  }
+
+  @Test
+  @DisplayName("Should reject credentials when stored hash unreadable")
+  void shouldRejectCredentialsWhenStoredHashUnreadable() {
+    // A real hash stripped of its {id} prefix — the corruption a migration bug would produce.
+    var unreadableHash = serviceEncoder.encode(CORRECT_PASSWORD).replace("{argon2id}", "");
+    var account = seedAccount(unreadableHash);
+
+    var attempt = commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build();
+
+    assertThatThrownBy(() -> loginService.login(attempt))
+        .isInstanceOf(InvalidCredentialsException.class);
+    // Exactly one equalizer burn — timing stays flat with every other rejection path.
+    assertThat(countingEncoder.completedVerifications()).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("Should rehash password when encoding upgrade needed")
+  void shouldRehashPasswordWhenEncodingUpgradeNeeded() {
+    var weakHash = weakEncoder.encode(CORRECT_PASSWORD);
+    var account = seedAccount(weakHash);
+
+    var result =
+        loginService.login(commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build());
+
+    assertThat(result.rawRefreshToken()).isNotBlank();
+    assertThat(result.session().getAccountId()).isEqualTo(account.getId());
+
+    var storedHash =
+        userAccountRepository.findById(account.getId()).orElseThrow().getPasswordHash();
+    assertThat(storedHash).isNotEqualTo(weakHash);
+    assertThat(serviceEncoder.matches(CORRECT_PASSWORD, storedHash)).isTrue();
+    assertThat(serviceEncoder.upgradeEncoding(storedHash)).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should reject login when email unknown")
+  void shouldRejectLoginWhenEmailUnknown() {
+    var attempt = commandBuilder("ghost@example.com").password(CORRECT_PASSWORD).build();
+
+    assertThatThrownBy(() -> loginService.login(attempt))
+        .isInstanceOf(InvalidCredentialsException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject login when account disabled")
+  void shouldRejectLoginWhenAccountDisabled() {
+    var account =
+        userAccountRepository.save(
+            AccountFixture.defaultAccountBuilder()
+                .passwordHash(serviceEncoder.encode(CORRECT_PASSWORD))
+                .enabled(false)
+                .build());
+
+    var attempt = commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build();
+
+    assertThatThrownBy(() -> loginService.login(attempt))
+        .isInstanceOf(InvalidCredentialsException.class);
+  }
+
+  @Test
+  @DisplayName("Should burn password verification cost when email unknown")
+  void shouldBurnPasswordVerificationCostWhenEmailUnknown() {
+    var attempt = commandBuilder("ghost@example.com").password(CORRECT_PASSWORD).build();
+
+    assertThatThrownBy(() -> loginService.login(attempt))
+        .isInstanceOf(InvalidCredentialsException.class);
+
+    assertThat(countingEncoder.completedVerifications()).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("Should burn password verification cost when account disabled")
+  void shouldBurnPasswordVerificationCostWhenAccountDisabled() {
+    var account =
+        userAccountRepository.save(
+            AccountFixture.defaultAccountBuilder()
+                .passwordHash(serviceEncoder.encode(CORRECT_PASSWORD))
+                .enabled(false)
+                .build());
+
+    var attempt = commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build();
+
+    assertThatThrownBy(() -> loginService.login(attempt))
+        .isInstanceOf(InvalidCredentialsException.class);
+
+    assertThat(countingEncoder.completedVerifications()).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("Should keep stored hash when no encoding upgrade needed")
+  void shouldKeepStoredHashWhenNoEncodingUpgradeNeeded() {
+    var strongHash = serviceEncoder.encode(CORRECT_PASSWORD);
+    var account = seedAccount(strongHash);
+
+    loginService.login(commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build());
+
+    assertThat(userAccountRepository.findById(account.getId()).orElseThrow().getPasswordHash())
+        .isEqualTo(strongHash);
+  }
+
+  @Test
+  @DisplayName("Should restore throttle budget when login succeeds")
+  void shouldRestoreThrottleBudgetWhenLoginSucceeds() {
+    var account = seedAccount(serviceEncoder.encode(CORRECT_PASSWORD));
+
+    for (int i = 0; i < 4; i++) {
+      var wrongAttempt = commandBuilder(account.getEmail()).password("wrong-" + i).build();
+      assertThatThrownBy(() -> loginService.login(wrongAttempt))
+          .isInstanceOf(InvalidCredentialsException.class);
+    }
+
+    loginService.login(commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build());
+
+    for (int i = 0; i < 5; i++) {
+      var wrongAttempt =
+          commandBuilder(account.getEmail())
+              .password("wrong-again-" + i)
+              .source("retry-src-" + i)
+              .build();
+      assertThatThrownBy(() -> loginService.login(wrongAttempt))
+          .isInstanceOf(InvalidCredentialsException.class);
+    }
+
+    var blockedAttempt =
+        commandBuilder(account.getEmail())
+            .password(CORRECT_PASSWORD)
+            .source("retry-src-final")
+            .build();
+    assertThatThrownBy(() -> loginService.login(blockedAttempt))
+        .isInstanceOf(TooManyLoginAttemptsException.class);
+  }
+
+  @Test
+  @DisplayName("Should keep source budget when other account succeeds from same source")
+  void shouldKeepSourceBudgetWhenOtherAccountSucceedsFromSameSource() {
+    var attacker = seedAccount(serviceEncoder.encode(CORRECT_PASSWORD));
+
+    for (int i = 0; i < 4; i++) {
+      var spray = commandBuilder("victim-" + i + "@example.com").password("guess").build();
+      assertThatThrownBy(() -> loginService.login(spray))
+          .isInstanceOf(InvalidCredentialsException.class);
+    }
+
+    loginService.login(commandBuilder(attacker.getEmail()).password(CORRECT_PASSWORD).build());
+
+    // The source budget is an alerting signal, never a gate: sprays from a shared source
+    // keep failing on credentials, not on a server-wide block, and each sprayed email
+    // stays capped by its own hard budget.
+    var fifthSpray = commandBuilder("victim-4@example.com").password("guess").build();
+    assertThatThrownBy(() -> loginService.login(fifthSpray))
+        .isInstanceOf(InvalidCredentialsException.class);
+
+    var sixthSpray = commandBuilder("victim-5@example.com").password("guess").build();
+    assertThatThrownBy(() -> loginService.login(sixthSpray))
+        .isInstanceOf(InvalidCredentialsException.class);
+  }
+
+  private com.streamarr.server.domain.auth.UserAccount seedAccount(String passwordHash) {
+    return userAccountRepository.save(
+        AccountFixture.defaultAccountBuilder().passwordHash(passwordHash).build());
+  }
+
+  private LoginCommand.LoginCommandBuilder commandBuilder(String email) {
+    return LoginCommand.builder().email(email).deviceName("test-device").source("127.0.0.1");
+  }
+
+  private static PasswordEncoder encoderWith(int memoryKib, int iterations) {
+    return new PasswordEncoderConfig()
+        .passwordEncoder(
+            Argon2Properties.builder()
+                .memoryKib(memoryKib)
+                .iterations(iterations)
+                .parallelism(1)
+                .build());
+  }
+
+  /**
+   * Counts password verifications that run to completion. A verification that throws — an
+   * unreadable stored hash — performs no hash work and must not count as a burn.
+   */
+  private static final class CountingPasswordEncoder implements PasswordEncoder {
+
+    private final PasswordEncoder delegate;
+    private final AtomicInteger completedVerifications = new AtomicInteger();
+
+    private CountingPasswordEncoder(PasswordEncoder delegate) {
+      this.delegate = delegate;
+    }
+
+    @Override
+    public String encode(CharSequence rawPassword) {
+      return delegate.encode(rawPassword);
+    }
+
+    @Override
+    public boolean matches(CharSequence rawPassword, String encodedPassword) {
+      var matched = delegate.matches(rawPassword, encodedPassword);
+      completedVerifications.incrementAndGet();
+      return matched;
+    }
+
+    @Override
+    public boolean upgradeEncoding(String encodedPassword) {
+      return delegate.upgradeEncoding(encodedPassword);
+    }
+
+    private int completedVerifications() {
+      return completedVerifications.get();
+    }
+  }
+}

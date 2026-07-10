@@ -1,0 +1,29 @@
+meta {
+  name: Search Series
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{TMDB_BASE_URL}}/search/tv?include_adult=false&language=en-US&page=1&query=Patriot
+  body: none
+  auth: inherit
+}
+
+params:query {
+  include_adult: false
+  language: en-US
+  page: 1
+  query: Patriot
+}
+
+headers {
+  accept: application/json
+}
+
+tests {
+  test("Should return TMDB search results", function() {
+    expect(res.status).to.equal(200);
+    expect(res.body.results).to.be.an("array");
+  });
+}

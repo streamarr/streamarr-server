@@ -7,7 +7,7 @@ import lombok.Builder;
 @Builder
 public record SessionProgressChangedEvent(
     UUID sessionId,
-    UUID userId,
+    UUID profileId,
     UUID mediaFileId,
     int positionSeconds,
     double percentComplete,

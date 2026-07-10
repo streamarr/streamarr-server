@@ -7,6 +7,7 @@ package com.streamarr.server.jooq.generated.tables;
 import com.streamarr.server.jooq.generated.Indexes;
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
+import com.streamarr.server.jooq.generated.tables.Profile.ProfilePath;
 import com.streamarr.server.jooq.generated.tables.records.WatchHistoryRecord;
 
 import java.time.OffsetDateTime;
@@ -17,10 +18,14 @@ import java.util.UUID;
 
 import org.jooq.Condition;
 import org.jooq.Field;
+import org.jooq.ForeignKey;
 import org.jooq.Index;
+import org.jooq.InverseForeignKey;
 import org.jooq.Name;
+import org.jooq.Path;
 import org.jooq.PlainSQL;
 import org.jooq.QueryPart;
+import org.jooq.Record;
 import org.jooq.SQL;
 import org.jooq.Schema;
 import org.jooq.Stringly;
@@ -82,9 +87,9 @@ public class WatchHistory extends TableImpl<WatchHistoryRecord> {
     public final TableField<WatchHistoryRecord, UUID> LAST_MODIFIED_BY = createField(DSL.name("last_modified_by"), SQLDataType.UUID, this, "");
 
     /**
-     * The column <code>public.watch_history.user_id</code>.
+     * The column <code>public.watch_history.profile_id</code>.
      */
-    public final TableField<WatchHistoryRecord, UUID> USER_ID = createField(DSL.name("user_id"), SQLDataType.UUID.nullable(false), this, "");
+    public final TableField<WatchHistoryRecord, UUID> PROFILE_ID = createField(DSL.name("profile_id"), SQLDataType.UUID.nullable(false), this, "");
 
     /**
      * The column <code>public.watch_history.collectable_id</code>.
@@ -135,6 +140,39 @@ public class WatchHistory extends TableImpl<WatchHistoryRecord> {
         this(DSL.name("watch_history"), null);
     }
 
+    public <O extends Record> WatchHistory(Table<O> path, ForeignKey<O, WatchHistoryRecord> childPath, InverseForeignKey<O, WatchHistoryRecord> parentPath) {
+        super(path, childPath, parentPath, WATCH_HISTORY);
+    }
+
+    /**
+     * A subtype implementing {@link Path} for simplified path-based joins.
+     */
+    public static class WatchHistoryPath extends WatchHistory implements Path<WatchHistoryRecord> {
+
+        private static final long serialVersionUID = 1L;
+        public <O extends Record> WatchHistoryPath(Table<O> path, ForeignKey<O, WatchHistoryRecord> childPath, InverseForeignKey<O, WatchHistoryRecord> parentPath) {
+            super(path, childPath, parentPath);
+        }
+        private WatchHistoryPath(Name alias, Table<WatchHistoryRecord> aliased) {
+            super(alias, aliased);
+        }
+
+        @Override
+        public WatchHistoryPath as(String alias) {
+            return new WatchHistoryPath(DSL.name(alias), this);
+        }
+
+        @Override
+        public WatchHistoryPath as(Name alias) {
+            return new WatchHistoryPath(alias, this);
+        }
+
+        @Override
+        public WatchHistoryPath as(Table<?> alias) {
+            return new WatchHistoryPath(alias.getQualifiedName(), this);
+        }
+    }
+
     @Override
     public Schema getSchema() {
         return aliased() ? null : Public.PUBLIC;
@@ -142,7 +180,7 @@ public class WatchHistory extends TableImpl<WatchHistoryRecord> {
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_WATCH_HISTORY_USER_COLLECTABLE);
+        return Arrays.asList(Indexes.IDX_WATCH_HISTORY_PROFILE_COLLECTABLE);
     }
 
     @Override
@@ -152,7 +190,24 @@ public class WatchHistory extends TableImpl<WatchHistoryRecord> {
 
     @Override
     public List<UniqueKey<WatchHistoryRecord>> getUniqueKeys() {
-        return Arrays.asList(Keys.UQ_WATCH_HISTORY_USER_COLLECTABLE_WATCHED);
+        return Arrays.asList(Keys.UQ_WATCH_HISTORY_PROFILE_COLLECTABLE_WATCHED);
+    }
+
+    @Override
+    public List<ForeignKey<WatchHistoryRecord, ?>> getReferences() {
+        return Arrays.asList(Keys.WATCH_HISTORY__FK_WATCH_HISTORY_PROFILE);
+    }
+
+    private transient ProfilePath _profile;
+
+    /**
+     * Get the implicit join path to the <code>public.profile</code> table.
+     */
+    public ProfilePath profile() {
+        if (_profile == null)
+            _profile = new ProfilePath(this, Keys.WATCH_HISTORY__FK_WATCH_HISTORY_PROFILE, null);
+
+        return _profile;
     }
 
     @Override

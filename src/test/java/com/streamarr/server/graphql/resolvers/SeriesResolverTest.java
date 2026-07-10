@@ -10,8 +10,13 @@ import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
+import com.streamarr.server.repositories.auth.AccountProfileRepository;
+import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.SeriesService;
+import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
+import com.streamarr.server.support.security.WithProfileContext;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -23,11 +28,16 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @Tag("UnitTest")
 @EnableDgsTest
-@SpringBootTest(classes = {SeriesResolver.class})
+@WithProfileContext
+@SpringBootTest(classes = {SeriesResolver.class, SecurityContextAuthorizationService.class})
 @DisplayName("Series Resolver Tests")
 class SeriesResolverTest {
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
+
+  @MockitoBean private ProfileRepository profileRepository;
+
+  @MockitoBean private AccountProfileRepository accountProfileRepository;
 
   @MockitoBean private SeriesService seriesService;
 
@@ -46,6 +56,28 @@ class SeriesResolverTest {
             "data.series.title");
 
     assertThat(title).isEqualTo("Breaking Bad");
+  }
+
+  @Test
+  @DisplayName("Should return background-created series when creator absent")
+  @SuppressWarnings("unchecked")
+  void shouldReturnBackgroundCreatedSeriesWhenCreatorAbsent() {
+    var seriesId = UUID.randomUUID();
+    var series = Series.builder().title("Background Series").build();
+    series.setId(seriesId);
+
+    when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
+
+    var result =
+        dgsQueryExecutor.execute(
+            String.format("{ series(id: \"%s\") { title createdBy } }", seriesId));
+
+    assertThat(result.getErrors()).isEmpty();
+    var data = result.<Map<String, Object>>getData();
+    var seriesData = (Map<String, Object>) data.get("series");
+    assertThat(seriesData)
+        .containsEntry("title", "Background Series")
+        .containsEntry("createdBy", null);
   }
 
   @Test

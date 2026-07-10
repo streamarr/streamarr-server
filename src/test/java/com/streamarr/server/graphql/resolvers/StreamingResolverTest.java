@@ -4,18 +4,38 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
+import com.nimbusds.jose.proc.JWSVerificationKeySelector;
+import com.nimbusds.jose.proc.SecurityContext;
+import com.nimbusds.jwt.proc.DefaultJWTProcessor;
+import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.config.security.AuthTokenProperties;
+import com.streamarr.server.config.security.TokenCryptoConfig;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.SubtitleDecision;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.fakes.FakeAccountProfileRepository;
+import com.streamarr.server.fakes.FakeHouseholdMembershipRepository;
+import com.streamarr.server.fakes.FakeProfileRepository;
+import com.streamarr.server.fakes.FakeVersionCounterReader;
+import com.streamarr.server.repositories.auth.AccountProfileRepository;
+import com.streamarr.server.repositories.auth.ProfileRepository;
+import com.streamarr.server.services.auth.PlaybackTokenIssuer;
+import com.streamarr.server.services.auth.TokenVersionCache;
+import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.watchprogress.SessionProgressService;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
+import com.streamarr.server.support.security.TestIdentityConstants;
+import com.streamarr.server.support.security.WithProfileContext;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -25,6 +45,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -35,13 +56,22 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 
 @Tag("UnitTest")
 @EnableDgsTest
-@SpringBootTest(classes = {StreamingResolver.class, StreamingResolverTest.TestConfig.class})
+@WithProfileContext
+@SpringBootTest(
+    classes = {
+      StreamingResolver.class,
+      StreamingResolverTest.TestConfig.class,
+      SecurityContextAuthorizationService.class
+    })
 @DisplayName("Streaming Resolver Tests")
 class StreamingResolverTest {
+
+  private static final String TEST_KEY_BASE64 =
+      "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQga+ZKCbAcyZIb7k2FE8rMPFtIpTdzX2dR/csZ8k6A95uhRANCAAQawOmVKMDLAOsboxKLb9khGsWyxwcIikucXDCfX18ME5X9/kqSS2vdMnFfZ6KR12U/Sy/EwOwnc82xFAyFdNbe";
 
   private static final StubStreamingService STUB_SERVICE = new StubStreamingService();
 
@@ -51,15 +81,70 @@ class StreamingResolverTest {
     StreamingService streamingService() {
       return STUB_SERVICE;
     }
+
+    @Bean
+    StreamingProperties streamingProperties() {
+      return StreamingProperties.builder()
+          .maxConcurrentTranscodes(8)
+          .segmentDuration(Duration.ofSeconds(6))
+          .sessionTimeout(Duration.ofSeconds(60))
+          .sessionRetention(Duration.ofHours(1))
+          .build();
+    }
+
+    /** The real issuer, so the resolver tests exercise its ownership refusal end to end. */
+    @Bean
+    PlaybackTokenIssuer playbackTokenIssuer() {
+      var crypto = new TokenCryptoConfig();
+      var reader = new FakeVersionCounterReader();
+      reader.sessionVersions.put(TestIdentityConstants.SESSION_ID, 1L);
+      reader.membershipVersions.put(
+          TestIdentityConstants.ACCOUNT_ID + ":" + TestIdentityConstants.HOUSEHOLD_ID, 1L);
+      reader.profilePolicyVersions.put(TestIdentityConstants.PROFILE_ID, 1L);
+
+      return new PlaybackTokenIssuer(
+          crypto.jwtEncoder(crypto.tokenSigningKeys(tokenProperties())),
+          java.time.Clock.systemUTC(),
+          new TokenVersionCache(reader));
+    }
+
+    @Bean
+    ProfileRepository profileRepository() {
+      return new FakeProfileRepository();
+    }
+
+    @Bean
+    AccountProfileRepository accountProfileRepository() {
+      return new FakeAccountProfileRepository(new FakeHouseholdMembershipRepository());
+    }
+
+    @Bean
+    SessionProgressService sessionProgressService() {
+      return new NoopSessionProgressService();
+    }
+
+    @Bean
+    WatchStatusService watchStatusService() {
+      return new NoopWatchStatusService();
+    }
   }
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
-  @MockitoBean private SessionProgressService sessionProgressService;
-  @MockitoBean private WatchStatusService watchStatusService;
+  @Autowired private StreamingProperties streamingProperties;
+
+  @BeforeEach
+  void resetStubService() {
+    STUB_SERVICE.reset();
+  }
 
   private StreamSession buildSession(UUID sessionId) {
+    return buildSessionOwnedBy(sessionId, TestIdentityConstants.PROFILE_ID);
+  }
+
+  private StreamSession buildSessionOwnedBy(UUID sessionId, UUID profileId) {
     return StreamSession.builder()
         .sessionId(sessionId)
+        .profileId(profileId)
         .mediaFileId(UUID.randomUUID())
         .sourcePath(Path.of("/media/movie.mkv"))
         .mediaProbe(
@@ -114,6 +199,108 @@ class StreamingResolverTest {
     assertThat(id).isEqualTo(sessionId.toString());
     assertThat(streamUrl).contains("/api/stream/" + sessionId + "/master.m3u8");
     assertThat(transcodeMode).isEqualTo("REMUX");
+    assertThat(STUB_SERVICE.getLastCreateProfileId()).isEqualTo(TestIdentityConstants.PROFILE_ID);
+  }
+
+  @Test
+  @DisplayName("Should return stream URL with URL-safe playback token when creating session")
+  void shouldReturnStreamUrlWithUrlSafePlaybackTokenWhenCreatingSession() {
+    var sessionId = UUID.randomUUID();
+    STUB_SERVICE.setNextResult(buildSession(sessionId));
+
+    var mutation =
+        String.format(
+            """
+            mutation {
+              createStreamSession(mediaFileId: "%s") {
+                streamUrl
+              }
+            }
+            """,
+            UUID.randomUUID());
+
+    String streamUrl =
+        dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.createStreamSession.streamUrl");
+
+    assertThat(streamUrl).startsWith("/api/stream/" + sessionId + "/master.m3u8?t=");
+    assertThat(streamUrl.substring(streamUrl.indexOf("?t=") + 3)).matches("[A-Za-z0-9._-]+");
+  }
+
+  @Test
+  @DisplayName("Should mint playback token for media duration plus session retention")
+  void shouldMintPlaybackTokenForMediaDurationPlusSessionRetention() {
+    var sessionId = UUID.randomUUID();
+    var session = buildSession(sessionId);
+    STUB_SERVICE.setNextResult(session);
+
+    var mutation =
+        String.format(
+            """
+            mutation {
+              createStreamSession(mediaFileId: "%s") {
+                streamUrl
+              }
+            }
+            """,
+            UUID.randomUUID());
+
+    String streamUrl =
+        dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.createStreamSession.streamUrl");
+    var token = streamUrl.substring(streamUrl.indexOf("?t=") + 3);
+    var decoded = decodeToken(token);
+    var tokenLifetime = Duration.between(decoded.getIssuedAt(), decoded.getExpiresAt());
+
+    assertThat(tokenLifetime)
+        .isEqualTo(session.getMediaProbe().duration().plus(streamingProperties.sessionRetention()));
+  }
+
+  private static org.springframework.security.oauth2.jwt.Jwt decodeToken(String token) {
+    var keys = new TokenCryptoConfig().tokenSigningKeys(tokenProperties());
+    var processor = new DefaultJWTProcessor<SecurityContext>();
+    processor.setJWSKeySelector(
+        new JWSVerificationKeySelector<>(
+            JWSAlgorithm.ES256, new ImmutableJWKSet<>(keys.verificationKeys())));
+    processor.setJWTClaimsSetVerifier((claims, context) -> {});
+    return new NimbusJwtDecoder(processor).decode(token);
+  }
+
+  private static AuthTokenProperties tokenProperties() {
+    return AuthTokenProperties.builder()
+        .signingKey(TEST_KEY_BASE64)
+        .verificationKeys(List.of())
+        .accessTokenTtl(Duration.ofMinutes(10))
+        .refreshTokenTtl(Duration.ofDays(30))
+        .rotationGrace(Duration.ofSeconds(30))
+        .build();
+  }
+
+  @Test
+  @DisplayName("Should destroy session when playback token issuance fails")
+  void shouldDestroySessionWhenPlaybackTokenIssuanceFails() {
+    // Simulates a future internal path handing back a foreign session: the resolver must never
+    // turn it into a playable URL, whatever the service layer does.
+    var sessionId = UUID.randomUUID();
+    STUB_SERVICE.setNextResult(buildSessionOwnedBy(sessionId, UUID.randomUUID()));
+
+    var mutation =
+        String.format(
+            """
+            mutation {
+              createStreamSession(mediaFileId: "%s") {
+                id
+                streamUrl
+              }
+            }
+            """,
+            UUID.randomUUID());
+
+    var result = dgsQueryExecutor.execute(mutation);
+
+    assertThat(result.getErrors()).hasSize(1);
+    assertThat(result.getErrors().getFirst().getMessage())
+        .contains("Streaming session not found: " + sessionId);
+    assertThat(result.toSpecification().toString()).doesNotContain("?t=");
+    assertThat(STUB_SERVICE.getActiveSessionCount()).isZero();
   }
 
   @Test
@@ -198,6 +385,17 @@ class StreamingResolverTest {
     assertThat(result.getErrors().getFirst().getMessage()).contains("Invalid ID format");
   }
 
+  @Test
+  @DisplayName("Should destroy as current profile when destroying session")
+  void shouldDestroyAsCurrentProfileWhenDestroyingSession() {
+    var mutation =
+        String.format("mutation { destroyStreamSession(sessionId: \"%s\") }", UUID.randomUUID());
+
+    dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.destroyStreamSession");
+
+    assertThat(STUB_SERVICE.getLastDestroyProfileId()).isEqualTo(TestIdentityConstants.PROFILE_ID);
+  }
+
   @ParameterizedTest(name = "{0}")
   @MethodSource("booleanMutations")
   @DisplayName("Should return true when executing boolean mutation")
@@ -244,6 +442,15 @@ class StreamingResolverTest {
 
     private StreamSession nextResult;
     private StreamingOptions lastReceivedOptions;
+    private UUID lastCreateProfileId;
+    private UUID lastDestroyProfileId;
+
+    void reset() {
+      nextResult = null;
+      lastReceivedOptions = null;
+      lastCreateProfileId = null;
+      lastDestroyProfileId = null;
+    }
 
     void setNextResult(StreamSession session) {
       this.nextResult = session;
@@ -253,9 +460,18 @@ class StreamingResolverTest {
       return lastReceivedOptions;
     }
 
+    UUID getLastCreateProfileId() {
+      return lastCreateProfileId;
+    }
+
+    UUID getLastDestroyProfileId() {
+      return lastDestroyProfileId;
+    }
+
     @Override
-    public StreamSession createSession(UUID mediaFileId, StreamingOptions options) {
+    public StreamSession createSession(UUID mediaFileId, UUID profileId, StreamingOptions options) {
       this.lastReceivedOptions = options;
+      this.lastCreateProfileId = profileId;
       return nextResult;
     }
 
@@ -266,7 +482,14 @@ class StreamingResolverTest {
 
     @Override
     public void destroySession(UUID sessionId) {
-      // no-op for test fake
+      if (nextResult != null && nextResult.getSessionId().equals(sessionId)) {
+        nextResult = null;
+      }
+    }
+
+    @Override
+    public void destroySession(UUID sessionId, UUID profileId) {
+      this.lastDestroyProfileId = profileId;
     }
 
     @Override
@@ -281,6 +504,36 @@ class StreamingResolverTest {
 
     @Override
     public void resumeSessionIfNeeded(UUID sessionId, String segmentName) {
+      // no-op for test fake
+    }
+  }
+
+  private static class NoopSessionProgressService extends SessionProgressService {
+
+    NoopSessionProgressService() {
+      super(null, null, null, null, null, null);
+    }
+
+    @Override
+    public void reportStreamSessionTimeline(
+        UUID profileId, UUID sessionId, int positionSeconds, PlaybackState state) {
+      // no-op for test fake
+    }
+  }
+
+  private static class NoopWatchStatusService extends WatchStatusService {
+
+    NoopWatchStatusService() {
+      super(null, null, null, null, null, null);
+    }
+
+    @Override
+    public void markWatched(UUID profileId, UUID collectableId) {
+      // no-op for test fake
+    }
+
+    @Override
+    public void markUnwatched(UUID profileId, UUID collectableId) {
       // no-op for test fake
     }
   }

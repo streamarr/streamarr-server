@@ -31,7 +31,7 @@ public class SessionProgressRepositoryCustomImpl implements SessionProgressRepos
     var rowsAffected =
         dsl.insertInto(SESSION_PROGRESS)
             .set(SESSION_PROGRESS.SESSION_ID, progress.sessionId())
-            .set(SESSION_PROGRESS.USER_ID, progress.userId())
+            .set(SESSION_PROGRESS.PROFILE_ID, progress.profileId())
             .set(SESSION_PROGRESS.MEDIA_FILE_ID, progress.mediaFileId())
             .set(SESSION_PROGRESS.POSITION_SECONDS, progress.positionSeconds())
             .set(SESSION_PROGRESS.PERCENT_COMPLETE, progress.percentComplete())
@@ -52,12 +52,12 @@ public class SessionProgressRepositoryCustomImpl implements SessionProgressRepos
   }
 
   @Override
-  public Optional<SessionProgress> findMostRecentByUserIdAndMediaFileId(
-      UUID userId, UUID mediaFileId) {
+  public Optional<SessionProgress> findMostRecentByProfileIdAndMediaFileId(
+      UUID profileId, UUID mediaFileId) {
     var query =
         dsl.select(SESSION_PROGRESS.asterisk())
             .from(SESSION_PROGRESS)
-            .where(SESSION_PROGRESS.USER_ID.eq(userId))
+            .where(SESSION_PROGRESS.PROFILE_ID.eq(profileId))
             .and(SESSION_PROGRESS.MEDIA_FILE_ID.eq(mediaFileId))
             .orderBy(SESSION_PROGRESS.LAST_MODIFIED_ON.desc())
             .limit(1);
@@ -74,10 +74,20 @@ public class SessionProgressRepositoryCustomImpl implements SessionProgressRepos
   }
 
   @Override
-  public void deleteByUserIdAndMediaFileIds(UUID userId, Collection<UUID> mediaFileIds) {
+  public void deleteByProfileIdAndMediaFileIds(UUID profileId, Collection<UUID> mediaFileIds) {
     dsl.deleteFrom(SESSION_PROGRESS)
-        .where(SESSION_PROGRESS.USER_ID.eq(userId))
+        .where(SESSION_PROGRESS.PROFILE_ID.eq(profileId))
         .and(SESSION_PROGRESS.MEDIA_FILE_ID.in(mediaFileIds))
+        .execute();
+  }
+
+  @Override
+  public void reassignProfile(UUID fromProfileId, UUID toProfileId) {
+    dsl.update(SESSION_PROGRESS)
+        .set(SESSION_PROGRESS.PROFILE_ID, toProfileId)
+        .set(SESSION_PROGRESS.LAST_MODIFIED_ON, OffsetDateTime.now(ZoneOffset.UTC))
+        .set(SESSION_PROGRESS.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
+        .where(SESSION_PROGRESS.PROFILE_ID.eq(fromProfileId))
         .execute();
   }
 }
