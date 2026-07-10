@@ -2,6 +2,10 @@ package com.streamarr.server.services.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
@@ -11,6 +15,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.AbstractPlatformTransactionManager;
 import org.springframework.transaction.support.DefaultTransactionStatus;
@@ -64,9 +69,51 @@ class TokenReuseRevokerTest {
     assertThat(revoked.getRevokedReason()).isEqualTo(SessionRevocationReason.TOKEN_REUSE);
   }
 
+  @Test
+  @DisplayName("Should log security error when deferred revocation fails")
+  void shouldLogSecurityErrorWhenDeferredRevocationFails() {
+    var session = saveSession();
+    var failingRevoker = new TokenReuseRevoker(new FailingWriter());
+    var template = new TransactionTemplate(new NoOpTransactionManager());
+
+    var logger = (Logger) LoggerFactory.getLogger(TokenReuseRevoker.class);
+    var appender = new ListAppender<ILoggingEvent>();
+    appender.start();
+    logger.addAppender(appender);
+    try {
+      // Spring swallows afterCompletion exceptions on its own logger with no session context.
+      // A detected theft whose revocation write fails must leave an application-owned ERROR
+      // naming the session, or the stolen family stays live with nothing to alert on.
+      template.executeWithoutResult(
+          _ -> failingRevoker.revokeAfterCompletion(session.getId(), Instant.now()));
+
+      assertThat(appender.list)
+          .anySatisfy(
+              event -> {
+                assertThat(event.getLevel()).isEqualTo(Level.ERROR);
+                assertThat(event.getFormattedMessage()).contains(session.getId().toString());
+              });
+    } finally {
+      logger.detachAppender(appender);
+      appender.stop();
+    }
+  }
+
   private AuthSession saveSession() {
     return sessionRepository.save(
         AuthSession.builder().id(UUID.randomUUID()).accountId(UUID.randomUUID()).build());
+  }
+
+  private static final class FailingWriter extends TokenReuseRevocationWriter {
+
+    FailingWriter() {
+      super(new FakeAuthSessionRepository(), new FakeRefreshTokenRepository());
+    }
+
+    @Override
+    public void revoke(UUID sessionId, Instant detectedAt) {
+      throw new IllegalStateException("Injected writer failure");
+    }
   }
 
   /** Real Spring transaction lifecycle over no resources — no manual synchronization state. */

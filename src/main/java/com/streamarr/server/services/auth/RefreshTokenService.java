@@ -78,8 +78,10 @@ public class RefreshTokenService {
     return new IssuedRefreshToken(rawToken, session);
   }
 
-  // Reuse detection must survive its own exception: the family revocation and version bump
-  // committed here are the security response, and the throw is only the caller's signal.
+  // Reuse detection must survive its own exception and any enclosing rollback: the family
+  // revocation and version bump are deferred to an after-completion REQUIRES_NEW transaction
+  // (TokenReuseRevoker), so they persist even though this exception rolls back the joined
+  // refresh transaction. The throw is only the caller's signal.
   @Transactional(noRollbackFor = TokenReuseDetectedException.class)
   public RefreshResult redeem(String rawToken) {
     var digest = digestOf(rawToken);
