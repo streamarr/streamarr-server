@@ -117,16 +117,22 @@ class CounterNotificationListenerTest {
   }
 
   @Test
-  @DisplayName("Should apply valid notification payloads to the cache")
-  void shouldApplyValidNotificationPayloadsToTheCache() {
+  @DisplayName("Should apply valid notification payloads to a warm cache")
+  void shouldApplyValidNotificationPayloadsToWarmCache() {
     var sessionId = UUID.randomUUID();
-    var cache = new TokenVersionCache(new FakeVersionCounterReader());
+    var reader = new FakeVersionCounterReader();
+    reader.sessionVersions.put(sessionId, 6L);
+    var cache = new TokenVersionCache(reader);
     var connectionSource = new ScriptedCounterNotificationConnectionSource();
     var listener = new CounterNotificationListener(cache, connectionSource, _ -> {});
 
     listener.start();
     try {
       connectionSource.awaitListenCount(1);
+      await().atMost(Duration.ofSeconds(1)).until(listener::isListening);
+      assertThat(cache.sessionVersion(sessionId)).contains(6L);
+      reader.sessionVersions.put(sessionId, 7L);
+      reader.failWith(new IllegalStateException("notification should advance the warm entry"));
       connectionSource.publish(
           new CounterNotificationPayload(CounterKind.SESSION, sessionId.toString(), 7L).encode());
 
@@ -174,8 +180,10 @@ class CounterNotificationListenerTest {
   void shouldReconnectWhenApplyingANotificationFailsUnexpectedly() {
     var sessionId = UUID.randomUUID();
     var poisonedSessionId = UUID.randomUUID();
+    var reader = new FakeVersionCounterReader();
+    reader.sessionVersions.put(sessionId, 7L);
     var cache =
-        new TokenVersionCache(new FakeVersionCounterReader()) {
+        new TokenVersionCache(reader) {
           @Override
           public void update(CounterKind kind, String key, long version) {
             if (key.equals(poisonedSessionId.toString())) {
@@ -194,6 +202,8 @@ class CounterNotificationListenerTest {
 
       // An unexpected failure must not kill the worker; it reconnects and keeps applying.
       connectionSource.awaitListenCount(2);
+      await().atMost(Duration.ofSeconds(1)).until(listener::isListening);
+      assertThat(cache.sessionVersion(sessionId)).contains(7L);
       connectionSource.publish(sessionPayload(sessionId, 7L));
 
       await()

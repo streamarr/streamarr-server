@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.auth.CounterKind;
 import com.streamarr.server.fakes.FakeVersionCounterReader;
+import com.streamarr.server.services.auth.events.CounterBumpedEvent;
 import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -34,10 +35,24 @@ class TokenVersionValidatorTest {
   @Test
   @DisplayName("Should reject stale token after older counter event arrives out of order")
   void shouldRejectStaleTokenAfterOlderCounterEventArrivesOutOfOrder() {
-    cache.update(CounterKind.SESSION, sessionId.toString(), 4L);
+    reader.sessionVersions.put(sessionId, 4L);
+    assertThat(validator.validate(tokenWithSessionVersion(4L)).hasErrors()).isFalse();
     cache.update(CounterKind.SESSION, sessionId.toString(), 3L);
 
     assertThat(validator.validate(tokenWithSessionVersion(3L)).hasErrors()).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should reject stale token when older counter event follows cache clear")
+  void shouldRejectStaleTokenWhenOlderCounterEventFollowsCacheClear() {
+    reader.sessionVersions.put(sessionId, 7L);
+    var refresher = new TokenVersionCacheRefresher(cache);
+
+    assertThat(validator.validate(tokenWithSessionVersion(7L)).hasErrors()).isFalse();
+    cache.clearAll();
+    refresher.onCounterBumped(CounterBumpedEvent.session(sessionId, 6L));
+
+    assertThat(validator.validate(tokenWithSessionVersion(6L)).hasErrors()).isTrue();
   }
 
   @Test
