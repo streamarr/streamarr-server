@@ -87,6 +87,25 @@ class LoginServiceTest {
   }
 
   @Test
+  @DisplayName("Should not burn password verification cost when throttled")
+  void shouldNotBurnPasswordVerificationCostWhenThrottled() {
+    var account = seedAccount(serviceEncoder.encode(CORRECT_PASSWORD));
+
+    for (int i = 0; i < 5; i++) {
+      var wrongAttempt = commandBuilder(account.getEmail()).password("wrong-" + i).build();
+      assertThatThrownBy(() -> loginService.login(wrongAttempt))
+          .isInstanceOf(InvalidCredentialsException.class);
+    }
+    var burnsBeforeThrottle = countingEncoder.matchesInvocations();
+
+    var throttledAttempt = commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build();
+    assertThatThrownBy(() -> loginService.login(throttledAttempt))
+        .isInstanceOf(TooManyLoginAttemptsException.class);
+
+    assertThat(countingEncoder.matchesInvocations()).isEqualTo(burnsBeforeThrottle);
+  }
+
+  @Test
   @DisplayName("Should rehash password when encoding upgrade needed")
   void shouldRehashPasswordWhenEncodingUpgradeNeeded() {
     var weakHash = weakEncoder.encode(CORRECT_PASSWORD);

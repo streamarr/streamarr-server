@@ -15,10 +15,12 @@ import com.streamarr.server.fakes.FakeRefreshTokenRepository;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.services.auth.events.CounterBumpedEvent;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -306,6 +308,40 @@ class RefreshTokenServiceTest {
           .isInstanceOf(IllegalStateException.class)
           .hasMessageContaining("SHA-256");
     }
+  }
+
+  @Test
+  @DisplayName("Should store only token digest when session created")
+  void shouldStoreOnlyTokenDigestWhenSessionCreated() throws NoSuchAlgorithmException {
+    var issued = issueSession();
+
+    var expectedDigest =
+        Base64.getUrlEncoder()
+            .withoutPadding()
+            .encodeToString(
+                MessageDigest.getInstance("SHA-256")
+                    .digest(issued.rawToken().getBytes(StandardCharsets.UTF_8)));
+    assertThat(tokenRepository.findAll())
+        .singleElement()
+        .satisfies(
+            token -> {
+              assertThat(token.getDigest()).isNotEqualTo(issued.rawToken());
+              assertThat(token.getDigest()).isEqualTo(expectedDigest);
+            });
+  }
+
+  @Test
+  @DisplayName("Should reject redemption when token lifetime exactly elapsed")
+  void shouldRejectRedemptionWhenTokenLifetimeExactlyElapsed() {
+    var issued = issueSession();
+
+    advanceClock(Duration.ofDays(30));
+
+    var boundaryToken = issued.rawToken();
+    assertThatThrownBy(() -> service.redeem(boundaryToken))
+        .isInstanceOf(InvalidRefreshTokenException.class);
+    assertThat(sessionRepository.findById(issued.session().getId()).orElseThrow().getRevokedAt())
+        .isNull();
   }
 
   private IssuedRefreshToken issueSession() {

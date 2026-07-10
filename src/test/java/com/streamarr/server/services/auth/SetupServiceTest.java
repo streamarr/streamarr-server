@@ -118,6 +118,30 @@ class SetupServiceTest {
   }
 
   @Test
+  @DisplayName("Should keep other profiles watch rows when setup remaps placeholder rows")
+  void shouldKeepOtherProfilesWatchRowsWhenSetupRemapsPlaceholderRows() {
+    var otherProfileId = UUID.randomUUID();
+    sessionProgressRepository.save(
+        SessionProgressFixture.progressBuilder(otherProfileId, UUID.randomUUID())
+            .durationSeconds(1800)
+            .build());
+    watchHistoryRepository.save(
+        WatchHistory.builder()
+            .profileId(otherProfileId)
+            .collectableId(UUID.randomUUID())
+            .watchedAt(Instant.now())
+            .durationSeconds(2400)
+            .build());
+
+    setupService.setup(defaultCommandBuilder().build());
+
+    assertThat(sessionProgressRepository.findAll())
+        .allSatisfy(progress -> assertThat(progress.getProfileId()).isEqualTo(otherProfileId));
+    assertThat(watchHistoryRepository.findAll())
+        .allSatisfy(history -> assertThat(history.getProfileId()).isEqualTo(otherProfileId));
+  }
+
+  @Test
   @DisplayName("Should reject setup when bootstrap claimed")
   void shouldRejectSetupWhenBootstrapClaimed() {
     bootstrapRepository.claim(UUID.randomUUID());
