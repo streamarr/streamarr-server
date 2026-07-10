@@ -44,24 +44,25 @@ class LoginServiceTest {
   private final FakeAuthSessionRepository sessionRepository = new FakeAuthSessionRepository();
   private final FakeRefreshTokenRepository tokenRepository = new FakeRefreshTokenRepository();
   private final CapturingEventPublisher eventPublisher = new CapturingEventPublisher();
+  private final RefreshTokenService refreshTokenService =
+      new RefreshTokenService(
+          sessionRepository,
+          tokenRepository,
+          AuthTokenProperties.builder()
+              .signingKey("")
+              .accessTokenTtl(Duration.ofMinutes(10))
+              .refreshTokenTtl(Duration.ofDays(30))
+              .rotationGrace(Duration.ofSeconds(30))
+              .build(),
+          clock,
+          new TokenReuseRevoker(
+              new TokenReuseRevocationWriter(sessionRepository, tokenRepository, eventPublisher)),
+          eventPublisher);
 
   private final LoginService loginService =
       new LoginService(
           userAccountRepository,
-          new RefreshTokenService(
-              sessionRepository,
-              tokenRepository,
-              AuthTokenProperties.builder()
-                  .signingKey("")
-                  .accessTokenTtl(Duration.ofMinutes(10))
-                  .refreshTokenTtl(Duration.ofDays(30))
-                  .rotationGrace(Duration.ofSeconds(30))
-                  .build(),
-              clock,
-              new TokenReuseRevoker(
-                  new TokenReuseRevocationWriter(
-                      sessionRepository, tokenRepository, eventPublisher)),
-              eventPublisher),
+          new LoginCompletionService(userAccountRepository, refreshTokenService),
           countingEncoder,
           new LoginThrottle(
               AuthThrottleProperties.builder()

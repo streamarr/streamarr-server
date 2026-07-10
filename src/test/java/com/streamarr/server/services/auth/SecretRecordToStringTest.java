@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -20,12 +21,13 @@ class SecretRecordToStringTest {
     var renderedValues =
         List.of(
             LoginCommand.builder().password(secret).toString(),
+            LoginCompletionCommand.builder().expectedPasswordHash(secret).toString(),
             SetupCommand.builder().password(secret).toString(),
             LoginResult.builder().rawRefreshToken(secret).toString(),
             AccessToken.builder().value(secret).toString());
 
     assertThat(renderedValues)
-        .hasSize(4)
+        .hasSize(5)
         .allSatisfy(rendered -> assertThat(rendered).doesNotContain(secret));
   }
 
@@ -36,6 +38,11 @@ class SecretRecordToStringTest {
     var renderedValues =
         List.of(
             LoginCommand.builder().password(secret).build().toString(),
+            LoginCompletionCommand.builder()
+                .expectedPasswordHash(secret)
+                .upgradedPasswordHash(Optional.of(secret))
+                .build()
+                .toString(),
             SetupCommand.builder().password(secret).build().toString(),
             LoginResult.builder().rawRefreshToken(secret).build().toString(),
             new IssuedRefreshToken(secret, null).toString(),
@@ -48,7 +55,7 @@ class SecretRecordToStringTest {
                 .toString());
 
     assertThat(renderedValues)
-        .hasSize(6)
+        .hasSize(7)
         .allSatisfy(rendered -> assertThat(rendered).doesNotContain(secret));
   }
 }

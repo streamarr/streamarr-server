@@ -99,6 +99,57 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
     }
   }
 
+  @Test
+  @DisplayName(
+      "Should reject an old-password login when password change completes after credential lock")
+  void shouldRejectOldPasswordLoginWhenPasswordChangeCompletesAfterCredentialLock()
+      throws Exception {
+    var oldPassword = UUID.randomUUID().toString();
+    var newPassword = UUID.randomUUID().toString();
+    account =
+        userAccountRepository.save(
+            AccountFixture.defaultAccountBuilder()
+                .passwordHash(passwordEncoder.encode(oldPassword))
+                .build());
+    var caller = refreshTokenService.createSession(account, "password-change-device").session();
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var login =
+          executor.submit(
+              () -> {
+                passwordEncoder.pauseAfterNextUpgradeCheck();
+                return loginService.login(
+                    LoginCommand.builder()
+                        .email(account.getEmail())
+                        .password(oldPassword)
+                        .deviceName("racing-login-device")
+                        .source("race-test")
+                        .build());
+              });
+
+      passwordEncoder.awaitLoginUpgradeChecked();
+
+      passwordChangeService.changePassword(
+          ChangePasswordCommand.builder()
+              .accountId(account.getId())
+              .sessionId(caller.getId())
+              .currentPassword(oldPassword)
+              .newPassword(newPassword)
+              .build());
+
+      passwordEncoder.releaseLogin();
+
+      assertThatThrownBy(() -> login.get(10, TimeUnit.SECONDS))
+          .isInstanceOf(ExecutionException.class)
+          .hasCauseInstanceOf(InvalidCredentialsException.class);
+      assertThat(authSessionRepository.findByAccountId(account.getId()))
+          .extracting("id")
+          .containsExactly(caller.getId());
+    } finally {
+      passwordEncoder.releaseLogin();
+    }
+  }
+
   @TestConfiguration(proxyBeanMethods = false)
   static class PasswordEncoderTestConfig {
 
@@ -126,12 +177,25 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
       preparePause(PausePoint.SUCCESSFUL_MATCH);
     }
 
+    void pauseAfterNextUpgradeCheck() {
+      preparePause(PausePoint.UPGRADE_CHECK);
+    }
+
     void awaitLoginVerified() throws InterruptedException {
       assertThat(pausePrepared.get().await(10, TimeUnit.SECONDS))
           .as("old-password login should prepare the verified interleaving point")
           .isTrue();
       assertThat(currentGate().loginPaused().await(10, TimeUnit.SECONDS))
           .as("old-password login should reach the verified interleaving point")
+          .isTrue();
+    }
+
+    void awaitLoginUpgradeChecked() throws InterruptedException {
+      assertThat(pausePrepared.get().await(10, TimeUnit.SECONDS))
+          .as("old-password login should prepare the post-lock interleaving point")
+          .isTrue();
+      assertThat(currentGate().loginPaused().await(10, TimeUnit.SECONDS))
+          .as("old-password login should reach the post-lock interleaving point")
           .isTrue();
     }
 
@@ -159,7 +223,9 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
 
     @Override
     public boolean upgradeEncoding(String encodedPassword) {
-      return delegate.upgradeEncoding(encodedPassword);
+      var upgradeEncoding = delegate.upgradeEncoding(encodedPassword);
+      pauseIfRequested(PausePoint.UPGRADE_CHECK);
+      return upgradeEncoding;
     }
 
     private void preparePause(PausePoint point) {
@@ -195,7 +261,8 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
     }
 
     private enum PausePoint {
-      SUCCESSFUL_MATCH
+      SUCCESSFUL_MATCH,
+      UPGRADE_CHECK
     }
 
     private record PauseGate(CountDownLatch loginPaused, CountDownLatch continueLogin) {}
