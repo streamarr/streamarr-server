@@ -3,6 +3,7 @@ package com.streamarr.server.services.auth;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -11,26 +12,26 @@ import org.springframework.stereotype.Service;
 public class LoginService {
 
   private final UserAccountRepository userAccountRepository;
-  private final RefreshTokenService refreshTokenService;
+  private final LoginCompletionService loginCompletionService;
   private final PasswordEncoder passwordEncoder;
   private final LoginThrottle throttle;
   private final String timingEqualizerHash;
 
   public LoginService(
       UserAccountRepository userAccountRepository,
-      RefreshTokenService refreshTokenService,
+      LoginCompletionService loginCompletionService,
       PasswordEncoder passwordEncoder,
       LoginThrottle throttle) {
     this.userAccountRepository = userAccountRepository;
-    this.refreshTokenService = refreshTokenService;
+    this.loginCompletionService = loginCompletionService;
     this.passwordEncoder = passwordEncoder;
     this.throttle = throttle;
     this.timingEqualizerHash = passwordEncoder.encode(UUID.randomUUID().toString());
   }
 
   // Deliberately not @Transactional: a method-level transaction would pin a pooled connection
-  // across the Argon2 work (the documented Hikari-exhaustion pattern). Each write inside —
-  // the rehash save and createSession — owns its own transaction.
+  // across the Argon2 work (the documented Hikari-exhaustion pattern). LoginCompletionService owns
+  // the short transaction that begins only after all password work has finished.
   public LoginResult login(LoginCommand command) {
     // Reserve the slot before any password work — recording failures after hashing is a
     // check-then-act race that lets a concurrent burst overrun the budget.
@@ -40,21 +41,17 @@ public class LoginService {
     if (!credentialsValid(account, command.password())) {
       throw new InvalidCredentialsException();
     }
-    if (!userAccountRepository.lockIfCredentialsUnchanged(
-        account.getId(), account.getPasswordHash())) {
-      throw new InvalidCredentialsException();
-    }
+    var result =
+        loginCompletionService.complete(
+            LoginCompletionCommand.builder()
+                .accountId(account.getId())
+                .expectedPasswordHash(account.getPasswordHash())
+                .upgradedPasswordHash(upgradedPasswordHash(account, command.password()))
+                .deviceName(command.deviceName())
+                .build());
 
     throttle.reset(command.email(), command.source());
-    rehashIfUpgradeNeeded(account, command.password());
-
-    var issued = refreshTokenService.createSession(account, command.deviceName());
-
-    return LoginResult.builder()
-        .account(account)
-        .session(issued.session())
-        .rawRefreshToken(issued.rawToken())
-        .build();
+    return result;
   }
 
   private boolean credentialsValid(UserAccount account, String password) {
@@ -67,12 +64,11 @@ public class LoginService {
     return passwordEncoder.matches(password, account.getPasswordHash());
   }
 
-  private void rehashIfUpgradeNeeded(UserAccount account, String rawPassword) {
+  private Optional<String> upgradedPasswordHash(UserAccount account, String rawPassword) {
     if (!passwordEncoder.upgradeEncoding(account.getPasswordHash())) {
-      return;
+      return Optional.empty();
     }
 
-    account.setPasswordHash(passwordEncoder.encode(rawPassword));
-    userAccountRepository.save(account);
+    return Optional.of(passwordEncoder.encode(rawPassword));
   }
 }

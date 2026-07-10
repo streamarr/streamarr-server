@@ -77,11 +77,25 @@ class RefreshRotationConcurrencyIT extends AbstractIntegrationTest {
 
     executor.shutdown();
 
-    // Both callers succeed: one genuine rotation, one grace replay — never a second rotation.
+    // Both callers recover the same successor: one genuine rotation, one grace replay.
     assertThat(exceptions).isEmpty();
     assertThat(results).hasSize(threadCount);
     assertThat(results).filteredOn(RefreshResult.Rotated.class::isInstance).hasSize(1);
-    assertThat(results).filteredOn(RefreshResult.GraceReplay.class::isInstance).hasSize(1);
+    assertThat(results).filteredOn(RefreshResult.Replayed.class::isInstance).hasSize(1);
+
+    var rotation =
+        (RefreshResult.Rotated)
+            results.stream()
+                .filter(RefreshResult.Rotated.class::isInstance)
+                .findFirst()
+                .orElseThrow();
+    var replay =
+        (RefreshResult.Replayed)
+            results.stream()
+                .filter(RefreshResult.Replayed.class::isInstance)
+                .findFirst()
+                .orElseThrow();
+    assertThat(replay.rawRefreshToken()).isEqualTo(rotation.rawRefreshToken());
 
     var sessionId = issued.session().getId();
     var tokens =
@@ -95,5 +109,19 @@ class RefreshRotationConcurrencyIT extends AbstractIntegrationTest {
 
     var session = authSessionRepository.findById(sessionId).orElseThrow();
     assertThat(session.getRevokedAt()).isNull();
+  }
+
+  @Test
+  @DisplayName("Should not recover consumed successor when earlier token replayed within grace")
+  void shouldNotRecoverConsumedSuccessorWhenEarlierTokenReplayedWithinGrace() {
+    account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    var issued = refreshTokenService.createSession(account, "late-response-device");
+    var firstRotation = (RefreshResult.Rotated) refreshTokenService.redeem(issued.rawToken());
+    refreshTokenService.redeem(firstRotation.rawRefreshToken());
+
+    var replay = refreshTokenService.redeem(issued.rawToken());
+
+    assertThat(replay).isInstanceOf(RefreshResult.SupersededReplay.class);
+    assertThat(replay.session().getId()).isEqualTo(issued.session().getId());
   }
 }
