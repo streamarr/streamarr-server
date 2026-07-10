@@ -37,8 +37,8 @@ Copying a password into `char[]` or `byte[]` at only one application layer does 
 Streamarr adopts mutable password buffers only if the complete input-to-hasher path owns those buffers, avoids immutable copies, clears every owned intermediate in `finally`, and the threat model justifies the added custom security code.
 Such a change replaces part of the Spring Security password-encoding boundary and therefore requires revisiting this ADR.
 
-Password login is throttled: failed attempts are rate-limited per account and per source with backoff, as NIST SP 800-63B requires for online guessing.
-Spring Security publishes authentication failure events but ships no limiter, so this throttle is Streamarr code driven by those events — the same posture as the profile-PIN limiter.
+Password login is throttled: failed attempts are rate-limited per account and per source within a sliding window, as NIST SP 800-63B requires for online guessing.
+Spring Security ships no login rate limiter, so this throttle is Streamarr code invoked inline before any password verification — reserving budget up front, rather than recording failure events afterwards, keeps a concurrent burst from overrunning it; the profile-PIN limiter shares this posture.
 
 Account/device sessions use long-lived, revocable refresh tokens, scoped to the account and device rather than to a household or profile.
 Refresh tokens rotate on every use: redeeming one consumes it and issues a successor, the server stores only a digest of the active token, and redemption of an already-consumed token is treated as theft and revokes the session's whole token family.
@@ -146,7 +146,7 @@ Explicitly deferred from v1:
 * Refresh-token revocation, rotation with reuse detection, digest-at-rest storage, and profile-token invalidation are required server features, not optional client behavior.
 * One token model has three carriers — bearer headers for native apps, `httpOnly` cookies plus CSRF protection for browsers, short-lived playback-URL tokens for streaming — and no carrier weakens validation.
 * Refresh races are resolved on the server — the rotation grace window — and merely smoothed by the web client's service worker, so a browser without a live worker degrades to slower renewal, never to spurious logout.
-* Login and PIN throttling are Streamarr code driven by Spring Security's authentication events, not framework features.
+* Login and PIN throttling are Streamarr code that reserves budget inline before password verification, not framework features.
 * Cross-instance invalidation rides Postgres version counters and `LISTEN`/`NOTIFY`, adding no Redis or other new infrastructure in v1.
 * The invalidation listener must never borrow and hold a connection from the transactional Hikari pool, even while reconnecting or backing off.
 * OAuth providers are authentication inputs to local accounts, not replacements for the account/profile/household model.

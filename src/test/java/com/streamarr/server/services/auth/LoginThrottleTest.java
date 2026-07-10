@@ -141,6 +141,19 @@ class LoginThrottleTest {
   }
 
   @Test
+  @DisplayName("Should still throttle when window exactly elapsed")
+  void shouldStillThrottleWhenWindowExactlyElapsed() {
+    for (int i = 0; i < MAX_ATTEMPTS; i++) {
+      throttle.registerAttempt(EMAIL, SOURCE);
+    }
+
+    currentTime.updateAndGet(instant -> instant.plus(WINDOW));
+
+    assertThatThrownBy(() -> throttle.registerAttempt(EMAIL, SOURCE))
+        .isInstanceOf(TooManyLoginAttemptsException.class);
+  }
+
+  @Test
   @DisplayName("Should not extend lockout window when blocked attempts continue")
   void shouldNotExtendLockoutWindowWhenBlockedAttemptsContinue() {
     for (int i = 0; i < MAX_ATTEMPTS; i++) {

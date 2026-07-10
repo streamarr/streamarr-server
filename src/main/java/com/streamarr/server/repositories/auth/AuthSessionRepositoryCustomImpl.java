@@ -6,6 +6,7 @@ import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.repositories.JooqQueryHelper;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Optional;
@@ -20,8 +21,9 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
 
   private final DSLContext dsl;
   private final AuditorAware<UUID> auditorAware;
-  private final EntityManager entityManager;
   private final CounterChangePublisher counterChangePublisher;
+
+  @PersistenceContext private final EntityManager entityManager;
 
   @Override
   @Transactional

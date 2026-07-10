@@ -247,6 +247,28 @@ class AccessTokenIssuerTest {
   }
 
   @Test
+  @DisplayName("Should reject context when account missing")
+  void shouldRejectContextWhenAccountMissing() {
+    var session = AuthSession.builder().id(UUID.randomUUID()).accountId(UUID.randomUUID()).build();
+    var contextBuilder = TokenContext.builder().session(session);
+
+    assertThatThrownBy(contextBuilder::build)
+        .isInstanceOf(NullPointerException.class)
+        .hasMessage("account");
+  }
+
+  @Test
+  @DisplayName("Should reject context when session missing")
+  void shouldRejectContextWhenSessionMissing() {
+    var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
+    var contextBuilder = TokenContext.builder().account(account);
+
+    assertThatThrownBy(contextBuilder::build)
+        .isInstanceOf(NullPointerException.class)
+        .hasMessage("session");
+  }
+
+  @Test
   @DisplayName("Should reject profile token when profile row missing")
   void shouldRejectProfileTokenWhenProfileRowMissing() {
     var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
