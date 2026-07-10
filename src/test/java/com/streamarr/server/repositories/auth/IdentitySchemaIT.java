@@ -482,6 +482,28 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should block deleting the claiming admin while the bootstrap record exists")
+  void shouldBlockDeletingClaimingAdminWhileBootstrapRecordExists() {
+    // fk_server_bootstrap_admin_account is the only auth FK with no ON DELETE action: it must keep
+    // the one-time claim from being re-opened by deleting the admin who won it.
+    var admin =
+        userAccountRepository.save(
+            AccountFixture.defaultAccountBuilder().accountRole(AccountRole.ADMIN).build());
+    assertThat(serverBootstrapRepository.claim(admin.getId())).isTrue();
+
+    assertThatThrownBy(() -> userAccountRepository.delete(admin))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("fk_server_bootstrap_admin_account");
+
+    var survivingClaim =
+        dsl.select(SERVER_BOOTSTRAP.ADMIN_ACCOUNT_ID)
+            .from(SERVER_BOOTSTRAP)
+            .fetchOne(SERVER_BOOTSTRAP.ADMIN_ACCOUNT_ID);
+    assertThat(survivingClaim).isEqualTo(admin.getId());
+    assertThat(userAccountRepository.findById(admin.getId())).isPresent();
+  }
+
+  @Test
   @DisplayName("Should preserve winning admin when second bootstrap claim loses")
   void shouldPreserveWinningAdminWhenSecondBootstrapClaimLoses() {
     var winner =

@@ -8,6 +8,7 @@ import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.crypto.MACSigner;
 import com.nimbusds.jose.jwk.Curve;
 import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.PlainJWT;
 import com.nimbusds.jwt.SignedJWT;
 import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.fakes.FakeVersionCounterReader;
@@ -170,6 +171,25 @@ class TokenCryptoConfigTest {
     var jwtDecoder = decoder(config.tokenSigningKeys(properties(KEY_A, List.of())));
 
     assertThatThrownBy(() -> jwtDecoder.decode(token)).isInstanceOf(BadJwtException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject unsigned token")
+  void shouldRejectUnsignedToken() {
+    var unsignedToken =
+        new PlainJWT(
+                new JWTClaimsSet.Builder()
+                    .subject(accountId.toString())
+                    .issueTime(Date.from(Instant.now()))
+                    .expirationTime(Date.from(Instant.now().plusSeconds(600)))
+                    .claim(TokenClaims.SESSION_ID, sessionId.toString())
+                    .claim(TokenClaims.SESSION_VERSION, 0L)
+                    .build())
+            .serialize();
+
+    var jwtDecoder = decoder(config.tokenSigningKeys(properties(KEY_A, List.of())));
+
+    assertThatThrownBy(() -> jwtDecoder.decode(unsignedToken)).isInstanceOf(BadJwtException.class);
   }
 
   @Test

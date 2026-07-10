@@ -261,8 +261,9 @@ class RefreshTokenServiceTest {
   }
 
   @Test
-  @DisplayName("Should treat rotated token as theft when rotation timestamp missing")
-  void shouldTreatRotatedTokenAsTheftWhenRotationTimestampMissing() {
+  @DisplayName(
+      "Should revoke family and treat rotated token as theft when rotation timestamp missing")
+  void shouldRevokeFamilyAndTreatRotatedTokenAsTheftWhenRotationTimestampMissing() {
     var issued = issueSession();
     service.redeem(issued.rawToken());
     tokenRepository.findAll().stream()
@@ -273,6 +274,14 @@ class RefreshTokenServiceTest {
 
     assertThatThrownBy(() -> service.redeem(replayedToken))
         .isInstanceOf(TokenReuseDetectedException.class);
+
+    // The revocation, not the exception, is the security response — pin that it actually happens.
+    var session = sessionRepository.findById(issued.session().getId()).orElseThrow();
+    assertThat(session.getRevokedAt()).isNotNull();
+    assertThat(session.getRevokedReason()).isEqualTo(SessionRevocationReason.TOKEN_REUSE);
+    assertThat(session.getSessionVersion()).isEqualTo(1L);
+    assertThat(tokenRepository.findAll())
+        .allSatisfy(token -> assertThat(token.getStatus()).isEqualTo(RefreshTokenStatus.REVOKED));
   }
 
   @Test
