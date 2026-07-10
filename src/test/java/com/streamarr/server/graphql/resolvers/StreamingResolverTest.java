@@ -4,6 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
+import com.nimbusds.jose.proc.JWSVerificationKeySelector;
+import com.nimbusds.jose.proc.SecurityContext;
+import com.nimbusds.jwt.proc.DefaultJWTProcessor;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
@@ -51,6 +56,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 
 @Tag("UnitTest")
 @EnableDgsTest
@@ -63,6 +69,9 @@ import org.springframework.context.annotation.Bean;
     })
 @DisplayName("Streaming Resolver Tests")
 class StreamingResolverTest {
+
+  private static final String TEST_KEY_BASE64 =
+      "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQga+ZKCbAcyZIb7k2FE8rMPFtIpTdzX2dR/csZ8k6A95uhRANCAAQawOmVKMDLAOsboxKLb9khGsWyxwcIikucXDCfX18ME5X9/kqSS2vdMnFfZ6KR12U/Sy/EwOwnc82xFAyFdNbe";
 
   private static final StubStreamingService STUB_SERVICE = new StubStreamingService();
 
@@ -86,13 +95,6 @@ class StreamingResolverTest {
     /** The real issuer, so the resolver tests exercise its ownership refusal end to end. */
     @Bean
     PlaybackTokenIssuer playbackTokenIssuer() {
-      var properties =
-          AuthTokenProperties.builder()
-              .signingKey("dGVzdC1zaWduaW5nLWtleS0zMi1ieXRlcy1sb25nISE=")
-              .accessTokenTtl(Duration.ofMinutes(10))
-              .refreshTokenTtl(Duration.ofDays(30))
-              .rotationGrace(Duration.ofSeconds(30))
-              .build();
       var crypto = new TokenCryptoConfig();
       var reader = new FakeVersionCounterReader();
       reader.sessionVersions.put(TestIdentityConstants.SESSION_ID, 1L);
@@ -101,7 +103,7 @@ class StreamingResolverTest {
       reader.profilePolicyVersions.put(TestIdentityConstants.PROFILE_ID, 1L);
 
       return new PlaybackTokenIssuer(
-          crypto.jwtEncoder(crypto.authSigningKey(properties)),
+          crypto.jwtEncoder(crypto.tokenSigningKeys(tokenProperties())),
           java.time.Clock.systemUTC(),
           new TokenVersionCache(reader));
     }
@@ -245,18 +247,31 @@ class StreamingResolverTest {
     String streamUrl =
         dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.createStreamSession.streamUrl");
     var token = streamUrl.substring(streamUrl.indexOf("?t=") + 3);
-    var keyBytes =
-        java.util.Base64.getDecoder().decode("dGVzdC1zaWduaW5nLWtleS0zMi1ieXRlcy1sb25nISE=");
-    var decoded =
-        org.springframework.security.oauth2.jwt.NimbusJwtDecoder.withSecretKey(
-                new javax.crypto.spec.SecretKeySpec(keyBytes, "HmacSHA256"))
-            .macAlgorithm(org.springframework.security.oauth2.jose.jws.MacAlgorithm.HS256)
-            .build()
-            .decode(token);
+    var decoded = decodeToken(token);
     var tokenLifetime = Duration.between(decoded.getIssuedAt(), decoded.getExpiresAt());
 
     assertThat(tokenLifetime)
         .isEqualTo(session.getMediaProbe().duration().plus(streamingProperties.sessionRetention()));
+  }
+
+  private static org.springframework.security.oauth2.jwt.Jwt decodeToken(String token) {
+    var keys = new TokenCryptoConfig().tokenSigningKeys(tokenProperties());
+    var processor = new DefaultJWTProcessor<SecurityContext>();
+    processor.setJWSKeySelector(
+        new JWSVerificationKeySelector<>(
+            JWSAlgorithm.ES256, new ImmutableJWKSet<>(keys.verificationKeys())));
+    processor.setJWTClaimsSetVerifier((claims, context) -> {});
+    return new NimbusJwtDecoder(processor).decode(token);
+  }
+
+  private static AuthTokenProperties tokenProperties() {
+    return AuthTokenProperties.builder()
+        .signingKey(TEST_KEY_BASE64)
+        .verificationKeys(List.of())
+        .accessTokenTtl(Duration.ofMinutes(10))
+        .refreshTokenTtl(Duration.ofDays(30))
+        .rotationGrace(Duration.ofSeconds(30))
+        .build();
   }
 
   @Test

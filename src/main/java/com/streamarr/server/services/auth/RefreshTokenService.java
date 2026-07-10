@@ -10,7 +10,6 @@ import com.streamarr.server.exceptions.InvalidRefreshTokenException;
 import com.streamarr.server.exceptions.TokenReuseDetectedException;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.RefreshTokenRepository;
-import com.streamarr.server.services.auth.events.CounterBumpedEvent;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
@@ -24,7 +23,6 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -42,7 +40,6 @@ public class RefreshTokenService {
   private final AuthTokenProperties properties;
   private final Clock clock;
   private final TokenReuseRevoker tokenReuseRevoker;
-  private final ApplicationEventPublisher eventPublisher;
 
   private final SecureRandom secureRandom = new SecureRandom();
 
@@ -62,10 +59,7 @@ public class RefreshTokenService {
   @Transactional
   public void logout(java.util.UUID sessionId) {
     var now = clock.instant();
-    sessionRepository
-        .revoke(sessionId, SessionRevocationReason.LOGOUT, now)
-        .ifPresent(
-            version -> eventPublisher.publishEvent(CounterBumpedEvent.session(sessionId, version)));
+    sessionRepository.revoke(sessionId, SessionRevocationReason.LOGOUT, now);
     tokenRepository.revokeAllForSession(sessionId, now);
   }
 
