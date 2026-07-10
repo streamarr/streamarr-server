@@ -54,6 +54,17 @@ public class RefreshTokenService {
     return new IssuedRefreshToken(rawToken, session);
   }
 
+  /** Replaces the session's refresh-token family with one fresh active token. */
+  @Transactional
+  public IssuedRefreshToken reissueFor(AuthSession session) {
+    tokenRepository.revokeAllForSession(session.getId());
+
+    var rawToken = generateRawToken();
+    tokenRepository.save(buildActiveToken(session, rawToken, clock.instant()));
+
+    return new IssuedRefreshToken(rawToken, session);
+  }
+
   // Reuse detection must survive its own exception: the family revocation and version bump
   // committed here are the security response, and the throw is only the caller's signal.
   @Transactional(noRollbackFor = TokenReuseDetectedException.class)
@@ -111,8 +122,9 @@ public class RefreshTokenService {
       return new RefreshResult.SupersededReplay(session);
     }
 
-    if (token.getStatus() == RefreshTokenStatus.ACTIVE) {
-      // Active but past expiry — stale, not theft.
+    if (token.getStatus() != RefreshTokenStatus.ROTATED) {
+      // An expired ACTIVE token is stale. A REVOKED token may have lost a race to intentional
+      // family reissue. Only a past-grace ROTATED token proves reuse.
       throw new InvalidRefreshTokenException();
     }
 
