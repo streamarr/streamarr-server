@@ -61,11 +61,12 @@ public class RefreshTokenService {
   /** Revokes the session and its whole token family; the version bump kills live access tokens. */
   @Transactional
   public void logout(java.util.UUID sessionId) {
+    var now = clock.instant();
     sessionRepository
-        .revoke(sessionId, SessionRevocationReason.LOGOUT, clock.instant())
+        .revoke(sessionId, SessionRevocationReason.LOGOUT, now)
         .ifPresent(
             version -> eventPublisher.publishEvent(CounterBumpedEvent.session(sessionId, version)));
-    tokenRepository.revokeAllForSession(sessionId);
+    tokenRepository.revokeAllForSession(sessionId, now);
   }
 
   /**
