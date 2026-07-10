@@ -41,5 +41,10 @@ public class TokenRefreshService {
     public boolean rotated() {
       return rotatedRefreshToken != null;
     }
+
+    @Override
+    public String toString() {
+      return "RefreshedTokens[accessToken=%s, rotatedRefreshToken=REDACTED]".formatted(accessToken);
+    }
   }
 }

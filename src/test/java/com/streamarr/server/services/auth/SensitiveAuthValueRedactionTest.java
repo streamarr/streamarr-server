@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.server.controllers.auth.AuthTokensResponse;
 import com.streamarr.server.controllers.auth.ChangePasswordRequest;
 import com.streamarr.server.controllers.auth.LoginRequest;
+import com.streamarr.server.controllers.auth.RefreshRequest;
 import com.streamarr.server.controllers.auth.SetupRequest;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.fixtures.AccountFixture;
@@ -37,6 +38,11 @@ class SensitiveAuthValueRedactionTest {
         new LoginRequest("user@example.com", SECRET_MARKER, "device", false),
         new SetupRequest("user@example.com", "User", SECRET_MARKER, "Home", "Profile", false),
         new ChangePasswordRequest(SECRET_MARKER, SECRET_MARKER, false),
+        new RefreshRequest(SECRET_MARKER, false),
+        new TokenRefreshService.RefreshedTokens(null, SECRET_MARKER),
+        ChangePasswordCommand.builder().currentPassword(SECRET_MARKER).newPassword(SECRET_MARKER),
+        PasswordChangeResult.builder().rawRefreshToken(SECRET_MARKER),
+        AuthTokensResponse.builder().accessToken(SECRET_MARKER).refreshToken(SECRET_MARKER),
         ChangePasswordCommand.builder()
             .accountId(UUID.randomUUID())
             .sessionId(UUID.randomUUID())
