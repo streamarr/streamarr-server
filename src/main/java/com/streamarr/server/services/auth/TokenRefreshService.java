@@ -26,25 +26,26 @@ public class TokenRefreshService {
     var context = sessionScopeService.revalidateStoredContext(account, result.session());
     var accessToken = accessTokenIssuer.issue(context);
 
-    var rotatedRefreshToken =
+    var rawRefreshToken =
         switch (result) {
           case RefreshResult.Rotated(String successor, _) -> successor;
-          case RefreshResult.GraceReplay _ -> null;
+          case RefreshResult.Replayed(String successor, _) -> successor;
+          case RefreshResult.SupersededReplay _ -> null;
         };
 
-    return new RefreshedTokens(accessToken, rotatedRefreshToken);
+    return new RefreshedTokens(accessToken, rawRefreshToken);
   }
 
-  /** rotatedRefreshToken is null on a grace replay — access only, never a second rotation. */
-  public record RefreshedTokens(AccessToken accessToken, String rotatedRefreshToken) {
+  /** rawRefreshToken is absent only when a recovered successor has already been superseded. */
+  public record RefreshedTokens(AccessToken accessToken, String rawRefreshToken) {
 
-    public boolean rotated() {
-      return rotatedRefreshToken != null;
+    public boolean carriesRefreshToken() {
+      return rawRefreshToken != null;
     }
 
     @Override
     public String toString() {
-      return "RefreshedTokens[accessToken=%s, rotatedRefreshToken=REDACTED]".formatted(accessToken);
+      return "RefreshedTokens[accessToken=%s, rawRefreshToken=REDACTED]".formatted(accessToken);
     }
   }
 }

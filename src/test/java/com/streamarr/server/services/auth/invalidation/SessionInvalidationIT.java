@@ -106,8 +106,9 @@ class SessionInvalidationIT extends AbstractIntegrationTest {
     secondInstanceListener.start();
     await().atMost(Duration.ofSeconds(10)).until(secondInstanceListener::isListening);
 
-    // createIdentity's linkProfile bumped the membership to 1; warm the stale value.
-    assertThat(secondInstanceCache.membershipVersion(accountId, householdId)).contains(1L);
+    var staleVersion = versionCounterReader.membershipVersion(accountId, householdId).orElseThrow();
+    assertThat(secondInstanceCache.membershipVersion(accountId, householdId))
+        .contains(staleVersion);
 
     accountProfileRepository.revokeProfileLink(
         AccountProfile.builder()
@@ -115,13 +116,16 @@ class SessionInvalidationIT extends AbstractIntegrationTest {
             .householdId(householdId)
             .profileId(identity.profile().getId())
             .build());
+    var currentVersion =
+        versionCounterReader.membershipVersion(accountId, householdId).orElseThrow();
+    assertThat(currentVersion).isGreaterThan(staleVersion);
 
     await()
         .atMost(Duration.ofSeconds(10))
         .untilAsserted(
             () ->
                 assertThat(secondInstanceCache.membershipVersion(accountId, householdId))
-                    .contains(2L));
+                    .contains(currentVersion));
   }
 
   @Test

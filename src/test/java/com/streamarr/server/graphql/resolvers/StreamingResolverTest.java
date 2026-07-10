@@ -260,8 +260,8 @@ class StreamingResolverTest {
   }
 
   @Test
-  @DisplayName("Should refuse to mint stream url when session not owned by caller")
-  void shouldRefuseToMintStreamUrlWhenSessionNotOwnedByCaller() {
+  @DisplayName("Should destroy session when playback token issuance fails")
+  void shouldDestroySessionWhenPlaybackTokenIssuanceFails() {
     // Simulates a future internal path handing back a foreign session: the resolver must never
     // turn it into a playable URL, whatever the service layer does.
     var sessionId = UUID.randomUUID();
@@ -285,6 +285,7 @@ class StreamingResolverTest {
     assertThat(result.getErrors().getFirst().getMessage())
         .contains("Streaming session not found: " + sessionId);
     assertThat(result.toSpecification().toString()).doesNotContain("?t=");
+    assertThat(STUB_SERVICE.getActiveSessionCount()).isZero();
   }
 
   @Test
@@ -466,7 +467,9 @@ class StreamingResolverTest {
 
     @Override
     public void destroySession(UUID sessionId) {
-      // no-op for test fake
+      if (nextResult != null && nextResult.getSessionId().equals(sessionId)) {
+        nextResult = null;
+      }
     }
 
     @Override

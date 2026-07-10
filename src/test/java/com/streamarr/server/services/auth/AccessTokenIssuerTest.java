@@ -68,13 +68,13 @@ class AccessTokenIssuerTest {
             .sessionVersion(7)
             .build();
     var householdId = UUID.randomUUID();
-    membershipRepository.save(
-        HouseholdMembership.builder()
-            .accountId(account.getId())
-            .householdId(householdId)
-            .householdRole(HouseholdRole.OWNER)
-            .membershipVersion(3)
-            .build());
+    var membership =
+        membershipRepository.grantMembership(
+            HouseholdMembership.builder()
+                .accountId(account.getId())
+                .householdId(householdId)
+                .householdRole(HouseholdRole.OWNER)
+                .build());
     var profile =
         profileRepository.save(
             ProfileFixture.defaultProfileBuilder()
@@ -108,7 +108,8 @@ class AccessTokenIssuerTest {
     assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ID))
         .isEqualTo(householdId.toString());
     assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ROLE)).isEqualTo("OWNER");
-    assertThat(decoded.<Long>getClaim(TokenClaims.MEMBERSHIP_VERSION)).isEqualTo(3L);
+    assertThat(decoded.<Long>getClaim(TokenClaims.MEMBERSHIP_VERSION))
+        .isEqualTo(membership.version());
     assertThat(decoded.getClaimAsString(TokenClaims.PROFILE_ID))
         .isEqualTo(profile.getId().toString());
     assertThat(decoded.<Long>getClaim(TokenClaims.POLICY_VERSION)).isEqualTo(5L);
@@ -125,7 +126,7 @@ class AccessTokenIssuerTest {
     var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
     var memberHouseholdId = UUID.randomUUID();
     var otherHouseholdId = UUID.randomUUID();
-    membershipRepository.save(
+    membershipRepository.grantMembership(
         HouseholdMembership.builder()
             .accountId(account.getId())
             .householdId(memberHouseholdId)
@@ -180,13 +181,13 @@ class AccessTokenIssuerTest {
     var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
     var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
     var householdId = UUID.randomUUID();
-    membershipRepository.save(
-        HouseholdMembership.builder()
-            .accountId(account.getId())
-            .householdId(householdId)
-            .householdRole(HouseholdRole.PARENT)
-            .membershipVersion(2)
-            .build());
+    var membership =
+        membershipRepository.grantMembership(
+            HouseholdMembership.builder()
+                .accountId(account.getId())
+                .householdId(householdId)
+                .householdRole(HouseholdRole.PARENT)
+                .build());
 
     var token =
         issuer.issue(
@@ -203,7 +204,8 @@ class AccessTokenIssuerTest {
     assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ID))
         .isEqualTo(householdId.toString());
     assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ROLE)).isEqualTo("PARENT");
-    assertThat(decoded.<Long>getClaim(TokenClaims.MEMBERSHIP_VERSION)).isEqualTo(2L);
+    assertThat(decoded.<Long>getClaim(TokenClaims.MEMBERSHIP_VERSION))
+        .isEqualTo(membership.version());
     assertThat(decoded.getClaimAsString(TokenClaims.PROFILE_ID)).isNull();
   }
 
@@ -245,7 +247,7 @@ class AccessTokenIssuerTest {
     var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
     var householdId = UUID.randomUUID();
     var missingProfileId = UUID.randomUUID();
-    membershipRepository.save(
+    membershipRepository.grantMembership(
         HouseholdMembership.builder()
             .accountId(account.getId())
             .householdId(householdId)
