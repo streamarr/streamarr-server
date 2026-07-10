@@ -1,5 +1,6 @@
 package com.streamarr.server;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -32,7 +33,13 @@ class ActuatorExposureIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should serve health when actuator queried")
   void shouldServeHealthWhenActuatorQueried() throws Exception {
-    mockMvc.perform(get("/actuator/health")).andExpect(status().isOk());
+    var response = mockMvc.perform(get("/actuator/health")).andReturn().getResponse();
+
+    // Exposure, not liveness: the aggregate flips between 200 and 503 with the environment
+    // (the ffmpeg and TMDB indicators go DOWN on runners without them). Both statuses carry a
+    // health document, proving the endpoint is mapped.
+    assertThat(response.getStatus()).isIn(200, 503);
+    assertThat(response.getContentAsString()).contains("status");
   }
 
   @Test
