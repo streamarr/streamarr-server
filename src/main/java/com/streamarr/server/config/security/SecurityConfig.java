@@ -32,6 +32,7 @@ public class SecurityConfig {
    * enabled for the framework's normal filter-chain contract; both filters share the cookie SPA
    * shape and the same request matcher.
    */
+  @SuppressWarnings("java:S4502")
   @Bean
   SecurityFilterChain securityFilterChain(HttpSecurity http) {
     return http.csrf(
