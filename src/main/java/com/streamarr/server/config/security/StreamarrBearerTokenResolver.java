@@ -8,10 +8,10 @@ import org.springframework.security.oauth2.server.resource.web.BearerTokenResolv
 import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
 
 /**
- * Path-aware token resolution. The permitAll auth endpoints resolve nothing: the Path=/ access
- * cookie rides every same-origin request, and an expired one would otherwise 401 the refresh before
- * the controller runs — deadlocking cookie-mode renewal into logout. Everywhere else the
- * Authorization header wins, falling back to the access cookie.
+ * Path-aware token resolution. The permitAll auth and health endpoints resolve nothing: the Path=/
+ * access cookie rides every same-origin request, and an expired one would otherwise 401 before the
+ * public endpoint runs. Everywhere else the Authorization header wins, falling back to the access
+ * cookie.
  */
 public class StreamarrBearerTokenResolver implements BearerTokenResolver {
 
@@ -20,12 +20,14 @@ public class StreamarrBearerTokenResolver implements BearerTokenResolver {
 
   private static final Set<String> UNAUTHENTICATED_AUTH_PATHS =
       Set.of("/api/auth/status", "/api/auth/setup", "/api/auth/login", "/api/auth/refresh");
+  private static final String HEALTH_PATH = "/actuator/health";
 
   private final DefaultBearerTokenResolver headerResolver = new DefaultBearerTokenResolver();
 
   @Override
   public String resolve(HttpServletRequest request) {
-    if (UNAUTHENTICATED_AUTH_PATHS.contains(pathWithinApplication(request))) {
+    var path = pathWithinApplication(request);
+    if (UNAUTHENTICATED_AUTH_PATHS.contains(path) || isHealthPath(path)) {
       return null;
     }
 
@@ -55,6 +57,10 @@ public class StreamarrBearerTokenResolver implements BearerTokenResolver {
 
   private static String pathWithinApplication(HttpServletRequest request) {
     return request.getRequestURI().substring(request.getContextPath().length());
+  }
+
+  private static boolean isHealthPath(String path) {
+    return HEALTH_PATH.equals(path) || path.startsWith(HEALTH_PATH + "/");
   }
 
   private static String accessCookieValue(HttpServletRequest request) {

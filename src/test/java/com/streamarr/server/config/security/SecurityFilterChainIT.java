@@ -12,6 +12,7 @@ import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.support.AuthTestSupport;
+import jakarta.servlet.http.Cookie;
 import java.time.Duration;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -141,6 +142,16 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
             result ->
                 org.assertj.core.api.Assertions.assertThat(result.getResponse().getStatus())
                     .isNotIn(401, 403));
+  }
+
+  @Test
+  @DisplayName("Should permit health when stale access cookie attached")
+  void shouldPermitHealthWhenStaleAccessCookieAttached() throws Exception {
+    mockMvc
+        .perform(
+            get("/actuator/health")
+                .cookie(new Cookie(AuthCookies.ACCESS_COOKIE, "stale-access-token")))
+        .andExpect(result -> assertThat(result.getResponse().getStatus()).isNotIn(401, 403));
   }
 
   @Test
