@@ -4,6 +4,7 @@ import com.streamarr.server.exceptions.InvalidRefreshTokenException;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /** Composes redemption, stored-context revalidation, and access-token minting for refresh. */
 @Service
@@ -15,6 +16,13 @@ public class TokenRefreshService {
   private final AccessTokenIssuer accessTokenIssuer;
   private final UserAccountRepository userAccountRepository;
 
+  /**
+   * The whole refresh use case is one transaction: redemption joins it, so the session lock taken
+   * during redemption is held through issuance — a concurrent logout waits, and a logout that
+   * committed first refuses redemption. Any failure after rotation (disabled account, revalidation,
+   * token encoding) rolls the rotation back instead of stranding the client's token family.
+   */
+  @Transactional
   public RefreshedTokens refresh(String rawToken) {
     var result = refreshTokenService.redeem(rawToken);
 
@@ -22,6 +30,9 @@ public class TokenRefreshService {
         userAccountRepository
             .findById(result.session().getAccountId())
             .orElseThrow(InvalidRefreshTokenException::new);
+    if (!account.isEnabled()) {
+      throw new InvalidRefreshTokenException();
+    }
 
     var context = sessionScopeService.revalidateStoredContext(account, result.session());
     var accessToken = accessTokenIssuer.issue(context);
