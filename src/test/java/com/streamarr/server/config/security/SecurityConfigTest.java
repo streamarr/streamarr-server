@@ -15,13 +15,12 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
-import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.context.support.AnnotationConfigWebApplicationContext;
 
@@ -89,11 +88,13 @@ class SecurityConfigTest {
   static class CsrfProbeController {
 
     @GetMapping("/csrf-probe")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    void get() {}
+    ResponseEntity<Void> get() {
+      return ResponseEntity.noContent().build();
+    }
 
     @PostMapping("/csrf-probe")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    void post() {}
+    ResponseEntity<Void> post() {
+      return ResponseEntity.noContent().build();
+    }
   }
 }
