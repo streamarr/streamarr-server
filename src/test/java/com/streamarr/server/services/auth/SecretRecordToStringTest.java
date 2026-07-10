@@ -40,6 +40,7 @@ class SecretRecordToStringTest {
             LoginResult.builder().rawRefreshToken(secret).build().toString(),
             new IssuedRefreshToken(secret, null).toString(),
             new RefreshResult.Rotated(secret, null).toString(),
+            new RefreshResult.Replayed(secret, null).toString(),
             AccessToken.builder()
                 .value(secret)
                 .expiresAt(Instant.EPOCH)
@@ -48,7 +49,7 @@ class SecretRecordToStringTest {
                 .toString());
 
     assertThat(renderedValues)
-        .hasSize(6)
+        .hasSize(7)
         .allSatisfy(rendered -> assertThat(rendered).doesNotContain(secret));
   }
 }

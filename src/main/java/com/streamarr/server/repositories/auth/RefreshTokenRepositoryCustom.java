@@ -20,4 +20,6 @@ public interface RefreshTokenRepositoryCustom {
    * copy.
    */
   Optional<UUID> findSessionIdByDigest(String digest);
+
+  boolean isActiveToken(UUID sessionId, String digest);
 }
