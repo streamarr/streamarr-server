@@ -7,6 +7,7 @@ import com.streamarr.server.domain.auth.HouseholdMembership;
 import com.streamarr.server.domain.auth.MembershipVersionChange;
 import com.streamarr.server.jooq.generated.tables.records.HouseholdMembershipRecord;
 import com.streamarr.server.services.auth.events.CounterBumpedEvent;
+import com.streamarr.server.services.auth.invalidation.CounterNotificationPayload;
 import jakarta.persistence.EntityManager;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -85,11 +86,11 @@ public class HouseholdMembershipRepositoryCustomImpl
     }
 
     var changed = versionChange.orElseThrow();
-    publishVersionChange(changed);
     dsl.deleteFrom(HOUSEHOLD_MEMBERSHIP)
         .where(HOUSEHOLD_MEMBERSHIP.ACCOUNT_ID.eq(accountId))
         .and(HOUSEHOLD_MEMBERSHIP.HOUSEHOLD_ID.eq(householdId))
         .execute();
+    publishVersionChange(changed);
     return versionChange;
   }
 
@@ -108,8 +109,11 @@ public class HouseholdMembershipRepositoryCustomImpl
   }
 
   private void publishVersionChange(MembershipVersionChange versionChange) {
-    eventPublisher.publishEvent(
+    var event =
         CounterBumpedEvent.membership(
-            versionChange.accountId(), versionChange.householdId(), versionChange.version()));
+            versionChange.accountId(), versionChange.householdId(), versionChange.version());
+    eventPublisher.publishEvent(event);
+    CounterNotificationPublisher.publish(
+        dsl, new CounterNotificationPayload(event.kind(), event.key(), event.version()));
   }
 }

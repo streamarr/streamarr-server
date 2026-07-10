@@ -5,9 +5,12 @@ import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.AccountProfile;
+import com.streamarr.server.domain.auth.HouseholdMembership;
+import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
+import com.streamarr.server.repositories.auth.HouseholdMembershipRepository;
 import com.streamarr.server.repositories.auth.VersionCounterReader;
 import com.streamarr.server.services.auth.CounterKind;
 import com.streamarr.server.services.auth.TokenVersionCache;
@@ -16,6 +19,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterEach;
@@ -39,6 +43,8 @@ class SessionInvalidationIT extends AbstractIntegrationTest {
   @Autowired private AuthSessionRepository sessionRepository;
 
   @Autowired private AccountProfileRepository accountProfileRepository;
+
+  @Autowired private HouseholdMembershipRepository membershipRepository;
 
   @Autowired private VersionCounterReader versionCounterReader;
 
@@ -126,6 +132,169 @@ class SessionInvalidationIT extends AbstractIntegrationTest {
             () ->
                 assertThat(secondInstanceCache.membershipVersion(accountId, householdId))
                     .contains(currentVersion));
+  }
+
+  @Test
+  @DisplayName("Should converge membership version on second instance when membership granted")
+  void shouldConvergeMembershipVersionOnSecondInstanceWhenMembershipGranted() {
+    identity = authTestSupport.createIdentity();
+    var accountId = identity.account().getId();
+    var householdId = identity.household().getId();
+
+    var secondInstanceCache = new TokenVersionCache(versionCounterReader);
+    secondInstanceListener =
+        new CounterNotificationListener(secondInstanceCache, connectionSource, backoff);
+    secondInstanceListener.start();
+    await().atMost(Duration.ofSeconds(10)).until(secondInstanceListener::isListening);
+
+    var staleVersion = versionCounterReader.membershipVersion(accountId, householdId).orElseThrow();
+    assertThat(secondInstanceCache.membershipVersion(accountId, householdId))
+        .contains(staleVersion);
+
+    membershipRepository.revokeMembership(accountId, householdId).orElseThrow();
+    var regranted =
+        membershipRepository.grantMembership(
+            HouseholdMembership.builder()
+                .accountId(accountId)
+                .householdId(householdId)
+                .householdRole(HouseholdRole.OWNER)
+                .build());
+
+    await()
+        .atMost(Duration.ofSeconds(10))
+        .untilAsserted(
+            () ->
+                assertThat(secondInstanceCache.membershipVersion(accountId, householdId))
+                    .contains(regranted.version()));
+  }
+
+  @Test
+  @DisplayName("Should converge membership version on second instance when household role changed")
+  void shouldConvergeMembershipVersionOnSecondInstanceWhenHouseholdRoleChanged() {
+    identity = authTestSupport.createIdentity();
+    var accountId = identity.account().getId();
+    var householdId = identity.household().getId();
+
+    var secondInstanceCache = new TokenVersionCache(versionCounterReader);
+    secondInstanceListener =
+        new CounterNotificationListener(secondInstanceCache, connectionSource, backoff);
+    secondInstanceListener.start();
+    await().atMost(Duration.ofSeconds(10)).until(secondInstanceListener::isListening);
+
+    var staleVersion = versionCounterReader.membershipVersion(accountId, householdId).orElseThrow();
+    assertThat(secondInstanceCache.membershipVersion(accountId, householdId))
+        .contains(staleVersion);
+
+    var roleChanged =
+        membershipRepository
+            .changeRole(
+                HouseholdMembership.builder()
+                    .accountId(accountId)
+                    .householdId(householdId)
+                    .householdRole(HouseholdRole.PARENT)
+                    .build())
+            .orElseThrow();
+
+    await()
+        .atMost(Duration.ofSeconds(10))
+        .untilAsserted(
+            () ->
+                assertThat(secondInstanceCache.membershipVersion(accountId, householdId))
+                    .contains(roleChanged.version()));
+  }
+
+  @Test
+  @DisplayName("Should converge membership version on second instance when membership revoked")
+  void shouldConvergeMembershipVersionOnSecondInstanceWhenMembershipRevoked() {
+    identity = authTestSupport.createIdentity();
+    var accountId = identity.account().getId();
+    var householdId = identity.household().getId();
+
+    var secondInstanceCache = new TokenVersionCache(versionCounterReader);
+    secondInstanceListener =
+        new CounterNotificationListener(secondInstanceCache, connectionSource, backoff);
+    secondInstanceListener.start();
+    await().atMost(Duration.ofSeconds(10)).until(secondInstanceListener::isListening);
+
+    var staleVersion = versionCounterReader.membershipVersion(accountId, householdId).orElseThrow();
+    assertThat(secondInstanceCache.membershipVersion(accountId, householdId))
+        .contains(staleVersion);
+
+    var revoked = membershipRepository.revokeMembership(accountId, householdId).orElseThrow();
+
+    await()
+        .atMost(Duration.ofSeconds(10))
+        .untilAsserted(
+            () ->
+                assertThat(secondInstanceCache.membershipVersion(accountId, householdId))
+                    .contains(revoked.version()));
+  }
+
+  @Test
+  @DisplayName("Should not notify other instances when membership mutation rolls back")
+  void shouldNotNotifyOtherInstancesWhenMembershipMutationRollsBack() {
+    identity = authTestSupport.createIdentity();
+    sentinelIdentity = authTestSupport.createIdentity();
+    var accountId = identity.account().getId();
+    var householdId = identity.household().getId();
+    var sentinelAccountId = sentinelIdentity.account().getId();
+    var sentinelHouseholdId = sentinelIdentity.household().getId();
+
+    var secondInstanceCache = new TokenVersionCache(versionCounterReader);
+    secondInstanceListener =
+        new CounterNotificationListener(secondInstanceCache, connectionSource, backoff);
+    secondInstanceListener.start();
+    await().atMost(Duration.ofSeconds(10)).until(secondInstanceListener::isListening);
+
+    var staleVersion = versionCounterReader.membershipVersion(accountId, householdId).orElseThrow();
+    var sentinelStaleVersion =
+        versionCounterReader
+            .membershipVersion(sentinelAccountId, sentinelHouseholdId)
+            .orElseThrow();
+    assertThat(secondInstanceCache.membershipVersion(accountId, householdId))
+        .contains(staleVersion);
+    assertThat(secondInstanceCache.membershipVersion(sentinelAccountId, sentinelHouseholdId))
+        .contains(sentinelStaleVersion);
+
+    var rolledBackVersion = new AtomicLong();
+    transactionTemplate.executeWithoutResult(
+        status -> {
+          var changed =
+              membershipRepository
+                  .changeRole(
+                      HouseholdMembership.builder()
+                          .accountId(accountId)
+                          .householdId(householdId)
+                          .householdRole(HouseholdRole.PARENT)
+                          .build())
+                  .orElseThrow();
+          rolledBackVersion.set(changed.version());
+          status.setRollbackOnly();
+        });
+
+    var sentinelChanged =
+        membershipRepository
+            .changeRole(
+                HouseholdMembership.builder()
+                    .accountId(sentinelAccountId)
+                    .householdId(sentinelHouseholdId)
+                    .householdRole(HouseholdRole.PARENT)
+                    .build())
+            .orElseThrow();
+    await()
+        .atMost(Duration.ofSeconds(10))
+        .untilAsserted(
+            () ->
+                assertThat(
+                        secondInstanceCache.membershipVersion(
+                            sentinelAccountId, sentinelHouseholdId))
+                    .contains(sentinelChanged.version()));
+
+    assertThat(rolledBackVersion.get()).isGreaterThan(staleVersion);
+    assertThat(versionCounterReader.membershipVersion(accountId, householdId))
+        .contains(staleVersion);
+    assertThat(secondInstanceCache.membershipVersion(accountId, householdId))
+        .contains(staleVersion);
   }
 
   @Test
