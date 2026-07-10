@@ -9,5 +9,7 @@ public interface HouseholdMembershipRepositoryCustom {
 
   MembershipVersionChange grantMembership(HouseholdMembership membership);
 
+  Optional<MembershipVersionChange> changeRole(HouseholdMembership membership);
+
   Optional<MembershipVersionChange> revokeMembership(UUID accountId, UUID householdId);
 }

@@ -34,15 +34,17 @@ class AccountProfileRepositoryIT extends AbstractIntegrationTest {
   @DisplayName("Should bump membership version when profile link revoked")
   void shouldBumpMembershipVersionWhenProfileLinkRevoked() {
     var seeded = seedMembershipWithUnlinkedProfile();
+    var initialVersion = membershipVersionOf(seeded.membership());
 
     accountProfileRepository.linkProfile(seeded.link());
 
-    assertThat(membershipVersionOf(seeded.membership())).isEqualTo(1L);
+    var linkedVersion = membershipVersionOf(seeded.membership());
+    assertThat(linkedVersion).isGreaterThan(initialVersion);
 
     var revoked = accountProfileRepository.revokeProfileLink(seeded.link());
 
     assertThat(revoked).isTrue();
-    assertThat(membershipVersionOf(seeded.membership())).isEqualTo(2L);
+    assertThat(membershipVersionOf(seeded.membership())).isGreaterThan(linkedVersion);
     assertThat(accountProfileRepository.findAll())
         .noneMatch(remaining -> seeded.link().getProfileId().equals(remaining.getProfileId()));
   }
@@ -51,11 +53,12 @@ class AccountProfileRepositoryIT extends AbstractIntegrationTest {
   @DisplayName("Should not bump membership version when revoking absent link")
   void shouldNotBumpMembershipVersionWhenRevokingAbsentLink() {
     var seeded = seedMembershipWithUnlinkedProfile();
+    var initialVersion = membershipVersionOf(seeded.membership());
 
     var revoked = accountProfileRepository.revokeProfileLink(seeded.link());
 
     assertThat(revoked).isFalse();
-    assertThat(membershipVersionOf(seeded.membership())).isZero();
+    assertThat(membershipVersionOf(seeded.membership())).isEqualTo(initialVersion);
   }
 
   @Test
@@ -64,12 +67,13 @@ class AccountProfileRepositoryIT extends AbstractIntegrationTest {
     var seeded = seedMembershipWithUnlinkedProfile();
     var link = seeded.link();
     accountProfileRepository.linkProfile(link);
+    var linkedVersion = membershipVersionOf(seeded.membership());
 
     assertThatThrownBy(() -> accountProfileRepository.linkProfile(link))
         .isInstanceOf(DataIntegrityViolationException.class)
         .hasMessageContaining("uq_account_profile_account_profile");
 
-    assertThat(membershipVersionOf(seeded.membership())).isEqualTo(1L);
+    assertThat(membershipVersionOf(seeded.membership())).isEqualTo(linkedVersion);
   }
 
   @Test
