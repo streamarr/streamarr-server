@@ -116,7 +116,7 @@ class RefreshRevocationRaceIT extends AbstractIntegrationTest {
             status -> {
               authSessionRepository.revoke(
                   sessionId, SessionRevocationReason.LOGOUT, Instant.now());
-              refreshTokenRepository.revokeAllForSession(sessionId);
+              refreshTokenRepository.revokeAllForSession(sessionId, Instant.now());
             });
   }
 

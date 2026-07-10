@@ -19,6 +19,10 @@ import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 
+/**
+ * Transitional HS256 single-key signing while the token core lands; the ES256/JWKS increment
+ * replaces this per ADR 0016.
+ */
 @Slf4j
 @Configuration
 public class TokenCryptoConfig {

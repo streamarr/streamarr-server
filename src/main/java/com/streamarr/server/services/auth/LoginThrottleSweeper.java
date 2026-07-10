@@ -6,9 +6,8 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * Periodically evicts throttle entries whose window has passed. A spray of unique emails or sources
- * would otherwise grow the throttle map without bound — sprayed keys are never touched again, so
- * only a sweep can reclaim them.
+ * Periodically evicts throttle entries whose window has passed; {@link LoginThrottle#sweepExpired}
+ * documents why sprayed keys need a sweep.
  */
 @Slf4j
 @Component

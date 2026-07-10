@@ -25,6 +25,14 @@ dgs:
     introspection:
       enabled: false
 
+# Web-exposed actuator endpoints are an explicit allowlist: health only. Heap dumps and other
+# diagnostics stay off the wire — ADR 0016's in-memory secret handling depends on it.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
 tmdb:
   api:
     token: ${TMDB_API_TOKEN:}
