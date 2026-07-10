@@ -29,7 +29,7 @@ public class TokenRefreshService {
     var rotatedRefreshToken =
         switch (result) {
           case RefreshResult.Rotated(String successor, _) -> successor;
-          case RefreshResult.GraceReplay _ -> null;
+          case RefreshResult.Replayed _, RefreshResult.SupersededReplay _ -> null;
         };
 
     return new RefreshedTokens(accessToken, rotatedRefreshToken);

@@ -41,6 +41,16 @@ public class RefreshTokenRepositoryCustomImpl implements RefreshTokenRepositoryC
   }
 
   @Override
+  public boolean isActiveToken(UUID sessionId, String digest) {
+    return dsl.fetchExists(
+        dsl.selectOne()
+            .from(REFRESH_TOKEN)
+            .where(REFRESH_TOKEN.SESSION_ID.eq(sessionId))
+            .and(REFRESH_TOKEN.DIGEST.eq(digest))
+            .and(REFRESH_TOKEN.STATUS.eq(RefreshTokenStatus.ACTIVE)));
+  }
+
+  @Override
   public void revokeAllForSession(UUID sessionId) {
     dsl.update(REFRESH_TOKEN)
         .set(REFRESH_TOKEN.STATUS, RefreshTokenStatus.REVOKED)
