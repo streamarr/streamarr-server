@@ -167,8 +167,9 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
     var issued = refreshTokenService.createSession(account, "tx-device");
     account.setEnabled(false);
     account = userAccountRepository.save(account);
+    var rawToken = issued.rawToken();
 
-    assertThatThrownBy(() -> tokenRefreshService.refresh(issued.rawToken()))
+    assertThatThrownBy(() -> tokenRefreshService.refresh(rawToken))
         .isInstanceOf(InvalidRefreshTokenException.class);
 
     // The refusal must leave the client's token usable: rotation rolls back with the refused
@@ -182,8 +183,9 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
     account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
     var issued = refreshTokenService.createSession(account, "tx-device");
     gatedIssuer.failNextIssuance();
+    var rawToken = issued.rawToken();
 
-    assertThatThrownBy(() -> tokenRefreshService.refresh(issued.rawToken()))
+    assertThatThrownBy(() -> tokenRefreshService.refresh(rawToken))
         .isInstanceOf(IllegalStateException.class);
 
     // Rotation and issuance are one unit: the client's original token must remain redeemable.
@@ -198,8 +200,9 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
     var issued = refreshTokenService.createSession(account, "tx-device");
 
     refreshTokenService.logout(issued.session().getId());
+    var rawToken = issued.rawToken();
 
-    assertThatThrownBy(() -> tokenRefreshService.refresh(issued.rawToken()))
+    assertThatThrownBy(() -> tokenRefreshService.refresh(rawToken))
         .isInstanceOf(TokenReuseDetectedException.class);
     assertThat(activeTokenCount(issued.session().getId())).isZero();
   }
@@ -281,8 +284,9 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
         .where(REFRESH_TOKEN.SESSION_ID.eq(issued.session().getId()))
         .and(REFRESH_TOKEN.STATUS.eq(RefreshTokenStatus.ROTATED))
         .execute();
+    var rawToken = issued.rawToken();
 
-    assertThatThrownBy(() -> tokenRefreshService.refresh(issued.rawToken()))
+    assertThatThrownBy(() -> tokenRefreshService.refresh(rawToken))
         .isInstanceOf(TokenReuseDetectedException.class);
 
     // The REQUIRES_NEW reuse writer fires after the outer transaction completes — under
