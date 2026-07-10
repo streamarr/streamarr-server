@@ -12,7 +12,11 @@ import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.AbstractPlatformTransactionManager;
+import org.springframework.transaction.support.DefaultTransactionStatus;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("UnitTest")
 @DisplayName("Token Reuse Revoker Tests")
@@ -26,13 +30,30 @@ class TokenReuseRevokerTest {
               sessionRepository, new FakeRefreshTokenRepository(), new CapturingEventPublisher()));
 
   @Test
-  @DisplayName("Should revoke immediately when transaction lacks synchronization")
-  void shouldRevokeImmediatelyWhenTransactionLacksSynchronization() {
-    var session =
-        sessionRepository.save(
-            AuthSession.builder().id(UUID.randomUUID()).accountId(UUID.randomUUID()).build());
+  @DisplayName("Should revoke inline when scope synchronizes without a transaction")
+  void shouldRevokeInlineWhenScopeSynchronizesWithoutATransaction() {
+    var session = saveSession();
+    var template = new TransactionTemplate(new NoOpTransactionManager());
+    template.setPropagationBehavior(TransactionDefinition.PROPAGATION_SUPPORTS);
 
-    // registerSynchronization would throw in this state — the revoker must run inline instead.
+    template.executeWithoutResult(
+        _ -> {
+          revoker.revokeAfterCompletion(session.getId(), Instant.now());
+          // Inline, not deferred: the revocation must be visible before the scope completes.
+          assertThat(sessionRepository.findById(session.getId()).orElseThrow().getRevokedAt())
+              .isNotNull();
+        });
+  }
+
+  @Test
+  @DisplayName("Should revoke inline when transaction lacks synchronization")
+  void shouldRevokeInlineWhenTransactionLacksSynchronization() {
+    var session = saveSession();
+
+    // Spring's transaction managers set the actual-transaction and synchronization flags
+    // together, so this state only arises from custom TransactionSynchronizationManager use.
+    // Pinned because the fail-safe matters: revoke inline rather than let
+    // registerSynchronization throw and lose the security response.
     TransactionSynchronizationManager.setActualTransactionActive(true);
     try {
       revoker.revokeAfterCompletion(session.getId(), Instant.now());
@@ -43,5 +64,28 @@ class TokenReuseRevokerTest {
     var revoked = sessionRepository.findById(session.getId()).orElseThrow();
     assertThat(revoked.getRevokedAt()).isNotNull();
     assertThat(revoked.getRevokedReason()).isEqualTo(SessionRevocationReason.TOKEN_REUSE);
+  }
+
+  private AuthSession saveSession() {
+    return sessionRepository.save(
+        AuthSession.builder().id(UUID.randomUUID()).accountId(UUID.randomUUID()).build());
+  }
+
+  /** Real Spring transaction lifecycle over no resources — no manual synchronization state. */
+  private static final class NoOpTransactionManager extends AbstractPlatformTransactionManager {
+
+    @Override
+    protected Object doGetTransaction() {
+      return new Object();
+    }
+
+    @Override
+    protected void doBegin(Object transaction, TransactionDefinition definition) {}
+
+    @Override
+    protected void doCommit(DefaultTransactionStatus status) {}
+
+    @Override
+    protected void doRollback(DefaultTransactionStatus status) {}
   }
 }

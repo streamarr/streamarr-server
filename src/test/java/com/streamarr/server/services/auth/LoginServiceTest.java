@@ -96,13 +96,13 @@ class LoginServiceTest {
       assertThatThrownBy(() -> loginService.login(wrongAttempt))
           .isInstanceOf(InvalidCredentialsException.class);
     }
-    var burnsBeforeThrottle = countingEncoder.matchesInvocations();
+    var burnsBeforeThrottle = countingEncoder.completedVerifications();
 
     var throttledAttempt = commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build();
     assertThatThrownBy(() -> loginService.login(throttledAttempt))
         .isInstanceOf(TooManyLoginAttemptsException.class);
 
-    assertThat(countingEncoder.matchesInvocations()).isEqualTo(burnsBeforeThrottle);
+    assertThat(countingEncoder.completedVerifications()).isEqualTo(burnsBeforeThrottle);
   }
 
   @Test
@@ -116,8 +116,8 @@ class LoginServiceTest {
 
     assertThatThrownBy(() -> loginService.login(attempt))
         .isInstanceOf(InvalidCredentialsException.class);
-    // The unreadable-hash attempt (which throws) plus the equalizer burn — timing stays flat.
-    assertThat(countingEncoder.matchesInvocations()).isEqualTo(2);
+    // Exactly one equalizer burn — timing stays flat with every other rejection path.
+    assertThat(countingEncoder.completedVerifications()).isEqualTo(1);
   }
 
   @Test
@@ -172,7 +172,7 @@ class LoginServiceTest {
     assertThatThrownBy(() -> loginService.login(attempt))
         .isInstanceOf(InvalidCredentialsException.class);
 
-    assertThat(countingEncoder.matchesInvocations()).isEqualTo(1);
+    assertThat(countingEncoder.completedVerifications()).isEqualTo(1);
   }
 
   @Test
@@ -190,7 +190,7 @@ class LoginServiceTest {
     assertThatThrownBy(() -> loginService.login(attempt))
         .isInstanceOf(InvalidCredentialsException.class);
 
-    assertThat(countingEncoder.matchesInvocations()).isEqualTo(1);
+    assertThat(countingEncoder.completedVerifications()).isEqualTo(1);
   }
 
   @Test
@@ -278,11 +278,14 @@ class LoginServiceTest {
                 .build());
   }
 
-  /** Observes how many full-cost password verifications a login attempt performs. */
+  /**
+   * Counts password verifications that run to completion. A verification that throws — an
+   * unreadable stored hash — performs no hash work and must not count as a burn.
+   */
   private static final class CountingPasswordEncoder implements PasswordEncoder {
 
     private final PasswordEncoder delegate;
-    private final AtomicInteger matchesInvocations = new AtomicInteger();
+    private final AtomicInteger completedVerifications = new AtomicInteger();
 
     private CountingPasswordEncoder(PasswordEncoder delegate) {
       this.delegate = delegate;
@@ -295,8 +298,9 @@ class LoginServiceTest {
 
     @Override
     public boolean matches(CharSequence rawPassword, String encodedPassword) {
-      matchesInvocations.incrementAndGet();
-      return delegate.matches(rawPassword, encodedPassword);
+      var matched = delegate.matches(rawPassword, encodedPassword);
+      completedVerifications.incrementAndGet();
+      return matched;
     }
 
     @Override
@@ -304,8 +308,8 @@ class LoginServiceTest {
       return delegate.upgradeEncoding(encodedPassword);
     }
 
-    private int matchesInvocations() {
-      return matchesInvocations.get();
+    private int completedVerifications() {
+      return completedVerifications.get();
     }
   }
 }
