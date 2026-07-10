@@ -10,7 +10,7 @@ link:0015-authorization-profiles-and-content-controls.adoc[ADR 0015] defines Str
 It assumes authenticated account/device sessions, profile-scoped request identity, token invalidation, and an authentication path that works across browsers, mobile clients, and limited-input TV apps.
 
 This foundation should land before richer content-control enforcement — but not as a `userId`-only shortcut.
-Its first increment must carry the account, household, profile, session, and version identity ADR 0015 needs, with authorization checks already behind the Streamarr authorization facade.
+Its first increment must carry the account, household, profile, and session identity ADR 0015 needs, with authorization checks already behind the Streamarr authorization facade.
 
 Authentication must stay independently revisable from that authorization.
 Password-hashing work factors, MFA requirements, and device-pairing details will change as hardware, Spring Security, client capabilities, and security guidance move.
@@ -44,23 +44,22 @@ Scopes nest rather than exclude: a household token also reaches account-scoped s
 A client therefore holds one access token at a time and upgrades it by selecting a household or profile; nesting widens context, never privilege, because every surface still applies ADR 0015's role and policy checks.
 The selected context is session state, not client state: the session row remembers the active household and profile, login auto-selection and the selection endpoints write it, and refresh re-derives scope from it only after a single account-profile lookup revalidates (account, stored household, stored profile) — selecting or switching a household always clears the stored profile first, so a stale selection can never mint a mismatched household/profile token, and failed revalidation downgrades to the highest valid scope.
 In Spring Security terms, each scope becomes a granted authority and the nesting is a declared authority hierarchy — `RoleHierarchyImpl.fromHierarchy` wired explicitly into the `AuthorizationManagerFactory` and the method-security expression handler, since a `RoleHierarchy` bean is not auto-detected — so request and method rules demand only the minimum scope.
-Every access token authorizes requests only within the context chain it names, and carries enough account, session, version, and — where selected — household and profile identity for the server to validate the session and the ADR 0015 authorization model.
-This makes access tokens self-contained and server-signed — validating one needs the signing key and the in-memory counters, not a database read — while refresh tokens stay opaque random secrets the server knows only by digest.
+Every access token authorizes requests only within the context chain it names, and carries enough account, session, and — where selected — household and profile identity for the server to validate the session and the ADR 0015 authorization model.
+This makes access tokens self-contained and server-signed — validating one needs the public key, not a database read — while refresh tokens stay opaque random secrets the server knows only by digest.
 Signing keys are configuration: rotation starts issuing with a new key while old keys remain verification-only until every token they signed has expired, which short access-token TTLs keep brief.
 Tokens are signed asymmetrically (ES256, P-256), each carrying its key's RFC 7638 thumbprint as `kid`: only the media server holds the private key, and verifiers need public keys only.
-This exists for the planned transcode split — horizontally scaled transcode workers verify playback tokens directly and run FFmpeg against untrusted media, so that tier must never hold a token-minting secret.
-Symmetric HMAC signing was rejected for that reason alone; in a single process it would be simpler and equivalent.
-A public key is never sufficient authorization, though: revocation lives in the version counters below, so any external verifier must also consume the counter feed — signature-plus-expiry checking alone silently disables revocation for playback tokens, whose validity rides the stream-session lifetime.
+This is defense-in-depth and optionality rather than a present operational requirement: the transcode split's recommended segment-serving topology (https://github.com/streamarr/streamarr-server/issues/76[#76]) proxies segments through the API server, so transcode workers never verify a playback token — but keeping the minting key private to the media server preserves the worker-as-verifier and edge-verifier topologies without ever placing a signing secret beside FFmpeg and untrusted media.
+Symmetric HMAC signing would be simpler and equivalent in a single process; it was set aside to keep those topologies open.
+A public key is never sufficient authorization, though: signature-plus-expiry checking alone cannot see revocation — for playback that authority is the stream session below, so any future external verifier must check it, or be handed short-lived signed URLs that encode the check, as the transcode-split ADR will ratify.
 A JWKS endpoint is deferred until an external verifier exists; the kid-keyed key set makes it additive.
 
-Restriction, membership, password, and session changes propagate through version counters.
-Postgres holds the authoritative session, membership, and profile-policy counters; each instance caches them in memory.
-When an instance changes one, it bumps the Postgres counter and publishes a `LISTEN`/`NOTIFY` event so every other instance evicts and refreshes that counter.
-The `LISTEN` subscriber holds its own dedicated Postgres connection, separate from the transactional Hikari pool.
-That connection must reach Postgres directly or through a session-mode pooler: `LISTEN` does not survive transaction-mode pooling, so PgBouncer in transaction mode silently breaks notifications.
-On instance start the counter cache is empty and fills from Postgres on first touch; when an authoritative counter cannot be read, validation fails closed rather than trusting a token's embedded versions.
-Each request checks its token's embedded versions against the in-memory cache, so the hot path needs no database round-trip; short token TTLs only backstop a missed notification.
-A password change invalidates every token for the account; a membership or restriction change invalidates the affected household- and profile-scoped tokens through the corresponding counter.
+Revocation runs on two channels, matched to what each surface can tolerate.
+API surfaces accept bounded staleness: access tokens live only minutes, revoking a session's refresh tokens is the kill switch, and the refresh endpoint's database checkpoint refuses successors the moment a password, session, or membership change lands — an invalidated session keeps at most one access-token lifetime of API reach.
+Staleness bounds the life of an invalidated session's tokens, never the policy applied: every surface still routes role and policy checks through the ADR 0015 authorization facade against authoritative state, so a restriction change bites on the very next request.
+Playback tolerates no TTL bound, because playback-token validity rides the stream-session lifetime; the stream session is therefore playback's single revocation authority, and every playlist and segment request checks the session's status before serving.
+Authentication changes cascade to that authority: logout, password change, and membership or restriction changes revoke the identity's active stream sessions — atomically with the triggering change once stream sessions persist in PostgreSQL (https://github.com/streamarr/streamarr-server/issues/211[#211]), and through the in-process session registry until then, which is equivalent while sessions live only in the serving instance.
+When a session's status cannot be read, streaming fails closed rather than serving on signature and expiry alone.
+This supersedes the version-counter design this ADR previously specified — per-request token-version checks against an in-memory cache fed by Postgres `LISTEN`/`NOTIFY` — because playback was its only load-bearing case: the stream session covers playback with one authority instead of two, and retiring the feed removes the dedicated-listener plumbing and the session-mode-pooler constraint `LISTEN` imposed.
 
 How a client presents tokens depends on what it can protect.
 Native apps — iOS, Android, TV — send access tokens as `Authorization: Bearer` headers and keep refresh tokens in platform-secure storage.
@@ -68,10 +67,10 @@ Browsers never touch tokens from script: both tokens travel as `httpOnly`, `Secu
 Cookies are ambient credentials, so cookie-authenticated requests keep Spring Security's default-on CSRF protection — the `csrf.spa()` configuration pairing the BREACH-protected `XorCsrfTokenRequestAttributeHandler` with `CookieCsrfTokenRepository`; bearer-header requests carry no ambient credential and stay CSRF-exempt.
 `httpOnly` keeps scripts from reading the session cookie, and cross-site tracing cannot echo it back while HTTP `TRACE` stays disabled — embedded Tomcat's default, which must not be re-enabled.
 That narrows XSS rather than eliminating it: an injected script can still ride the session, so Spring Security's default security headers, a Content-Security-Policy, and output encoding remain required hygiene.
-Streaming is the third carrier: playlist-driven players — AVPlayer above all — cannot attach headers to the segment requests a playlist spawns, so issued manifest, playlist, and segment URLs embed a short-lived, playback-scoped profile token the server validates exactly like a header token.
+Streaming is the third carrier: playlist-driven players — AVPlayer above all — cannot attach headers to the segment requests a playlist spawns, so issued manifest, playlist, and segment URLs embed a playback-scoped, stream-session-bound profile token the server validates exactly like a header token.
 Same tokens, different carrier, not a weaker channel: playback-URL tokens authorize nothing but playback, and the server redacts them from its own request logs and traces.
-Logs the server does not own — a reverse proxy in front of a self-hosted install — will record these URLs, which is exactly why the tokens' short TTL and playback-only scope bound what a captured URL is worth.
-Playback-token validity rides the stream-session lifetime rather than a fixed minutes-scale TTL — VOD players fetch playlists once and then request segments for hours — while revocation stays instant through the same per-request version check, and session reaping bounds residual exposure.
+Logs the server does not own — a reverse proxy in front of a self-hosted install — will record these URLs, which is exactly why the token's playback-only scope and binding to a single stream session bound what a captured URL is worth.
+Playback-token validity rides the stream-session lifetime rather than a fixed minutes-scale TTL — VOD players fetch playlists once and then request segments for hours — while revocation stays instant through the per-request session-status check, and session reaping bounds residual exposure.
 
 Renewal is a server contract before it is client code.
 The server never slides an access token or re-issues one on its own authority; renewal always passes through the refresh endpoint.
@@ -122,20 +121,22 @@ Explicitly deferred from v1:
 * Rainbow-table resistance comes from the encoder's per-password salts, not custom code.
 * Argon2id work factors live in configuration or a security runbook, not this ADR.
 * MFA and device pairing are account/session concerns; profile selection stays a viewing-context concern.
-* Refresh-token revocation, rotation with reuse detection, digest-at-rest storage, and profile-token invalidation are required server features, not optional client behavior.
-* One token model has three carriers — bearer headers for native apps, `httpOnly` cookies plus CSRF protection for browsers, short-lived playback-URL tokens for streaming — and no carrier weakens validation.
+* Refresh-token revocation, rotation with reuse detection, digest-at-rest storage, and the stream-session revocation cascade are required server features, not optional client behavior.
+* One token model has three carriers — bearer headers for native apps, `httpOnly` cookies plus CSRF protection for browsers, session-bound playback-URL tokens for streaming — and no carrier weakens validation.
 * Refresh races are resolved on the server — the rotation grace window — and merely smoothed by the web client's service worker, so a browser without a live worker degrades to slower renewal, never to spurious logout.
 * Login and PIN throttling are Streamarr code driven by Spring Security's authentication events, not framework features.
-* Cross-instance invalidation rides Postgres version counters and `LISTEN`/`NOTIFY`, adding no Redis or other new infrastructure in v1.
-* The invalidation listener must never borrow and hold a connection from the transactional Hikari pool, even while reconnecting or backing off.
+* Revocation state rides ordinary PostgreSQL rows — refresh-token families and stream sessions — adding no Redis or other new infrastructure in v1 and imposing no pooler-mode constraints.
+* API-surface revocation is bounded by the access-token TTL, which makes that TTL a security parameter — minutes, not hours; instant revocation is a playback property, carried by the stream session.
 * OAuth providers are authentication inputs to local accounts, not replacements for the account/profile/household model.
 
 == Rejected Alternatives
 
 * Spring Security's default `DelegatingPasswordEncoder` id — it still encodes with bcrypt, OWASP puts Argon2id first, and the delegating mechanism makes the stronger default free.
 * An application-managed salt column — the encoded password string already carries algorithm, parameters, and salt; a separate column invites custom crypto handling.
-* Redis or any shared cache for cross-instance invalidation — Postgres version counters with `LISTEN`/`NOTIFY` cover v1 without new infrastructure.
-* Sliding or self-renewing access tokens — re-issuing near expiry on the access token's own authority makes the short-lived credential immortal for whoever holds it, yields no rotation theft signal, lets active clients outrun the TTL backstop for missed invalidations, and skips the refresh endpoint's authoritative database checkpoint.
+* Redis or any shared cache for cross-instance invalidation — ordinary PostgreSQL rows cover v1 without new infrastructure, and a revocation authority cannot live in a store that may drop acknowledged writes on failover.
+* Per-request version counters fed by `LISTEN`/`NOTIFY` — this ADR's earlier design: once the stream session became playback's authority, playback was no longer a case for counters, instant API-surface revocation was not worth a second authority, and the feed bound every future token verifier to counter consumption while `LISTEN` breaks silently behind transaction-mode poolers.
+* Short access-token TTLs as the sole revocation mechanism for playback — playback-URL tokens have no refresh channel: players fetch a playlist once and replay its segment URLs for hours, so playback validity must ride the stream-session lifetime and only a per-request authority check can revoke it mid-stream.
+* Sliding or self-renewing access tokens — re-issuing near expiry on the access token's own authority makes the short-lived credential immortal for whoever holds it, yields no rotation theft signal, lets active clients outrun the TTL bound on a revoked session, and skips the refresh endpoint's authoritative database checkpoint.
 * Script-readable browser token storage (`localStorage` or plain cookies) — `httpOnly` cookies plus CSRF protection confine XSS to riding a session rather than stealing it.
 * `Authorization` headers on streaming segment requests — playlist-driven players cannot attach them, so playback URLs carry the token instead.
 * Profile PINs as an authentication or MFA factor — low-entropy convenience gates guard viewing context, never accounts.
@@ -146,6 +147,8 @@ Explicitly deferred from v1:
 * link:0015-authorization-profiles-and-content-controls.adoc[ADR 0015: Authorization, Profiles, and Content Controls]
 * https://github.com/streamarr/streamarr-server/issues/41[Issue #41: Authentication & User Management]
 * https://github.com/streamarr/streamarr-server/issues/163[Issue #163: Replace placeholder user ID with authenticated user from Spring Security]
+* https://github.com/streamarr/streamarr-server/issues/76[Issue #76: Distributed transcoding — stream-session control plane and worker adapters]
+* https://github.com/streamarr/streamarr-server/issues/211[Issue #211: Persist stream sessions in PostgreSQL]
 * https://docs.spring.io/spring-security/reference/features/authentication/password-storage.html[Spring Security: Password Storage]
 * https://docs.spring.io/spring-security/reference/servlet/authentication/mfa.html[Spring Security: Multi-Factor Authentication]
 * https://docs.spring.io/spring-security/reference/servlet/authentication/onetimetoken.html[Spring Security: One-Time Token Login]
