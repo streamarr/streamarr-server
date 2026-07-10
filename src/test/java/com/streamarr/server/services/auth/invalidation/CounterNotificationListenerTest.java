@@ -190,6 +190,48 @@ class CounterNotificationListenerTest {
   }
 
   @Test
+  @DisplayName("Should clear the cache when a malformed notification arrives")
+  void shouldClearCacheWhenMalformedNotificationArrives() {
+    var sessionId = UUID.randomUUID();
+    var fenceId = UUID.randomUUID();
+    var reader = new FakeVersionCounterReader();
+    reader.sessionVersions.put(sessionId, 5L);
+    reader.sessionVersions.put(fenceId, 1L);
+    var cache = new TokenVersionCache(reader);
+    var connectionSource = new ScriptedCounterNotificationConnectionSource();
+    var listener = new CounterNotificationListener(cache, connectionSource, _ -> {});
+
+    listener.start();
+    try {
+      connectionSource.awaitListenCount(1);
+      await().atMost(Duration.ofSeconds(1)).until(listener::isListening);
+      assertThat(cache.sessionVersion(sessionId)).contains(5L);
+      assertThat(cache.sessionVersion(fenceId)).contains(1L);
+
+      // A bump this instance misses because the payload is malformed (a format evolution puts an
+      // extra field in the version slot).
+      reader.sessionVersions.put(sessionId, 9L);
+      connectionSource.publish("SESSION|" + sessionId + "|9|EXTRA");
+
+      // Once the well-formed fence is applied, the malformed payload has been processed.
+      reader.sessionVersions.put(fenceId, 2L);
+      connectionSource.publish(
+          new CounterNotificationPayload(CounterKind.SESSION, fenceId.toString(), 2L).encode());
+      await()
+          .atMost(Duration.ofSeconds(1))
+          .untilAsserted(() -> assertThat(cache.sessionVersion(fenceId)).contains(2L));
+
+      // The malformed payload cleared the cache, so the stale entry is gone and the lookup reads
+      // through to the current database value.
+      assertThat(cache.sessionVersion(sessionId)).contains(9L);
+    } finally {
+      listener.stop();
+    }
+
+    await().atMost(Duration.ofSeconds(1)).until(() -> !listener.isListening());
+  }
+
+  @Test
   @DisplayName("Should back off exponentially to the cap and reset after reconnecting")
   void shouldBackOffExponentiallyToTheCapAndResetAfterReconnecting() {
     var recordedSleeps = new CopyOnWriteArrayList<Long>();

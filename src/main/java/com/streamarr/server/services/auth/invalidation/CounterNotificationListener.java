@@ -171,6 +171,14 @@ public class CounterNotificationListener implements SmartLifecycle {
         .ifPresentOrElse(
             notification ->
                 cache.update(notification.kind(), notification.key(), notification.version()),
-            () -> log.warn("Ignoring malformed counter notification: {}", payload));
+            () -> failClosedOnMalformed(payload));
+  }
+
+  private void failClosedOnMalformed(String payload) {
+    // A payload we cannot parse may carry an invalidation we can no longer identify, and cache
+    // entries have no TTL. Clearing forces every lookup back through the database until the next
+    // well-formed notification, so a missed bump cannot leave a stale entry serving a dead token.
+    log.error("Clearing version cache on malformed counter notification: {}", payload);
+    cache.clearAll();
   }
 }

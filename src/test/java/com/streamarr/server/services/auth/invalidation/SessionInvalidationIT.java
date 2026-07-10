@@ -399,8 +399,8 @@ class SessionInvalidationIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should keep applying valid notifications when malformed ones arrive first")
-  void shouldKeepApplyingValidNotificationsWhenMalformedOnesArriveFirst() {
+  @DisplayName("Should fail closed and reject the session when a malformed notification arrives")
+  void shouldFailClosedAndRejectSessionWhenMalformedNotificationArrives() {
     identity = authTestSupport.createIdentity();
     var sessionId = identity.session().getId();
 
@@ -412,15 +412,17 @@ class SessionInvalidationIT extends AbstractIntegrationTest {
 
     assertThat(secondInstanceCache.sessionVersion(sessionId)).contains(0L);
 
-    // Garbage commits before the revoke, so the listener must survive it to see the real bump.
+    // A malformed notification clears the warm entry rather than leaving it stale, so the missed
+    // revoke can no longer be served from cache. The listener must survive the garbage.
     publishRawNotification("garbage-with-no-delimiters");
     publishRawNotification("SESSION|" + sessionId + "|not-a-number");
     sessionRepository.revoke(sessionId, SessionRevocationReason.LOGOUT, Instant.now());
 
+    // The revoked session reads through as empty, so its tokens are rejected on the second
+    // instance — the malformed payload cannot leave a stale version alive.
     await()
         .atMost(Duration.ofSeconds(10))
-        .untilAsserted(
-            () -> assertThat(secondInstanceCache.sessionVersion(sessionId)).contains(1L));
+        .untilAsserted(() -> assertThat(secondInstanceCache.sessionVersion(sessionId)).isEmpty());
     assertThat(secondInstanceListener.isListening()).isTrue();
   }
 
