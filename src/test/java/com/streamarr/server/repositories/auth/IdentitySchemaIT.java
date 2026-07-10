@@ -78,7 +78,7 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
     var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
     var household = householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
     var membership =
-        householdMembershipRepository.save(
+        grantMembership(
             HouseholdMembership.builder()
                 .accountId(account.getId())
                 .householdId(household.getId())
@@ -97,7 +97,7 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
             accountProfileRepository.findByAccountIdAndProfileId(account.getId(), profile.getId()))
         .isPresent();
 
-    householdMembershipRepository.delete(membership);
+    householdMembershipRepository.revokeMembership(account.getId(), household.getId());
 
     assertThat(
             accountProfileRepository.findByAccountIdAndProfileId(account.getId(), profile.getId()))
@@ -112,7 +112,7 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
     var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
     var memberHousehold =
         householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
-    householdMembershipRepository.save(
+    grantMembership(
         HouseholdMembership.builder()
             .accountId(account.getId())
             .householdId(memberHousehold.getId())
@@ -142,7 +142,7 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
     var seeded = seedLinkedIdentity();
     var otherHousehold =
         householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
-    householdMembershipRepository.save(
+    grantMembership(
         HouseholdMembership.builder()
             .accountId(seeded.account().getId())
             .householdId(otherHousehold.getId())
@@ -183,7 +183,7 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
   void shouldRejectSessionProfileWhenAccountNotLinked() {
     var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
     var household = householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
-    householdMembershipRepository.save(
+    grantMembership(
         HouseholdMembership.builder()
             .accountId(account.getId())
             .householdId(household.getId())
@@ -310,7 +310,8 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
                 .activeProfileId(seeded.profile().getId())
                 .build());
 
-    householdMembershipRepository.delete(seeded.membership());
+    householdMembershipRepository.revokeMembership(
+        seeded.account().getId(), seeded.household().getId());
 
     var reloaded = authSessionRepository.findById(session.getId()).orElseThrow();
     assertThat(reloaded.getActiveHouseholdId()).isNull();
@@ -378,7 +379,7 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
     var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
     var household = householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
     var membership =
-        householdMembershipRepository.save(
+        grantMembership(
             HouseholdMembership.builder()
                 .accountId(account.getId())
                 .householdId(household.getId())
@@ -472,5 +473,12 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
         .digest("digest-" + UUID.randomUUID())
         .status(status)
         .expiresAt(Instant.now().plus(Duration.ofDays(30)));
+  }
+
+  private HouseholdMembership grantMembership(HouseholdMembership membership) {
+    householdMembershipRepository.grantMembership(membership);
+    return householdMembershipRepository
+        .findByAccountIdAndHouseholdId(membership.getAccountId(), membership.getHouseholdId())
+        .orElseThrow();
   }
 }

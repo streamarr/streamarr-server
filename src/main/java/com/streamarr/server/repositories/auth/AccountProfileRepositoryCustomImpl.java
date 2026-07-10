@@ -1,9 +1,11 @@
 package com.streamarr.server.repositories.auth;
 
+import static com.streamarr.server.jooq.generated.Sequences.HOUSEHOLD_MEMBERSHIP_VERSION_SEQ;
 import static com.streamarr.server.jooq.generated.tables.AccountProfile.ACCOUNT_PROFILE;
 import static com.streamarr.server.jooq.generated.tables.HouseholdMembership.HOUSEHOLD_MEMBERSHIP;
 
 import com.streamarr.server.domain.auth.AccountProfile;
+import com.streamarr.server.domain.auth.MembershipVersionChange;
 import com.streamarr.server.services.auth.events.CounterBumpedEvent;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -34,7 +36,8 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
         .set(ACCOUNT_PROFILE.LAST_MODIFIED_BY, auditUser)
         .execute();
 
-    bumpMembershipVersion(link, auditUser);
+    var versionChange = bumpMembershipVersion(link, auditUser);
+    publishVersionChange(versionChange);
   }
 
   @Override
@@ -53,33 +56,34 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
       return false;
     }
 
-    bumpMembershipVersion(link, auditUser);
+    var versionChange = bumpMembershipVersion(link, auditUser);
+    publishVersionChange(versionChange);
     return true;
   }
 
   /**
-   * The bump and its cache-refresh event live here so no future grant/revoke endpoint can forget
-   * either half of the invariant (ADR 0015 counter propagation).
+   * The globally allocated bump and its cache-refresh event live here so no future profile-link
+   * path can forget either half of the invariant (ADR 0015 counter propagation).
    */
-  private void bumpMembershipVersion(AccountProfile link, UUID auditUser) {
+  private MembershipVersionChange bumpMembershipVersion(AccountProfile link, UUID auditUser) {
     // The membership row is FK-guaranteed: every account_profile row references it, so the
     // link being granted or revoked proves it exists in this transaction.
-    var updated =
+    var version =
         dsl.update(HOUSEHOLD_MEMBERSHIP)
             .set(
-                HOUSEHOLD_MEMBERSHIP.MEMBERSHIP_VERSION,
-                HOUSEHOLD_MEMBERSHIP.MEMBERSHIP_VERSION.plus(1))
+                HOUSEHOLD_MEMBERSHIP.MEMBERSHIP_VERSION, HOUSEHOLD_MEMBERSHIP_VERSION_SEQ.nextval())
             .set(HOUSEHOLD_MEMBERSHIP.LAST_MODIFIED_ON, OffsetDateTime.now(ZoneOffset.UTC))
             .set(HOUSEHOLD_MEMBERSHIP.LAST_MODIFIED_BY, auditUser)
             .where(HOUSEHOLD_MEMBERSHIP.ACCOUNT_ID.eq(link.getAccountId()))
             .and(HOUSEHOLD_MEMBERSHIP.HOUSEHOLD_ID.eq(link.getHouseholdId()))
             .returning(HOUSEHOLD_MEMBERSHIP.MEMBERSHIP_VERSION)
-            .fetchSingle();
+            .fetchSingle(HOUSEHOLD_MEMBERSHIP.MEMBERSHIP_VERSION);
+    return new MembershipVersionChange(link.getAccountId(), link.getHouseholdId(), version);
+  }
 
+  private void publishVersionChange(MembershipVersionChange versionChange) {
     eventPublisher.publishEvent(
         CounterBumpedEvent.membership(
-            link.getAccountId(),
-            link.getHouseholdId(),
-            updated.get(HOUSEHOLD_MEMBERSHIP.MEMBERSHIP_VERSION)));
+            versionChange.accountId(), versionChange.householdId(), versionChange.version()));
   }
 }

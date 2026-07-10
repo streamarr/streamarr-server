@@ -41,13 +41,16 @@ public class RefreshTokenRepositoryCustomImpl implements RefreshTokenRepositoryC
   }
 
   @Override
-  public boolean isActiveToken(UUID sessionId, String digest) {
+  public boolean isActiveToken(UUID sessionId, String digest, Instant now) {
+    var nowOffset = now.atOffset(ZoneOffset.UTC);
+
     return dsl.fetchExists(
         dsl.selectOne()
             .from(REFRESH_TOKEN)
             .where(REFRESH_TOKEN.SESSION_ID.eq(sessionId))
             .and(REFRESH_TOKEN.DIGEST.eq(digest))
-            .and(REFRESH_TOKEN.STATUS.eq(RefreshTokenStatus.ACTIVE)));
+            .and(REFRESH_TOKEN.STATUS.eq(RefreshTokenStatus.ACTIVE))
+            .and(REFRESH_TOKEN.EXPIRES_AT.gt(nowOffset)));
   }
 
   @Override

@@ -134,7 +134,7 @@ public class RefreshTokenService {
     // The session is not revoked (guarded above), so grace turns purely on token timing.
     if (isWithinGrace(token, now)) {
       var rawSuccessor = deriveSuccessor(rawToken, token.getId());
-      if (tokenRepository.isActiveToken(session.getId(), digestOf(rawSuccessor))) {
+      if (tokenRepository.isActiveToken(session.getId(), digestOf(rawSuccessor), now)) {
         return new RefreshResult.Replayed(rawSuccessor, session);
       }
       return new RefreshResult.SupersededReplay(session);

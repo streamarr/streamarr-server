@@ -515,7 +515,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
         membershipRepository
             .findByAccountIdAndHouseholdId(account.getId(), household.getId())
             .orElseThrow();
-    membershipRepository.delete(membership);
+    membershipRepository.revokeMembership(membership.getAccountId(), membership.getHouseholdId());
 
     mockMvc
         .perform(
@@ -533,7 +533,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     var secondHousehold =
         householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
     secondHouseholdId = secondHousehold.getId();
-    membershipRepository.save(
+    membershipRepository.grantMembership(
         HouseholdMembership.builder()
             .accountId(account.getId())
             .householdId(secondHousehold.getId())
@@ -1186,7 +1186,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
                 .passwordHash(passwordEncoder.encode(PASSWORD))
                 .build());
     household = householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
-    membershipRepository.save(
+    membershipRepository.grantMembership(
         HouseholdMembership.builder()
             .accountId(account.getId())
             .householdId(household.getId())

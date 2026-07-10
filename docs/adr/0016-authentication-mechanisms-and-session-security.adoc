@@ -88,7 +88,7 @@ Redeeming a refresh token at the dedicated refresh endpoint rotates it, sets the
 An expired access token fails with a machine-readable expired-token code distinct from other authentication failures, so a client knows refresh-and-retry is worthwhile.
 Rotation's theft rule tolerates one honest race: every tab of a browser shares one cookie jar, so concurrent refreshes can innocently redeem the same token.
 Each rotation's successor is deterministic but secret: the server derives it with HMAC-SHA-256 keyed by the presented 256-bit predecessor over a domain label and that predecessor's internal refresh-token row UUID, then stores only the successor's digest.
-Within a short grace window — judged from the persisted rotation timestamp, so it survives restarts and works across instances — the server derives the same successor again and returns it only while its digest still names the session's active token.
+Within a short grace window — judged from the persisted rotation timestamp, so it survives restarts and works across instances — the server derives the same successor again and returns it only while its digest still names the session's active, unexpired token.
 This makes a lost successful rotation response recoverable without storing plaintext, while concurrent responses can only write the same active successor into the browser's cookie jar.
 If that successor has already rotated, the older predecessor is superseded: its grace replay may receive a fresh access token but no refresh token, so it cannot overwrite the current cookie with a consumed credential.
 Exactly one genuine rotation happens per predecessor, and reuse outside the window stays theft.

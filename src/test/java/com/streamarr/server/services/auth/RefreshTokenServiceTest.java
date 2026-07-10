@@ -129,6 +129,30 @@ class RefreshTokenServiceTest {
   }
 
   @Test
+  @DisplayName("Should classify expired successor as superseded replay within grace")
+  void shouldClassifyExpiredSuccessorAsSupersededReplayWithinGrace() {
+    var shortLivedService =
+        serviceWith(
+            AuthTokenProperties.builder()
+                .signingKey("")
+                .accessTokenTtl(Duration.ofMinutes(10))
+                .refreshTokenTtl(Duration.ofSeconds(1))
+                .rotationGrace(Duration.ofSeconds(10))
+                .build());
+    var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
+    var issued = shortLivedService.createSession(account, "test-device");
+    var rotation = (RefreshResult.Rotated) shortLivedService.redeem(issued.rawToken());
+
+    advanceClock(Duration.ofSeconds(2));
+    var replay = shortLivedService.redeem(issued.rawToken());
+
+    assertThat(replay).isInstanceOf(RefreshResult.SupersededReplay.class);
+    assertThat(replay.session().getRevokedAt()).isNull();
+    assertThatThrownBy(() -> shortLivedService.redeem(rotation.rawRefreshToken()))
+        .isInstanceOf(InvalidRefreshTokenException.class);
+  }
+
+  @Test
   @DisplayName("Should revoke family when consumed token redeemed after grace")
   void shouldRevokeFamilyWhenConsumedTokenRedeemedAfterGrace() {
     var issued = issueSession();
@@ -283,5 +307,15 @@ class RefreshTokenServiceTest {
 
   private void advanceClock(Duration duration) {
     currentTime.updateAndGet(instant -> instant.plus(duration));
+  }
+
+  private RefreshTokenService serviceWith(AuthTokenProperties tokenProperties) {
+    return new RefreshTokenService(
+        sessionRepository,
+        tokenRepository,
+        tokenProperties,
+        clock,
+        tokenReuseRevoker,
+        eventPublisher);
   }
 }
