@@ -6,13 +6,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.auth.CounterKind;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
-import com.streamarr.server.services.auth.CounterKind;
 import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.services.auth.TokenVersionCache;
 import com.streamarr.server.services.streaming.SegmentStore;

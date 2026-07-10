@@ -12,6 +12,7 @@ import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
 import com.nimbusds.jose.proc.JWSVerificationKeySelector;
 import com.nimbusds.jose.proc.SecurityContext;
 import com.nimbusds.jwt.proc.DefaultJWTProcessor;
+import com.streamarr.server.services.auth.TokenContract;
 import com.streamarr.server.services.auth.TokenIdentityValidator;
 import com.streamarr.server.services.auth.TokenVersionValidator;
 import java.security.KeyFactory;
@@ -91,7 +92,9 @@ public class TokenCryptoConfig {
     var decoder = new NimbusJwtDecoder(processor);
     decoder.setJwtValidator(
         new DelegatingOAuth2TokenValidator<>(
-            JwtValidators.createDefault(), identityValidator, versionValidator));
+            JwtValidators.createDefaultWithIssuer(TokenContract.ISSUER),
+            identityValidator,
+            versionValidator));
     return decoder;
   }
 

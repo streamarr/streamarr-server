@@ -6,14 +6,11 @@ import static com.streamarr.server.jooq.generated.tables.HouseholdMembership.HOU
 
 import com.streamarr.server.domain.auth.AccountProfile;
 import com.streamarr.server.domain.auth.MembershipVersionChange;
-import com.streamarr.server.services.auth.events.CounterBumpedEvent;
-import com.streamarr.server.services.auth.invalidation.CounterNotificationPayload;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.AuditorAware;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,7 +19,7 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
 
   private final DSLContext dsl;
   private final AuditorAware<UUID> auditorAware;
-  private final ApplicationEventPublisher eventPublisher;
+  private final CounterChangePublisher counterChangePublisher;
 
   @Override
   @Transactional
@@ -38,7 +35,7 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
         .execute();
 
     var versionChange = bumpMembershipVersion(link, auditUser);
-    publishVersionChange(versionChange);
+    counterChangePublisher.publishMembership(versionChange);
   }
 
   @Override
@@ -58,14 +55,13 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
     }
 
     var versionChange = bumpMembershipVersion(link, auditUser);
-    publishVersionChange(versionChange);
+    counterChangePublisher.publishMembership(versionChange);
     return true;
   }
 
   /**
-   * The globally allocated bump, its local cache event, and the cross-instance notify live here so
-   * no future profile-link path can forget any leg of the invariant (ADR 0015 requirement, ADR 0016
-   * propagation).
+   * Returns the globally allocated bump so each profile-link path can dispatch the local cache
+   * event and cross-instance notification together (ADR 0015 requirement, ADR 0016 propagation).
    */
   private MembershipVersionChange bumpMembershipVersion(AccountProfile link, UUID auditUser) {
     // The membership row is FK-guaranteed: every account_profile row references it, so the
@@ -81,14 +77,5 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
             .returning(HOUSEHOLD_MEMBERSHIP.MEMBERSHIP_VERSION)
             .fetchSingle(HOUSEHOLD_MEMBERSHIP.MEMBERSHIP_VERSION);
     return new MembershipVersionChange(link.getAccountId(), link.getHouseholdId(), version);
-  }
-
-  private void publishVersionChange(MembershipVersionChange versionChange) {
-    var event =
-        CounterBumpedEvent.membership(
-            versionChange.accountId(), versionChange.householdId(), versionChange.version());
-    eventPublisher.publishEvent(event);
-    CounterNotificationPublisher.publish(
-        dsl, new CounterNotificationPayload(event.kind(), event.key(), event.version()));
   }
 }

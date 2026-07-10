@@ -1,5 +1,6 @@
 package com.streamarr.server.services.auth.invalidation;
 
+import com.streamarr.server.repositories.auth.CounterNotificationPayload;
 import com.streamarr.server.services.auth.TokenVersionCache;
 import java.util.concurrent.atomic.AtomicInteger;
 import lombok.RequiredArgsConstructor;

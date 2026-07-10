@@ -5,8 +5,6 @@ import static com.streamarr.server.jooq.generated.tables.AuthSession.AUTH_SESSIO
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.repositories.JooqQueryHelper;
-import com.streamarr.server.services.auth.CounterKind;
-import com.streamarr.server.services.auth.invalidation.CounterNotificationPayload;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -23,6 +21,7 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
   private final DSLContext dsl;
   private final AuditorAware<UUID> auditorAware;
   private final EntityManager entityManager;
+  private final CounterChangePublisher counterChangePublisher;
 
   @Override
   @Transactional
@@ -45,7 +44,7 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
             .fetchOne();
 
     var bumped = Optional.ofNullable(updated).map(row -> row.get(AUTH_SESSION.SESSION_VERSION));
-    bumped.ifPresent(version -> publishSessionBump(sessionId, version));
+    bumped.ifPresent(version -> counterChangePublisher.publishSession(sessionId, version));
     return bumped;
   }
 
@@ -65,7 +64,7 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
             .fetchOne();
 
     var bumped = Optional.ofNullable(updated).map(row -> row.get(AUTH_SESSION.SESSION_VERSION));
-    bumped.ifPresent(version -> publishSessionBump(sessionId, version));
+    bumped.ifPresent(version -> counterChangePublisher.publishSession(sessionId, version));
     return bumped;
   }
 
@@ -90,10 +89,5 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
 
     return JooqQueryHelper.nativeQuery(entityManager, query, AuthSession.class).stream()
         .findFirst();
-  }
-
-  private void publishSessionBump(UUID sessionId, long version) {
-    CounterNotificationPublisher.publish(
-        dsl, new CounterNotificationPayload(CounterKind.SESSION, sessionId.toString(), version));
   }
 }

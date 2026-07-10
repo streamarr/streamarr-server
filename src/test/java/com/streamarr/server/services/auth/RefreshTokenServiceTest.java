@@ -13,17 +13,20 @@ import com.streamarr.server.domain.auth.RefreshTokenStatus;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.exceptions.InvalidRefreshTokenException;
 import com.streamarr.server.exceptions.TokenReuseDetectedException;
-import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeRefreshTokenRepository;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.AccountFixture;
-import com.streamarr.server.services.auth.events.CounterBumpedEvent;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -39,7 +42,6 @@ class RefreshTokenServiceTest {
 
   private final FakeAuthSessionRepository sessionRepository = new FakeAuthSessionRepository();
   private final FakeRefreshTokenRepository tokenRepository = new FakeRefreshTokenRepository();
-  private final CapturingEventPublisher eventPublisher = new CapturingEventPublisher();
 
   private final AuthTokenProperties properties =
       AuthTokenProperties.builder()
@@ -52,12 +54,11 @@ class RefreshTokenServiceTest {
   private final MutableClock clock = new MutableClock(currentTime);
 
   private final TokenReuseRevoker tokenReuseRevoker =
-      new TokenReuseRevoker(
-          new TokenReuseRevocationWriter(sessionRepository, tokenRepository, eventPublisher));
+      new TokenReuseRevoker(new TokenReuseRevocationWriter(sessionRepository, tokenRepository));
 
   private final RefreshTokenService service =
       new RefreshTokenService(
-          sessionRepository, tokenRepository, properties, clock, tokenReuseRevoker, eventPublisher);
+          sessionRepository, tokenRepository, properties, clock, tokenReuseRevoker);
 
   @Test
   @DisplayName("Should rotate when active token redeemed")
@@ -97,7 +98,6 @@ class RefreshTokenServiceTest {
     assertThat(tokenRepository.findAll())
         .filteredOn(token -> token.getStatus() == RefreshTokenStatus.ACTIVE)
         .hasSize(1);
-    assertThat(eventPublisher.getEventsOfType(CounterBumpedEvent.class)).isEmpty();
   }
 
   @Test
@@ -111,7 +111,6 @@ class RefreshTokenServiceTest {
 
     assertThat(replay).isInstanceOf(RefreshResult.Replayed.class);
     assertThat(replay.session().getRevokedAt()).isNull();
-    assertThat(eventPublisher.getEventsOfType(CounterBumpedEvent.class)).isEmpty();
   }
 
   @Test
@@ -171,15 +170,6 @@ class RefreshTokenServiceTest {
 
     assertThat(tokenRepository.findAll())
         .allSatisfy(token -> assertThat(token.getStatus()).isEqualTo(RefreshTokenStatus.REVOKED));
-
-    assertThat(eventPublisher.getEventsOfType(CounterBumpedEvent.class))
-        .singleElement()
-        .satisfies(
-            event -> {
-              assertThat(event.kind()).isEqualTo(CounterKind.SESSION);
-              assertThat(event.key()).isEqualTo(session.getId().toString());
-              assertThat(event.version()).isEqualTo(1L);
-            });
   }
 
   @Test
@@ -232,7 +222,6 @@ class RefreshTokenServiceTest {
 
     var session = sessionRepository.findById(issued.session().getId()).orElseThrow();
     assertThat(session.getRevokedAt()).isNull();
-    assertThat(eventPublisher.getEventsOfType(CounterBumpedEvent.class)).isEmpty();
   }
 
   @Test
@@ -265,9 +254,6 @@ class RefreshTokenServiceTest {
 
     assertThatThrownBy(() -> service.redeem(replayedToken))
         .isInstanceOf(TokenReuseDetectedException.class);
-
-    // The session was already revoked, so the reuse path finds no version to bump: no event.
-    assertThat(eventPublisher.getEventsOfType(CounterBumpedEvent.class)).isEmpty();
   }
 
   @Test
@@ -298,7 +284,41 @@ class RefreshTokenServiceTest {
     assertThat(tokenRepository.findAll())
         .singleElement()
         .satisfies(token -> assertThat(token.getStatus()).isEqualTo(RefreshTokenStatus.ACTIVE));
-    assertThat(eventPublisher.getEventsOfType(CounterBumpedEvent.class)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should keep reissued session live when an earlier refresh finishes afterward")
+  void shouldKeepReissuedSessionLiveWhenEarlierRefreshFinishesAfterward() throws Exception {
+    var pausingSessions = new PausingAuthSessionRepository();
+    var tokens = new FakeRefreshTokenRepository();
+    var revoker = new TokenReuseRevoker(new TokenReuseRevocationWriter(pausingSessions, tokens));
+    var racingService =
+        new RefreshTokenService(pausingSessions, tokens, properties, clock, revoker);
+    var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
+    var issued = racingService.createSession(account, "test-device");
+
+    pausingSessions.pauseNextLock();
+    IssuedRefreshToken reissued;
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var refresh = executor.submit(() -> racingService.redeem(issued.rawToken()));
+      assertThat(pausingSessions.lockEntered.await(10, TimeUnit.SECONDS)).isTrue();
+
+      reissued = racingService.reissueFor(issued.session());
+      pausingSessions.releaseLock.countDown();
+
+      assertThatThrownBy(() -> refresh.get(10, TimeUnit.SECONDS))
+          .isInstanceOf(ExecutionException.class)
+          .hasCauseInstanceOf(InvalidRefreshTokenException.class);
+    } finally {
+      pausingSessions.releaseLock.countDown();
+    }
+
+    assertThat(pausingSessions.findById(issued.session().getId()).orElseThrow().getRevokedAt())
+        .isNull();
+    assertThat(tokens.findAll())
+        .filteredOn(token -> token.getStatus() == RefreshTokenStatus.ACTIVE)
+        .hasSize(1);
+    assertThat(racingService.redeem(reissued.rawToken())).isInstanceOf(RefreshResult.Rotated.class);
   }
 
   @Test
@@ -326,11 +346,34 @@ class RefreshTokenServiceTest {
 
   private RefreshTokenService serviceWith(AuthTokenProperties tokenProperties) {
     return new RefreshTokenService(
-        sessionRepository,
-        tokenRepository,
-        tokenProperties,
-        clock,
-        tokenReuseRevoker,
-        eventPublisher);
+        sessionRepository, tokenRepository, tokenProperties, clock, tokenReuseRevoker);
+  }
+
+  private static final class PausingAuthSessionRepository extends FakeAuthSessionRepository {
+
+    private final CountDownLatch lockEntered = new CountDownLatch(1);
+    private final CountDownLatch releaseLock = new CountDownLatch(1);
+    private volatile boolean pause;
+
+    private void pauseNextLock() {
+      pause = true;
+    }
+
+    @Override
+    public Optional<com.streamarr.server.domain.auth.AuthSession> lockById(UUID sessionId) {
+      if (pause) {
+        pause = false;
+        lockEntered.countDown();
+        try {
+          if (!releaseLock.await(10, TimeUnit.SECONDS)) {
+            throw new AssertionError("refresh lock was not released");
+          }
+        } catch (InterruptedException _) {
+          Thread.currentThread().interrupt();
+          throw new AssertionError("refresh lock interrupted");
+        }
+      }
+      return super.lockById(sessionId);
+    }
   }
 }

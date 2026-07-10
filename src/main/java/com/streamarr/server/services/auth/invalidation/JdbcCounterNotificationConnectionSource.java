@@ -1,6 +1,7 @@
 package com.streamarr.server.services.auth.invalidation;
 
 import com.streamarr.server.config.security.CounterListenerProperties;
+import com.streamarr.server.repositories.auth.CounterNotificationPayload;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;

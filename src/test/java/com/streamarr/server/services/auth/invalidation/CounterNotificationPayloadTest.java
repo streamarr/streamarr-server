@@ -3,7 +3,8 @@ package com.streamarr.server.services.auth.invalidation;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 
-import com.streamarr.server.services.auth.CounterKind;
+import com.streamarr.server.domain.auth.CounterKind;
+import com.streamarr.server.repositories.auth.CounterNotificationPayload;
 import java.util.UUID;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;

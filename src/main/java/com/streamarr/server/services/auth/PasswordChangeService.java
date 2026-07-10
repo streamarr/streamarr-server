@@ -6,9 +6,7 @@ import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.RefreshTokenRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
-import com.streamarr.server.services.auth.events.CounterBumpedEvent;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,7 +26,6 @@ public class PasswordChangeService {
   private final RefreshTokenService refreshTokenService;
   private final PasswordEncoder passwordEncoder;
   private final java.time.Clock clock;
-  private final ApplicationEventPublisher eventPublisher;
 
   @Transactional
   public PasswordChangeResult changePassword(ChangePasswordCommand command) {
@@ -59,12 +56,7 @@ public class PasswordChangeService {
       // session_version underneath them, so getSessionVersion()/getRevokedAt() would read stale
       // first-level-cache state — and mutating them would flush that stale state back over the
       // jOOQ write. Don't read or set counter/revocation fields on them here (see AGENTS.md).
-      sessionRepository
-          .revoke(session.getId(), SessionRevocationReason.PASSWORD_CHANGE, now)
-          .ifPresent(
-              version ->
-                  eventPublisher.publishEvent(
-                      CounterBumpedEvent.session(session.getId(), version)));
+      sessionRepository.revoke(session.getId(), SessionRevocationReason.PASSWORD_CHANGE, now);
       tokenRepository.revokeAllForSession(session.getId());
     }
 
@@ -78,7 +70,6 @@ public class PasswordChangeService {
         sessionRepository
             .bumpVersion(callerSession.getId(), now)
             .orElseThrow(AuthenticationRequiredException::new);
-    eventPublisher.publishEvent(CounterBumpedEvent.session(callerSession.getId(), bumpedVersion));
     // Align the managed entity with the SQL bump so the fresh access token carries the new sv.
     callerSession.setSessionVersion(bumpedVersion);
 

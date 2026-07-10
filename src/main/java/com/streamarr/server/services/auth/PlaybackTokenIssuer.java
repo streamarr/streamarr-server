@@ -29,8 +29,6 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class PlaybackTokenIssuer {
 
-  private static final String ISSUER = "streamarr";
-
   private final JwtEncoder jwtEncoder;
   private final Clock clock;
   private final TokenVersionCache versionCache;
@@ -58,7 +56,7 @@ public class PlaybackTokenIssuer {
 
     var claims =
         JwtClaimsSet.builder()
-            .issuer(ISSUER)
+            .issuer(TokenContract.ISSUER)
             .id(UUID.randomUUID().toString())
             .subject(identity.accountId().toString())
             .issuedAt(now)

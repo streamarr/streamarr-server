@@ -10,7 +10,6 @@ import com.streamarr.server.exceptions.InvalidRefreshTokenException;
 import com.streamarr.server.exceptions.TokenReuseDetectedException;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.RefreshTokenRepository;
-import com.streamarr.server.services.auth.events.CounterBumpedEvent;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
@@ -24,7 +23,6 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -42,7 +40,6 @@ public class RefreshTokenService {
   private final AuthTokenProperties properties;
   private final Clock clock;
   private final TokenReuseRevoker tokenReuseRevoker;
-  private final ApplicationEventPublisher eventPublisher;
 
   private final SecureRandom secureRandom = new SecureRandom();
 
@@ -61,10 +58,7 @@ public class RefreshTokenService {
   /** Revokes the session and its whole token family; the version bump kills live access tokens. */
   @Transactional
   public void logout(java.util.UUID sessionId) {
-    sessionRepository
-        .revoke(sessionId, SessionRevocationReason.LOGOUT, clock.instant())
-        .ifPresent(
-            version -> eventPublisher.publishEvent(CounterBumpedEvent.session(sessionId, version)));
+    sessionRepository.revoke(sessionId, SessionRevocationReason.LOGOUT, clock.instant());
     tokenRepository.revokeAllForSession(sessionId);
   }
 
@@ -140,8 +134,9 @@ public class RefreshTokenService {
       return new RefreshResult.SupersededReplay(session);
     }
 
-    if (token.getStatus() == RefreshTokenStatus.ACTIVE) {
-      // Active but past expiry — stale, not theft.
+    if (token.getStatus() != RefreshTokenStatus.ROTATED) {
+      // An expired ACTIVE token is stale. A REVOKED token may have lost a race to intentional
+      // family reissue. Only a past-grace ROTATED token proves reuse.
       throw new InvalidRefreshTokenException();
     }
 

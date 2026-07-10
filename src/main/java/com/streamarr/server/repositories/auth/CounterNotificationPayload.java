@@ -1,6 +1,6 @@
-package com.streamarr.server.services.auth.invalidation;
+package com.streamarr.server.repositories.auth;
 
-import com.streamarr.server.services.auth.CounterKind;
+import com.streamarr.server.domain.auth.CounterKind;
 import java.util.Optional;
 
 /**

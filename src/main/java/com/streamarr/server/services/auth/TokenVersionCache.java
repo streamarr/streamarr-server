@@ -1,10 +1,13 @@
 package com.streamarr.server.services.auth;
 
+import com.streamarr.server.domain.auth.CounterKind;
 import com.streamarr.server.repositories.auth.VersionCounterReader;
 import com.streamarr.server.services.auth.events.CounterBumpedEvent;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -21,6 +24,8 @@ public class TokenVersionCache {
   private final VersionCounterReader reader;
 
   private final ConcurrentHashMap<CacheKey, Long> cache = new ConcurrentHashMap<>();
+  private final AtomicLong generation = new AtomicLong();
+  private final ReentrantReadWriteLock invalidationLock = new ReentrantReadWriteLock();
 
   public Optional<Long> sessionVersion(UUID sessionId) {
     return lookup(
@@ -40,11 +45,24 @@ public class TokenVersionCache {
   }
 
   public void update(CounterKind kind, String key, long version) {
-    cache.merge(new CacheKey(kind, key), version, Math::max);
+    var lock = invalidationLock.readLock();
+    lock.lock();
+    try {
+      cache.merge(new CacheKey(kind, key), version, Math::max);
+    } finally {
+      lock.unlock();
+    }
   }
 
   public void clearAll() {
-    cache.clear();
+    var lock = invalidationLock.writeLock();
+    lock.lock();
+    try {
+      generation.incrementAndGet();
+      cache.clear();
+    } finally {
+      lock.unlock();
+    }
   }
 
   private Optional<Long> lookup(
@@ -56,9 +74,22 @@ public class TokenVersionCache {
       return Optional.of(cached);
     }
 
-    var read = readThrough.get();
-    read.ifPresent(version -> cache.putIfAbsent(cacheKey, version));
-    return read;
+    while (true) {
+      var readGeneration = generation.get();
+      var read = readThrough.get();
+      var lock = invalidationLock.readLock();
+      lock.lock();
+      try {
+        if (generation.get() != readGeneration) {
+          continue;
+        }
+
+        read.ifPresent(version -> cache.putIfAbsent(cacheKey, version));
+        return Optional.ofNullable(cache.get(cacheKey));
+      } finally {
+        lock.unlock();
+      }
+    }
   }
 
   private record CacheKey(CounterKind kind, String key) {}

@@ -21,8 +21,6 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class AccessTokenIssuer {
 
-  private static final String ISSUER = "streamarr";
-
   private final JwtEncoder jwtEncoder;
   private final AuthTokenProperties properties;
   private final Clock clock;
@@ -38,7 +36,7 @@ public class AccessTokenIssuer {
 
     var claims =
         JwtClaimsSet.builder()
-            .issuer(ISSUER)
+            .issuer(TokenContract.ISSUER)
             .id(UUID.randomUUID().toString())
             .subject(context.account().getId().toString())
             .issuedAt(now)

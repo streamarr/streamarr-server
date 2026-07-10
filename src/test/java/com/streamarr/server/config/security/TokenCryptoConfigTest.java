@@ -12,6 +12,7 @@ import com.nimbusds.jwt.SignedJWT;
 import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.fakes.FakeVersionCounterReader;
 import com.streamarr.server.services.auth.TokenClaims;
+import com.streamarr.server.services.auth.TokenContract;
 import com.streamarr.server.services.auth.TokenIdentityValidator;
 import com.streamarr.server.services.auth.TokenScope;
 import com.streamarr.server.services.auth.TokenVersionCache;
@@ -32,6 +33,7 @@ import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
+import org.springframework.security.oauth2.jwt.JwtValidationException;
 
 @Tag("UnitTest")
 @DisplayName("Token Crypto Config Tests")
@@ -171,6 +173,16 @@ class TokenCryptoConfigTest {
   }
 
   @Test
+  @DisplayName("Should reject token when issuer is foreign")
+  void shouldRejectTokenFromForeignIssuer() {
+    var keys = config.tokenSigningKeys(properties(KEY_A, List.of()));
+    var token = mint(config.jwtEncoder(keys), "foreign-issuer");
+
+    assertThatThrownBy(() -> decoder(keys).decode(token))
+        .isInstanceOf(JwtValidationException.class);
+  }
+
+  @Test
   @DisplayName("Should fail fast when signing key not base64")
   void shouldFailFastWhenSigningKeyNotBase64() {
     var properties = properties("not-valid-base64!!!", List.of());
@@ -246,10 +258,14 @@ class TokenCryptoConfigTest {
   }
 
   private String mint(JwtEncoder encoder) {
+    return mint(encoder, TokenContract.ISSUER);
+  }
+
+  private String mint(JwtEncoder encoder, String issuer) {
     var now = Instant.now();
     var claims =
         JwtClaimsSet.builder()
-            .issuer("streamarr")
+            .issuer(issuer)
             .subject(accountId.toString())
             .issuedAt(now)
             .expiresAt(now.plusSeconds(600))

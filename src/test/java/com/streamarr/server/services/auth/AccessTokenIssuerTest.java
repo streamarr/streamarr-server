@@ -27,6 +27,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.oauth2.jwt.JwtClaimNames;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 
 @Tag("UnitTest")
@@ -104,6 +105,7 @@ class AccessTokenIssuerTest {
     assertThat(token.scope()).isEqualTo(TokenScope.PROFILE);
 
     var decoded = buildDecoder().decode(token.value());
+    assertThat(decoded.getClaimAsString(JwtClaimNames.ISS)).isEqualTo(TokenContract.ISSUER);
     assertThat(decoded.getSubject()).isEqualTo(account.getId().toString());
     assertThat(decoded.getClaimAsString(TokenClaims.SESSION_ID))
         .isEqualTo(session.getId().toString());
