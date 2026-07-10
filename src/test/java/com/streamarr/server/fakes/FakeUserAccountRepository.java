@@ -11,6 +11,14 @@ public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
     implements UserAccountRepository {
 
   @Override
+  public boolean lockIfCredentialsUnchanged(java.util.UUID accountId, String expectedPasswordHash) {
+    return findById(accountId)
+        .filter(UserAccount::isEnabled)
+        .filter(account -> account.getPasswordHash().equals(expectedPasswordHash))
+        .isPresent();
+  }
+
+  @Override
   public <S extends UserAccount> S save(S entity) {
     // Mirrors uq_user_account_email on lower(email).
     var duplicateEmail =

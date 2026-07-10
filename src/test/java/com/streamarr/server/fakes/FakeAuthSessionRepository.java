@@ -11,6 +11,13 @@ public class FakeAuthSessionRepository extends FakeJpaRepository<AuthSession>
     implements AuthSessionRepository {
 
   @Override
+  public java.util.List<AuthSession> findByAccountId(UUID accountId) {
+    return database.values().stream()
+        .filter(session -> accountId.equals(session.getAccountId()))
+        .toList();
+  }
+
+  @Override
   public Optional<AuthSession> lockById(UUID sessionId) {
     // Single-JVM fake: the row lock is a no-op; the guard logic is what the unit tests exercise.
     return findById(sessionId);
@@ -27,5 +34,29 @@ public class FakeAuthSessionRepository extends FakeJpaRepository<AuthSession>
               session.setSessionVersion(session.getSessionVersion() + 1);
               return session.getSessionVersion();
             });
+  }
+
+  @Override
+  public Optional<Long> bumpVersion(UUID sessionId, Instant now) {
+    return findById(sessionId)
+        .filter(session -> session.getRevokedAt() == null)
+        .map(
+            session -> {
+              session.setSessionVersion(session.getSessionVersion() + 1);
+              return session.getSessionVersion();
+            });
+  }
+
+  @Override
+  public boolean updateSelectionIfLive(AuthSession session, Instant now) {
+    return findById(session.getId())
+        .filter(stored -> stored.getRevokedAt() == null)
+        .map(
+            stored -> {
+              stored.setActiveHouseholdId(session.getActiveHouseholdId());
+              stored.setActiveProfileId(session.getActiveProfileId());
+              return true;
+            })
+        .orElse(false);
   }
 }

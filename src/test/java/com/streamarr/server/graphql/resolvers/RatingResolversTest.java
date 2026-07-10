@@ -8,6 +8,11 @@ import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.domain.metadata.Rating;
 import com.streamarr.server.repositories.RatingRepository;
+import com.streamarr.server.repositories.auth.AccountProfileRepository;
+import com.streamarr.server.repositories.auth.ProfileRepository;
+import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
+import com.streamarr.server.support.security.WithProfileContext;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -19,11 +24,16 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @Tag("UnitTest")
 @EnableDgsTest
-@SpringBootTest(classes = {RatingResolvers.class})
+@WithProfileContext
+@SpringBootTest(classes = {RatingResolvers.class, SecurityContextAuthorizationService.class})
 @DisplayName("Rating Resolver Tests")
 class RatingResolversTest {
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
+
+  @MockitoBean private ProfileRepository profileRepository;
+
+  @MockitoBean private AccountProfileRepository accountProfileRepository;
 
   @MockitoBean private RatingRepository ratingRepository;
 
@@ -42,6 +52,26 @@ class RatingResolversTest {
             "data.rating.source");
 
     assertThat(source).isEqualTo("IMDb");
+  }
+
+  @Test
+  @DisplayName("Should return background-created rating when creator absent")
+  @SuppressWarnings("unchecked")
+  void shouldReturnBackgroundCreatedRatingWhenCreatorAbsent() {
+    var ratingId = UUID.randomUUID();
+    var rating = Rating.builder().source("TMDB").value("7.5").build();
+    rating.setId(ratingId);
+
+    when(ratingRepository.findById(ratingId)).thenReturn(Optional.of(rating));
+
+    var result =
+        dgsQueryExecutor.execute(
+            String.format("{ rating(id: \"%s\") { source createdBy } }", ratingId));
+
+    assertThat(result.getErrors()).isEmpty();
+    var data = result.<Map<String, Object>>getData();
+    var ratingData = (Map<String, Object>) data.get("rating");
+    assertThat(ratingData).containsEntry("source", "TMDB").containsEntry("createdBy", null);
   }
 
   @Test

@@ -3,6 +3,7 @@ package com.streamarr.server.repositories;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.support.security.WithProfileContext;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -12,6 +13,7 @@ import org.springframework.data.domain.AuditorAware;
 
 @Tag("IntegrationTest")
 @DisplayName("PersonRepositoryCustomImpl Integration Tests")
+@WithProfileContext
 class PersonRepositoryCustomImplIT extends AbstractIntegrationTest {
 
   @Autowired private PersonRepository personRepository;

@@ -25,11 +25,18 @@ class TokenVersionCacheRefresherTest {
     var householdId = UUID.randomUUID();
     var profileId = UUID.randomUUID();
 
+    reader.sessionVersions.put(sessionId, 2L);
+    reader.membershipVersions.put(accountId + ":" + householdId, 3L);
+    reader.profilePolicyVersions.put(profileId, 4L);
+    assertThat(cache.sessionVersion(sessionId)).contains(2L);
+    assertThat(cache.membershipVersion(accountId, householdId)).contains(3L);
+    assertThat(cache.profilePolicyVersion(profileId)).contains(4L);
+    reader.failWith(new IllegalStateException("reader should not be called for warm entries"));
+
     refresher.onCounterBumped(CounterBumpedEvent.session(sessionId, 3));
     refresher.onCounterBumped(CounterBumpedEvent.membership(accountId, householdId, 4));
     refresher.onCounterBumped(CounterBumpedEvent.profile(profileId, 5));
 
-    // The reader has no rows: every hit below must come from the refreshed cache.
     assertThat(cache.sessionVersion(sessionId)).contains(3L);
     assertThat(cache.membershipVersion(accountId, householdId)).contains(4L);
     assertThat(cache.profilePolicyVersion(profileId)).contains(5L);
@@ -39,10 +46,12 @@ class TokenVersionCacheRefresherTest {
   @DisplayName("Should fall back to reader when cache cleared")
   void shouldFallBackToReaderWhenCacheCleared() {
     var sessionId = UUID.randomUUID();
-    refresher.onCounterBumped(CounterBumpedEvent.session(sessionId, 7));
+    reader.sessionVersions.put(sessionId, 7L);
+    assertThat(cache.sessionVersion(sessionId)).contains(7L);
 
     cache.clearAll();
 
+    reader.sessionVersions.remove(sessionId);
     assertThat(cache.sessionVersion(sessionId)).isEmpty();
 
     reader.sessionVersions.put(sessionId, 8L);
@@ -53,8 +62,9 @@ class TokenVersionCacheRefresherTest {
   @DisplayName("Should retain newer version when older event arrives")
   void shouldRetainNewerVersionWhenOlderEventArrives() {
     var sessionId = UUID.randomUUID();
+    reader.sessionVersions.put(sessionId, 8L);
+    assertThat(cache.sessionVersion(sessionId)).contains(8L);
 
-    refresher.onCounterBumped(CounterBumpedEvent.session(sessionId, 8));
     refresher.onCounterBumped(CounterBumpedEvent.session(sessionId, 7));
 
     assertThat(cache.sessionVersion(sessionId)).contains(8L);

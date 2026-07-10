@@ -46,7 +46,7 @@ public class HlsStreamingService implements StreamingService {
   private final MutexFactory<UUID> resumeMutex;
 
   @Override
-  public StreamSession createSession(UUID mediaFileId, StreamingOptions options) {
+  public StreamSession createSession(UUID mediaFileId, UUID profileId, StreamingOptions options) {
     var mediaFile =
         mediaFileRepository
             .findById(mediaFileId)
@@ -64,6 +64,7 @@ public class HlsStreamingService implements StreamingService {
         StreamSession.builder()
             .sessionId(sessionId)
             .mediaFileId(mediaFileId)
+            .profileId(profileId)
             .sourcePath(FilepathCodec.decode(mediaFile.getFilepathUri()))
             .mediaProbe(probe)
             .transcodeDecision(decision)
@@ -106,6 +107,21 @@ public class HlsStreamingService implements StreamingService {
               segmentStore.deleteSession(sessionId);
               log.info("Destroyed streaming session {}", sessionId);
             });
+  }
+
+  @Override
+  public void destroySession(UUID sessionId, UUID profileId) {
+    var session = sessionRepository.findById(sessionId);
+    if (session.isEmpty()) {
+      return;
+    }
+    // The caller still sees a plain no-op (no existence oracle); the miss is logged so
+    // cross-profile attempts and wrong-owner stamping stay diagnosable server-side.
+    if (!session.get().isOwnedBy(profileId)) {
+      log.warn("Destroy for session {} rejected: profile {} does not own it", sessionId, profileId);
+      return;
+    }
+    destroySession(sessionId);
   }
 
   @Override

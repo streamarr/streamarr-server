@@ -4,6 +4,7 @@ import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.RefreshToken;
 import com.streamarr.server.domain.auth.RefreshTokenStatus;
+import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidRefreshTokenException;
 import com.streamarr.server.exceptions.TokenReuseDetectedException;
@@ -54,7 +55,18 @@ public class RefreshTokenService {
     return new IssuedRefreshToken(rawToken, session);
   }
 
-  /** Replaces the session's refresh-token family with one fresh active token. */
+  /** Revokes the session and its whole token family; the version bump kills live access tokens. */
+  @Transactional
+  public void logout(java.util.UUID sessionId) {
+    var now = clock.instant();
+    sessionRepository.revoke(sessionId, SessionRevocationReason.LOGOUT, now);
+    tokenRepository.revokeAllForSession(sessionId, now);
+  }
+
+  /**
+   * Replaces the session's refresh token family with one fresh ACTIVE token — the one-ACTIVE
+   * invariant holds because everything else is revoked first.
+   */
   @Transactional
   public IssuedRefreshToken reissueFor(AuthSession session) {
     var now = clock.instant();
@@ -86,6 +98,7 @@ public class RefreshTokenService {
     if (session.getRevokedAt() != null) {
       // Redeeming any token of a revoked session — including a successor that raced revocation —
       // is reuse: never rotate, never mint.
+      logTokenReuse(session);
       throw new TokenReuseDetectedException();
     }
 
@@ -134,8 +147,10 @@ public class RefreshTokenService {
   }
 
   private boolean isWithinGrace(RefreshToken token, Instant now) {
-    // consumeActiveToken stamps rotatedAt atomically with ROTATED, so ROTATED implies non-null.
+    // A ROTATED row missing its timestamp is anomalous state no writer produces; refuse grace so
+    // it lands on the theft path rather than an error.
     return token.getStatus() == RefreshTokenStatus.ROTATED
+        && token.getRotatedAt() != null
         && !now.isAfter(token.getRotatedAt().plus(properties.rotationGrace()));
   }
 
@@ -146,6 +161,10 @@ public class RefreshTokenService {
         session.getAccountId());
 
     tokenReuseRevoker.revokeAfterCompletion(session.getId(), now);
+  }
+
+  private static void logTokenReuse(AuthSession session) {
+    log.warn("Refresh token reuse detected for sessionId={}", session.getId());
   }
 
   private RefreshToken buildActiveToken(AuthSession session, String rawToken, Instant now) {

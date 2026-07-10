@@ -13,10 +13,12 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -54,14 +56,15 @@ class SecurityConfigTest {
   void shouldRequireCsrfWhenAuthCookieRidesUnsafeRequest() throws Exception {
     mockMvc
         .perform(
-            post("/csrf-probe").cookie(new Cookie(AuthCookies.ACCESS_COOKIE, "ambient-credential")))
+            post("/api/auth/login")
+                .cookie(new Cookie(AuthCookies.ACCESS_COOKIE, "ambient-credential")))
         .andExpect(status().isForbidden());
   }
 
   @Test
   @DisplayName("Should not require csrf when no auth cookie is present")
   void shouldNotRequireCsrfWhenNoAuthCookieIsPresent() throws Exception {
-    mockMvc.perform(post("/csrf-probe")).andExpect(status().isNoContent());
+    mockMvc.perform(post("/api/auth/login")).andExpect(status().isNoContent());
   }
 
   @Test
@@ -69,7 +72,7 @@ class SecurityConfigTest {
   void shouldNotRequireCsrfWhenBearerCredentialAccompaniesAuthCookie() throws Exception {
     mockMvc
         .perform(
-            post("/csrf-probe")
+            post("/api/auth/login")
                 .cookie(new Cookie(AuthCookies.ACCESS_COOKIE, "ambient-credential"))
                 .header("Authorization", "Bearer opaque-token"))
         .andExpect(status().isNoContent());
@@ -80,7 +83,7 @@ class SecurityConfigTest {
   void shouldNotRequireCsrfWhenBearerSchemeCasedDifferently() throws Exception {
     mockMvc
         .perform(
-            post("/csrf-probe")
+            post("/api/auth/login")
                 .cookie(new Cookie(AuthCookies.ACCESS_COOKIE, "ambient-credential"))
                 .header("Authorization", "bearer opaque-token"))
         .andExpect(status().isNoContent());
@@ -91,7 +94,7 @@ class SecurityConfigTest {
   void shouldRequireCsrfWhenBearerValueBlank() throws Exception {
     mockMvc
         .perform(
-            post("/csrf-probe")
+            post("/api/auth/login")
                 .cookie(new Cookie(AuthCookies.ACCESS_COOKIE, "ambient-credential"))
                 .header("Authorization", "Bearer   "))
         .andExpect(status().isForbidden());
@@ -102,7 +105,7 @@ class SecurityConfigTest {
   void shouldRequireCsrfWhenAuthorizationSchemeNotBearer() throws Exception {
     mockMvc
         .perform(
-            post("/csrf-probe")
+            post("/api/auth/login")
                 .cookie(new Cookie(AuthCookies.ACCESS_COOKIE, "ambient-credential"))
                 .header("Authorization", "Basic dXNlcjpwYXNz"))
         .andExpect(status().isForbidden());
@@ -113,7 +116,7 @@ class SecurityConfigTest {
   void shouldRequireCsrfWhenOnlyRefreshCookiePresent() throws Exception {
     mockMvc
         .perform(
-            post("/csrf-probe")
+            post("/api/auth/login")
                 .cookie(new Cookie(AuthCookies.REFRESH_COOKIE, "ambient-credential")))
         .andExpect(status().isForbidden());
   }
@@ -122,12 +125,12 @@ class SecurityConfigTest {
   @DisplayName("Should accept cookie authenticated request when csrf cookie is echoed")
   void shouldAcceptCookieAuthenticatedRequestWhenCsrfCookieIsEchoed() throws Exception {
     var tokenCookie =
-        mockMvc.perform(get("/csrf-probe")).andReturn().getResponse().getCookie("XSRF-TOKEN");
+        mockMvc.perform(get("/api/auth/login")).andReturn().getResponse().getCookie("XSRF-TOKEN");
 
     assertThat(tokenCookie).isNotNull();
     mockMvc
         .perform(
-            post("/csrf-probe")
+            post("/api/auth/login")
                 .cookie(new Cookie(AuthCookies.ACCESS_COOKIE, "ambient-credential"), tokenCookie)
                 .header("X-XSRF-TOKEN", tokenCookie.getValue()))
         .andExpect(status().isNoContent());
@@ -135,18 +138,31 @@ class SecurityConfigTest {
 
   @Configuration(proxyBeanMethods = false)
   @EnableWebSecurity
-  @Import(SecurityConfig.class)
-  static class TestSecurityConfiguration {}
+  @Import({
+    SecurityConfig.class,
+    JwtIdentityConverter.class,
+    RestAuthenticationEntryPoint.class,
+    RestAccessDeniedHandler.class
+  })
+  static class TestSecurityConfiguration {
+
+    @Bean
+    JwtDecoder jwtDecoder() {
+      return _ -> {
+        throw new AssertionError("CSRF must reject ambient cookies before token decoding");
+      };
+    }
+  }
 
   @RestController
   static class CsrfProbeController {
 
-    @GetMapping("/csrf-probe")
+    @GetMapping("/api/auth/login")
     ResponseEntity<Void> get() {
       return ResponseEntity.noContent().build();
     }
 
-    @PostMapping("/csrf-probe")
+    @PostMapping("/api/auth/login")
     ResponseEntity<Void> post() {
       return ResponseEntity.noContent().build();
     }

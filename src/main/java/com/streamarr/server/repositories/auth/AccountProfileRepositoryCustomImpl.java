@@ -59,7 +59,13 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
     return true;
   }
 
+  /**
+   * Returns the globally allocated bump so each profile-link path can dispatch the local cache
+   * event and cross-instance notification together (ADR 0015 requirement, ADR 0016 propagation).
+   */
   private MembershipVersionChange bumpMembershipVersion(AccountProfile link, UUID auditUser) {
+    // The membership row is FK-guaranteed: every account_profile row references it, so the
+    // link being granted or revoked proves it exists in this transaction.
     var version =
         dsl.update(HOUSEHOLD_MEMBERSHIP)
             .set(

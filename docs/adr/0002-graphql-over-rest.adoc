@@ -19,3 +19,4 @@ Use GraphQL via Netflix DGS for the API layer.
 * Single endpoint simplifies client networking
 * DGS integrates cleanly with Spring Boot and provides schema-first development
 * Streaming endpoints (HLS) remain REST since media players expect plain HTTP
+* Auth token issuance (`/api/auth/**`) is the second REST exception: a path-scoped refresh cookie is impossible over the single `/graphql` URL, and `Set-Cookie`/CSRF mechanics stay out of the protocol-agnostic layer -- identity reads (`me`) stay GraphQL

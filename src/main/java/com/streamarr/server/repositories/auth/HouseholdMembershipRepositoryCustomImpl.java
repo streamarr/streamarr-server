@@ -86,11 +86,11 @@ public class HouseholdMembershipRepositoryCustomImpl
     }
 
     var changed = versionChange.orElseThrow();
-    counterChangePublisher.publishMembership(changed);
     dsl.deleteFrom(HOUSEHOLD_MEMBERSHIP)
         .where(HOUSEHOLD_MEMBERSHIP.ACCOUNT_ID.eq(accountId))
         .and(HOUSEHOLD_MEMBERSHIP.HOUSEHOLD_ID.eq(householdId))
         .execute();
+    counterChangePublisher.publishMembership(changed);
     return versionChange;
   }
 

@@ -24,7 +24,7 @@
         <sonar.coverage.exclusions>**/pom.xml, **/StreamarrServerApplication.java</sonar.coverage.exclusions>
         <sonar.test.inclusions>**/src/test/**</sonar.test.inclusions>
         <sonar.exclusions>**/jooq/generated/**</sonar.exclusions>
-        <sonar.issue.ignore.multicriteria>e1,e2,e3</sonar.issue.ignore.multicriteria>
+        <sonar.issue.ignore.multicriteria>e1,e2,e3,e4</sonar.issue.ignore.multicriteria>
         <!-- Google Java Format puts static imports first; S8445 wants them last -->
         <sonar.issue.ignore.multicriteria.e1.ruleKey>java:S8445</sonar.issue.ignore.multicriteria.e1.ruleKey>
         <sonar.issue.ignore.multicriteria.e1.resourceKey>**/*.java</sonar.issue.ignore.multicriteria.e1.resourceKey>
@@ -35,6 +35,10 @@
              deliberately do not participate (Hibernate-safe identity semantics) -->
         <sonar.issue.ignore.multicriteria.e3.ruleKey>java:S2160</sonar.issue.ignore.multicriteria.e3.ruleKey>
         <sonar.issue.ignore.multicriteria.e3.resourceKey>src/main/java/com/streamarr/server/domain/**</sonar.issue.ignore.multicriteria.e3.resourceKey>
+        <!-- The refresh cookie Path is a fixed security constant that must match the endpoint
+             route exactly; making it a "customizable parameter" would be a footgun, not a fix -->
+        <sonar.issue.ignore.multicriteria.e4.ruleKey>java:S1075</sonar.issue.ignore.multicriteria.e4.ruleKey>
+        <sonar.issue.ignore.multicriteria.e4.resourceKey>**/config/security/AuthCookies.java</sonar.issue.ignore.multicriteria.e4.resourceKey>
 
         <apache-commons-lang.version>3.20.0</apache-commons-lang.version>
         <apache-commons-text.version>1.15.0</apache-commons-text.version>
@@ -325,6 +329,13 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <!-- Local runs get the dev profile; the packaged artifact must never
+                         self-activate it (see PackagedConfigurationTest). -->
+                    <profiles>
+                        <profile>dev</profile>
+                    </profiles>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.jacoco</groupId>

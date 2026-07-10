@@ -4,17 +4,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mockStatic;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.domain.auth.RefreshTokenStatus;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.exceptions.InvalidRefreshTokenException;
 import com.streamarr.server.exceptions.TokenReuseDetectedException;
-import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeRefreshTokenRepository;
 import com.streamarr.server.fakes.MutableClock;
 import com.streamarr.server.fixtures.AccountFixture;
-import com.streamarr.server.services.auth.events.CounterBumpedEvent;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -32,6 +34,7 @@ import javax.crypto.Mac;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 @Tag("UnitTest")
 @DisplayName("Refresh Token Service Tests")
@@ -42,7 +45,6 @@ class RefreshTokenServiceTest {
 
   private final FakeAuthSessionRepository sessionRepository = new FakeAuthSessionRepository();
   private final FakeRefreshTokenRepository tokenRepository = new FakeRefreshTokenRepository();
-  private final CapturingEventPublisher eventPublisher = new CapturingEventPublisher();
 
   private final AuthTokenProperties properties =
       AuthTokenProperties.builder()
@@ -55,8 +57,7 @@ class RefreshTokenServiceTest {
   private final MutableClock clock = new MutableClock(currentTime);
 
   private final TokenReuseRevoker tokenReuseRevoker =
-      new TokenReuseRevoker(
-          new TokenReuseRevocationWriter(sessionRepository, tokenRepository, eventPublisher));
+      new TokenReuseRevoker(new TokenReuseRevocationWriter(sessionRepository, tokenRepository));
 
   private final RefreshTokenService service =
       new RefreshTokenService(
@@ -100,7 +101,6 @@ class RefreshTokenServiceTest {
     assertThat(tokenRepository.findAll())
         .filteredOn(token -> token.getStatus() == RefreshTokenStatus.ACTIVE)
         .hasSize(1);
-    assertThat(eventPublisher.getEventsOfType(CounterBumpedEvent.class)).isEmpty();
   }
 
   @Test
@@ -114,7 +114,6 @@ class RefreshTokenServiceTest {
 
     assertThat(replay).isInstanceOf(RefreshResult.Replayed.class);
     assertThat(replay.session().getRevokedAt()).isNull();
-    assertThat(eventPublisher.getEventsOfType(CounterBumpedEvent.class)).isEmpty();
   }
 
   @Test
@@ -175,14 +174,35 @@ class RefreshTokenServiceTest {
 
     assertThat(tokenRepository.findAll())
         .allSatisfy(token -> assertThat(token.getStatus()).isEqualTo(RefreshTokenStatus.REVOKED));
+  }
 
-    assertThat(eventPublisher.getEventsOfType(CounterBumpedEvent.class))
+  @Test
+  @DisplayName("Should log token reuse with a safe session identifier")
+  void shouldLogTokenReuseWithSafeSessionIdentifier() {
+    var issued = issueSession();
+    service.redeem(issued.rawToken());
+    advanceClock(Duration.ofSeconds(31));
+    var replayedToken = issued.rawToken();
+    var logger = (Logger) LoggerFactory.getLogger(RefreshTokenService.class);
+    var appender = new ListAppender<ILoggingEvent>();
+    appender.start();
+    logger.addAppender(appender);
+
+    try {
+      assertThatThrownBy(() -> service.redeem(replayedToken))
+          .isInstanceOf(TokenReuseDetectedException.class);
+    } finally {
+      logger.detachAppender(appender);
+    }
+
+    assertThat(appender.list)
         .singleElement()
         .satisfies(
             event -> {
-              assertThat(event.kind()).isEqualTo(CounterKind.SESSION);
-              assertThat(event.key()).isEqualTo(session.getId().toString());
-              assertThat(event.version()).isEqualTo(1L);
+              assertThat(event.getLevel()).isEqualTo(Level.WARN);
+              assertThat(event.getFormattedMessage())
+                  .contains(issued.session().getId().toString())
+                  .doesNotContain(replayedToken);
             });
   }
 
@@ -206,7 +226,6 @@ class RefreshTokenServiceTest {
 
     var session = sessionRepository.findById(issued.session().getId()).orElseThrow();
     assertThat(session.getRevokedAt()).isNull();
-    assertThat(eventPublisher.getEventsOfType(CounterBumpedEvent.class)).isEmpty();
   }
 
   @Test
@@ -239,9 +258,21 @@ class RefreshTokenServiceTest {
 
     assertThatThrownBy(() -> service.redeem(replayedToken))
         .isInstanceOf(TokenReuseDetectedException.class);
+  }
 
-    // The session was already revoked, so the reuse path finds no version to bump: no event.
-    assertThat(eventPublisher.getEventsOfType(CounterBumpedEvent.class)).isEmpty();
+  @Test
+  @DisplayName("Should treat rotated token as theft when rotation timestamp missing")
+  void shouldTreatRotatedTokenAsTheftWhenRotationTimestampMissing() {
+    var issued = issueSession();
+    service.redeem(issued.rawToken());
+    tokenRepository.findAll().stream()
+        .filter(token -> token.getStatus() == RefreshTokenStatus.ROTATED)
+        .forEach(token -> token.setRotatedAt(null));
+
+    var replayedToken = issued.rawToken();
+
+    assertThatThrownBy(() -> service.redeem(replayedToken))
+        .isInstanceOf(TokenReuseDetectedException.class);
   }
 
   @Test
@@ -257,7 +288,6 @@ class RefreshTokenServiceTest {
     assertThat(tokenRepository.findAll())
         .singleElement()
         .satisfies(token -> assertThat(token.getStatus()).isEqualTo(RefreshTokenStatus.ACTIVE));
-    assertThat(eventPublisher.getEventsOfType(CounterBumpedEvent.class)).isEmpty();
   }
 
   @Test
@@ -265,9 +295,7 @@ class RefreshTokenServiceTest {
   void shouldKeepReissuedSessionLiveWhenEarlierRefreshFinishesAfterward() throws Exception {
     var pausingSessions = new PausingAuthSessionRepository();
     var tokens = new FakeRefreshTokenRepository();
-    var events = new CapturingEventPublisher();
-    var revoker =
-        new TokenReuseRevoker(new TokenReuseRevocationWriter(pausingSessions, tokens, events));
+    var revoker = new TokenReuseRevoker(new TokenReuseRevocationWriter(pausingSessions, tokens));
     var racingService =
         new RefreshTokenService(pausingSessions, tokens, properties, clock, revoker);
     var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();

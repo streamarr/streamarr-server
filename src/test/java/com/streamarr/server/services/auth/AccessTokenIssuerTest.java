@@ -3,6 +3,11 @@ package com.streamarr.server.services.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
+import com.nimbusds.jose.proc.JWSVerificationKeySelector;
+import com.nimbusds.jose.proc.SecurityContext;
+import com.nimbusds.jwt.proc.DefaultJWTProcessor;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
 import com.streamarr.server.domain.auth.AccountProfile;
@@ -19,18 +24,18 @@ import com.streamarr.server.fixtures.ProfileFixture;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.UUID;
-import javax.crypto.spec.SecretKeySpec;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import org.springframework.security.oauth2.jwt.JwtClaimNames;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 
 @Tag("UnitTest")
 @DisplayName("Access Token Issuer Tests")
 class AccessTokenIssuerTest {
 
-  private static final String TEST_KEY_BASE64 = "dGVzdC1zaWduaW5nLWtleS0zMi1ieXRlcy1sb25nISE=";
+  private static final String TEST_KEY_BASE64 =
+      "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQga+ZKCbAcyZIb7k2FE8rMPFtIpTdzX2dR/csZ8k6A95uhRANCAAQawOmVKMDLAOsboxKLb9khGsWyxwcIikucXDCfX18ME5X9/kqSS2vdMnFfZ6KR12U/Sy/EwOwnc82xFAyFdNbe";
 
   private final AuthTokenProperties properties =
       AuthTokenProperties.builder()
@@ -50,7 +55,7 @@ class AccessTokenIssuerTest {
 
   private final AccessTokenIssuer issuer =
       new AccessTokenIssuer(
-          cryptoConfig.jwtEncoder(cryptoConfig.authSigningKey(properties)),
+          cryptoConfig.jwtEncoder(cryptoConfig.tokenSigningKeys(properties)),
           properties,
           Clock.systemUTC(),
           membershipRepository,
@@ -100,6 +105,7 @@ class AccessTokenIssuerTest {
     assertThat(token.scope()).isEqualTo(TokenScope.PROFILE);
 
     var decoded = buildDecoder().decode(token.value());
+    assertThat(decoded.getClaimAsString(JwtClaimNames.ISS)).isEqualTo(TokenContract.ISSUER);
     assertThat(decoded.getSubject()).isEqualTo(account.getId().toString());
     assertThat(decoded.getClaimAsString(TokenClaims.SESSION_ID))
         .isEqualTo(session.getId().toString());
@@ -120,8 +126,8 @@ class AccessTokenIssuerTest {
   }
 
   @Test
-  @DisplayName("Should reject profile outside household")
-  void shouldRejectProfileOutsideHousehold() {
+  @DisplayName("Should reject profile when outside household")
+  void shouldRejectProfileWhenOutsideHousehold() {
     var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
     var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
     var memberHouseholdId = UUID.randomUUID();
@@ -295,9 +301,12 @@ class AccessTokenIssuerTest {
   }
 
   private NimbusJwtDecoder buildDecoder() {
-    var keyBytes = java.util.Base64.getDecoder().decode(TEST_KEY_BASE64);
-    return NimbusJwtDecoder.withSecretKey(new SecretKeySpec(keyBytes, "HmacSHA256"))
-        .macAlgorithm(MacAlgorithm.HS256)
-        .build();
+    var keys = cryptoConfig.tokenSigningKeys(properties);
+    var processor = new DefaultJWTProcessor<SecurityContext>();
+    processor.setJWSKeySelector(
+        new JWSVerificationKeySelector<>(
+            JWSAlgorithm.ES256, new ImmutableJWKSet<>(keys.verificationKeys())));
+    processor.setJWTClaimsSetVerifier((claims, context) -> {});
+    return new NimbusJwtDecoder(processor);
   }
 }

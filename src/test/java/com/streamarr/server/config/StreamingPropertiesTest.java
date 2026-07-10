@@ -6,10 +6,26 @@ import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.validation.autoconfigure.ValidationAutoConfiguration;
+import org.springframework.context.annotation.Configuration;
 
 @Tag("UnitTest")
 @DisplayName("Streaming Properties Tests")
 class StreamingPropertiesTest {
+
+  private static final ApplicationContextRunner CONTEXT_RUNNER =
+      new ApplicationContextRunner()
+          .withConfiguration(AutoConfigurations.of(ValidationAutoConfiguration.class))
+          .withUserConfiguration(StreamingPropertiesConfiguration.class);
+
+  @Configuration(proxyBeanMethods = false)
+  @EnableConfigurationProperties(StreamingProperties.class)
+  static class StreamingPropertiesConfiguration {}
 
   @Test
   @DisplayName("Should default segment duration to 6 seconds when null")
@@ -49,5 +65,27 @@ class StreamingPropertiesTest {
     var properties = StreamingProperties.builder().segmentBasePath("/custom/segments").build();
 
     assertThat(properties.segmentBasePath()).isEqualTo("/custom/segments");
+  }
+
+  @ParameterizedTest
+  @ValueSource(longs = {0, -1})
+  @DisplayName("Should reject session retention when not positive")
+  void shouldRejectSessionRetentionWhenNotPositive(long retentionSeconds) {
+    CONTEXT_RUNNER
+        .withPropertyValues("streaming.session-retention=" + Duration.ofSeconds(retentionSeconds))
+        .run(context -> assertThat(context).hasFailed());
+  }
+
+  @Test
+  @DisplayName("Should accept positive session retention")
+  void shouldAcceptPositiveSessionRetention() {
+    CONTEXT_RUNNER
+        .withPropertyValues("streaming.session-retention=PT1H")
+        .run(
+            context -> {
+              assertThat(context).hasNotFailed();
+              assertThat(context.getBean(StreamingProperties.class).sessionRetention())
+                  .isEqualTo(Duration.ofHours(1));
+            });
   }
 }

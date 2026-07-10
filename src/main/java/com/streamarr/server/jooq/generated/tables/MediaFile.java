@@ -77,7 +77,7 @@ public class MediaFile extends TableImpl<MediaFileRecord> {
     /**
      * The column <code>public.media_file.created_by</code>.
      */
-    public final TableField<MediaFileRecord, UUID> CREATED_BY = createField(DSL.name("created_by"), SQLDataType.UUID.nullable(false), this, "");
+    public final TableField<MediaFileRecord, UUID> CREATED_BY = createField(DSL.name("created_by"), SQLDataType.UUID, this, "");
 
     /**
      * The column <code>public.media_file.last_modified_on</code>.

@@ -19,5 +19,7 @@ public interface AccountProfileRepository
   Optional<AccountProfile> findByAccountIdAndHouseholdIdAndProfileId(
       UUID accountId, UUID householdId, UUID profileId);
 
+  List<AccountProfile> findByAccountIdAndHouseholdId(UUID accountId, UUID householdId);
+
   List<AccountProfile> findAll();
 }

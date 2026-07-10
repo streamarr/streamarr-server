@@ -9,8 +9,16 @@ import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.fakes.FakeAccountProfileRepository;
+import com.streamarr.server.fakes.FakeHouseholdMembershipRepository;
+import com.streamarr.server.fakes.FakeProfileRepository;
+import com.streamarr.server.repositories.auth.AccountProfileRepository;
+import com.streamarr.server.repositories.auth.ProfileRepository;
+import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.services.pagination.PaginationService;
 import com.streamarr.server.services.watchprogress.ContinueWatchingService;
+import com.streamarr.server.support.security.TestIdentityConstants;
+import com.streamarr.server.support.security.WithProfileContext;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -21,14 +29,22 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @EnableDgsTest
-@SpringBootTest(classes = {ContinueWatchingResolver.class, PaginationService.class})
+@WithProfileContext
+@SpringBootTest(
+    classes = {
+      ContinueWatchingResolver.class,
+      PaginationService.class,
+      SecurityContextAuthorizationService.class
+    })
 @DisplayName("Continue Watching Resolver Tests")
 class ContinueWatchingResolverTest {
 
-  private static final UUID PROFILE_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+  private static final UUID PROFILE_ID = TestIdentityConstants.PROFILE_ID;
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
   @MockitoBean private ContinueWatchingService continueWatchingService;
+  @MockitoBean private ProfileRepository profileRepository;
+  @MockitoBean private AccountProfileRepository accountProfileRepository;
 
   @Nested
   @DisplayName("continueWatching query")
@@ -116,7 +132,11 @@ class ContinueWatchingResolverTest {
     void shouldThrowForUnsupportedMediaType() {
       var resolver =
           new ContinueWatchingResolver(
-              mock(ContinueWatchingService.class), new PaginationService());
+              mock(ContinueWatchingService.class),
+              new SecurityContextAuthorizationService(
+                  new FakeProfileRepository(),
+                  new FakeAccountProfileRepository(new FakeHouseholdMembershipRepository())),
+              new PaginationService());
       var unsupported = new Object();
 
       assertThatThrownBy(() -> resolver.resolveContinueWatchingMedia(unsupported))

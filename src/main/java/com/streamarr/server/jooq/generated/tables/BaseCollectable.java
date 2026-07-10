@@ -80,7 +80,7 @@ public class BaseCollectable extends TableImpl<BaseCollectableRecord> {
     /**
      * The column <code>public.base_collectable.created_by</code>.
      */
-    public final TableField<BaseCollectableRecord, UUID> CREATED_BY = createField(DSL.name("created_by"), SQLDataType.UUID.nullable(false), this, "");
+    public final TableField<BaseCollectableRecord, UUID> CREATED_BY = createField(DSL.name("created_by"), SQLDataType.UUID, this, "");
 
     /**
      * The column <code>public.base_collectable.last_modified_on</code>.

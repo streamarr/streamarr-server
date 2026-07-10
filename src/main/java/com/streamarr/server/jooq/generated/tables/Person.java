@@ -75,7 +75,7 @@ public class Person extends TableImpl<PersonRecord> {
     /**
      * The column <code>public.person.created_by</code>.
      */
-    public final TableField<PersonRecord, UUID> CREATED_BY = createField(DSL.name("created_by"), SQLDataType.UUID.nullable(false), this, "");
+    public final TableField<PersonRecord, UUID> CREATED_BY = createField(DSL.name("created_by"), SQLDataType.UUID, this, "");
 
     /**
      * The column <code>public.person.last_modified_on</code>.

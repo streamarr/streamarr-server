@@ -25,6 +25,7 @@ public class SpaCookieCsrfTokenRequestHandler implements CsrfTokenRequestHandler
   public void handle(
       HttpServletRequest request, HttpServletResponse response, Supplier<CsrfToken> csrfToken) {
     xorHandler.handle(request, response, csrfToken);
+    // Realise the deferred token so the cookie repository writes XSRF-TOKEN for the SPA.
     csrfToken.get();
   }
 
