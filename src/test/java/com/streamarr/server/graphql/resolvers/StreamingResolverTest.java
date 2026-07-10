@@ -466,7 +466,9 @@ class StreamingResolverTest {
 
     @Override
     public void destroySession(UUID sessionId) {
-      // no-op for test fake
+      if (nextResult != null && nextResult.getSessionId().equals(sessionId)) {
+        nextResult = null;
+      }
     }
 
     @Override
