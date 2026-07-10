@@ -142,6 +142,7 @@ class LibraryResolverTest {
 
     @Test
     @DisplayName("Should return background-created library when creator absent")
+    @SuppressWarnings("unchecked")
     void shouldReturnBackgroundCreatedLibraryWhenCreatorAbsent() {
       var libraryId = UUID.randomUUID();
       var library = buildMovieLibrary(libraryId);
@@ -154,10 +155,8 @@ class LibraryResolverTest {
 
       assertThat(result.getErrors()).isEmpty();
       var data = result.<Map<String, Object>>getData();
-      var libraryData = (Map<?, ?>) data.get("library");
-      assertThat(libraryData.get("name")).isEqualTo("Movies");
-      assertThat(libraryData.containsKey("createdBy")).isTrue();
-      assertThat(libraryData.get("createdBy")).isNull();
+      var libraryData = (Map<String, Object>) data.get("library");
+      assertThat(libraryData).containsEntry("name", "Movies").containsEntry("createdBy", null);
     }
   }
 

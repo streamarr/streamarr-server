@@ -19,7 +19,8 @@ public record AuthTokensResponse(
 
   @Override
   public String toString() {
-    return "AuthTokensResponse[accessToken=REDACTED, accessTokenExpiresAt=%s, scope=%s,"
-        + " refreshToken=REDACTED]".formatted(accessTokenExpiresAt, scope);
+    return ("AuthTokensResponse[accessToken=REDACTED, accessTokenExpiresAt=%s, scope=%s,"
+            + " refreshToken=REDACTED]")
+        .formatted(accessTokenExpiresAt, scope);
   }
 }

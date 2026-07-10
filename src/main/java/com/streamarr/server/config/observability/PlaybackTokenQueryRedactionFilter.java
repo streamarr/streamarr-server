@@ -35,25 +35,6 @@ public class PlaybackTokenQueryRedactionFilter extends OncePerRequestFilter {
     filterChain.doFilter(new RedactedQueryRequest(request), response);
   }
 
-  private static String redact(String queryString) {
-    var redacted =
-        Arrays.stream(queryString.split("&", -1))
-            .filter(parameter -> !isPlaybackToken(parameter))
-            .collect(Collectors.joining("&"));
-    return redacted.isEmpty() ? null : redacted;
-  }
-
-  private static boolean isPlaybackToken(String parameter) {
-    var equals = parameter.indexOf('=');
-    var encodedName = equals >= 0 ? parameter.substring(0, equals) : parameter;
-
-    try {
-      return "t".equals(URLDecoder.decode(encodedName, StandardCharsets.UTF_8));
-    } catch (IllegalArgumentException _) {
-      return false;
-    }
-  }
-
   private static final class RedactedQueryRequest extends HttpServletRequestWrapper {
 
     private RedactedQueryRequest(HttpServletRequest request) {
@@ -63,6 +44,25 @@ public class PlaybackTokenQueryRedactionFilter extends OncePerRequestFilter {
     @Override
     public String getQueryString() {
       return redact(super.getQueryString());
+    }
+
+    private static String redact(String queryString) {
+      var redacted =
+          Arrays.stream(queryString.split("&", -1))
+              .filter(parameter -> !isPlaybackToken(parameter))
+              .collect(Collectors.joining("&"));
+      return redacted.isEmpty() ? null : redacted;
+    }
+
+    private static boolean isPlaybackToken(String parameter) {
+      var equals = parameter.indexOf('=');
+      var encodedName = equals >= 0 ? parameter.substring(0, equals) : parameter;
+
+      try {
+        return "t".equals(URLDecoder.decode(encodedName, StandardCharsets.UTF_8));
+      } catch (IllegalArgumentException _) {
+        return false;
+      }
     }
   }
 }

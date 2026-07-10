@@ -46,12 +46,11 @@ class RestAccessDeniedHandlerTest {
   @Test
   @DisplayName("Should propagate unexpected response writer runtime failures")
   void shouldPropagateUnexpectedResponseWriterRuntimeFailures() {
+    var request = new MockHttpServletRequest();
     var response = new RestAuthenticationEntryPointTest.RuntimeFailingResponse();
+    var exception = new AccessDeniedException("denied");
 
-    assertThatThrownBy(
-            () ->
-                handler.handle(
-                    new MockHttpServletRequest(), response, new AccessDeniedException("denied")))
+    assertThatThrownBy(() -> handler.handle(request, response, exception))
         .isInstanceOf(IllegalStateException.class)
         .hasMessage("response already committed");
   }

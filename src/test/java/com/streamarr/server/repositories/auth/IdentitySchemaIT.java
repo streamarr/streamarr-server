@@ -77,13 +77,12 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
   void shouldCascadeAccountProfileLinkWhenMembershipRevoked() {
     var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
     var household = householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
-    var membership =
-        grantMembership(
-            HouseholdMembership.builder()
-                .accountId(account.getId())
-                .householdId(household.getId())
-                .householdRole(HouseholdRole.OWNER)
-                .build());
+    grantMembership(
+        HouseholdMembership.builder()
+            .accountId(account.getId())
+            .householdId(household.getId())
+            .householdRole(HouseholdRole.OWNER)
+            .build());
     var profile =
         profileRepository.save(
             ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());

@@ -144,10 +144,11 @@ class RefreshTokenServiceTest {
 
     advanceClock(Duration.ofSeconds(2));
     var replay = shortLivedService.redeem(issued.rawToken());
+    var successorToken = rotation.rawRefreshToken();
 
     assertThat(replay).isInstanceOf(RefreshResult.SupersededReplay.class);
     assertThat(replay.session().getRevokedAt()).isNull();
-    assertThatThrownBy(() -> shortLivedService.redeem(rotation.rawRefreshToken()))
+    assertThatThrownBy(() -> shortLivedService.redeem(successorToken))
         .isInstanceOf(InvalidRefreshTokenException.class);
   }
 

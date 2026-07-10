@@ -56,6 +56,7 @@ class MovieResolverTest {
 
   @Test
   @DisplayName("Should return background-created movie when creator absent")
+  @SuppressWarnings("unchecked")
   void shouldReturnBackgroundCreatedMovieWhenCreatorAbsent() {
     var movieId = UUID.randomUUID();
     var movie = Movie.builder().title("Background Movie").build();
@@ -69,10 +70,10 @@ class MovieResolverTest {
 
     assertThat(result.getErrors()).isEmpty();
     var data = result.<Map<String, Object>>getData();
-    var movieData = (Map<?, ?>) data.get("movie");
-    assertThat(movieData.get("title")).isEqualTo("Background Movie");
-    assertThat(movieData.containsKey("createdBy")).isTrue();
-    assertThat(movieData.get("createdBy")).isNull();
+    var movieData = (Map<String, Object>) data.get("movie");
+    assertThat(movieData)
+        .containsEntry("title", "Background Movie")
+        .containsEntry("createdBy", null);
   }
 
   @Test
