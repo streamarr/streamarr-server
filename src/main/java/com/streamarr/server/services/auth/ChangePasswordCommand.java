@@ -17,7 +17,6 @@ public record ChangePasswordCommand(
 
   @Override
   public String toString() {
-    return "ChangePasswordCommand[accountId=%s, sessionId=%s, currentPassword=REDACTED,"
-        + " newPassword=REDACTED]".formatted(accountId, sessionId);
+    return "ChangePasswordCommand[accountId=%s, sessionId=%s]".formatted(accountId, sessionId);
   }
 }
