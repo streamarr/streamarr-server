@@ -1,6 +1,5 @@
 package com.streamarr.server.repositories.auth;
 
-import com.streamarr.server.services.auth.invalidation.CounterNotificationPayload;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 

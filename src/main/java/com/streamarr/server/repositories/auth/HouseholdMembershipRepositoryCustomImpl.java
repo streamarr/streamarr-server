@@ -3,11 +3,10 @@ package com.streamarr.server.repositories.auth;
 import static com.streamarr.server.jooq.generated.Sequences.HOUSEHOLD_MEMBERSHIP_VERSION_SEQ;
 import static com.streamarr.server.jooq.generated.tables.HouseholdMembership.HOUSEHOLD_MEMBERSHIP;
 
+import com.streamarr.server.domain.auth.CounterKind;
 import com.streamarr.server.domain.auth.HouseholdMembership;
 import com.streamarr.server.domain.auth.MembershipVersionChange;
 import com.streamarr.server.jooq.generated.tables.records.HouseholdMembershipRecord;
-import com.streamarr.server.services.auth.events.CounterBumpedEvent;
-import com.streamarr.server.services.auth.invalidation.CounterNotificationPayload;
 import jakarta.persistence.EntityManager;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -15,7 +14,6 @@ import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.AuditorAware;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,7 +24,7 @@ public class HouseholdMembershipRepositoryCustomImpl
   private final EntityManager entityManager;
   private final DSLContext dsl;
   private final AuditorAware<UUID> auditorAware;
-  private final ApplicationEventPublisher eventPublisher;
+  private final CounterChangePublisher counterChangePublisher;
 
   @Override
   @Transactional
@@ -109,11 +107,12 @@ public class HouseholdMembershipRepositoryCustomImpl
   }
 
   private void publishVersionChange(MembershipVersionChange versionChange) {
-    var event =
-        CounterBumpedEvent.membership(
-            versionChange.accountId(), versionChange.householdId(), versionChange.version());
-    eventPublisher.publishEvent(event);
+    counterChangePublisher.publishMembership(versionChange);
     CounterNotificationPublisher.publish(
-        dsl, new CounterNotificationPayload(event.kind(), event.key(), event.version()));
+        dsl,
+        new CounterNotificationPayload(
+            CounterKind.MEMBERSHIP,
+            versionChange.accountId() + ":" + versionChange.householdId(),
+            versionChange.version()));
   }
 }

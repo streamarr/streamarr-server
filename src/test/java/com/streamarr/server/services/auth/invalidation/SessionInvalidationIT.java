@@ -5,14 +5,15 @@ import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.AccountProfile;
+import com.streamarr.server.domain.auth.CounterKind;
 import com.streamarr.server.domain.auth.HouseholdMembership;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
+import com.streamarr.server.repositories.auth.CounterNotificationPayload;
 import com.streamarr.server.repositories.auth.HouseholdMembershipRepository;
 import com.streamarr.server.repositories.auth.VersionCounterReader;
-import com.streamarr.server.services.auth.CounterKind;
 import com.streamarr.server.services.auth.TokenVersionCache;
 import com.streamarr.server.support.AuthTestSupport;
 import java.time.Duration;

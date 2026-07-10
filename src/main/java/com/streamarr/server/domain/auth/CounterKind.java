@@ -1,4 +1,4 @@
-package com.streamarr.server.services.auth;
+package com.streamarr.server.domain.auth;
 
 public enum CounterKind {
   SESSION,

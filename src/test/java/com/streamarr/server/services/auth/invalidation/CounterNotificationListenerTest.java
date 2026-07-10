@@ -3,8 +3,9 @@ package com.streamarr.server.services.auth.invalidation;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
+import com.streamarr.server.domain.auth.CounterKind;
 import com.streamarr.server.fakes.FakeVersionCounterReader;
-import com.streamarr.server.services.auth.CounterKind;
+import com.streamarr.server.repositories.auth.CounterNotificationPayload;
 import com.streamarr.server.services.auth.TokenVersionCache;
 import java.time.Duration;
 import java.util.UUID;

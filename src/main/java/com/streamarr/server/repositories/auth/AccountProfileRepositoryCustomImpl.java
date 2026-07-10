@@ -5,15 +5,13 @@ import static com.streamarr.server.jooq.generated.tables.AccountProfile.ACCOUNT_
 import static com.streamarr.server.jooq.generated.tables.HouseholdMembership.HOUSEHOLD_MEMBERSHIP;
 
 import com.streamarr.server.domain.auth.AccountProfile;
+import com.streamarr.server.domain.auth.CounterKind;
 import com.streamarr.server.domain.auth.MembershipVersionChange;
-import com.streamarr.server.services.auth.events.CounterBumpedEvent;
-import com.streamarr.server.services.auth.invalidation.CounterNotificationPayload;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.AuditorAware;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,7 +20,7 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
 
   private final DSLContext dsl;
   private final AuditorAware<UUID> auditorAware;
-  private final ApplicationEventPublisher eventPublisher;
+  private final CounterChangePublisher counterChangePublisher;
 
   @Override
   @Transactional
@@ -84,11 +82,12 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
   }
 
   private void publishVersionChange(MembershipVersionChange versionChange) {
-    var event =
-        CounterBumpedEvent.membership(
-            versionChange.accountId(), versionChange.householdId(), versionChange.version());
-    eventPublisher.publishEvent(event);
+    counterChangePublisher.publishMembership(versionChange);
     CounterNotificationPublisher.publish(
-        dsl, new CounterNotificationPayload(event.kind(), event.key(), event.version()));
+        dsl,
+        new CounterNotificationPayload(
+            CounterKind.MEMBERSHIP,
+            versionChange.accountId() + ":" + versionChange.householdId(),
+            versionChange.version()));
   }
 }

@@ -3,10 +3,9 @@ package com.streamarr.server.repositories.auth;
 import static com.streamarr.server.jooq.generated.tables.AuthSession.AUTH_SESSION;
 
 import com.streamarr.server.domain.auth.AuthSession;
+import com.streamarr.server.domain.auth.CounterKind;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.repositories.JooqQueryHelper;
-import com.streamarr.server.services.auth.CounterKind;
-import com.streamarr.server.services.auth.invalidation.CounterNotificationPayload;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.ZoneOffset;

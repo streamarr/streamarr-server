@@ -2,7 +2,7 @@ package com.streamarr.server.services.auth.events;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.services.auth.CounterKind;
+import com.streamarr.server.domain.auth.CounterKind;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;

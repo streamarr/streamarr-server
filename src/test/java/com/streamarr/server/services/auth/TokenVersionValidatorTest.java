@@ -2,6 +2,7 @@ package com.streamarr.server.services.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.domain.auth.CounterKind;
 import com.streamarr.server.fakes.FakeVersionCounterReader;
 import java.time.Instant;
 import java.util.UUID;
