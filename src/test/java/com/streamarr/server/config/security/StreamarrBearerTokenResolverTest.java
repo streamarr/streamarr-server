@@ -74,6 +74,25 @@ class StreamarrBearerTokenResolverTest {
     assertThat(resolver.resolve(request)).isNull();
   }
 
+  @ParameterizedTest(name = "Should suppress stale access cookie on public health path {0}")
+  @ValueSource(strings = {"/actuator/health", "/actuator/health/liveness"})
+  void shouldSuppressStaleAccessCookieOnPublicHealthPath(String uri) {
+    var request = requestFor(uri);
+    request.setCookies(new Cookie(AuthCookies.ACCESS_COOKIE, "stale-access-token"));
+
+    assertThat(resolver.resolve(request)).isNull();
+  }
+
+  @ParameterizedTest(name = "Should keep resolving access cookie on protected actuator path {0}")
+  @ValueSource(strings = {"/actuator/metrics", "/actuator/healthcheck"})
+  void shouldKeepResolvingAccessCookieOnProtectedActuatorPath(String uri) {
+    var request = requestFor(uri);
+    request.setCookies(new Cookie(AuthCookies.ACCESS_COOKIE, "access-token"));
+
+    assertThat(resolver.resolve(request)).isEqualTo("access-token");
+    assertThat(StreamarrBearerTokenResolver.usedAccessCookie(request)).isTrue();
+  }
+
   private static MockHttpServletRequest requestFor(String uri) {
     var request = new MockHttpServletRequest("GET", uri);
     request.setRequestURI(uri);
