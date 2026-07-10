@@ -149,11 +149,11 @@ public class AuthController {
 
     var refreshed = tokenRefreshService.refresh(carrier.refreshToken());
 
-    if (refreshed.rotated()) {
+    if (refreshed.carriesRefreshToken()) {
       return respond(
           HttpStatus.OK,
           refreshed.accessToken(),
-          refreshed.rotatedRefreshToken(),
+          refreshed.rawRefreshToken(),
           carrier.cookieMode());
     }
     return respondAccessOnly(refreshed.accessToken(), carrier.cookieMode());
