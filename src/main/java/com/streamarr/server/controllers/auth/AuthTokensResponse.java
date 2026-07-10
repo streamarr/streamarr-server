@@ -9,6 +9,14 @@ import lombok.Builder;
 public record AuthTokensResponse(
     String accessToken, Instant accessTokenExpiresAt, String scope, String refreshToken) {
 
+  public static class AuthTokensResponseBuilder {
+
+    @Override
+    public String toString() {
+      return "AuthTokensResponseBuilder[REDACTED]";
+    }
+  }
+
   @Override
   public String toString() {
     return "AuthTokensResponse[accessToken=REDACTED, accessTokenExpiresAt=%s, scope=%s,"
