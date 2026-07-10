@@ -1,0 +1,121 @@
+= ADR 0017: Persisted Playback-Enforcement Lifecycle
+
+== Status
+
+Accepted
+
+=== Implementation status
+
+* This lifecycle is implemented by issue #211 (PR-A); atomic revocation integration follows in PR-B1 and the version-counter retirement in PR-B2 (issue #213).
+* The single-streaming-instance boundary holds until the distributed control plane (issue #76); `PROVISIONING` here is a local admission state, not #76's distributed capacity reservation.
+* Media-deletion choreography and its restrictive foreign key land together in PR-A2 — a `RESTRICT` constraint never ships ahead of the deletion workflow that satisfies it.
+
+== Context
+
+link:0016-authentication-mechanisms-and-session-security.adoc[ADR 0016] moves playback revocation from per-request version counters to persisted enforcement state.
+Stream sessions today live in a per-JVM map: a playback token is signature-portable, but nothing durable records whether the session it names may still be served, no revocation survives a restart, and a stale-but-unexpired access token could mint playback authority that outlives its own staleness bound.
+This ADR fixes the persisted state machine, the authority predicates, and the concurrency and cleanup contracts that make the stream row a trustworthy enforcement record.
+
+== Decision
+
+=== Joint authority, two predicates
+
+The stream row and the authorization session *together* form playback's enforcement authority; neither alone is sufficient.
+Because the playback token does not exist until activation, two predicates stay distinct:
+
+* `sourceAuthorityMatches` — evaluated at admission and activation: the profile-scoped *source* token matches the row's authorization-session id, account, household, and profile; the authorization session is unrevoked; the owning account is enabled; the current profile grant exists.
+* `playbackRequestMatches` — evaluated only at the request gate: `sourceAuthorityMatches` plus `PLAYBACK` scope, `requestedId == token.streamSessionId == row.id`, and row status `ACTIVE`.
+
+Without the enabled-account condition, disabling an account stops refresh but an already-issued playback token — whose validity spans a media traversal plus retention — would keep playing.
+
+=== Frozen state machine
+
+----
+PROVISIONING → ACTIVE
+PROVISIONING → TERMINATING
+ACTIVE       → TERMINATING
+TERMINATING  → deleted only after durable external cleanup succeeds
+----
+
+No reverse transitions exist.
+`TERMINATING` carries `terminal_at` and `terminal_reason ∈ {STARTUP_FAILURE, OWNER_DESTROY, RETENTION_EXPIRED, PROVISIONING_TIMEOUT, AUTH_REVOKED, SOURCE_DELETED}`; a database `CHECK` pairs the terminal fields with the status.
+The first terminal transition wins: later cleanup or revocation attempts never replace the recorded reason or timestamp.
+
+The `TERMINATING` row *is* the durable cleanup marker: FFmpeg teardown and segment deletion happen after its transaction commits, the row is deleted only once cleanup succeeds, and failed cleanup retries periodically — startup-only retry is insufficient.
+No authoritative parent may cascade-delete it.
+The stream row's foreign keys to the authorization session/account binding, the media file, and the household/profile/grant chain use `NO ACTION`/`RESTRICT` with explicit indexes; deleting a parent while a stream exists fails rather than silently erasing enforcement and cleanup state.
+Parent deletion is explicit two-stage choreography: terminalize the affected streams (`AUTH_REVOKED` for identity or grant removal, `SOURCE_DELETED` for media removal), complete or retry cleanup, delete the stream rows, then retry the parent deletion.
+This invariant is also the foundation the distributed split needs, where remote workers require durable stop and cleanup intent.
+
+=== Creation: admission, then locked activation
+
+----
+conditional provisioning admission
+  → FFmpeg startup behind the terminal fence
+  → locked activation
+  → playback-token issuance
+  → per-request enforcement gate
+----
+
+A single creation service owns admission, process startup, activation, token issuance, and compensation, with its database steps on separately proxied transaction boundaries so admission genuinely commits before FFmpeg starts, even when the orchestrator is invoked from another transaction.
+
+*Admission* conditionally inserts a `PROVISIONING` row only while `sourceAuthorityMatches` holds.
+It promises no strict serialization against a concurrent revoke — a short-lived `PROVISIONING` row may appear, but never playable authority — and no FFmpeg side effect happens before admission commits.
+
+*Activation is the linearization point.*
+In one transaction it locks and revalidates the authorization session, requires the row to still be `PROVISIONING`, re-evaluates `sourceAuthorityMatches`, and conditionally transitions to `ACTIVE`.
+A revocation that holds the session row forces activation to wait and re-evaluate after it commits; a bare `UPDATE … WHERE EXISTS(live auth)` is insufficient because its existence check reads a statement snapshot — PostgreSQL reproduced a revoked authorization session paired with an `ACTIVE` stream under that form.
+Database retries for SQLSTATE `40P01`/`40001` are bounded at three attempts, each a fresh transaction with backoff outside any connection; FFmpeg is never repeated by a database retry.
+
+Every failure after admission — partial variant startup, runtime registration, activation refusal, retry exhaustion, token encoding or handoff — transitions the row to `TERMINATING` with a first-wins reason, runs the terminal fence after commit, cleans segments, and retains the row for periodic retry when either cleanup step fails.
+
+=== Request gate and linearization
+
+Every playlist, init, and segment request checks the runtime registry first — a registry miss is a 404 with no database touch — then `playbackRequestMatches`, then performs a monotonic touch.
+
+The linearization rule: a request admitted by the gate before a revocation commits may complete; every gate evaluated after the revocation commits denies.
+No cancellation of already-admitted response work is promised.
+
+=== One retention clock
+
+The database column `last_accessed_at` is the sole retention authority.
+Database time means `statement_timestamp()` — never `now()`/`CURRENT_TIMESTAMP`, which are transaction-start time and wrong inside an outer timeline transaction — and touches are monotonic: `GREATEST(last_accessed_at, statement_timestamp())`, so out-of-order requests cannot move the clock backward.
+The heap timestamp only mirrors the committed database value; timeline reporting joins its surrounding transaction for the authoritative touch and updates the heap snapshot after commit, as a no-op if termination has removed the runtime entry.
+Restart makes existing sessions immediately inaccessible (runtime state is absent); their rows expire through ordinary retention, and there is no destructive "rows missing from runtime" sweep, which would delete another instance's live sessions under rolling deployment.
+
+=== Runtime terminal fence
+
+A per-session lifecycle slot is installed before process spawn: `STARTING → RUNNING → TERMINAL`.
+Termination-first makes a late registration kill its process immediately; registration-first makes termination kill the registered process; a terminal session cannot resume or relocate.
+Reclamation is concrete, not aspirational: an in-flight-starter refcount is held across the spawn-to-register window, and a slot is reclaimed only when the refcount is zero, the slot is `TERMINAL`, and persisted/runtime authority prevents another start — no permanent tombstones, and no starter can register into a reclaimed slot.
+
+=== Filesystem reconciliation
+
+Orphaned segment directories are reconciled by snapshotting candidate directories before querying surviving rows, failing closed when the database query fails, and never following symlinks during recursive deletion.
+Retained rows and their directories expire together through the reaper.
+
+== Consequences
+
+* Playback enforcement survives restarts and is revocable mid-stream without per-request version counters.
+* A stale-but-unexpired access token cannot mint playback authority that outlives its staleness bound: admission and activation re-check the live authorization session, and the gate re-checks it per request.
+* Every lifecycle transition is a conditional statement; read-check-write sequences in Java are structurally excluded.
+* Cleanup is durable: crash windows between terminalization, teardown, and deletion are covered by the retained `TERMINATING` row and periodic retry.
+* Parent deletion becomes choreography rather than cascade — future account/profile/grant management must route through it.
+* The single-instance boundary is explicit; the distributed control plane extends this machine (owner, generation, leases) rather than replacing it.
+
+== Rejected Alternatives
+
+* `ON DELETE CASCADE` from authoritative parents — deleting a parent would erase the terminal-cleanup marker, leaking the FFmpeg process and segment files with nothing recording that cleanup is owed.
+* Activation via a single `UPDATE … WHERE EXISTS(live auth session)` — the `EXISTS` reads a statement snapshot; PostgreSQL reproduced revoked-auth-plus-`ACTIVE` under this form. Locked revalidation is required.
+* Admission serialized against revocation with `SELECT … FOR SHARE` on the auth session before the grant check — manually reproduced as a PostgreSQL deadlock (`40P01`) with concurrent grant deletion; `FOR UPDATE` strengthens the same lock inversion. Admission is a conditional checkpoint; activation is the linearization point.
+* A generic durable save/upsert for the stream row — runtime saves after suspend/resume/relocate could resurrect revoked or deleted rows; only explicit conditional lifecycle operations exist.
+* `DELETE … RETURNING` with best-effort cleanup — deletion removes the only retry marker; the terminal state is retained until external teardown succeeds.
+* Distributed `RESERVED` semantics for local admission — #76's reservation is an atomic worker-capacity claim; local `PROVISIONING` claims no capacity, so the states are named differently on purpose.
+
+== References
+
+* link:0016-authentication-mechanisms-and-session-security.adoc[ADR 0016: Authentication Mechanisms and Session Security]
+* link:0013-stream-decision-architecture.adoc[ADR 0013: Stream Decision Architecture]
+* https://github.com/streamarr/streamarr-server/issues/211[Issue #211: Persist stream sessions in PostgreSQL]
+* https://github.com/streamarr/streamarr-server/issues/213[Issue #213: Retire token version counters]
+* https://github.com/streamarr/streamarr-server/issues/76[Issue #76: Distributed transcoding control plane]
