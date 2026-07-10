@@ -146,9 +146,10 @@ just a public key. The public verification keys are served at `/.well-known/jwks
 
 Cross-instance token invalidation rides PostgreSQL LISTEN/NOTIFY: counter bumps call
 `pg_notify` inside the bumping transaction, and each instance's `CounterNotificationListener`
-applies them to its local version cache over one dedicated (non-Hikari) connection, clearing
-the whole cache on every connection loss and reconnect so missed notifications cannot leave
-stale entries. A `SELECT 1` liveness probe per poll (with TCP keepalive and a bounded socket
+applies them to its local version cache over one dedicated (non-Hikari) connection. The listener
+suspends caching on startup and every connection loss, so every counter lookup reads through to
+PostgreSQL while notifications might be missed; caching resumes from an empty state only after
+`LISTEN` succeeds. A `SELECT 1` liveness probe per poll (with TCP keepalive and a bounded socket
 timeout) turns a silently dead connection into a reconnect, and a health indicator reports the
 feed's state.
 

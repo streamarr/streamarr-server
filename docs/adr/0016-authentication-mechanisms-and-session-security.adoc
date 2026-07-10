@@ -70,8 +70,9 @@ Postgres holds the authoritative session, membership, and profile-policy counter
 When an instance changes one, it bumps the Postgres counter and publishes the new version through `LISTEN`/`NOTIFY`; every other instance applies it to its cached counter monotonically (highest version wins), so duplicate or out-of-order delivery cannot regress state.
 The `LISTEN` subscriber holds its own dedicated Postgres connection, separate from the transactional Hikari pool.
 That connection must reach Postgres directly or through a session-mode pooler: `LISTEN` does not survive transaction-mode pooling, so PgBouncer in transaction mode silently breaks notifications.
-On instance start the counter cache is empty and fills from Postgres on first touch; when an authoritative counter cannot be read, validation fails closed rather than trusting a token's embedded versions.
-Each request checks its token's embedded versions against the in-memory cache, so the hot path needs no database round-trip; short token TTLs only backstop a missed notification.
+On instance start and whenever the notification connection is unavailable, caching is suspended and every counter lookup reads through to Postgres; successful reads are not installed until `LISTEN` succeeds again, so a missed notification cannot strand a stale refill.
+Once the feed is listening, the empty cache fills from Postgres on first touch and each request checks its token's embedded versions against the in-memory value, so the healthy hot path needs no database round-trip.
+When an authoritative counter cannot be read, validation fails closed rather than trusting a token's embedded versions; short token TTLs only backstop an undetected notification-feed failure.
 A password change invalidates every token for the account; a membership or restriction change invalidates the affected household- and profile-scoped tokens through the corresponding counter.
 
 How a client presents tokens depends on what it can protect.

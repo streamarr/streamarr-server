@@ -11,10 +11,10 @@ import org.springframework.stereotype.Component;
 /**
  * Cross-instance invalidation: counter bumps publish through pg_notify inside their transaction
  * (commit-bound atomicity for free), and this listener applies them to the local version cache. It
- * holds one dedicated JDBC connection — never a Hikari lease — on a virtual thread, and clears the
- * whole cache on every (re)connect and on every connection loss: notifications missed while
- * disconnected must not leave stale entries, so lookups read through until the feed is back, and a
- * cleared cache lazily refills. PgBouncer transaction pooling does not carry LISTEN/NOTIFY; see
+ * holds one dedicated JDBC connection — never a Hikari lease — on a virtual thread. Caching is
+ * suspended on startup and every connection loss, then resumed only after LISTEN succeeds:
+ * notifications missed while disconnected must not leave stale entries, so lookups read through
+ * until the feed is back. PgBouncer transaction pooling does not carry LISTEN/NOTIFY; see
  * docs/architecture.adoc.
  */
 @Slf4j
@@ -35,19 +35,30 @@ public class CounterNotificationListener implements SmartLifecycle {
   private volatile boolean running;
   private volatile boolean listening;
   private final AtomicInteger consecutiveFailures = new AtomicInteger();
+  private final Object lifecycleMonitor = new Object();
   private Thread worker;
 
   @Override
   public void start() {
-    running = true;
-    worker = Thread.ofVirtual().name("counter-notification-listener").start(this::listenLoop);
+    synchronized (lifecycleMonitor) {
+      if (running) {
+        return;
+      }
+      cache.suspendCaching();
+      running = true;
+      worker = Thread.ofVirtual().name("counter-notification-listener").unstarted(this::listenLoop);
+      worker.start();
+    }
   }
 
   @Override
   public void stop() {
-    running = false;
-    if (worker != null) {
-      worker.interrupt();
+    synchronized (lifecycleMonitor) {
+      running = false;
+      cache.suspendCaching();
+      if (worker != null) {
+        worker.interrupt();
+      }
     }
   }
 
@@ -68,8 +79,15 @@ public class CounterNotificationListener implements SmartLifecycle {
     try {
       reconnectLoop();
     } finally {
-      // No exit path — not even an Error — may strand the flag at true on a dead worker.
-      listening = false;
+      // No exit path — not even an Error or stop racing LISTEN — may leave caching enabled or
+      // strand the flag at true on a dead worker.
+      synchronized (lifecycleMonitor) {
+        if (worker == Thread.currentThread()) {
+          cache.suspendCaching();
+          listening = false;
+          worker = null;
+        }
+      }
     }
   }
 
@@ -79,9 +97,9 @@ public class CounterNotificationListener implements SmartLifecycle {
     while (running) {
       try (var connection = connectionSource.open()) {
         connection.listen();
-        // Anything published while we were away is lost; stale entries must not survive.
-        cache.clearAll();
-        listening = true;
+        if (!resumeAfterListenIfRunning()) {
+          return;
+        }
         backoffMs = INITIAL_BACKOFF_MS;
         consecutiveFailures.set(0);
         consumeNotifications(connection);
@@ -101,12 +119,24 @@ public class CounterNotificationListener implements SmartLifecycle {
     }
   }
 
+  private boolean resumeAfterListenIfRunning() {
+    synchronized (lifecycleMonitor) {
+      if (!running || worker != Thread.currentThread()) {
+        return false;
+      }
+      // Anything published while we were away is lost; stale entries must not survive.
+      cache.resumeCaching();
+      listening = true;
+      return true;
+    }
+  }
+
   private boolean disconnected() {
     listening = false;
     consecutiveFailures.incrementAndGet();
-    // Bumps are invisible while the feed is down; clearing on every failed attempt keeps
-    // lookups reading through, bounding staleness to one backoff interval.
-    cache.clearAll();
+    // Bumps are invisible while the feed is down, so no successful read may become a cache hit
+    // until LISTEN succeeds again.
+    cache.suspendCaching();
     return !running;
   }
 
