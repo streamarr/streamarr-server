@@ -18,11 +18,14 @@ import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class SetupService {
@@ -36,6 +39,8 @@ public class SetupService {
       UUID.fromString("00000000-0000-0000-0000-000000000001");
 
   private static final String DEFAULT_RATING_REGION = "US";
+
+  private static final String EMAIL_UNIQUE_INDEX = "uq_user_account_email";
 
   private final UserAccountRepository userAccountRepository;
   private final HouseholdRepository householdRepository;
@@ -101,7 +106,7 @@ public class SetupService {
   private UserAccount createAdminAccount(SetupCommand command) {
     // Accounts only exist once setup has won, so a duplicate email before the claim can only
     // be a competing setup that already flushed — report the domain conflict, not the
-    // constraint violation.
+    // constraint violation. Any other integrity failure is a real defect and must surface.
     try {
       return userAccountRepository.saveAndFlush(
           UserAccount.builder()
@@ -111,8 +116,17 @@ public class SetupService {
               .accountRole(AccountRole.ADMIN)
               .enabled(true)
               .build());
-    } catch (DataIntegrityViolationException _) {
-      throw new SetupAlreadyCompletedException();
+    } catch (DataIntegrityViolationException e) {
+      if (!isDuplicateAdminEmail(e)) {
+        throw e;
+      }
+      log.warn("Setup lost the admin-email race to a competing setup.", e);
+      throw new SetupAlreadyCompletedException(e);
     }
+  }
+
+  private static boolean isDuplicateAdminEmail(DataIntegrityViolationException e) {
+    return e.getCause() instanceof ConstraintViolationException violation
+        && EMAIL_UNIQUE_INDEX.equals(violation.getConstraintName());
   }
 }
