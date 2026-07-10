@@ -249,13 +249,16 @@ class LoginServiceTest {
 
     loginService.login(commandBuilder(attacker.getEmail()).password(CORRECT_PASSWORD).build());
 
+    // The source budget is an alerting signal, never a gate: sprays from a shared source
+    // keep failing on credentials, not on a server-wide block, and each sprayed email
+    // stays capped by its own hard budget.
     var fifthSpray = commandBuilder("victim-4@example.com").password("guess").build();
     assertThatThrownBy(() -> loginService.login(fifthSpray))
         .isInstanceOf(InvalidCredentialsException.class);
 
     var sixthSpray = commandBuilder("victim-5@example.com").password("guess").build();
     assertThatThrownBy(() -> loginService.login(sixthSpray))
-        .isInstanceOf(TooManyLoginAttemptsException.class);
+        .isInstanceOf(InvalidCredentialsException.class);
   }
 
   private com.streamarr.server.domain.auth.UserAccount seedAccount(String passwordHash) {

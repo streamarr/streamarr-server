@@ -17,7 +17,15 @@ import org.springframework.stereotype.Component;
  * In-memory, per-instance login throttle keyed by account email and request source. An attempt
  * reserves its slot atomically before any password work, so a concurrent burst cannot overrun the
  * budget; blocked attempts reserve nothing, so hostile traffic cannot extend a victim's lockout.
- * Restart resets the counters and N instances multiply the attempt budget by N — the same
+ *
+ * <p>The email budget is the hard limit. The source budget is an alerting signal only: behind a
+ * reverse proxy — the normal self-hosted deployment — every client shares the proxy's address, so a
+ * blocking source budget would let five failed logins lock every account out server-wide. Exhausted
+ * sources log a WARN operators can alert on; forwarded-header resolution
+ * (SERVER_FORWARD_HEADERS_STRATEGY) is opt-in for proxied deployments that want real client
+ * addresses in that signal.
+ *
+ * <p>Restart resets the counters and N instances multiply the attempt budget by N — the same
  * single-JVM posture as MutexFactory; database-backed throttling is the fast-follow if
  * multi-instance deployment materialises.
  */
@@ -31,7 +39,7 @@ public class LoginThrottle {
 
   private final ConcurrentHashMap<String, Deque<Instant>> attempts = new ConcurrentHashMap<>();
 
-  /** Reserves one attempt slot on both keys, or throws without consuming any budget. */
+  /** Reserves one email slot or throws; source exhaustion only raises the alerting signal. */
   public void registerAttempt(String email, String source) {
     var emailKey = emailKey(email);
     var sourceKey = sourceKey(source);
@@ -40,13 +48,12 @@ public class LoginThrottle {
       log.warn("Login throttled: attempt budget exhausted for {}", emailKey);
       throw new TooManyLoginAttemptsException();
     }
-    if (reserve(sourceKey)) {
-      return;
+    if (!reserve(sourceKey)) {
+      log.warn(
+          "Login pressure: source attempt budget exhausted for {} — attempts continue; the"
+              + " per-account budget remains the hard limit",
+          sourceKey);
     }
-
-    release(emailKey);
-    log.warn("Login throttled: attempt budget exhausted for {}", sourceKey);
-    throw new TooManyLoginAttemptsException();
   }
 
   /**

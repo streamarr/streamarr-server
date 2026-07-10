@@ -4,6 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.streamarr.server.config.security.AuthThrottleProperties;
 import com.streamarr.server.exceptions.TooManyLoginAttemptsException;
 import com.streamarr.server.fakes.MutableClock;
@@ -18,6 +22,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 @Tag("UnitTest")
 @DisplayName("Login Throttle Tests")
@@ -48,14 +53,32 @@ class LoginThrottleTest {
   }
 
   @Test
-  @DisplayName("Should block sixth attempt when source budget exhausted across emails")
-  void shouldBlockSixthAttemptWhenSourceBudgetExhaustedAcrossEmails() {
+  @DisplayName("Should allow attempt and warn when source budget exhausted across emails")
+  void shouldAllowAttemptAndWarnWhenSourceBudgetExhaustedAcrossEmails() {
     for (int i = 0; i < MAX_ATTEMPTS; i++) {
       throttle.registerAttempt("user-" + i + "@example.com", SOURCE);
     }
 
-    assertThatThrownBy(() -> throttle.registerAttempt("fresh@example.com", SOURCE))
-        .isInstanceOf(TooManyLoginAttemptsException.class);
+    // Behind a reverse proxy every client shares one source: the source dimension is an
+    // alerting signal, never a gate, or five failures would lock the whole server out.
+    var logger = (Logger) LoggerFactory.getLogger(LoginThrottle.class);
+    var appender = new ListAppender<ILoggingEvent>();
+    appender.start();
+    logger.addAppender(appender);
+    try {
+      assertThatCode(() -> throttle.registerAttempt("fresh@example.com", SOURCE))
+          .doesNotThrowAnyException();
+
+      assertThat(appender.list)
+          .anySatisfy(
+              event -> {
+                assertThat(event.getLevel()).isEqualTo(Level.WARN);
+                assertThat(event.getFormattedMessage()).contains(SOURCE);
+              });
+    } finally {
+      logger.detachAppender(appender);
+      appender.stop();
+    }
   }
 
   @Test
@@ -90,40 +113,33 @@ class LoginThrottleTest {
   }
 
   @Test
-  @DisplayName("Should return email slot when source budget blocks the attempt")
-  void shouldReturnEmailSlotWhenSourceBudgetBlocksTheAttempt() {
+  @DisplayName("Should keep email budget as the hard limit when source exhausted")
+  void shouldKeepEmailBudgetAsTheHardLimitWhenSourceExhausted() {
     for (int i = 0; i < MAX_ATTEMPTS; i++) {
       throttle.registerAttempt("other-" + i + "@example.com", SOURCE);
     }
 
-    assertThatThrownBy(() -> throttle.registerAttempt(EMAIL, SOURCE))
-        .isInstanceOf(TooManyLoginAttemptsException.class);
-
+    // The exhausted source never blocks, but each allowed attempt still consumes the
+    // account's own budget — the per-email limit is the hard guarantee.
     for (int i = 0; i < MAX_ATTEMPTS; i++) {
-      var freshSource = "src-" + i;
-      assertThatCode(() -> throttle.registerAttempt(EMAIL, freshSource)).doesNotThrowAnyException();
+      assertThatCode(() -> throttle.registerAttempt(EMAIL, SOURCE)).doesNotThrowAnyException();
     }
 
-    assertThatThrownBy(() -> throttle.registerAttempt(EMAIL, "src-fresh"))
+    assertThatThrownBy(() -> throttle.registerAttempt(EMAIL, SOURCE))
         .isInstanceOf(TooManyLoginAttemptsException.class);
   }
 
   @Test
   @DisplayName("Should keep earlier attempts when returned slot not the only one")
   void shouldKeepEarlierAttemptsWhenReturnedSlotNotTheOnlyOne() {
-    for (int i = 0; i < MAX_ATTEMPTS; i++) {
-      throttle.registerAttempt("other-" + i + "@example.com", SOURCE);
+    for (int i = 0; i < MAX_ATTEMPTS - 1; i++) {
+      throttle.registerAttempt(EMAIL, "src-" + i);
     }
     throttle.registerAttempt(EMAIL, "src-earlier");
+    throttle.reset("unrelated@example.com", "src-earlier");
 
-    assertThatThrownBy(() -> throttle.registerAttempt(EMAIL, SOURCE))
-        .isInstanceOf(TooManyLoginAttemptsException.class);
-
-    for (int i = 0; i < MAX_ATTEMPTS - 1; i++) {
-      var freshSource = "src-" + i;
-      assertThatCode(() -> throttle.registerAttempt(EMAIL, freshSource)).doesNotThrowAnyException();
-    }
-
+    // The unrelated reset returned one slot on src-earlier only; the email budget is
+    // untouched and still exhausted.
     assertThatThrownBy(() -> throttle.registerAttempt(EMAIL, "src-fresh"))
         .isInstanceOf(TooManyLoginAttemptsException.class);
   }
@@ -199,10 +215,22 @@ class LoginThrottleTest {
 
     throttle.reset(EMAIL, SOURCE);
 
-    assertThatCode(() -> throttle.registerAttempt("fresh@example.com", SOURCE))
-        .doesNotThrowAnyException();
-    assertThatThrownBy(() -> throttle.registerAttempt("another@example.com", SOURCE))
-        .isInstanceOf(TooManyLoginAttemptsException.class);
+    var logger = (Logger) LoggerFactory.getLogger(LoginThrottle.class);
+    var appender = new ListAppender<ILoggingEvent>();
+    appender.start();
+    logger.addAppender(appender);
+    try {
+      // One success returned exactly one source slot: the next attempt fits silently,
+      // the one after exceeds the budget again and raises the pressure signal.
+      throttle.registerAttempt("fresh@example.com", SOURCE);
+      assertThat(appender.list).noneMatch(event -> event.getFormattedMessage().contains(SOURCE));
+
+      throttle.registerAttempt("another@example.com", SOURCE);
+      assertThat(appender.list).anyMatch(event -> event.getFormattedMessage().contains(SOURCE));
+    } finally {
+      logger.detachAppender(appender);
+      appender.stop();
+    }
   }
 
   @Test
@@ -217,15 +245,15 @@ class LoginThrottleTest {
   }
 
   @Test
-  @DisplayName("Should throttle by source alone when email missing")
-  void shouldThrottleBySourceAloneWhenEmailMissing() {
+  @DisplayName("Should allow attempts by source alone when email missing")
+  void shouldAllowAttemptsBySourceAloneWhenEmailMissing() {
     for (int i = 0; i < MAX_ATTEMPTS; i++) {
       throttle.registerAttempt(null, SOURCE);
     }
 
-    assertThatThrownBy(() -> throttle.registerAttempt(null, SOURCE))
-        .isInstanceOf(TooManyLoginAttemptsException.class);
-
+    // Source is alerting-only and a null email is unreachable behind @NotBlank validation:
+    // nothing blocks, and reset stays a safe no-op.
+    assertThatCode(() -> throttle.registerAttempt(null, SOURCE)).doesNotThrowAnyException();
     assertThatCode(() -> throttle.reset(null, null)).doesNotThrowAnyException();
   }
 

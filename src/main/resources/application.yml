@@ -58,6 +58,11 @@ dev:
   admin-email: ${DEV_ADMIN_EMAIL:admin@dev.local}
   admin-password: ${DEV_ADMIN_PASSWORD:streamarr-dev}
 
+server:
+  # Opt-in for reverse-proxied deployments: NATIVE/FRAMEWORK make the login throttle's
+  # per-source signal reflect real client addresses instead of the proxy's.
+  forward-headers-strategy: ${SERVER_FORWARD_HEADERS_STRATEGY:none}
+
 auth:
   token:
     signing-key: ${AUTH_TOKEN_SIGNING_KEY:}

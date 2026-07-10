@@ -43,7 +43,8 @@ Copying a password into `char[]` or `byte[]` at only one application layer does 
 Streamarr adopts mutable password buffers only if the complete input-to-hasher path owns those buffers, avoids immutable copies, clears every owned intermediate in `finally`, and the threat model justifies the added custom security code.
 Such a change replaces part of the Spring Security password-encoding boundary and therefore requires revisiting this ADR.
 
-Password login is throttled: failed attempts are rate-limited per account and per source within a sliding window, as NIST SP 800-63B requires for online guessing.
+Password login is throttled: failed attempts are rate-limited per account within a sliding window, as NIST SP 800-63B requires for online guessing.
+Per-source pressure is tracked and surfaced for alerting rather than hard-blocked: the normal self-hosted deployment sits behind a reverse proxy where every client shares one source address, so a blocking source budget would let five failed logins lock every account out server-wide; forwarded-header resolution is opt-in configuration for proxied deployments that want real client addresses in the signal.
 Spring Security ships no login rate limiter, so this throttle is Streamarr code invoked inline before any password verification — reserving budget up front, rather than recording failure events afterwards, keeps a concurrent burst from overrunning it; the profile-PIN limiter shares this posture.
 
 Account/device sessions use long-lived, revocable refresh tokens, scoped to the account and device rather than to a household or profile.
