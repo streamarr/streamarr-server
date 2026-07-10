@@ -4,6 +4,7 @@ import jakarta.validation.constraints.NotNull;
 import java.time.Duration;
 import java.util.List;
 import lombok.Builder;
+import org.hibernate.validator.constraints.time.DurationMax;
 import org.hibernate.validator.constraints.time.DurationMin;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
@@ -14,7 +15,10 @@ import org.springframework.validation.annotation.Validated;
 public record AuthTokenProperties(
     String signingKey,
     List<String> verificationKeys,
-    @NotNull @DurationMin(seconds = 0, inclusive = false) Duration accessTokenTtl,
+    // Bounded API staleness rides this ceiling (ADR 0016): revocation prevents renewal, and
+    // access-token expiry bounds the residual authorization window.
+    @NotNull @DurationMin(seconds = 0, inclusive = false) @DurationMax(minutes = 15)
+        Duration accessTokenTtl,
     @NotNull @DurationMin(seconds = 0, inclusive = false) Duration refreshTokenTtl,
     @NotNull @DurationMin Duration rotationGrace) {
 

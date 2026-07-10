@@ -42,6 +42,26 @@ class AuthTokenPropertiesTest {
   }
 
   @Test
+  @DisplayName("Should reject configuration when access token ttl exceeds maximum")
+  void shouldRejectConfigurationWhenAccessTokenTtlExceedsMaximum() {
+    var properties = validProperties().accessTokenTtl(Duration.ofMinutes(16)).build();
+
+    // Bounded API staleness is a security property: the ADR promises a minutes-scale
+    // ceiling, so configuration cannot silently raise it.
+    assertThat(VALIDATOR.validate(properties))
+        .extracting(violation -> violation.getPropertyPath().toString())
+        .containsExactly("accessTokenTtl");
+  }
+
+  @Test
+  @DisplayName("Should accept configuration when access token ttl is at maximum")
+  void shouldAcceptConfigurationWhenAccessTokenTtlIsAtMaximum() {
+    var properties = validProperties().accessTokenTtl(Duration.ofMinutes(15)).build();
+
+    assertThat(VALIDATOR.validate(properties)).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should reject configuration when refresh token ttl is negative")
   void shouldRejectConfigurationWhenRefreshTokenTtlIsNegative() {
     var properties = validProperties().refreshTokenTtl(Duration.ofDays(-1)).build();
