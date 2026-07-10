@@ -14,6 +14,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -112,26 +113,34 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
   static final class PausingPasswordEncoder implements PasswordEncoder {
 
     private final PasswordEncoder delegate;
-    private final ThreadLocal<Boolean> pauseAfterMatch = ThreadLocal.withInitial(() -> false);
-    private final CountDownLatch loginVerified = new CountDownLatch(1);
-    private final CountDownLatch continueLogin = new CountDownLatch(1);
+    private final ThreadLocal<PausePoint> pausePoint = new ThreadLocal<>();
+    private final AtomicReference<PauseGate> pauseGate = new AtomicReference<>();
+    private final AtomicReference<CountDownLatch> pausePrepared =
+        new AtomicReference<>(new CountDownLatch(1));
 
     private PausingPasswordEncoder(PasswordEncoder delegate) {
       this.delegate = delegate;
     }
 
     void pauseAfterNextSuccessfulMatch() {
-      pauseAfterMatch.set(true);
+      preparePause(PausePoint.SUCCESSFUL_MATCH);
     }
 
     void awaitLoginVerified() throws InterruptedException {
-      assertThat(loginVerified.await(10, TimeUnit.SECONDS))
+      assertThat(pausePrepared.get().await(10, TimeUnit.SECONDS))
+          .as("old-password login should prepare the verified interleaving point")
+          .isTrue();
+      assertThat(currentGate().loginPaused().await(10, TimeUnit.SECONDS))
           .as("old-password login should reach the verified interleaving point")
           .isTrue();
     }
 
     void releaseLogin() {
-      continueLogin.countDown();
+      var gate = pauseGate.getAndSet(null);
+      if (gate != null) {
+        gate.continueLogin().countDown();
+      }
+      pausePrepared.set(new CountDownLatch(1));
     }
 
     @Override
@@ -142,14 +151,10 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
     @Override
     public boolean matches(CharSequence rawPassword, String encodedPassword) {
       var matches = delegate.matches(rawPassword, encodedPassword);
-      if (!matches || !pauseAfterMatch.get()) {
-        return matches;
+      if (matches) {
+        pauseIfRequested(PausePoint.SUCCESSFUL_MATCH);
       }
-
-      pauseAfterMatch.remove();
-      loginVerified.countDown();
-      awaitLoginRelease();
-      return true;
+      return matches;
     }
 
     @Override
@@ -157,9 +162,30 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
       return delegate.upgradeEncoding(encodedPassword);
     }
 
-    private void awaitLoginRelease() {
+    private void preparePause(PausePoint point) {
+      pausePoint.set(point);
+      pauseGate.set(new PauseGate(new CountDownLatch(1), new CountDownLatch(1)));
+      pausePrepared.get().countDown();
+    }
+
+    private PauseGate currentGate() {
+      var gate = pauseGate.get();
+      if (gate == null) {
+        throw new AssertionError("no login pause has been prepared");
+      }
+      return gate;
+    }
+
+    private void pauseIfRequested(PausePoint point) {
+      if (pausePoint.get() != point) {
+        return;
+      }
+
+      pausePoint.remove();
+      var gate = currentGate();
+      gate.loginPaused().countDown();
       try {
-        if (!continueLogin.await(10, TimeUnit.SECONDS)) {
+        if (!gate.continueLogin().await(10, TimeUnit.SECONDS)) {
           throw new AssertionError("password change did not release the paused login");
         }
       } catch (InterruptedException e) {
@@ -167,5 +193,11 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
         throw new AssertionError("paused login was interrupted", e);
       }
     }
+
+    private enum PausePoint {
+      SUCCESSFUL_MATCH
+    }
+
+    private record PauseGate(CountDownLatch loginPaused, CountDownLatch continueLogin) {}
   }
 }
