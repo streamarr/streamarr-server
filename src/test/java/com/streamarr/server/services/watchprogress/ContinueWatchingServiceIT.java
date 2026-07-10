@@ -223,9 +223,13 @@ class ContinueWatchingServiceIT extends AbstractIntegrationTest {
                 .build());
 
         // Profile isolation here is a raw jOOQ predicate, not an active guard: this pin
-        // fails if the profile filter is ever dropped from the continue-watching query.
+        // fails if the profile filter is ever dropped from the continue-watching query. The
+        // non-emptiness guard keeps doesNotContain from passing vacuously on a broken query.
         var results = continueWatchingService.getContinueWatching(profileId, 20);
-        assertThat(results).extracting(BaseCollectable::getId).doesNotContain(otherMovie.getId());
+        assertThat(results)
+            .isNotEmpty()
+            .extracting(BaseCollectable::getId)
+            .doesNotContain(otherMovie.getId());
 
         var otherResults = continueWatchingService.getContinueWatching(otherProfileId, 20);
         assertThat(otherResults)
