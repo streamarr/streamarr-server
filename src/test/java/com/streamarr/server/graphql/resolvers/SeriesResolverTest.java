@@ -16,6 +16,7 @@ import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.support.security.WithProfileContext;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -55,6 +56,27 @@ class SeriesResolverTest {
             "data.series.title");
 
     assertThat(title).isEqualTo("Breaking Bad");
+  }
+
+  @Test
+  @DisplayName("Should return background-created series when creator absent")
+  void shouldReturnBackgroundCreatedSeriesWhenCreatorAbsent() {
+    var seriesId = UUID.randomUUID();
+    var series = Series.builder().title("Background Series").build();
+    series.setId(seriesId);
+
+    when(seriesService.findById(seriesId)).thenReturn(Optional.of(series));
+
+    var result =
+        dgsQueryExecutor.execute(
+            String.format("{ series(id: \"%s\") { title createdBy } }", seriesId));
+
+    assertThat(result.getErrors()).isEmpty();
+    var data = result.<Map<String, Object>>getData();
+    var seriesData = (Map<?, ?>) data.get("series");
+    assertThat(seriesData.get("title")).isEqualTo("Background Series");
+    assertThat(seriesData.containsKey("createdBy")).isTrue();
+    assertThat(seriesData.get("createdBy")).isNull();
   }
 
   @Test

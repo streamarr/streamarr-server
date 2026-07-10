@@ -12,6 +12,7 @@ import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.support.security.WithProfileContext;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -51,6 +52,27 @@ class MovieResolverTest {
             String.format("{ movie(id: \"%s\") { title tagline } }", movieId), "data.movie.title");
 
     assertThat(title).isEqualTo("Inception");
+  }
+
+  @Test
+  @DisplayName("Should return background-created movie when creator absent")
+  void shouldReturnBackgroundCreatedMovieWhenCreatorAbsent() {
+    var movieId = UUID.randomUUID();
+    var movie = Movie.builder().title("Background Movie").build();
+    movie.setId(movieId);
+
+    when(movieService.findById(movieId)).thenReturn(Optional.of(movie));
+
+    var result =
+        dgsQueryExecutor.execute(
+            String.format("{ movie(id: \"%s\") { title createdBy } }", movieId));
+
+    assertThat(result.getErrors()).isEmpty();
+    var data = result.<Map<String, Object>>getData();
+    var movieData = (Map<?, ?>) data.get("movie");
+    assertThat(movieData.get("title")).isEqualTo("Background Movie");
+    assertThat(movieData.containsKey("createdBy")).isTrue();
+    assertThat(movieData.get("createdBy")).isNull();
   }
 
   @Test

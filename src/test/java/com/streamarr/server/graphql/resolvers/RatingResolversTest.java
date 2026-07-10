@@ -12,6 +12,7 @@ import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.support.security.WithProfileContext;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -51,6 +52,27 @@ class RatingResolversTest {
             "data.rating.source");
 
     assertThat(source).isEqualTo("IMDb");
+  }
+
+  @Test
+  @DisplayName("Should return background-created rating when creator absent")
+  void shouldReturnBackgroundCreatedRatingWhenCreatorAbsent() {
+    var ratingId = UUID.randomUUID();
+    var rating = Rating.builder().source("TMDB").value("7.5").build();
+    rating.setId(ratingId);
+
+    when(ratingRepository.findById(ratingId)).thenReturn(Optional.of(rating));
+
+    var result =
+        dgsQueryExecutor.execute(
+            String.format("{ rating(id: \"%s\") { source createdBy } }", ratingId));
+
+    assertThat(result.getErrors()).isEmpty();
+    var data = result.<Map<String, Object>>getData();
+    var ratingData = (Map<?, ?>) data.get("rating");
+    assertThat(ratingData.get("source")).isEqualTo("TMDB");
+    assertThat(ratingData.containsKey("createdBy")).isTrue();
+    assertThat(ratingData.get("createdBy")).isNull();
   }
 
   @Test

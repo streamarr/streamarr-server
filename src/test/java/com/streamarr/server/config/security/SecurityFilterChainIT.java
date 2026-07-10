@@ -25,7 +25,7 @@ import org.springframework.test.web.servlet.MockMvc;
 @DisplayName("Security Filter Chain Integration Tests")
 class SecurityFilterChainIT extends AbstractIntegrationTest {
 
-  private static final String LIBRARIES_QUERY = "{\"query\": \"{ libraries { id } }\"}";
+  private static final String ACCOUNT_QUERY = "{\"query\": \"{ me { accountId } }\"}";
 
   @Autowired private MockMvc mockMvc;
 
@@ -46,7 +46,7 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   @DisplayName("Should reject graphql when unauthenticated")
   void shouldRejectGraphQlWhenUnauthenticated() throws Exception {
     mockMvc
-        .perform(post("/graphql").contentType(MediaType.APPLICATION_JSON).content(LIBRARIES_QUERY))
+        .perform(post("/graphql").contentType(MediaType.APPLICATION_JSON).content(ACCOUNT_QUERY))
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
   }
@@ -58,6 +58,44 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
         .perform(get("/api/images/{id}", UUID.randomUUID()))
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+  }
+
+  @Test
+  @DisplayName("Should reject images when account scoped")
+  void shouldRejectImagesWhenAccountScoped() throws Exception {
+    identity = authTestSupport.createIdentity();
+
+    mockMvc
+        .perform(
+            get("/api/images/{id}", UUID.randomUUID())
+                .with(bearer(authTestSupport.accountBearer(identity))))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+  }
+
+  @Test
+  @DisplayName("Should reject images when household scoped")
+  void shouldRejectImagesWhenHouseholdScoped() throws Exception {
+    identity = authTestSupport.createIdentity();
+
+    mockMvc
+        .perform(
+            get("/api/images/{id}", UUID.randomUUID())
+                .with(bearer(authTestSupport.householdBearer(identity))))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+  }
+
+  @Test
+  @DisplayName("Should permit images when profile scoped")
+  void shouldPermitImagesWhenProfileScoped() throws Exception {
+    identity = authTestSupport.createIdentity();
+
+    mockMvc
+        .perform(
+            get("/api/images/{id}", UUID.randomUUID())
+                .with(bearer(authTestSupport.profileBearer(identity))))
+        .andExpect(status().isNotFound());
   }
 
   @Test
@@ -103,7 +141,7 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
         .perform(
             post("/graphql")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(LIBRARIES_QUERY)
+                .content(ACCOUNT_QUERY)
                 .with(bearer(authTestSupport.accountBearer(identity))))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist());
@@ -118,7 +156,7 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
         .perform(
             post("/graphql")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(LIBRARIES_QUERY)
+                .content(ACCOUNT_QUERY)
                 .with(bearer(authTestSupport.profileBearer(identity))))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").doesNotExist());

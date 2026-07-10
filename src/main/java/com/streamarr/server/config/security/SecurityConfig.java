@@ -57,6 +57,8 @@ public class SecurityConfig {
                     // Transitional: open until playback-URL tokens land (next PR).
                     .requestMatchers("/api/stream/**")
                     .permitAll()
+                    .requestMatchers("/api/images/**")
+                    .hasAuthority("SCOPE_PROFILE")
                     .anyRequest()
                     .hasAuthority("SCOPE_ACCOUNT"))
         .oauth2ResourceServer(
