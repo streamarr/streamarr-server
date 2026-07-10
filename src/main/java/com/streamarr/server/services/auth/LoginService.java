@@ -4,9 +4,11 @@ import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import java.util.UUID;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+@Slf4j
 @Service
 public class LoginService {
 
@@ -60,7 +62,15 @@ public class LoginService {
       passwordEncoder.matches(password, timingEqualizerHash);
       return false;
     }
-    return passwordEncoder.matches(password, account.getPasswordHash());
+    try {
+      return passwordEncoder.matches(password, account.getPasswordHash());
+    } catch (IllegalArgumentException e) {
+      // An unreadable stored hash must fail like a wrong password — burning the equalizer keeps
+      // the timing profile — not escape as a raw error that marks the account's broken state.
+      log.error("Stored password hash for account {} is unreadable.", account.getId(), e);
+      passwordEncoder.matches(password, timingEqualizerHash);
+      return false;
+    }
   }
 
   private void rehashIfUpgradeNeeded(UserAccount account, String rawPassword) {

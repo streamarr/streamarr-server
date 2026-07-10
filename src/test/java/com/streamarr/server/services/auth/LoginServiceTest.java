@@ -106,6 +106,21 @@ class LoginServiceTest {
   }
 
   @Test
+  @DisplayName("Should reject credentials when stored hash unreadable")
+  void shouldRejectCredentialsWhenStoredHashUnreadable() {
+    // A real hash stripped of its {id} prefix — the corruption a migration bug would produce.
+    var unreadableHash = serviceEncoder.encode(CORRECT_PASSWORD).replace("{argon2id}", "");
+    var account = seedAccount(unreadableHash);
+
+    var attempt = commandBuilder(account.getEmail()).password(CORRECT_PASSWORD).build();
+
+    assertThatThrownBy(() -> loginService.login(attempt))
+        .isInstanceOf(InvalidCredentialsException.class);
+    // The unreadable-hash attempt (which throws) plus the equalizer burn — timing stays flat.
+    assertThat(countingEncoder.matchesInvocations()).isEqualTo(2);
+  }
+
+  @Test
   @DisplayName("Should rehash password when encoding upgrade needed")
   void shouldRehashPasswordWhenEncodingUpgradeNeeded() {
     var weakHash = weakEncoder.encode(CORRECT_PASSWORD);
