@@ -81,7 +81,7 @@ public class Library extends TableImpl<LibraryRecord> {
     /**
      * The column <code>public.library.created_by</code>.
      */
-    public final TableField<LibraryRecord, UUID> CREATED_BY = createField(DSL.name("created_by"), SQLDataType.UUID.nullable(false), this, "");
+    public final TableField<LibraryRecord, UUID> CREATED_BY = createField(DSL.name("created_by"), SQLDataType.UUID, this, "");
 
     /**
      * The column <code>public.library.last_modified_on</code>.

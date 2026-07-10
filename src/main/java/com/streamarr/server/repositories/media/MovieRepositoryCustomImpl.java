@@ -193,7 +193,7 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
       return noCondition();
     }
 
-    var userId = requireUserId(filter.getUserId());
+    var profileId = requireProfileId(filter.getProfileId());
 
     var isWatched =
         exists(
@@ -203,7 +203,7 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
                     Tables.WATCH_HISTORY
                         .COLLECTABLE_ID
                         .eq(Tables.BASE_COLLECTABLE.ID)
-                        .and(Tables.WATCH_HISTORY.USER_ID.eq(userId))
+                        .and(Tables.WATCH_HISTORY.PROFILE_ID.eq(profileId))
                         .and(Tables.WATCH_HISTORY.DISMISSED_AT.isNull())));
 
     var hasProgress =
@@ -216,7 +216,7 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
                     Tables.MEDIA_FILE
                         .MEDIA_ID
                         .eq(Tables.BASE_COLLECTABLE.ID)
-                        .and(Tables.SESSION_PROGRESS.USER_ID.eq(userId))
+                        .and(Tables.SESSION_PROGRESS.PROFILE_ID.eq(profileId))
                         .and(Tables.SESSION_PROGRESS.POSITION_SECONDS.greaterThan(0))));
 
     return switch (watchStatus) {
@@ -227,7 +227,7 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
   }
 
   private Field<?> lastWatchedField(MediaFilter filter) {
-    var userId = requireUserId(filter.getUserId());
+    var profileId = requireProfileId(filter.getProfileId());
     return select(max(Tables.SESSION_PROGRESS.LAST_MODIFIED_ON))
         .from(Tables.SESSION_PROGRESS)
         .innerJoin(Tables.MEDIA_FILE)
@@ -236,17 +236,17 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
             Tables.MEDIA_FILE
                 .MEDIA_ID
                 .eq(Tables.BASE_COLLECTABLE.ID)
-                .and(Tables.SESSION_PROGRESS.USER_ID.eq(userId)))
+                .and(Tables.SESSION_PROGRESS.PROFILE_ID.eq(profileId)))
         .asField();
   }
 
   @Override
-  public Map<UUID, Instant> findLastWatchedByMovieIds(UUID userId, Collection<UUID> movieIds) {
+  public Map<UUID, Instant> findLastWatchedByMovieIds(UUID profileId, Collection<UUID> movieIds) {
     if (movieIds == null || movieIds.isEmpty()) {
       return Map.of();
     }
 
-    var resolvedUserId = requireUserId(userId);
+    var resolvedProfileId = requireProfileId(profileId);
     var maxField = max(Tables.SESSION_PROGRESS.LAST_MODIFIED_ON);
 
     return context
@@ -258,13 +258,13 @@ public class MovieRepositoryCustomImpl implements MovieRepositoryCustom {
             Tables.MEDIA_FILE
                 .MEDIA_ID
                 .in(movieIds)
-                .and(Tables.SESSION_PROGRESS.USER_ID.eq(resolvedUserId)))
+                .and(Tables.SESSION_PROGRESS.PROFILE_ID.eq(resolvedProfileId)))
         .groupBy(Tables.MEDIA_FILE.MEDIA_ID)
         .fetchMap(Tables.MEDIA_FILE.MEDIA_ID, r -> toInstant(r.get(maxField)));
   }
 
-  private static UUID requireUserId(UUID userId) {
-    return Objects.requireNonNull(userId, "userId is required for user-scoped watch queries");
+  private static UUID requireProfileId(UUID profileId) {
+    return Objects.requireNonNull(profileId, "profileId is required for user-scoped watch queries");
   }
 
   private static Instant toInstant(OffsetDateTime value) {

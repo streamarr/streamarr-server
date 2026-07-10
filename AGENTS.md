@@ -106,6 +106,20 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 - Validate inputs at the API boundary; trust internal code
 - Use Optional for values that may be absent — never return null
 
+### Plaintext Secret Handling
+- Passwords and raw tokens are short-lived boundary values: consume them synchronously, then
+  release every application reference. Never persist, cache, publish in events, log, trace, or
+  include them in exception messages or diagnostic context.
+- Use the framework-native `String`/`CharSequence` path at Spring/Jackson boundaries. Do not
+  convert one layer to `char[]` or `byte[]` and claim secure erasure while another layer retains
+  or recreates a `String`.
+- Secret-bearing records must override `toString()` to omit raw secrets. Treat generated builder
+  `toString()` methods as a separate leakage surface; never log builders carrying secrets.
+- Mutable password buffers are justified only as an end-to-end design in which the boundary,
+  validation, and hashing APIs avoid immutable copies and every owned buffer is cleared. Revisit
+  [ADR 0016](docs/adr/0016-authentication-mechanisms-and-session-security.adoc) before introducing
+  that pipeline.
+
 ### Code Style
 - Google Java Format enforced via Spotless (runs on build)
 - Checkstyle also runs at `validate` and fails the build (`checkstyle.xml`)
@@ -148,6 +162,7 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 - **No `@Query` JPQL**: every repository query is either a derived method (`findBySeriesIdOrderBySeasonNumber`) or jOOQ on the `{Repository}Custom` fragment. JPQL strings break silently on entity refactors; derived signatures are validated at startup and jOOQ at compile time. Remaining `@Query` usages are legacy (tracked in #193) — don't copy them
 - **Reads**: jOOQ builds the SQL, but execute through `JooqQueryHelper.nativeQuery(…)` (JPA `EntityManager` native query) so results map to JPA entities — don't `context.fetch*()` for entity reads
 - **Writes**: execute jOOQ DSL directly (`context.update(…).returning()`, `INSERT … ON CONFLICT`) and map records to entities manually
+- **First-level-cache staleness (hybrid footgun)**: Hibernate's persistence context is not invalidated by jOOQ DML. Within one transaction, a JPA read of a row you (or a concurrently-committed transaction) mutated via jOOQ returns the *stale managed copy* — Hibernate keeps the first-loaded field state and won't refresh it on re-query, even though the SQL fetched fresh values. `JooqQueryHelper.nativeQuery` does **not** escape this (native entity queries still return the already-managed instance). So don't JPA-load a row you're about to jOOQ-mutate and then JPA-re-read it in the same transaction expecting fresh state — read the discriminating value (id, status) with a jOOQ **scalar** fetch (see `RefreshTokenService.redeem` → `RefreshTokenRepositoryCustom.findSessionIdByDigest`, which avoids caching the token it then rotates via jOOQ), or `em.refresh()` it. Not statically enforceable (temporal data-flow, not structural); the safety net is concurrency ITs (`RefreshRotationConcurrencyIT`, `RefreshRevocationRaceIT`). Single-thread happy paths hide it; it surfaces under concurrency.
 - **Pagination**: keyset/seek (`row(fields)` comparisons, NULLS LAST) fetching `limit + 2` to detect adjacent pages — no OFFSET pagination
 - No optimistic locking (`@Version`); entity equality is id-based with `hashCode() = getClass().hashCode()` (Hibernate-proxy-safe)
 

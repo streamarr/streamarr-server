@@ -1,6 +1,6 @@
 type Rating {
     id: ID!
-    createdBy: ID!
+    createdBy: ID
     createdOn: String!
     lastModifiedBy: ID
     lastModifiedOn: String!

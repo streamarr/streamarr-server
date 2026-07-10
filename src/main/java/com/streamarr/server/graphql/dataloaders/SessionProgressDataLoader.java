@@ -28,7 +28,8 @@ public class SessionProgressDataLoader
   private Map<SessionProgressLoaderKey, WatchProgressDto> loadProgress(
       Set<SessionProgressLoaderKey> keys) {
     var result = new HashMap<SessionProgressLoaderKey, WatchProgressDto>();
-    var keysByUser = keys.stream().collect(Collectors.groupingBy(SessionProgressLoaderKey::userId));
+    var keysByUser =
+        keys.stream().collect(Collectors.groupingBy(SessionProgressLoaderKey::profileId));
 
     for (var entry : keysByUser.entrySet()) {
       var mediaFileIds =

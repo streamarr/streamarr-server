@@ -92,16 +92,16 @@ public class WatchHistoryRecord extends UpdatableRecordImpl<WatchHistoryRecord> 
     }
 
     /**
-     * Setter for <code>public.watch_history.user_id</code>.
+     * Setter for <code>public.watch_history.profile_id</code>.
      */
-    public void setUserId(UUID value) {
+    public void setProfileId(UUID value) {
         set(5, value);
     }
 
     /**
-     * Getter for <code>public.watch_history.user_id</code>.
+     * Getter for <code>public.watch_history.profile_id</code>.
      */
-    public UUID getUserId() {
+    public UUID getProfileId() {
         return (UUID) get(5);
     }
 
@@ -184,7 +184,7 @@ public class WatchHistoryRecord extends UpdatableRecordImpl<WatchHistoryRecord> 
     /**
      * Create a detached, initialised WatchHistoryRecord
      */
-    public WatchHistoryRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, UUID userId, UUID collectableId, OffsetDateTime watchedAt, Integer durationSeconds, OffsetDateTime dismissedAt) {
+    public WatchHistoryRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, UUID profileId, UUID collectableId, OffsetDateTime watchedAt, Integer durationSeconds, OffsetDateTime dismissedAt) {
         super(WatchHistory.WATCH_HISTORY);
 
         setId(id);
@@ -192,7 +192,7 @@ public class WatchHistoryRecord extends UpdatableRecordImpl<WatchHistoryRecord> 
         setCreatedBy(createdBy);
         setLastModifiedOn(lastModifiedOn);
         setLastModifiedBy(lastModifiedBy);
-        setUserId(userId);
+        setProfileId(profileId);
         setCollectableId(collectableId);
         setWatchedAt(watchedAt);
         setDurationSeconds(durationSeconds);

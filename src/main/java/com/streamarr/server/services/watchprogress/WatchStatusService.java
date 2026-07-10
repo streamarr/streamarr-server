@@ -38,8 +38,10 @@ public class WatchStatusService {
   private final ApplicationEventPublisher eventPublisher;
 
   public Map<UUID, SessionProgress> getProgressForMediaFiles(
-      UUID userId, Collection<UUID> mediaFileIds) {
-    return sessionProgressRepository.findByUserIdAndMediaFileIdIn(userId, mediaFileIds).stream()
+      UUID profileId, Collection<UUID> mediaFileIds) {
+    return sessionProgressRepository
+        .findByProfileIdAndMediaFileIdIn(profileId, mediaFileIds)
+        .stream()
         .collect(
             Collectors.toMap(
                 SessionProgress::getMediaFileId,
@@ -48,54 +50,54 @@ public class WatchStatusService {
   }
 
   @Transactional
-  public void markWatched(UUID userId, UUID collectableId) {
+  public void markWatched(UUID profileId, UUID collectableId) {
     var scope = resolveCollectableScope(collectableId);
-    markWatchedInternal(userId, collectableId, scope, Instant.now(), 0);
+    markWatchedInternal(profileId, collectableId, scope, Instant.now(), 0);
   }
 
   @Transactional
   public void markWatched(
-      UUID userId,
+      UUID profileId,
       UUID collectableId,
       CollectableScope scope,
       Instant watchedAt,
       int durationSeconds) {
-    markWatchedInternal(userId, collectableId, scope, watchedAt, durationSeconds);
+    markWatchedInternal(profileId, collectableId, scope, watchedAt, durationSeconds);
   }
 
   private void markWatchedInternal(
-      UUID userId,
+      UUID profileId,
       UUID collectableId,
       CollectableScope scope,
       Instant watchedAt,
       int durationSeconds) {
     var leafIds = resolveLeafCollectableIds(collectableId, scope);
-    watchHistoryRepository.batchInsert(userId, leafIds, watchedAt, durationSeconds);
+    watchHistoryRepository.batchInsert(profileId, leafIds, watchedAt, durationSeconds);
 
-    eventPublisher.publishEvent(new WatchStatusChangedEvent(userId, collectableId));
+    eventPublisher.publishEvent(new WatchStatusChangedEvent(profileId, collectableId));
   }
 
   @Transactional
-  public void markUnwatched(UUID userId, UUID collectableId) {
+  public void markUnwatched(UUID profileId, UUID collectableId) {
     var scope = resolveCollectableScope(collectableId);
-    markUnwatchedInternal(userId, collectableId, scope);
+    markUnwatchedInternal(profileId, collectableId, scope);
   }
 
   @Transactional
-  public void markUnwatched(UUID userId, UUID collectableId, CollectableScope scope) {
-    markUnwatchedInternal(userId, collectableId, scope);
+  public void markUnwatched(UUID profileId, UUID collectableId, CollectableScope scope) {
+    markUnwatchedInternal(profileId, collectableId, scope);
   }
 
-  private void markUnwatchedInternal(UUID userId, UUID collectableId, CollectableScope scope) {
+  private void markUnwatchedInternal(UUID profileId, UUID collectableId, CollectableScope scope) {
     var leafIds = resolveLeafCollectableIds(collectableId, scope);
-    watchHistoryRepository.dismissAll(userId, leafIds);
+    watchHistoryRepository.dismissAll(profileId, leafIds);
 
     var mediaFileIds = mediaFileRepository.findMediaFileIdsByMediaIds(leafIds);
     if (!mediaFileIds.isEmpty()) {
-      sessionProgressRepository.deleteByUserIdAndMediaFileIds(userId, mediaFileIds);
+      sessionProgressRepository.deleteByProfileIdAndMediaFileIds(profileId, mediaFileIds);
     }
 
-    eventPublisher.publishEvent(new WatchStatusChangedEvent(userId, collectableId));
+    eventPublisher.publishEvent(new WatchStatusChangedEvent(profileId, collectableId));
   }
 
   private CollectableScope resolveCollectableScope(UUID collectableId) {
@@ -120,8 +122,8 @@ public class WatchStatusService {
   }
 
   public Map<UUID, WatchStatus> getWatchStatusForDirectMedia(
-      UUID userId, Collection<UUID> collectableIds) {
-    var data = fetchCollectableMediaData(userId, collectableIds);
+      UUID profileId, Collection<UUID> collectableIds) {
+    var data = fetchCollectableMediaData(profileId, collectableIds);
 
     var result = new HashMap<UUID, WatchStatus>();
     for (var collectableId : collectableIds) {
@@ -135,11 +137,14 @@ public class WatchStatusService {
     return result;
   }
 
-  public Map<UUID, WatchStatus> getWatchStatusForSeasons(UUID userId, Collection<UUID> seasonIds) {
-    return aggregateStatusByGroup(userId, episodeRepository.findEpisodeIdsBySeasonIds(seasonIds));
+  public Map<UUID, WatchStatus> getWatchStatusForSeasons(
+      UUID profileId, Collection<UUID> seasonIds) {
+    return aggregateStatusByGroup(
+        profileId, episodeRepository.findEpisodeIdsBySeasonIds(seasonIds));
   }
 
-  public Map<UUID, WatchStatus> getWatchStatusForSeries(UUID userId, Collection<UUID> seriesIds) {
+  public Map<UUID, WatchStatus> getWatchStatusForSeries(
+      UUID profileId, Collection<UUID> seriesIds) {
     var seasonIdsBySeriesId = seasonRepository.findSeasonIdsBySeriesIds(seriesIds);
     if (seasonIdsBySeriesId.isEmpty()) {
       return Map.of();
@@ -159,16 +164,16 @@ public class WatchStatusService {
               .flatMap(seasonId -> episodeIdsBySeasonId.getOrDefault(seasonId, List.of()).stream())
               .toList());
     }
-    return aggregateStatusByGroup(userId, episodeIdsBySeriesId);
+    return aggregateStatusByGroup(profileId, episodeIdsBySeriesId);
   }
 
   private Map<UUID, WatchStatus> aggregateStatusByGroup(
-      UUID userId, Map<UUID, List<UUID>> episodeIdsByGroup) {
+      UUID profileId, Map<UUID, List<UUID>> episodeIdsByGroup) {
     if (episodeIdsByGroup.isEmpty()) {
       return Map.of();
     }
 
-    var data = fetchCollectableMediaData(userId, flatten(episodeIdsByGroup));
+    var data = fetchCollectableMediaData(profileId, flatten(episodeIdsByGroup));
 
     var result = new HashMap<UUID, WatchStatus>();
     for (var entry : episodeIdsByGroup.entrySet()) {
@@ -182,12 +187,13 @@ public class WatchStatusService {
   }
 
   public Map<UUID, WatchProgressDto> getAggregateProgressForSeasons(
-      UUID userId, Collection<UUID> seasonIds) {
-    return aggregateProgressByGroup(userId, episodeRepository.findEpisodeIdsBySeasonIds(seasonIds));
+      UUID profileId, Collection<UUID> seasonIds) {
+    return aggregateProgressByGroup(
+        profileId, episodeRepository.findEpisodeIdsBySeasonIds(seasonIds));
   }
 
   public Map<UUID, WatchProgressDto> getAggregateProgressForSeries(
-      UUID userId, Collection<UUID> seriesIds) {
+      UUID profileId, Collection<UUID> seriesIds) {
     var seasonIdsBySeriesId = seasonRepository.findSeasonIdsBySeriesIds(seriesIds);
     if (seasonIdsBySeriesId.isEmpty()) {
       return Map.of();
@@ -207,16 +213,16 @@ public class WatchStatusService {
               .flatMap(seasonId -> episodeIdsBySeasonId.getOrDefault(seasonId, List.of()).stream())
               .toList());
     }
-    return aggregateProgressByGroup(userId, episodeIdsBySeriesId);
+    return aggregateProgressByGroup(profileId, episodeIdsBySeriesId);
   }
 
   private Map<UUID, WatchProgressDto> aggregateProgressByGroup(
-      UUID userId, Map<UUID, List<UUID>> episodeIdsByGroup) {
+      UUID profileId, Map<UUID, List<UUID>> episodeIdsByGroup) {
     if (episodeIdsByGroup.isEmpty()) {
       return Map.of();
     }
 
-    var data = fetchCollectableMediaData(userId, flatten(episodeIdsByGroup));
+    var data = fetchCollectableMediaData(profileId, flatten(episodeIdsByGroup));
 
     var result = new HashMap<UUID, WatchProgressDto>();
     for (var entry : episodeIdsByGroup.entrySet()) {
@@ -242,13 +248,13 @@ public class WatchStatusService {
       Map<UUID, SessionProgress> progressMap) {}
 
   private CollectableMediaData fetchCollectableMediaData(
-      UUID userId, Collection<UUID> collectableIds) {
-    var watchedIds = findWatchedCollectableIds(userId, collectableIds);
+      UUID profileId, Collection<UUID> collectableIds) {
+    var watchedIds = findWatchedCollectableIds(profileId, collectableIds);
     var mediaFiles = mediaFileRepository.findByMediaIdIn(collectableIds);
     var mediaFilesByCollectableId =
         mediaFiles.stream().collect(Collectors.groupingBy(MediaFile::getMediaId));
     var progressMap =
-        getProgressForMediaFiles(userId, mediaFiles.stream().map(MediaFile::getId).toList());
+        getProgressForMediaFiles(profileId, mediaFiles.stream().map(MediaFile::getId).toList());
     return new CollectableMediaData(watchedIds, mediaFilesByCollectableId, progressMap);
   }
 
@@ -264,8 +270,10 @@ public class WatchStatusService {
     return idsByGroup.values().stream().flatMap(Collection::stream).toList();
   }
 
-  private Set<UUID> findWatchedCollectableIds(UUID userId, Collection<UUID> collectableIds) {
-    return watchHistoryRepository.findByUserIdAndCollectableIdIn(userId, collectableIds).stream()
+  private Set<UUID> findWatchedCollectableIds(UUID profileId, Collection<UUID> collectableIds) {
+    return watchHistoryRepository
+        .findByProfileIdAndCollectableIdIn(profileId, collectableIds)
+        .stream()
         .filter(wh -> wh.getDismissedAt() == null)
         .map(WatchHistory::getCollectableId)
         .collect(Collectors.toSet());

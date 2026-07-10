@@ -10,7 +10,11 @@ import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.metadata.Company;
 import com.streamarr.server.domain.metadata.Genre;
 import com.streamarr.server.domain.metadata.Person;
+import com.streamarr.server.repositories.auth.AccountProfileRepository;
+import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.SeriesService;
+import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
+import com.streamarr.server.support.security.WithProfileContext;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -23,11 +27,21 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @Tag("UnitTest")
 @EnableDgsTest
-@SpringBootTest(classes = {SeriesFieldResolver.class, SeriesResolver.class})
+@WithProfileContext
+@SpringBootTest(
+    classes = {
+      SeriesFieldResolver.class,
+      SeriesResolver.class,
+      SecurityContextAuthorizationService.class
+    })
 @DisplayName("Series Field Resolver Tests")
 class SeriesFieldResolverTest {
 
   @Autowired private DgsQueryExecutor dgsQueryExecutor;
+
+  @MockitoBean private ProfileRepository profileRepository;
+
+  @MockitoBean private AccountProfileRepository accountProfileRepository;
 
   @MockitoBean private SeriesService seriesService;
 

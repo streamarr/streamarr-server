@@ -79,7 +79,7 @@ class StreamingSessionCleanupListenerTest {
     }
 
     @Override
-    public StreamSession createSession(UUID mediaFileId, StreamingOptions options) {
+    public StreamSession createSession(UUID mediaFileId, UUID profileId, StreamingOptions options) {
       throw new UnsupportedOperationException();
     }
 
@@ -91,6 +91,11 @@ class StreamingSessionCleanupListenerTest {
     @Override
     public void destroySession(UUID sessionId) {
       sessions.remove(sessionId);
+    }
+
+    @Override
+    public void destroySession(UUID sessionId, UUID profileId) {
+      throw new UnsupportedOperationException();
     }
 
     @Override

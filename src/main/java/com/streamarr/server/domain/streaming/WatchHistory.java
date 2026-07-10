@@ -22,7 +22,7 @@ import lombok.experimental.SuperBuilder;
 @EqualsAndHashCode(callSuper = true, onlyExplicitlyIncluded = true)
 public class WatchHistory extends BaseAuditableEntity<WatchHistory> {
 
-  private UUID userId;
+  private UUID profileId;
   private UUID collectableId;
   private Instant watchedAt;
   private int durationSeconds;

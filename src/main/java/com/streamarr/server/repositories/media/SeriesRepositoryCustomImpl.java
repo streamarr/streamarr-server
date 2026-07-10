@@ -194,10 +194,10 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
       return noCondition();
     }
 
-    var userId = requireUserId(filter.getUserId());
+    var profileId = requireProfileId(filter.getProfileId());
 
-    var fullyWatched = seriesHasEpisodes().and(not(seriesHasUnwatchedEpisode(userId)));
-    var hasAnyWatchActivity = anyEpisodeWatched(userId).or(anyEpisodeHasProgress(userId));
+    var fullyWatched = seriesHasEpisodes().and(not(seriesHasUnwatchedEpisode(profileId)));
+    var hasAnyWatchActivity = anyEpisodeWatched(profileId).or(anyEpisodeHasProgress(profileId));
 
     return switch (watchStatus) {
       case WATCHED -> fullyWatched;
@@ -215,7 +215,7 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
             .where(Tables.SEASON.SERIES_ID.eq(Tables.BASE_COLLECTABLE.ID)));
   }
 
-  private static Condition seriesHasUnwatchedEpisode(UUID userId) {
+  private static Condition seriesHasUnwatchedEpisode(UUID profileId) {
     return exists(
         select(Tables.EPISODE.ID)
             .from(Tables.EPISODE)
@@ -225,10 +225,10 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
                 Tables.SEASON
                     .SERIES_ID
                     .eq(Tables.BASE_COLLECTABLE.ID)
-                    .and(not(episodeIsWatched(userId)))));
+                    .and(not(episodeIsWatched(profileId)))));
   }
 
-  private static Condition episodeIsWatched(UUID userId) {
+  private static Condition episodeIsWatched(UUID profileId) {
     return exists(
         select(Tables.WATCH_HISTORY.ID)
             .from(Tables.WATCH_HISTORY)
@@ -236,11 +236,11 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
                 Tables.WATCH_HISTORY
                     .COLLECTABLE_ID
                     .eq(Tables.EPISODE.ID)
-                    .and(Tables.WATCH_HISTORY.USER_ID.eq(userId))
+                    .and(Tables.WATCH_HISTORY.PROFILE_ID.eq(profileId))
                     .and(Tables.WATCH_HISTORY.DISMISSED_AT.isNull())));
   }
 
-  private static Condition anyEpisodeWatched(UUID userId) {
+  private static Condition anyEpisodeWatched(UUID profileId) {
     return exists(
         select(Tables.WATCH_HISTORY.ID)
             .from(Tables.WATCH_HISTORY)
@@ -252,11 +252,11 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
                 Tables.SEASON
                     .SERIES_ID
                     .eq(Tables.BASE_COLLECTABLE.ID)
-                    .and(Tables.WATCH_HISTORY.USER_ID.eq(userId))
+                    .and(Tables.WATCH_HISTORY.PROFILE_ID.eq(profileId))
                     .and(Tables.WATCH_HISTORY.DISMISSED_AT.isNull())));
   }
 
-  private static Condition anyEpisodeHasProgress(UUID userId) {
+  private static Condition anyEpisodeHasProgress(UUID profileId) {
     return exists(
         select(Tables.SESSION_PROGRESS.ID)
             .from(Tables.SESSION_PROGRESS)
@@ -270,12 +270,12 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
                 Tables.SEASON
                     .SERIES_ID
                     .eq(Tables.BASE_COLLECTABLE.ID)
-                    .and(Tables.SESSION_PROGRESS.USER_ID.eq(userId))
+                    .and(Tables.SESSION_PROGRESS.PROFILE_ID.eq(profileId))
                     .and(Tables.SESSION_PROGRESS.POSITION_SECONDS.greaterThan(0))));
   }
 
   private Field<?> lastWatchedField(MediaFilter filter) {
-    var userId = requireUserId(filter.getUserId());
+    var profileId = requireProfileId(filter.getProfileId());
     return select(max(Tables.SESSION_PROGRESS.LAST_MODIFIED_ON))
         .from(Tables.SESSION_PROGRESS)
         .innerJoin(Tables.MEDIA_FILE)
@@ -288,17 +288,17 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
             Tables.SEASON
                 .SERIES_ID
                 .eq(Tables.BASE_COLLECTABLE.ID)
-                .and(Tables.SESSION_PROGRESS.USER_ID.eq(userId)))
+                .and(Tables.SESSION_PROGRESS.PROFILE_ID.eq(profileId)))
         .asField();
   }
 
   @Override
-  public Map<UUID, Instant> findLastWatchedBySeriesIds(UUID userId, Collection<UUID> seriesIds) {
+  public Map<UUID, Instant> findLastWatchedBySeriesIds(UUID profileId, Collection<UUID> seriesIds) {
     if (seriesIds == null || seriesIds.isEmpty()) {
       return Map.of();
     }
 
-    var resolvedUserId = requireUserId(userId);
+    var resolvedProfileId = requireProfileId(profileId);
     var maxField = max(Tables.SESSION_PROGRESS.LAST_MODIFIED_ON);
 
     return context
@@ -314,13 +314,13 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
             Tables.SEASON
                 .SERIES_ID
                 .in(seriesIds)
-                .and(Tables.SESSION_PROGRESS.USER_ID.eq(resolvedUserId)))
+                .and(Tables.SESSION_PROGRESS.PROFILE_ID.eq(resolvedProfileId)))
         .groupBy(Tables.SEASON.SERIES_ID)
         .fetchMap(Tables.SEASON.SERIES_ID, r -> toInstant(r.get(maxField)));
   }
 
-  private static UUID requireUserId(UUID userId) {
-    return Objects.requireNonNull(userId, "userId is required for user-scoped watch queries");
+  private static UUID requireProfileId(UUID profileId) {
+    return Objects.requireNonNull(profileId, "profileId is required for user-scoped watch queries");
   }
 
   private static Instant toInstant(OffsetDateTime value) {

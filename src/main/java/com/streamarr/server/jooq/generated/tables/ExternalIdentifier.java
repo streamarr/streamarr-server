@@ -75,7 +75,7 @@ public class ExternalIdentifier extends TableImpl<ExternalIdentifierRecord> {
     /**
      * The column <code>public.external_identifier.created_by</code>.
      */
-    public final TableField<ExternalIdentifierRecord, UUID> CREATED_BY = createField(DSL.name("created_by"), SQLDataType.UUID.nullable(false), this, "");
+    public final TableField<ExternalIdentifierRecord, UUID> CREATED_BY = createField(DSL.name("created_by"), SQLDataType.UUID, this, "");
 
     /**
      * The column <code>public.external_identifier.last_modified_on</code>.

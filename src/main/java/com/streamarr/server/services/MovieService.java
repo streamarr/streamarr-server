@@ -219,7 +219,7 @@ public class MovieService {
       return Map.of();
     }
     return movieRepository.findLastWatchedByMovieIds(
-        filter.getUserId(), movies.stream().map(Movie::getId).toList());
+        filter.getProfileId(), movies.stream().map(Movie::getId).toList());
   }
 
   private Object getOrderByValue(

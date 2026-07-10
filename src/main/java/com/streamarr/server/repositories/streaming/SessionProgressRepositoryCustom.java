@@ -9,9 +9,12 @@ public interface SessionProgressRepositoryCustom {
 
   boolean upsertProgress(SaveWatchProgress progress);
 
-  Optional<SessionProgress> findMostRecentByUserIdAndMediaFileId(UUID userId, UUID mediaFileId);
+  Optional<SessionProgress> findMostRecentByProfileIdAndMediaFileId(
+      UUID profileId, UUID mediaFileId);
 
   void deleteBySessionId(UUID sessionId);
 
-  void deleteByUserIdAndMediaFileIds(UUID userId, Collection<UUID> mediaFileIds);
+  void deleteByProfileIdAndMediaFileIds(UUID profileId, Collection<UUID> mediaFileIds);
+
+  void reassignProfile(UUID fromProfileId, UUID toProfileId);
 }

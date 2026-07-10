@@ -24,6 +24,7 @@ public class HouseholdMembershipRepositoryCustomImpl
   private final EntityManager entityManager;
   private final DSLContext dsl;
   private final AuditorAware<UUID> auditorAware;
+  private final CounterChangePublisher counterChangePublisher;
 
   @Override
   @Transactional
@@ -32,7 +33,9 @@ public class HouseholdMembershipRepositoryCustomImpl
     membership.setMembershipVersion(nextMembershipVersion());
     entityManager.persist(membership);
     entityManager.flush();
-    return changeFrom(membership);
+    var versionChange = changeFrom(membership);
+    counterChangePublisher.publishMembership(versionChange);
+    return versionChange;
   }
 
   @Override
@@ -40,21 +43,26 @@ public class HouseholdMembershipRepositoryCustomImpl
   public Optional<MembershipVersionChange> changeRole(HouseholdMembership membership) {
     var auditUser = auditorAware.getCurrentAuditor().orElse(null);
 
-    return dsl.update(HOUSEHOLD_MEMBERSHIP)
-        .set(
-            HOUSEHOLD_MEMBERSHIP.HOUSEHOLD_ROLE,
-            com.streamarr.server.jooq.generated.enums.HouseholdRole.valueOf(
-                membership.getHouseholdRole().name()))
-        .set(HOUSEHOLD_MEMBERSHIP.MEMBERSHIP_VERSION, HOUSEHOLD_MEMBERSHIP_VERSION_SEQ.nextval())
-        .set(HOUSEHOLD_MEMBERSHIP.LAST_MODIFIED_ON, OffsetDateTime.now(ZoneOffset.UTC))
-        .set(HOUSEHOLD_MEMBERSHIP.LAST_MODIFIED_BY, auditUser)
-        .where(HOUSEHOLD_MEMBERSHIP.ACCOUNT_ID.eq(membership.getAccountId()))
-        .and(HOUSEHOLD_MEMBERSHIP.HOUSEHOLD_ID.eq(membership.getHouseholdId()))
-        .returning(
-            HOUSEHOLD_MEMBERSHIP.ACCOUNT_ID,
-            HOUSEHOLD_MEMBERSHIP.HOUSEHOLD_ID,
-            HOUSEHOLD_MEMBERSHIP.MEMBERSHIP_VERSION)
-        .fetchOptional(this::changeFrom);
+    var versionChange =
+        dsl.update(HOUSEHOLD_MEMBERSHIP)
+            .set(
+                HOUSEHOLD_MEMBERSHIP.HOUSEHOLD_ROLE,
+                com.streamarr.server.jooq.generated.enums.HouseholdRole.valueOf(
+                    membership.getHouseholdRole().name()))
+            .set(
+                HOUSEHOLD_MEMBERSHIP.MEMBERSHIP_VERSION, HOUSEHOLD_MEMBERSHIP_VERSION_SEQ.nextval())
+            .set(HOUSEHOLD_MEMBERSHIP.LAST_MODIFIED_ON, OffsetDateTime.now(ZoneOffset.UTC))
+            .set(HOUSEHOLD_MEMBERSHIP.LAST_MODIFIED_BY, auditUser)
+            .where(HOUSEHOLD_MEMBERSHIP.ACCOUNT_ID.eq(membership.getAccountId()))
+            .and(HOUSEHOLD_MEMBERSHIP.HOUSEHOLD_ID.eq(membership.getHouseholdId()))
+            .returning(
+                HOUSEHOLD_MEMBERSHIP.ACCOUNT_ID,
+                HOUSEHOLD_MEMBERSHIP.HOUSEHOLD_ID,
+                HOUSEHOLD_MEMBERSHIP.MEMBERSHIP_VERSION)
+            .fetchOptional(this::changeFrom);
+
+    versionChange.ifPresent(counterChangePublisher::publishMembership);
+    return versionChange;
   }
 
   @Override
@@ -77,10 +85,12 @@ public class HouseholdMembershipRepositoryCustomImpl
       return Optional.empty();
     }
 
+    var changed = versionChange.orElseThrow();
     dsl.deleteFrom(HOUSEHOLD_MEMBERSHIP)
         .where(HOUSEHOLD_MEMBERSHIP.ACCOUNT_ID.eq(accountId))
         .and(HOUSEHOLD_MEMBERSHIP.HOUSEHOLD_ID.eq(householdId))
         .execute();
+    counterChangePublisher.publishMembership(changed);
     return versionChange;
   }
 

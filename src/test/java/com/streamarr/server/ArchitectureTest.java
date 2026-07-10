@@ -1,6 +1,7 @@
 package com.streamarr.server;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noMethods;
 
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
@@ -8,6 +9,7 @@ import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
+import org.springframework.transaction.annotation.Transactional;
 
 @Tag("UnitTest")
 @DisplayName("Architecture Rules")
@@ -55,4 +57,51 @@ class ArchitectureTest {
           .dependOnClassesThat()
           .resideInAnyPackage("..graphql..")
           .as("Services must not depend on graphql");
+
+  @ArchTest
+  static final ArchRule authServicesMustNotDependOnJooq =
+      noClasses()
+          .that()
+          .resideInAPackage("..services.auth..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAPackage("org.jooq..")
+          .as("Auth services must not depend on jOOQ; DSLContext stays in repositories");
+
+  // Transaction boundaries belong in services. A transactional controller/resolver would run
+  // several service calls in one persistence context, where a JPA read can return Hibernate's
+  // stale first-level-cache copy of a row a jOOQ write already changed (see AGENTS.md,
+  // Persistence).
+  private static final String TRANSACTION_BOUNDARY_REASON =
+      "Controllers and resolvers must not be @Transactional — transaction boundaries belong in"
+          + " services so each call gets its own persistence context";
+
+  @ArchTest
+  static final ArchRule controllersAndResolversMustNotBeTransactional =
+      noClasses()
+          .that()
+          .resideInAnyPackage("..controllers..", "..graphql..")
+          .should()
+          .beAnnotatedWith(Transactional.class)
+          .as(TRANSACTION_BOUNDARY_REASON);
+
+  @ArchTest
+  static final ArchRule controllerAndResolverMethodsMustNotBeTransactional =
+      noMethods()
+          .that()
+          .areDeclaredInClassesThat()
+          .resideInAnyPackage("..controllers..", "..graphql..")
+          .should()
+          .beAnnotatedWith(Transactional.class)
+          .as(TRANSACTION_BOUNDARY_REASON);
+
+  @ArchTest
+  static final ArchRule authRepositoriesMustNotDependOnAuthServices =
+      noClasses()
+          .that()
+          .resideInAPackage("..repositories.auth..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAPackage("..services.auth..")
+          .as("Auth repositories must remain below auth services in the dependency direction");
 }

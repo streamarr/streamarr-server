@@ -3,7 +3,6 @@ package com.streamarr.server.services.watchprogress;
 import com.streamarr.server.config.WatchProgressProperties;
 import com.streamarr.server.domain.streaming.CollectableScope;
 import com.streamarr.server.domain.streaming.PlaybackState;
-import com.streamarr.server.domain.streaming.SessionProgress;
 import com.streamarr.server.exceptions.MediaFileNotFoundException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
@@ -13,7 +12,6 @@ import com.streamarr.server.services.streaming.StreamSessionRepository;
 import com.streamarr.server.services.watchprogress.events.ItemWatchedEvent;
 import com.streamarr.server.services.watchprogress.events.SessionProgressChangedEvent;
 import java.time.Instant;
-import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -33,13 +31,9 @@ public class SessionProgressService {
   private final WatchStatusService watchStatusService;
   private final ApplicationEventPublisher eventPublisher;
 
-  public Optional<SessionProgress> getProgress(UUID userId, UUID mediaFileId) {
-    return sessionProgressRepository.findMostRecentByUserIdAndMediaFileId(userId, mediaFileId);
-  }
-
   @Transactional
   public void reportStreamSessionTimeline(
-      UUID userId, UUID sessionId, int positionSeconds, PlaybackState state) {
+      UUID profileId, UUID sessionId, int positionSeconds, PlaybackState state) {
     if (positionSeconds < 0) {
       return;
     }
@@ -48,6 +42,15 @@ public class SessionProgressService {
         sessionRepository
             .findById(sessionId)
             .orElseThrow(() -> new SessionNotFoundException(sessionId));
+    // Unowned reads as missing — same SessionNotFound as a vanished session, never an
+    // ownership error (no existence oracle); the warn keeps the miss visible to operators.
+    if (!session.isOwnedBy(profileId)) {
+      log.warn(
+          "Timeline report for session {} rejected: profile {} does not own it",
+          sessionId,
+          profileId);
+      throw new SessionNotFoundException(sessionId);
+    }
 
     session.updatePlaybackState(positionSeconds, state);
 
@@ -62,11 +65,11 @@ public class SessionProgressService {
             sessionId, session.getMediaFileId(), positionSeconds, percentComplete, durationSeconds);
 
     if (state == PlaybackState.STOPPED) {
-      handleStoppedPlayback(userId, context);
+      handleStoppedPlayback(profileId, context);
       return;
     }
 
-    persistProgress(userId, context, state);
+    persistProgress(profileId, context, state);
   }
 
   private record PlaybackContext(
@@ -76,39 +79,43 @@ public class SessionProgressService {
       double percentComplete,
       int durationSeconds) {}
 
-  private void handleStoppedPlayback(UUID userId, PlaybackContext ctx) {
+  private void handleStoppedPlayback(UUID profileId, PlaybackContext ctx) {
     var remainingSeconds = ctx.durationSeconds() - ctx.positionSeconds();
     var decision =
         evaluateStopDecision(ctx.percentComplete(), remainingSeconds, ctx.durationSeconds());
 
     switch (decision) {
       case DISCARD -> sessionProgressRepository.deleteBySessionId(ctx.sessionId());
-      case MARK_WATCHED -> markSessionWatched(userId, ctx);
-      case PERSIST -> persistProgress(userId, ctx, PlaybackState.STOPPED);
+      case MARK_WATCHED -> markSessionWatched(profileId, ctx);
+      case PERSIST -> persistProgress(profileId, ctx, PlaybackState.STOPPED);
     }
   }
 
-  private void markSessionWatched(UUID userId, PlaybackContext ctx) {
+  private void markSessionWatched(UUID profileId, PlaybackContext ctx) {
     sessionProgressRepository.deleteBySessionId(ctx.sessionId());
 
     var collectableId = resolveCollectableId(ctx.mediaFileId());
     watchStatusService.markWatched(
-        userId, collectableId, CollectableScope.DIRECT_MEDIA, Instant.now(), ctx.durationSeconds());
+        profileId,
+        collectableId,
+        CollectableScope.DIRECT_MEDIA,
+        Instant.now(),
+        ctx.durationSeconds());
 
     eventPublisher.publishEvent(
         ItemWatchedEvent.builder()
             .sessionId(ctx.sessionId())
-            .userId(userId)
+            .profileId(profileId)
             .mediaFileId(ctx.mediaFileId())
             .collectableId(collectableId)
             .build());
   }
 
-  private void persistProgress(UUID userId, PlaybackContext ctx, PlaybackState state) {
+  private void persistProgress(UUID profileId, PlaybackContext ctx, PlaybackState state) {
     sessionProgressRepository.upsertProgress(
         SaveWatchProgress.builder()
             .sessionId(ctx.sessionId())
-            .userId(userId)
+            .profileId(profileId)
             .mediaFileId(ctx.mediaFileId())
             .positionSeconds(ctx.positionSeconds())
             .percentComplete(ctx.percentComplete())
@@ -118,7 +125,7 @@ public class SessionProgressService {
     eventPublisher.publishEvent(
         SessionProgressChangedEvent.builder()
             .sessionId(ctx.sessionId())
-            .userId(userId)
+            .profileId(profileId)
             .mediaFileId(ctx.mediaFileId())
             .positionSeconds(ctx.positionSeconds())
             .percentComplete(ctx.percentComplete())

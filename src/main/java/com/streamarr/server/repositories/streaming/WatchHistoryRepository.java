@@ -10,8 +10,9 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface WatchHistoryRepository
     extends JpaRepository<WatchHistory, UUID>, WatchHistoryRepositoryCustom {
 
-  Optional<WatchHistory> findFirstByUserIdAndCollectableIdOrderByWatchedAtDesc(
-      UUID userId, UUID collectableId);
+  Optional<WatchHistory> findFirstByProfileIdAndCollectableIdOrderByWatchedAtDesc(
+      UUID profileId, UUID collectableId);
 
-  List<WatchHistory> findByUserIdAndCollectableIdIn(UUID userId, Collection<UUID> collectableIds);
+  List<WatchHistory> findByProfileIdAndCollectableIdIn(
+      UUID profileId, Collection<UUID> collectableIds);
 }

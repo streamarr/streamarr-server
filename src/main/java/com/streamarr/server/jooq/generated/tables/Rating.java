@@ -74,7 +74,7 @@ public class Rating extends TableImpl<RatingRecord> {
     /**
      * The column <code>public.rating.created_by</code>.
      */
-    public final TableField<RatingRecord, UUID> CREATED_BY = createField(DSL.name("created_by"), SQLDataType.UUID.nullable(false), this, "");
+    public final TableField<RatingRecord, UUID> CREATED_BY = createField(DSL.name("created_by"), SQLDataType.UUID, this, "");
 
     /**
      * The column <code>public.rating.last_modified_on</code>.

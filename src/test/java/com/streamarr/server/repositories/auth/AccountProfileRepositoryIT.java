@@ -10,6 +10,7 @@ import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
+import com.streamarr.server.services.auth.TokenVersionCache;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -30,6 +31,27 @@ class AccountProfileRepositoryIT extends AbstractIntegrationTest {
 
   @Autowired private AccountProfileRepository accountProfileRepository;
 
+  @Autowired private TokenVersionCache tokenVersionCache;
+
+  @Test
+  @DisplayName("Should refresh warmed version cache when profile linked")
+  void shouldRefreshWarmedVersionCacheWhenProfileLinked() {
+    var seeded = seedMembershipWithUnlinkedProfile();
+    var initialVersion = membershipVersionOf(seeded.membership());
+    assertThat(
+            tokenVersionCache.membershipVersion(
+                seeded.link().getAccountId(), seeded.link().getHouseholdId()))
+        .contains(initialVersion);
+
+    accountProfileRepository.linkProfile(seeded.link());
+
+    var linkedVersion = membershipVersionOf(seeded.membership());
+    assertThat(
+            tokenVersionCache.membershipVersion(
+                seeded.link().getAccountId(), seeded.link().getHouseholdId()))
+        .contains(linkedVersion);
+  }
+
   @Test
   @DisplayName("Should bump membership version when profile link revoked")
   void shouldBumpMembershipVersionWhenProfileLinkRevoked() {
@@ -40,11 +62,20 @@ class AccountProfileRepositoryIT extends AbstractIntegrationTest {
 
     var linkedVersion = membershipVersionOf(seeded.membership());
     assertThat(linkedVersion).isGreaterThan(initialVersion);
+    assertThat(
+            tokenVersionCache.membershipVersion(
+                seeded.link().getAccountId(), seeded.link().getHouseholdId()))
+        .contains(linkedVersion);
 
     var revoked = accountProfileRepository.revokeProfileLink(seeded.link());
 
+    var revokedVersion = membershipVersionOf(seeded.membership());
     assertThat(revoked).isTrue();
-    assertThat(membershipVersionOf(seeded.membership())).isGreaterThan(linkedVersion);
+    assertThat(revokedVersion).isGreaterThan(linkedVersion);
+    assertThat(
+            tokenVersionCache.membershipVersion(
+                seeded.link().getAccountId(), seeded.link().getHouseholdId()))
+        .contains(revokedVersion);
     assertThat(accountProfileRepository.findAll())
         .noneMatch(remaining -> seeded.link().getProfileId().equals(remaining.getProfileId()));
   }

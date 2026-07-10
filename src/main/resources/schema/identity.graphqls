@@ -1,0 +1,21 @@
+type Me {
+    accountId: ID!
+    email: String!
+    displayName: String!
+    role: String!
+    scope: String!
+    memberships: [Membership!]!
+}
+
+type Membership {
+    householdId: ID!
+    householdName: String!
+    householdRole: String!
+    profiles: [SelectableProfile!]!
+}
+
+type SelectableProfile {
+    id: ID!
+    name: String!
+    active: Boolean!
+}

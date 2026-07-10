@@ -2,7 +2,6 @@ package com.streamarr.server.controllers;
 
 import com.streamarr.server.services.ImageService;
 import java.io.IOException;
-import java.time.Duration;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,7 +34,7 @@ public class ImageController {
 
       return ResponseEntity.ok()
           .contentType(MediaType.IMAGE_JPEG)
-          .cacheControl(CacheControl.maxAge(Duration.ofDays(365)).cachePublic().immutable())
+          .cacheControl(CacheControl.noStore())
           .eTag(imageId.toString())
           .body(imageData);
     } catch (IOException e) {

@@ -5,6 +5,7 @@ import static com.streamarr.server.jooq.generated.tables.AccountProfile.ACCOUNT_
 import static com.streamarr.server.jooq.generated.tables.HouseholdMembership.HOUSEHOLD_MEMBERSHIP;
 
 import com.streamarr.server.domain.auth.AccountProfile;
+import com.streamarr.server.domain.auth.MembershipVersionChange;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.UUID;
@@ -18,6 +19,7 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
 
   private final DSLContext dsl;
   private final AuditorAware<UUID> auditorAware;
+  private final CounterChangePublisher counterChangePublisher;
 
   @Override
   @Transactional
@@ -32,7 +34,8 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
         .set(ACCOUNT_PROFILE.LAST_MODIFIED_BY, auditUser)
         .execute();
 
-    bumpMembershipVersion(link, auditUser);
+    var versionChange = bumpMembershipVersion(link, auditUser);
+    counterChangePublisher.publishMembership(versionChange);
   }
 
   @Override
@@ -51,17 +54,28 @@ public class AccountProfileRepositoryCustomImpl implements AccountProfileReposit
       return false;
     }
 
-    bumpMembershipVersion(link, auditUser);
+    var versionChange = bumpMembershipVersion(link, auditUser);
+    counterChangePublisher.publishMembership(versionChange);
     return true;
   }
 
-  private void bumpMembershipVersion(AccountProfile link, UUID auditUser) {
-    dsl.update(HOUSEHOLD_MEMBERSHIP)
-        .set(HOUSEHOLD_MEMBERSHIP.MEMBERSHIP_VERSION, HOUSEHOLD_MEMBERSHIP_VERSION_SEQ.nextval())
-        .set(HOUSEHOLD_MEMBERSHIP.LAST_MODIFIED_ON, OffsetDateTime.now(ZoneOffset.UTC))
-        .set(HOUSEHOLD_MEMBERSHIP.LAST_MODIFIED_BY, auditUser)
-        .where(HOUSEHOLD_MEMBERSHIP.ACCOUNT_ID.eq(link.getAccountId()))
-        .and(HOUSEHOLD_MEMBERSHIP.HOUSEHOLD_ID.eq(link.getHouseholdId()))
-        .execute();
+  /**
+   * Returns the globally allocated bump so each profile-link path can dispatch the local cache
+   * event and cross-instance notification together (ADR 0015 requirement, ADR 0016 propagation).
+   */
+  private MembershipVersionChange bumpMembershipVersion(AccountProfile link, UUID auditUser) {
+    // The membership row is FK-guaranteed: every account_profile row references it, so the
+    // link being granted or revoked proves it exists in this transaction.
+    var version =
+        dsl.update(HOUSEHOLD_MEMBERSHIP)
+            .set(
+                HOUSEHOLD_MEMBERSHIP.MEMBERSHIP_VERSION, HOUSEHOLD_MEMBERSHIP_VERSION_SEQ.nextval())
+            .set(HOUSEHOLD_MEMBERSHIP.LAST_MODIFIED_ON, OffsetDateTime.now(ZoneOffset.UTC))
+            .set(HOUSEHOLD_MEMBERSHIP.LAST_MODIFIED_BY, auditUser)
+            .where(HOUSEHOLD_MEMBERSHIP.ACCOUNT_ID.eq(link.getAccountId()))
+            .and(HOUSEHOLD_MEMBERSHIP.HOUSEHOLD_ID.eq(link.getHouseholdId()))
+            .returning(HOUSEHOLD_MEMBERSHIP.MEMBERSHIP_VERSION)
+            .fetchSingle(HOUSEHOLD_MEMBERSHIP.MEMBERSHIP_VERSION);
+    return new MembershipVersionChange(link.getAccountId(), link.getHouseholdId(), version);
   }
 }

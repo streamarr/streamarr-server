@@ -32,12 +32,13 @@ public class AggregateWatchProgressDataLoader
       Set<WatchProgressLoaderKey> keys) {
     var result = new HashMap<WatchProgressLoaderKey, WatchProgressDto>();
     var keysByBatch =
-        keys.stream().collect(Collectors.groupingBy(key -> new Batch(key.userId(), key.scope())));
+        keys.stream()
+            .collect(Collectors.groupingBy(key -> new Batch(key.profileId(), key.scope())));
 
     for (var entry : keysByBatch.entrySet()) {
       var entityIds = entry.getValue().stream().map(WatchProgressLoaderKey::entityId).toList();
       var progressByEntityId =
-          loadByScope(entry.getKey().userId(), entry.getKey().scope(), entityIds);
+          loadByScope(entry.getKey().profileId(), entry.getKey().scope(), entityIds);
 
       for (var key : entry.getValue()) {
         result.put(key, progressByEntityId.get(key.entityId()));
@@ -47,13 +48,13 @@ public class AggregateWatchProgressDataLoader
     return result;
   }
 
-  private record Batch(UUID userId, CollectableScope scope) {}
+  private record Batch(UUID profileId, CollectableScope scope) {}
 
   private Map<UUID, WatchProgressDto> loadByScope(
-      UUID userId, CollectableScope scope, List<UUID> entityIds) {
+      UUID profileId, CollectableScope scope, List<UUID> entityIds) {
     return switch (scope) {
-      case SEASON -> watchStatusService.getAggregateProgressForSeasons(userId, entityIds);
-      case SERIES -> watchStatusService.getAggregateProgressForSeries(userId, entityIds);
+      case SEASON -> watchStatusService.getAggregateProgressForSeasons(profileId, entityIds);
+      case SERIES -> watchStatusService.getAggregateProgressForSeries(profileId, entityIds);
       case DIRECT_MEDIA ->
           throw new UnsupportedOperationException(
               "DIRECT_MEDIA uses the per-media-file watchProgress loader");
