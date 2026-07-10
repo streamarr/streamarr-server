@@ -64,7 +64,7 @@ class SessionSelectionRevocationRaceIT extends AbstractIntegrationTest {
 
     for (int round = 0; round < ROUNDS; round++) {
       var household = householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
-      householdMembershipRepository.save(
+      householdMembershipRepository.grantMembership(
           HouseholdMembership.builder()
               .accountId(account.getId())
               .householdId(household.getId())

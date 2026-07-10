@@ -90,11 +90,13 @@ public class LibraryResolver {
 
   @DgsQuery
   public List<Library> libraries() {
+    authorizationService.requireProfile();
     return libraryRepository.findAll();
   }
 
   @DgsQuery
   public Optional<Library> library(String id) {
+    authorizationService.requireProfile();
     return libraryRepository.findById(parseUuid(id));
   }
 
@@ -150,6 +152,7 @@ public class LibraryResolver {
 
   @DgsData(parentType = "Library")
   public List<AlphabetIndexDto> alphabetIndex(DataFetchingEnvironment dfe) {
+    authorizationService.requireProfile();
     Library library = dfe.getSource();
     return libraryManagementService.getAlphabetIndex(library.getId()).stream()
         .map(m -> new AlphabetIndexDto(m.getLetter(), m.getItemCount()))

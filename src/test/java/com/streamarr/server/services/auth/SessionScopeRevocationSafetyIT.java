@@ -63,7 +63,7 @@ class SessionScopeRevocationSafetyIT extends AbstractIntegrationTest {
   void shouldKeepSessionRevokedWhenAutoSelectContextRunsOnStaleEntity() {
     account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
     var household = householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
-    membershipRepository.save(
+    membershipRepository.grantMembership(
         HouseholdMembership.builder()
             .accountId(account.getId())
             .householdId(household.getId())
@@ -90,7 +90,7 @@ class SessionScopeRevocationSafetyIT extends AbstractIntegrationTest {
   void shouldKeepSessionRevokedWhenRevalidationDowngradesStaleEntity() {
     account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
     var household = householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
-    membershipRepository.save(
+    membershipRepository.grantMembership(
         HouseholdMembership.builder()
             .accountId(account.getId())
             .householdId(household.getId())

@@ -16,4 +16,20 @@ public record AuthTokenProperties(
     List<String> verificationKeys,
     @NotNull @DurationMin(seconds = 0, inclusive = false) Duration accessTokenTtl,
     @NotNull @DurationMin(seconds = 0, inclusive = false) Duration refreshTokenTtl,
-    @NotNull @DurationMin Duration rotationGrace) {}
+    @NotNull @DurationMin Duration rotationGrace) {
+
+  public static class AuthTokenPropertiesBuilder {
+
+    @Override
+    public String toString() {
+      return "AuthTokenPropertiesBuilder[signingKey=[REDACTED], accessTokenTtl=%s, refreshTokenTtl=%s, rotationGrace=%s]"
+          .formatted(accessTokenTtl, refreshTokenTtl, rotationGrace);
+    }
+  }
+
+  @Override
+  public String toString() {
+    return "AuthTokenProperties[signingKey=[REDACTED], accessTokenTtl=%s, refreshTokenTtl=%s, rotationGrace=%s]"
+        .formatted(accessTokenTtl, refreshTokenTtl, rotationGrace);
+  }
+}

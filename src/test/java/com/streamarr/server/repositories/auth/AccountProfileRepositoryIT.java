@@ -10,6 +10,7 @@ import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
+import com.streamarr.server.services.auth.TokenVersionCache;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -30,19 +31,51 @@ class AccountProfileRepositoryIT extends AbstractIntegrationTest {
 
   @Autowired private AccountProfileRepository accountProfileRepository;
 
+  @Autowired private TokenVersionCache tokenVersionCache;
+
+  @Test
+  @DisplayName("Should refresh warmed version cache when profile linked")
+  void shouldRefreshWarmedVersionCacheWhenProfileLinked() {
+    var seeded = seedMembershipWithUnlinkedProfile();
+    var initialVersion = membershipVersionOf(seeded.membership());
+    assertThat(
+            tokenVersionCache.membershipVersion(
+                seeded.link().getAccountId(), seeded.link().getHouseholdId()))
+        .contains(initialVersion);
+
+    accountProfileRepository.linkProfile(seeded.link());
+
+    var linkedVersion = membershipVersionOf(seeded.membership());
+    assertThat(
+            tokenVersionCache.membershipVersion(
+                seeded.link().getAccountId(), seeded.link().getHouseholdId()))
+        .contains(linkedVersion);
+  }
+
   @Test
   @DisplayName("Should bump membership version when profile link revoked")
   void shouldBumpMembershipVersionWhenProfileLinkRevoked() {
     var seeded = seedMembershipWithUnlinkedProfile();
+    var initialVersion = membershipVersionOf(seeded.membership());
 
     accountProfileRepository.linkProfile(seeded.link());
 
-    assertThat(membershipVersionOf(seeded.membership())).isEqualTo(1L);
+    var linkedVersion = membershipVersionOf(seeded.membership());
+    assertThat(linkedVersion).isGreaterThan(initialVersion);
+    assertThat(
+            tokenVersionCache.membershipVersion(
+                seeded.link().getAccountId(), seeded.link().getHouseholdId()))
+        .contains(linkedVersion);
 
     var revoked = accountProfileRepository.revokeProfileLink(seeded.link());
 
+    var revokedVersion = membershipVersionOf(seeded.membership());
     assertThat(revoked).isTrue();
-    assertThat(membershipVersionOf(seeded.membership())).isEqualTo(2L);
+    assertThat(revokedVersion).isGreaterThan(linkedVersion);
+    assertThat(
+            tokenVersionCache.membershipVersion(
+                seeded.link().getAccountId(), seeded.link().getHouseholdId()))
+        .contains(revokedVersion);
     assertThat(accountProfileRepository.findAll())
         .noneMatch(remaining -> seeded.link().getProfileId().equals(remaining.getProfileId()));
   }
@@ -51,11 +84,12 @@ class AccountProfileRepositoryIT extends AbstractIntegrationTest {
   @DisplayName("Should not bump membership version when revoking absent link")
   void shouldNotBumpMembershipVersionWhenRevokingAbsentLink() {
     var seeded = seedMembershipWithUnlinkedProfile();
+    var initialVersion = membershipVersionOf(seeded.membership());
 
     var revoked = accountProfileRepository.revokeProfileLink(seeded.link());
 
     assertThat(revoked).isFalse();
-    assertThat(membershipVersionOf(seeded.membership())).isZero();
+    assertThat(membershipVersionOf(seeded.membership())).isEqualTo(initialVersion);
   }
 
   @Test
@@ -64,12 +98,13 @@ class AccountProfileRepositoryIT extends AbstractIntegrationTest {
     var seeded = seedMembershipWithUnlinkedProfile();
     var link = seeded.link();
     accountProfileRepository.linkProfile(link);
+    var linkedVersion = membershipVersionOf(seeded.membership());
 
     assertThatThrownBy(() -> accountProfileRepository.linkProfile(link))
         .isInstanceOf(DataIntegrityViolationException.class)
         .hasMessageContaining("uq_account_profile_account_profile");
 
-    assertThat(membershipVersionOf(seeded.membership())).isEqualTo(1L);
+    assertThat(membershipVersionOf(seeded.membership())).isEqualTo(linkedVersion);
   }
 
   @Test
@@ -91,7 +126,7 @@ class AccountProfileRepositoryIT extends AbstractIntegrationTest {
     var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
     var household = householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
     var membership =
-        householdMembershipRepository.save(
+        grantMembership(
             HouseholdMembership.builder()
                 .accountId(account.getId())
                 .householdId(household.getId())
@@ -114,5 +149,12 @@ class AccountProfileRepositoryIT extends AbstractIntegrationTest {
         .findById(membership.getId())
         .orElseThrow()
         .getMembershipVersion();
+  }
+
+  private HouseholdMembership grantMembership(HouseholdMembership membership) {
+    householdMembershipRepository.grantMembership(membership);
+    return householdMembershipRepository
+        .findByAccountIdAndHouseholdId(membership.getAccountId(), membership.getHouseholdId())
+        .orElseThrow();
   }
 }

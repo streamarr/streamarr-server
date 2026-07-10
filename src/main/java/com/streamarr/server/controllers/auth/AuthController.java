@@ -1,5 +1,6 @@
 package com.streamarr.server.controllers.auth;
 
+import com.streamarr.server.config.security.StreamarrBearerTokenResolver;
 import com.streamarr.server.exceptions.InvalidRefreshTokenException;
 import com.streamarr.server.services.auth.AccessToken;
 import com.streamarr.server.services.auth.AccessTokenIssuer;
@@ -58,7 +59,7 @@ public class AuthController {
 
   @PostMapping("/change-password")
   public ResponseEntity<AuthTokensResponse> changePassword(
-      @Valid @RequestBody ChangePasswordRequest request) {
+      @Valid @RequestBody ChangePasswordRequest request, HttpServletRequest httpRequest) {
     var identity = authorizationService.currentIdentity();
     var result =
         passwordChangeService.changePassword(
@@ -72,27 +73,35 @@ public class AuthController {
     var context = sessionScopeService.revalidateStoredContext(result.account(), result.session());
     var accessToken = accessTokenIssuer.issue(context);
 
-    return respond(HttpStatus.OK, accessToken, result.rawRefreshToken(), request.cookieMode());
+    return respond(
+        HttpStatus.OK,
+        accessToken,
+        result.rawRefreshToken(),
+        StreamarrBearerTokenResolver.usedAccessCookie(httpRequest));
   }
 
   @PostMapping("/select-household")
   public ResponseEntity<AuthTokensResponse> selectHousehold(
-      @Valid @RequestBody SelectHouseholdRequest request) {
+      @Valid @RequestBody SelectHouseholdRequest request, HttpServletRequest httpRequest) {
     var identity = authorizationService.currentIdentity();
     var context =
         sessionScopeService.selectHousehold(
             identity.accountId(), identity.sessionId(), request.householdId());
-    return respondAccessOnly(accessTokenIssuer.issue(context), request.cookieMode());
+    return respondAccessOnly(
+        accessTokenIssuer.issue(context),
+        StreamarrBearerTokenResolver.usedAccessCookie(httpRequest));
   }
 
   @PostMapping("/select-profile")
   public ResponseEntity<AuthTokensResponse> selectProfile(
-      @Valid @RequestBody SelectProfileRequest request) {
+      @Valid @RequestBody SelectProfileRequest request, HttpServletRequest httpRequest) {
     var identity = authorizationService.currentIdentity();
     var context =
         sessionScopeService.selectProfile(
             identity.accountId(), identity.sessionId(), request.profileId());
-    return respondAccessOnly(accessTokenIssuer.issue(context), request.cookieMode());
+    return respondAccessOnly(
+        accessTokenIssuer.issue(context),
+        StreamarrBearerTokenResolver.usedAccessCookie(httpRequest));
   }
 
   @PostMapping("/setup")
@@ -140,22 +149,20 @@ public class AuthController {
 
     var refreshed = tokenRefreshService.refresh(carrier.refreshToken());
 
-    // Only a genuine rotation carries a successor refresh token; a grace replay never does —
-    // exactly one refresh cookie per grace episode, so late responses cannot poison the jar.
-    if (refreshed.rotated()) {
+    if (refreshed.carriesRefreshToken()) {
       return respond(
           HttpStatus.OK,
           refreshed.accessToken(),
-          refreshed.rotatedRefreshToken(),
+          refreshed.rawRefreshToken(),
           carrier.cookieMode());
     }
     return respondAccessOnly(refreshed.accessToken(), carrier.cookieMode());
   }
 
-  private RefreshRequest resolveRefreshCarrier(
+  private RefreshCarrier resolveRefreshCarrier(
       RefreshRequest request, HttpServletRequest httpRequest) {
     if (request != null && request.refreshToken() != null && !request.refreshToken().isBlank()) {
-      return request;
+      return new RefreshCarrier(request.refreshToken(), false);
     }
 
     var cookies = httpRequest.getCookies();
@@ -167,9 +174,11 @@ public class AuthController {
         .filter(cookie -> AuthCookieWriter.REFRESH_COOKIE.equals(cookie.getName()))
         .map(jakarta.servlet.http.Cookie::getValue)
         .findFirst()
-        .map(rawToken -> new RefreshRequest(rawToken, true))
+        .map(rawToken -> new RefreshCarrier(rawToken, true))
         .orElseThrow(InvalidRefreshTokenException::new);
   }
+
+  private record RefreshCarrier(String refreshToken, boolean cookieMode) {}
 
   private static String deviceNameOf(HttpServletRequest httpRequest) {
     return httpRequest.getHeader(HttpHeaders.USER_AGENT);
@@ -193,7 +202,7 @@ public class AuthController {
         .body(body.build());
   }
 
-  /** Grace replays refresh the access credential only; the refresh cookie is never rewritten. */
+  /** Writes only the access credential for scope changes or a superseded refresh replay. */
   private ResponseEntity<AuthTokensResponse> respondAccessOnly(
       AccessToken accessToken, boolean cookieMode) {
     var body =

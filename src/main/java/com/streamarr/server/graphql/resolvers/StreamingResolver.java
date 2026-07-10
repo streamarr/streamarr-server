@@ -40,7 +40,12 @@ public class StreamingResolver {
         streamingService.createSession(
             parseUuid(mediaFileId), authorizationService.requireProfile(), opts);
 
-    return toDto(session);
+    try {
+      return toDto(session);
+    } catch (RuntimeException exception) {
+      streamingService.destroySession(session.getSessionId());
+      throw exception;
+    }
   }
 
   @DgsMutation

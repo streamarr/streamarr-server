@@ -54,13 +54,13 @@ class VersionCounterReaderIT extends AbstractIntegrationTest {
     account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
     var household = householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
     householdId = household.getId();
-    membershipRepository.save(
-        HouseholdMembership.builder()
-            .accountId(account.getId())
-            .householdId(householdId)
-            .householdRole(HouseholdRole.OWNER)
-            .membershipVersion(4)
-            .build());
+    var membership =
+        membershipRepository.grantMembership(
+            HouseholdMembership.builder()
+                .accountId(account.getId())
+                .householdId(householdId)
+                .householdRole(HouseholdRole.OWNER)
+                .build());
     var profile =
         profileRepository.save(
             ProfileFixture.defaultProfileBuilder()
@@ -72,7 +72,8 @@ class VersionCounterReaderIT extends AbstractIntegrationTest {
             AuthSession.builder().accountId(account.getId()).sessionVersion(2).build());
 
     assertThat(versionCounterReader.sessionVersion(session.getId())).contains(2L);
-    assertThat(versionCounterReader.membershipVersion(account.getId(), householdId)).contains(4L);
+    assertThat(versionCounterReader.membershipVersion(account.getId(), householdId))
+        .contains(membership.version());
     assertThat(versionCounterReader.profilePolicyVersion(profile.getId())).contains(6L);
   }
 

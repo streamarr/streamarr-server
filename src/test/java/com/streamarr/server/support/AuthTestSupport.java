@@ -67,7 +67,7 @@ public class AuthTestSupport {
                 .passwordHash(passwordEncoder.encode(PASSWORD))
                 .build());
     var household = householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
-    membershipRepository.save(
+    membershipRepository.grantMembership(
         HouseholdMembership.builder()
             .accountId(account.getId())
             .householdId(household.getId())
