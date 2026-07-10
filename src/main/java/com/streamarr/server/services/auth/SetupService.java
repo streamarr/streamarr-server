@@ -32,8 +32,8 @@ public class SetupService {
 
   /**
    * Identity every watch row was written against before real profiles existed. Setup remaps those
-   * rows to the first profile; the constant (and its twin in graphql.CurrentUser) disappears at the
-   * enforcement flip.
+   * rows to the first profile; the constant disappears when the V047 profile FK is validated and
+   * the placeholder era ends.
    */
   private static final UUID LEGACY_PLACEHOLDER_PROFILE_ID =
       UUID.fromString("00000000-0000-0000-0000-000000000001");

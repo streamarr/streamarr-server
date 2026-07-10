@@ -1,17 +1,23 @@
 package com.streamarr.server.config;
 
+import jakarta.validation.constraints.NotNull;
 import java.nio.file.Path;
 import java.time.Duration;
 import lombok.Builder;
+import org.hibernate.validator.constraints.time.DurationMin;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.validation.annotation.Validated;
 
 @Builder
+@Validated
 @ConfigurationProperties(prefix = "streaming")
 public record StreamingProperties(
     int maxConcurrentTranscodes,
     Duration segmentDuration,
     Duration sessionTimeout,
-    Duration sessionRetention,
+    // Session retention contributes the playback token's pause/slow-playback slack; reject a
+    // non-positive value at startup rather than minting unusable tokens.
+    @NotNull @DurationMin(seconds = 0, inclusive = false) Duration sessionRetention,
     String segmentBasePath,
     String ffmpegPath,
     String ffprobePath) {

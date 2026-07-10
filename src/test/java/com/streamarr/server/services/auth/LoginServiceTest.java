@@ -9,7 +9,6 @@ import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.PasswordEncoderConfig;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.exceptions.TooManyLoginAttemptsException;
-import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeRefreshTokenRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
@@ -43,7 +42,6 @@ class LoginServiceTest {
 
   private final FakeAuthSessionRepository sessionRepository = new FakeAuthSessionRepository();
   private final FakeRefreshTokenRepository tokenRepository = new FakeRefreshTokenRepository();
-  private final CapturingEventPublisher eventPublisher = new CapturingEventPublisher();
   private final RefreshTokenService refreshTokenService =
       new RefreshTokenService(
           sessionRepository,
@@ -56,8 +54,7 @@ class LoginServiceTest {
               .build(),
           clock,
           new TokenReuseRevoker(
-              new TokenReuseRevocationWriter(sessionRepository, tokenRepository, eventPublisher)),
-          eventPublisher);
+              new TokenReuseRevocationWriter(sessionRepository, tokenRepository)));
 
   private final LoginService loginService =
       new LoginService(

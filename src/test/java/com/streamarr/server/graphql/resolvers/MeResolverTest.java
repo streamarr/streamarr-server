@@ -119,6 +119,8 @@ class MeResolverTest {
     SecurityContextHolder.getContext()
         .setAuthentication(
             new StreamarrAuthenticationToken(
-                identity, null, List.of(new SimpleGrantedAuthority("SCOPE_ACCOUNT"))));
+                identity,
+                null,
+                List.of(new SimpleGrantedAuthority(TokenScope.ACCOUNT.authority()))));
   }
 }

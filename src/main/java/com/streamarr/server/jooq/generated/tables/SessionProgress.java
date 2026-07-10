@@ -8,6 +8,7 @@ import com.streamarr.server.jooq.generated.Indexes;
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.tables.MediaFile.MediaFilePath;
+import com.streamarr.server.jooq.generated.tables.Profile.ProfilePath;
 import com.streamarr.server.jooq.generated.tables.records.SessionProgressRecord;
 
 import java.time.OffsetDateTime;
@@ -200,7 +201,7 @@ public class SessionProgress extends TableImpl<SessionProgressRecord> {
 
     @Override
     public List<ForeignKey<SessionProgressRecord, ?>> getReferences() {
-        return Arrays.asList(Keys.SESSION_PROGRESS__FK_SESSION_PROGRESS_MEDIA_FILE);
+        return Arrays.asList(Keys.SESSION_PROGRESS__FK_SESSION_PROGRESS_MEDIA_FILE, Keys.SESSION_PROGRESS__FK_SESSION_PROGRESS_PROFILE);
     }
 
     private transient MediaFilePath _mediaFile;
@@ -213,6 +214,18 @@ public class SessionProgress extends TableImpl<SessionProgressRecord> {
             _mediaFile = new MediaFilePath(this, Keys.SESSION_PROGRESS__FK_SESSION_PROGRESS_MEDIA_FILE, null);
 
         return _mediaFile;
+    }
+
+    private transient ProfilePath _profile;
+
+    /**
+     * Get the implicit join path to the <code>public.profile</code> table.
+     */
+    public ProfilePath profile() {
+        if (_profile == null)
+            _profile = new ProfilePath(this, Keys.SESSION_PROGRESS__FK_SESSION_PROGRESS_PROFILE, null);
+
+        return _profile;
     }
 
     @Override

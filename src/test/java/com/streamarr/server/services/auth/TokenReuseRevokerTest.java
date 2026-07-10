@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
-import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeRefreshTokenRepository;
 import java.time.Instant;
@@ -26,8 +25,7 @@ class TokenReuseRevokerTest {
 
   private final TokenReuseRevoker revoker =
       new TokenReuseRevoker(
-          new TokenReuseRevocationWriter(
-              sessionRepository, new FakeRefreshTokenRepository(), new CapturingEventPublisher()));
+          new TokenReuseRevocationWriter(sessionRepository, new FakeRefreshTokenRepository()));
 
   @Test
   @DisplayName("Should revoke inline when scope synchronizes without a transaction")

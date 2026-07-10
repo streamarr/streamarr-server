@@ -20,10 +20,12 @@ import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
 import com.streamarr.server.repositories.streaming.WatchHistoryRepository;
+import com.streamarr.server.support.AuthTestSupport;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -43,18 +45,27 @@ class WatchStatusServiceIT extends AbstractIntegrationTest {
   @Autowired private WatchHistoryRepository watchHistoryRepository;
   @Autowired private SessionProgressRepository sessionProgressRepository;
   @Autowired private WatchStatusService watchStatusService;
+  @Autowired private AuthTestSupport authTestSupport;
 
   private Library library;
+  private AuthTestSupport.TestIdentity identity;
+  private UUID profileId;
 
   @BeforeAll
   void setup() {
     library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeSeriesLibrary());
+    identity = authTestSupport.createIdentity();
+    profileId = identity.profile().getId();
+  }
+
+  @AfterAll
+  void deleteIdentitySeed() {
+    authTestSupport.deleteIdentity(identity);
   }
 
   @Test
   @DisplayName("Should write history for every episode when marking series watched by id")
   void shouldWriteHistoryForEveryEpisodeWhenMarkingSeriesWatchedById() {
-    var profileId = UUID.randomUUID();
     var series = createSeries("Fully Watched Series");
     var seasonOne = createSeason(series, 1);
     var seasonTwo = createSeason(series, 2);
@@ -78,7 +89,6 @@ class WatchStatusServiceIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should insert history once when marking series watched twice at same instant")
   void shouldInsertHistoryOnceWhenMarkingSeriesWatchedTwiceAtSameInstant() {
-    var profileId = UUID.randomUUID();
     var series = createSeries("Idempotent Series");
     var season = createSeason(series, 1);
     var episodeIds = List.of(createEpisode(season, 1).getId(), createEpisode(season, 2).getId());
@@ -96,7 +106,6 @@ class WatchStatusServiceIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should dismiss history and delete progress when marking series unwatched")
   void shouldDismissHistoryAndDeleteProgressWhenMarkingSeriesUnwatched() {
-    var profileId = UUID.randomUUID();
     var series = createSeries("Reset Series");
     var season = createSeason(series, 1);
     var episode = createEpisodeWithFile(season, 1);

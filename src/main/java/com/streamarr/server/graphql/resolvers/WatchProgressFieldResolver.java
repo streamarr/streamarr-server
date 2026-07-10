@@ -9,12 +9,12 @@ import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.domain.streaming.CollectableScope;
 import com.streamarr.server.domain.streaming.WatchStatus;
-import com.streamarr.server.graphql.CurrentUser;
 import com.streamarr.server.graphql.dataloaders.SessionProgressLoaderKey;
 import com.streamarr.server.graphql.dataloaders.WatchProgressLoaderKey;
 import com.streamarr.server.graphql.dataloaders.WatchStatusLoaderKey;
 import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.SeriesService;
+import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.watchprogress.WatchProgressDto;
 import graphql.schema.DataFetchingEnvironment;
 import java.util.Comparator;
@@ -34,6 +34,7 @@ public class WatchProgressFieldResolver {
   private static final String WATCH_STATUS_LOADER = "watchStatus";
 
   private final MovieService movieService;
+  private final AuthorizationService authorizationService;
   private final SeriesService seriesService;
 
   @DgsData(parentType = "Movie", field = "watchProgress")
@@ -86,13 +87,13 @@ public class WatchProgressFieldResolver {
 
   private CompletableFuture<WatchProgressDto> loadProgress(
       DataFetchingEnvironment dfe, List<MediaFile> files) {
+    var profileId = authorizationService.requireProfile();
     if (files.isEmpty()) {
       return CompletableFuture.completedFuture(null);
     }
 
     DataLoader<SessionProgressLoaderKey, WatchProgressDto> loader =
         dfe.getDataLoader(WATCH_PROGRESS_LOADER);
-    var profileId = CurrentUser.id();
     var keys =
         files.stream().map(file -> new SessionProgressLoaderKey(profileId, file.getId())).toList();
 
@@ -110,12 +111,14 @@ public class WatchProgressFieldResolver {
       DataFetchingEnvironment dfe, UUID entityId, CollectableScope scope) {
     DataLoader<WatchProgressLoaderKey, WatchProgressDto> loader =
         dfe.getDataLoader(AGGREGATE_WATCH_PROGRESS_LOADER);
-    return loader.load(new WatchProgressLoaderKey(CurrentUser.id(), entityId, scope));
+    return loader.load(
+        new WatchProgressLoaderKey(authorizationService.requireProfile(), entityId, scope));
   }
 
   private CompletableFuture<WatchStatus> loadWatchStatus(
       DataFetchingEnvironment dfe, UUID entityId, CollectableScope scope) {
     DataLoader<WatchStatusLoaderKey, WatchStatus> loader = dfe.getDataLoader(WATCH_STATUS_LOADER);
-    return loader.load(new WatchStatusLoaderKey(CurrentUser.id(), entityId, scope));
+    return loader.load(
+        new WatchStatusLoaderKey(authorizationService.requireProfile(), entityId, scope));
   }
 }

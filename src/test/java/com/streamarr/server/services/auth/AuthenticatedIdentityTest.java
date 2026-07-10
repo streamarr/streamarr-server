@@ -25,4 +25,19 @@ class AuthenticatedIdentityTest {
 
     assertThatThrownBy(identity::build).isInstanceOf(IllegalArgumentException.class);
   }
+
+  @Test
+  @DisplayName("Should reject profile identity without household role")
+  void shouldRejectProfileIdentityWithoutHouseholdRole() {
+    var identity =
+        AuthenticatedIdentity.builder()
+            .accountId(UUID.randomUUID())
+            .role(AccountRole.USER)
+            .sessionId(UUID.randomUUID())
+            .scope(TokenScope.PROFILE)
+            .householdId(UUID.randomUUID())
+            .profileId(UUID.randomUUID());
+
+    assertThatThrownBy(identity::build).isInstanceOf(IllegalArgumentException.class);
+  }
 }

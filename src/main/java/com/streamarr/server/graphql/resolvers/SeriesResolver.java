@@ -9,6 +9,7 @@ import com.streamarr.server.domain.media.Season;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.exceptions.InvalidIdException;
 import com.streamarr.server.services.SeriesService;
+import com.streamarr.server.services.authorization.AuthorizationService;
 import graphql.schema.DataFetchingEnvironment;
 import java.util.List;
 import java.util.Optional;
@@ -20,19 +21,23 @@ import lombok.RequiredArgsConstructor;
 public class SeriesResolver {
 
   private final SeriesService seriesService;
+  private final AuthorizationService authorizationService;
 
   @DgsQuery
   public Optional<Series> series(String id) {
+    authorizationService.requireProfile();
     return seriesService.findById(parseUuid(id));
   }
 
   @DgsQuery
   public Optional<Season> season(String id) {
+    authorizationService.requireProfile();
     return seriesService.findSeasonById(parseUuid(id));
   }
 
   @DgsQuery
   public Optional<Episode> episode(String id) {
+    authorizationService.requireProfile();
     return seriesService.findEpisodeById(parseUuid(id));
   }
 

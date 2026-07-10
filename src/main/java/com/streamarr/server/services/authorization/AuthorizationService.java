@@ -13,6 +13,13 @@ public interface AuthorizationService {
 
   AuthenticatedIdentity currentIdentity();
 
+  /**
+   * The raw value of the signature-verified token that authenticated this request. Sourced from the
+   * validated token, never from a request parameter, so callers that echo it (e.g. playlist segment
+   * URLs) reflect only server-validated input.
+   */
+  String currentTokenValue();
+
   UUID requireAccountId();
 
   UUID requireHousehold();

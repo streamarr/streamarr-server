@@ -74,7 +74,7 @@ public class Review extends TableImpl<ReviewRecord> {
     /**
      * The column <code>public.review.created_by</code>.
      */
-    public final TableField<ReviewRecord, UUID> CREATED_BY = createField(DSL.name("created_by"), SQLDataType.UUID.nullable(false), this, "");
+    public final TableField<ReviewRecord, UUID> CREATED_BY = createField(DSL.name("created_by"), SQLDataType.UUID, this, "");
 
     /**
      * The column <code>public.review.last_modified_on</code>.

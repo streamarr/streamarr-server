@@ -27,8 +27,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 
 @Tag("UnitTest")
 @DisplayName("Authorization Service Tests")
@@ -139,6 +141,56 @@ class AuthorizationServiceTest {
         .isInstanceOf(AuthenticationRequiredException.class);
   }
 
+  @Test
+  @DisplayName("Should reject the token value when unauthenticated")
+  void shouldRejectCurrentTokenValueWhenUnauthenticated() {
+    assertThatThrownBy(authorizationService::currentTokenValue)
+        .isInstanceOf(AuthenticationRequiredException.class);
+  }
+
+  @Test
+  @DisplayName("Should return the validated token value when authenticated with a JWT credential")
+  void shouldReturnValidatedTokenValueWhenAuthenticated() {
+    var jwt =
+        Jwt.withTokenValue("signed.jwt.value")
+            .header("typ", "JWT")
+            .subject(accountId.toString())
+            .build();
+    authenticateWith(profileScopedIdentity(HouseholdRole.MEMBER, AccountRole.USER), jwt);
+
+    assertThat(authorizationService.currentTokenValue()).isEqualTo("signed.jwt.value");
+  }
+
+  @Test
+  @DisplayName("Should reject the token value when our token carries no JWT credential")
+  void shouldRejectTokenValueWhenStreamarrTokenCarriesNoJwt() {
+    authenticateWith(profileScopedIdentity(HouseholdRole.MEMBER, AccountRole.USER));
+
+    assertThatThrownBy(authorizationService::currentTokenValue)
+        .isInstanceOf(AuthenticationRequiredException.class);
+  }
+
+  @Test
+  @DisplayName("Should refuse the facade when a foreign authentication type carries a JWT")
+  void shouldRefuseFacadeWhenForeignAuthenticationCarriesJwt() {
+    var jwt =
+        Jwt.withTokenValue("attacker.controlled.jwt")
+            .header("typ", "JWT")
+            .subject(UUID.randomUUID().toString())
+            .build();
+    SecurityContextHolder.getContext()
+        .setAuthentication(
+            new UsernamePasswordAuthenticationToken(
+                "principal",
+                jwt,
+                List.of(new SimpleGrantedAuthority(TokenScope.PROFILE.authority()))));
+
+    assertThatThrownBy(authorizationService::currentIdentity)
+        .isInstanceOf(AuthenticationRequiredException.class);
+    assertThatThrownBy(authorizationService::currentTokenValue)
+        .isInstanceOf(AuthenticationRequiredException.class);
+  }
+
   @ParameterizedTest(name = "Should allow household role when minimum is {0}")
   @EnumSource(
       value = HouseholdRole.class,
@@ -209,8 +261,8 @@ class AuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should allow parent viewing activity of profile in active household")
-  void shouldAllowParentViewingActivityOfProfileInActiveHousehold() {
+  @DisplayName("Should allow a parent to view activity when the profile is in the active household")
+  void shouldAllowParentToViewActivityWhenProfileInActiveHousehold() {
     var managed = saveProfile(householdId);
     authenticateWith(profileScopedIdentity(HouseholdRole.PARENT, AccountRole.USER));
 
@@ -218,8 +270,9 @@ class AuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should deny parent viewing activity of profile outside active household")
-  void shouldDenyParentViewingActivityOfProfileOutsideActiveHousehold() {
+  @DisplayName(
+      "Should deny a parent from viewing activity when the profile is outside the active household")
+  void shouldDenyParentFromViewingActivityWhenProfileOutsideActiveHousehold() {
     var foreign = saveProfile(UUID.randomUUID());
     authenticateWith(profileScopedIdentity(HouseholdRole.PARENT, AccountRole.USER));
 
@@ -227,8 +280,8 @@ class AuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should deny parent viewing activity of missing profile")
-  void shouldDenyParentViewingActivityOfMissingProfile() {
+  @DisplayName("Should deny parent viewing activity when the profile is missing")
+  void shouldDenyParentViewingActivityWhenProfileMissing() {
     authenticateWith(profileScopedIdentity(HouseholdRole.PARENT, AccountRole.USER));
 
     assertThat(authorizationService.canViewActivityOf(UUID.randomUUID())).isFalse();
@@ -243,8 +296,8 @@ class AuthorizationServiceTest {
   }
 
   @Test
-  @DisplayName("Should allow server admin viewing any profile activity")
-  void shouldAllowServerAdminViewingAnyProfileActivity() {
+  @DisplayName("Should allow viewing any profile activity when the caller is a server admin")
+  void shouldAllowViewingAnyProfileActivityWhenServerAdmin() {
     var foreign = saveProfile(UUID.randomUUID());
     authenticateWith(profileScopedIdentity(HouseholdRole.MEMBER, AccountRole.ADMIN));
 
@@ -280,8 +333,12 @@ class AuthorizationServiceTest {
   }
 
   private void authenticateWith(AuthenticatedIdentity identity) {
-    var authorities = List.of(new SimpleGrantedAuthority("SCOPE_" + identity.scope().name()));
+    authenticateWith(identity, null);
+  }
+
+  private void authenticateWith(AuthenticatedIdentity identity, Jwt token) {
+    var authorities = List.of(new SimpleGrantedAuthority(identity.scope().authority()));
     SecurityContextHolder.getContext()
-        .setAuthentication(new StreamarrAuthenticationToken(identity, null, authorities));
+        .setAuthentication(new StreamarrAuthenticationToken(identity, token, authorities));
   }
 }

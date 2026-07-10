@@ -14,10 +14,14 @@ public record AuthenticatedIdentity(
     UUID accountId,
     AccountRole role,
     UUID sessionId,
+    Long sessionVersion,
     TokenScope scope,
     UUID householdId,
     HouseholdRole householdRole,
-    UUID profileId) {
+    Long membershipVersion,
+    UUID profileId,
+    Long policyVersion,
+    UUID streamSessionId) {
 
   public AuthenticatedIdentity {
     Objects.requireNonNull(accountId, "accountId is required");
@@ -46,10 +50,14 @@ public record AuthenticatedIdentity(
         .accountId(UUID.fromString(jwt.getSubject()))
         .role(AccountRole.valueOf(jwt.getClaimAsString(TokenClaims.ROLE)))
         .sessionId(UUID.fromString(jwt.getClaimAsString(TokenClaims.SESSION_ID)))
+        .sessionVersion(jwt.getClaim(TokenClaims.SESSION_VERSION))
         .scope(TokenScope.valueOf(jwt.getClaimAsString(TokenClaims.SCOPE).toUpperCase(Locale.ROOT)))
         .householdId(uuidClaim(jwt, TokenClaims.HOUSEHOLD_ID))
         .householdRole(householdRoleClaim(jwt))
+        .membershipVersion(jwt.getClaim(TokenClaims.MEMBERSHIP_VERSION))
         .profileId(uuidClaim(jwt, TokenClaims.PROFILE_ID))
+        .policyVersion(jwt.getClaim(TokenClaims.POLICY_VERSION))
+        .streamSessionId(uuidClaim(jwt, TokenClaims.STREAM_SESSION))
         .build();
   }
 

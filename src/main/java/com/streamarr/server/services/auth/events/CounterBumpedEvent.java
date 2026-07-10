@@ -1,6 +1,6 @@
 package com.streamarr.server.services.auth.events;
 
-import com.streamarr.server.services.auth.CounterKind;
+import com.streamarr.server.domain.auth.CounterKind;
 import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;

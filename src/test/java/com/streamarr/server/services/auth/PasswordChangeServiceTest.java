@@ -7,7 +7,6 @@ import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
-import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeAuthSessionRepository;
 import com.streamarr.server.fakes.FakeRefreshTokenRepository;
 import com.streamarr.server.fakes.FakeUserAccountRepository;
@@ -31,7 +30,6 @@ class PasswordChangeServiceTest {
   private final FakeRefreshTokenRepository tokenRepository = new FakeRefreshTokenRepository();
   private final PasswordEncoder passwordEncoder = new TestPasswordEncoder();
   private final Clock clock = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC);
-  private final CapturingEventPublisher eventPublisher = new CapturingEventPublisher();
   private final RefreshTokenService refreshTokenService =
       new RefreshTokenService(
           sessionRepository,
@@ -42,8 +40,7 @@ class PasswordChangeServiceTest {
               .build(),
           clock,
           new TokenReuseRevoker(
-              new TokenReuseRevocationWriter(sessionRepository, tokenRepository, eventPublisher)),
-          eventPublisher);
+              new TokenReuseRevocationWriter(sessionRepository, tokenRepository)));
   private final PasswordChangeService service =
       new PasswordChangeService(
           accountRepository,
@@ -51,8 +48,7 @@ class PasswordChangeServiceTest {
           tokenRepository,
           refreshTokenService,
           passwordEncoder,
-          clock,
-          eventPublisher);
+          clock);
 
   @Test
   @DisplayName("Should fail closed without issuing a token when account is missing")

@@ -14,16 +14,19 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
 import org.springframework.data.domain.AuditorAware;
+import org.springframework.transaction.annotation.Transactional;
 
 @RequiredArgsConstructor
 public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCustom {
 
   private final DSLContext dsl;
   private final AuditorAware<UUID> auditorAware;
+  private final CounterChangePublisher counterChangePublisher;
 
   @PersistenceContext private final EntityManager entityManager;
 
   @Override
+  @Transactional
   public Optional<Long> revoke(UUID sessionId, SessionRevocationReason reason, Instant now) {
     var nowOffset = now.atOffset(ZoneOffset.UTC);
 
@@ -42,10 +45,13 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
             .returning(AUTH_SESSION.SESSION_VERSION)
             .fetchOne();
 
-    return Optional.ofNullable(updated).map(row -> row.get(AUTH_SESSION.SESSION_VERSION));
+    var bumped = Optional.ofNullable(updated).map(row -> row.get(AUTH_SESSION.SESSION_VERSION));
+    bumped.ifPresent(version -> counterChangePublisher.publishSession(sessionId, version));
+    return bumped;
   }
 
   @Override
+  @Transactional
   public Optional<Long> bumpVersion(UUID sessionId, Instant now) {
     var nowOffset = now.atOffset(ZoneOffset.UTC);
 
@@ -59,7 +65,9 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
             .returning(AUTH_SESSION.SESSION_VERSION)
             .fetchOne();
 
-    return Optional.ofNullable(updated).map(row -> row.get(AUTH_SESSION.SESSION_VERSION));
+    var bumped = Optional.ofNullable(updated).map(row -> row.get(AUTH_SESSION.SESSION_VERSION));
+    bumped.ifPresent(version -> counterChangePublisher.publishSession(sessionId, version));
+    return bumped;
   }
 
   @Override

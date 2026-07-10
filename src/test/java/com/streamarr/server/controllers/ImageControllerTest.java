@@ -70,8 +70,8 @@ class ImageControllerTest {
   }
 
   @Test
-  @DisplayName("Should include immutable cache control header when image exists")
-  void shouldIncludeImmutableCacheControlHeaderWhenImageExists() throws Exception {
+  @DisplayName("Should prevent caching when image exists")
+  void shouldPreventCachingWhenImageExists() throws Exception {
     var image = createImageWithFile(new byte[] {1, 2, 3});
 
     var result =
@@ -80,10 +80,7 @@ class ImageControllerTest {
             .andExpect(status().isOk())
             .andReturn();
 
-    assertThat(result.getResponse().getHeader("Cache-Control"))
-        .contains("max-age=31536000")
-        .contains("public")
-        .contains("immutable");
+    assertThat(result.getResponse().getHeader("Cache-Control")).isEqualTo("no-store");
   }
 
   @Test

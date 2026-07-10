@@ -1,5 +1,6 @@
 package com.streamarr.server.config.security;
 
+import com.streamarr.server.services.auth.TokenScope;
 import org.springframework.security.access.hierarchicalroles.RoleHierarchy;
 import org.springframework.security.access.hierarchicalroles.RoleHierarchyImpl;
 
@@ -14,9 +15,12 @@ public final class ScopeHierarchy {
 
   public static RoleHierarchy roleHierarchy() {
     return RoleHierarchyImpl.fromHierarchy(
-        """
-        SCOPE_PROFILE > SCOPE_HOUSEHOLD
-        SCOPE_HOUSEHOLD > SCOPE_ACCOUNT
-        """);
+        grants(TokenScope.PROFILE, TokenScope.HOUSEHOLD)
+            + "\n"
+            + grants(TokenScope.HOUSEHOLD, TokenScope.ACCOUNT));
+  }
+
+  private static String grants(TokenScope higher, TokenScope lower) {
+    return higher.authority() + " > " + lower.authority();
   }
 }

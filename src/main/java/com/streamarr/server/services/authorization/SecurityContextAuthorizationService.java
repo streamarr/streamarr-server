@@ -13,6 +13,7 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -27,6 +28,16 @@ public class SecurityContextAuthorizationService implements AuthorizationService
     var authentication = SecurityContextHolder.getContext().getAuthentication();
     if (authentication instanceof StreamarrAuthenticationToken token) {
       return token.getPrincipal();
+    }
+    throw new AuthenticationRequiredException();
+  }
+
+  @Override
+  public String currentTokenValue() {
+    var authentication = SecurityContextHolder.getContext().getAuthentication();
+    if (authentication instanceof StreamarrAuthenticationToken token
+        && token.getCredentials() instanceof Jwt jwt) {
+      return jwt.getTokenValue();
     }
     throw new AuthenticationRequiredException();
   }

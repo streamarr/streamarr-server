@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 
 @Tag("UnitTest")
 @DisplayName("Streamarr Bearer Token Resolver Tests")
@@ -52,6 +53,19 @@ class StreamarrBearerTokenResolverTest {
     assertThat(resolver.resolve(requestFor("/api/images/some-id"))).isNull();
   }
 
+  @Test
+  @DisplayName("Should resolve playback query token when application has context path")
+  void shouldResolvePlaybackQueryTokenWhenApplicationHasContextPath() {
+    var request = requestFor("/streamarr/api/stream/some-id/master.m3u8");
+    request.setContextPath("/streamarr");
+    request.setServletPath("/api/stream/some-id/master.m3u8");
+    request.setParameter("t", "playback-token");
+    var streamMatcher = PathPatternRequestMatcher.withDefaults().matcher("/api/stream/**");
+
+    assertThat(streamMatcher.matches(request)).isTrue();
+    assertThat(resolver.resolve(request)).isEqualTo("playback-token");
+  }
+
   @ParameterizedTest(name = "Should suppress bearer resolution on {0}")
   @ValueSource(
       strings = {"/api/auth/status", "/api/auth/setup", "/api/auth/login", "/api/auth/refresh"})
@@ -72,6 +86,25 @@ class StreamarrBearerTokenResolverTest {
     request.setCookies(new Cookie(AuthCookies.ACCESS_COOKIE, "cookie-token"));
 
     assertThat(resolver.resolve(request)).isNull();
+  }
+
+  @ParameterizedTest(name = "Should suppress stale access cookie on public health path {0}")
+  @ValueSource(strings = {"/actuator/health", "/actuator/health/liveness"})
+  void shouldSuppressStaleAccessCookieOnPublicHealthPath(String uri) {
+    var request = requestFor(uri);
+    request.setCookies(new Cookie(AuthCookies.ACCESS_COOKIE, "stale-access-token"));
+
+    assertThat(resolver.resolve(request)).isNull();
+  }
+
+  @ParameterizedTest(name = "Should keep resolving access cookie on protected actuator path {0}")
+  @ValueSource(strings = {"/actuator/metrics", "/actuator/healthcheck"})
+  void shouldKeepResolvingAccessCookieOnProtectedActuatorPath(String uri) {
+    var request = requestFor(uri);
+    request.setCookies(new Cookie(AuthCookies.ACCESS_COOKIE, "access-token"));
+
+    assertThat(resolver.resolve(request)).isEqualTo("access-token");
+    assertThat(StreamarrBearerTokenResolver.usedAccessCookie(request)).isTrue();
   }
 
   private static MockHttpServletRequest requestFor(String uri) {
