@@ -60,6 +60,7 @@ class SeriesResolverTest {
 
   @Test
   @DisplayName("Should return background-created series when creator absent")
+  @SuppressWarnings("unchecked")
   void shouldReturnBackgroundCreatedSeriesWhenCreatorAbsent() {
     var seriesId = UUID.randomUUID();
     var series = Series.builder().title("Background Series").build();
@@ -73,10 +74,10 @@ class SeriesResolverTest {
 
     assertThat(result.getErrors()).isEmpty();
     var data = result.<Map<String, Object>>getData();
-    var seriesData = (Map<?, ?>) data.get("series");
-    assertThat(seriesData.get("title")).isEqualTo("Background Series");
-    assertThat(seriesData.containsKey("createdBy")).isTrue();
-    assertThat(seriesData.get("createdBy")).isNull();
+    var seriesData = (Map<String, Object>) data.get("series");
+    assertThat(seriesData)
+        .containsEntry("title", "Background Series")
+        .containsEntry("createdBy", null);
   }
 
   @Test

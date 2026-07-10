@@ -110,10 +110,11 @@ class RestAuthenticationEntryPointTest {
   @Test
   @DisplayName("Should propagate unexpected response writer runtime failures")
   void shouldPropagateUnexpectedResponseWriterRuntimeFailures() {
+    var request = new MockHttpServletRequest();
     var response = new RuntimeFailingResponse();
     var exception = new OAuth2AuthenticationException(new OAuth2Error("invalid_token"));
 
-    assertThatThrownBy(() -> entryPoint.commence(new MockHttpServletRequest(), response, exception))
+    assertThatThrownBy(() -> entryPoint.commence(request, response, exception))
         .isInstanceOf(IllegalStateException.class)
         .hasMessage("response already committed");
   }
