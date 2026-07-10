@@ -57,10 +57,11 @@ public class RefreshTokenService {
   /** Replaces the session's refresh-token family with one fresh active token. */
   @Transactional
   public IssuedRefreshToken reissueFor(AuthSession session) {
-    tokenRepository.revokeAllForSession(session.getId());
+    var now = clock.instant();
+    tokenRepository.revokeAllForSession(session.getId(), now);
 
     var rawToken = generateRawToken();
-    tokenRepository.save(buildActiveToken(session, rawToken, clock.instant()));
+    tokenRepository.save(buildActiveToken(session, rawToken, now));
 
     return new IssuedRefreshToken(rawToken, session);
   }

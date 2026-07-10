@@ -24,7 +24,7 @@ public class TokenReuseRevocationWriter {
   public void revoke(UUID sessionId, Instant detectedAt) {
     var bumpedVersion =
         sessionRepository.revoke(sessionId, SessionRevocationReason.TOKEN_REUSE, detectedAt);
-    tokenRepository.revokeAllForSession(sessionId);
+    tokenRepository.revokeAllForSession(sessionId, detectedAt);
 
     bumpedVersion.ifPresent(
         version -> eventPublisher.publishEvent(CounterBumpedEvent.session(sessionId, version)));

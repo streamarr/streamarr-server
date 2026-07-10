@@ -54,7 +54,7 @@ public class FakeRefreshTokenRepository extends FakeJpaRepository<RefreshToken>
   }
 
   @Override
-  public void revokeAllForSession(UUID sessionId) {
+  public void revokeAllForSession(UUID sessionId, Instant now) {
     database.values().stream()
         .filter(token -> sessionId.equals(token.getSessionId()))
         .forEach(token -> token.setStatus(RefreshTokenStatus.REVOKED));

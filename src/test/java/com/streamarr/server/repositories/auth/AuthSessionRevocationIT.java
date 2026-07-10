@@ -67,7 +67,7 @@ class AuthSessionRevocationIT extends AbstractIntegrationTest {
         tokenBuilder(session).status(RefreshTokenStatus.ROTATED).rotatedAt(Instant.now()).build());
     refreshTokenRepository.save(tokenBuilder(session).status(RefreshTokenStatus.ACTIVE).build());
 
-    refreshTokenRepository.revokeAllForSession(session.getId());
+    refreshTokenRepository.revokeAllForSession(session.getId(), Instant.now());
 
     assertThat(refreshTokenRepository.findAll())
         .filteredOn(token -> session.getId().equals(token.getSessionId()))
