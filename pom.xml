@@ -16,6 +16,7 @@
     <description>Streamarr, the open source media server system.</description>
 
     <modules>
+        <module>streamarr-transcode-engine</module>
         <module>streamarr-server</module>
         <module>streamarr-coverage</module>
     </modules>

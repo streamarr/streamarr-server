@@ -283,6 +283,6 @@ class TranscodeCapabilityServiceTest {
   }
 
   private Process createProcess(String stdout, int exitCode) {
-    return new FakeProcess(stdout, exitCode);
+    return new CapabilityProcessFake(stdout, exitCode);
   }
 }
