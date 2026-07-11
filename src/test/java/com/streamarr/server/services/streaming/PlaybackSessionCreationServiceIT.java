@@ -20,6 +20,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.config.StreamingProperties;
+import com.streamarr.server.domain.auth.AccountProfile;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
@@ -37,7 +38,9 @@ import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.jooq.generated.enums.StreamSessionStatus;
 import com.streamarr.server.repositories.LibraryRepository;
+import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
+import com.streamarr.server.repositories.auth.HouseholdMembershipRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.streaming.MediaStreamTermination;
@@ -88,6 +91,7 @@ import org.springframework.test.context.bean.override.convention.TestBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import tools.jackson.databind.ObjectMapper;
 
 @Tag("IntegrationTest")
 @DisplayName("Playback Session Creation Service Integration Tests")
@@ -115,7 +119,9 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
   @Autowired private StreamingProperties streamingProperties;
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private MediaFileRepository mediaFileRepository;
+  @Autowired private AccountProfileRepository accountProfileRepository;
   @Autowired private AuthSessionRepository authSessionRepository;
+  @Autowired private HouseholdMembershipRepository householdMembershipRepository;
   @Autowired private SessionRevocationService sessionRevocationService;
   @Autowired private UserAccountRepository userAccountRepository;
   @Autowired private AuthTestSupport authTestSupport;
@@ -130,6 +136,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
   @Autowired private PersistedStreamSessionReaper cleanupWorker;
   @Autowired private Clock clock;
   @Autowired private MockMvc mockMvc;
+  @Autowired private ObjectMapper objectMapper;
   @Autowired private PlatformTransactionManager transactionManager;
   @Autowired private MediaParentDeletionService mediaParentDeletionService;
 
@@ -1043,6 +1050,109 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should refuse new playback and the next segment after logout")
+  void shouldRefuseNewPlaybackAndNextSegmentAfterLogout() throws Exception {
+    var accessToken = authTestSupport.profileBearer(testIdentity);
+    var created = createPlaybackSessionThroughApi(accessToken);
+    SEGMENT_STORE.addSegment(created.sessionId(), "segment0.ts", new byte[] {0x47, 0x01, 0x02});
+
+    mockMvc
+        .perform(post("/api/auth/logout").with(AuthTestSupport.bearer(accessToken)))
+        .andExpect(status().isNoContent());
+
+    assertNewPlaybackAndNextSegmentRefused(accessToken, created);
+  }
+
+  @Test
+  @DisplayName("Should refuse new playback and the next segment after password change")
+  void shouldRefuseNewPlaybackAndNextSegmentAfterPasswordChange() throws Exception {
+    var accessToken = authTestSupport.profileBearer(testIdentity);
+    var created = createPlaybackSessionThroughApi(accessToken);
+    SEGMENT_STORE.addSegment(created.sessionId(), "segment0.ts", new byte[] {0x47, 0x01, 0x02});
+
+    mockMvc
+        .perform(
+            post("/api/auth/change-password")
+                .with(AuthTestSupport.bearer(accessToken))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "currentPassword": "%s",
+                      "newPassword": "a brand new secure passphrase!",
+                      "cookieMode": false
+                    }
+                    """
+                        .formatted(AuthTestSupport.PASSWORD)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.accessToken").isNotEmpty());
+
+    assertNewPlaybackAndNextSegmentRefused(accessToken, created);
+  }
+
+  private void assertNewPlaybackAndNextSegmentRefused(
+      String accessToken, ApiPlaybackSession created) throws Exception {
+    var startsBeforeRefusedCreation = TRANSCODE_EXECUTOR.getStartedRequests().size();
+    var rowsBeforeRefusedCreation =
+        new StreamSessionStateProbe(dsl).countForAuthSession(testIdentity.session().getId());
+    var refusedCreation =
+        mockMvc
+            .perform(
+                post("/graphql")
+                    .with(AuthTestSupport.bearer(accessToken))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(createStreamSessionMutation()))
+            .andReturn()
+            .getResponse();
+    var nextSegment =
+        mockMvc
+            .perform(
+                get("/api/stream/{sessionId}/segment0.ts", created.sessionId())
+                    .param("t", created.playbackToken()))
+            .andReturn()
+            .getResponse();
+
+    assertThat(List.of(refusedCreation.getStatus(), nextSegment.getStatus()))
+        .containsExactly(200, 404);
+    assertThat(refusedCreation.getContentAsString()).contains("SESSION_NOT_FOUND");
+    assertThat(TRANSCODE_EXECUTOR.getStartedRequests()).hasSize(startsBeforeRefusedCreation);
+    assertThat(new StreamSessionStateProbe(dsl).countForAuthSession(testIdentity.session().getId()))
+        .isEqualTo(rowsBeforeRefusedCreation);
+  }
+
+  @Test
+  @DisplayName(
+      "Should allow bounded ordinary API access but refuse playback when profile link revoked")
+  void shouldAllowBoundedOrdinaryApiAccessButRefusePlaybackWhenProfileLinkRevoked()
+      throws Exception {
+    var accessToken = authTestSupport.profileBearer(testIdentity);
+    assertThat(
+            accountProfileRepository.revokeProfileLink(
+                AccountProfile.builder()
+                    .accountId(testIdentity.account().getId())
+                    .householdId(testIdentity.household().getId())
+                    .profileId(testIdentity.profile().getId())
+                    .build()))
+        .isTrue();
+
+    assertBoundedContextStaleness(accessToken);
+  }
+
+  @Test
+  @DisplayName(
+      "Should allow bounded ordinary API access but refuse playback when membership revoked")
+  void shouldAllowBoundedOrdinaryApiAccessButRefusePlaybackWhenMembershipRevoked()
+      throws Exception {
+    var accessToken = authTestSupport.profileBearer(testIdentity);
+    assertThat(
+            householdMembershipRepository.revokeMembership(
+                testIdentity.account().getId(), testIdentity.household().getId()))
+        .isPresent();
+
+    assertBoundedContextStaleness(accessToken);
+  }
+
+  @Test
   @DisplayName("Should durably terminalize before owner destroy cleans runtime")
   void shouldDurablyTerminalizeBeforeOwnerDestroyCleansRuntime() throws Exception {
     createPlaybackSession();
@@ -1672,6 +1782,62 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
     return created;
   }
 
+  private ApiPlaybackSession createPlaybackSessionThroughApi(String accessToken) throws Exception {
+    var response =
+        mockMvc
+            .perform(
+                post("/graphql")
+                    .with(AuthTestSupport.bearer(accessToken))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(createStreamSessionMutation()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.createStreamSession.id").isNotEmpty())
+            .andExpect(jsonPath("$.data.createStreamSession.streamUrl").isNotEmpty())
+            .andReturn()
+            .getResponse();
+    var session =
+        objectMapper.readTree(response.getContentAsString()).get("data").get("createStreamSession");
+    streamSessionId = UUID.fromString(session.get("id").asString());
+    var streamUrl = session.get("streamUrl").asString();
+    return new ApiPlaybackSession(
+        streamSessionId, streamUrl.substring(streamUrl.indexOf("?t=") + 3));
+  }
+
+  private void assertBoundedContextStaleness(String accessToken) throws Exception {
+    var ordinaryApi =
+        mockMvc
+            .perform(
+                get("/api/images/{id}", UUID.randomUUID())
+                    .with(AuthTestSupport.bearer(accessToken)))
+            .andReturn()
+            .getResponse();
+    var refusedCreation =
+        mockMvc
+            .perform(
+                post("/graphql")
+                    .with(AuthTestSupport.bearer(accessToken))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(createStreamSessionMutation()))
+            .andReturn()
+            .getResponse();
+
+    assertThat(List.of(ordinaryApi.getStatus(), refusedCreation.getStatus()))
+        .containsExactly(404, 200);
+    assertThat(refusedCreation.getContentAsString()).contains("SESSION_NOT_FOUND");
+    assertThat(TRANSCODE_EXECUTOR.getStartedRequests()).isEmpty();
+    assertThat(new StreamSessionStateProbe(dsl).countForAuthSession(testIdentity.session().getId()))
+        .isZero();
+  }
+
+  private String createStreamSessionMutation() {
+    return """
+        {
+          "query": "mutation { createStreamSession(mediaFileId: \\"%s\\") { id streamUrl } }"
+        }
+        """
+        .formatted(mediaFileId);
+  }
+
   private AuthenticatedIdentity playbackIdentity(CreatedPlaybackSession created) {
     return AuthenticatedIdentity.fromJwt(jwtDecoder.decode(created.playbackToken().value()));
   }
@@ -1811,6 +1977,8 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
       return observedActiveAuthority;
     }
   }
+
+  private record ApiPlaybackSession(UUID sessionId, String playbackToken) {}
 
   private static final class ObservingFailingSegmentStore implements SegmentStore {
 

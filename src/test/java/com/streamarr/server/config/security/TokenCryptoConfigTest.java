@@ -12,13 +12,10 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.PlainJWT;
 import com.nimbusds.jwt.SignedJWT;
 import com.streamarr.server.domain.auth.AccountRole;
-import com.streamarr.server.fakes.FakeVersionCounterReader;
 import com.streamarr.server.services.auth.TokenClaims;
 import com.streamarr.server.services.auth.TokenContract;
 import com.streamarr.server.services.auth.TokenIdentityValidator;
 import com.streamarr.server.services.auth.TokenScope;
-import com.streamarr.server.services.auth.TokenVersionCache;
-import com.streamarr.server.services.auth.TokenVersionValidator;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
@@ -55,7 +52,6 @@ class TokenCryptoConfigTest {
 
   private final TokenCryptoConfig config = new TokenCryptoConfig();
 
-  private final FakeVersionCounterReader reader = new FakeVersionCounterReader();
   private final UUID sessionId = UUID.randomUUID();
   private final UUID accountId = UUID.randomUUID();
 
@@ -72,6 +68,22 @@ class TokenCryptoConfigTest {
 
     var decoded = decoder(keys).decode(token);
     assertThat(decoded.getSubject()).isEqualTo(accountId.toString());
+  }
+
+  @Test
+  @DisplayName("Should accept legacy token with version counter claims")
+  void shouldAcceptLegacyTokenWithVersionCounterClaims() {
+    var keys = config.tokenSigningKeys(properties(KEY_A, List.of()));
+    var token =
+        mint(
+            config.jwtEncoder(keys),
+            claims -> claims.claim("sv", 99L).claim("mv", 98L).claim("pv", 97L));
+
+    var decoded = decoder(keys).decode(token);
+
+    assertThat(decoded.<Long>getClaim("sv")).isEqualTo(99L);
+    assertThat(decoded.<Long>getClaim("mv")).isEqualTo(98L);
+    assertThat(decoded.<Long>getClaim("pv")).isEqualTo(97L);
   }
 
   @Test
@@ -365,11 +377,7 @@ class TokenCryptoConfigTest {
   }
 
   private JwtDecoder decoder(TokenSigningKeys keys) {
-    reader.sessionVersions.put(sessionId, 0L);
-    return config.jwtDecoder(
-        keys,
-        new TokenIdentityValidator(),
-        new TokenVersionValidator(new TokenVersionCache(reader)));
+    return config.jwtDecoder(keys, new TokenIdentityValidator());
   }
 
   private static String tamperSignature(String token) {

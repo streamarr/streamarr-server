@@ -326,8 +326,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject existing profile token when profile link revoked")
-  void shouldRejectExistingProfileTokenWhenProfileLinkRevoked() throws Exception {
+  @DisplayName("Should keep bounded ordinary API access when profile link revoked")
+  void shouldKeepBoundedOrdinaryApiAccessWhenProfileLinkRevoked() throws Exception {
     seedSingleProfileIdentity();
     var loginResponse =
         mockMvc
@@ -355,13 +355,13 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
             .profileId(profile.getId())
             .build());
 
-    // The membership counter bump makes every outstanding profile token stale immediately.
+    // Profile-link loss is enforced authoritatively for new playback and refresh. The already
+    // issued access token keeps its bounded ordinary-API lifetime.
     mockMvc
         .perform(
             get("/api/images/{id}", UUID.randomUUID())
                 .header("Authorization", "Bearer " + accessToken))
-        .andExpect(status().isUnauthorized())
-        .andExpect(jsonPath("$.code").value("INVALID_TOKEN"));
+        .andExpect(status().isNotFound());
   }
 
   @Test
@@ -852,13 +852,13 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     changePassword(deviceA.get("accessToken").asString(), PASSWORD, "a brand new passphrase!")
         .andExpect(status().isOk());
 
-    // Device B's own session is revoked, which transitionally bumps its sv and revokes its refresh.
+    // Device B cannot renew, while its already-issued access token keeps its bounded ordinary-API
+    // lifetime.
     mockMvc
         .perform(
             get("/api/images/{id}", UUID.randomUUID())
                 .header("Authorization", "Bearer " + deviceB.get("accessToken").asString()))
-        .andExpect(status().isUnauthorized())
-        .andExpect(jsonPath("$.code").value("INVALID_TOKEN"));
+        .andExpect(status().isNotFound());
     mockMvc
         .perform(
             post("/api/auth/refresh")
@@ -891,7 +891,8 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     var replacementSessionId =
         decodeToken(changed.get("accessToken").asString()).getClaimAsString(TokenClaims.SESSION_ID);
 
-    // The fresh tokens work; every pre-change credential is dead — including the caller's own.
+    // The fresh tokens work. The prior access token keeps only its bounded ordinary-API lifetime;
+    // the prior refresh family is dead.
     assertThat(replacementSessionId).isNotEqualTo(oldSessionId);
     mockMvc
         .perform(
@@ -902,7 +903,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
         .perform(
             get("/api/images/{id}", UUID.randomUUID())
                 .header("Authorization", "Bearer " + oldAccessToken))
-        .andExpect(status().isUnauthorized());
+        .andExpect(status().isNotFound());
     // Reuse detection is scoped to the old SID and cannot damage the replacement family.
     mockMvc
         .perform(
@@ -1057,12 +1058,13 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     assertThat(logoutResponse.getCookie("streamarr_access").getMaxAge()).isZero();
     assertThat(logoutResponse.getCookie("streamarr_refresh").getMaxAge()).isZero();
 
-    // The session-version bump kills the outstanding access token; the refresh family is revoked.
+    // Logout revokes renewal immediately, while the already-issued access token keeps its bounded
+    // ordinary-API lifetime.
     mockMvc
         .perform(
             get("/api/images/{id}", UUID.randomUUID())
                 .header("Authorization", "Bearer " + accessToken))
-        .andExpect(status().isUnauthorized());
+        .andExpect(status().isNotFound());
     mockMvc
         .perform(
             post("/api/auth/refresh")

@@ -15,7 +15,6 @@ import com.nimbusds.jwt.proc.DefaultJWTProcessor;
 import com.streamarr.server.services.auth.StrictJwtExpiryValidator;
 import com.streamarr.server.services.auth.TokenContract;
 import com.streamarr.server.services.auth.TokenIdentityValidator;
-import com.streamarr.server.services.auth.TokenVersionValidator;
 import java.security.KeyFactory;
 import java.security.NoSuchAlgorithmException;
 import java.security.interfaces.ECPrivateKey;
@@ -74,15 +73,12 @@ public class TokenCryptoConfig {
   }
 
   /**
-   * Identity and version validation run inside the decoder, so malformed or stale tokens never
-   * become an Authentication. The key selector is pinned to ES256: HMAC or unsigned tokens never
-   * reach validation.
+   * Identity validation runs inside the decoder, so malformed tokens never become an
+   * Authentication. The key selector is pinned to ES256: HMAC or unsigned tokens never reach
+   * validation.
    */
   @Bean
-  public JwtDecoder jwtDecoder(
-      TokenSigningKeys keys,
-      TokenIdentityValidator identityValidator,
-      TokenVersionValidator versionValidator) {
+  public JwtDecoder jwtDecoder(TokenSigningKeys keys, TokenIdentityValidator identityValidator) {
     var processor = new DefaultJWTProcessor<SecurityContext>();
     processor.setJWSKeySelector(
         new JWSVerificationKeySelector<>(
@@ -98,8 +94,7 @@ public class TokenCryptoConfig {
         new DelegatingOAuth2TokenValidator<>(
             JwtValidators.createDefaultWithIssuer(TokenContract.ISSUER),
             new StrictJwtExpiryValidator(Clock.systemUTC()),
-            identityValidator,
-            versionValidator));
+            identityValidator));
     return decoder;
   }
 
