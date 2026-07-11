@@ -119,20 +119,6 @@ public class ProfileRecord extends UpdatableRecordImpl<ProfileRecord> {
         return (String) get(6);
     }
 
-    /**
-     * Setter for <code>public.profile.policy_version</code>.
-     */
-    public void setPolicyVersion(Long value) {
-        set(7, value);
-    }
-
-    /**
-     * Getter for <code>public.profile.policy_version</code>.
-     */
-    public Long getPolicyVersion() {
-        return (Long) get(7);
-    }
-
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -156,7 +142,7 @@ public class ProfileRecord extends UpdatableRecordImpl<ProfileRecord> {
     /**
      * Create a detached, initialised ProfileRecord
      */
-    public ProfileRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, UUID householdId, String name, Long policyVersion) {
+    public ProfileRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, UUID householdId, String name) {
         super(Profile.PROFILE);
 
         setId(id);
@@ -166,7 +152,6 @@ public class ProfileRecord extends UpdatableRecordImpl<ProfileRecord> {
         setLastModifiedBy(lastModifiedBy);
         setHouseholdId(householdId);
         setName(name);
-        setPolicyVersion(policyVersion);
         resetTouchedOnNotNull();
     }
 }

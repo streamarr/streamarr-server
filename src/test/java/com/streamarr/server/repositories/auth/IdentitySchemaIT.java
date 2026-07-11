@@ -21,8 +21,10 @@ import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.jooq.DSLContext;
+import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -57,6 +59,17 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
     // The reusable container outlives each run; the singleton claim must never leak between
     // tests.
     dsl.deleteFrom(SERVER_BOOTSTRAP).execute();
+  }
+
+  @Test
+  @DisplayName("Should omit retired token version counter schema")
+  void shouldOmitRetiredTokenVersionCounterSchema() {
+    assertThat(columnNames("auth_session")).contains("id").doesNotContain("session_version");
+    assertThat(columnNames("household_membership"))
+        .contains("id")
+        .doesNotContain("membership_version");
+    assertThat(columnNames("profile")).contains("id").doesNotContain("policy_version");
+    assertThat(sequenceNames()).doesNotContain("household_membership_version_seq");
   }
 
   @Test
@@ -493,6 +506,28 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
         .digest("digest-" + UUID.randomUUID())
         .status(status)
         .expiresAt(Instant.now().plus(Duration.ofDays(30)));
+  }
+
+  private List<String> columnNames(String tableName) {
+    var columns = DSL.table(DSL.name("information_schema", "columns"));
+    var columnName = DSL.field(DSL.name("column_name"), String.class);
+    var tableSchema = DSL.field(DSL.name("table_schema"), String.class);
+    var table = DSL.field(DSL.name("table_name"), String.class);
+    return dsl.select(columnName)
+        .from(columns)
+        .where(tableSchema.eq("public"))
+        .and(table.eq(tableName))
+        .fetch(columnName);
+  }
+
+  private List<String> sequenceNames() {
+    var sequences = DSL.table(DSL.name("information_schema", "sequences"));
+    var sequenceName = DSL.field(DSL.name("sequence_name"), String.class);
+    var sequenceSchema = DSL.field(DSL.name("sequence_schema"), String.class);
+    return dsl.select(sequenceName)
+        .from(sequences)
+        .where(sequenceSchema.eq("public"))
+        .fetch(sequenceName);
   }
 
   private HouseholdMembership grantMembership(HouseholdMembership membership) {

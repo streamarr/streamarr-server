@@ -99,11 +99,6 @@ public class Profile extends TableImpl<ProfileRecord> {
      */
     public final TableField<ProfileRecord, String> NAME = createField(DSL.name("name"), SQLDataType.CLOB.nullable(false), this, "");
 
-    /**
-     * The column <code>public.profile.policy_version</code>.
-     */
-    public final TableField<ProfileRecord, Long> POLICY_VERSION = createField(DSL.name("policy_version"), SQLDataType.BIGINT.nullable(false).defaultValue(DSL.field(DSL.raw("0"), SQLDataType.BIGINT)), this, "");
-
     private Profile(Name alias, Table<ProfileRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }

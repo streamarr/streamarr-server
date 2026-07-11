@@ -105,11 +105,6 @@ public class AuthSession extends TableImpl<AuthSessionRecord> {
     public final TableField<AuthSessionRecord, String> DEVICE_NAME = createField(DSL.name("device_name"), SQLDataType.CLOB, this, "");
 
     /**
-     * The column <code>public.auth_session.session_version</code>.
-     */
-    public final TableField<AuthSessionRecord, Long> SESSION_VERSION = createField(DSL.name("session_version"), SQLDataType.BIGINT.nullable(false).defaultValue(DSL.field(DSL.raw("0"), SQLDataType.BIGINT)), this, "");
-
-    /**
      * The column <code>public.auth_session.active_household_id</code>.
      */
     public final TableField<AuthSessionRecord, UUID> ACTIVE_HOUSEHOLD_ID = createField(DSL.name("active_household_id"), SQLDataType.UUID, this, "");
