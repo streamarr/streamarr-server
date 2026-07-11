@@ -128,6 +128,32 @@ If Sonar preserves the lineage, continue under ordinary gates.
 If it treats the application as roughly 45,000 new production lines, stop and resolve the structural-analysis policy explicitly.
 Do not add exclusions, distort new-code settings, mix behavior into the move, or adopt the nested reactor merely to evade analysis.
 
+=== P5-A1a policy resolution
+
+The first remote analysis of https://github.com/streamarr/streamarr-server/pull/224[PR #224]
+confirmed the risk.
+At move commit `0a7ca57cc597635b68b04d2945988b7216e4b0e2`, Git classified all 899
+relocated `src` files as exact `R100` renames, and an independent hash comparison matched every
+relocated file to its base blob.
+SonarCloud nevertheless classified 80,759 lines as new because its pull-request analysis does not
+preserve relocated-file lineage.
+
+Keep the conventional reactor and accept a one-time exception for PR #224's rename-derived new-line
+and new-code coverage attribution only.
+The imported aggregate still contains the same 7,958 executable lines and 2,075 branch conditions as
+the frozen baseline.
+Sonar's 94.8% combined PR coverage also adds 101 lines from the existing, development-profile-only
+`DevDataInitializer` to the new-code denominator because it classifies the whole relocated tree as
+new; that class remains covered by the pre-existing JaCoCo exclusion, not a new workaround.
+
+The exception does not waive genuine findings.
+PR #224 must still have zero open new issues, zero new vulnerabilities or hotspots, unchanged full
+analysis scope, and a successful aggregate-report import.
+No Sonar exclusion, source-path remapping, new-code-setting change, quality-gate relaxation, or
+exceptional Maven layout is authorized.
+After the reactor reaches `main`, that analysis becomes the normal path baseline; the next small
+change must prove that Sonar again attributes only the files and lines actually changed.
+
 After the move, use a dedicated `streamarr-coverage` module with `jacoco:report-aggregate`.
 Point each analyzed module at one reactor-level XML report and assert that the report exists and contains the moved engine classes before Sonar runs.
 Generated protobuf sources remain outside issue, duplication, and coverage analysis.
