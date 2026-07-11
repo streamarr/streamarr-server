@@ -17,8 +17,8 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 @Tag("UnitTest")
-@DisplayName("Terminating Stream Session Cleanup Worker Tests")
-class TerminatingStreamSessionCleanupWorkerTest {
+@DisplayName("Persisted Stream Session Reaper Tests")
+class PersistedStreamSessionReaperTest {
 
   @Test
   @DisplayName("Should continue cleanup when one terminating session fails")
@@ -28,10 +28,10 @@ class TerminatingStreamSessionCleanupWorkerTest {
     var lifecycle = new CleanupLifecycle(List.of(failingId, succeedingId));
     var cleanup = new IsolatingCleanup(failingId);
     var worker =
-        new TerminatingStreamSessionCleanupWorker(
+        new PersistedStreamSessionReaper(
             lifecycle, cleanup, new StreamSessionTransactionRetry(_ -> {}), Clock.systemUTC());
 
-    worker.cleanupTerminating();
+    worker.reapPersistedSessions();
 
     assertThat(cleanup.attemptedIds).containsExactly(failingId, succeedingId);
     assertThat(cleanup.cleanedIds).containsExactly(succeedingId);
@@ -42,13 +42,13 @@ class TerminatingStreamSessionCleanupWorkerTest {
   void shouldPerformNoExternalCleanupWhenTerminatingQueryFails() {
     var cleanup = new IsolatingCleanup(Set.of());
     var worker =
-        new TerminatingStreamSessionCleanupWorker(
+        new PersistedStreamSessionReaper(
             new CleanupLifecycle(null),
             cleanup,
             new StreamSessionTransactionRetry(_ -> {}),
             Clock.systemUTC());
 
-    worker.cleanupTerminating();
+    worker.reapPersistedSessions();
 
     assertThat(cleanup.attemptedIds).isEmpty();
   }
@@ -59,13 +59,13 @@ class TerminatingStreamSessionCleanupWorkerTest {
     var terminatingId = UUID.randomUUID();
     var cleanup = new IsolatingCleanup(Set.of());
     var worker =
-        new TerminatingStreamSessionCleanupWorker(
+        new PersistedStreamSessionReaper(
             new CleanupLifecycle(List.of(terminatingId), true),
             cleanup,
             new StreamSessionTransactionRetry(_ -> {}),
             Clock.systemUTC());
 
-    worker.cleanupTerminating();
+    worker.reapPersistedSessions();
 
     assertThat(cleanup.attemptedIds).containsExactly(terminatingId);
   }
@@ -76,15 +76,15 @@ class TerminatingStreamSessionCleanupWorkerTest {
     var terminatingIds = IntStream.rangeClosed(1, 3).mapToObj(index -> new UUID(0, index)).toList();
     var cleanup = new IsolatingCleanup(Set.copyOf(terminatingIds.subList(0, 2)));
     var worker =
-        new TerminatingStreamSessionCleanupWorker(
+        new PersistedStreamSessionReaper(
             new CleanupLifecycle(terminatingIds),
             cleanup,
             new StreamSessionTransactionRetry(_ -> {}),
             Clock.systemUTC(),
             2);
 
-    worker.cleanupTerminating();
-    worker.cleanupTerminating();
+    worker.reapPersistedSessions();
+    worker.reapPersistedSessions();
 
     assertThat(cleanup.attemptedIds).contains(terminatingIds.getLast());
   }
@@ -102,10 +102,10 @@ class TerminatingStreamSessionCleanupWorkerTest {
             .build());
     var cleanup = new IsolatingCleanup(Set.of());
     var worker =
-        new TerminatingStreamSessionCleanupWorker(
+        new PersistedStreamSessionReaper(
             lifecycle, cleanup, new StreamSessionTransactionRetry(_ -> {}), Clock.systemUTC());
 
-    worker.cleanupTerminating();
+    worker.reapPersistedSessions();
 
     assertThat(lifecycle.findTerminationIntents()).isEmpty();
     assertThat(cleanup.cleanedIds).containsExactly(streamSessionId);
@@ -119,10 +119,10 @@ class TerminatingStreamSessionCleanupWorkerTest {
     lifecycle.failIntentLoading();
     var cleanup = new IsolatingCleanup(Set.of());
     var worker =
-        new TerminatingStreamSessionCleanupWorker(
+        new PersistedStreamSessionReaper(
             lifecycle, cleanup, new StreamSessionTransactionRetry(_ -> {}), Clock.systemUTC());
 
-    worker.cleanupTerminating();
+    worker.reapPersistedSessions();
 
     assertThat(lifecycle.reconciliationAttempts).isEqualTo(1);
     assertThat(cleanup.cleanedIds).containsExactly(terminatingId);
@@ -138,13 +138,13 @@ class TerminatingStreamSessionCleanupWorkerTest {
     lifecycle.recordTerminationIntent(terminationIntent(succeedingId));
     lifecycle.failReplayFor(failingId);
     var worker =
-        new TerminatingStreamSessionCleanupWorker(
+        new PersistedStreamSessionReaper(
             lifecycle,
             new IsolatingCleanup(Set.of()),
             new StreamSessionTransactionRetry(_ -> {}),
             Clock.systemUTC());
 
-    worker.cleanupTerminating();
+    worker.reapPersistedSessions();
 
     assertThat(lifecycle.replayAttemptedIds).containsExactly(failingId, succeedingId);
     assertThat(lifecycle.findTerminationIntents())

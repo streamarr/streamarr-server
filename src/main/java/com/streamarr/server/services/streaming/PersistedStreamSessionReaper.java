@@ -10,7 +10,7 @@ import org.springframework.stereotype.Component;
 
 @Slf4j
 @Component
-public class TerminatingStreamSessionCleanupWorker {
+public class PersistedStreamSessionReaper {
 
   private static final int BATCH_SIZE = 50;
 
@@ -21,7 +21,7 @@ public class TerminatingStreamSessionCleanupWorker {
   private final int batchSize;
 
   @Autowired
-  public TerminatingStreamSessionCleanupWorker(
+  public PersistedStreamSessionReaper(
       StreamSessionLifecycleTransactions lifecycleTransactions,
       StreamSessionCleanup cleanupService,
       StreamSessionTransactionRetry transactionRetry,
@@ -29,7 +29,7 @@ public class TerminatingStreamSessionCleanupWorker {
     this(lifecycleTransactions, cleanupService, transactionRetry, clock, BATCH_SIZE);
   }
 
-  TerminatingStreamSessionCleanupWorker(
+  PersistedStreamSessionReaper(
       StreamSessionLifecycleTransactions lifecycleTransactions,
       StreamSessionCleanup cleanupService,
       StreamSessionTransactionRetry transactionRetry,
@@ -43,7 +43,7 @@ public class TerminatingStreamSessionCleanupWorker {
   }
 
   @Scheduled(fixedDelayString = "${streaming.cleanup-interval-ms:15000}")
-  public void cleanupTerminating() {
+  public void reapPersistedSessions() {
     retryPendingTerminations();
     reconcileMissingMediaSources();
     cleanupKnownTerminating();

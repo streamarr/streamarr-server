@@ -43,7 +43,7 @@ import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.server.services.streaming.PlaybackSessionCreationService;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.StreamingService;
-import com.streamarr.server.services.streaming.TerminatingStreamSessionCleanupWorker;
+import com.streamarr.server.services.streaming.PersistedStreamSessionReaper;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
@@ -106,7 +106,7 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
 
   @Autowired private PlaybackSessionCreationService playbackSessionCreationService;
 
-  @Autowired private TerminatingStreamSessionCleanupWorker cleanupWorker;
+  @Autowired private PersistedStreamSessionReaper cleanupWorker;
 
   @Autowired private MediaParentDeletionRetryWorker deletionRetryWorker;
 
@@ -366,7 +366,7 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
     try {
       deletionTransactions.prepareLibraryDeletion(fixture.libraryId());
       assertThat(deletionTransactions.finalizeLibraryDeletion(fixture.libraryId())).isFalse();
-      cleanupWorker.cleanupTerminating();
+      cleanupWorker.reapPersistedSessions();
 
       assertThat(libraryRepository.findById(fixture.libraryId())).isPresent();
       assertThat(mediaFileRepository.findById(fixture.mediaFileId())).isPresent();

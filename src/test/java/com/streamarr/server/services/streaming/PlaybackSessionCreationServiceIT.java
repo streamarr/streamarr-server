@@ -113,7 +113,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
   @Autowired private RuntimeStreamSessionRegistry runtimeRegistry;
   @Autowired private StreamSessionCleanup cleanup;
   @Autowired private StreamSessionTransactionRetry transactionRetry;
-  @Autowired private TerminatingStreamSessionCleanupWorker cleanupWorker;
+  @Autowired private PersistedStreamSessionReaper cleanupWorker;
   @Autowired private Clock clock;
   @Autowired private MockMvc mockMvc;
   @Autowired private PlatformTransactionManager transactionManager;
@@ -207,7 +207,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
     assertThat(TRANSCODE_EXECUTOR.isRunning(streamSessionId)).isFalse();
 
     SEGMENT_STORE.allowDeletion();
-    cleanupWorker.cleanupTerminating();
+    cleanupWorker.reapPersistedSessions();
 
     assertThat(stateProbe.status(streamSessionId)).isEmpty();
   }
@@ -244,8 +244,8 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
     assertThat(lifecycleTransactions.findTerminationIntents()).hasSize(1);
     assertThat(streamingService.getActiveSessionCount()).isZero();
 
-    new TerminatingStreamSessionCleanupWorker(retryingLifecycle, cleanup, transactionRetry, clock)
-        .cleanupTerminating();
+    new PersistedStreamSessionReaper(retryingLifecycle, cleanup, transactionRetry, clock)
+        .reapPersistedSessions();
 
     assertThat(lifecycleTransactions.findTerminationIntents()).isEmpty();
     assertThat(stateProbe.status(streamSessionId)).isEmpty();
@@ -282,9 +282,9 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
     assertThat(stateProbe.status(streamSessionId)).contains(StreamSessionStatus.ACTIVE);
     assertThat(streamingService.getActiveSessionCount()).isZero();
 
-    new TerminatingStreamSessionCleanupWorker(
+    new PersistedStreamSessionReaper(
             lifecycleTransactions, cleanup, transactionRetry, clock)
-        .cleanupTerminating();
+        .reapPersistedSessions();
 
     assertThat(stateProbe.status(streamSessionId)).isEmpty();
   }
@@ -336,9 +336,9 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
         .where(STREAM_SESSION_TERMINATION_INTENT.STREAM_SESSION_ID.eq(streamSessionId))
         .execute();
 
-    new TerminatingStreamSessionCleanupWorker(
+    new PersistedStreamSessionReaper(
             lifecycleTransactions, cleanup, transactionRetry, clock)
-        .cleanupTerminating();
+        .reapPersistedSessions();
 
     assertThat(stateProbe.status(streamSessionId)).isEmpty();
   }
@@ -382,7 +382,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
             authority(streamSessionId, sourceIdentity()),
             streamingProperties.provisioningTimeout());
 
-    cleanupWorker.cleanupTerminating();
+    cleanupWorker.reapPersistedSessions();
 
     assertThat(admitted).isPresent();
     assertThat(new StreamSessionStateProbe(dsl).status(streamSessionId))
