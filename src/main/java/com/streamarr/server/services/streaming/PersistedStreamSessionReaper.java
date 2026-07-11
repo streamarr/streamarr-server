@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming;
 
+import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.repositories.streaming.StreamSessionTermination;
 import java.time.Clock;
 import java.util.List;
@@ -18,6 +19,7 @@ public class PersistedStreamSessionReaper {
   private final StreamSessionCleanup cleanupService;
   private final StreamSessionTransactionRetry transactionRetry;
   private final Clock clock;
+  private final StreamingProperties properties;
   private final int batchSize;
 
   @Autowired
@@ -25,8 +27,9 @@ public class PersistedStreamSessionReaper {
       StreamSessionLifecycleTransactions lifecycleTransactions,
       StreamSessionCleanup cleanupService,
       StreamSessionTransactionRetry transactionRetry,
-      Clock clock) {
-    this(lifecycleTransactions, cleanupService, transactionRetry, clock, BATCH_SIZE);
+      Clock clock,
+      StreamingProperties properties) {
+    this(lifecycleTransactions, cleanupService, transactionRetry, clock, properties, BATCH_SIZE);
   }
 
   PersistedStreamSessionReaper(
@@ -34,11 +37,13 @@ public class PersistedStreamSessionReaper {
       StreamSessionCleanup cleanupService,
       StreamSessionTransactionRetry transactionRetry,
       Clock clock,
+      StreamingProperties properties,
       int batchSize) {
     this.lifecycleTransactions = lifecycleTransactions;
     this.cleanupService = cleanupService;
     this.transactionRetry = transactionRetry;
     this.clock = clock;
+    this.properties = properties;
     this.batchSize = batchSize;
   }
 
@@ -46,6 +51,8 @@ public class PersistedStreamSessionReaper {
   public void reapPersistedSessions() {
     retryPendingTerminations();
     reconcileMissingMediaSources();
+    terminalizeRetentionExpiredSessions();
+    reconcileUnbackedRuntimeAndStorage();
     cleanupKnownTerminating();
   }
 
@@ -76,6 +83,25 @@ public class PersistedStreamSessionReaper {
           () -> lifecycleTransactions.terminalizeMissingMediaSources(clock.instant()));
     } catch (RuntimeException exception) {
       log.warn("Failed to reconcile stream sessions with missing media", exception);
+    }
+  }
+
+  private void terminalizeRetentionExpiredSessions() {
+    try {
+      transactionRetry.execute(
+          () ->
+              lifecycleTransactions.terminalizeExpiredActiveSessions(
+                  properties.sessionRetention(), batchSize));
+    } catch (RuntimeException exception) {
+      log.warn("Failed to terminalize retention-expired stream sessions", exception);
+    }
+  }
+
+  private void reconcileUnbackedRuntimeAndStorage() {
+    try {
+      cleanupService.reconcileUnbackedRuntimeAndStorage();
+    } catch (RuntimeException exception) {
+      log.warn("Failed to reconcile unbacked runtime and stored stream sessions", exception);
     }
   }
 

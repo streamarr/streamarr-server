@@ -8,6 +8,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 public class UnsupportedStreamSessionLifecycleTransactions
@@ -32,6 +33,16 @@ public class UnsupportedStreamSessionLifecycleTransactions
 
   @Override
   public Optional<Instant> touchIfActiveAndOwnedBy(UUID streamSessionId, UUID profileId) {
+    throw unsupported();
+  }
+
+  @Override
+  public List<UUID> terminalizeExpiredActiveSessions(Duration retention, int limit) {
+    throw unsupported();
+  }
+
+  @Override
+  public Set<UUID> findAllSessionIds() {
     throw unsupported();
   }
 

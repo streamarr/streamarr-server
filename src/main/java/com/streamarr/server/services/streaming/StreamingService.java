@@ -34,6 +34,10 @@ public interface StreamingService {
 
   Collection<StreamSession> getAllSessions();
 
+  default Collection<UUID> snapshotCleanupCandidateIds() {
+    return getAllSessions().stream().map(StreamSession::getSessionId).toList();
+  }
+
   int getActiveSessionCount();
 
   void resumeSessionIfNeeded(UUID sessionId, String segmentName);

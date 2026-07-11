@@ -9,6 +9,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -43,6 +44,18 @@ public class TransactionalStreamSessionLifecycle implements StreamSessionLifecyc
   @Transactional(propagation = Propagation.MANDATORY)
   public Optional<Instant> touchIfActiveAndOwnedBy(UUID streamSessionId, UUID profileId) {
     return repository.touchIfActiveAndOwnedBy(streamSessionId, profileId);
+  }
+
+  @Override
+  @Transactional(propagation = Propagation.REQUIRES_NEW)
+  public List<UUID> terminalizeExpiredActiveSessions(Duration retention, int limit) {
+    return repository.terminalizeExpiredActiveSessions(retention, limit);
+  }
+
+  @Override
+  @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
+  public Set<UUID> findAllSessionIds() {
+    return repository.findAllSessionIds();
   }
 
   @Override

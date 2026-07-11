@@ -77,6 +77,9 @@ class DefaultPlaybackSessionTerminationServiceTest {
     public void cleanup(UUID streamSessionId) {
       cleanedIds.add(streamSessionId);
     }
+
+    @Override
+    public void reconcileUnbackedRuntimeAndStorage() {}
   }
 
   private static final class RecordingLifecycle

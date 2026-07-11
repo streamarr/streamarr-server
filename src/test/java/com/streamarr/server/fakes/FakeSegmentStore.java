@@ -5,6 +5,7 @@ import com.streamarr.server.services.streaming.SegmentStore;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 public class FakeSegmentStore implements SegmentStore {
@@ -33,6 +34,11 @@ public class FakeSegmentStore implements SegmentStore {
   @Override
   public boolean segmentExists(UUID sessionId, String segmentName) {
     return sessions.getOrDefault(sessionId, Map.of()).containsKey(segmentName);
+  }
+
+  @Override
+  public Set<UUID> snapshotStoredSessionIds() {
+    return Set.copyOf(sessions.keySet());
   }
 
   @Override

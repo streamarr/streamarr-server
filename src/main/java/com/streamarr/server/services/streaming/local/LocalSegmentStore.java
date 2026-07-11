@@ -13,6 +13,9 @@ import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Duration;
+import java.util.HashSet;
+import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -85,6 +88,21 @@ public class LocalSegmentStore implements SegmentStore {
   }
 
   @Override
+  public Set<UUID> snapshotStoredSessionIds() {
+    var sessionIds = new HashSet<UUID>();
+    try (var entries = Files.newDirectoryStream(baseDir)) {
+      for (var entry : entries) {
+        storedSessionId(entry).ifPresent(sessionIds::add);
+      }
+    } catch (NoSuchFileException _) {
+      return Set.of();
+    } catch (IOException exception) {
+      throw new UncheckedIOException("Failed to discover stored stream sessions", exception);
+    }
+    return Set.copyOf(sessionIds);
+  }
+
+  @Override
   public void deleteSession(UUID sessionId) {
     sessionDirs.remove(sessionId);
     var dir = baseDir.resolve(sessionId.toString());
@@ -119,6 +137,16 @@ public class LocalSegmentStore implements SegmentStore {
       return dir;
     } catch (IOException e) {
       throw new UncheckedIOException("Failed to create session directory", e);
+    }
+  }
+
+  private static Optional<UUID> storedSessionId(Path entry) {
+    var name = entry.getFileName().toString();
+    try {
+      var sessionId = UUID.fromString(name);
+      return sessionId.toString().equals(name) ? Optional.of(sessionId) : Optional.empty();
+    } catch (IllegalArgumentException _) {
+      return Optional.empty();
     }
   }
 

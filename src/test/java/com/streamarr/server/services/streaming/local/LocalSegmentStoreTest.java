@@ -121,6 +121,56 @@ class LocalSegmentStoreTest {
   }
 
   @Test
+  @DisplayName("Should discover a stored session after restart")
+  void shouldDiscoverStoredSessionAfterRestart() {
+    var sessionId = UUID.randomUUID();
+    store.getOutputDirectory(sessionId);
+    store = new LocalSegmentStore(tempDir);
+
+    var storedSessionIds = store.snapshotStoredSessionIds();
+
+    assertThat(storedSessionIds).containsExactly(sessionId);
+  }
+
+  @Test
+  @DisplayName("Should scan only direct UUID entries without following symlinks")
+  void shouldScanOnlyDirectUuidEntriesWithoutFollowingSymlinks() throws IOException {
+    var storedSessionId = UUID.randomUUID();
+    Files.createDirectory(tempDir.resolve(storedSessionId.toString()));
+    Files.createDirectory(tempDir.resolve("not-a-session"));
+    Files.createDirectory(tempDir.resolve("1-1-1-1-1"));
+    var external = Files.createDirectory(tempDir.resolve("external"));
+    Files.createDirectory(external.resolve(UUID.randomUUID().toString()));
+    var linkedSessionId = UUID.randomUUID();
+    Files.createSymbolicLink(tempDir.resolve(linkedSessionId.toString()), external);
+
+    var storedSessionIds = store.snapshotStoredSessionIds();
+
+    assertThat(storedSessionIds).containsExactlyInAnyOrder(storedSessionId, linkedSessionId);
+  }
+
+  @Test
+  @DisplayName("Should report no stored sessions when base directory is missing")
+  void shouldReportNoStoredSessionsWhenBaseDirectoryIsMissing() {
+    store = new LocalSegmentStore(tempDir.resolve("missing"));
+
+    var storedSessionIds = store.snapshotStoredSessionIds();
+
+    assertThat(storedSessionIds).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should fail stored session discovery when base path is not a directory")
+  void shouldFailStoredSessionDiscoveryWhenBasePathIsNotDirectory() throws IOException {
+    var baseFile = Files.writeString(tempDir.resolve("segments.file"), "not a directory");
+    store = new LocalSegmentStore(baseFile);
+
+    assertThatThrownBy(store::snapshotStoredSessionIds)
+        .isInstanceOf(java.io.UncheckedIOException.class)
+        .hasMessage("Failed to discover stored stream sessions");
+  }
+
+  @Test
   @DisplayName("Should delete a session symlink without following its external target")
   void shouldDeleteSessionSymlinkWithoutFollowingItsExternalTarget() throws IOException {
     var sessionId = UUID.randomUUID();

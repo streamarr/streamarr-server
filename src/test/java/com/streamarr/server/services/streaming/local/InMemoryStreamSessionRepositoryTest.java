@@ -154,6 +154,24 @@ class InMemoryStreamSessionRepositoryTest {
   }
 
   @Test
+  @DisplayName("Should expose cleanup candidates without exposing an empty reservation")
+  void shouldExposeCleanupCandidatesWithoutExposingEmptyReservation() {
+    var session = StreamSessionFixture.buildMpegtsSession();
+    var reservation = repository.reserve(session.getSessionId()).orElseThrow();
+
+    assertThat(repository.snapshotCleanupCandidateIds()).isEmpty();
+
+    assertThat(repository.attach(reservation, session)).isTrue();
+    assertThat(repository.snapshotCleanupCandidateIds()).containsExactly(session.getSessionId());
+
+    assertThat(repository.terminalize(session.getSessionId())).isTrue();
+    assertThat(repository.snapshotCleanupCandidateIds()).containsExactly(session.getSessionId());
+
+    repository.markRuntimeStopped(session.getSessionId());
+    assertThat(repository.snapshotCleanupCandidateIds()).isEmpty();
+  }
+
+  @Test
   @DisplayName("Should not let stale starter affect a reclaimed replacement slot")
   void shouldNotLetStaleStarterAffectReclaimedReplacementSlot() {
     var session = StreamSessionFixture.buildMpegtsSession();

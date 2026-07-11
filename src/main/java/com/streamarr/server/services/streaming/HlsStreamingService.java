@@ -156,6 +156,11 @@ public class HlsStreamingService implements StreamingService {
   }
 
   @Override
+  public Collection<UUID> snapshotCleanupCandidateIds() {
+    return sessionRepository.snapshotCleanupCandidateIds();
+  }
+
+  @Override
   public int getActiveSessionCount() {
     return sessionRepository.count();
   }

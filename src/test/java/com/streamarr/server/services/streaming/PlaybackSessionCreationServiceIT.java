@@ -31,6 +31,7 @@ import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.fakes.FakeFfprobeService;
+import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
@@ -41,14 +42,21 @@ import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.streaming.MediaStreamTermination;
 import com.streamarr.server.repositories.streaming.StreamSessionAuthority;
+import com.streamarr.server.repositories.streaming.StreamSessionEnforcementRepository;
 import com.streamarr.server.repositories.streaming.StreamSessionTermination;
 import com.streamarr.server.services.auth.AccessToken;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.services.auth.SessionScopeService;
+import com.streamarr.server.services.concurrency.MutexFactory;
+import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.library.MediaParentDeletionService;
+import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRepository;
+import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Duration;
@@ -71,6 +79,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
@@ -82,6 +91,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Tag("IntegrationTest")
 @DisplayName("Playback Session Creation Service Integration Tests")
 class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
+
+  @TempDir Path restartSegmentBase;
 
   private static final IllegalStateException TOKEN_FAILURE =
       new IllegalStateException("simulated playback token encoding failure");
@@ -110,6 +121,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
   @Autowired private SessionScopeService sessionScopeService;
   @Autowired private DSLContext dsl;
   @Autowired private StreamSessionLifecycleTransactions lifecycleTransactions;
+  @Autowired private StreamSessionEnforcementRepository enforcementRepository;
   @Autowired private RuntimeStreamSessionRegistry runtimeRegistry;
   @Autowired private StreamSessionCleanup cleanup;
   @Autowired private StreamSessionTransactionRetry transactionRetry;
@@ -244,7 +256,8 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
     assertThat(lifecycleTransactions.findTerminationIntents()).hasSize(1);
     assertThat(streamingService.getActiveSessionCount()).isZero();
 
-    new PersistedStreamSessionReaper(retryingLifecycle, cleanup, transactionRetry, clock)
+    new PersistedStreamSessionReaper(
+            retryingLifecycle, cleanup, transactionRetry, clock, streamingProperties)
         .reapPersistedSessions();
 
     assertThat(lifecycleTransactions.findTerminationIntents()).isEmpty();
@@ -283,7 +296,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
     assertThat(streamingService.getActiveSessionCount()).isZero();
 
     new PersistedStreamSessionReaper(
-            lifecycleTransactions, cleanup, transactionRetry, clock)
+            lifecycleTransactions, cleanup, transactionRetry, clock, streamingProperties)
         .reapPersistedSessions();
 
     assertThat(stateProbe.status(streamSessionId)).isEmpty();
@@ -337,7 +350,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
         .execute();
 
     new PersistedStreamSessionReaper(
-            lifecycleTransactions, cleanup, transactionRetry, clock)
+            lifecycleTransactions, cleanup, transactionRetry, clock, streamingProperties)
         .reapPersistedSessions();
 
     assertThat(stateProbe.status(streamSessionId)).isEmpty();
@@ -732,6 +745,273 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
     var page = lifecycleTransactions.findTerminatingIdsAfter(sessionIds.getFirst(), 1);
 
     assertThat(page).containsExactly(sessionIds.get(1));
+  }
+
+  @Test
+  @DisplayName("Should terminalize an active session after database retention expires")
+  void shouldTerminalizeActiveSessionAfterDatabaseRetentionExpires() {
+    createPlaybackSession();
+    dsl.update(STREAM_SESSION)
+        .set(STREAM_SESSION.LAST_ACCESSED_AT, Instant.EPOCH.atOffset(ZoneOffset.UTC))
+        .where(STREAM_SESSION.ID.eq(streamSessionId))
+        .execute();
+    var before = databaseTime();
+
+    var terminalized =
+        lifecycleTransactions.terminalizeExpiredActiveSessions(Duration.ofHours(24), 50);
+
+    var stateProbe = new StreamSessionStateProbe(dsl);
+    assertThat(terminalized).contains(streamSessionId);
+    assertThat(stateProbe.status(streamSessionId)).contains(StreamSessionStatus.TERMINATING);
+    assertThat(stateProbe.terminalReason(streamSessionId))
+        .contains(
+            com.streamarr.server.jooq.generated.enums.StreamSessionTerminalReason
+                .RETENTION_EXPIRED);
+    assertThat(stateProbe.terminalAt(streamSessionId))
+        .hasValueSatisfying(at -> assertThat(at).isAfterOrEqualTo(before));
+  }
+
+  @Test
+  @DisplayName("Should use statement time instead of transaction start for retention")
+  void shouldUseStatementTimeInsteadOfTransactionStartForRetention() {
+    createPlaybackSession();
+    var retention = Duration.ofMillis(100);
+    var transactionTemplate = new TransactionTemplate(transactionManager);
+
+    var terminalized =
+        transactionTemplate.execute(
+            _ -> {
+              var transactionStartedAt =
+                  dsl.select(org.jooq.impl.DSL.currentOffsetDateTime()).fetchSingle().value1();
+              dsl.update(STREAM_SESSION)
+                  .set(
+                      STREAM_SESSION.LAST_ACCESSED_AT,
+                      transactionStartedAt.minus(retention).plus(Duration.ofMillis(50)))
+                  .where(STREAM_SESSION.ID.eq(streamSessionId))
+                  .execute();
+              try {
+                Thread.sleep(200);
+              } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(
+                    "Interrupted while advancing statement time", exception);
+              }
+              return enforcementRepository.terminalizeExpiredActiveSessions(retention, 50);
+            });
+
+    assertThat(terminalized).contains(streamSessionId);
+  }
+
+  @Test
+  @DisplayName("Should leave provisioning timeout to the durable creation guard")
+  void shouldLeaveProvisioningTimeoutToDurableCreationGuard() {
+    streamSessionId = UUID.randomUUID();
+    assertThat(
+            lifecycleTransactions.admit(
+                authority(streamSessionId, sourceIdentity()),
+                streamingProperties.provisioningTimeout()))
+        .isPresent();
+    dsl.update(STREAM_SESSION)
+        .set(STREAM_SESSION.CREATED_AT, Instant.EPOCH.atOffset(ZoneOffset.UTC))
+        .set(STREAM_SESSION.LAST_ACCESSED_AT, Instant.EPOCH.atOffset(ZoneOffset.UTC))
+        .where(STREAM_SESSION.ID.eq(streamSessionId))
+        .execute();
+
+    var terminalized =
+        lifecycleTransactions.terminalizeExpiredActiveSessions(Duration.ofHours(24), 50);
+
+    assertThat(terminalized).doesNotContain(streamSessionId);
+    assertThat(new StreamSessionStateProbe(dsl).status(streamSessionId))
+        .contains(StreamSessionStatus.PROVISIONING);
+    assertThat(terminationIntentReason(streamSessionId))
+        .isEqualTo(
+            com.streamarr.server.jooq.generated.enums.StreamSessionTerminalReason
+                .PROVISIONING_TIMEOUT);
+    assertThat(terminationIntentArmed(streamSessionId)).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should retain and retry retention cleanup after segment deletion fails")
+  void shouldRetainAndRetryRetentionCleanupAfterSegmentDeletionFails() {
+    createPlaybackSession();
+    dsl.update(STREAM_SESSION)
+        .set(STREAM_SESSION.LAST_ACCESSED_AT, Instant.EPOCH.atOffset(ZoneOffset.UTC))
+        .where(STREAM_SESSION.ID.eq(streamSessionId))
+        .execute();
+    SEGMENT_STORE.failDeletion();
+
+    cleanupWorker.reapPersistedSessions();
+
+    var stateProbe = new StreamSessionStateProbe(dsl);
+    assertThat(stateProbe.status(streamSessionId)).contains(StreamSessionStatus.TERMINATING);
+    assertThat(stateProbe.terminalReason(streamSessionId))
+        .contains(
+            com.streamarr.server.jooq.generated.enums.StreamSessionTerminalReason
+                .RETENTION_EXPIRED);
+    assertThat(streamingService.getActiveSessionCount()).isZero();
+
+    SEGMENT_STORE.allowDeletion();
+    cleanupWorker.reapPersistedSessions();
+
+    assertThat(stateProbe.status(streamSessionId)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should bound retention claims and make keyset progress")
+  void shouldBoundRetentionClaimsAndMakeKeysetProgress() {
+    var sessionIds =
+        List.of(
+            UUID.fromString("22222222-2222-2222-2222-222222222221"),
+            UUID.fromString("22222222-2222-2222-2222-222222222222"),
+            UUID.fromString("22222222-2222-2222-2222-222222222223"));
+    var authority = sourceIdentity();
+    sessionIds.forEach(id -> prepareActiveSession(id, authority));
+    dsl.update(STREAM_SESSION)
+        .set(STREAM_SESSION.LAST_ACCESSED_AT, Instant.EPOCH.atOffset(ZoneOffset.UTC))
+        .where(STREAM_SESSION.ID.in(sessionIds))
+        .execute();
+
+    var first = lifecycleTransactions.terminalizeExpiredActiveSessions(Duration.ofHours(24), 1);
+    var second = lifecycleTransactions.terminalizeExpiredActiveSessions(Duration.ofHours(24), 1);
+    var third = lifecycleTransactions.terminalizeExpiredActiveSessions(Duration.ofHours(24), 1);
+
+    assertThat(first).hasSize(1);
+    assertThat(second).hasSize(1);
+    assertThat(third).hasSize(1);
+    assertThat(java.util.stream.Stream.of(first, second, third).flatMap(List::stream))
+        .containsExactlyInAnyOrderElementsOf(sessionIds);
+  }
+
+  @Test
+  @DisplayName("Should skip locked retention candidates")
+  void shouldSkipLockedRetentionCandidates() throws Exception {
+    var lockedId = UUID.fromString("33333333-3333-3333-3333-333333333331");
+    var availableId = UUID.fromString("33333333-3333-3333-3333-333333333332");
+    var identity = sourceIdentity();
+    prepareActiveSession(lockedId, identity);
+    prepareActiveSession(availableId, identity);
+    dsl.update(STREAM_SESSION)
+        .set(STREAM_SESSION.LAST_ACCESSED_AT, Instant.EPOCH.atOffset(ZoneOffset.UTC))
+        .where(STREAM_SESSION.ID.in(lockedId, availableId))
+        .execute();
+    var rowLocked = new CountDownLatch(1);
+    var releaseLock = new CountDownLatch(1);
+    var transactionTemplate = new TransactionTemplate(transactionManager);
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var lock =
+          executor.submit(
+              () ->
+                  transactionTemplate.executeWithoutResult(
+                      _ -> {
+                        dsl.select(STREAM_SESSION.ID)
+                            .from(STREAM_SESSION)
+                            .where(STREAM_SESSION.ID.eq(lockedId))
+                            .forUpdate()
+                            .fetchSingle();
+                        rowLocked.countDown();
+                        ControllableTranscodeExecutor.await(releaseLock);
+                      }));
+      assertThat(rowLocked.await(5, TimeUnit.SECONDS)).isTrue();
+
+      var claim =
+          executor.submit(
+              () ->
+                  lifecycleTransactions.terminalizeExpiredActiveSessions(Duration.ofHours(24), 2));
+      try {
+        assertThat(claim.get(1, TimeUnit.SECONDS)).containsExactly(availableId);
+      } finally {
+        releaseLock.countDown();
+      }
+      lock.get(5, TimeUnit.SECONDS);
+    } finally {
+      releaseLock.countDown();
+    }
+  }
+
+  @Test
+  @DisplayName("Should preserve the first terminal reason when retention later expires")
+  void shouldPreserveFirstTerminalReasonWhenRetentionLaterExpires() {
+    createPlaybackSession();
+    dsl.update(STREAM_SESSION)
+        .set(STREAM_SESSION.LAST_ACCESSED_AT, Instant.EPOCH.atOffset(ZoneOffset.UTC))
+        .where(STREAM_SESSION.ID.eq(streamSessionId))
+        .execute();
+    var ownerDestroyedAt = Instant.parse("2030-01-02T03:04:05.123456Z");
+    assertThat(
+            lifecycleTransactions.terminalize(
+                StreamSessionTermination.builder()
+                    .streamSessionId(streamSessionId)
+                    .reason(StreamSessionTerminalReason.OWNER_DESTROY)
+                    .terminalAt(ownerDestroyedAt)
+                    .build()))
+        .isTrue();
+
+    var retentionExpired =
+        lifecycleTransactions.terminalizeExpiredActiveSessions(Duration.ofHours(24), 50);
+
+    var stateProbe = new StreamSessionStateProbe(dsl);
+    assertThat(retentionExpired).doesNotContain(streamSessionId);
+    assertThat(stateProbe.terminalReason(streamSessionId))
+        .contains(
+            com.streamarr.server.jooq.generated.enums.StreamSessionTerminalReason.OWNER_DESTROY);
+    assertThat(stateProbe.terminalAt(streamSessionId)).contains(ownerDestroyedAt);
+  }
+
+  @Test
+  @DisplayName("Should deny access and clean retained storage after a two-boot restart")
+  void shouldDenyAccessAndCleanRetainedStorageAfterTwoBootRestart() throws Exception {
+    streamSessionId = UUID.randomUUID();
+    var sourceIdentity = sourceIdentity();
+    prepareActiveSession(streamSessionId, sourceIdentity);
+    dsl.update(STREAM_SESSION)
+        .set(STREAM_SESSION.LAST_ACCESSED_AT, Instant.EPOCH.atOffset(ZoneOffset.UTC))
+        .where(STREAM_SESSION.ID.eq(streamSessionId))
+        .execute();
+
+    var bootOneRegistry = new InMemoryStreamSessionRepository();
+    bootOneRegistry.save(
+        StreamSession.builder()
+            .sessionId(streamSessionId)
+            .profileId(sourceIdentity.profileId())
+            .build());
+    var bootOneStore = new LocalSegmentStore(restartSegmentBase);
+    var retainedSegment =
+        Files.writeString(
+            bootOneStore.getOutputDirectory(streamSessionId).resolve("segment0.ts"), "retained");
+    assertThat(bootOneRegistry.findById(streamSessionId)).isPresent();
+    bootOneStore.shutdown();
+
+    var bootTwoRegistry = new InMemoryStreamSessionRepository();
+    var bootTwoStore = new LocalSegmentStore(restartSegmentBase);
+    var beforeRestartAccess =
+        new StreamSessionStateProbe(dsl).lastAccessedAt(streamSessionId).orElseThrow();
+    var bootTwoAccess =
+        new DefaultPlaybackSessionAccessService(
+            bootTwoRegistry, lifecycleTransactions, transactionRetry);
+
+    var access =
+        bootTwoAccess.access(streamSessionId, playbackIdentity(sourceIdentity, streamSessionId));
+
+    assertThat(access).isEmpty();
+    assertThat(new StreamSessionStateProbe(dsl).lastAccessedAt(streamSessionId))
+        .contains(beforeRestartAccess);
+    assertThat(retainedSegment).exists();
+
+    var bootTwoRuntime = runtimeService(bootTwoRegistry, bootTwoStore);
+    var bootTwoCleanup =
+        new StreamSessionCleanupService(
+            bootTwoRuntime,
+            lifecycleTransactions,
+            bootTwoStore,
+            transactionRetry,
+            new MutexFactoryProvider());
+    new PersistedStreamSessionReaper(
+            lifecycleTransactions, bootTwoCleanup, transactionRetry, clock, streamingProperties)
+        .reapPersistedSessions();
+
+    assertThat(new StreamSessionStateProbe(dsl).status(streamSessionId)).isEmpty();
+    assertThat(retainedSegment).doesNotExist();
   }
 
   @Test
@@ -1312,6 +1592,19 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
     return sessionId;
   }
 
+  private void prepareActiveSession(UUID sessionId, AuthenticatedIdentity identity) {
+    var sessionAuthority = authority(sessionId, identity);
+    assertThat(
+            lifecycleTransactions.admit(
+                sessionAuthority, streamingProperties.provisioningTimeout()))
+        .isPresent();
+    assertThat(
+            lifecycleTransactions.activate(
+                sessionAuthority, streamingProperties.provisioningTimeout()))
+        .isTrue();
+    assertThat(lifecycleTransactions.completeCreation(sessionId)).isTrue();
+  }
+
   private Instant replayAfter(UUID sessionId) {
     return dsl.select(STREAM_SESSION_TERMINATION_INTENT.REPLAY_AFTER)
         .from(STREAM_SESSION_TERMINATION_INTENT)
@@ -1337,6 +1630,16 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
 
   private static Instant postgresTimestamp(Instant timestamp) {
     return timestamp.plusNanos(500).truncatedTo(ChronoUnit.MICROS);
+  }
+
+  private Instant databaseTime() {
+    return dsl.select(
+            org.jooq.impl.DSL.function(
+                org.jooq.impl.DSL.name("statement_timestamp"),
+                org.jooq.impl.SQLDataType.TIMESTAMPWITHTIMEZONE))
+        .fetchSingle()
+        .value1()
+        .toInstant();
   }
 
   private AuthenticatedIdentity sourceIdentity(TestIdentity identity) {
@@ -1409,6 +1712,20 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
   private PlaybackSessionAccessService playbackAccessService() {
     return new DefaultPlaybackSessionAccessService(
         runtimeRegistry, lifecycleTransactions, transactionRetry);
+  }
+
+  private StreamingService runtimeService(
+      RuntimeStreamSessionRegistry runtimeRegistry, SegmentStore restartSegmentStore) {
+    return new HlsStreamingService(
+        new FakeMediaFileRepository(),
+        new FakeTranscodeExecutor(),
+        restartSegmentStore,
+        new FakeFfprobeService(),
+        new TranscodeDecisionService(),
+        new QualityLadderService(),
+        streamingProperties,
+        runtimeRegistry,
+        new MutexFactory<>());
   }
 
   private MediaFile saveMediaFile(UUID owningLibraryId) {
@@ -1536,6 +1853,11 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
     @Override
     public boolean segmentExists(UUID sessionId, String segmentName) {
       return delegate.segmentExists(sessionId, segmentName);
+    }
+
+    @Override
+    public Set<UUID> snapshotStoredSessionIds() {
+      return delegate.snapshotStoredSessionIds();
     }
 
     @Override
@@ -1744,6 +2066,16 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
     @Override
     public Optional<Instant> touchIfActiveAndOwnedBy(UUID streamSessionId, UUID profileId) {
       return delegate.touchIfActiveAndOwnedBy(streamSessionId, profileId);
+    }
+
+    @Override
+    public List<UUID> terminalizeExpiredActiveSessions(Duration retention, int limit) {
+      return delegate.terminalizeExpiredActiveSessions(retention, limit);
+    }
+
+    @Override
+    public Set<UUID> findAllSessionIds() {
+      return delegate.findAllSessionIds();
     }
 
     @Override

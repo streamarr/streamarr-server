@@ -4,6 +4,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 public interface StreamSessionEnforcementRepository {
@@ -15,6 +16,10 @@ public interface StreamSessionEnforcementRepository {
   Optional<Instant> touchIfPlaybackRequestMatches(PlaybackRequestAuthority authority);
 
   Optional<Instant> touchIfActiveAndOwnedBy(UUID streamSessionId, UUID profileId);
+
+  List<UUID> terminalizeExpiredActiveSessions(Duration retention, int limit);
+
+  Set<UUID> findAllSessionIds();
 
   List<UUID> findTerminatingIds(int limit);
 

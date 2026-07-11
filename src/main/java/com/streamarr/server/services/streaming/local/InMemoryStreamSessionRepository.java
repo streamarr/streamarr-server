@@ -227,6 +227,15 @@ public class InMemoryStreamSessionRepository implements RuntimeStreamSessionRegi
   }
 
   @Override
+  public Collection<UUID> snapshotCleanupCandidateIds() {
+    return List.copyOf(
+        slots.entrySet().stream()
+            .filter(entry -> cleanupCandidate(entry.getValue()))
+            .map(java.util.Map.Entry::getKey)
+            .toList());
+  }
+
+  @Override
   public void mirrorCommittedAccess(UUID sessionId, Instant accessedAt) {
     slots.computeIfPresent(
         sessionId,
@@ -312,6 +321,10 @@ public class InMemoryStreamSessionRepository implements RuntimeStreamSessionRegi
 
   private static boolean matches(Slot slot, UUID generation) {
     return slot.generation.equals(generation);
+  }
+
+  private static boolean cleanupCandidate(Slot slot) {
+    return slot.session.get() != null || (slot.state == State.TERMINAL && !slot.runtimeStopped);
   }
 
   private static void finishStarter(Slot slot) {

@@ -139,6 +139,16 @@ class PlaybackSessionAccessServiceTest {
     }
 
     @Override
+    public List<UUID> terminalizeExpiredActiveSessions(java.time.Duration retention, int limit) {
+      throw unexpectedDatabaseAccess();
+    }
+
+    @Override
+    public java.util.Set<UUID> findAllSessionIds() {
+      throw unexpectedDatabaseAccess();
+    }
+
+    @Override
     public List<UUID> findTerminatingIds(int limit) {
       throw unexpectedDatabaseAccess();
     }

@@ -147,7 +147,15 @@ class StreamingResolverTest {
 
     @Bean
     StreamSessionCleanup streamSessionCleanup() {
-      return STUB_SERVICE::destroySession;
+      return new StreamSessionCleanup() {
+        @Override
+        public void cleanup(UUID streamSessionId) {
+          STUB_SERVICE.destroySession(streamSessionId);
+        }
+
+        @Override
+        public void reconcileUnbackedRuntimeAndStorage() {}
+      };
     }
 
     @Bean
@@ -601,6 +609,16 @@ class StreamingResolverTest {
     @Override
     public Optional<Instant> touchIfActiveAndOwnedBy(UUID streamSessionId, UUID profileId) {
       return Optional.of(Instant.EPOCH);
+    }
+
+    @Override
+    public List<UUID> terminalizeExpiredActiveSessions(java.time.Duration retention, int limit) {
+      return List.of();
+    }
+
+    @Override
+    public java.util.Set<UUID> findAllSessionIds() {
+      return java.util.Set.of();
     }
 
     @Override

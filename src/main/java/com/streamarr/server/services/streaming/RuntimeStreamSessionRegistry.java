@@ -34,6 +34,8 @@ public interface RuntimeStreamSessionRegistry extends StreamSessionRepository {
 
   Collection<UUID> fenceAll();
 
+  Collection<UUID> snapshotCleanupCandidateIds();
+
   void mirrorCommittedAccess(UUID sessionId, Instant accessedAt);
 
   void mirrorCommittedTimeline(CommittedStreamSessionTimeline timeline);

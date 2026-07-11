@@ -2,9 +2,11 @@ package com.streamarr.server.services.streaming;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.StreamSessionTerminalReason;
 import com.streamarr.server.repositories.streaming.StreamSessionTermination;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -27,9 +29,7 @@ class PersistedStreamSessionReaperTest {
     var succeedingId = UUID.randomUUID();
     var lifecycle = new CleanupLifecycle(List.of(failingId, succeedingId));
     var cleanup = new IsolatingCleanup(failingId);
-    var worker =
-        new PersistedStreamSessionReaper(
-            lifecycle, cleanup, new StreamSessionTransactionRetry(_ -> {}), Clock.systemUTC());
+    var worker = reaper(lifecycle, cleanup);
 
     worker.reapPersistedSessions();
 
@@ -41,12 +41,7 @@ class PersistedStreamSessionReaperTest {
   @DisplayName("Should perform no external cleanup when terminating query fails")
   void shouldPerformNoExternalCleanupWhenTerminatingQueryFails() {
     var cleanup = new IsolatingCleanup(Set.of());
-    var worker =
-        new PersistedStreamSessionReaper(
-            new CleanupLifecycle(null),
-            cleanup,
-            new StreamSessionTransactionRetry(_ -> {}),
-            Clock.systemUTC());
+    var worker = reaper(new CleanupLifecycle(null), cleanup);
 
     worker.reapPersistedSessions();
 
@@ -58,12 +53,7 @@ class PersistedStreamSessionReaperTest {
   void shouldCleanExistingTerminalRowsWhenMissingMediaReconciliationFails() {
     var terminatingId = UUID.randomUUID();
     var cleanup = new IsolatingCleanup(Set.of());
-    var worker =
-        new PersistedStreamSessionReaper(
-            new CleanupLifecycle(List.of(terminatingId), true),
-            cleanup,
-            new StreamSessionTransactionRetry(_ -> {}),
-            Clock.systemUTC());
+    var worker = reaper(new CleanupLifecycle(List.of(terminatingId), true), cleanup);
 
     worker.reapPersistedSessions();
 
@@ -81,6 +71,7 @@ class PersistedStreamSessionReaperTest {
             cleanup,
             new StreamSessionTransactionRetry(_ -> {}),
             Clock.systemUTC(),
+            properties(),
             2);
 
     worker.reapPersistedSessions();
@@ -101,9 +92,7 @@ class PersistedStreamSessionReaperTest {
             .terminalAt(Instant.now())
             .build());
     var cleanup = new IsolatingCleanup(Set.of());
-    var worker =
-        new PersistedStreamSessionReaper(
-            lifecycle, cleanup, new StreamSessionTransactionRetry(_ -> {}), Clock.systemUTC());
+    var worker = reaper(lifecycle, cleanup);
 
     worker.reapPersistedSessions();
 
@@ -118,9 +107,7 @@ class PersistedStreamSessionReaperTest {
     var lifecycle = new CleanupLifecycle(List.of(terminatingId));
     lifecycle.failIntentLoading();
     var cleanup = new IsolatingCleanup(Set.of());
-    var worker =
-        new PersistedStreamSessionReaper(
-            lifecycle, cleanup, new StreamSessionTransactionRetry(_ -> {}), Clock.systemUTC());
+    var worker = reaper(lifecycle, cleanup);
 
     worker.reapPersistedSessions();
 
@@ -137,12 +124,7 @@ class PersistedStreamSessionReaperTest {
     lifecycle.recordTerminationIntent(terminationIntent(failingId));
     lifecycle.recordTerminationIntent(terminationIntent(succeedingId));
     lifecycle.failReplayFor(failingId);
-    var worker =
-        new PersistedStreamSessionReaper(
-            lifecycle,
-            new IsolatingCleanup(Set.of()),
-            new StreamSessionTransactionRetry(_ -> {}),
-            Clock.systemUTC());
+    var worker = reaper(lifecycle, new IsolatingCleanup(Set.of()));
 
     worker.reapPersistedSessions();
 
@@ -150,6 +132,70 @@ class PersistedStreamSessionReaperTest {
     assertThat(lifecycle.findTerminationIntents())
         .extracting(StreamSessionTermination::streamSessionId)
         .containsExactly(failingId);
+  }
+
+  @Test
+  @DisplayName("Should terminalize retention-expired sessions before cleanup")
+  void shouldTerminalizeRetentionExpiredSessionsBeforeCleanup() {
+    var streamSessionId = UUID.randomUUID();
+    var lifecycle = new CleanupLifecycle(new ArrayList<>());
+    lifecycle.expire(streamSessionId);
+    var cleanup = new IsolatingCleanup(Set.of());
+
+    reaper(lifecycle, cleanup).reapPersistedSessions();
+
+    assertThat(cleanup.cleanedIds).containsExactly(streamSessionId);
+    assertThat(lifecycle.observedRetention).isEqualTo(properties().sessionRetention());
+  }
+
+  @Test
+  @DisplayName("Should reconcile unbacked runtime and storage before terminal cleanup")
+  void shouldReconcileUnbackedRuntimeAndStorageBeforeTerminalCleanup() {
+    var cleanup = new IsolatingCleanup(Set.of());
+
+    reaper(new CleanupLifecycle(List.of()), cleanup).reapPersistedSessions();
+
+    assertThat(cleanup.reconciled).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should continue reconciliation and cleanup when retention expiry fails")
+  void shouldContinueReconciliationAndCleanupWhenRetentionExpiryFails() {
+    var terminatingId = UUID.randomUUID();
+    var lifecycle = new CleanupLifecycle(List.of(terminatingId));
+    lifecycle.failExpiration();
+    var cleanup = new IsolatingCleanup(Set.of());
+
+    reaper(lifecycle, cleanup).reapPersistedSessions();
+
+    assertThat(cleanup.reconciled).isTrue();
+    assertThat(cleanup.cleanedIds).containsExactly(terminatingId);
+  }
+
+  @Test
+  @DisplayName("Should continue terminal cleanup when orphan reconciliation fails")
+  void shouldContinueTerminalCleanupWhenOrphanReconciliationFails() {
+    var terminatingId = UUID.randomUUID();
+    var cleanup = new IsolatingCleanup(Set.of());
+    cleanup.failReconciliation();
+
+    reaper(new CleanupLifecycle(List.of(terminatingId)), cleanup).reapPersistedSessions();
+
+    assertThat(cleanup.cleanedIds).containsExactly(terminatingId);
+  }
+
+  private static PersistedStreamSessionReaper reaper(
+      StreamSessionLifecycleTransactions lifecycle, StreamSessionCleanup cleanup) {
+    return new PersistedStreamSessionReaper(
+        lifecycle,
+        cleanup,
+        new StreamSessionTransactionRetry(_ -> {}),
+        Clock.systemUTC(),
+        properties());
+  }
+
+  private static StreamingProperties properties() {
+    return StreamingProperties.builder().sessionRetention(Duration.ofHours(24)).build();
   }
 
   private static StreamSessionTermination terminationIntent(UUID streamSessionId) {
@@ -165,6 +211,8 @@ class PersistedStreamSessionReaperTest {
     private final Set<UUID> failingIds;
     private final List<UUID> attemptedIds = new ArrayList<>();
     private final List<UUID> cleanedIds = new ArrayList<>();
+    private boolean reconciled;
+    private boolean reconciliationFails;
 
     private IsolatingCleanup(UUID failingId) {
       this(failingId == null ? Set.of() : Set.of(failingId));
@@ -174,6 +222,10 @@ class PersistedStreamSessionReaperTest {
       this.failingIds = failingIds;
     }
 
+    private void failReconciliation() {
+      reconciliationFails = true;
+    }
+
     @Override
     public void cleanup(UUID streamSessionId) {
       attemptedIds.add(streamSessionId);
@@ -181,6 +233,14 @@ class PersistedStreamSessionReaperTest {
         throw new IllegalStateException("simulated cleanup failure");
       }
       cleanedIds.add(streamSessionId);
+    }
+
+    @Override
+    public void reconcileUnbackedRuntimeAndStorage() {
+      reconciled = true;
+      if (reconciliationFails) {
+        throw new IllegalStateException("simulated orphan reconciliation failure");
+      }
     }
   }
 
@@ -194,6 +254,9 @@ class PersistedStreamSessionReaperTest {
     private final Set<UUID> failingReplayIds = new HashSet<>();
     private boolean intentLoadingFails;
     private int reconciliationAttempts;
+    private UUID expiringId;
+    private Duration observedRetention;
+    private boolean expirationFails;
 
     private CleanupLifecycle(List<UUID> terminatingIds) {
       this(terminatingIds, false);
@@ -210,6 +273,27 @@ class PersistedStreamSessionReaperTest {
 
     private void failReplayFor(UUID streamSessionId) {
       failingReplayIds.add(streamSessionId);
+    }
+
+    private void expire(UUID streamSessionId) {
+      expiringId = streamSessionId;
+    }
+
+    private void failExpiration() {
+      expirationFails = true;
+    }
+
+    @Override
+    public List<UUID> terminalizeExpiredActiveSessions(Duration retention, int limit) {
+      observedRetention = retention;
+      if (expirationFails) {
+        throw new IllegalStateException("simulated retention expiry failure");
+      }
+      if (expiringId == null) {
+        return List.of();
+      }
+      terminatingIds.add(expiringId);
+      return List.of(expiringId);
     }
 
     @Override

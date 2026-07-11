@@ -17,6 +17,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
@@ -24,6 +25,7 @@ import org.jooq.DSLContext;
 import org.jooq.Select;
 import org.jooq.impl.DSL;
 import org.jooq.impl.SQLDataType;
+import org.jooq.types.DayToSecond;
 import org.springframework.stereotype.Repository;
 
 @Repository
@@ -176,6 +178,35 @@ public class StreamSessionEnforcementRepositoryImpl implements StreamSessionEnfo
         .returning(STREAM_SESSION.LAST_ACCESSED_AT)
         .fetchOptional(STREAM_SESSION.LAST_ACCESSED_AT)
         .map(java.time.OffsetDateTime::toInstant);
+  }
+
+  @Override
+  public List<java.util.UUID> terminalizeExpiredActiveSessions(Duration retention, int limit) {
+    var cutoff = statementTimestamp().sub(DSL.val(DayToSecond.valueOf(retention)));
+    var candidates =
+        dsl.select(STREAM_SESSION.ID)
+            .from(STREAM_SESSION)
+            .where(STREAM_SESSION.STATUS.eq(StreamSessionStatus.ACTIVE))
+            .and(STREAM_SESSION.LAST_ACCESSED_AT.le(cutoff))
+            .orderBy(STREAM_SESSION.LAST_ACCESSED_AT, STREAM_SESSION.ID)
+            .limit(limit)
+            .forUpdate()
+            .skipLocked();
+    return dsl.update(STREAM_SESSION)
+        .set(STREAM_SESSION.STATUS, StreamSessionStatus.TERMINATING)
+        .set(STREAM_SESSION.TERMINAL_AT, statementTimestamp())
+        .set(
+            STREAM_SESSION.TERMINAL_REASON,
+            com.streamarr.server.jooq.generated.enums.StreamSessionTerminalReason.RETENTION_EXPIRED)
+        .where(STREAM_SESSION.ID.in(candidates))
+        .and(STREAM_SESSION.STATUS.eq(StreamSessionStatus.ACTIVE))
+        .returning(STREAM_SESSION.ID)
+        .fetch(STREAM_SESSION.ID);
+  }
+
+  @Override
+  public Set<java.util.UUID> findAllSessionIds() {
+    return dsl.select(STREAM_SESSION.ID).from(STREAM_SESSION).fetchSet(STREAM_SESSION.ID);
   }
 
   @Override
