@@ -45,9 +45,10 @@ public class StreamSession {
       int positionSeconds, PlaybackState state, Instant accessedAt) {
     playbackSnapshot.updateAndGet(
         current ->
-            accessedAt.isBefore(current.accessedAt())
-                ? current
-                : new PlaybackSnapshot(positionSeconds, state, accessedAt));
+            new PlaybackSnapshot(
+                positionSeconds,
+                state,
+                accessedAt.isAfter(current.accessedAt()) ? accessedAt : current.accessedAt()));
   }
 
   public PlaybackSnapshot getPlaybackSnapshot() {

@@ -47,10 +47,16 @@ class RuntimeStreamSessionTimelineListenerTest {
     var runtimeSession = StreamSessionFixture.defaultSessionBuilder().build();
     var currentAccess = Instant.parse("2026-07-11T02:00:00Z");
     runtimeSession.setLastAccessedAt(currentAccess.minusSeconds(10));
-    runtimeSession.mirrorCommittedPlaybackState(600, PlaybackState.PLAYING, currentAccess);
     runtimeRegistry.save(runtimeSession);
     var listener = new RuntimeStreamSessionTimelineListener(runtimeRegistry);
 
+    listener.onTimelineCommitted(
+        StreamSessionTimelineCommittedEvent.builder()
+            .sessionId(runtimeSession.getSessionId())
+            .positionSeconds(600)
+            .state(PlaybackState.PLAYING)
+            .accessedAt(currentAccess)
+            .build());
     listener.onTimelineCommitted(
         StreamSessionTimelineCommittedEvent.builder()
             .sessionId(runtimeSession.getSessionId())
@@ -63,6 +69,32 @@ class RuntimeStreamSessionTimelineListenerTest {
     assertThat(snapshot.positionSeconds()).isEqualTo(600);
     assertThat(snapshot.state()).isEqualTo(PlaybackState.PLAYING);
     assertThat(snapshot.accessedAt()).isEqualTo(currentAccess);
+  }
+
+  @Test
+  @DisplayName("Should apply committed timeline after a later access callback")
+  void shouldApplyCommittedTimelineAfterLaterAccessCallback() {
+    var runtimeRegistry = new InMemoryStreamSessionRepository();
+    var runtimeSession = StreamSessionFixture.defaultSessionBuilder().build();
+    var timelineAccess = Instant.parse("2026-07-11T01:00:00Z");
+    var laterAccess = timelineAccess.plusSeconds(1);
+    runtimeSession.setLastAccessedAt(timelineAccess.minusSeconds(1));
+    runtimeRegistry.save(runtimeSession);
+    runtimeRegistry.mirrorCommittedAccess(runtimeSession.getSessionId(), laterAccess);
+    var listener = new RuntimeStreamSessionTimelineListener(runtimeRegistry);
+
+    listener.onTimelineCommitted(
+        StreamSessionTimelineCommittedEvent.builder()
+            .sessionId(runtimeSession.getSessionId())
+            .positionSeconds(420)
+            .state(PlaybackState.PLAYING)
+            .accessedAt(timelineAccess)
+            .build());
+
+    var snapshot = runtimeSession.getPlaybackSnapshot();
+    assertThat(snapshot.positionSeconds()).isEqualTo(420);
+    assertThat(snapshot.state()).isEqualTo(PlaybackState.PLAYING);
+    assertThat(snapshot.accessedAt()).isEqualTo(laterAccess);
   }
 
   @Test

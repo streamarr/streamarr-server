@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.fixtures.StreamSessionFixture;
+import com.streamarr.server.services.streaming.CommittedStreamSessionTimeline;
 import com.streamarr.server.services.streaming.RuntimeSessionReservation;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -187,6 +188,30 @@ class InMemoryStreamSessionRepositoryTest {
     var later = Instant.parse("2026-07-10T20:00:01Z");
     repository.mirrorCommittedAccess(session.getSessionId(), later);
     assertThat(session.getLastAccessedAt()).isEqualTo(later);
+  }
+
+  @Test
+  @DisplayName("Should preserve committed timeline when a later access is already mirrored")
+  void shouldPreserveCommittedTimelineWhenLaterAccessAlreadyMirrored() {
+    var session = StreamSessionFixture.buildMpegtsSession();
+    var timelineAccess = Instant.parse("2026-07-10T20:00:00Z");
+    var laterAccess = timelineAccess.plusSeconds(1);
+    session.setLastAccessedAt(timelineAccess.minusSeconds(1));
+    repository.save(session);
+
+    repository.mirrorCommittedAccess(session.getSessionId(), laterAccess);
+    repository.mirrorCommittedTimeline(
+        CommittedStreamSessionTimeline.builder()
+            .streamSessionId(session.getSessionId())
+            .positionSeconds(420)
+            .state(PlaybackState.PLAYING)
+            .accessedAt(timelineAccess)
+            .build());
+
+    var snapshot = session.getPlaybackSnapshot();
+    assertThat(snapshot.positionSeconds()).isEqualTo(420);
+    assertThat(snapshot.state()).isEqualTo(PlaybackState.PLAYING);
+    assertThat(snapshot.accessedAt()).isEqualTo(laterAccess);
   }
 
   @Test

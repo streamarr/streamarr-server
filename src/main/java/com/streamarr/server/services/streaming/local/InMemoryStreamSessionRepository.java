@@ -28,6 +28,7 @@ public class InMemoryStreamSessionRepository implements RuntimeStreamSessionRegi
 
     private final UUID generation = UUID.randomUUID();
     private volatile State state = State.STARTING;
+    private Instant latestTimelineAccessedAt = Instant.MIN;
     private final AtomicReference<StreamSession> session = new AtomicReference<>();
     private int inFlight;
     private int starters;
@@ -244,10 +245,12 @@ public class InMemoryStreamSessionRepository implements RuntimeStreamSessionRegi
         timeline.streamSessionId(),
         (_, slot) -> {
           var session = slot.session.get();
-          if (session != null) {
-            session.mirrorCommittedPlaybackState(
-                timeline.positionSeconds(), timeline.state(), timeline.accessedAt());
+          if (session == null || timeline.accessedAt().isBefore(slot.latestTimelineAccessedAt)) {
+            return slot;
           }
+          session.mirrorCommittedPlaybackState(
+              timeline.positionSeconds(), timeline.state(), timeline.accessedAt());
+          slot.latestTimelineAccessedAt = timeline.accessedAt();
           return slot;
         });
   }
