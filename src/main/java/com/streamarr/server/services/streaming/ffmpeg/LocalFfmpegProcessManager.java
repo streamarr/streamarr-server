@@ -25,13 +25,23 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
   @Override
   public Process startProcess(
       UUID sessionId, String variantLabel, List<String> command, Path workingDir) {
+    var key = new ProcessKey(sessionId, variantLabel);
+    if (processes.containsKey(key)) {
+      throw duplicateProcess(sessionId, variantLabel);
+    }
+
     try {
       var processBuilder = new ProcessBuilder(command);
       processBuilder.directory(workingDir.toFile());
 
       var process = processBuilder.start();
       var drainer = new StderrDrainer(process.getErrorStream());
-      processes.put(new ProcessKey(sessionId, variantLabel), new ManagedProcess(process, drainer));
+      var managed = new ManagedProcess(process, drainer);
+      var existing = processes.putIfAbsent(key, managed);
+      if (existing != null) {
+        shutdownManagedProcess(managed, sessionId);
+        throw duplicateProcess(sessionId, variantLabel);
+      }
 
       log.info(
           "Started FFmpeg process (PID {}) for session {} variant {}",
@@ -45,16 +55,25 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
     }
   }
 
+  private TranscodeException duplicateProcess(UUID sessionId, String variantLabel) {
+    log.error(
+        "Refusing duplicate FFmpeg process for session {} variant {}", sessionId, variantLabel);
+    return new TranscodeException(TranscodeException.GENERIC_MESSAGE);
+  }
+
   @Override
   public void stopProcess(UUID sessionId) {
-    var keysToRemove =
-        processes.keySet().stream().filter(key -> key.sessionId().equals(sessionId)).toList();
+    var entriesToStop =
+        processes.entrySet().stream()
+            .filter(entry -> entry.getKey().sessionId().equals(sessionId))
+            .toList();
 
-    for (var key : keysToRemove) {
-      shutdownManagedProcess(processes.remove(key), sessionId);
+    for (var entry : entriesToStop) {
+      shutdownManagedProcess(entry.getValue(), sessionId);
+      processes.remove(entry.getKey(), entry.getValue());
     }
 
-    if (!keysToRemove.isEmpty()) {
+    if (!entriesToStop.isEmpty()) {
       log.info("Stopped FFmpeg process(es) for session {}", sessionId);
     }
   }
@@ -69,9 +88,14 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
       return;
     }
 
-    sendQuitSignal(managed.process(), sessionId);
-    awaitGracefulShutdown(managed.process(), sessionId);
-    managed.drainer().close();
+    try {
+      sendQuitSignal(managed.process(), sessionId);
+      awaitShutdown(managed.process(), sessionId);
+    } finally {
+      if (!managed.process().isAlive()) {
+        managed.drainer().close();
+      }
+    }
   }
 
   private void sendQuitSignal(Process process, UUID sessionId) {
@@ -84,15 +108,21 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
     }
   }
 
-  private void awaitGracefulShutdown(Process process, UUID sessionId) {
+  private void awaitShutdown(Process process, UUID sessionId) {
     try {
+      if (process.waitFor(GRACEFUL_SHUTDOWN_SECONDS, TimeUnit.SECONDS)) {
+        return;
+      }
+
+      log.warn("FFmpeg did not stop gracefully for session {}, forcing", sessionId);
+      process.destroyForcibly();
       if (!process.waitFor(GRACEFUL_SHUTDOWN_SECONDS, TimeUnit.SECONDS)) {
-        log.warn("FFmpeg did not stop gracefully for session {}, forcing", sessionId);
-        process.destroyForcibly();
+        throw new TranscodeException(TranscodeException.GENERIC_MESSAGE);
       }
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       process.destroyForcibly();
+      throw new TranscodeException(TranscodeException.GENERIC_MESSAGE, e);
     }
   }
 
@@ -118,7 +148,7 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
     if (!managed.process().isAlive()) {
       logExitDetails(key, managed);
       managed.drainer().close();
-      processes.remove(key);
+      processes.remove(key, managed);
       return false;
     }
 

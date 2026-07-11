@@ -8,6 +8,7 @@ import com.streamarr.server.exceptions.InvalidSegmentPathException;
 import com.streamarr.server.exceptions.TranscodeException;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.UUID;
@@ -91,6 +92,59 @@ class LocalSegmentStoreTest {
     store.deleteSession(sessionId);
 
     assertThat(outputDir).doesNotExist();
+  }
+
+  @Test
+  @DisplayName("Should delete a persisted session directory after restart")
+  void shouldDeletePersistedSessionDirectoryAfterRestart() throws IOException {
+    var sessionId = UUID.randomUUID();
+    var outputDir = store.getOutputDirectory(sessionId);
+    Files.write(outputDir.resolve("segment0.ts"), "data".getBytes());
+    store = new LocalSegmentStore(tempDir);
+
+    store.deleteSession(sessionId);
+
+    assertThat(outputDir).doesNotExist();
+  }
+
+  @Test
+  @DisplayName("Should preserve session directory when runtime shuts down")
+  void shouldPreserveSessionDirectoryWhenRuntimeShutsDown() throws IOException {
+    var sessionId = UUID.randomUUID();
+    var outputDir = store.getOutputDirectory(sessionId);
+    var segment = Files.writeString(outputDir.resolve("segment0.ts"), "data");
+
+    store.shutdown();
+
+    assertThat(outputDir).exists().isDirectory();
+    assertThat(segment).exists().hasContent("data");
+  }
+
+  @Test
+  @DisplayName("Should delete a session symlink without following its external target")
+  void shouldDeleteSessionSymlinkWithoutFollowingItsExternalTarget() throws IOException {
+    var sessionId = UUID.randomUUID();
+    var outputDir = store.getOutputDirectory(sessionId);
+    var externalDir = Files.createDirectory(tempDir.resolve("external"));
+    var externalFile = Files.writeString(externalDir.resolve("keep.txt"), "keep");
+    Files.createSymbolicLink(outputDir.resolve("external-link"), externalDir);
+
+    store.deleteSession(sessionId);
+
+    assertThat(outputDir).doesNotExist();
+    assertThat(externalFile).exists().hasContent("keep");
+  }
+
+  @Test
+  @DisplayName("Should delete a dangling session directory symlink")
+  void shouldDeleteDanglingSessionDirectorySymlink() throws IOException {
+    var sessionId = UUID.randomUUID();
+    var sessionLink = tempDir.resolve(sessionId.toString());
+    Files.createSymbolicLink(sessionLink, tempDir.resolve("missing-target"));
+
+    store.deleteSession(sessionId);
+
+    assertThat(Files.exists(sessionLink, LinkOption.NOFOLLOW_LINKS)).isFalse();
   }
 
   @Test

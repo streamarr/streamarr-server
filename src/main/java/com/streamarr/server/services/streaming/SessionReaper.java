@@ -18,7 +18,6 @@ public class SessionReaper {
   private final StreamingService streamingService;
   private final TranscodeExecutor transcodeExecutor;
   private final StreamingProperties properties;
-  private final StreamSessionRepository sessionRepository;
 
   @Scheduled(fixedDelayString = "${streaming.reaper-interval-ms:15000}")
   public void reapSessions() {
@@ -29,12 +28,6 @@ public class SessionReaper {
   }
 
   private void processSession(StreamSession session, Instant now) {
-    if (isExpired(session, now)) {
-      log.info("Reaping expired session {}", session.getSessionId());
-      streamingService.destroySession(session.getSessionId());
-      return;
-    }
-
     if (isIdle(session, now) && session.hasActiveTranscodes()) {
       log.info("Suspending idle session {}", session.getSessionId());
       suspendSession(session);
@@ -42,11 +35,6 @@ public class SessionReaper {
     }
 
     handleDeadProcesses(session);
-  }
-
-  private boolean isExpired(StreamSession session, Instant now) {
-    var idleSeconds = now.getEpochSecond() - session.getLastAccessedAt().getEpochSecond();
-    return idleSeconds > properties.sessionRetention().toSeconds();
   }
 
   private boolean isIdle(StreamSession session, Instant now) {
@@ -66,7 +54,6 @@ public class SessionReaper {
           entry.getKey(),
           new TranscodeHandle(handle.processId(), TranscodeStatus.SUSPENDED, handle.startNumber()));
     }
-    sessionRepository.save(session);
   }
 
   private void handleDeadProcesses(StreamSession session) {
@@ -86,7 +73,6 @@ public class SessionReaper {
       session.setVariantHandle(
           label,
           new TranscodeHandle(handle.processId(), TranscodeStatus.FAILED, handle.startNumber()));
-      sessionRepository.save(session);
     }
   }
 }

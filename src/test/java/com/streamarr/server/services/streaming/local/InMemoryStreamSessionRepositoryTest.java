@@ -3,7 +3,10 @@ package com.streamarr.server.services.streaming.local;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.streaming.PlaybackState;
+import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.fixtures.StreamSessionFixture;
+import com.streamarr.server.services.streaming.RuntimeSessionReservation;
+import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -103,5 +106,105 @@ class InMemoryStreamSessionRepositoryTest {
     var found = repository.findById(session.getSessionId());
     assertThat(found).isPresent();
     assertThat(found.get().getPlaybackSnapshot().positionSeconds()).isEqualTo(300);
+  }
+
+  @Test
+  @DisplayName("Should reclaim terminal slot only after its late starter is stopped")
+  void shouldReclaimTerminalSlotOnlyAfterLateStarterIsStopped() {
+    var session = StreamSessionFixture.buildMpegtsSession();
+    var reservation = repository.reserve(session.getSessionId()).orElseThrow();
+    assertThat(repository.attach(reservation, session)).isTrue();
+    var starter = repository.beginTranscodeStart(session.getSessionId()).orElseThrow();
+
+    assertThat(repository.terminalize(session.getSessionId())).isTrue();
+    repository.markRuntimeStopped(session.getSessionId());
+    repository.releaseTerminal(session.getSessionId());
+    repository.releaseReservation(reservation);
+
+    assertThat(repository.reserve(session.getSessionId())).isEmpty();
+    assertThat(repository.completeTranscodeStart(starter)).isFalse();
+    repository.finishRejectedTranscodeStart(starter, true);
+    assertThat(repository.reserve(session.getSessionId())).isPresent();
+  }
+
+  @Test
+  @DisplayName("Should retain terminal slot when stopping a late starter fails")
+  void shouldRetainTerminalSlotWhenStoppingLateStarterFails() {
+    var session = StreamSessionFixture.buildMpegtsSession();
+    var reservation = repository.reserve(session.getSessionId()).orElseThrow();
+    var starter = repository.beginTranscodeStart(session.getSessionId()).orElseThrow();
+    repository.terminalize(session.getSessionId());
+    repository.markRuntimeStopped(session.getSessionId());
+    repository.releaseTerminal(session.getSessionId());
+    repository.releaseReservation(reservation);
+
+    assertThat(repository.completeTranscodeStart(starter)).isFalse();
+    repository.finishRejectedTranscodeStart(starter, false);
+
+    assertThat(repository.reserve(session.getSessionId())).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should not let stale starter affect a reclaimed replacement slot")
+  void shouldNotLetStaleStarterAffectReclaimedReplacementSlot() {
+    var session = StreamSessionFixture.buildMpegtsSession();
+    var firstReservation = repository.reserve(session.getSessionId()).orElseThrow();
+    assertThat(repository.attach(firstReservation, session)).isTrue();
+    var staleStarter = repository.beginTranscodeStart(session.getSessionId()).orElseThrow();
+    repository.terminalize(session.getSessionId());
+    repository.markRuntimeStopped(session.getSessionId());
+    repository.releaseTerminal(session.getSessionId());
+    repository.releaseReservation(firstReservation);
+    repository.finishRejectedTranscodeStart(staleStarter, true);
+
+    var replacement = repository.reserve(session.getSessionId()).orElseThrow();
+    assertThat(repository.attach(replacement, session)).isTrue();
+
+    assertThat(repository.completeTranscodeStart(staleStarter)).isFalse();
+    assertThat(repository.markRunning(replacement)).isTrue();
+    assertThat(repository.findById(session.getSessionId())).contains(session);
+  }
+
+  @Test
+  @DisplayName("Should mirror committed access monotonically")
+  void shouldMirrorCommittedAccessMonotonically() {
+    var session = StreamSessionFixture.buildMpegtsSession();
+    var current = Instant.parse("2026-07-10T20:00:00Z");
+    session.setLastAccessedAt(current);
+    repository.save(session);
+
+    repository.mirrorCommittedAccess(session.getSessionId(), Instant.parse("2026-07-10T19:59:59Z"));
+    assertThat(session.getLastAccessedAt()).isEqualTo(current);
+
+    var later = Instant.parse("2026-07-10T20:00:01Z");
+    repository.mirrorCommittedAccess(session.getSessionId(), later);
+    assertThat(session.getLastAccessedAt()).isEqualTo(later);
+  }
+
+  @Test
+  @DisplayName("Should reclaim repeated terminal cycles and reject stale attachment")
+  void shouldReclaimRepeatedTerminalCyclesAndRejectStaleAttachment() {
+    RuntimeSessionReservation staleReservation = null;
+    StreamSession staleSession = null;
+    for (var cycle = 0; cycle < 100; cycle++) {
+      var session = StreamSessionFixture.buildMpegtsSession();
+      var reservation = repository.reserve(session.getSessionId()).orElseThrow();
+      assertThat(repository.attach(reservation, session)).isTrue();
+      var start = repository.beginTranscodeStart(session.getSessionId()).orElseThrow();
+      assertThat(repository.completeTranscodeStart(start)).isTrue();
+      assertThat(repository.markRunning(reservation)).isTrue();
+      repository.releaseReservation(reservation);
+
+      assertThat(repository.terminalize(session.getSessionId())).isTrue();
+      repository.markRuntimeStopped(session.getSessionId());
+      repository.releaseTerminal(session.getSessionId());
+
+      assertThat(repository.findById(session.getSessionId())).isEmpty();
+      assertThat(repository.count()).isZero();
+      staleReservation = reservation;
+      staleSession = session;
+    }
+
+    assertThat(repository.attach(staleReservation, staleSession)).isFalse();
   }
 }

@@ -37,6 +37,8 @@ import com.streamarr.server.jooq.generated.tables.SeriesGenre;
 import com.streamarr.server.jooq.generated.tables.SeriesPerson;
 import com.streamarr.server.jooq.generated.tables.ServerBootstrap;
 import com.streamarr.server.jooq.generated.tables.SessionProgress;
+import com.streamarr.server.jooq.generated.tables.StreamSession;
+import com.streamarr.server.jooq.generated.tables.StreamSessionTerminationIntent;
 import com.streamarr.server.jooq.generated.tables.UserAccount;
 import com.streamarr.server.jooq.generated.tables.WatchHistory;
 
@@ -229,6 +231,16 @@ public class Public extends SchemaImpl {
     public final SessionProgress SESSION_PROGRESS = SessionProgress.SESSION_PROGRESS;
 
     /**
+     * The table <code>public.stream_session</code>.
+     */
+    public final StreamSession STREAM_SESSION = StreamSession.STREAM_SESSION;
+
+    /**
+     * The table <code>public.stream_session_termination_intent</code>.
+     */
+    public final StreamSessionTerminationIntent STREAM_SESSION_TERMINATION_INTENT = StreamSessionTerminationIntent.STREAM_SESSION_TERMINATION_INTENT;
+
+    /**
      * The table <code>public.user_account</code>.
      */
     public final UserAccount USER_ACCOUNT = UserAccount.USER_ACCOUNT;
@@ -294,6 +306,8 @@ public class Public extends SchemaImpl {
             SeriesPerson.SERIES_PERSON,
             ServerBootstrap.SERVER_BOOTSTRAP,
             SessionProgress.SESSION_PROGRESS,
+            StreamSession.STREAM_SESSION,
+            StreamSessionTerminationIntent.STREAM_SESSION_TERMINATION_INTENT,
             UserAccount.USER_ACCOUNT,
             WatchHistory.WATCH_HISTORY
         );

@@ -31,10 +31,16 @@ import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
+import com.streamarr.server.services.auth.AuthenticatedIdentity;
+import com.streamarr.server.services.auth.SessionScopeService;
+import com.streamarr.server.services.streaming.CreatePlaybackSessionCommand;
 import com.streamarr.server.services.streaming.FfprobeService;
+import com.streamarr.server.services.streaming.PlaybackSessionCreationService;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.StreamingService;
+import com.streamarr.server.services.streaming.TerminatingStreamSessionCleanupWorker;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
+import com.streamarr.server.support.AuthTestSupport;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -53,6 +59,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.Isolated;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.bean.override.convention.TestBean;
 
 @Isolated
@@ -79,6 +86,16 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
   @Autowired private GenreRepository genreRepository;
 
   @Autowired private StreamingService streamingService;
+
+  @Autowired private PlaybackSessionCreationService playbackSessionCreationService;
+
+  @Autowired private TerminatingStreamSessionCleanupWorker cleanupWorker;
+
+  @Autowired private AuthTestSupport authTestSupport;
+
+  @Autowired private SessionScopeService sessionScopeService;
+
+  @Autowired private JwtDecoder jwtDecoder;
 
   @TestBean TranscodeExecutor transcodeExecutor;
   @TestBean FfprobeService ffprobeService;
@@ -227,6 +244,11 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should terminate active streaming sessions when library is removed")
   void shouldTerminateActiveStreamingSessionsWhenLibraryIsRemoved() {
+    var identity = authTestSupport.createIdentity();
+    sessionScopeService.selectHousehold(
+        identity.account().getId(), identity.session().getId(), identity.household().getId());
+    sessionScopeService.selectProfile(
+        identity.account().getId(), identity.session().getId(), identity.profile().getId());
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     var movie =
         movieRepository.saveAndFlush(
@@ -246,18 +268,31 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
             .quality(VideoQuality.AUTO)
             .supportedCodecs(List.of("h264"))
             .build();
-    var session = streamingService.createSession(mediaFile.getId(), UUID.randomUUID(), options);
+    try {
+      var sourceIdentity =
+          AuthenticatedIdentity.fromJwt(jwtDecoder.decode(authTestSupport.profileBearer(identity)));
+      var session =
+          playbackSessionCreationService.create(
+              CreatePlaybackSessionCommand.builder()
+                  .mediaFileId(mediaFile.getId())
+                  .options(options)
+                  .sourceIdentity(sourceIdentity)
+                  .build());
 
-    assertThat(streamingService.getActiveSessionCount()).isEqualTo(1);
+      assertThat(streamingService.getActiveSessionCount()).isEqualTo(1);
 
-    libraryManagementService.removeLibrary(library.getId());
+      libraryManagementService.removeLibrary(library.getId());
+      cleanupWorker.cleanupTerminating();
 
-    assertThat(streamingService.getActiveSessionCount())
-        .as("Streaming session should be terminated when library is removed")
-        .isZero();
-    assertThat(FAKE_EXECUTOR.getStopped())
-        .as("Transcode process should be stopped")
-        .contains(session.getSessionId());
+      assertThat(streamingService.getActiveSessionCount())
+          .as("Streaming session should be terminated when library is removed")
+          .isZero();
+      assertThat(FAKE_EXECUTOR.getStopped())
+          .as("Transcode process should be stopped")
+          .contains(session.sessionId());
+    } finally {
+      authTestSupport.deleteIdentity(identity);
+    }
   }
 
   @Test

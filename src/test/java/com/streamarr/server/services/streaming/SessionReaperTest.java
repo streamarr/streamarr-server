@@ -4,10 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.StreamSession;
-import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
-import com.streamarr.server.fakes.FakeStreamSessionRepository;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import java.nio.file.Path;
@@ -40,9 +38,7 @@ class SessionReaperTest {
             .sessionTimeout(Duration.ofSeconds(60))
             .sessionRetention(Duration.ofHours(24))
             .build();
-    reaper =
-        new SessionReaper(
-            streamingService, executor, properties, new FakeStreamSessionRepository());
+    reaper = new SessionReaper(streamingService, executor, properties);
   }
 
   @Test
@@ -68,14 +64,15 @@ class SessionReaperTest {
   }
 
   @Test
-  @DisplayName("Should destroy session when idle past retention timeout")
-  void shouldDestroySessionWhenIdlePastRetentionTimeout() {
+  @DisplayName("Should preserve durable session for persistence retention reaper")
+  void shouldPreserveDurableSessionForPersistenceRetentionReaper() {
     var session = buildSession(Instant.now().minusSeconds(90_000));
     streamingService.addSession(session);
 
     reaper.reapSessions();
 
-    assertThat(streamingService.accessSession(session.getSessionId())).isEmpty();
+    assertThat(streamingService.accessSession(session.getSessionId())).isPresent();
+    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.SUSPENDED);
   }
 
   @Test
@@ -271,7 +268,7 @@ class SessionReaperTest {
     }
 
     @Override
-    public StreamSession createSession(UUID mediaFileId, UUID profileId, StreamingOptions options) {
+    public StreamSession createSession(CreateRuntimeStreamSessionCommand command) {
       throw new UnsupportedOperationException();
     }
 

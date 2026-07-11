@@ -11,6 +11,7 @@ import com.streamarr.server.jooq.generated.tables.AuthSession.AuthSessionPath;
 import com.streamarr.server.jooq.generated.tables.Household.HouseholdPath;
 import com.streamarr.server.jooq.generated.tables.HouseholdMembership.HouseholdMembershipPath;
 import com.streamarr.server.jooq.generated.tables.ServerBootstrap.ServerBootstrapPath;
+import com.streamarr.server.jooq.generated.tables.StreamSession.StreamSessionPath;
 import com.streamarr.server.jooq.generated.tables.records.UserAccountRecord;
 
 import java.time.OffsetDateTime;
@@ -220,6 +221,19 @@ public class UserAccount extends TableImpl<UserAccountRecord> {
             _serverBootstrap = new ServerBootstrapPath(this, null, Keys.SERVER_BOOTSTRAP__FK_SERVER_BOOTSTRAP_ADMIN_ACCOUNT.getInverseKey());
 
         return _serverBootstrap;
+    }
+
+    private transient StreamSessionPath _streamSession;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.stream_session</code> table
+     */
+    public StreamSessionPath streamSession() {
+        if (_streamSession == null)
+            _streamSession = new StreamSessionPath(this, null, Keys.STREAM_SESSION__FK_STREAM_SESSION_ACCOUNT.getInverseKey());
+
+        return _streamSession;
     }
 
     /**

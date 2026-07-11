@@ -100,6 +100,24 @@ class LocalFfmpegProcessManagerTest {
   }
 
   @Test
+  @DisplayName("Should reject duplicate variant without replacing its running process")
+  void shouldRejectDuplicateVariantWithoutReplacingItsRunningProcess() {
+    var sessionId = UUID.randomUUID();
+    var variant = StreamSession.defaultVariant();
+    var first = manager.startProcess(sessionId, variant, List.of("sleep", "30"), tempDir);
+
+    assertThatThrownBy(
+            () -> manager.startProcess(sessionId, variant, List.of("sleep", "30"), tempDir))
+        .isInstanceOf(TranscodeException.class)
+        .hasMessage(TranscodeException.GENERIC_MESSAGE);
+
+    assertThat(first.isAlive()).isTrue();
+    assertThat(manager.isRunning(sessionId, variant)).isTrue();
+    manager.stopProcess(sessionId);
+    assertThat(first.isAlive()).isFalse();
+  }
+
+  @Test
   @DisplayName("Should stop all variants when stopping session")
   void shouldStopAllVariantsWhenStoppingSession() {
     var sessionId = UUID.randomUUID();

@@ -10,6 +10,7 @@ import com.streamarr.server.jooq.generated.tables.AccountProfile.AccountProfileP
 import com.streamarr.server.jooq.generated.tables.AuthSession.AuthSessionPath;
 import com.streamarr.server.jooq.generated.tables.Household.HouseholdPath;
 import com.streamarr.server.jooq.generated.tables.SessionProgress.SessionProgressPath;
+import com.streamarr.server.jooq.generated.tables.StreamSession.StreamSessionPath;
 import com.streamarr.server.jooq.generated.tables.WatchHistory.WatchHistoryPath;
 import com.streamarr.server.jooq.generated.tables.records.ProfileRecord;
 
@@ -249,6 +250,19 @@ public class Profile extends TableImpl<ProfileRecord> {
             _sessionProgress = new SessionProgressPath(this, null, Keys.SESSION_PROGRESS__FK_SESSION_PROGRESS_PROFILE.getInverseKey());
 
         return _sessionProgress;
+    }
+
+    private transient StreamSessionPath _streamSession;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.stream_session</code> table
+     */
+    public StreamSessionPath streamSession() {
+        if (_streamSession == null)
+            _streamSession = new StreamSessionPath(this, null, Keys.STREAM_SESSION__FK_STREAM_SESSION_PROFILE_HOUSEHOLD.getInverseKey());
+
+        return _streamSession;
     }
 
     private transient WatchHistoryPath _watchHistory;

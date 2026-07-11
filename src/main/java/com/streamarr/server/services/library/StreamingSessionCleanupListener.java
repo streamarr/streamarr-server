@@ -1,8 +1,10 @@
 package com.streamarr.server.services.library;
 
-import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.server.domain.streaming.StreamSessionTerminalReason;
+import com.streamarr.server.repositories.streaming.MediaStreamTermination;
 import com.streamarr.server.services.library.events.LibraryRemovedEvent;
-import com.streamarr.server.services.streaming.StreamingService;
+import com.streamarr.server.services.streaming.StreamSessionLifecycleTransactions;
+import java.time.Clock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -14,21 +16,25 @@ import org.springframework.transaction.event.TransactionalEventListener;
 @RequiredArgsConstructor
 public class StreamingSessionCleanupListener {
 
-  private final StreamingService streamingService;
+  private final StreamSessionLifecycleTransactions lifecycleTransactions;
+  private final Clock clock;
 
   @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
   public void onLibraryRemoved(LibraryRemovedEvent event) {
-    try {
-      if (event.mediaFileIds().isEmpty()) {
-        return;
-      }
+    if (event.mediaFileIds().isEmpty()) {
+      return;
+    }
 
-      streamingService.getAllSessions().stream()
-          .filter(session -> event.mediaFileIds().contains(session.getMediaFileId()))
-          .map(StreamSession::getSessionId)
-          .forEach(streamingService::destroySession);
-    } catch (Exception e) {
-      log.warn("Failed to terminate streaming sessions: {}", e.getMessage());
+    try {
+      var termination =
+          MediaStreamTermination.builder()
+              .mediaFileIds(event.mediaFileIds())
+              .reason(StreamSessionTerminalReason.SOURCE_DELETED)
+              .terminalAt(clock.instant())
+              .build();
+      lifecycleTransactions.terminalizeByMediaFiles(termination);
+    } catch (RuntimeException exception) {
+      log.warn("Failed to terminate streams for removed library media", exception);
     }
   }
 }

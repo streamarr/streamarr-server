@@ -15,6 +15,7 @@ public record StreamingProperties(
     int maxConcurrentTranscodes,
     Duration segmentDuration,
     Duration sessionTimeout,
+    @NotNull @DurationMin(seconds = 0, inclusive = false) Duration provisioningTimeout,
     // Session retention contributes the playback token's pause/slow-playback slack; reject a
     // non-positive value at startup rather than minting unusable tokens.
     @NotNull @DurationMin(seconds = 0, inclusive = false) Duration sessionRetention,
@@ -33,6 +34,10 @@ public record StreamingProperties(
 
     if (sessionTimeout == null) {
       sessionTimeout = Duration.ofSeconds(60);
+    }
+
+    if (provisioningTimeout == null) {
+      provisioningTimeout = Duration.ofMinutes(2);
     }
 
     if (sessionRetention == null) {

@@ -13,7 +13,7 @@ import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.streaming.CreatePlaybackSessionCommand;
 import com.streamarr.server.services.streaming.CreatedPlaybackSession;
 import com.streamarr.server.services.streaming.PlaybackSessionCreationService;
-import com.streamarr.server.services.streaming.StreamingService;
+import com.streamarr.server.services.streaming.PlaybackSessionTerminationService;
 import com.streamarr.server.services.watchprogress.SessionProgressService;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
 import java.util.Optional;
@@ -24,9 +24,9 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class StreamingResolver {
 
-  private final StreamingService streamingService;
   private final AuthorizationService authorizationService;
   private final PlaybackSessionCreationService playbackSessionCreationService;
+  private final PlaybackSessionTerminationService playbackSessionTerminationService;
   private final SessionProgressService sessionProgressService;
   private final WatchStatusService watchStatusService;
 
@@ -49,7 +49,8 @@ public class StreamingResolver {
 
   @DgsMutation
   public boolean destroyStreamSession(@InputArgument String sessionId) {
-    streamingService.destroySession(parseUuid(sessionId), authorizationService.requireProfile());
+    playbackSessionTerminationService.destroy(
+        parseUuid(sessionId), authorizationService.requireProfile());
 
     return true;
   }

@@ -5,16 +5,17 @@ import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.streaming.SegmentStore;
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.nio.file.DirectoryStream;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import lombok.extern.slf4j.Slf4j;
 
-@Slf4j
 public class LocalSegmentStore implements SegmentStore {
 
   private static final Duration POLL_INTERVAL = Duration.ofMillis(100);
@@ -85,19 +86,14 @@ public class LocalSegmentStore implements SegmentStore {
 
   @Override
   public void deleteSession(UUID sessionId) {
-    var dir = sessionDirs.remove(sessionId);
-    if (dir != null && Files.exists(dir)) {
+    sessionDirs.remove(sessionId);
+    var dir = baseDir.resolve(sessionId.toString());
+    if (Files.exists(dir, LinkOption.NOFOLLOW_LINKS)) {
       deleteDirectoryRecursively(dir);
     }
   }
 
   public void shutdown() {
-    sessionDirs.forEach(
-        (id, dir) -> {
-          if (Files.exists(dir)) {
-            deleteDirectoryRecursively(dir);
-          }
-        });
     sessionDirs.clear();
   }
 
@@ -127,17 +123,29 @@ public class LocalSegmentStore implements SegmentStore {
   }
 
   private void deleteDirectoryRecursively(Path dir) {
-    try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir)) {
-      for (var entry : stream) {
-        if (!Files.isDirectory(entry)) {
-          Files.deleteIfExists(entry);
-          continue;
-        }
-        deleteDirectoryRecursively(entry);
-      }
-      Files.deleteIfExists(dir);
+    try {
+      Files.walkFileTree(
+          dir,
+          new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attributes)
+                throws IOException {
+              Files.deleteIfExists(file);
+              return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult postVisitDirectory(Path directory, IOException exception)
+                throws IOException {
+              if (exception != null) {
+                throw exception;
+              }
+              Files.deleteIfExists(directory);
+              return FileVisitResult.CONTINUE;
+            }
+          });
     } catch (IOException e) {
-      log.warn("Failed to clean up session directory: {}", dir, e);
+      throw new UncheckedIOException("Failed to clean up session directory: " + dir, e);
     }
   }
 }

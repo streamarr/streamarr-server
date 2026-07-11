@@ -44,6 +44,14 @@ class StreamingPropertiesTest {
   }
 
   @Test
+  @DisplayName("Should default provisioning timeout independently to two minutes")
+  void shouldDefaultProvisioningTimeoutIndependentlyToTwoMinutes() {
+    var properties = StreamingProperties.builder().build();
+
+    assertThat(properties.provisioningTimeout()).isEqualTo(Duration.ofMinutes(2));
+  }
+
+  @Test
   @DisplayName("Should default segment base path when null")
   void shouldDefaultSegmentBasePathWhenNull() {
     var properties = StreamingProperties.builder().build();

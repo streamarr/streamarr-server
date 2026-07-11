@@ -3,7 +3,6 @@ package com.streamarr.server.services.streaming;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.streaming.StreamSession;
-import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -20,8 +19,8 @@ import org.junit.jupiter.api.Test;
 class StreamingShutdownHookTest {
 
   @Test
-  @DisplayName("Should destroy all active sessions when shutdown hook fires")
-  void shouldDestroyAllActiveSessionsWhenShutdownHookFires() {
+  @DisplayName("Should stop runtime without durably destroying sessions when shutdown hook fires")
+  void shouldStopRuntimeWithoutDurablyDestroyingSessionsWhenShutdownHookFires() {
     var service = new TrackingStreamingService();
     var session1 = StreamSessionFixture.buildMpegtsSession();
     var session2 = StreamSessionFixture.buildMpegtsSession();
@@ -32,8 +31,9 @@ class StreamingShutdownHookTest {
     hook.onShutdown();
 
     assertThat(service.getActiveSessionCount()).isZero();
-    assertThat(service.getDestroyedIds())
+    assertThat(service.getShutdownIds())
         .containsExactlyInAnyOrder(session1.getSessionId(), session2.getSessionId());
+    assertThat(service.getDestroyedIds()).isEmpty();
   }
 
   @Test
@@ -45,6 +45,7 @@ class StreamingShutdownHookTest {
     hook.onShutdown();
 
     assertThat(service.getActiveSessionCount()).isZero();
+    assertThat(service.getShutdownIds()).isEmpty();
     assertThat(service.getDestroyedIds()).isEmpty();
   }
 
@@ -52,6 +53,7 @@ class StreamingShutdownHookTest {
 
     private final ConcurrentHashMap<UUID, StreamSession> sessions = new ConcurrentHashMap<>();
     private final List<UUID> destroyedIds = new ArrayList<>();
+    private final List<UUID> shutdownIds = new ArrayList<>();
 
     void addSession(StreamSession session) {
       sessions.put(session.getSessionId(), session);
@@ -61,8 +63,18 @@ class StreamingShutdownHookTest {
       return List.copyOf(destroyedIds);
     }
 
+    List<UUID> getShutdownIds() {
+      return List.copyOf(shutdownIds);
+    }
+
     @Override
-    public StreamSession createSession(UUID mediaFileId, UUID profileId, StreamingOptions options) {
+    public void shutdownRuntime() {
+      shutdownIds.addAll(sessions.keySet());
+      sessions.clear();
+    }
+
+    @Override
+    public StreamSession createSession(CreateRuntimeStreamSessionCommand command) {
       throw new UnsupportedOperationException();
     }
 

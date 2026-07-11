@@ -31,6 +31,10 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -45,6 +49,8 @@ class HlsStreamingServiceTest {
   private FakeTranscodeExecutor transcodeExecutor;
   private FakeSegmentStore segmentStore;
   private FakeFfprobeService ffprobeService;
+  private StreamingProperties properties;
+  private RuntimeStreamSessionRegistry runtimeRegistry;
   private HlsStreamingService service;
 
   @BeforeEach
@@ -53,7 +59,7 @@ class HlsStreamingServiceTest {
     transcodeExecutor = new FakeTranscodeExecutor();
     segmentStore = new FakeSegmentStore();
     ffprobeService = new FakeFfprobeService();
-    var properties =
+    properties =
         StreamingProperties.builder()
             .maxConcurrentTranscodes(3)
             .segmentDuration(Duration.ofSeconds(6))
@@ -62,6 +68,7 @@ class HlsStreamingServiceTest {
     var decisionService = new TranscodeDecisionService();
 
     var qualityLadderService = new QualityLadderService();
+    runtimeRegistry = new FakeStreamSessionRepository();
 
     service =
         new HlsStreamingService(
@@ -72,8 +79,120 @@ class HlsStreamingServiceTest {
             decisionService,
             qualityLadderService,
             properties,
-            new FakeStreamSessionRepository(),
+            runtimeRegistry,
             new MutexFactory<>());
+  }
+
+  @Test
+  @DisplayName("Should stop a late transcode when destroy wins during startup")
+  void shouldStopLateTranscodeWhenDestroyWinsDuringStartup() throws Exception {
+    var file = seedMediaFile();
+    var streamSessionId = UUID.randomUUID();
+    var blockingExecutor = new BlockingTranscodeExecutor();
+    var runtimeRegistry = new FakeStreamSessionRepository();
+    var reservation = runtimeRegistry.reserve(streamSessionId).orElseThrow();
+    var racingService = createService(blockingExecutor, runtimeRegistry);
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var creation =
+          executor.submit(
+              () ->
+                  racingService.createSession(
+                      CreateRuntimeStreamSessionCommand.builder()
+                          .streamSessionId(streamSessionId)
+                          .mediaFileId(file.getId())
+                          .profileId(UUID.randomUUID())
+                          .options(defaultOptions())
+                          .initialLastAccessedAt(Instant.now())
+                          .reservation(reservation)
+                          .build()));
+      assertThat(blockingExecutor.awaitStart()).isTrue();
+
+      racingService.destroySession(streamSessionId);
+      blockingExecutor.releaseStart();
+      assertThatThrownBy(() -> creation.get(5, TimeUnit.SECONDS))
+          .hasCauseInstanceOf(com.streamarr.server.exceptions.SessionNotFoundException.class);
+    }
+
+    assertThat(racingService.accessSession(streamSessionId)).isEmpty();
+    assertThat(blockingExecutor.isRunning(streamSessionId)).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should fence a reserved session before runtime shutdown returns")
+  void shouldFenceReservedSessionBeforeRuntimeShutdownReturns() {
+    var streamSessionId = UUID.randomUUID();
+    var runtimeRegistry = new FakeStreamSessionRepository();
+    var reservation = runtimeRegistry.reserve(streamSessionId).orElseThrow();
+    var shutdownService = createService(transcodeExecutor, runtimeRegistry);
+
+    shutdownService.shutdownRuntime();
+
+    assertThat(
+            runtimeRegistry.attach(
+                reservation, StreamSession.builder().sessionId(streamSessionId).build()))
+        .isFalse();
+    assertThat(runtimeRegistry.beginTranscodeStart(streamSessionId)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should wait for in-flight starter before runtime shutdown returns")
+  void shouldWaitForInFlightStarterBeforeRuntimeShutdownReturns() throws Exception {
+    var file = seedMediaFile();
+    var streamSessionId = UUID.randomUUID();
+    var blockingExecutor = new BlockingTranscodeExecutor();
+    var runtimeRegistry = new FakeStreamSessionRepository();
+    var reservation = runtimeRegistry.reserve(streamSessionId).orElseThrow();
+    var shutdownService = createService(blockingExecutor, runtimeRegistry);
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var creation =
+          executor.submit(
+              () ->
+                  shutdownService.createSession(
+                      CreateRuntimeStreamSessionCommand.builder()
+                          .streamSessionId(streamSessionId)
+                          .mediaFileId(file.getId())
+                          .profileId(UUID.randomUUID())
+                          .options(defaultOptions())
+                          .initialLastAccessedAt(Instant.now())
+                          .reservation(reservation)
+                          .build()));
+      assertThat(blockingExecutor.awaitStart()).isTrue();
+      var shutdown = executor.submit(shutdownService::shutdownRuntime);
+
+      try {
+        assertThatThrownBy(() -> shutdown.get(200, TimeUnit.MILLISECONDS))
+            .isInstanceOf(TimeoutException.class);
+      } finally {
+        blockingExecutor.releaseStart();
+      }
+
+      assertThatThrownBy(() -> creation.get(5, TimeUnit.SECONDS))
+          .hasCauseInstanceOf(com.streamarr.server.exceptions.SessionNotFoundException.class);
+      shutdown.get(5, TimeUnit.SECONDS);
+    }
+
+    assertThat(blockingExecutor.isRunning(streamSessionId)).isFalse();
+  }
+
+  private HlsStreamingService createService(
+      TranscodeExecutor executor, RuntimeStreamSessionRegistry repository) {
+    return new HlsStreamingService(
+        mediaFileRepository,
+        executor,
+        segmentStore,
+        ffprobeService,
+        new TranscodeDecisionService(),
+        new QualityLadderService(),
+        properties,
+        repository,
+        new MutexFactory<>());
+  }
+
+  private StreamSession createSession(UUID mediaFileId, UUID profileId, StreamingOptions options) {
+    return RuntimeStreamSessionTestDriver.create(
+        service, runtimeRegistry, mediaFileId, profileId, options);
   }
 
   private StreamingOptions defaultOptions() {
@@ -99,7 +218,7 @@ class HlsStreamingServiceTest {
   void shouldAssignSessionIdAndMediaFileWhenCreatingSession() {
     var file = seedMediaFile();
 
-    var session = service.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
 
     assertThat(session.getSessionId()).isNotNull();
     assertThat(session.getMediaFileId()).isEqualTo(file.getId());
@@ -110,7 +229,7 @@ class HlsStreamingServiceTest {
   void shouldPopulateMediaProbeWhenCreatingSession() {
     var file = seedMediaFile();
 
-    var session = service.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
 
     assertThat(session.getMediaProbe()).isNotNull();
   }
@@ -120,7 +239,7 @@ class HlsStreamingServiceTest {
   void shouldPopulateTranscodeDecisionWhenCreatingSession() {
     var file = seedMediaFile();
 
-    var session = service.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
 
     assertThat(session.getTranscodeDecision()).isNotNull();
   }
@@ -130,7 +249,7 @@ class HlsStreamingServiceTest {
   void shouldStartTranscodeWhenCreatingSession() {
     var file = seedMediaFile();
 
-    var session = service.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
 
     assertThat(transcodeExecutor.getStarted()).contains(session.getSessionId());
     assertThat(transcodeExecutor.isRunning(session.getSessionId())).isTrue();
@@ -144,7 +263,7 @@ class HlsStreamingServiceTest {
 
     var options = defaultOptions();
 
-    assertThatThrownBy(() -> service.createSession(invalidId, profileId, options))
+    assertThatThrownBy(() -> createSession(invalidId, profileId, options))
         .isInstanceOf(MediaFileNotFoundException.class);
   }
 
@@ -152,7 +271,7 @@ class HlsStreamingServiceTest {
   @DisplayName("Should return session when session exists")
   void shouldReturnSessionWhenSessionExists() {
     var file = seedMediaFile();
-    var session = service.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
 
     var retrieved = service.accessSession(session.getSessionId());
 
@@ -169,22 +288,22 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("Should update last accessed timestamp when session is retrieved")
-  void shouldUpdateLastAccessedTimestampWhenSessionIsRetrieved() {
+  @DisplayName("Should preserve committed last accessed timestamp when session is retrieved")
+  void shouldPreserveCommittedLastAccessedTimestampWhenSessionIsRetrieved() {
     var file = seedMediaFile();
-    var session = service.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
     var initialAccess = session.getLastAccessedAt();
 
     var retrieved = service.accessSession(session.getSessionId());
 
-    assertThat(retrieved.get().getLastAccessedAt()).isAfterOrEqualTo(initialAccess);
+    assertThat(retrieved.get().getLastAccessedAt()).isEqualTo(initialAccess);
   }
 
   @Test
   @DisplayName("Should remove session and stop transcode when session is destroyed")
   void shouldRemoveSessionAndStopTranscodeWhenSessionIsDestroyed() {
     var file = seedMediaFile();
-    var session = service.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
 
     service.destroySession(session.getSessionId());
 
@@ -215,14 +334,14 @@ class HlsStreamingServiceTest {
 
     for (int i = 0; i < 3; i++) {
       var file = seedMediaFile();
-      service.createSession(file.getId(), UUID.randomUUID(), options);
+      createSession(file.getId(), UUID.randomUUID(), options);
     }
 
     var oneMore = seedMediaFile();
     var oneMoreId = oneMore.getId();
     var profileId = UUID.randomUUID();
 
-    assertThatThrownBy(() -> service.createSession(oneMoreId, profileId, options))
+    assertThatThrownBy(() -> createSession(oneMoreId, profileId, options))
         .isInstanceOf(MaxConcurrentTranscodesException.class);
   }
 
@@ -249,14 +368,14 @@ class HlsStreamingServiceTest {
     var sessions = new java.util.ArrayList<StreamSession>();
     for (int i = 0; i < 3; i++) {
       var file = seedMediaFile();
-      sessions.add(service.createSession(file.getId(), UUID.randomUUID(), options));
+      sessions.add(createSession(file.getId(), UUID.randomUUID(), options));
     }
 
     var suspended = sessions.getFirst();
     suspended.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
 
     var oneMore = seedMediaFile();
-    var newSession = service.createSession(oneMore.getId(), UUID.randomUUID(), options);
+    var newSession = createSession(oneMore.getId(), UUID.randomUUID(), options);
 
     assertThat(newSession).isNotNull();
   }
@@ -283,7 +402,7 @@ class HlsStreamingServiceTest {
 
     for (int i = 0; i < 3; i++) {
       var file = seedMediaFile();
-      service.createSession(file.getId(), UUID.randomUUID(), transcodeOptions);
+      createSession(file.getId(), UUID.randomUUID(), transcodeOptions);
     }
 
     ffprobeService.setDefaultProbe(
@@ -300,7 +419,7 @@ class HlsStreamingServiceTest {
     var remuxOptions = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();
     var file = seedMediaFile();
 
-    var session = service.createSession(file.getId(), UUID.randomUUID(), remuxOptions);
+    var session = createSession(file.getId(), UUID.randomUUID(), remuxOptions);
 
     assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
   }
@@ -322,7 +441,7 @@ class HlsStreamingServiceTest {
     var file = seedMediaFile();
     var options = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();
 
-    var session = service.createSession(file.getId(), UUID.randomUUID(), options);
+    var session = createSession(file.getId(), UUID.randomUUID(), options);
 
     assertThat(session.getTranscodeDecision().transcodeMode())
         .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
@@ -333,7 +452,7 @@ class HlsStreamingServiceTest {
   @DisplayName("Should keep previously transcoded segments when relocating")
   void shouldKeepPreviouslyTranscodedSegmentsWhenRelocating() {
     var file = seedMediaFile();
-    var session = service.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
     segmentStore.addSegment(session.getSessionId(), "segment0.ts", new byte[] {1});
 
     service.resumeSessionIfNeeded(session.getSessionId(), "segment100.ts");
@@ -363,7 +482,7 @@ class HlsStreamingServiceTest {
             .supportedCodecs(List.of("h264"))
             .build();
 
-    var session = service.createSession(file.getId(), UUID.randomUUID(), options);
+    var session = createSession(file.getId(), UUID.randomUUID(), options);
 
     assertThat(session.getVariants()).hasSizeGreaterThan(1);
     assertThat(session.getVariantHandles()).hasSizeGreaterThan(1);
@@ -379,7 +498,7 @@ class HlsStreamingServiceTest {
             .supportedCodecs(List.of("h264"))
             .build();
 
-    var session = service.createSession(file.getId(), UUID.randomUUID(), options);
+    var session = createSession(file.getId(), UUID.randomUUID(), options);
 
     assertThat(session.getVariants()).isEmpty();
     assertThat(session.getHandle()).isNotNull();
@@ -406,7 +525,7 @@ class HlsStreamingServiceTest {
             .supportedCodecs(List.of("h264"))
             .build();
 
-    var session = service.createSession(file.getId(), UUID.randomUUID(), options);
+    var session = createSession(file.getId(), UUID.randomUUID(), options);
 
     assertThat(session.getVariants()).isEmpty();
     assertThat(session.getHandle()).isNotNull();
@@ -433,7 +552,7 @@ class HlsStreamingServiceTest {
             .supportedCodecs(List.of("h264"))
             .build();
 
-    var session = service.createSession(file.getId(), UUID.randomUUID(), options);
+    var session = createSession(file.getId(), UUID.randomUUID(), options);
 
     assertThat(session.getVariants()).hasSizeGreaterThan(1);
     assertThat(transcodeExecutor.getStartedVariants())
@@ -446,7 +565,7 @@ class HlsStreamingServiceTest {
   void shouldReturnSessionImmediatelyAfterCreation() {
     var file = seedMediaFile();
 
-    var session = service.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
 
     assertThat(service.accessSession(session.getSessionId())).isPresent();
   }
@@ -463,7 +582,7 @@ class HlsStreamingServiceTest {
   @DisplayName("Should not destroy session when destroy requested by another profile")
   void shouldNotDestroySessionWhenDestroyRequestedByAnotherProfile() {
     var file = seedMediaFile();
-    var session = service.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
 
     service.destroySession(session.getSessionId(), UUID.randomUUID());
 
@@ -475,7 +594,7 @@ class HlsStreamingServiceTest {
   @DisplayName("Should log ownership miss when destroy requested by another profile")
   void shouldLogOwnershipMissWhenDestroyRequestedByAnotherProfile() {
     var file = seedMediaFile();
-    var session = service.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
 
     var logger = (Logger) LoggerFactory.getLogger(HlsStreamingService.class);
     var appender = new ListAppender<ILoggingEvent>();
@@ -498,7 +617,7 @@ class HlsStreamingServiceTest {
   void shouldRemoveSessionAndStopTranscodeWhenDestroyRequestedByOwningProfile() {
     var file = seedMediaFile();
     var profileId = UUID.randomUUID();
-    var session = service.createSession(file.getId(), profileId, defaultOptions());
+    var session = createSession(file.getId(), profileId, defaultOptions());
 
     service.destroySession(session.getSessionId(), profileId);
 
@@ -511,8 +630,8 @@ class HlsStreamingServiceTest {
   void shouldReturnAllSessionsWhenMultipleSessionsCreated() {
     var file1 = seedMediaFile();
     var file2 = seedMediaFile();
-    service.createSession(file1.getId(), UUID.randomUUID(), defaultOptions());
-    service.createSession(file2.getId(), UUID.randomUUID(), defaultOptions());
+    createSession(file1.getId(), UUID.randomUUID(), defaultOptions());
+    createSession(file2.getId(), UUID.randomUUID(), defaultOptions());
 
     var all = service.getAllSessions();
 
@@ -524,8 +643,8 @@ class HlsStreamingServiceTest {
   void shouldReturnActiveSessionCountWhenSessionsExist() {
     var file1 = seedMediaFile();
     var file2 = seedMediaFile();
-    var session1 = service.createSession(file1.getId(), UUID.randomUUID(), defaultOptions());
-    service.createSession(file2.getId(), UUID.randomUUID(), defaultOptions());
+    var session1 = createSession(file1.getId(), UUID.randomUUID(), defaultOptions());
+    createSession(file2.getId(), UUID.randomUUID(), defaultOptions());
 
     service.destroySession(session1.getSessionId());
 
@@ -541,6 +660,7 @@ class HlsStreamingServiceTest {
             .segmentDuration(Duration.ofSeconds(6))
             .sessionTimeout(Duration.ofSeconds(60))
             .build();
+    var limitedRegistry = new FakeStreamSessionRepository();
     var limitedService =
         new HlsStreamingService(
             mediaFileRepository,
@@ -550,7 +670,7 @@ class HlsStreamingServiceTest {
             new TranscodeDecisionService(),
             new QualityLadderService(),
             properties,
-            new FakeStreamSessionRepository(),
+            limitedRegistry,
             new MutexFactory<>());
 
     ffprobeService.setDefaultProbe(
@@ -571,7 +691,9 @@ class HlsStreamingServiceTest {
             .supportedCodecs(List.of("h264"))
             .build();
 
-    var session = limitedService.createSession(file.getId(), UUID.randomUUID(), options);
+    var session =
+        RuntimeStreamSessionTestDriver.create(
+            limitedService, limitedRegistry, file.getId(), UUID.randomUUID(), options);
 
     assertThat(session.getVariants()).hasSize(2);
   }
@@ -598,7 +720,7 @@ class HlsStreamingServiceTest {
 
     for (int i = 0; i < 2; i++) {
       var file = seedMediaFile();
-      service.createSession(file.getId(), UUID.randomUUID(), singleVariantOptions);
+      createSession(file.getId(), UUID.randomUUID(), singleVariantOptions);
     }
 
     var abrOptions =
@@ -608,7 +730,7 @@ class HlsStreamingServiceTest {
             .build();
     var file = seedMediaFile();
 
-    var session = service.createSession(file.getId(), UUID.randomUUID(), abrOptions);
+    var session = createSession(file.getId(), UUID.randomUUID(), abrOptions);
 
     assertThat(session.getVariants()).hasSize(1);
   }
@@ -635,7 +757,7 @@ class HlsStreamingServiceTest {
 
     for (int i = 0; i < 3; i++) {
       var file = seedMediaFile();
-      service.createSession(file.getId(), UUID.randomUUID(), singleVariantOptions);
+      createSession(file.getId(), UUID.randomUUID(), singleVariantOptions);
     }
 
     var abrOptions =
@@ -647,7 +769,7 @@ class HlsStreamingServiceTest {
     var abrFileId = abrFile.getId();
     var profileId = UUID.randomUUID();
 
-    assertThatThrownBy(() -> service.createSession(abrFileId, profileId, abrOptions))
+    assertThatThrownBy(() -> createSession(abrFileId, profileId, abrOptions))
         .isInstanceOf(MaxConcurrentTranscodesException.class);
   }
 
@@ -655,7 +777,7 @@ class HlsStreamingServiceTest {
   @DisplayName("Should restart FFmpeg when segment is missing from suspended session")
   void shouldRestartFfmpegWhenSegmentIsMissingFromSuspendedSession() {
     var file = seedMediaFile();
-    var session = service.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
     session.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
     transcodeExecutor.markDead(session.getSessionId());
 
@@ -669,7 +791,7 @@ class HlsStreamingServiceTest {
   @DisplayName("Should not restart FFmpeg when session is actively transcoding")
   void shouldNotRestartFfmpegWhenSessionIsActivelyTranscoding() {
     var file = seedMediaFile();
-    var session = service.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
     var startedBefore = transcodeExecutor.getStarted().size();
 
     service.resumeSessionIfNeeded(session.getSessionId(), "segment0.ts");
@@ -681,7 +803,7 @@ class HlsStreamingServiceTest {
   @DisplayName("Should not restart FFmpeg when segment already exists on disk")
   void shouldNotRestartFfmpegWhenSegmentAlreadyExistsOnDisk() {
     var file = seedMediaFile();
-    var session = service.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
     session.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
     transcodeExecutor.markDead(session.getSessionId());
     segmentStore.addSegment(session.getSessionId(), "segment5.ts", new byte[] {0x47});
@@ -699,10 +821,10 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("Should update last accessed time when resuming suspended session")
-  void shouldUpdateLastAccessedTimeWhenResumingSuspendedSession() {
+  @DisplayName("Should preserve committed last accessed time when resuming suspended session")
+  void shouldPreserveCommittedLastAccessedTimeWhenResumingSuspendedSession() {
     var file = seedMediaFile();
-    var session = service.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
     session.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
     session.setLastAccessedAt(Instant.now().minusSeconds(200));
     transcodeExecutor.markDead(session.getSessionId());
@@ -710,14 +832,14 @@ class HlsStreamingServiceTest {
 
     service.resumeSessionIfNeeded(session.getSessionId(), "segment5.ts");
 
-    assertThat(session.getLastAccessedAt()).isAfter(oldAccessTime);
+    assertThat(session.getLastAccessedAt()).isEqualTo(oldAccessTime);
   }
 
   @Test
   @DisplayName("Should resume with correct start number when segment is TS format")
   void shouldResumeWithCorrectStartNumberWhenSegmentIsTsFormat() {
     var file = seedMediaFile();
-    var session = service.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
     session.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
     transcodeExecutor.markDead(session.getSessionId());
 
@@ -733,7 +855,7 @@ class HlsStreamingServiceTest {
   @DisplayName("Should resume with correct start number when segment is fMP4 format")
   void shouldResumeWithCorrectStartNumberWhenSegmentIsFmp4Format() {
     var file = seedMediaFile();
-    var session = service.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
     session.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
     transcodeExecutor.markDead(session.getSessionId());
 
@@ -749,7 +871,7 @@ class HlsStreamingServiceTest {
   @DisplayName("Should resume with correct start number when segment includes variant path")
   void shouldResumeWithCorrectStartNumberWhenSegmentIncludesVariantPath() {
     var file = seedMediaFile();
-    var session = service.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
     session.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
     transcodeExecutor.markDead(session.getSessionId());
 
@@ -765,7 +887,7 @@ class HlsStreamingServiceTest {
   @DisplayName("Should resume at beginning when segment name has no index")
   void shouldResumeAtBeginningWhenSegmentNameHasNoIndex() {
     var file = seedMediaFile();
-    var session = service.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
     session.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
     transcodeExecutor.markDead(session.getSessionId());
 
@@ -781,7 +903,7 @@ class HlsStreamingServiceTest {
   @DisplayName("Should resume at beginning when segment is first")
   void shouldResumeAtBeginningWhenSegmentIsFirst() {
     var file = seedMediaFile();
-    var session = service.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
     session.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
     transcodeExecutor.markDead(session.getSessionId());
 
@@ -814,7 +936,7 @@ class HlsStreamingServiceTest {
             .supportedCodecs(List.of("h264"))
             .build();
 
-    var session = service.createSession(file.getId(), UUID.randomUUID(), options);
+    var session = createSession(file.getId(), UUID.randomUUID(), options);
     var variantLabels = session.getVariants().stream().map(v -> v.label()).toList();
 
     for (var label : variantLabels) {
@@ -845,7 +967,7 @@ class HlsStreamingServiceTest {
       "Should relocate the transcode when the requested segment is behind the encoder start")
   void shouldRelocateTheTranscodeWhenTheRequestedSegmentIsBehindTheEncoderStart() {
     var file = seedMediaFile();
-    var session = service.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
     // Move the encoder forward first: segment50 is far ahead of fresh output.
     service.resumeSessionIfNeeded(session.getSessionId(), "segment50.ts");
 
@@ -862,7 +984,7 @@ class HlsStreamingServiceTest {
   void shouldRelocateTheTranscodeWhenTheRequestedSegmentIsFarAheadOfProgress() {
     var file = seedMediaFile();
     var profileId = UUID.randomUUID();
-    var session = service.createSession(file.getId(), profileId, defaultOptions());
+    var session = createSession(file.getId(), profileId, defaultOptions());
 
     service.resumeSessionIfNeeded(session.getSessionId(), "segment100.ts");
 
@@ -876,7 +998,7 @@ class HlsStreamingServiceTest {
   @DisplayName("Should wait when the requested segment is near the encoder start")
   void shouldWaitWhenTheRequestedSegmentIsNearTheEncoderStart() {
     var file = seedMediaFile();
-    var session = service.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
     var requestsBefore = transcodeExecutor.getStartedRequests().size();
 
     service.resumeSessionIfNeeded(session.getSessionId(), "segment2.ts");
@@ -889,7 +1011,7 @@ class HlsStreamingServiceTest {
   @DisplayName("Should wait when the encoder is within the forward gap of the request")
   void shouldWaitWhenTheEncoderIsWithinTheForwardGapOfTheRequest() {
     var file = seedMediaFile();
-    var session = service.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
     segmentStore.addSegment(session.getSessionId(), "segment96.ts", new byte[] {1});
     var requestsBefore = transcodeExecutor.getStartedRequests().size();
 
@@ -903,7 +1025,7 @@ class HlsStreamingServiceTest {
   @DisplayName("Should not relocate when the requested segment already exists")
   void shouldNotRelocateWhenTheRequestedSegmentAlreadyExists() {
     var file = seedMediaFile();
-    var session = service.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
     segmentStore.addSegment(session.getSessionId(), "segment10.ts", new byte[] {1});
     var requestsBefore = transcodeExecutor.getStartedRequests().size();
 
@@ -916,7 +1038,7 @@ class HlsStreamingServiceTest {
   @DisplayName("Should resume at the absolute segment position when resuming")
   void shouldResumeAtTheAbsoluteSegmentPositionWhenResuming() {
     var file = seedMediaFile();
-    var session = service.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
 
     session.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
     transcodeExecutor.markDead(session.getSessionId());
@@ -927,5 +1049,57 @@ class HlsStreamingServiceTest {
     var lastRequest = transcodeExecutor.getStartedRequests().getLast();
     assertThat(lastRequest.seekPosition()).isEqualTo(30);
     assertThat(lastRequest.startNumber()).isEqualTo(5);
+  }
+
+  private static final class BlockingTranscodeExecutor implements TranscodeExecutor {
+
+    private final FakeTranscodeExecutor delegate = new FakeTranscodeExecutor();
+    private final CountDownLatch startEntered = new CountDownLatch(1);
+    private final CountDownLatch allowStart = new CountDownLatch(1);
+
+    @Override
+    public TranscodeHandle start(TranscodeRequest request) {
+      startEntered.countDown();
+      await(allowStart);
+      return delegate.start(request);
+    }
+
+    private boolean awaitStart() throws InterruptedException {
+      return startEntered.await(5, TimeUnit.SECONDS);
+    }
+
+    private void releaseStart() {
+      allowStart.countDown();
+    }
+
+    @Override
+    public void stop(UUID sessionId) {
+      delegate.stop(sessionId);
+    }
+
+    @Override
+    public boolean isRunning(UUID sessionId) {
+      return delegate.isRunning(sessionId);
+    }
+
+    @Override
+    public boolean isRunning(UUID sessionId, String variantLabel) {
+      return delegate.isRunning(sessionId, variantLabel);
+    }
+
+    @Override
+    public boolean isHealthy() {
+      return delegate.isHealthy();
+    }
+
+    private static void await(CountDownLatch latch) {
+      try {
+        latch.await();
+      } catch (InterruptedException exception) {
+        Thread.currentThread().interrupt();
+        throw new IllegalStateException(
+            "Interrupted while controlling transcode startup", exception);
+      }
+    }
   }
 }

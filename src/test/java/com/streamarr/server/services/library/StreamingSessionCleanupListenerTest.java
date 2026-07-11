@@ -2,15 +2,21 @@ package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.domain.streaming.StreamSession;
-import com.streamarr.server.domain.streaming.StreamingOptions;
+import com.streamarr.server.domain.streaming.StreamSessionTerminalReason;
+import com.streamarr.server.repositories.streaming.MediaStreamTermination;
+import com.streamarr.server.repositories.streaming.PlaybackRequestAuthority;
+import com.streamarr.server.repositories.streaming.StreamSessionAuthority;
+import com.streamarr.server.repositories.streaming.StreamSessionTermination;
 import com.streamarr.server.services.library.events.LibraryRemovedEvent;
-import com.streamarr.server.services.streaming.StreamingService;
-import java.util.Collection;
+import com.streamarr.server.services.streaming.StreamSessionLifecycleTransactions;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -19,97 +25,118 @@ import org.junit.jupiter.api.Test;
 @DisplayName("Streaming Session Cleanup Listener Tests")
 class StreamingSessionCleanupListenerTest {
 
-  private final FakeStreamingService fakeStreamingService = new FakeStreamingService();
-  private final StreamingSessionCleanupListener listener =
-      new StreamingSessionCleanupListener(fakeStreamingService);
+  private static final Instant NOW = Instant.parse("2026-07-10T20:00:00Z");
+
+  private FakeLifecycleTransactions lifecycleTransactions;
+  private StreamingSessionCleanupListener listener;
+
+  @BeforeEach
+  void setUp() {
+    lifecycleTransactions = new FakeLifecycleTransactions();
+    listener =
+        new StreamingSessionCleanupListener(
+            lifecycleTransactions, Clock.fixed(NOW, ZoneOffset.UTC));
+  }
 
   @Test
-  @DisplayName(
-      "Should terminate streaming sessions matching media file IDs when LibraryRemovedEvent is received")
-  void shouldTerminateMatchingSessionsWhenLibraryRemovedEventReceived() {
+  @DisplayName("Should durably terminalize matching streams and defer runtime cleanup")
+  void shouldDurablyTerminalizeMatchingStreamsAndDeferRuntimeCleanup() {
     var mediaFileId = UUID.randomUUID();
-    var session = buildSessionForMediaFile(mediaFileId);
-    fakeStreamingService.addSession(session);
+    var streamSessionId = UUID.randomUUID();
+    lifecycleTransactions.affectedStreamIds = List.of(streamSessionId);
 
-    var event = new LibraryRemovedEvent("/library/path", Set.of(mediaFileId));
-    listener.onLibraryRemoved(event);
+    listener.onLibraryRemoved(new LibraryRemovedEvent("/library/path", Set.of(mediaFileId)));
 
-    assertThat(fakeStreamingService.getAllSessions()).isEmpty();
+    assertThat(lifecycleTransactions.termination.mediaFileIds()).containsExactly(mediaFileId);
+    assertThat(lifecycleTransactions.termination.reason())
+        .isEqualTo(StreamSessionTerminalReason.SOURCE_DELETED);
+    assertThat(lifecycleTransactions.termination.terminalAt()).isEqualTo(NOW);
   }
 
   @Test
-  @DisplayName(
-      "Should not terminate sessions for unrelated media files when LibraryRemovedEvent is received")
-  void shouldNotTerminateUnrelatedSessionsWhenLibraryRemovedEventReceived() {
-    var unrelatedMediaFileId = UUID.randomUUID();
-    var unrelatedSession = buildSessionForMediaFile(unrelatedMediaFileId);
-    fakeStreamingService.addSession(unrelatedSession);
+  @DisplayName("Should skip durable and runtime cleanup when event has no media files")
+  void shouldSkipCleanupWhenEventHasNoMediaFiles() {
+    listener.onLibraryRemoved(new LibraryRemovedEvent("/library/path", Set.of()));
 
-    var removedMediaFileId = UUID.randomUUID();
-    var event = new LibraryRemovedEvent("/library/path", Set.of(removedMediaFileId));
-    listener.onLibraryRemoved(event);
-
-    assertThat(fakeStreamingService.getAllSessions()).hasSize(1);
-    assertThat(fakeStreamingService.getAllSessions().iterator().next().getMediaFileId())
-        .isEqualTo(unrelatedMediaFileId);
+    assertThat(lifecycleTransactions.termination).isNull();
   }
 
-  @Test
-  @DisplayName("Should handle empty media file IDs gracefully without terminating any sessions")
-  void shouldHandleEmptyMediaFileIdsGracefully() {
-    var session = buildSessionForMediaFile(UUID.randomUUID());
-    fakeStreamingService.addSession(session);
+  private static final class FakeLifecycleTransactions
+      implements StreamSessionLifecycleTransactions {
 
-    var event = new LibraryRemovedEvent("/library/path", Set.of());
-    listener.onLibraryRemoved(event);
+    private MediaStreamTermination termination;
+    private List<UUID> affectedStreamIds = List.of();
 
-    assertThat(fakeStreamingService.getAllSessions()).hasSize(1);
-  }
-
-  private StreamSession buildSessionForMediaFile(UUID mediaFileId) {
-    return StreamSession.builder().sessionId(UUID.randomUUID()).mediaFileId(mediaFileId).build();
-  }
-
-  private static class FakeStreamingService implements StreamingService {
-
-    private final ConcurrentHashMap<UUID, StreamSession> sessions = new ConcurrentHashMap<>();
-
-    void addSession(StreamSession session) {
-      sessions.put(session.getSessionId(), session);
+    @Override
+    public List<UUID> terminalizeByMediaFiles(MediaStreamTermination requestedTermination) {
+      termination = requestedTermination;
+      return affectedStreamIds;
     }
 
     @Override
-    public StreamSession createSession(UUID mediaFileId, UUID profileId, StreamingOptions options) {
+    public List<UUID> terminalizeMissingMediaSources(Instant terminalAt) {
       throw new UnsupportedOperationException();
     }
 
     @Override
-    public Optional<StreamSession> accessSession(UUID sessionId) {
+    public Optional<Instant> admit(
+        StreamSessionAuthority authority, java.time.Duration provisioningTimeout) {
       throw new UnsupportedOperationException();
     }
 
     @Override
-    public void destroySession(UUID sessionId) {
-      sessions.remove(sessionId);
-    }
-
-    @Override
-    public void destroySession(UUID sessionId, UUID profileId) {
+    public boolean activate(
+        StreamSessionAuthority authority, java.time.Duration provisioningTimeout) {
       throw new UnsupportedOperationException();
     }
 
     @Override
-    public Collection<StreamSession> getAllSessions() {
-      return sessions.values();
+    public Optional<Instant> touchIfPlaybackRequestMatches(PlaybackRequestAuthority authority) {
+      throw new UnsupportedOperationException();
     }
 
     @Override
-    public int getActiveSessionCount() {
-      return sessions.size();
+    public List<UUID> findTerminatingIds(int limit) {
+      throw new UnsupportedOperationException();
     }
 
     @Override
-    public void resumeSessionIfNeeded(UUID sessionId, String segmentName) {
+    public List<UUID> findTerminatingIdsAfter(UUID afterId, int limit) {
+      throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public boolean terminalize(StreamSessionTermination requestedTermination) {
+      throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public boolean recordTerminationIntent(StreamSessionTermination requestedTermination) {
+      throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public List<StreamSessionTermination> findTerminationIntents() {
+      throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public boolean completeCreation(UUID streamSessionId) {
+      throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public boolean replayTerminationIntent(UUID streamSessionId) {
+      throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public boolean deleteTerminationIntent(UUID streamSessionId) {
+      throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public boolean deleteTerminating(UUID streamSessionId) {
       throw new UnsupportedOperationException();
     }
   }

@@ -28,11 +28,21 @@ import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.fakes.FakeVersionCounterReader;
 import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
+import com.streamarr.server.repositories.streaming.MediaStreamTermination;
+import com.streamarr.server.repositories.streaming.PlaybackRequestAuthority;
+import com.streamarr.server.repositories.streaming.StreamSessionAuthority;
+import com.streamarr.server.repositories.streaming.StreamSessionTermination;
 import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.services.auth.TokenVersionCache;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
+import com.streamarr.server.services.streaming.CreateRuntimeStreamSessionCommand;
 import com.streamarr.server.services.streaming.DefaultPlaybackSessionCreationService;
 import com.streamarr.server.services.streaming.PlaybackSessionCreationService;
+import com.streamarr.server.services.streaming.PlaybackSessionTerminationService;
+import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
+import com.streamarr.server.services.streaming.StreamSessionCleanup;
+import com.streamarr.server.services.streaming.StreamSessionLifecycleTransactions;
+import com.streamarr.server.services.streaming.StreamSessionTransactionRetry;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.watchprogress.SessionProgressService;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
@@ -114,9 +124,45 @@ class StreamingResolverTest {
     PlaybackSessionCreationService playbackSessionCreationService(
         StreamingService streamingService,
         PlaybackTokenIssuer playbackTokenIssuer,
-        StreamingProperties streamingProperties) {
+        StreamingProperties streamingProperties,
+        StreamSessionLifecycleTransactions lifecycleTransactions,
+        RuntimeStreamSessionRegistry runtimeRegistry,
+        StreamSessionCleanup cleanup,
+        StreamSessionTransactionRetry transactionRetry) {
       return new DefaultPlaybackSessionCreationService(
-          streamingService, playbackTokenIssuer, streamingProperties);
+          streamingService,
+          playbackTokenIssuer,
+          streamingProperties,
+          lifecycleTransactions,
+          runtimeRegistry,
+          cleanup,
+          transactionRetry,
+          java.time.Clock.systemUTC());
+    }
+
+    @Bean
+    StreamSessionTransactionRetry streamSessionTransactionRetry() {
+      return new StreamSessionTransactionRetry();
+    }
+
+    @Bean
+    StreamSessionCleanup streamSessionCleanup() {
+      return STUB_SERVICE::destroySession;
+    }
+
+    @Bean
+    PlaybackSessionTerminationService playbackSessionTerminationService() {
+      return STUB_SERVICE::destroySession;
+    }
+
+    @Bean
+    RuntimeStreamSessionRegistry runtimeStreamSessionRegistry() {
+      return new com.streamarr.server.services.streaming.local.InMemoryStreamSessionRepository();
+    }
+
+    @Bean
+    StreamSessionLifecycleTransactions streamSessionLifecycleTransactions() {
+      return new NoopStreamSessionLifecycleTransactions();
     }
 
     @Bean
@@ -480,9 +526,9 @@ class StreamingResolverTest {
     }
 
     @Override
-    public StreamSession createSession(UUID mediaFileId, UUID profileId, StreamingOptions options) {
-      this.lastReceivedOptions = options;
-      this.lastCreateProfileId = profileId;
+    public StreamSession createSession(CreateRuntimeStreamSessionCommand command) {
+      this.lastReceivedOptions = command.options();
+      this.lastCreateProfileId = command.profileId();
       return nextResult;
     }
 
@@ -529,6 +575,82 @@ class StreamingResolverTest {
     public void reportStreamSessionTimeline(
         UUID profileId, UUID sessionId, int positionSeconds, PlaybackState state) {
       // no-op for test fake
+    }
+  }
+
+  private static class NoopStreamSessionLifecycleTransactions
+      implements StreamSessionLifecycleTransactions {
+
+    @Override
+    public Optional<Instant> admit(
+        StreamSessionAuthority authority, java.time.Duration provisioningTimeout) {
+      return Optional.of(Instant.EPOCH);
+    }
+
+    @Override
+    public boolean activate(
+        StreamSessionAuthority authority, java.time.Duration provisioningTimeout) {
+      return true;
+    }
+
+    @Override
+    public Optional<Instant> touchIfPlaybackRequestMatches(PlaybackRequestAuthority authority) {
+      return Optional.empty();
+    }
+
+    @Override
+    public List<UUID> findTerminatingIds(int limit) {
+      return List.of();
+    }
+
+    @Override
+    public List<UUID> findTerminatingIdsAfter(UUID afterId, int limit) {
+      return List.of();
+    }
+
+    @Override
+    public List<UUID> terminalizeByMediaFiles(MediaStreamTermination termination) {
+      return List.of();
+    }
+
+    @Override
+    public List<UUID> terminalizeMissingMediaSources(Instant terminalAt) {
+      return List.of();
+    }
+
+    @Override
+    public boolean terminalize(StreamSessionTermination termination) {
+      return true;
+    }
+
+    @Override
+    public boolean recordTerminationIntent(StreamSessionTermination termination) {
+      return true;
+    }
+
+    @Override
+    public List<StreamSessionTermination> findTerminationIntents() {
+      return List.of();
+    }
+
+    @Override
+    public boolean completeCreation(UUID streamSessionId) {
+      return true;
+    }
+
+    @Override
+    public boolean replayTerminationIntent(UUID streamSessionId) {
+      return true;
+    }
+
+    @Override
+    public boolean deleteTerminationIntent(UUID streamSessionId) {
+      return true;
+    }
+
+    @Override
+    public boolean deleteTerminating(UUID streamSessionId) {
+      return true;
     }
   }
 

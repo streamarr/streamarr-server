@@ -30,6 +30,8 @@ import com.streamarr.server.jooq.generated.tables.SeriesDirector;
 import com.streamarr.server.jooq.generated.tables.SeriesGenre;
 import com.streamarr.server.jooq.generated.tables.SeriesPerson;
 import com.streamarr.server.jooq.generated.tables.SessionProgress;
+import com.streamarr.server.jooq.generated.tables.StreamSession;
+import com.streamarr.server.jooq.generated.tables.StreamSessionTerminationIntent;
 import com.streamarr.server.jooq.generated.tables.WatchHistory;
 
 import org.jooq.Index;
@@ -95,6 +97,15 @@ public class Indexes {
     public static final Index IDX_SESSION_PROGRESS_MEDIA_FILE_ID = Internal.createIndex(DSL.name("idx_session_progress_media_file_id"), SessionProgress.SESSION_PROGRESS, new OrderField[] { SessionProgress.SESSION_PROGRESS.MEDIA_FILE_ID }, false);
     public static final Index IDX_SESSION_PROGRESS_PROFILE_ID = Internal.createIndex(DSL.name("idx_session_progress_profile_id"), SessionProgress.SESSION_PROGRESS, new OrderField[] { SessionProgress.SESSION_PROGRESS.PROFILE_ID }, false);
     public static final Index IDX_SESSION_PROGRESS_RESUME = Internal.createIndex(DSL.name("idx_session_progress_resume"), SessionProgress.SESSION_PROGRESS, new OrderField[] { SessionProgress.SESSION_PROGRESS.PROFILE_ID, SessionProgress.SESSION_PROGRESS.MEDIA_FILE_ID, SessionProgress.SESSION_PROGRESS.LAST_MODIFIED_ON.desc() }, false);
+    public static final Index IDX_STREAM_SESSION_ACCOUNT_HOUSEHOLD = Internal.createIndex(DSL.name("idx_stream_session_account_household"), StreamSession.STREAM_SESSION, new OrderField[] { StreamSession.STREAM_SESSION.ACCOUNT_ID, StreamSession.STREAM_SESSION.HOUSEHOLD_ID }, false);
+    public static final Index IDX_STREAM_SESSION_ACCOUNT_PROFILE = Internal.createIndex(DSL.name("idx_stream_session_account_profile"), StreamSession.STREAM_SESSION, new OrderField[] { StreamSession.STREAM_SESSION.ACCOUNT_ID, StreamSession.STREAM_SESSION.PROFILE_ID }, false);
+    public static final Index IDX_STREAM_SESSION_ACTIVE_RETENTION = Internal.createIndex(DSL.name("idx_stream_session_active_retention"), StreamSession.STREAM_SESSION, new OrderField[] { StreamSession.STREAM_SESSION.LAST_ACCESSED_AT, StreamSession.STREAM_SESSION.ID }, false);
+    public static final Index IDX_STREAM_SESSION_AUTH_ACCOUNT = Internal.createIndex(DSL.name("idx_stream_session_auth_account"), StreamSession.STREAM_SESSION, new OrderField[] { StreamSession.STREAM_SESSION.AUTH_SESSION_ID, StreamSession.STREAM_SESSION.ACCOUNT_ID }, false);
+    public static final Index IDX_STREAM_SESSION_MEDIA_FILE = Internal.createIndex(DSL.name("idx_stream_session_media_file"), StreamSession.STREAM_SESSION, new OrderField[] { StreamSession.STREAM_SESSION.MEDIA_FILE_ID }, false);
+    public static final Index IDX_STREAM_SESSION_PROFILE_HOUSEHOLD = Internal.createIndex(DSL.name("idx_stream_session_profile_household"), StreamSession.STREAM_SESSION, new OrderField[] { StreamSession.STREAM_SESSION.PROFILE_ID, StreamSession.STREAM_SESSION.HOUSEHOLD_ID }, false);
+    public static final Index IDX_STREAM_SESSION_PROVISIONING_TIMEOUT = Internal.createIndex(DSL.name("idx_stream_session_provisioning_timeout"), StreamSession.STREAM_SESSION, new OrderField[] { StreamSession.STREAM_SESSION.CREATED_AT, StreamSession.STREAM_SESSION.ID }, false);
+    public static final Index IDX_STREAM_SESSION_TERMINATING_CLEANUP = Internal.createIndex(DSL.name("idx_stream_session_terminating_cleanup"), StreamSession.STREAM_SESSION, new OrderField[] { StreamSession.STREAM_SESSION.TERMINAL_AT, StreamSession.STREAM_SESSION.ID }, false);
+    public static final Index IDX_STREAM_SESSION_TERMINATION_INTENT_REPLAY = Internal.createIndex(DSL.name("idx_stream_session_termination_intent_replay"), StreamSessionTerminationIntent.STREAM_SESSION_TERMINATION_INTENT, new OrderField[] { StreamSessionTerminationIntent.STREAM_SESSION_TERMINATION_INTENT.ARMED, StreamSessionTerminationIntent.STREAM_SESSION_TERMINATION_INTENT.REPLAY_AFTER, StreamSessionTerminationIntent.STREAM_SESSION_TERMINATION_INTENT.STREAM_SESSION_ID }, false);
     public static final Index IDX_WATCH_HISTORY_PROFILE_COLLECTABLE = Internal.createIndex(DSL.name("idx_watch_history_profile_collectable"), WatchHistory.WATCH_HISTORY, new OrderField[] { WatchHistory.WATCH_HISTORY.PROFILE_ID, WatchHistory.WATCH_HISTORY.COLLECTABLE_ID, WatchHistory.WATCH_HISTORY.WATCHED_AT.desc() }, false);
     public static final Index IMAGE_ENTITY_ID_IMAGE_TYPE_VARIANT_IDX = Internal.createIndex(DSL.name("image_entity_id_image_type_variant_idx"), Image.IMAGE, new OrderField[] { Image.IMAGE.ENTITY_ID, Image.IMAGE.IMAGE_TYPE, Image.IMAGE.VARIANT }, true);
     public static final Index IMAGE_ENTITY_TYPE_ENTITY_ID_IDX = Internal.createIndex(DSL.name("image_entity_type_entity_id_idx"), Image.IMAGE, new OrderField[] { Image.IMAGE.ENTITY_TYPE, Image.IMAGE.ENTITY_ID }, false);

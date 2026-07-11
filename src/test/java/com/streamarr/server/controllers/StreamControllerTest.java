@@ -6,7 +6,6 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.defaultVariantB
 import static com.streamarr.server.fixtures.StreamSessionFixture.fullTranscodeDecision;
 import static com.streamarr.server.fixtures.StreamSessionFixture.withActiveVariantHandles;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -20,7 +19,9 @@ import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.TokenScope;
 import com.streamarr.server.services.authorization.AuthorizationService;
+import com.streamarr.server.services.streaming.CreateRuntimeStreamSessionCommand;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
+import com.streamarr.server.services.streaming.PlaybackSessionAccessService;
 import com.streamarr.server.services.streaming.StreamingService;
 import java.time.Duration;
 import java.time.Instant;
@@ -36,7 +37,6 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -69,8 +69,21 @@ class StreamControllerTest {
     boundStreamSession.set(SESSION_ID);
     controller =
         new StreamController(
-            streamingService, playlistService, segmentStore, new BoundAuthorizationService());
+            streamingService,
+            playlistService,
+            segmentStore,
+            new BoundAuthorizationService(),
+            playbackSessionAccessService());
     mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
+  }
+
+  private PlaybackSessionAccessService playbackSessionAccessService() {
+    return (sessionId, identity) -> {
+      if (!sessionId.equals(identity.streamSessionId())) {
+        return Optional.empty();
+      }
+      return streamingService.accessSession(sessionId);
+    };
   }
 
   @Test
@@ -131,16 +144,14 @@ class StreamControllerTest {
 
   @ParameterizedTest
   @ValueSource(strings = {"master.m3u8", "stream.m3u8", "segment0.ts", "init.mp4"})
-  @DisplayName("Should reject stream request when token is bound to another stream session")
-  void shouldRejectStreamRequestWhenTokenIsBoundToAnotherStreamSession(String path) {
+  @DisplayName("Should return 404 when token is bound to another stream session")
+  void shouldReturn404WhenTokenIsBoundToAnotherStreamSession(String path) throws Exception {
     streamingService.setSession(buildMpegtsSession());
     boundStreamSession.set(UUID.randomUUID());
 
-    assertThatThrownBy(
-            () ->
-                mockMvc.perform(
-                    get("/api/stream/{sessionId}/" + path, SESSION_ID).param("t", "unit-token")))
-        .hasCauseInstanceOf(AccessDeniedException.class);
+    mockMvc
+        .perform(get("/api/stream/{sessionId}/" + path, SESSION_ID).param("t", "unit-token"))
+        .andExpect(status().isNotFound());
   }
 
   @ParameterizedTest
@@ -494,7 +505,7 @@ class StreamControllerTest {
     }
 
     @Override
-    public StreamSession createSession(UUID mediaFileId, UUID profileId, StreamingOptions options) {
+    public StreamSession createSession(CreateRuntimeStreamSessionCommand command) {
       return session;
     }
 

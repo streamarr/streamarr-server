@@ -13,6 +13,7 @@ import com.streamarr.server.jooq.generated.tables.Household.HouseholdPath;
 import com.streamarr.server.jooq.generated.tables.HouseholdMembership.HouseholdMembershipPath;
 import com.streamarr.server.jooq.generated.tables.Profile.ProfilePath;
 import com.streamarr.server.jooq.generated.tables.RefreshToken.RefreshTokenPath;
+import com.streamarr.server.jooq.generated.tables.StreamSession.StreamSessionPath;
 import com.streamarr.server.jooq.generated.tables.UserAccount.UserAccountPath;
 import com.streamarr.server.jooq.generated.tables.records.AuthSessionRecord;
 
@@ -211,6 +212,11 @@ public class AuthSession extends TableImpl<AuthSessionRecord> {
     }
 
     @Override
+    public List<UniqueKey<AuthSessionRecord>> getUniqueKeys() {
+        return Arrays.asList(Keys.UQ_AUTH_SESSION_ID_ACCOUNT);
+    }
+
+    @Override
     public List<ForeignKey<AuthSessionRecord, ?>> getReferences() {
         return Arrays.asList(Keys.AUTH_SESSION__FK_AUTH_SESSION_ACCOUNT, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_ACCOUNT_PROFILE, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_HOUSEHOLD, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_MEMBERSHIP, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_PROFILE, Keys.AUTH_SESSION__FK_AUTH_SESSION_ACTIVE_PROFILE_HOUSEHOLD);
     }
@@ -302,6 +308,19 @@ public class AuthSession extends TableImpl<AuthSessionRecord> {
             _refreshToken = new RefreshTokenPath(this, null, Keys.REFRESH_TOKEN__FK_REFRESH_TOKEN_SESSION.getInverseKey());
 
         return _refreshToken;
+    }
+
+    private transient StreamSessionPath _streamSession;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.stream_session</code> table
+     */
+    public StreamSessionPath streamSession() {
+        if (_streamSession == null)
+            _streamSession = new StreamSessionPath(this, null, Keys.STREAM_SESSION__FK_STREAM_SESSION_AUTH_ACCOUNT.getInverseKey());
+
+        return _streamSession;
     }
 
     @Override

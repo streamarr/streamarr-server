@@ -42,11 +42,14 @@ public class HlsStreamingService implements StreamingService {
   private final TranscodeDecisionService transcodeDecisionService;
   private final QualityLadderService qualityLadderService;
   private final StreamingProperties properties;
-  private final StreamSessionRepository sessionRepository;
+  private final RuntimeStreamSessionRegistry sessionRepository;
   private final MutexFactory<UUID> resumeMutex;
 
   @Override
-  public StreamSession createSession(UUID mediaFileId, UUID profileId, StreamingOptions options) {
+  public StreamSession createSession(CreateRuntimeStreamSessionCommand command) {
+    var mediaFileId = command.mediaFileId();
+    var profileId = command.profileId();
+    var options = command.options();
     var mediaFile =
         mediaFileRepository
             .findById(mediaFileId)
@@ -57,7 +60,7 @@ public class HlsStreamingService implements StreamingService {
     var variants = resolveVariants(probe, options, decision);
     variants = enforceCapacityLimits(decision.transcodeMode(), variants);
 
-    var sessionId = UUID.randomUUID();
+    var sessionId = command.streamSessionId();
     var now = Instant.now();
 
     var session =
@@ -72,10 +75,12 @@ public class HlsStreamingService implements StreamingService {
             .variants(variants)
             .createdAt(now)
             .build();
+    session.setLastAccessedAt(command.initialLastAccessedAt());
 
-    sessionRepository.save(session);
+    if (!sessionRepository.attach(command.reservation(), session)) {
+      throw new com.streamarr.server.exceptions.SessionNotFoundException(sessionId);
+    }
     startTranscodes(session, 0, 0);
-    sessionRepository.save(session);
     log.info(
         "Created streaming session {} for media file {} (mode: {}, variants: {})",
         sessionId,
@@ -88,25 +93,45 @@ public class HlsStreamingService implements StreamingService {
 
   @Override
   public Optional<StreamSession> accessSession(UUID sessionId) {
-    var session = sessionRepository.findById(sessionId);
-    session.ifPresent(
-        s -> {
-          s.setLastAccessedAt(Instant.now());
-          sessionRepository.save(s);
-        });
-    return session;
+    return sessionRepository.findById(sessionId);
   }
 
   @Override
   public void destroySession(UUID sessionId) {
-    sessionRepository
-        .removeById(sessionId)
-        .ifPresent(
-            session -> {
-              transcodeExecutor.stop(sessionId);
-              segmentStore.deleteSession(sessionId);
-              log.info("Destroyed streaming session {}", sessionId);
-            });
+    if (!sessionRepository.terminalize(sessionId)) {
+      return;
+    }
+    terminateRuntime(sessionId);
+  }
+
+  @Override
+  public boolean terminateRuntime(UUID sessionId) {
+    sessionRepository.terminalize(sessionId);
+    transcodeExecutor.stop(sessionId);
+    sessionRepository.markRuntimeStopped(sessionId);
+    segmentStore.deleteSession(sessionId);
+    var quiescent = sessionRepository.releaseTerminal(sessionId);
+    log.info("Destroyed streaming session {}", sessionId);
+    return quiescent;
+  }
+
+  @Override
+  public void shutdownRuntime() {
+    var sessionIds = sessionRepository.fenceAll();
+    sessionIds.forEach(this::stopForShutdown);
+    for (var sessionId : sessionIds) {
+      sessionRepository.awaitTranscodeStarts(sessionId);
+      stopForShutdown(sessionId);
+    }
+  }
+
+  private void stopForShutdown(UUID sessionId) {
+    try {
+      transcodeExecutor.stop(sessionId);
+      sessionRepository.markRuntimeStopped(sessionId);
+    } catch (RuntimeException exception) {
+      log.warn("Failed to stop stream session {} during shutdown", sessionId, exception);
+    }
   }
 
   @Override
@@ -213,9 +238,6 @@ public class HlsStreamingService implements StreamingService {
     var segmentIndex = parseSegmentIndex(segmentName);
     transcodeExecutor.stop(sessionId);
     startTranscodes(session, segmentIndex * segmentDurationSeconds(), segmentIndex);
-    session.setLastAccessedAt(Instant.now());
-    sessionRepository.save(session);
-
     log.info("Relocated transcode for session {} to segment {}", sessionId, segmentIndex);
   }
 
@@ -249,9 +271,6 @@ public class HlsStreamingService implements StreamingService {
     var resumeSeek = segmentIndex * (int) properties.segmentDuration().toSeconds();
 
     startTranscodes(session, resumeSeek, segmentIndex);
-    session.setLastAccessedAt(Instant.now());
-    sessionRepository.save(session);
-
     log.info(
         "Resumed suspended session {} at segment {} (seek {}s)",
         sessionId,
@@ -347,7 +366,7 @@ public class HlsStreamingService implements StreamingService {
             .variantLabel(StreamSession.defaultVariant())
             .startNumber(startNumber)
             .build();
-    var handle = transcodeExecutor.start(request);
+    var handle = startTranscode(request);
 
     session.setHandle(handle);
   }
@@ -369,9 +388,41 @@ public class HlsStreamingService implements StreamingService {
               .variantLabel(variant.label())
               .startNumber(startNumber)
               .build();
-      var handle = transcodeExecutor.start(request);
+      var handle = startTranscode(request);
 
       session.setVariantHandle(variant.label(), handle);
+    }
+  }
+
+  private TranscodeHandle startTranscode(TranscodeRequest request) {
+    var start =
+        sessionRepository
+            .beginTranscodeStart(request.sessionId())
+            .orElseThrow(
+                () ->
+                    new com.streamarr.server.exceptions.SessionNotFoundException(
+                        request.sessionId()));
+    TranscodeHandle handle;
+    try {
+      handle = transcodeExecutor.start(request);
+    } catch (RuntimeException exception) {
+      sessionRepository.abortTranscodeStart(start);
+      throw exception;
+    }
+    if (sessionRepository.completeTranscodeStart(start)) {
+      return handle;
+    }
+    finishRejectedStart(start);
+    throw new com.streamarr.server.exceptions.SessionNotFoundException(request.sessionId());
+  }
+
+  private void finishRejectedStart(RuntimeTranscodeStart start) {
+    try {
+      transcodeExecutor.stop(start.sessionId());
+      sessionRepository.finishRejectedTranscodeStart(start, true);
+    } catch (RuntimeException exception) {
+      sessionRepository.finishRejectedTranscodeStart(start, false);
+      throw exception;
     }
   }
 

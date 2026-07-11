@@ -5,6 +5,7 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.exceptions.InvalidSegmentPathException;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
+import com.streamarr.server.services.streaming.PlaybackSessionAccessService;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.StreamingService;
 import java.time.Duration;
@@ -34,6 +35,7 @@ public class StreamController {
   private final HlsPlaylistService playlistService;
   private final SegmentStore segmentStore;
   private final AuthorizationService authorizationService;
+  private final PlaybackSessionAccessService playbackSessionAccessService;
 
   @GetMapping("/{sessionId}/master.m3u8")
   public ResponseEntity<String> getMasterPlaylist(@PathVariable UUID sessionId) {
@@ -181,17 +183,8 @@ public class StreamController {
     return authorizationService.currentTokenValue();
   }
 
-  /** A playback token is worth exactly the one stream session it was minted for. */
-  private void requireTokenBoundTo(UUID sessionId) {
-    if (!sessionId.equals(authorizationService.currentIdentity().streamSessionId())) {
-      throw new org.springframework.security.access.AccessDeniedException(
-          "Playback token is not valid for this stream session.");
-    }
-  }
-
   private Optional<StreamSession> findSession(UUID sessionId) {
-    requireTokenBoundTo(sessionId);
-    return streamingService.accessSession(sessionId);
+    return playbackSessionAccessService.access(sessionId, authorizationService.currentIdentity());
   }
 
   private void validatePathSegment(String segment) {

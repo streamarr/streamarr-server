@@ -6,14 +6,15 @@ Accepted
 
 === Implementation status
 
-* Nothing in this ADR is built yet: the lifecycle will be implemented by issue #211 (PR-A), atomic revocation integration follows in PR-B1, and the version-counter retirement completes the transition in PR-B2 (issue #213). PR-A/PR-B1/PR-B2 name the sequential delivery increments of those issues.
+* PR-A1 implements persisted admission and activation, the per-request gate, the runtime terminal fence, owner destroy, first-wins terminalization, a leased durable compensation guard, and terminating-row cleanup retry. It also adds a fail-closed media-existence gate plus missing-media reconciliation as a bridge to PR-A2. Owner destroy moved forward because leaving the existing mutation on runtime-only teardown would leak every durable A1 row.
+* PR-A2 completes media-parent deletion choreography and its restrictive foreign key, timeline transaction integration, full retention/terminating reaping, restart reconciliation, and the remaining interleaving matrix. A1's leased guard already supplies bounded provisioning/startup recovery. Atomic revocation integration follows in PR-B1, and version-counter retirement completes the transition in PR-B2 (issue #213).
 * The single-streaming-instance boundary holds until the distributed control plane (issue #76); `PROVISIONING` here is a local admission state, not #76's distributed capacity reservation.
-* Media-deletion choreography and its restrictive foreign key land together in PR-A2 — a `RESTRICT` constraint never ships ahead of the deletion workflow that satisfies it.
+* Media-deletion choreography and its restrictive foreign key land together in PR-A2 — a `RESTRICT` constraint never ships ahead of the deletion workflow that satisfies it. Until then, a missing media row fails the request gate and the cleanup worker terminalizes the orphan as `SOURCE_DELETED`; this bridge does not replace parent-deletion retry choreography.
 
 == Context
 
 link:0016-authentication-mechanisms-and-session-security.adoc[ADR 0016] moves playback revocation from per-request version counters to persisted enforcement state.
-Stream sessions today live in a per-JVM map: a playback token is signature-portable, but nothing durable records whether the session it names may still be served, no revocation survives a restart, and a stale-but-unexpired access token could mint playback authority that outlives its own staleness bound.
+Before PR-A1, stream sessions lived only in a per-JVM map: a playback token was signature-portable, but nothing durable recorded whether the session it named could still be served, no revocation survived a restart, and a stale-but-unexpired access token could mint playback authority that outlived its own staleness bound.
 This ADR fixes the persisted state machine, the authority predicates, and the concurrency and cleanup contracts that make the stream row a trustworthy enforcement record.
 
 == Decision
@@ -23,8 +24,8 @@ This ADR fixes the persisted state machine, the authority predicates, and the co
 The stream row and the authorization session *together* form playback's enforcement authority; neither alone is sufficient.
 Because the playback token does not exist until activation, two predicates stay distinct:
 
-* `sourceAuthorityMatches` — evaluated at admission and activation: the profile-scoped *source* token matches the row's authorization-session id, account, household, and profile; the authorization session is unrevoked; the owning account is enabled; the current profile grant exists.
-* `playbackRequestMatches` — evaluated only at the request gate: `sourceAuthorityMatches` plus `PLAYBACK` scope, `requestedId == token.streamSessionId == row.id`, and row status `ACTIVE`.
+* `sourceAuthorityMatches` — evaluated at admission and activation: the profile-scoped *source* token matches the row's authorization-session id, account, household, and profile; the authorization session is unrevoked; the owning account is enabled; the current profile grant and referenced media source exist.
+* `playbackRequestMatches` — evaluated only at the request gate: `sourceAuthorityMatches` plus `PLAYBACK` scope, `requestedId == token.streamSessionId == row.id`, and row status `ACTIVE`. Before PR-A2 installs the media foreign key and deletion choreography, the gate independently requires the referenced media row to exist.
 
 Without the enabled-account condition, disabling an account stops refresh but an already-issued playback token — whose validity spans a media traversal plus retention — would keep playing.
 
@@ -57,7 +58,7 @@ conditional provisioning admission
   → per-request enforcement gate
 ----
 
-A single creation service owns admission, process startup, activation, token issuance, and compensation, with its database steps on separately proxied transaction boundaries so admission genuinely commits before FFmpeg starts, even when the orchestrator is invoked from another transaction.
+A single creation service owns admission, process startup, activation, token issuance, and compensation, with its database steps on separately proxied transaction boundaries so admission genuinely commits before FFmpeg starts. The orchestration boundary rejects an ambient transaction: suspending one would leave its physical connection checked out across retry backoff, ffprobe, FFmpeg startup, and token issuance.
 
 *Admission* conditionally inserts a `PROVISIONING` row only while `sourceAuthorityMatches` holds.
 It promises no strict serialization against a concurrent revoke — a short-lived `PROVISIONING` row may appear, but never playable authority — and no FFmpeg side effect happens before admission commits.
@@ -68,6 +69,7 @@ A revocation that holds the session row forces activation to wait and re-evaluat
 Database retries for SQLSTATE `40P01`/`40001` are bounded at three attempts, each a fresh transaction with backoff outside any connection; FFmpeg is never repeated by a database retry.
 
 Every failure after admission — partial variant startup, runtime registration, activation refusal, retry exhaustion, token encoding or handoff — transitions the row to `TERMINATING` with a first-wins reason, runs the terminal fence after commit, cleans segments, and retains the row for periodic retry when either cleanup step fails.
+Admission atomically records an unarmed `PROVISIONING_TIMEOUT` compensation guard before FFmpeg can start. Activation renews it as a bounded `STARTUP_FAILURE` guard for token issuance. Successful creation locks the stream row and removes the guard before returning the token. If the bounded terminal-transition transaction exhausts, compensation arms the guard with the exact first-wins reason and time; if that write also exhausts, the pre-recorded fallback becomes replayable when its database-time lease expires. Worker replay and successful completion lock the parent row first and recheck the guard, so exactly one can win even after a stale candidate read. This small PostgreSQL outbox is internal saga durability, not a service-to-service message bus.
 
 === Request gate and linearization
 
@@ -88,11 +90,14 @@ Restart makes existing sessions immediately inaccessible (runtime state is absen
 A per-session lifecycle slot is installed before process spawn: `STARTING → RUNNING → TERMINAL`.
 Termination-first makes a late registration kill its process immediately; registration-first makes termination kill the registered process; a terminal session cannot resume or relocate.
 Reclamation is concrete, not aspirational: an in-flight-starter refcount is held across the spawn-to-register window, and a slot is reclaimed only when the refcount is zero, the slot is `TERMINAL`, and persisted/runtime authority prevents another start — no permanent tombstones, and no starter can register into a reclaimed slot.
+Durable cleanup does not delete the `TERMINATING` row until all issued starters have settled and process teardown is confirmed; a failed late stop clears any earlier "stopped" observation so the next worker pass retries it.
+Runtime shutdown fences admissions, drains issued starters, and performs a final stop pass before returning, preventing FFmpeg from spawning behind JVM teardown.
 
 === Filesystem reconciliation
 
 Orphaned segment directories are reconciled by snapshotting candidate directories before querying surviving rows, failing closed when the database query fails, and never following symlinks during recursive deletion.
 Retained rows and their directories expire together through the reaper.
+Graceful runtime shutdown drops only process-local directory registrations; it preserves segment directories for the same durable cleanup path used after a crash or restart.
 
 == Consequences
 

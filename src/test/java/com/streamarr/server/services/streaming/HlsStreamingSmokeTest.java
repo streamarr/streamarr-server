@@ -46,6 +46,7 @@ class HlsStreamingSmokeTest {
   private FakeMediaFileRepository mediaFileRepository;
   private LocalSegmentStore segmentStore;
   private HlsStreamingService streamingService;
+  private RuntimeStreamSessionRegistry runtimeRegistry;
   private HlsPlaylistService playlistService;
   private Path segmentBaseDir;
 
@@ -110,6 +111,7 @@ class HlsStreamingSmokeTest {
             .build();
 
     mediaFileRepository = new FakeMediaFileRepository();
+    runtimeRegistry = new InMemoryStreamSessionRepository();
     streamingService =
         new HlsStreamingService(
             mediaFileRepository,
@@ -119,7 +121,7 @@ class HlsStreamingSmokeTest {
             decisionService,
             qualityLadderService,
             properties,
-            new InMemoryStreamSessionRepository(),
+            runtimeRegistry,
             new MutexFactory<>());
 
     playlistService = new HlsPlaylistService(properties);
@@ -144,6 +146,12 @@ class HlsStreamingSmokeTest {
         .build();
   }
 
+  private com.streamarr.server.domain.streaming.StreamSession createSession(
+      UUID mediaFileId, UUID profileId, StreamingOptions options) {
+    return RuntimeStreamSessionTestDriver.create(
+        streamingService, runtimeRegistry, mediaFileId, profileId, options);
+  }
+
   private MediaFile seedMediaFile() {
     var file =
         MediaFile.builder()
@@ -159,7 +167,7 @@ class HlsStreamingSmokeTest {
   @DisplayName("Should detect correct codecs when probing test video")
   void shouldDetectCorrectCodecsWhenProbingTestVideo() {
     var file = seedMediaFile();
-    var session = streamingService.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
 
     var probe = session.getMediaProbe();
     assertThat(probe.videoCodec()).isEqualTo("h264");
@@ -170,7 +178,7 @@ class HlsStreamingSmokeTest {
   @DisplayName("Should detect correct resolution when probing test video")
   void shouldDetectCorrectResolutionWhenProbingTestVideo() {
     var file = seedMediaFile();
-    var session = streamingService.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
 
     var probe = session.getMediaProbe();
     assertThat(probe.width()).isEqualTo(320);
@@ -181,7 +189,7 @@ class HlsStreamingSmokeTest {
   @DisplayName("Should detect valid duration and bitrate when probing test video")
   void shouldDetectValidDurationAndBitrateWhenProbingTestVideo() {
     var file = seedMediaFile();
-    var session = streamingService.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
 
     var probe = session.getMediaProbe();
     assertThat(probe.framerate()).isGreaterThan(0);
@@ -199,7 +207,7 @@ class HlsStreamingSmokeTest {
             .supportedCodecs(List.of("h264"))
             .build();
 
-    var session = streamingService.createSession(file.getId(), UUID.randomUUID(), options);
+    var session = createSession(file.getId(), UUID.randomUUID(), options);
 
     assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
     assertThat(session.getTranscodeDecision().containerFormat()).isEqualTo(ContainerFormat.MPEGTS);
@@ -215,7 +223,7 @@ class HlsStreamingSmokeTest {
             .supportedCodecs(List.of("h264"))
             .build();
 
-    var session = streamingService.createSession(file.getId(), UUID.randomUUID(), options);
+    var session = createSession(file.getId(), UUID.randomUUID(), options);
 
     assertThat(session.getHandle()).isNotNull();
     assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
@@ -233,7 +241,7 @@ class HlsStreamingSmokeTest {
   @DisplayName("Should start master playlist with EXTM3U and no BOM when session is active")
   void shouldStartMasterPlaylistWithExtm3uAndNoBomWhenSessionIsActive() {
     var file = seedMediaFile();
-    var session = streamingService.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
     var playlist = playlistService.generateMasterPlaylist(session, "smoke-token");
 
     assertThat(playlist).startsWith("#EXTM3U\n").doesNotContain("\uFEFF");
@@ -243,7 +251,7 @@ class HlsStreamingSmokeTest {
   @DisplayName("Should include stream variant info in master playlist when session is active")
   void shouldIncludeStreamVariantInfoInMasterPlaylistWhenSessionIsActive() {
     var file = seedMediaFile();
-    var session = streamingService.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
     var playlist = playlistService.generateMasterPlaylist(session, "smoke-token");
 
     assertThat(playlist)
@@ -258,7 +266,7 @@ class HlsStreamingSmokeTest {
   @DisplayName("Should include required HLS tags in media playlist when session is active")
   void shouldIncludeRequiredHlsTagsInMediaPlaylistWhenSessionIsActive() {
     var file = seedMediaFile();
-    var session = streamingService.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
     var playlist = playlistService.generateMediaPlaylist(session, "smoke-token");
 
     assertThat(playlist)
@@ -276,7 +284,7 @@ class HlsStreamingSmokeTest {
   @DisplayName("Should generate valid segment entries in media playlist when session is active")
   void shouldGenerateValidSegmentEntriesInMediaPlaylistWhenSessionIsActive() {
     var file = seedMediaFile();
-    var session = streamingService.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
     var playlist = playlistService.generateMediaPlaylist(session, "smoke-token");
 
     var extinfLines = playlist.lines().filter(l -> l.startsWith("#EXTINF:")).toList();
@@ -308,7 +316,7 @@ class HlsStreamingSmokeTest {
             .supportedCodecs(List.of("h264"))
             .build();
 
-    var session = streamingService.createSession(file.getId(), UUID.randomUUID(), options);
+    var session = createSession(file.getId(), UUID.randomUUID(), options);
     var sessionId = session.getSessionId();
 
     segmentStore.waitForSegment(sessionId, "segment0.ts", Duration.ofSeconds(30));
@@ -335,7 +343,7 @@ class HlsStreamingSmokeTest {
             .supportedCodecs(List.of("h264"))
             .build();
 
-    var session = streamingService.createSession(file.getId(), UUID.randomUUID(), options);
+    var session = createSession(file.getId(), UUID.randomUUID(), options);
     var sessionId = session.getSessionId();
 
     segmentStore.waitForSegment(sessionId, "segment0.ts", Duration.ofSeconds(30));

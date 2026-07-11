@@ -8,13 +8,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.CounterKind;
 import com.streamarr.server.domain.streaming.StreamSession;
-import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.services.auth.TokenVersionCache;
+import com.streamarr.server.services.streaming.CreateRuntimeStreamSessionCommand;
+import com.streamarr.server.services.streaming.PlaybackSessionAccessService;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
@@ -80,6 +81,7 @@ class StreamControllerIT extends AbstractIntegrationTest {
   @TestBean StreamingService streamingService;
   @TestBean SegmentStore segmentStore;
   @TestBean TranscodeExecutor transcodeExecutor;
+  @TestBean PlaybackSessionAccessService playbackSessionAccessService;
 
   static StreamingService streamingService() {
     return STUB_SERVICE;
@@ -91,6 +93,15 @@ class StreamControllerIT extends AbstractIntegrationTest {
 
   static TranscodeExecutor transcodeExecutor() {
     return FAKE_EXECUTOR;
+  }
+
+  static PlaybackSessionAccessService playbackSessionAccessService() {
+    return (sessionId, authenticatedIdentity) -> {
+      if (!sessionId.equals(authenticatedIdentity.streamSessionId())) {
+        return Optional.empty();
+      }
+      return STUB_SERVICE.accessSession(sessionId);
+    };
   }
 
   @Test
@@ -179,8 +190,8 @@ class StreamControllerIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject playback when token session mismatches path")
-  void shouldRejectPlaybackWhenTokenSessionMismatchesPath() throws Exception {
+  @DisplayName("Should return not found when token session mismatches path")
+  void shouldReturnNotFoundWhenTokenSessionMismatchesPath() throws Exception {
     var sessionA = StreamSessionFixture.buildMpegtsSession();
     var sessionB = StreamSessionFixture.buildMpegtsSession();
     STUB_SERVICE.addSession(sessionA);
@@ -191,7 +202,7 @@ class StreamControllerIT extends AbstractIntegrationTest {
         .perform(
             get("/api/stream/{id}/master.m3u8", sessionB.getSessionId())
                 .param("t", playbackToken(sessionA.getSessionId())))
-        .andExpect(status().isForbidden());
+        .andExpect(status().isNotFound());
   }
 
   @Test
@@ -267,7 +278,7 @@ class StreamControllerIT extends AbstractIntegrationTest {
     }
 
     @Override
-    public StreamSession createSession(UUID mediaFileId, UUID profileId, StreamingOptions options) {
+    public StreamSession createSession(CreateRuntimeStreamSessionCommand command) {
       throw new UnsupportedOperationException();
     }
 
