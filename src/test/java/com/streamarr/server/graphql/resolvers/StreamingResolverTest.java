@@ -154,7 +154,9 @@ class StreamingResolverTest {
         }
 
         @Override
-        public void reconcileUnbackedRuntimeAndStorage() {}
+        public void reconcileUnbackedRuntimeAndStorage() {
+          // This focused resolver test creates no persisted runtime or storage to reconcile.
+        }
       };
     }
 

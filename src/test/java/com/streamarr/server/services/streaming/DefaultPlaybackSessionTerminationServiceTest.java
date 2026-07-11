@@ -79,7 +79,9 @@ class DefaultPlaybackSessionTerminationServiceTest {
     }
 
     @Override
-    public void reconcileUnbackedRuntimeAndStorage() {}
+    public void reconcileUnbackedRuntimeAndStorage() {
+      // This recording fake has no persisted runtime or storage to reconcile.
+    }
   }
 
   private static final class RecordingLifecycle

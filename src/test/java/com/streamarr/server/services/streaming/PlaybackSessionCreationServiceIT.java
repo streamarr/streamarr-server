@@ -789,13 +789,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
                       transactionStartedAt.minus(retention).plus(Duration.ofMillis(50)))
                   .where(STREAM_SESSION.ID.eq(streamSessionId))
                   .execute();
-              try {
-                Thread.sleep(200);
-              } catch (InterruptedException exception) {
-                Thread.currentThread().interrupt();
-                throw new IllegalStateException(
-                    "Interrupted while advancing statement time", exception);
-              }
+              dsl.execute("SELECT pg_sleep(?)", 0.2);
               return enforcementRepository.terminalizeExpiredActiveSessions(retention, 50);
             });
 
@@ -820,7 +814,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
     var terminalized =
         lifecycleTransactions.terminalizeExpiredActiveSessions(Duration.ofHours(24), 50);
 
-    assertThat(terminalized).doesNotContain(streamSessionId);
+    assertThat(terminalized).isEmpty();
     assertThat(new StreamSessionStateProbe(dsl).status(streamSessionId))
         .contains(StreamSessionStatus.PROVISIONING);
     assertThat(terminationIntentReason(streamSessionId))
@@ -951,7 +945,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
         lifecycleTransactions.terminalizeExpiredActiveSessions(Duration.ofHours(24), 50);
 
     var stateProbe = new StreamSessionStateProbe(dsl);
-    assertThat(retentionExpired).doesNotContain(streamSessionId);
+    assertThat(retentionExpired).isEmpty();
     assertThat(stateProbe.terminalReason(streamSessionId))
         .contains(
             com.streamarr.server.jooq.generated.enums.StreamSessionTerminalReason.OWNER_DESTROY);
