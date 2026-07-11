@@ -50,10 +50,20 @@ public class PersistedStreamSessionReaper {
   @Scheduled(fixedDelayString = "${streaming.cleanup-interval-ms:15000}")
   public void reapPersistedSessions() {
     retryPendingTerminations();
+    reconcileRevokedAuthSessions();
     reconcileMissingMediaSources();
     terminalizeRetentionExpiredSessions();
     reconcileUnbackedRuntimeAndStorage();
     cleanupKnownTerminating();
+  }
+
+  private void reconcileRevokedAuthSessions() {
+    try {
+      transactionRetry.execute(
+          () -> lifecycleTransactions.terminalizeRevokedAuthSessions(batchSize));
+    } catch (RuntimeException exception) {
+      log.warn("Failed to reconcile stream sessions with revoked authentication", exception);
+    }
   }
 
   private void retryPendingTerminations() {

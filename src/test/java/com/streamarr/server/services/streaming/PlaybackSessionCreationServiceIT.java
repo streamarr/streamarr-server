@@ -47,6 +47,7 @@ import com.streamarr.server.repositories.streaming.StreamSessionTermination;
 import com.streamarr.server.services.auth.AccessToken;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.PlaybackTokenIssuer;
+import com.streamarr.server.services.auth.SessionRevocationService;
 import com.streamarr.server.services.auth.SessionScopeService;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
@@ -115,6 +116,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
   @Autowired private LibraryRepository libraryRepository;
   @Autowired private MediaFileRepository mediaFileRepository;
   @Autowired private AuthSessionRepository authSessionRepository;
+  @Autowired private SessionRevocationService sessionRevocationService;
   @Autowired private UserAccountRepository userAccountRepository;
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private JwtDecoder jwtDecoder;
@@ -1075,13 +1077,17 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
     var playbackIdentity = playbackIdentity(created);
     var stateProbe = new StreamSessionStateProbe(dsl);
     var before = stateProbe.lastAccessedAt(streamSessionId);
-    authSessionRepository.revoke(
+    sessionRevocationService.revoke(
         testIdentity.session().getId(), SessionRevocationReason.LOGOUT, clock.instant());
 
     var result = playbackAccessService().access(streamSessionId, playbackIdentity);
 
     assertThat(result).isEmpty();
     assertThat(stateProbe.lastAccessedAt(streamSessionId)).isEqualTo(before);
+    assertThat(stateProbe.status(streamSessionId)).contains(StreamSessionStatus.TERMINATING);
+    assertThat(stateProbe.terminalReason(streamSessionId))
+        .contains(
+            com.streamarr.server.jooq.generated.enums.StreamSessionTerminalReason.AUTH_REVOKED);
   }
 
   @Test
@@ -1195,7 +1201,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
   @DisplayName("Should spawn no transcode when auth session was revoked before admission")
   void shouldSpawnNoTranscodeWhenAuthSessionWasRevokedBeforeAdmission() {
     var identity = sourceIdentity();
-    authSessionRepository.revoke(
+    sessionRevocationService.revoke(
         testIdentity.session().getId(), SessionRevocationReason.LOGOUT, clock.instant());
 
     assertThatThrownBy(
@@ -1293,7 +1299,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
       assertThat(TRANSCODE_EXECUTOR.awaitBlockedStart()).isTrue();
       streamSessionId = TRANSCODE_EXECUTOR.blockedSessionId();
 
-      authSessionRepository.revoke(
+      sessionRevocationService.revoke(
           testIdentity.session().getId(), SessionRevocationReason.LOGOUT, clock.instant());
       TRANSCODE_EXECUTOR.releaseStart();
 
@@ -1303,6 +1309,9 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
 
     var stateProbe = new StreamSessionStateProbe(dsl);
     assertThat(stateProbe.status(streamSessionId)).contains(StreamSessionStatus.TERMINATING);
+    assertThat(stateProbe.terminalReason(streamSessionId))
+        .contains(
+            com.streamarr.server.jooq.generated.enums.StreamSessionTerminalReason.AUTH_REVOKED);
     assertThat(stateProbe.activeCount(streamSessionId)).isZero();
     assertThat(streamingService.getActiveSessionCount()).isZero();
     assertThat(TRANSCODE_EXECUTOR.isRunning(streamSessionId)).isFalse();
@@ -1387,14 +1396,10 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
               () ->
                   transactionTemplate.executeWithoutResult(
                       _ -> {
-                        dsl.update(AUTH_SESSION)
-                            .set(AUTH_SESSION.REVOKED_AT, clock.instant().atOffset(ZoneOffset.UTC))
-                            .set(
-                                AUTH_SESSION.REVOKED_REASON,
-                                com.streamarr.server.jooq.generated.enums.SessionRevocationReason
-                                    .LOGOUT)
-                            .where(AUTH_SESSION.ID.eq(testIdentity.session().getId()))
-                            .execute();
+                        sessionRevocationService.revoke(
+                            testIdentity.session().getId(),
+                            SessionRevocationReason.LOGOUT,
+                            clock.instant());
                         revocationUpdated.countDown();
                         ControllableTranscodeExecutor.await(allowRevocationCommit);
                       }));
@@ -1418,8 +1423,11 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
       allowRevocationCommit.countDown();
     }
 
-    assertThat(new StreamSessionStateProbe(dsl).status(streamSessionId))
-        .contains(StreamSessionStatus.PROVISIONING);
+    var stateProbe = new StreamSessionStateProbe(dsl);
+    assertThat(stateProbe.status(streamSessionId)).contains(StreamSessionStatus.TERMINATING);
+    assertThat(stateProbe.terminalReason(streamSessionId))
+        .contains(
+            com.streamarr.server.jooq.generated.enums.StreamSessionTerminalReason.AUTH_REVOKED);
   }
 
   @Test
@@ -2091,6 +2099,11 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
     @Override
     public List<UUID> terminalizeMissingMediaSources(Instant terminalAt) {
       return delegate.terminalizeMissingMediaSources(terminalAt);
+    }
+
+    @Override
+    public List<UUID> terminalizeRevokedAuthSessions(int limit) {
+      return delegate.terminalizeRevokedAuthSessions(limit);
     }
 
     @Override

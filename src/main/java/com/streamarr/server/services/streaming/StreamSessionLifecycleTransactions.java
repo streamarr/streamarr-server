@@ -33,6 +33,8 @@ public interface StreamSessionLifecycleTransactions {
 
   List<UUID> terminalizeMissingMediaSources(Instant terminalAt);
 
+  List<UUID> terminalizeRevokedAuthSessions(int limit);
+
   boolean terminalize(StreamSessionTermination termination);
 
   boolean recordTerminationIntent(StreamSessionTermination termination);

@@ -40,6 +40,7 @@ public class RefreshTokenService {
   private final AuthTokenProperties properties;
   private final Clock clock;
   private final TokenReuseRevoker tokenReuseRevoker;
+  private final SessionRevocationService sessionRevocationService;
 
   private final SecureRandom secureRandom = new SecureRandom();
 
@@ -56,11 +57,8 @@ public class RefreshTokenService {
   }
 
   /** Revokes the session and its whole token family; the version bump kills live access tokens. */
-  @Transactional
   public void logout(java.util.UUID sessionId) {
-    var now = clock.instant();
-    sessionRepository.revoke(sessionId, SessionRevocationReason.LOGOUT, now);
-    tokenRepository.revokeAllForSession(sessionId, now);
+    sessionRevocationService.revoke(sessionId, SessionRevocationReason.LOGOUT, clock.instant());
   }
 
   /**

@@ -644,6 +644,11 @@ class StreamingResolverTest {
     }
 
     @Override
+    public List<UUID> terminalizeRevokedAuthSessions(int limit) {
+      return List.of();
+    }
+
+    @Override
     public boolean terminalize(StreamSessionTermination termination) {
       return true;
     }

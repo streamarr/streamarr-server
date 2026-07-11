@@ -42,6 +42,8 @@ class LoginServiceTest {
 
   private final FakeAuthSessionRepository sessionRepository = new FakeAuthSessionRepository();
   private final FakeRefreshTokenRepository tokenRepository = new FakeRefreshTokenRepository();
+  private final SessionRevocationService sessionRevocationService =
+      SessionRevocationTestFixture.create(sessionRepository, tokenRepository);
   private final RefreshTokenService refreshTokenService =
       new RefreshTokenService(
           sessionRepository,
@@ -53,8 +55,8 @@ class LoginServiceTest {
               .rotationGrace(Duration.ofSeconds(30))
               .build(),
           clock,
-          new TokenReuseRevoker(
-              new TokenReuseRevocationWriter(sessionRepository, tokenRepository)));
+          new TokenReuseRevoker(new TokenReuseRevocationWriter(sessionRevocationService)),
+          sessionRevocationService);
 
   private final LoginService loginService =
       new LoginService(

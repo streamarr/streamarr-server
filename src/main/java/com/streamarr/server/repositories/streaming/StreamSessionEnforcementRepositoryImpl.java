@@ -265,6 +265,56 @@ public class StreamSessionEnforcementRepositoryImpl implements StreamSessionEnfo
   }
 
   @Override
+  public List<java.util.UUID> terminalizeByAuthSession(
+      java.util.UUID authSessionId, Instant terminalAt) {
+    return dsl.update(STREAM_SESSION)
+        .set(STREAM_SESSION.STATUS, StreamSessionStatus.TERMINATING)
+        .set(STREAM_SESSION.TERMINAL_AT, terminalAt.atOffset(ZoneOffset.UTC))
+        .set(
+            STREAM_SESSION.TERMINAL_REASON,
+            com.streamarr.server.jooq.generated.enums.StreamSessionTerminalReason.AUTH_REVOKED)
+        .where(STREAM_SESSION.AUTH_SESSION_ID.eq(authSessionId))
+        .and(STREAM_SESSION.STATUS.in(StreamSessionStatus.PROVISIONING, StreamSessionStatus.ACTIVE))
+        .returning(STREAM_SESSION.ID)
+        .fetch(STREAM_SESSION.ID);
+  }
+
+  @Override
+  public List<java.util.UUID> terminalizeRevokedAuthSessions(int limit) {
+    var liveStatus =
+        STREAM_SESSION.STATUS.in(StreamSessionStatus.PROVISIONING, StreamSessionStatus.ACTIVE);
+    var revokedAuthority =
+        dsl.selectOne()
+            .from(AUTH_SESSION)
+            .where(AUTH_SESSION.ID.eq(STREAM_SESSION.AUTH_SESSION_ID))
+            .and(AUTH_SESSION.REVOKED_AT.isNotNull());
+    var candidates =
+        dsl.select(STREAM_SESSION.ID)
+            .from(STREAM_SESSION)
+            .where(liveStatus)
+            .andExists(revokedAuthority)
+            .orderBy(STREAM_SESSION.ID)
+            .limit(limit)
+            .forUpdate()
+            .skipLocked();
+    var revokedAt =
+        dsl.select(AUTH_SESSION.REVOKED_AT)
+            .from(AUTH_SESSION)
+            .where(AUTH_SESSION.ID.eq(STREAM_SESSION.AUTH_SESSION_ID));
+
+    return dsl.update(STREAM_SESSION)
+        .set(STREAM_SESSION.STATUS, StreamSessionStatus.TERMINATING)
+        .set(STREAM_SESSION.TERMINAL_AT, revokedAt)
+        .set(
+            STREAM_SESSION.TERMINAL_REASON,
+            com.streamarr.server.jooq.generated.enums.StreamSessionTerminalReason.AUTH_REVOKED)
+        .where(STREAM_SESSION.ID.in(candidates))
+        .and(liveStatus)
+        .returning(STREAM_SESSION.ID)
+        .fetch(STREAM_SESSION.ID);
+  }
+
+  @Override
   public boolean terminalize(StreamSessionTermination termination) {
     var terminalAt = termination.terminalAt().atOffset(ZoneOffset.UTC);
     var terminalReason =

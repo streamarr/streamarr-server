@@ -61,6 +61,35 @@ class PersistedStreamSessionReaperTest {
   }
 
   @Test
+  @DisplayName("Should reconcile revoked auth before missing media and cleanup")
+  void shouldReconcileRevokedAuthBeforeMissingMediaAndCleanup() {
+    var revokedStreamId = UUID.randomUUID();
+    var lifecycle = new CleanupLifecycle(new ArrayList<>());
+    lifecycle.revokeAuthFor(revokedStreamId);
+    var cleanup = new IsolatingCleanup(Set.of());
+
+    reaper(lifecycle, cleanup).reapPersistedSessions();
+
+    assertThat(lifecycle.reconciliationOrder).containsExactly("auth", "media");
+    assertThat(cleanup.cleanedIds).containsExactly(revokedStreamId);
+  }
+
+  @Test
+  @DisplayName("Should continue reconciliation and cleanup when revoked-auth recovery fails")
+  void shouldContinueReconciliationAndCleanupWhenRevokedAuthRecoveryFails() {
+    var terminatingId = UUID.randomUUID();
+    var lifecycle = new CleanupLifecycle(List.of(terminatingId));
+    lifecycle.failAuthReconciliation();
+    var cleanup = new IsolatingCleanup(Set.of());
+
+    reaper(lifecycle, cleanup).reapPersistedSessions();
+
+    assertThat(lifecycle.authReconciliationAttempts).isEqualTo(1);
+    assertThat(lifecycle.reconciliationAttempts).isEqualTo(1);
+    assertThat(cleanup.cleanedIds).containsExactly(terminatingId);
+  }
+
+  @Test
   @DisplayName("Should attempt rows after a full batch of persistent cleanup failures")
   void shouldAttemptRowsAfterFullBatchOfPersistentCleanupFailures() {
     var terminatingIds = IntStream.rangeClosed(1, 3).mapToObj(index -> new UUID(0, index)).toList();
@@ -252,8 +281,12 @@ class PersistedStreamSessionReaperTest {
     private final List<StreamSessionTermination> terminationIntents = new ArrayList<>();
     private final List<UUID> replayAttemptedIds = new ArrayList<>();
     private final Set<UUID> failingReplayIds = new HashSet<>();
+    private final List<String> reconciliationOrder = new ArrayList<>();
     private boolean intentLoadingFails;
     private int reconciliationAttempts;
+    private int authReconciliationAttempts;
+    private UUID revokedAuthStreamId;
+    private boolean authReconciliationFails;
     private UUID expiringId;
     private Duration observedRetention;
     private boolean expirationFails;
@@ -281,6 +314,14 @@ class PersistedStreamSessionReaperTest {
 
     private void failExpiration() {
       expirationFails = true;
+    }
+
+    private void revokeAuthFor(UUID streamSessionId) {
+      revokedAuthStreamId = streamSessionId;
+    }
+
+    private void failAuthReconciliation() {
+      authReconciliationFails = true;
     }
 
     @Override
@@ -313,11 +354,26 @@ class PersistedStreamSessionReaperTest {
 
     @Override
     public List<UUID> terminalizeMissingMediaSources(Instant terminalAt) {
+      reconciliationOrder.add("media");
       reconciliationAttempts++;
       if (reconciliationFails) {
         throw new IllegalStateException("simulated reconciliation failure");
       }
       return List.of();
+    }
+
+    @Override
+    public List<UUID> terminalizeRevokedAuthSessions(int limit) {
+      reconciliationOrder.add("auth");
+      authReconciliationAttempts++;
+      if (authReconciliationFails) {
+        throw new IllegalStateException("simulated auth reconciliation failure");
+      }
+      if (revokedAuthStreamId == null) {
+        return List.of();
+      }
+      terminatingIds.add(revokedAuthStreamId);
+      return List.of(revokedAuthStreamId);
     }
 
     @Override

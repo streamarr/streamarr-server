@@ -29,6 +29,10 @@ public interface StreamSessionEnforcementRepository {
 
   List<UUID> terminalizeMissingMediaSources(Instant terminalAt);
 
+  List<UUID> terminalizeRevokedAuthSessions(int limit);
+
+  List<UUID> terminalizeByAuthSession(UUID authSessionId, Instant terminalAt);
+
   boolean terminalize(StreamSessionTermination termination);
 
   boolean recordTerminationIntent(StreamSessionTermination termination);

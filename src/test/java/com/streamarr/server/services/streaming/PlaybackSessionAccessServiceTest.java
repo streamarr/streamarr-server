@@ -169,6 +169,11 @@ class PlaybackSessionAccessServiceTest {
     }
 
     @Override
+    public List<UUID> terminalizeRevokedAuthSessions(int limit) {
+      throw unexpectedDatabaseAccess();
+    }
+
+    @Override
     public boolean terminalize(StreamSessionTermination termination) {
       throw unexpectedDatabaseAccess();
     }

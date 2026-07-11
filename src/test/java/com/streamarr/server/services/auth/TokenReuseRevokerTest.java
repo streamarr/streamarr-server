@@ -27,10 +27,12 @@ import org.springframework.transaction.support.TransactionTemplate;
 class TokenReuseRevokerTest {
 
   private final FakeAuthSessionRepository sessionRepository = new FakeAuthSessionRepository();
+  private final FakeRefreshTokenRepository tokenRepository = new FakeRefreshTokenRepository();
+  private final SessionRevocationService sessionRevocationService =
+      SessionRevocationTestFixture.create(sessionRepository, tokenRepository);
 
   private final TokenReuseRevoker revoker =
-      new TokenReuseRevoker(
-          new TokenReuseRevocationWriter(sessionRepository, new FakeRefreshTokenRepository()));
+      new TokenReuseRevoker(new TokenReuseRevocationWriter(sessionRevocationService));
 
   @Test
   @DisplayName("Should revoke inline when scope synchronizes without a transaction")
@@ -107,7 +109,9 @@ class TokenReuseRevokerTest {
   private static final class FailingWriter extends TokenReuseRevocationWriter {
 
     FailingWriter() {
-      super(new FakeAuthSessionRepository(), new FakeRefreshTokenRepository());
+      super(
+          SessionRevocationTestFixture.create(
+              new FakeAuthSessionRepository(), new FakeRefreshTokenRepository()));
     }
 
     @Override

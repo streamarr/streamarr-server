@@ -84,6 +84,12 @@ public class TransactionalStreamSessionLifecycle implements StreamSessionLifecyc
 
   @Override
   @Transactional(propagation = Propagation.REQUIRES_NEW)
+  public List<UUID> terminalizeRevokedAuthSessions(int limit) {
+    return repository.terminalizeRevokedAuthSessions(limit);
+  }
+
+  @Override
+  @Transactional(propagation = Propagation.REQUIRES_NEW)
   public boolean terminalize(StreamSessionTermination termination) {
     return repository.terminalize(termination);
   }

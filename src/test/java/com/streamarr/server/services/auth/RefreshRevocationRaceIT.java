@@ -25,8 +25,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("IntegrationTest")
 @DisplayName("Refresh Revocation Race Integration Tests")
@@ -41,8 +39,7 @@ class RefreshRevocationRaceIT extends AbstractIntegrationTest {
   @Autowired private AuthSessionRepository authSessionRepository;
 
   @Autowired private RefreshTokenRepository refreshTokenRepository;
-
-  @Autowired private PlatformTransactionManager transactionManager;
+  @Autowired private SessionRevocationService sessionRevocationService;
 
   private UserAccount account;
 
@@ -109,15 +106,8 @@ class RefreshRevocationRaceIT extends AbstractIntegrationTest {
     }
   }
 
-  /** Mirrors the atomic revoke-and-sweep that logout and password-change perform downstream. */
   private void revokeAndSweep(UUID sessionId) {
-    new TransactionTemplate(transactionManager)
-        .executeWithoutResult(
-            status -> {
-              authSessionRepository.revoke(
-                  sessionId, SessionRevocationReason.LOGOUT, Instant.now());
-              refreshTokenRepository.revokeAllForSession(sessionId, Instant.now());
-            });
+    sessionRevocationService.revoke(sessionId, SessionRevocationReason.LOGOUT, Instant.now());
   }
 
   private Runnable guarded(

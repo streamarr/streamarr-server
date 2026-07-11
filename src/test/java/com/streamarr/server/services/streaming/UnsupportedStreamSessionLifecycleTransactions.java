@@ -67,6 +67,11 @@ public class UnsupportedStreamSessionLifecycleTransactions
   }
 
   @Override
+  public List<UUID> terminalizeRevokedAuthSessions(int limit) {
+    throw unsupported();
+  }
+
+  @Override
   public boolean terminalize(StreamSessionTermination termination) {
     throw unsupported();
   }

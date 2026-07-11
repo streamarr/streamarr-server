@@ -1,8 +1,6 @@
 package com.streamarr.server.services.auth;
 
 import com.streamarr.server.domain.auth.SessionRevocationReason;
-import com.streamarr.server.repositories.auth.AuthSessionRepository;
-import com.streamarr.server.repositories.auth.RefreshTokenRepository;
 import java.time.Instant;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -14,12 +12,10 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class TokenReuseRevocationWriter {
 
-  private final AuthSessionRepository sessionRepository;
-  private final RefreshTokenRepository tokenRepository;
+  private final SessionRevocationService sessionRevocationService;
 
   @Transactional(propagation = Propagation.REQUIRES_NEW)
   public void revoke(UUID sessionId, Instant detectedAt) {
-    sessionRepository.revoke(sessionId, SessionRevocationReason.TOKEN_REUSE, detectedAt);
-    tokenRepository.revokeAllForSession(sessionId, detectedAt);
+    sessionRevocationService.revoke(sessionId, SessionRevocationReason.TOKEN_REUSE, detectedAt);
   }
 }

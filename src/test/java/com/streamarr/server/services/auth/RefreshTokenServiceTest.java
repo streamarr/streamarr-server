@@ -56,12 +56,20 @@ class RefreshTokenServiceTest {
 
   private final MutableClock clock = new MutableClock(currentTime);
 
+  private final SessionRevocationService sessionRevocationService =
+      SessionRevocationTestFixture.create(sessionRepository, tokenRepository);
+
   private final TokenReuseRevoker tokenReuseRevoker =
-      new TokenReuseRevoker(new TokenReuseRevocationWriter(sessionRepository, tokenRepository));
+      new TokenReuseRevoker(new TokenReuseRevocationWriter(sessionRevocationService));
 
   private final RefreshTokenService service =
       new RefreshTokenService(
-          sessionRepository, tokenRepository, properties, clock, tokenReuseRevoker);
+          sessionRepository,
+          tokenRepository,
+          properties,
+          clock,
+          tokenReuseRevoker,
+          sessionRevocationService);
 
   @Test
   @DisplayName("Should rotate when active token redeemed")
@@ -303,9 +311,11 @@ class RefreshTokenServiceTest {
   void shouldKeepReissuedSessionLiveWhenEarlierRefreshFinishesAfterward() throws Exception {
     var pausingSessions = new PausingAuthSessionRepository();
     var tokens = new FakeRefreshTokenRepository();
-    var revoker = new TokenReuseRevoker(new TokenReuseRevocationWriter(pausingSessions, tokens));
+    var revocationService = SessionRevocationTestFixture.create(pausingSessions, tokens);
+    var revoker = new TokenReuseRevoker(new TokenReuseRevocationWriter(revocationService));
     var racingService =
-        new RefreshTokenService(pausingSessions, tokens, properties, clock, revoker);
+        new RefreshTokenService(
+            pausingSessions, tokens, properties, clock, revoker, revocationService);
     var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
     var issued = racingService.createSession(account, "test-device");
 
@@ -408,7 +418,12 @@ class RefreshTokenServiceTest {
 
   private RefreshTokenService serviceWith(AuthTokenProperties tokenProperties) {
     return new RefreshTokenService(
-        sessionRepository, tokenRepository, tokenProperties, clock, tokenReuseRevoker);
+        sessionRepository,
+        tokenRepository,
+        tokenProperties,
+        clock,
+        tokenReuseRevoker,
+        sessionRevocationService);
   }
 
   private static final class PausingAuthSessionRepository extends FakeAuthSessionRepository {

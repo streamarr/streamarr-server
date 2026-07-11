@@ -30,6 +30,8 @@ class PasswordChangeServiceTest {
   private final FakeRefreshTokenRepository tokenRepository = new FakeRefreshTokenRepository();
   private final PasswordEncoder passwordEncoder = new TestPasswordEncoder();
   private final Clock clock = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC);
+  private final SessionRevocationService sessionRevocationService =
+      SessionRevocationTestFixture.create(sessionRepository, tokenRepository);
   private final RefreshTokenService refreshTokenService =
       new RefreshTokenService(
           sessionRepository,
@@ -39,8 +41,8 @@ class PasswordChangeServiceTest {
               .rotationGrace(Duration.ofSeconds(30))
               .build(),
           clock,
-          new TokenReuseRevoker(
-              new TokenReuseRevocationWriter(sessionRepository, tokenRepository)));
+          new TokenReuseRevoker(new TokenReuseRevocationWriter(sessionRevocationService)),
+          sessionRevocationService);
   private final PasswordChangeService service =
       new PasswordChangeService(
           accountRepository,

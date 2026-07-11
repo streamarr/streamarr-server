@@ -37,6 +37,8 @@ class AuthSecurityEventLoggingTest {
     var clock = new MutableClock(currentTime);
     var sessionRepository = new FakeAuthSessionRepository();
     var tokenRepository = new FakeRefreshTokenRepository();
+    var sessionRevocationService =
+        SessionRevocationTestFixture.create(sessionRepository, tokenRepository);
     var service =
         new RefreshTokenService(
             sessionRepository,
@@ -48,8 +50,8 @@ class AuthSecurityEventLoggingTest {
                 .rotationGrace(Duration.ofSeconds(30))
                 .build(),
             clock,
-            new TokenReuseRevoker(
-                new TokenReuseRevocationWriter(sessionRepository, tokenRepository)));
+            new TokenReuseRevoker(new TokenReuseRevocationWriter(sessionRevocationService)),
+            sessionRevocationService);
     var account = AccountFixture.defaultAccountBuilder().build();
     var issued = service.createSession(account, "security-log-test");
     service.redeem(issued.rawToken());
