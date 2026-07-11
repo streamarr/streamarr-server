@@ -1,10 +1,12 @@
 package com.streamarr.server.services.library;
 
+import static com.streamarr.server.jooq.generated.tables.StreamSession.STREAM_SESSION;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.LibraryStatus;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.MediaFile;
@@ -23,11 +25,14 @@ import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
+import com.streamarr.server.jooq.generated.enums.StreamSessionStatus;
+import com.streamarr.server.jooq.generated.enums.StreamSessionTerminalReason;
 import com.streamarr.server.repositories.GenreRepository;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.PersonRepository;
 import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
+import com.streamarr.server.repositories.media.MediaParentDeletionRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
@@ -41,16 +46,21 @@ import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.streaming.TerminatingStreamSessionCleanupWorker;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.support.AuthTestSupport;
+import com.streamarr.server.support.AuthTestSupport.TestIdentity;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
+import lombok.Builder;
+import org.jooq.DSLContext;
+import org.jooq.impl.DSL;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -69,6 +79,8 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
 
   @Autowired private LibraryManagementService libraryManagementService;
 
+  @Autowired private OrphanedMediaFileCleanupService orphanedMediaFileCleanupService;
+
   @Autowired private LibraryRepository libraryRepository;
 
   @Autowired private MovieRepository movieRepository;
@@ -81,6 +93,8 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
 
   @Autowired private MediaFileRepository mediaFileRepository;
 
+  @Autowired private MediaParentDeletionRepository mediaParentDeletionRepository;
+
   @Autowired private PersonRepository personRepository;
 
   @Autowired private GenreRepository genreRepository;
@@ -91,17 +105,24 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
 
   @Autowired private TerminatingStreamSessionCleanupWorker cleanupWorker;
 
+  @Autowired private MediaParentDeletionRetryWorker deletionRetryWorker;
+
+  @Autowired private MediaParentDeletionTransactions deletionTransactions;
+
   @Autowired private AuthTestSupport authTestSupport;
 
   @Autowired private SessionScopeService sessionScopeService;
 
   @Autowired private JwtDecoder jwtDecoder;
 
+  @Autowired private DSLContext dsl;
+
   @TestBean TranscodeExecutor transcodeExecutor;
   @TestBean FfprobeService ffprobeService;
   @TestBean SegmentStore segmentStore;
 
-  private static final FakeTranscodeExecutor FAKE_EXECUTOR = new FakeTranscodeExecutor();
+  private static final StopFailingTranscodeExecutor FAKE_EXECUTOR =
+      new StopFailingTranscodeExecutor();
   private static final FakeFfprobeService FAKE_FFPROBE = new FakeFfprobeService();
   private static final FakeSegmentStore FAKE_SEGMENT_STORE = new FakeSegmentStore();
 
@@ -244,55 +265,275 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should terminate active streaming sessions when library is removed")
   void shouldTerminateActiveStreamingSessionsWhenLibraryIsRemoved() {
-    var identity = authTestSupport.createIdentity();
-    sessionScopeService.selectHousehold(
-        identity.account().getId(), identity.session().getId(), identity.household().getId());
-    sessionScopeService.selectProfile(
-        identity.account().getId(), identity.session().getId(), identity.profile().getId());
-    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
-    var movie =
-        movieRepository.saveAndFlush(
-            Movie.builder().title("Streaming Movie").library(library).build());
-    var mediaFile =
-        mediaFileRepository.saveAndFlush(
-            MediaFile.builder()
-                .libraryId(library.getId())
-                .mediaId(movie.getId())
-                .filepathUri("/test/streaming.mkv")
-                .filename("streaming.mkv")
-                .status(MediaFileStatus.MATCHED)
-                .build());
-
-    var options =
-        StreamingOptions.builder()
-            .quality(VideoQuality.AUTO)
-            .supportedCodecs(List.of("h264"))
-            .build();
+    var fixture = createActiveStream("Streaming Movie", "/test/streaming.mkv");
     try {
-      var sourceIdentity =
-          AuthenticatedIdentity.fromJwt(jwtDecoder.decode(authTestSupport.profileBearer(identity)));
-      var session =
-          playbackSessionCreationService.create(
-              CreatePlaybackSessionCommand.builder()
-                  .mediaFileId(mediaFile.getId())
-                  .options(options)
-                  .sourceIdentity(sourceIdentity)
-                  .build());
-
       assertThat(streamingService.getActiveSessionCount()).isEqualTo(1);
 
-      libraryManagementService.removeLibrary(library.getId());
-      cleanupWorker.cleanupTerminating();
+      libraryManagementService.removeLibrary(fixture.libraryId());
 
       assertThat(streamingService.getActiveSessionCount())
           .as("Streaming session should be terminated when library is removed")
           .isZero();
       assertThat(FAKE_EXECUTOR.getStopped())
           .as("Transcode process should be stopped")
-          .contains(session.sessionId());
+          .contains(fixture.streamSessionId());
     } finally {
-      authTestSupport.deleteIdentity(identity);
+      cleanupFixture(fixture);
     }
+  }
+
+  @Test
+  @DisplayName("Should retain library deletion intent when stream cleanup fails")
+  void shouldRetainLibraryDeletionIntentWhenStreamCleanupFails() {
+    var fixture = createActiveStream("Retained Streaming Movie", "/test/retained-streaming.mkv");
+
+    try {
+      FAKE_EXECUTOR.failStopFor(fixture.streamSessionId());
+
+      libraryManagementService.removeLibrary(fixture.libraryId());
+
+      assertThat(libraryRepository.findById(fixture.libraryId())).isPresent();
+      assertThat(mediaFileRepository.findById(fixture.mediaFileId())).isPresent();
+      assertSourceDeleted(fixture.streamSessionId());
+      assertThat(intentExists("library_deletion_intent", "library_id", fixture.libraryId()))
+          .isTrue();
+      assertThat(intentExists("media_file_deletion_intent", "media_file_id", fixture.mediaFileId()))
+          .isTrue();
+    } finally {
+      cleanupFixture(fixture);
+    }
+  }
+
+  @Test
+  @DisplayName("Should complete persisted library deletion when cleanup retry succeeds")
+  void shouldCompletePersistedLibraryDeletionWhenCleanupRetrySucceeds() {
+    var fixture = createActiveStream("Retried Streaming Movie", "/test/retried-streaming.mkv");
+
+    try {
+      FAKE_EXECUTOR.failStopFor(fixture.streamSessionId());
+      libraryManagementService.removeLibrary(fixture.libraryId());
+
+      FAKE_EXECUTOR.allowStopFor(fixture.streamSessionId());
+      deletionRetryWorker.retryPending();
+
+      assertThat(libraryRepository.findById(fixture.libraryId())).isEmpty();
+      assertThat(mediaFileRepository.findById(fixture.mediaFileId())).isEmpty();
+      assertStreamMissing(fixture.streamSessionId());
+      assertThat(intentExists("library_deletion_intent", "library_id", fixture.libraryId()))
+          .isFalse();
+    } finally {
+      cleanupFixture(fixture);
+    }
+  }
+
+  @Test
+  @DisplayName("Should retry parent deletion after cleanup completed before finalization")
+  void shouldRetryParentDeletionAfterCleanupCompletedBeforeFinalization() {
+    var fixture =
+        createActiveStream("Interrupted Parent Deletion", "/test/interrupted-parent-deletion.mkv");
+
+    try {
+      deletionTransactions.prepareLibraryDeletion(fixture.libraryId());
+      assertThat(deletionTransactions.finalizeLibraryDeletion(fixture.libraryId())).isFalse();
+      cleanupWorker.cleanupTerminating();
+
+      assertThat(libraryRepository.findById(fixture.libraryId())).isPresent();
+      assertThat(mediaFileRepository.findById(fixture.mediaFileId())).isPresent();
+      assertStreamMissing(fixture.streamSessionId());
+      assertThat(intentExists("library_deletion_intent", "library_id", fixture.libraryId()))
+          .isTrue();
+
+      deletionRetryWorker.retryPending();
+
+      assertThat(libraryRepository.findById(fixture.libraryId())).isEmpty();
+      assertThat(intentExists("library_deletion_intent", "library_id", fixture.libraryId()))
+          .isFalse();
+    } finally {
+      cleanupFixture(fixture);
+    }
+  }
+
+  @Test
+  @DisplayName("Should reject a scan when library deletion is pending")
+  void shouldRejectScanWhenLibraryDeletionIsPending() {
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    deletionTransactions.prepareLibraryDeletion(library.getId());
+
+    assertThatThrownBy(() -> libraryManagementService.scanLibrary(library.getId()))
+        .isInstanceOf(LibraryNotFoundException.class)
+        .hasMessageContaining(library.getId().toString());
+
+    assertThat(intentExists("library_deletion_intent", "library_id", library.getId())).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should reject a refresh when library deletion is pending")
+  void shouldRejectRefreshWhenLibraryDeletionIsPending() {
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    deletionTransactions.prepareLibraryDeletion(library.getId());
+
+    assertThatThrownBy(() -> libraryManagementService.refreshLibrary(library.getId()))
+        .isInstanceOf(LibraryNotFoundException.class)
+        .hasMessageContaining(library.getId().toString());
+
+    assertThat(intentExists("library_deletion_intent", "library_id", library.getId())).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should preserve pending deletion while a library mutation is active")
+  void shouldPreservePendingDeletionWhileLibraryMutationIsActive() {
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    deletionTransactions.prepareLibraryDeletion(library.getId());
+    library.setStatus(LibraryStatus.SCANNING);
+    libraryRepository.saveAndFlush(library);
+
+    deletionRetryWorker.retryPending();
+
+    assertThat(libraryRepository.findById(library.getId())).isPresent();
+    assertThat(intentExists("library_deletion_intent", "library_id", library.getId())).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should retain and retry orphaned media deletion when stream cleanup fails")
+  void shouldRetainAndRetryOrphanedMediaDeletionWhenStreamCleanupFails() {
+    var fixture =
+        createActiveStream("Orphaned Streaming Movie", "/test/missing-orphaned-streaming.mkv");
+
+    try {
+      FAKE_EXECUTOR.failStopFor(fixture.streamSessionId());
+
+      orphanedMediaFileCleanupService.cleanupOrphanedFiles(fixture.library());
+
+      assertThat(mediaFileRepository.findById(fixture.mediaFileId())).isPresent();
+      assertSourceDeleted(fixture.streamSessionId());
+      assertThat(intentExists("media_file_deletion_intent", "media_file_id", fixture.mediaFileId()))
+          .isTrue();
+      assertThat(deletionTransactions.finalizeMediaFileDeletion(fixture.mediaFileId())).isFalse();
+
+      FAKE_EXECUTOR.allowStopFor(fixture.streamSessionId());
+      deletionRetryWorker.retryPending();
+
+      assertThat(mediaFileRepository.findById(fixture.mediaFileId())).isEmpty();
+      assertThat(movieRepository.findById(fixture.movieId())).isEmpty();
+      assertThat(libraryRepository.findById(fixture.libraryId())).isPresent();
+      assertStreamMissing(fixture.streamSessionId());
+      assertThat(intentExists("media_file_deletion_intent", "media_file_id", fixture.mediaFileId()))
+          .isFalse();
+    } finally {
+      cleanupFixture(fixture);
+    }
+  }
+
+  @Test
+  @DisplayName("Should handle stale and conflicting parent deletion work")
+  void shouldHandleStaleAndConflictingParentDeletionWork() {
+    var missingId = UUID.randomUUID();
+
+    assertThatThrownBy(() -> deletionTransactions.resumeLibraryDeletion(missingId))
+        .isInstanceOf(LibraryNotFoundException.class);
+    assertThat(deletionTransactions.finalizeLibraryDeletion(missingId)).isFalse();
+    assertThat(deletionTransactions.finalizeMediaFileDeletion(missingId)).isFalse();
+    assertThat(deletionTransactions.prepareMediaFileDeletions(missingId, Set.of()).targets())
+        .isEmpty();
+    assertThat(
+            deletionTransactions
+                .prepareMediaFileDeletions(missingId, Set.of(UUID.randomUUID()))
+                .targets())
+        .isEmpty();
+
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    assertThatThrownBy(() -> deletionTransactions.resumeLibraryDeletion(library.getId()))
+        .isInstanceOf(LibraryNotFoundException.class);
+    assertThat(deletionTransactions.finalizeLibraryDeletion(library.getId())).isFalse();
+
+    var movie =
+        movieRepository.saveAndFlush(
+            Movie.builder().title("Shared Deletion Target").library(library).build());
+    var mediaFiles =
+        mediaFileRepository.saveAllAndFlush(
+            List.of(
+                MediaFile.builder()
+                    .libraryId(library.getId())
+                    .mediaId(movie.getId())
+                    .filepathUri("file:///stale-deletion/first.mkv")
+                    .filename("first.mkv")
+                    .status(MediaFileStatus.MATCHED)
+                    .build(),
+                MediaFile.builder()
+                    .libraryId(library.getId())
+                    .mediaId(movie.getId())
+                    .filepathUri("file:///stale-deletion/second.mkv")
+                    .filename("second.mkv")
+                    .status(MediaFileStatus.MATCHED)
+                    .build()));
+
+    deletionTransactions.prepareMediaFileDeletions(
+        library.getId(), Set.of(mediaFiles.getFirst().getId()));
+    assertThat(deletionTransactions.finalizeMediaFileDeletion(mediaFiles.getFirst().getId()))
+        .isTrue();
+    assertThat(movieRepository.findById(movie.getId())).isPresent();
+
+    var unmatchedMediaFile =
+        mediaFileRepository.saveAndFlush(
+            MediaFile.builder()
+                .libraryId(library.getId())
+                .filepathUri("file:///stale-deletion/unmatched.mkv")
+                .filename("unmatched.mkv")
+                .status(MediaFileStatus.UNMATCHED)
+                .build());
+    deletionTransactions.prepareMediaFileDeletions(
+        library.getId(), Set.of(unmatchedMediaFile.getId()));
+    assertThat(deletionTransactions.finalizeMediaFileDeletion(unmatchedMediaFile.getId())).isTrue();
+
+    deletionTransactions.prepareLibraryDeletion(library.getId());
+    assertThat(
+            deletionTransactions
+                .prepareMediaFileDeletions(library.getId(), Set.of(mediaFiles.getLast().getId()))
+                .targets())
+        .isEmpty();
+    assertThat(deletionTransactions.resumeMediaFileDeletion(mediaFiles.getLast().getId()).targets())
+        .isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should page beyond the oldest parent deletion intent batch")
+  void shouldPageBeyondOldestParentDeletionIntentBatch() {
+    var libraries =
+        java.util.stream.Stream.generate(LibraryFixtureCreator::buildFakeLibrary)
+            .limit(51)
+            .toList();
+    libraryRepository.saveAllAndFlush(libraries);
+    libraries.forEach(library -> deletionTransactions.prepareLibraryDeletion(library.getId()));
+
+    var mediaLibrary = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    var mediaFiles =
+        java.util.stream.IntStream.range(0, 51)
+            .mapToObj(
+                index ->
+                    MediaFile.builder()
+                        .libraryId(mediaLibrary.getId())
+                        .filepathUri("file:///parent-deletion-batch/" + index + ".mkv")
+                        .filename(index + ".mkv")
+                        .status(MediaFileStatus.UNMATCHED)
+                        .build())
+            .toList();
+    mediaFileRepository.saveAllAndFlush(mediaFiles);
+    deletionTransactions.prepareMediaFileDeletions(
+        mediaLibrary.getId(),
+        mediaFiles.stream().map(MediaFile::getId).collect(java.util.stream.Collectors.toSet()));
+
+    var firstLibraries = mediaParentDeletionRepository.findLibraryDeletionIntents(50);
+    var nextLibraries =
+        mediaParentDeletionRepository.findLibraryDeletionIntentsAfter(firstLibraries.getLast(), 50);
+    var firstMedia = mediaParentDeletionRepository.findStandaloneMediaFileDeletionIntents(50);
+    var nextMedia =
+        mediaParentDeletionRepository.findStandaloneMediaFileDeletionIntentsAfter(
+            firstMedia.getLast(), 50);
+
+    assertThat(firstLibraries).hasSize(50);
+    assertThat(nextLibraries).hasSize(1);
+    assertThat(firstMedia).hasSize(50);
+    assertThat(nextMedia).hasSize(1);
   }
 
   @Test
@@ -494,5 +735,118 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
     assertThat(Files.readString(movieFile))
         .as("File content must remain intact")
         .isEqualTo("fake video content");
+  }
+
+  private boolean intentExists(String tableName, String idColumnName, UUID id) {
+    var table = DSL.table(DSL.name(tableName));
+    var idColumn = DSL.field(DSL.name(idColumnName), UUID.class);
+    return dsl.fetchExists(DSL.selectOne().from(table).where(idColumn.eq(id)));
+  }
+
+  private ActiveStreamFixture createActiveStream(String title, String filepathUri) {
+    var identity = authTestSupport.createIdentity();
+    sessionScopeService.selectHousehold(
+        identity.account().getId(), identity.session().getId(), identity.household().getId());
+    sessionScopeService.selectProfile(
+        identity.account().getId(), identity.session().getId(), identity.profile().getId());
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+    var movie = movieRepository.saveAndFlush(Movie.builder().title(title).library(library).build());
+    var mediaFile =
+        mediaFileRepository.saveAndFlush(
+            MediaFile.builder()
+                .libraryId(library.getId())
+                .mediaId(movie.getId())
+                .filepathUri(filepathUri)
+                .filename(filepathUri.substring(filepathUri.lastIndexOf('/') + 1))
+                .status(MediaFileStatus.MATCHED)
+                .build());
+    var sourceIdentity =
+        AuthenticatedIdentity.fromJwt(jwtDecoder.decode(authTestSupport.profileBearer(identity)));
+    var session =
+        playbackSessionCreationService.create(
+            CreatePlaybackSessionCommand.builder()
+                .mediaFileId(mediaFile.getId())
+                .options(
+                    StreamingOptions.builder()
+                        .quality(VideoQuality.AUTO)
+                        .supportedCodecs(List.of("h264"))
+                        .build())
+                .sourceIdentity(sourceIdentity)
+                .build());
+    return ActiveStreamFixture.builder()
+        .identity(identity)
+        .library(library)
+        .movieId(movie.getId())
+        .mediaFileId(mediaFile.getId())
+        .streamSessionId(session.sessionId())
+        .build();
+  }
+
+  private void cleanupFixture(ActiveStreamFixture fixture) {
+    FAKE_EXECUTOR.allowStopFor(fixture.streamSessionId());
+    deletionRetryWorker.retryPending();
+    streamingService.terminateRuntime(fixture.streamSessionId());
+    dsl.deleteFrom(STREAM_SESSION).where(STREAM_SESSION.ID.eq(fixture.streamSessionId())).execute();
+    authTestSupport.deleteIdentity(fixture.identity());
+  }
+
+  private void assertSourceDeleted(UUID streamSessionId) {
+    assertThat(
+            dsl.select(STREAM_SESSION.STATUS, STREAM_SESSION.TERMINAL_REASON)
+                .from(STREAM_SESSION)
+                .where(STREAM_SESSION.ID.eq(streamSessionId))
+                .fetchOne())
+        .satisfies(
+            stored -> {
+              assertThat(stored.value1()).isEqualTo(StreamSessionStatus.TERMINATING);
+              assertThat(stored.value2()).isEqualTo(StreamSessionTerminalReason.SOURCE_DELETED);
+            });
+  }
+
+  private void assertStreamMissing(UUID streamSessionId) {
+    assertThat(
+            dsl.fetchExists(
+                DSL.selectOne().from(STREAM_SESSION).where(STREAM_SESSION.ID.eq(streamSessionId))))
+        .isFalse();
+  }
+
+  @Builder
+  private record ActiveStreamFixture(
+      TestIdentity identity,
+      Library library,
+      UUID movieId,
+      UUID mediaFileId,
+      UUID streamSessionId) {
+
+    private UUID libraryId() {
+      return library.getId();
+    }
+  }
+
+  private static final class StopFailingTranscodeExecutor extends FakeTranscodeExecutor {
+
+    private final Set<UUID> stopFailures = new java.util.HashSet<>();
+
+    private void failStopFor(UUID streamSessionId) {
+      stopFailures.add(streamSessionId);
+    }
+
+    private void allowStopFor(UUID streamSessionId) {
+      stopFailures.remove(streamSessionId);
+    }
+
+    @Override
+    public void stop(UUID streamSessionId) {
+      if (stopFailures.contains(streamSessionId)) {
+        throw new IllegalStateException("simulated stop failure");
+      }
+      super.stop(streamSessionId);
+    }
+
+    @Override
+    public void reset() {
+      super.reset();
+      stopFailures.clear();
+    }
   }
 }

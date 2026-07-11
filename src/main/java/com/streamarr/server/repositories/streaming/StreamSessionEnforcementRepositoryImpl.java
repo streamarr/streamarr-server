@@ -3,7 +3,9 @@ package com.streamarr.server.repositories.streaming;
 import static com.streamarr.server.jooq.generated.tables.AccountProfile.ACCOUNT_PROFILE;
 import static com.streamarr.server.jooq.generated.tables.AuthSession.AUTH_SESSION;
 import static com.streamarr.server.jooq.generated.tables.HouseholdMembership.HOUSEHOLD_MEMBERSHIP;
+import static com.streamarr.server.jooq.generated.tables.LibraryDeletionIntent.LIBRARY_DELETION_INTENT;
 import static com.streamarr.server.jooq.generated.tables.MediaFile.MEDIA_FILE;
+import static com.streamarr.server.jooq.generated.tables.MediaFileDeletionIntent.MEDIA_FILE_DELETION_INTENT;
 import static com.streamarr.server.jooq.generated.tables.Profile.PROFILE;
 import static com.streamarr.server.jooq.generated.tables.StreamSession.STREAM_SESSION;
 import static com.streamarr.server.jooq.generated.tables.StreamSessionTerminationIntent.STREAM_SESSION_TERMINATION_INTENT;
@@ -54,7 +56,8 @@ public class StreamSessionEnforcementRepositoryImpl implements StreamSessionEnfo
                         DSL.val(authority.profileId()),
                         DSL.val(authority.mediaFileId()),
                         DSL.val(StreamSessionStatus.PROVISIONING))
-                    .whereExists(liveAuthority(authority)))
+                    .whereExists(liveAuthority(authority))
+                    .andExists(mediaSource(DSL.val(authority.mediaFileId()))))
             .onConflict(STREAM_SESSION.ID)
             .doNothing()
             .returning(STREAM_SESSION.LAST_ACCESSED_AT)
@@ -361,6 +364,8 @@ public class StreamSessionEnforcementRepositoryImpl implements StreamSessionEnfo
     return dsl.select(MEDIA_FILE.ID)
         .from(MEDIA_FILE)
         .where(MEDIA_FILE.ID.eq(authority.mediaFileId()))
+        .andNotExists(mediaDeletionIntent(MEDIA_FILE.ID))
+        .andNotExists(libraryDeletionIntent(MEDIA_FILE.LIBRARY_ID))
         .forKeyShare()
         .fetchOptional()
         .isPresent();
@@ -375,7 +380,23 @@ public class StreamSessionEnforcementRepositoryImpl implements StreamSessionEnfo
   }
 
   private Select<?> mediaSource(org.jooq.Field<java.util.UUID> mediaFileId) {
-    return dsl.selectOne().from(MEDIA_FILE).where(MEDIA_FILE.ID.eq(mediaFileId));
+    return dsl.selectOne()
+        .from(MEDIA_FILE)
+        .where(MEDIA_FILE.ID.eq(mediaFileId))
+        .andNotExists(mediaDeletionIntent(MEDIA_FILE.ID))
+        .andNotExists(libraryDeletionIntent(MEDIA_FILE.LIBRARY_ID));
+  }
+
+  private Select<?> mediaDeletionIntent(org.jooq.Field<java.util.UUID> mediaFileId) {
+    return dsl.selectOne()
+        .from(MEDIA_FILE_DELETION_INTENT)
+        .where(MEDIA_FILE_DELETION_INTENT.MEDIA_FILE_ID.eq(mediaFileId));
+  }
+
+  private Select<?> libraryDeletionIntent(org.jooq.Field<java.util.UUID> libraryId) {
+    return dsl.selectOne()
+        .from(LIBRARY_DELETION_INTENT)
+        .where(LIBRARY_DELETION_INTENT.LIBRARY_ID.eq(libraryId));
   }
 
   private org.jooq.Field<java.time.OffsetDateTime> statementTimestamp() {

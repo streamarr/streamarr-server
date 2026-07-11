@@ -5,20 +5,15 @@ import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
-import com.streamarr.server.services.MovieService;
 import com.streamarr.server.services.library.events.ScanCompletedEvent;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
-import java.util.Objects;
-import java.util.Set;
-import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.support.TransactionTemplate;
 
 @Slf4j
 @Service
@@ -27,9 +22,8 @@ public class OrphanedMediaFileCleanupService {
 
   private final LibraryRepository libraryRepository;
   private final MediaFileRepository mediaFileRepository;
-  private final MovieService movieService;
+  private final MediaParentDeletionService deletionService;
   private final FileSystem fileSystem;
-  private final TransactionTemplate transactionTemplate;
 
   @EventListener
   public void onScanCompleted(ScanCompletedEvent event) {
@@ -38,7 +32,7 @@ public class OrphanedMediaFileCleanupService {
           libraryRepository
               .findById(event.libraryId())
               .orElseThrow(() -> new LibraryNotFoundException(event.libraryId()));
-      transactionTemplate.executeWithoutResult(status -> cleanupOrphanedFiles(library));
+      cleanupOrphanedFiles(library);
     } catch (LibraryNotFoundException _) {
       log.warn("Library {} was deleted before orphaned file cleanup could run.", event.libraryId());
     } catch (Exception e) {
@@ -55,18 +49,11 @@ public class OrphanedMediaFileCleanupService {
       return;
     }
 
-    var affectedMovieIds =
-        orphanedFiles.stream()
-            .map(MediaFile::getMediaId)
-            .filter(Objects::nonNull)
-            .collect(Collectors.toSet());
-
-    mediaFileRepository.deleteAll(orphanedFiles);
-
-    deleteMoviesWithNoRemainingFiles(affectedMovieIds);
+    var orphanedFileIds = orphanedFiles.stream().map(MediaFile::getId).collect(Collectors.toSet());
+    deletionService.deleteMediaFiles(library.getId(), orphanedFileIds);
 
     log.info(
-        "Removed {} orphaned media file(s) from {} library.",
+        "Requested removal of {} orphaned media file(s) from {} library.",
         orphanedFiles.size(),
         library.getName());
   }
@@ -78,21 +65,6 @@ public class OrphanedMediaFileCleanupService {
     } catch (InvalidPathException | SecurityException _) {
       log.warn("MediaFile id: {} has unmappable filepath — treating as orphaned.", file.getId());
       return false;
-    }
-  }
-
-  private void deleteMoviesWithNoRemainingFiles(Set<UUID> movieIds) {
-    if (movieIds.isEmpty()) {
-      return;
-    }
-
-    var mediaIdsWithRemainingFiles = mediaFileRepository.findDistinctMediaIdsByMediaIdIn(movieIds);
-
-    for (var movieId : movieIds) {
-      if (!mediaIdsWithRemainingFiles.contains(movieId)) {
-        movieService.deleteMovieById(movieId);
-        log.info("Deleted Movie id: {} — no remaining media files.", movieId);
-      }
     }
   }
 }

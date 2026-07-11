@@ -15,13 +15,10 @@ import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.repositories.LibraryMetadataRepository;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
-import com.streamarr.server.services.MovieService;
-import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.library.events.ItemProcessedEvent;
 import com.streamarr.server.services.library.events.LibraryAddedEvent;
-import com.streamarr.server.services.library.events.LibraryRemovedEvent;
 import com.streamarr.server.services.library.events.RefreshEndedEvent;
 import com.streamarr.server.services.library.events.ScanCompletedEvent;
 import com.streamarr.server.services.library.events.ScanEndedEvent;
@@ -40,12 +37,10 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
-import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 @Slf4j
 @Service
@@ -58,10 +53,9 @@ public class LibraryManagementService implements ActiveScanChecker {
   private final LibraryRepository libraryRepository;
   private final LibraryMetadataRepository libraryMetadataRepository;
   private final MediaFileRepository mediaFileRepository;
-  private final MovieService movieService;
-  private final SeriesService seriesService;
   private final ApplicationEventPublisher eventPublisher;
   private final LibraryRefreshService libraryRefreshService;
+  private final MediaParentDeletionService mediaParentDeletionService;
   private final FileSystem fileSystem;
   private final MutexFactory<String> mutexFactory;
   private final Set<UUID> activeScans = ConcurrentHashMap.newKeySet();
@@ -75,11 +69,10 @@ public class LibraryManagementService implements ActiveScanChecker {
       LibraryRepository libraryRepository,
       LibraryMetadataRepository libraryMetadataRepository,
       MediaFileRepository mediaFileRepository,
-      MovieService movieService,
-      SeriesService seriesService,
       ApplicationEventPublisher eventPublisher,
       MutexFactoryProvider mutexFactoryProvider,
       LibraryRefreshService libraryRefreshService,
+      MediaParentDeletionService mediaParentDeletionService,
       FileSystem fileSystem) {
     this.ignoredFileValidator = ignoredFileValidator;
     this.videoExtensionValidator = videoExtensionValidator;
@@ -88,10 +81,9 @@ public class LibraryManagementService implements ActiveScanChecker {
     this.libraryRepository = libraryRepository;
     this.libraryMetadataRepository = libraryMetadataRepository;
     this.mediaFileRepository = mediaFileRepository;
-    this.movieService = movieService;
-    this.seriesService = seriesService;
     this.eventPublisher = eventPublisher;
     this.libraryRefreshService = libraryRefreshService;
+    this.mediaParentDeletionService = mediaParentDeletionService;
     this.fileSystem = fileSystem;
 
     this.mutexFactory = mutexFactoryProvider.getMutexFactory();
@@ -175,23 +167,12 @@ public class LibraryManagementService implements ActiveScanChecker {
         });
   }
 
-  @Transactional
   public void removeLibrary(UUID libraryId) {
     var libraryMutex = mutexFactory.getMutex(libraryId.toString());
     libraryMutex.lock();
 
     try {
-      var library = findLibraryOrThrow(libraryId);
-      rejectIfScanning(library);
-      rejectIfRefreshing(library);
-
-      var mediaFiles = mediaFileRepository.findByLibraryId(libraryId);
-      var mediaFileIds = extractMediaFileIds(mediaFiles);
-
-      deleteLibraryContent(libraryId, mediaFiles);
-      libraryRepository.delete(library);
-
-      eventPublisher.publishEvent(new LibraryRemovedEvent(library.getFilepathUri(), mediaFileIds));
+      mediaParentDeletionService.deleteLibrary(libraryId);
     } finally {
       libraryMutex.unlock();
     }
@@ -201,28 +182,6 @@ public class LibraryManagementService implements ActiveScanChecker {
     return libraryRepository
         .findById(libraryId)
         .orElseThrow(() -> new LibraryNotFoundException(libraryId));
-  }
-
-  private void rejectIfScanning(Library library) {
-    if (library.getStatus() == LibraryStatus.SCANNING) {
-      throw new LibraryScanInProgressException(library.getId());
-    }
-  }
-
-  private void rejectIfRefreshing(Library library) {
-    if (library.getStatus() == LibraryStatus.REFRESHING) {
-      throw new LibraryRefreshInProgressException(library.getId());
-    }
-  }
-
-  private Set<UUID> extractMediaFileIds(List<MediaFile> mediaFiles) {
-    return mediaFiles.stream().map(MediaFile::getId).collect(Collectors.toSet());
-  }
-
-  private void deleteLibraryContent(UUID libraryId, List<MediaFile> mediaFiles) {
-    movieService.deleteByLibraryId(libraryId);
-    seriesService.deleteByLibraryId(libraryId);
-    mediaFileRepository.deleteAll(mediaFiles);
   }
 
   public void refreshLibrary(UUID libraryId) {
@@ -252,6 +211,7 @@ public class LibraryManagementService implements ActiveScanChecker {
     libraryMutex.lock();
 
     try {
+      rejectIfDeletionPending(libraryId);
       var library = findLibraryOrThrow(libraryId);
 
       if (library.getStatus() == LibraryStatus.SCANNING) {
@@ -358,6 +318,7 @@ public class LibraryManagementService implements ActiveScanChecker {
     libraryMutex.lock();
 
     try {
+      rejectIfDeletionPending(libraryId);
       var library =
           libraryRepository
               .findById(libraryId)
@@ -379,6 +340,12 @@ public class LibraryManagementService implements ActiveScanChecker {
       return library;
     } finally {
       libraryMutex.unlock();
+    }
+  }
+
+  private void rejectIfDeletionPending(UUID libraryId) {
+    if (mediaParentDeletionService.isLibraryDeletionPending(libraryId)) {
+      throw new LibraryNotFoundException(libraryId);
     }
   }
 

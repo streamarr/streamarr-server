@@ -13,7 +13,9 @@ import com.streamarr.server.jooq.generated.tables.FileProcessingTask;
 import com.streamarr.server.jooq.generated.tables.HouseholdMembership;
 import com.streamarr.server.jooq.generated.tables.Image;
 import com.streamarr.server.jooq.generated.tables.Library;
+import com.streamarr.server.jooq.generated.tables.LibraryDeletionIntent;
 import com.streamarr.server.jooq.generated.tables.MediaFile;
+import com.streamarr.server.jooq.generated.tables.MediaFileDeletionIntent;
 import com.streamarr.server.jooq.generated.tables.Movie;
 import com.streamarr.server.jooq.generated.tables.MovieCompany;
 import com.streamarr.server.jooq.generated.tables.MovieDirector;
@@ -64,6 +66,8 @@ public class Indexes {
     public static final Index IDX_EPISODE_SEASON_ID = Internal.createIndex(DSL.name("idx_episode_season_id"), Episode.EPISODE, new OrderField[] { Episode.EPISODE.SEASON_ID }, false);
     public static final Index IDX_EXTERNAL_IDENTIFIER_ENTITY_ID = Internal.createIndex(DSL.name("idx_external_identifier_entity_id"), ExternalIdentifier.EXTERNAL_IDENTIFIER, new OrderField[] { ExternalIdentifier.EXTERNAL_IDENTIFIER.ENTITY_ID }, false);
     public static final Index IDX_HOUSEHOLD_MEMBERSHIP_HOUSEHOLD_ID = Internal.createIndex(DSL.name("idx_household_membership_household_id"), HouseholdMembership.HOUSEHOLD_MEMBERSHIP, new OrderField[] { HouseholdMembership.HOUSEHOLD_MEMBERSHIP.HOUSEHOLD_ID }, false);
+    public static final Index IDX_LIBRARY_DELETION_INTENT_REQUESTED = Internal.createIndex(DSL.name("idx_library_deletion_intent_requested"), LibraryDeletionIntent.LIBRARY_DELETION_INTENT, new OrderField[] { LibraryDeletionIntent.LIBRARY_DELETION_INTENT.REQUESTED_AT, LibraryDeletionIntent.LIBRARY_DELETION_INTENT.LIBRARY_ID }, false);
+    public static final Index IDX_MEDIA_FILE_DELETION_INTENT_REQUESTED = Internal.createIndex(DSL.name("idx_media_file_deletion_intent_requested"), MediaFileDeletionIntent.MEDIA_FILE_DELETION_INTENT, new OrderField[] { MediaFileDeletionIntent.MEDIA_FILE_DELETION_INTENT.REQUESTED_AT, MediaFileDeletionIntent.MEDIA_FILE_DELETION_INTENT.MEDIA_FILE_ID }, false);
     public static final Index IDX_MEDIA_FILE_LIBRARY_ID = Internal.createIndex(DSL.name("idx_media_file_library_id"), MediaFile.MEDIA_FILE, new OrderField[] { MediaFile.MEDIA_FILE.LIBRARY_ID }, false);
     public static final Index IDX_MEDIA_FILE_MEDIA_ID = Internal.createIndex(DSL.name("idx_media_file_media_id"), MediaFile.MEDIA_FILE, new OrderField[] { MediaFile.MEDIA_FILE.MEDIA_ID }, false);
     public static final Index IDX_MOVIE_COMPANY_COMPANY_ID = Internal.createIndex(DSL.name("idx_movie_company_company_id"), MovieCompany.MOVIE_COMPANY, new OrderField[] { MovieCompany.MOVIE_COMPANY.COMPANY_ID }, false);

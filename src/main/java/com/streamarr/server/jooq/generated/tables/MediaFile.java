@@ -10,7 +10,9 @@ import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.enums.MediaFileStatus;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable.BaseCollectablePath;
 import com.streamarr.server.jooq.generated.tables.Library.LibraryPath;
+import com.streamarr.server.jooq.generated.tables.MediaFileDeletionIntent.MediaFileDeletionIntentPath;
 import com.streamarr.server.jooq.generated.tables.SessionProgress.SessionProgressPath;
+import com.streamarr.server.jooq.generated.tables.StreamSession.StreamSessionPath;
 import com.streamarr.server.jooq.generated.tables.records.MediaFileRecord;
 
 import java.time.OffsetDateTime;
@@ -226,6 +228,19 @@ public class MediaFile extends TableImpl<MediaFileRecord> {
         return _library;
     }
 
+    private transient MediaFileDeletionIntentPath _mediaFileDeletionIntent;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.media_file_deletion_intent</code> table
+     */
+    public MediaFileDeletionIntentPath mediaFileDeletionIntent() {
+        if (_mediaFileDeletionIntent == null)
+            _mediaFileDeletionIntent = new MediaFileDeletionIntentPath(this, null, Keys.MEDIA_FILE_DELETION_INTENT__FK_MEDIA_FILE_DELETION_INTENT_MEDIA_FILE.getInverseKey());
+
+        return _mediaFileDeletionIntent;
+    }
+
     private transient SessionProgressPath _sessionProgress;
 
     /**
@@ -237,6 +252,19 @@ public class MediaFile extends TableImpl<MediaFileRecord> {
             _sessionProgress = new SessionProgressPath(this, null, Keys.SESSION_PROGRESS__FK_SESSION_PROGRESS_MEDIA_FILE.getInverseKey());
 
         return _sessionProgress;
+    }
+
+    private transient StreamSessionPath _streamSession;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.stream_session</code> table
+     */
+    public StreamSessionPath streamSession() {
+        if (_streamSession == null)
+            _streamSession = new StreamSessionPath(this, null, Keys.STREAM_SESSION__FK_STREAM_SESSION_MEDIA_FILE.getInverseKey());
+
+        return _streamSession;
     }
 
     @Override

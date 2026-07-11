@@ -16,8 +16,10 @@ import com.streamarr.server.jooq.generated.tables.Household;
 import com.streamarr.server.jooq.generated.tables.HouseholdMembership;
 import com.streamarr.server.jooq.generated.tables.Image;
 import com.streamarr.server.jooq.generated.tables.Library;
+import com.streamarr.server.jooq.generated.tables.LibraryDeletionIntent;
 import com.streamarr.server.jooq.generated.tables.LibraryMetadata;
 import com.streamarr.server.jooq.generated.tables.MediaFile;
+import com.streamarr.server.jooq.generated.tables.MediaFileDeletionIntent;
 import com.streamarr.server.jooq.generated.tables.Movie;
 import com.streamarr.server.jooq.generated.tables.MovieCompany;
 import com.streamarr.server.jooq.generated.tables.MovieDirector;
@@ -126,6 +128,11 @@ public class Public extends SchemaImpl {
     public final Library LIBRARY = Library.LIBRARY;
 
     /**
+     * The table <code>public.library_deletion_intent</code>.
+     */
+    public final LibraryDeletionIntent LIBRARY_DELETION_INTENT = LibraryDeletionIntent.LIBRARY_DELETION_INTENT;
+
+    /**
      * The table <code>public.library_metadata</code>.
      */
     public final LibraryMetadata LIBRARY_METADATA = LibraryMetadata.LIBRARY_METADATA;
@@ -134,6 +141,11 @@ public class Public extends SchemaImpl {
      * The table <code>public.media_file</code>.
      */
     public final MediaFile MEDIA_FILE = MediaFile.MEDIA_FILE;
+
+    /**
+     * The table <code>public.media_file_deletion_intent</code>.
+     */
+    public final MediaFileDeletionIntent MEDIA_FILE_DELETION_INTENT = MediaFileDeletionIntent.MEDIA_FILE_DELETION_INTENT;
 
     /**
      * The table <code>public.movie</code>.
@@ -285,8 +297,10 @@ public class Public extends SchemaImpl {
             HouseholdMembership.HOUSEHOLD_MEMBERSHIP,
             Image.IMAGE,
             Library.LIBRARY,
+            LibraryDeletionIntent.LIBRARY_DELETION_INTENT,
             LibraryMetadata.LIBRARY_METADATA,
             MediaFile.MEDIA_FILE,
+            MediaFileDeletionIntent.MEDIA_FILE_DELETION_INTENT,
             Movie.MOVIE,
             MovieCompany.MOVIE_COMPANY,
             MovieDirector.MOVIE_DIRECTOR,

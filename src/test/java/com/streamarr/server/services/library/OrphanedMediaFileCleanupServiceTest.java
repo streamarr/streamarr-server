@@ -12,6 +12,7 @@ import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
+import com.streamarr.server.fakes.FakeMediaParentDeletionService;
 import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
@@ -19,6 +20,7 @@ import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.services.ImageService;
 import com.streamarr.server.services.MovieService;
+import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.library.events.ScanCompletedEvent;
 import java.io.IOException;
 import java.nio.file.FileSystem;
@@ -30,10 +32,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.springframework.transaction.TransactionDefinition;
-import org.springframework.transaction.support.AbstractPlatformTransactionManager;
-import org.springframework.transaction.support.DefaultTransactionStatus;
-import org.springframework.transaction.support.TransactionTemplate;
 
 @Tag("UnitTest")
 @DisplayName("Orphaned Media File Cleanup Service Tests")
@@ -58,14 +56,18 @@ class OrphanedMediaFileCleanupServiceTest {
           null,
           null);
   private final FileSystem fileSystem = Jimfs.newFileSystem(Configuration.unix());
+  private final MediaParentDeletionService deletionService =
+      FakeMediaParentDeletionService.builder()
+          .libraryRepository(fakeLibraryRepository)
+          .mediaFileRepository(fakeMediaFileRepository)
+          .movieService(movieService)
+          .seriesService(mock(SeriesService.class))
+          .eventPublisher(_ -> {})
+          .build();
 
   private final OrphanedMediaFileCleanupService orphanedMediaFileCleanupService =
       new OrphanedMediaFileCleanupService(
-          fakeLibraryRepository,
-          fakeMediaFileRepository,
-          movieService,
-          fileSystem,
-          noOpTransactionTemplate());
+          fakeLibraryRepository, fakeMediaFileRepository, deletionService, fileSystem);
 
   private Library library;
 
@@ -268,11 +270,7 @@ class OrphanedMediaFileCleanupServiceTest {
 
     var serviceWithThrowingRepo =
         new OrphanedMediaFileCleanupService(
-            fakeLibraryRepository,
-            throwingMediaFileRepository,
-            movieService,
-            fileSystem,
-            noOpTransactionTemplate());
+            fakeLibraryRepository, throwingMediaFileRepository, deletionService, fileSystem);
 
     var event = new ScanCompletedEvent(library.getId());
 
@@ -286,30 +284,5 @@ class OrphanedMediaFileCleanupServiceTest {
     var movieFile = movieFolder.resolve(filename);
     Files.createFile(movieFile);
     return movieFile;
-  }
-
-  private static TransactionTemplate noOpTransactionTemplate() {
-    return new TransactionTemplate(
-        new AbstractPlatformTransactionManager() {
-          @Override
-          protected Object doGetTransaction() {
-            return new Object();
-          }
-
-          @Override
-          protected void doBegin(Object transaction, TransactionDefinition definition) {
-            // no-op for test
-          }
-
-          @Override
-          protected void doCommit(DefaultTransactionStatus status) {
-            // no-op for test
-          }
-
-          @Override
-          protected void doRollback(DefaultTransactionStatus status) {
-            // no-op for test
-          }
-        });
   }
 }

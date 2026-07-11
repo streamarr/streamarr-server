@@ -16,8 +16,10 @@ import com.streamarr.server.jooq.generated.tables.Household;
 import com.streamarr.server.jooq.generated.tables.HouseholdMembership;
 import com.streamarr.server.jooq.generated.tables.Image;
 import com.streamarr.server.jooq.generated.tables.Library;
+import com.streamarr.server.jooq.generated.tables.LibraryDeletionIntent;
 import com.streamarr.server.jooq.generated.tables.LibraryMetadata;
 import com.streamarr.server.jooq.generated.tables.MediaFile;
+import com.streamarr.server.jooq.generated.tables.MediaFileDeletionIntent;
 import com.streamarr.server.jooq.generated.tables.Movie;
 import com.streamarr.server.jooq.generated.tables.MovieCompany;
 import com.streamarr.server.jooq.generated.tables.MovieDirector;
@@ -110,6 +112,11 @@ public class Tables {
     public static final Library LIBRARY = Library.LIBRARY;
 
     /**
+     * The table <code>public.library_deletion_intent</code>.
+     */
+    public static final LibraryDeletionIntent LIBRARY_DELETION_INTENT = LibraryDeletionIntent.LIBRARY_DELETION_INTENT;
+
+    /**
      * The table <code>public.library_metadata</code>.
      */
     public static final LibraryMetadata LIBRARY_METADATA = LibraryMetadata.LIBRARY_METADATA;
@@ -118,6 +125,11 @@ public class Tables {
      * The table <code>public.media_file</code>.
      */
     public static final MediaFile MEDIA_FILE = MediaFile.MEDIA_FILE;
+
+    /**
+     * The table <code>public.media_file_deletion_intent</code>.
+     */
+    public static final MediaFileDeletionIntent MEDIA_FILE_DELETION_INTENT = MediaFileDeletionIntent.MEDIA_FILE_DELETION_INTENT;
 
     /**
      * The table <code>public.movie</code>.

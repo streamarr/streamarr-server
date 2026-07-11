@@ -12,6 +12,7 @@ import com.streamarr.server.jooq.generated.enums.StreamSessionTerminalReason;
 import com.streamarr.server.jooq.generated.tables.AccountProfile.AccountProfilePath;
 import com.streamarr.server.jooq.generated.tables.AuthSession.AuthSessionPath;
 import com.streamarr.server.jooq.generated.tables.HouseholdMembership.HouseholdMembershipPath;
+import com.streamarr.server.jooq.generated.tables.MediaFile.MediaFilePath;
 import com.streamarr.server.jooq.generated.tables.Profile.ProfilePath;
 import com.streamarr.server.jooq.generated.tables.StreamSessionTerminationIntent.StreamSessionTerminationIntentPath;
 import com.streamarr.server.jooq.generated.tables.UserAccount.UserAccountPath;
@@ -203,7 +204,7 @@ public class StreamSession extends TableImpl<StreamSessionRecord> {
 
     @Override
     public List<ForeignKey<StreamSessionRecord, ?>> getReferences() {
-        return Arrays.asList(Keys.STREAM_SESSION__FK_STREAM_SESSION_ACCOUNT, Keys.STREAM_SESSION__FK_STREAM_SESSION_ACCOUNT_PROFILE, Keys.STREAM_SESSION__FK_STREAM_SESSION_AUTH_ACCOUNT, Keys.STREAM_SESSION__FK_STREAM_SESSION_MEMBERSHIP, Keys.STREAM_SESSION__FK_STREAM_SESSION_PROFILE_HOUSEHOLD);
+        return Arrays.asList(Keys.STREAM_SESSION__FK_STREAM_SESSION_ACCOUNT, Keys.STREAM_SESSION__FK_STREAM_SESSION_ACCOUNT_PROFILE, Keys.STREAM_SESSION__FK_STREAM_SESSION_AUTH_ACCOUNT, Keys.STREAM_SESSION__FK_STREAM_SESSION_MEDIA_FILE, Keys.STREAM_SESSION__FK_STREAM_SESSION_MEMBERSHIP, Keys.STREAM_SESSION__FK_STREAM_SESSION_PROFILE_HOUSEHOLD);
     }
 
     private transient UserAccountPath _userAccount;
@@ -241,6 +242,18 @@ public class StreamSession extends TableImpl<StreamSessionRecord> {
             _authSession = new AuthSessionPath(this, Keys.STREAM_SESSION__FK_STREAM_SESSION_AUTH_ACCOUNT, null);
 
         return _authSession;
+    }
+
+    private transient MediaFilePath _mediaFile;
+
+    /**
+     * Get the implicit join path to the <code>public.media_file</code> table.
+     */
+    public MediaFilePath mediaFile() {
+        if (_mediaFile == null)
+            _mediaFile = new MediaFilePath(this, Keys.STREAM_SESSION__FK_STREAM_SESSION_MEDIA_FILE, null);
+
+        return _mediaFile;
     }
 
     private transient HouseholdMembershipPath _householdMembership;

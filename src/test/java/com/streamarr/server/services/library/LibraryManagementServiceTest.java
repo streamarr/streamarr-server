@@ -31,6 +31,7 @@ import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeLibraryMetadataRepository;
 import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
+import com.streamarr.server.fakes.FakeMediaParentDeletionService;
 import com.streamarr.server.fakes.FakeMovieRepository;
 import com.streamarr.server.fakes.SecurityExceptionFileSystem;
 import com.streamarr.server.fakes.ThrowingFileSystemWrapper;
@@ -129,6 +130,14 @@ class LibraryManagementServiceTest {
   private final SeriesService seriesService = mock(SeriesService.class);
 
   private final LibraryRefreshService libraryRefreshService = mock(LibraryRefreshService.class);
+  private final MediaParentDeletionService mediaParentDeletionService =
+      FakeMediaParentDeletionService.builder()
+          .libraryRepository(fakeLibraryRepository)
+          .mediaFileRepository(fakeMediaFileRepository)
+          .movieService(movieService)
+          .seriesService(seriesService)
+          .eventPublisher(capturingEventPublisher)
+          .build();
 
   private final LibraryManagementService libraryManagementService =
       new LibraryManagementService(
@@ -139,11 +148,10 @@ class LibraryManagementServiceTest {
           fakeLibraryRepository,
           new FakeLibraryMetadataRepository(),
           fakeMediaFileRepository,
-          movieService,
-          seriesService,
           capturingEventPublisher,
           new MutexFactoryProvider(),
           libraryRefreshService,
+          mediaParentDeletionService,
           fileSystem);
 
   private UUID savedLibraryId;
@@ -253,11 +261,10 @@ class LibraryManagementServiceTest {
             fakeLibraryRepository,
             new FakeLibraryMetadataRepository(),
             fakeMediaFileRepository,
-            movieService,
-            seriesService,
             capturingEventPublisher,
             new MutexFactoryProvider(),
             libraryRefreshService,
+            mediaParentDeletionService,
             throwingFileSystem);
 
     serviceWithThrowingFs.scanLibrary(savedLibraryId);
@@ -288,11 +295,10 @@ class LibraryManagementServiceTest {
             fakeLibraryRepository,
             new FakeLibraryMetadataRepository(),
             fakeMediaFileRepository,
-            movieService,
-            seriesService,
             capturingEventPublisher,
             new MutexFactoryProvider(),
             libraryRefreshService,
+            mediaParentDeletionService,
             throwingFileSystem);
 
     serviceWithThrowingFs.scanLibrary(savedLibraryId);
@@ -384,11 +390,10 @@ class LibraryManagementServiceTest {
             fakeLibraryRepository,
             new FakeLibraryMetadataRepository(),
             fakeMediaFileRepository,
-            movieService,
-            seriesService,
             capturingEventPublisher,
             new MutexFactoryProvider(),
             libraryRefreshService,
+            mediaParentDeletionService,
             throwingFileSystem);
 
     serviceWithThrowingFs.scanLibrary(savedLibraryId);
@@ -884,11 +889,10 @@ class LibraryManagementServiceTest {
               fakeLibraryRepository,
               new FakeLibraryMetadataRepository(),
               fakeMediaFileRepository,
-              movieService,
-              seriesService,
               capturingEventPublisher,
               new MutexFactoryProvider(),
               libraryRefreshService,
+              mediaParentDeletionService,
               securityExceptionFs);
 
       var library = LibraryFixtureCreator.buildUnsavedLibrary("Test Library", "/secure-path");

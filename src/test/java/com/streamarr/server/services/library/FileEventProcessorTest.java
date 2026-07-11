@@ -18,7 +18,6 @@ import com.streamarr.server.fakes.FakeLibraryRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.services.MovieService;
-import com.streamarr.server.services.SeriesService;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.metadata.MetadataProvider;
 import com.streamarr.server.services.metadata.movie.MovieMetadataProviderResolver;
@@ -124,8 +123,6 @@ class FileEventProcessorTest {
             new MutexFactoryProvider());
 
     var seriesFileProcessor = mock(SeriesFileProcessor.class);
-    var seriesService = mock(SeriesService.class);
-
     var libraryManagementService =
         new LibraryManagementService(
             ignoredFileValidator,
@@ -135,11 +132,10 @@ class FileEventProcessorTest {
             libraryRepository,
             new FakeLibraryMetadataRepository(),
             mediaFileRepository,
-            movieService,
-            seriesService,
             event -> {},
             new MutexFactoryProvider(),
             mock(LibraryRefreshService.class),
+            mock(MediaParentDeletionService.class),
             fileSystem);
 
     var taskRepository = new FakeFileProcessingTaskRepository();

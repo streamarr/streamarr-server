@@ -13,6 +13,7 @@ import com.streamarr.server.jooq.generated.enums.LibraryStatus;
 import com.streamarr.server.jooq.generated.enums.MediaType;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable.BaseCollectablePath;
 import com.streamarr.server.jooq.generated.tables.FileProcessingTask.FileProcessingTaskPath;
+import com.streamarr.server.jooq.generated.tables.LibraryDeletionIntent.LibraryDeletionIntentPath;
 import com.streamarr.server.jooq.generated.tables.LibraryMetadata.LibraryMetadataPath;
 import com.streamarr.server.jooq.generated.tables.MediaFile.MediaFilePath;
 import com.streamarr.server.jooq.generated.tables.records.LibraryRecord;
@@ -247,6 +248,19 @@ public class Library extends TableImpl<LibraryRecord> {
             _mediaFile = new MediaFilePath(this, null, Keys.MEDIA_FILE__FK_LIBRARY.getInverseKey());
 
         return _mediaFile;
+    }
+
+    private transient LibraryDeletionIntentPath _libraryDeletionIntent;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.library_deletion_intent</code> table
+     */
+    public LibraryDeletionIntentPath libraryDeletionIntent() {
+        if (_libraryDeletionIntent == null)
+            _libraryDeletionIntent = new LibraryDeletionIntentPath(this, null, Keys.LIBRARY_DELETION_INTENT__FK_LIBRARY_DELETION_INTENT_LIBRARY.getInverseKey());
+
+        return _libraryDeletionIntent;
     }
 
     private transient LibraryMetadataPath _libraryMetadata;

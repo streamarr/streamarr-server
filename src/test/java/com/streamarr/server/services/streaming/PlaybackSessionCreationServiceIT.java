@@ -3,6 +3,9 @@ package com.streamarr.server.services.streaming;
 import static com.streamarr.server.jooq.generated.Tables.STREAM_SESSION;
 import static com.streamarr.server.jooq.generated.tables.AccountProfile.ACCOUNT_PROFILE;
 import static com.streamarr.server.jooq.generated.tables.AuthSession.AUTH_SESSION;
+import static com.streamarr.server.jooq.generated.tables.LibraryDeletionIntent.LIBRARY_DELETION_INTENT;
+import static com.streamarr.server.jooq.generated.tables.MediaFile.MEDIA_FILE;
+import static com.streamarr.server.jooq.generated.tables.MediaFileDeletionIntent.MEDIA_FILE_DELETION_INTENT;
 import static com.streamarr.server.jooq.generated.tables.StreamSessionTerminationIntent.STREAM_SESSION_TERMINATION_INTENT;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -43,6 +46,7 @@ import com.streamarr.server.services.auth.AccessToken;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.services.auth.SessionScopeService;
+import com.streamarr.server.services.library.MediaParentDeletionService;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
 import java.sql.SQLException;
@@ -113,6 +117,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
   @Autowired private Clock clock;
   @Autowired private MockMvc mockMvc;
   @Autowired private PlatformTransactionManager transactionManager;
+  @Autowired private MediaParentDeletionService mediaParentDeletionService;
 
   private TestIdentity testIdentity;
   private UUID libraryId;
@@ -584,6 +589,105 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should spawn no transcode when media deletion is pending before admission")
+  void shouldSpawnNoTranscodeWhenMediaDeletionIsPendingBeforeAdmission() {
+    dsl.insertInto(MEDIA_FILE_DELETION_INTENT, MEDIA_FILE_DELETION_INTENT.MEDIA_FILE_ID)
+        .values(mediaFileId)
+        .execute();
+
+    assertThatThrownBy(this::createPlaybackSession)
+        .isInstanceOf(com.streamarr.server.exceptions.SessionNotFoundException.class);
+
+    assertThat(TRANSCODE_EXECUTOR.getStartedRequests()).isEmpty();
+    assertThat(new StreamSessionStateProbe(dsl).countForAuthSession(testIdentity.session().getId()))
+        .isZero();
+  }
+
+  @Test
+  @DisplayName("Should spawn no transcode when library deletion is pending before admission")
+  void shouldSpawnNoTranscodeWhenLibraryDeletionIsPendingBeforeAdmission() {
+    dsl.insertInto(
+            LIBRARY_DELETION_INTENT,
+            LIBRARY_DELETION_INTENT.LIBRARY_ID,
+            LIBRARY_DELETION_INTENT.FILEPATH_URI)
+        .values(libraryId, "/test/library")
+        .execute();
+
+    assertThatThrownBy(this::createPlaybackSession)
+        .isInstanceOf(com.streamarr.server.exceptions.SessionNotFoundException.class);
+
+    assertThat(TRANSCODE_EXECUTOR.getStartedRequests()).isEmpty();
+    assertThat(new StreamSessionStateProbe(dsl).countForAuthSession(testIdentity.session().getId()))
+        .isZero();
+  }
+
+  @Test
+  @DisplayName("Should refuse admission when deletion commits while media lock is awaited")
+  void shouldRefuseAdmissionWhenDeletionCommitsWhileMediaLockIsAwaited() throws Exception {
+    var deletionPrepared = new CountDownLatch(1);
+    var allowDeletionCommit = new CountDownLatch(1);
+    var candidateSessionId = UUID.randomUUID();
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var deletion =
+          executor.submit(
+              () ->
+                  new TransactionTemplate(transactionManager)
+                      .executeWithoutResult(
+                          _ -> {
+                            dsl.select(MEDIA_FILE.ID)
+                                .from(MEDIA_FILE)
+                                .where(MEDIA_FILE.ID.eq(mediaFileId))
+                                .forUpdate()
+                                .fetchSingle();
+                            dsl.insertInto(
+                                    MEDIA_FILE_DELETION_INTENT,
+                                    MEDIA_FILE_DELETION_INTENT.MEDIA_FILE_ID)
+                                .values(mediaFileId)
+                                .execute();
+                            deletionPrepared.countDown();
+                            ControllableTranscodeExecutor.await(allowDeletionCommit);
+                          }));
+      assertThat(deletionPrepared.await(5, TimeUnit.SECONDS)).isTrue();
+
+      var admission =
+          executor.submit(
+              () ->
+                  lifecycleTransactions.admit(
+                      authority(candidateSessionId, sourceIdentity()),
+                      streamingProperties.provisioningTimeout()));
+      assertThatThrownBy(() -> admission.get(200, TimeUnit.MILLISECONDS))
+          .isInstanceOf(TimeoutException.class);
+
+      allowDeletionCommit.countDown();
+      deletion.get(5, TimeUnit.SECONDS);
+
+      assertThat(admission.get(5, TimeUnit.SECONDS)).isEmpty();
+    } finally {
+      allowDeletionCommit.countDown();
+    }
+
+    assertThat(new StreamSessionStateProbe(dsl).status(candidateSessionId)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should refuse activation when media deletion starts after admission")
+  void shouldRefuseActivationWhenMediaDeletionStartsAfterAdmission() {
+    streamSessionId = UUID.randomUUID();
+    var authority = authority(streamSessionId, sourceIdentity());
+    assertThat(lifecycleTransactions.admit(authority, streamingProperties.provisioningTimeout()))
+        .isPresent();
+    dsl.insertInto(MEDIA_FILE_DELETION_INTENT, MEDIA_FILE_DELETION_INTENT.MEDIA_FILE_ID)
+        .values(mediaFileId)
+        .execute();
+
+    assertThat(lifecycleTransactions.activate(authority, streamingProperties.provisioningTimeout()))
+        .isFalse();
+    assertThat(new StreamSessionStateProbe(dsl).status(streamSessionId))
+        .contains(StreamSessionStatus.PROVISIONING);
+  }
+
+  @Test
   @DisplayName("Should leave playback unchanged when no media sources are terminalized")
   void shouldLeavePlaybackUnchangedWhenNoMediaSourcesAreTerminalized() {
     createPlaybackSession();
@@ -795,15 +899,17 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should deny and reconcile playback when media deletion event is missing")
-  void shouldDenyAndReconcilePlaybackWhenMediaDeletionEventIsMissing() {
+  @DisplayName("Should prevent media deletion from bypassing stream cleanup")
+  void shouldPreventMediaDeletionFromBypassingStreamCleanup() {
     var created = createPlaybackSession();
     var playbackIdentity = playbackIdentity(created);
-    mediaFileRepository.deleteById(mediaFileId);
-    mediaFileRepository.flush();
+
+    assertThatThrownBy(() -> mediaFileRepository.deleteById(mediaFileId))
+        .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+
+    mediaParentDeletionService.deleteMediaFiles(libraryId, Set.of(mediaFileId));
 
     var access = playbackAccessService().access(streamSessionId, playbackIdentity);
-    cleanupWorker.cleanupTerminating();
 
     assertThat(access).isEmpty();
     assertThat(new StreamSessionStateProbe(dsl).status(streamSessionId)).isEmpty();
@@ -1079,8 +1185,8 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should leave no playable runtime when media source is deleted during startup")
-  void shouldLeaveNoPlayableRuntimeWhenMediaSourceIsDeletedDuringStartup() throws Exception {
+  @DisplayName("Should leave no playable runtime when media deletion starts during startup")
+  void shouldLeaveNoPlayableRuntimeWhenMediaDeletionStartsDuringStartup() throws Exception {
     SEGMENT_STORE.failDeletion();
     TRANSCODE_EXECUTOR.blockNextStart();
     var identity = sourceIdentity();
@@ -1098,8 +1204,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
       assertThat(TRANSCODE_EXECUTOR.awaitBlockedStart()).isTrue();
       streamSessionId = TRANSCODE_EXECUTOR.blockedSessionId();
 
-      mediaFileRepository.deleteById(mediaFileId);
-      mediaFileRepository.flush();
+      mediaParentDeletionService.deleteMediaFiles(libraryId, Set.of(mediaFileId));
       TRANSCODE_EXECUTOR.releaseStart();
 
       assertThatThrownBy(() -> creation.get(5, TimeUnit.SECONDS))
