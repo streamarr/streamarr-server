@@ -134,17 +134,16 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
     var foreignAccount = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
     var foreignSession =
         refreshTokenService.createSession(foreignAccount, "foreign-password-device").session();
+    var command =
+        ChangePasswordCommand.builder()
+            .accountId(account.getId())
+            .sessionId(foreignSession.getId())
+            .currentPassword(oldPassword)
+            .newPassword(UUID.randomUUID().toString())
+            .build();
 
     try {
-      assertThatThrownBy(
-              () ->
-                  passwordChangeService.changePassword(
-                      ChangePasswordCommand.builder()
-                          .accountId(account.getId())
-                          .sessionId(foreignSession.getId())
-                          .currentPassword(oldPassword)
-                          .newPassword(UUID.randomUUID().toString())
-                          .build()))
+      assertThatThrownBy(() -> passwordChangeService.changePassword(command))
           .isInstanceOf(AuthenticationRequiredException.class);
 
       assertThat(
@@ -171,16 +170,15 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
                 .build());
     var caller = refreshTokenService.createSession(account, "revoked-password-device").session();
     refreshTokenService.logout(caller.getId());
+    var command =
+        ChangePasswordCommand.builder()
+            .accountId(account.getId())
+            .sessionId(caller.getId())
+            .currentPassword(oldPassword)
+            .newPassword(UUID.randomUUID().toString())
+            .build();
 
-    assertThatThrownBy(
-            () ->
-                passwordChangeService.changePassword(
-                    ChangePasswordCommand.builder()
-                        .accountId(account.getId())
-                        .sessionId(caller.getId())
-                        .currentPassword(oldPassword)
-                        .newPassword(UUID.randomUUID().toString())
-                        .build()))
+    assertThatThrownBy(() -> passwordChangeService.changePassword(command))
         .isInstanceOf(AuthenticationRequiredException.class);
 
     assertThat(authSessionRepository.findByAccountId(account.getId()))

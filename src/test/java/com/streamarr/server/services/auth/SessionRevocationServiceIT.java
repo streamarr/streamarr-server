@@ -201,12 +201,13 @@ class SessionRevocationServiceIT extends AbstractIntegrationTest {
                 com.streamarr.server.jooq.generated.tables.RefreshToken.REFRESH_TOKEN.SESSION_ID.eq(
                     identity.session().getId()))
             .fetchSingle(com.streamarr.server.jooq.generated.tables.RefreshToken.REFRESH_TOKEN.ID);
+    var authSessionId = identity.session().getId();
     installFailingStreamTerminalizationTrigger();
     try {
       assertThatThrownBy(
               () ->
                   sessionRevocationService.revoke(
-                      identity.session().getId(), SessionRevocationReason.LOGOUT, FIRST_REVOCATION))
+                      authSessionId, SessionRevocationReason.LOGOUT, FIRST_REVOCATION))
           .isInstanceOf(RuntimeException.class)
           .hasMessageContaining("injected stream terminalization failure");
     } finally {
@@ -225,17 +226,16 @@ class SessionRevocationServiceIT extends AbstractIntegrationTest {
   void shouldRollBackPasswordSessionsRefreshTokensAndStreamsWhenJwtEncodingFails() {
     var streamSessionId = saveStream(StreamSessionStatus.ACTIVE);
     var newPassword = UUID.randomUUID().toString();
+    var command =
+        ChangePasswordCommand.builder()
+            .accountId(identity.account().getId())
+            .sessionId(identity.session().getId())
+            .currentPassword(AuthTestSupport.PASSWORD)
+            .newPassword(newPassword)
+            .build();
     failingJwtEncoder.failNextEncoding();
 
-    assertThatThrownBy(
-            () ->
-                passwordChangeService.changePassword(
-                    ChangePasswordCommand.builder()
-                        .accountId(identity.account().getId())
-                        .sessionId(identity.session().getId())
-                        .currentPassword(AuthTestSupport.PASSWORD)
-                        .newPassword(newPassword)
-                        .build()))
+    assertThatThrownBy(() -> passwordChangeService.changePassword(command))
         .isInstanceOf(JwtEncodingException.class)
         .hasMessageContaining("injected JWT encoding failure");
 
