@@ -4,9 +4,9 @@
 - `./mvnw verify` — full build: unit tests (Surefire, `*Test`) + integration tests (Failsafe, `*IT`) + Checkstyle + Spotless
 - `./mvnw test` — unit tests only
 - `./mvnw spotless:apply` — format before committing
-- `./mvnw generate-sources -Pgenerate-jooq-code` — regenerate jOOQ classes after adding a migration. Requires the local Postgres from `docker compose up -d`; migrates it, then generates into `src/main/java/com/streamarr/server/jooq/generated` (checked in — commit regenerated files with the migration)
-- Smoke tests (`@Tag("SmokeTest")`, e.g. `HlsStreamingSmokeTest`) are excluded from all normal builds; run with `./mvnw test -Dsurefire.excludedGroups=`
-- Local run: `docker compose up -d` (PostgreSQL), then `./mvnw spring-boot:run`. Every config value has an env-var default except `TMDB_API_TOKEN` (required for metadata enrichment); `IMAGE_STORAGE_PATH` and `STREAMING_SEGMENT_BASE_PATH` default to empty
+- `./mvnw -pl streamarr-server generate-sources -Pgenerate-jooq-code` — regenerate jOOQ classes after adding a migration. Requires the local Postgres from `docker compose up -d`; migrates it, then generates into `streamarr-server/src/main/java/com/streamarr/server/jooq/generated` (checked in — commit regenerated files with the migration)
+- Smoke tests (`@Tag("SmokeTest")`, e.g. `HlsStreamingSmokeTest`) are excluded from all normal builds; run with `./mvnw -pl streamarr-server test -Dsurefire.excludedGroups=`
+- Local run: `docker compose up -d` (PostgreSQL), then `./mvnw -pl streamarr-server spring-boot:run`. Every config value has an env-var default except `TMDB_API_TOKEN` (required for metadata enrichment); `IMAGE_STORAGE_PATH` and `STREAMING_SEGMENT_BASE_PATH` default to empty
 
 ## Engineering Philosophy
 
@@ -169,11 +169,11 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 ### Flyway
 - **NEVER edit a migration that exists on `main`** — in-place edits break checksum validation on every existing database; write a new incremental migration instead
 - **Before merging, re-check your `V###` number against `main`** — parallel branches have collided (two V039s); renumber yours if taken
-- SQL migrations in `src/main/resources/db/migration`; Java migrations (data transforms) in `src/main/java/db/migration`
+- SQL migrations in `streamarr-server/src/main/resources/db/migration`; Java migrations (data transforms) in `streamarr-server/src/main/java/db/migration`
 - When changing a stored value's representation (e.g. path → URI), define the encode/decode contract in one codec class with a round-trip test first, then migrate call sites
 
 ## GraphQL (Netflix DGS)
-- Schema-first: `.graphqls` files in `src/main/resources/schema/`; GraphiQL and introspection disabled
+- Schema-first: `.graphqls` files in `streamarr-server/src/main/resources/schema/`; GraphiQL and introspection disabled
 - Association fields resolve via `@DgsData(parentType = …)` field resolvers
 - Batch list-valued association fields with a `@DgsDataLoader` (`MappedBatchLoader`, as done for images) — per-parent queries in field resolvers are an N+1
 - Relay connections are built via `RelayConnectionAdapter` over the protocol-agnostic `MediaPage`/`PageItem` types in `services.pagination`

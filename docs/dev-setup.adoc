@@ -30,7 +30,7 @@ This starts PostgreSQL 18 on port 5432 with credentials from `.env`.
 
 [source,bash]
 ----
-./mvnw spring-boot:run
+./mvnw -pl streamarr-server spring-boot:run
 ----
 
 The server starts on `http://localhost:8080` with the `dev` profile active.
@@ -57,7 +57,7 @@ After modifying Flyway migrations, regenerate jOOQ types:
 [source,bash]
 ----
 docker compose up -d postgres
-./mvnw generate-sources -P generate-jooq-code
+./mvnw -pl streamarr-server generate-sources -Pgenerate-jooq-code
 ----
 
 == Code Formatting
@@ -93,5 +93,5 @@ GRAFANA_CLOUD_OTLP_ENDPOINT=<your-endpoint>
 docker compose --profile observability up -d
 
 # Run server with observability profile:
-./mvnw spring-boot:run -Dspring-boot.run.profiles=dev,observability
+./mvnw -pl streamarr-server spring-boot:run -Dspring-boot.run.profiles=dev,observability
 ----

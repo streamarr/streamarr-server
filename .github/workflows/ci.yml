@@ -33,6 +33,20 @@ jobs:
       - name: Build and test
         run: ./mvnw --batch-mode verify
 
+      - name: Verify aggregate coverage report
+        shell: bash
+        run: |
+          report="streamarr-coverage/target/site/jacoco-aggregate/jacoco.xml"
+          if [[ ! -s "${report}" ]]; then
+            echo "::error::Aggregate JaCoCo report is missing or empty: ${report}"
+            exit 1
+          fi
+
+          if ! grep -Fq '<class name="com/streamarr/server/StreamarrServerApplication"' "${report}"; then
+            echo "::error::Aggregate JaCoCo report does not contain the server application class"
+            exit 1
+          fi
+
       - name: Cache SonarCloud packages
         if: env.SONAR_TOKEN != ''
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6

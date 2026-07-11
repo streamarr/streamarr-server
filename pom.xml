@@ -9,17 +9,24 @@
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     <groupId>com.streamarr</groupId>
-    <artifactId>server</artifactId>
+    <artifactId>streamarr-parent</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>Streamarr-Server</name>
+    <packaging>pom</packaging>
+    <name>Streamarr</name>
     <description>Streamarr, the open source media server system.</description>
+
+    <modules>
+        <module>streamarr-server</module>
+        <module>streamarr-coverage</module>
+    </modules>
+
     <properties>
         <java.version>25</java.version>
         <sonar.projectKey>streamarr_streamarr-server</sonar.projectKey>
         <sonar.organization>streamarr</sonar.organization>
         <sonar.host.url>https://sonarcloud.io</sonar.host.url>
         <sonar.coverage.jacoco.xmlReportPaths>
-            target/site/jacoco-merged-test-coverage-report/jacoco.xml
+            ${maven.multiModuleProjectDirectory}/streamarr-coverage/target/site/jacoco-aggregate/jacoco.xml
         </sonar.coverage.jacoco.xmlReportPaths>
         <sonar.coverage.exclusions>**/pom.xml, **/StreamarrServerApplication.java</sonar.coverage.exclusions>
         <sonar.test.inclusions>**/src/test/**</sonar.test.inclusions>
@@ -73,208 +80,6 @@
         <archunit.version>1.4.2</archunit.version>
     </properties>
 
-    <dependencies>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-actuator</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-jpa</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-validation</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-webflux</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-security</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.bouncycastle</groupId>
-            <artifactId>bcprov-jdk18on</artifactId>
-            <version>${bouncycastle.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-jooq</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-flyway</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.flywaydb</groupId>
-            <artifactId>flyway-database-postgresql</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.netflix.graphql.dgs</groupId>
-            <artifactId>dgs-starter</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.netflix.graphql.dgs</groupId>
-            <artifactId>graphql-dgs-pagination</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>com.github.mizosoft.methanol</groupId>
-            <artifactId>methanol</artifactId>
-            <version>${methanol-client.version}</version>
-        </dependency>
-
-        <dependency>
-            <groupId>com.google.guava</groupId>
-            <artifactId>guava</artifactId>
-            <version>${guava.version}</version>
-        </dependency>
-
-        <dependency>
-            <groupId>org.projectlombok</groupId>
-            <artifactId>lombok</artifactId>
-            <version>${lombok.version}</version>
-            <scope>provided</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>commons-io</groupId>
-            <artifactId>commons-io</artifactId>
-            <version>${apache-commons-io.version}</version>
-        </dependency>
-
-        <dependency>
-            <groupId>org.apache.commons</groupId>
-            <artifactId>commons-lang3</artifactId>
-            <version>${apache-commons-lang.version}</version>
-        </dependency>
-
-        <dependency>
-            <groupId>org.apache.commons</groupId>
-            <artifactId>commons-text</artifactId>
-            <version>${apache-commons-text.version}</version>
-        </dependency>
-
-        <dependency>
-            <groupId>io.methvin</groupId>
-            <artifactId>directory-watcher</artifactId>
-            <version>${methvin-directory-watcher.version}</version>
-        </dependency>
-
-        <dependency>
-            <groupId>org.jooq</groupId>
-            <artifactId>jooq-meta-extensions-hibernate</artifactId>
-            <version>${jooq.version}</version>
-        </dependency>
-
-        <dependency>
-            <groupId>org.postgresql</groupId>
-            <artifactId>postgresql</artifactId>
-            <version>${postgresql.version}</version>
-        </dependency>
-
-        <dependency>
-            <groupId>net.coobird</groupId>
-            <artifactId>thumbnailator</artifactId>
-            <version>${thumbnailator.version}</version>
-        </dependency>
-
-        <dependency>
-            <groupId>io.trbl</groupId>
-            <artifactId>blurhash</artifactId>
-            <version>${blurhash.version}</version>
-        </dependency>
-
-        <dependency>
-            <groupId>com.google.jimfs</groupId>
-            <artifactId>jimfs</artifactId>
-            <version>${jimfs.version}</version>
-            <scope>test</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>org.testcontainers</groupId>
-            <artifactId>testcontainers</artifactId>
-            <scope>test</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>org.testcontainers</groupId>
-            <artifactId>testcontainers-junit-jupiter</artifactId>
-            <scope>test</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>org.testcontainers</groupId>
-            <artifactId>testcontainers-postgresql</artifactId>
-            <scope>test</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-testcontainers</artifactId>
-            <scope>test</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>org.awaitility</groupId>
-            <artifactId>awaitility</artifactId>
-            <version>${awaitility.version}</version>
-            <scope>test</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>io.opentelemetry.instrumentation</groupId>
-            <artifactId>opentelemetry-spring-boot-starter</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>org.springframework.security</groupId>
-            <artifactId>spring-security-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>com.tngtech.archunit</groupId>
-            <artifactId>archunit-junit5</artifactId>
-            <version>${archunit.version}</version>
-            <scope>test</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>com.netflix.graphql.dgs</groupId>
-            <artifactId>dgs-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>org.wiremock</groupId>
-            <artifactId>wiremock-standalone</artifactId>
-            <version>3.13.2</version>
-            <scope>test</scope>
-        </dependency>
-    </dependencies>
-
     <dependencyManagement>
         <dependencies>
             <dependency>
@@ -310,307 +115,87 @@
     </dependencyManagement>
 
     <build>
-        <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <configuration>
-                    <source>${java.version}</source>
-                    <target>${java.version}</target>
-                    <annotationProcessorPaths>
-                        <path>
-                            <groupId>org.projectlombok</groupId>
-                            <artifactId>lombok</artifactId>
-                            <version>${lombok.version}</version>
-                        </path>
-                    </annotationProcessorPaths>
-                </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-maven-plugin</artifactId>
-                <configuration>
-                    <!-- Local runs get the dev profile; the packaged artifact must never
-                         self-activate it (see PackagedConfigurationTest). -->
-                    <profiles>
-                        <profile>dev</profile>
-                    </profiles>
-                </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.jacoco</groupId>
-                <artifactId>jacoco-maven-plugin</artifactId>
-                <version>${jacoco.version}</version>
-                <configuration>
-                    <excludes>
-                        <exclude>**/com/streamarr/server/jooq/generated/**</exclude>
-                        <exclude>**/com/streamarr/server/config/DevDataInitializer.class</exclude>
-                    </excludes>
-                </configuration>
-                <executions>
-                    <execution>
-                        <id>before-unit-test-execution</id>
-                        <goals>
-                            <goal>prepare-agent</goal>
-                        </goals>
-                        <configuration>
-                            <destFile>
-                                ${project.build.directory}/jacoco-output/jacoco-unit-tests.exec
-                            </destFile>
-                            <propertyName>surefire.jacoco.args</propertyName>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>after-unit-test-execution</id>
-                        <phase>test</phase>
-                        <goals>
-                            <goal>report</goal>
-                        </goals>
-                        <configuration>
-                            <dataFile>
-                                ${project.build.directory}/jacoco-output/jacoco-unit-tests.exec
-                            </dataFile>
-                            <outputDirectory>
-                                ${project.reporting.outputDirectory}/jacoco-unit-test-coverage-report
-                            </outputDirectory>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>before-integration-test-execution</id>
-                        <phase>pre-integration-test</phase>
-                        <goals>
-                            <goal>prepare-agent</goal>
-                        </goals>
-                        <configuration>
-                            <destFile>
-                                ${project.build.directory}/jacoco-output/jacoco-integration-tests.exec
-                            </destFile>
-                            <propertyName>failsafe.jacoco.args</propertyName>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>after-integration-test-execution</id>
-                        <phase>post-integration-test</phase>
-                        <goals>
-                            <goal>report</goal>
-                        </goals>
-                        <configuration>
-                            <dataFile>
-                                ${project.build.directory}/jacoco-output/jacoco-integration-tests.exec
-                            </dataFile>
-                            <outputDirectory>
-                                ${project.reporting.outputDirectory}/jacoco-integration-test-coverage-report
-                            </outputDirectory>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>merge-unit-and-integration</id>
-                        <phase>post-integration-test</phase>
-                        <goals>
-                            <goal>merge</goal>
-                        </goals>
-                        <configuration>
-                            <fileSets>
-                                <fileSet>
-                                    <directory>${project.build.directory}/jacoco-output/</directory>
-                                    <includes>
-                                        <include>*.exec</include>
-                                    </includes>
-                                </fileSet>
-                            </fileSets>
-                            <destFile>${project.build.directory}/jacoco-output/merged.exec</destFile>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>create-merged-report</id>
-                        <phase>post-integration-test</phase>
-                        <goals>
-                            <goal>report</goal>
-                        </goals>
-                        <configuration>
-                            <dataFile>${project.build.directory}/jacoco-output/merged.exec</dataFile>
-                            <outputDirectory>
-                                ${project.reporting.outputDirectory}/jacoco-merged-test-coverage-report
-                            </outputDirectory>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
-                <groupId>com.diffplug.spotless</groupId>
-                <artifactId>spotless-maven-plugin</artifactId>
-                <version>${spotless.version}</version>
-                <configuration>
-                    <java>
-                        <googleJavaFormat/>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <configuration>
+                        <source>${java.version}</source>
+                        <target>${java.version}</target>
+                        <annotationProcessorPaths>
+                            <path>
+                                <groupId>org.projectlombok</groupId>
+                                <artifactId>lombok</artifactId>
+                                <version>${lombok.version}</version>
+                            </path>
+                        </annotationProcessorPaths>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.jacoco</groupId>
+                    <artifactId>jacoco-maven-plugin</artifactId>
+                    <version>${jacoco.version}</version>
+                    <configuration>
                         <excludes>
-                            <exclude>src/main/java/com/streamarr/server/jooq/generated/**</exclude>
+                            <exclude>**/com/streamarr/server/jooq/generated/**</exclude>
+                            <exclude>**/com/streamarr/server/config/DevDataInitializer.class</exclude>
                         </excludes>
-                    </java>
-                </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-checkstyle-plugin</artifactId>
-                <version>${maven-checkstyle-plugin.version}</version>
-                <dependencies>
-                    <dependency>
-                        <groupId>com.puppycrawl.tools</groupId>
-                        <artifactId>checkstyle</artifactId>
-                        <version>${checkstyle.version}</version>
-                    </dependency>
-                </dependencies>
-                <configuration>
-                    <configLocation>checkstyle.xml</configLocation>
-                    <consoleOutput>true</consoleOutput>
-                    <failsOnError>true</failsOnError>
-                    <sourceDirectories>
-                        <sourceDirectory>${project.build.sourceDirectory}</sourceDirectory>
-                    </sourceDirectories>
-                    <excludes>**/jooq/generated/**</excludes>
-                </configuration>
-                <executions>
-                    <execution>
-                        <id>checkstyle-check</id>
-                        <phase>validate</phase>
-                        <goals>
-                            <goal>check</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <version>${surefire-failsafe-plugin.version}</version>
-                <configuration>
-                    <argLine>${surefire.jacoco.args}</argLine>
-                    <excludedGroups>${surefire.excludedGroups}</excludedGroups>
-                </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-failsafe-plugin</artifactId>
-                <version>${surefire-failsafe-plugin.version}</version>
-                <configuration>
-                    <argLine>${failsafe.jacoco.args}</argLine>
-                    <excludedGroups>${failsafe.excludedGroups}</excludedGroups>
-                </configuration>
-                <executions>
-                    <execution>
-                        <goals>
-                            <goal>integration-test</goal>
-                            <goal>verify</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
-        </plugins>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>com.diffplug.spotless</groupId>
+                    <artifactId>spotless-maven-plugin</artifactId>
+                    <version>${spotless.version}</version>
+                    <configuration>
+                        <java>
+                            <googleJavaFormat/>
+                            <excludes>
+                                <exclude>src/main/java/com/streamarr/server/jooq/generated/**</exclude>
+                            </excludes>
+                        </java>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-checkstyle-plugin</artifactId>
+                    <version>${maven-checkstyle-plugin.version}</version>
+                    <dependencies>
+                        <dependency>
+                            <groupId>com.puppycrawl.tools</groupId>
+                            <artifactId>checkstyle</artifactId>
+                            <version>${checkstyle.version}</version>
+                        </dependency>
+                    </dependencies>
+                    <configuration>
+                        <configLocation>${maven.multiModuleProjectDirectory}/checkstyle.xml</configLocation>
+                        <consoleOutput>true</consoleOutput>
+                        <failsOnError>true</failsOnError>
+                        <sourceDirectories>
+                            <sourceDirectory>${project.build.sourceDirectory}</sourceDirectory>
+                        </sourceDirectories>
+                        <excludes>**/jooq/generated/**</excludes>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>${surefire-failsafe-plugin.version}</version>
+                    <configuration>
+                        <argLine>${surefire.jacoco.args}</argLine>
+                        <excludedGroups>${surefire.excludedGroups}</excludedGroups>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-failsafe-plugin</artifactId>
+                    <version>${surefire-failsafe-plugin.version}</version>
+                    <configuration>
+                        <argLine>${failsafe.jacoco.args}</argLine>
+                        <excludedGroups>${failsafe.excludedGroups}</excludedGroups>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
     </build>
-
-    <profiles>
-        <profile>
-            <id>generate-jooq-code</id>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>it.ozimov</groupId>
-                        <artifactId>yaml-properties-maven-plugin</artifactId>
-                        <version>${yaml-properties-maven-plugin.version}</version>
-                        <executions>
-                            <execution>
-                                <phase>initialize</phase>
-                                <goals>
-                                    <goal>read-project-properties</goal>
-                                </goals>
-                                <configuration>
-                                    <files>
-                                        <file>src/main/resources/application.yml</file>
-                                    </files>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                    <plugin>
-                        <groupId>org.flywaydb</groupId>
-                        <artifactId>flyway-maven-plugin</artifactId>
-                        <version>${flyway.version}</version>
-                        <executions>
-                            <execution>
-                                <phase>generate-sources</phase>
-                                <goals>
-                                    <goal>migrate</goal>
-                                </goals>
-                            </execution>
-                        </executions>
-                        <dependencies>
-                            <dependency>
-                                <groupId>org.flywaydb</groupId>
-                                <artifactId>flyway-database-postgresql</artifactId>
-                                <version>${flyway.version}</version>
-                            </dependency>
-                        </dependencies>
-                        <configuration>
-                            <!--suppress UnresolvedMavenProperty -->
-                            <driver>${spring.datasource.driverClassName}</driver>
-                            <!--suppress UnresolvedMavenProperty -->
-                            <url>${spring.datasource.url}</url>
-                            <!--suppress UnresolvedMavenProperty -->
-                            <user>${spring.datasource.username}</user>
-                            <!--suppress UnresolvedMavenProperty -->
-                            <password>${spring.datasource.password}</password>
-                            <baselineOnMigrate>true</baselineOnMigrate>
-                            <table>schema_history</table>
-                            <schemas>
-                                <schema>public</schema>
-                            </schemas>
-                            <locations>
-                                <location>filesystem:src/main/resources/db/migration</location>
-                            </locations>
-                        </configuration>
-                    </plugin>
-                    <plugin>
-                        <groupId>org.jooq</groupId>
-                        <artifactId>jooq-codegen-maven</artifactId>
-                        <version>${jooq.version}</version>
-                        <executions>
-                            <execution>
-                                <id>generate-postgres</id>
-                                <phase>generate-sources</phase>
-                                <goals>
-                                    <goal>generate</goal>
-                                </goals>
-                            </execution>
-                        </executions>
-                        <configuration>
-                            <jdbc>
-                                <!--suppress UnresolvedMavenProperty -->
-                                <driver>${spring.datasource.driverClassName}</driver>
-                                <!--suppress UnresolvedMavenProperty -->
-                                <url>${spring.datasource.url}</url>
-                                <!--suppress UnresolvedMavenProperty -->
-                                <user>${spring.datasource.username}</user>
-                                <!--suppress UnresolvedMavenProperty -->
-                                <password>${spring.datasource.password}</password>
-                            </jdbc>
-                            <generator>
-                                <database>
-                                    <name>org.jooq.meta.postgres.PostgresDatabase</name>
-                                    <includes>.*</includes>
-                                    <inputSchema>public</inputSchema>
-                                </database>
-                                <generate>
-                                    <pojos>false</pojos>
-                                </generate>
-                                <target>
-                                    <packageName>com.streamarr.server.jooq.generated</packageName>
-                                    <directory>src/main/java</directory>
-                                </target>
-                            </generator>
-                        </configuration>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
-    </profiles>
 </project>

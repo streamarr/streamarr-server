@@ -54,4 +54,4 @@ buildNumber.properties
 .env
 
 ### Test fixtures ###
-src/test/resources/BigBuckBunny_320x180.mp4
+streamarr-server/src/test/resources/BigBuckBunny_320x180.mp4
