@@ -54,8 +54,10 @@ class DefaultPlaybackSessionTerminationServiceTest {
     var lifecycle = new RecordingLifecycle(true);
     var cleanup = new RecordingCleanup();
     var service = service(runtimeRegistry, lifecycle, cleanup);
+    var streamSessionId = session.getSessionId();
+    var profileId = session.getProfileId();
 
-    assertThatThrownBy(() -> service.destroy(session.getSessionId(), session.getProfileId()))
+    assertThatThrownBy(() -> service.destroy(streamSessionId, profileId))
         .isInstanceOf(IllegalStateException.class);
 
     assertThat(lifecycle.terminalAttempts).isEqualTo(3);

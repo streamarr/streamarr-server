@@ -4,6 +4,7 @@ import java.sql.SQLException;
 import java.util.Set;
 import java.util.function.IntConsumer;
 import java.util.function.Supplier;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.IllegalTransactionStateException;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -16,6 +17,7 @@ public class StreamSessionTransactionRetry {
 
   private final IntConsumer backoff;
 
+  @Autowired
   public StreamSessionTransactionRetry() {
     this(StreamSessionTransactionRetry::sleep);
   }

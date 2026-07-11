@@ -719,7 +719,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
     account.setEnabled(false);
     userAccountRepository.saveAndFlush(account);
 
-    assertThatThrownBy(() -> createPlaybackSession())
+    assertThatThrownBy(this::createPlaybackSession)
         .isInstanceOf(com.streamarr.server.exceptions.SessionNotFoundException.class);
 
     assertThat(TRANSCODE_EXECUTOR.getStartedRequests()).isEmpty();

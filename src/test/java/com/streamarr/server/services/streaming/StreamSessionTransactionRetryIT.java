@@ -85,7 +85,7 @@ class StreamSessionTransactionRetryIT extends AbstractIntegrationTest {
                       return retry.execute(
                           () ->
                               inner.execute(
-                                  __ -> {
+                                  _ -> {
                                     attempts.incrementAndGet();
                                     return "committed";
                                   }));

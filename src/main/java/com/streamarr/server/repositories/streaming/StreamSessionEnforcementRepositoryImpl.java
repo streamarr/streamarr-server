@@ -265,13 +265,13 @@ public class StreamSessionEnforcementRepositoryImpl implements StreamSessionEnfo
                 .or(STREAM_SESSION_TERMINATION_INTENT.REPLAY_AFTER.le(statementTimestamp())))
         .orderBy(STREAM_SESSION_TERMINATION_INTENT.STREAM_SESSION_ID)
         .fetch(
-            record ->
+            intentRecord ->
                 StreamSessionTermination.builder()
-                    .streamSessionId(record.value1())
-                    .terminalAt(record.value2().toInstant())
+                    .streamSessionId(intentRecord.value1())
+                    .terminalAt(intentRecord.value2().toInstant())
                     .reason(
                         com.streamarr.server.domain.streaming.StreamSessionTerminalReason.valueOf(
-                            record.value3().getLiteral()))
+                            intentRecord.value3().getLiteral()))
                     .build());
   }
 

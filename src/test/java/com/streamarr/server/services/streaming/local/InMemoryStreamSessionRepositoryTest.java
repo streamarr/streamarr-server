@@ -1,13 +1,20 @@
 package com.streamarr.server.services.streaming.local;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.services.streaming.RuntimeSessionReservation;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -206,5 +213,62 @@ class InMemoryStreamSessionRepositoryTest {
     }
 
     assertThat(repository.attach(staleReservation, staleSession)).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should publish and fence a runtime session across concurrent readers")
+  void shouldPublishAndFenceRuntimeSessionAcrossConcurrentReaders() throws Exception {
+    var session = StreamSessionFixture.buildMpegtsSession();
+    var reservation = repository.reserve(session.getSessionId()).orElseThrow();
+    assertThat(repository.attach(reservation, session)).isTrue();
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var readerCount = 32;
+      var readyToFence = new CountDownLatch(readerCount);
+      var terminalized = new CountDownLatch(1);
+      var readers = new ArrayList<Future<?>>();
+      for (var reader = 0; reader < readerCount; reader++) {
+        readers.add(
+            executor.submit(
+                () -> {
+                  assertThat(repository.findById(session.getSessionId())).contains(session);
+                  assertThat(repository.findAll()).contains(session);
+                  readyToFence.countDown();
+                  if (!terminalized.await(5, TimeUnit.SECONDS)) {
+                    throw new TimeoutException("Session was not terminalized");
+                  }
+                  assertThat(repository.findById(session.getSessionId())).isEmpty();
+                  assertThat(repository.findAll()).doesNotContain(session);
+                  return null;
+                }));
+      }
+
+      assertThat(readyToFence.await(5, TimeUnit.SECONDS)).isTrue();
+      assertThat(repository.terminalize(session.getSessionId())).isTrue();
+      terminalized.countDown();
+      for (var reader : readers) {
+        reader.get(5, TimeUnit.SECONDS);
+      }
+    }
+  }
+
+  @Test
+  @DisplayName("Should await the current starter drain without blocking its completion")
+  void shouldAwaitCurrentStarterDrainWithoutBlockingItsCompletion() throws Exception {
+    var sessionId = UUID.randomUUID();
+    repository.reserve(sessionId).orElseThrow();
+    var firstStart = repository.beginTranscodeStart(sessionId).orElseThrow();
+    assertThat(repository.completeTranscodeStart(firstStart)).isTrue();
+    var currentStart = repository.beginTranscodeStart(sessionId).orElseThrow();
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var waiting = executor.submit(() -> repository.awaitTranscodeStarts(sessionId));
+      assertThatThrownBy(() -> waiting.get(100, TimeUnit.MILLISECONDS))
+          .isInstanceOf(TimeoutException.class);
+
+      var completion = executor.submit(() -> repository.completeTranscodeStart(currentStart));
+      assertThat(completion.get(5, TimeUnit.SECONDS)).isTrue();
+      waiting.get(5, TimeUnit.SECONDS);
+    }
   }
 }

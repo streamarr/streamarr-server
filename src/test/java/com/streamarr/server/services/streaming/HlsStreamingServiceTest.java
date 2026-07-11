@@ -89,9 +89,9 @@ class HlsStreamingServiceTest {
     var file = seedMediaFile();
     var streamSessionId = UUID.randomUUID();
     var blockingExecutor = new BlockingTranscodeExecutor();
-    var runtimeRegistry = new FakeStreamSessionRepository();
-    var reservation = runtimeRegistry.reserve(streamSessionId).orElseThrow();
-    var racingService = createService(blockingExecutor, runtimeRegistry);
+    var racingRegistry = new FakeStreamSessionRepository();
+    var reservation = racingRegistry.reserve(streamSessionId).orElseThrow();
+    var racingService = createService(blockingExecutor, racingRegistry);
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       var creation =
@@ -122,17 +122,17 @@ class HlsStreamingServiceTest {
   @DisplayName("Should fence a reserved session before runtime shutdown returns")
   void shouldFenceReservedSessionBeforeRuntimeShutdownReturns() {
     var streamSessionId = UUID.randomUUID();
-    var runtimeRegistry = new FakeStreamSessionRepository();
-    var reservation = runtimeRegistry.reserve(streamSessionId).orElseThrow();
-    var shutdownService = createService(transcodeExecutor, runtimeRegistry);
+    var shutdownRegistry = new FakeStreamSessionRepository();
+    var reservation = shutdownRegistry.reserve(streamSessionId).orElseThrow();
+    var shutdownService = createService(transcodeExecutor, shutdownRegistry);
 
     shutdownService.shutdownRuntime();
 
     assertThat(
-            runtimeRegistry.attach(
+            shutdownRegistry.attach(
                 reservation, StreamSession.builder().sessionId(streamSessionId).build()))
         .isFalse();
-    assertThat(runtimeRegistry.beginTranscodeStart(streamSessionId)).isEmpty();
+    assertThat(shutdownRegistry.beginTranscodeStart(streamSessionId)).isEmpty();
   }
 
   @Test
@@ -141,9 +141,9 @@ class HlsStreamingServiceTest {
     var file = seedMediaFile();
     var streamSessionId = UUID.randomUUID();
     var blockingExecutor = new BlockingTranscodeExecutor();
-    var runtimeRegistry = new FakeStreamSessionRepository();
-    var reservation = runtimeRegistry.reserve(streamSessionId).orElseThrow();
-    var shutdownService = createService(blockingExecutor, runtimeRegistry);
+    var shutdownRegistry = new FakeStreamSessionRepository();
+    var reservation = shutdownRegistry.reserve(streamSessionId).orElseThrow();
+    var shutdownService = createService(blockingExecutor, shutdownRegistry);
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       var creation =
@@ -654,7 +654,7 @@ class HlsStreamingServiceTest {
   @Test
   @DisplayName("Should truncate variants when exceeding available slots")
   void shouldTruncateVariantsWhenExceedingAvailableSlots() {
-    var properties =
+    var limitedProperties =
         StreamingProperties.builder()
             .maxConcurrentTranscodes(2)
             .segmentDuration(Duration.ofSeconds(6))
@@ -669,7 +669,7 @@ class HlsStreamingServiceTest {
             ffprobeService,
             new TranscodeDecisionService(),
             new QualityLadderService(),
-            properties,
+            limitedProperties,
             limitedRegistry,
             new MutexFactory<>());
 

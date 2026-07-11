@@ -104,10 +104,10 @@ class LocalFfmpegProcessManagerTest {
   void shouldRejectDuplicateVariantWithoutReplacingItsRunningProcess() {
     var sessionId = UUID.randomUUID();
     var variant = StreamSession.defaultVariant();
-    var first = manager.startProcess(sessionId, variant, List.of("sleep", "30"), tempDir);
+    var command = List.of("sleep", "30");
+    var first = manager.startProcess(sessionId, variant, command, tempDir);
 
-    assertThatThrownBy(
-            () -> manager.startProcess(sessionId, variant, List.of("sleep", "30"), tempDir))
+    assertThatThrownBy(() -> manager.startProcess(sessionId, variant, command, tempDir))
         .isInstanceOf(TranscodeException.class)
         .hasMessage(TranscodeException.GENERIC_MESSAGE);
 

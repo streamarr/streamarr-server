@@ -27,11 +27,11 @@ public class InMemoryStreamSessionRepository implements RuntimeStreamSessionRegi
 
     private final UUID generation = UUID.randomUUID();
     private volatile State state = State.STARTING;
-    private volatile StreamSession session;
+    private final AtomicReference<StreamSession> session = new AtomicReference<>();
     private int inFlight;
     private int starters;
-    private volatile CompletableFuture<Void> startersDrained =
-        CompletableFuture.completedFuture(null);
+    private final AtomicReference<CompletableFuture<Void>> startersDrained =
+        new AtomicReference<>(CompletableFuture.completedFuture(null));
     private boolean runtimeStopped;
     private boolean reclaimRequested;
 
@@ -72,7 +72,7 @@ public class InMemoryStreamSessionRepository implements RuntimeStreamSessionRegi
         reservation.sessionId(),
         (_, slot) -> {
           if (matches(slot, reservation.generation()) && slot.state != State.TERMINAL) {
-            slot.session = session;
+            slot.session.set(session);
             attached.set(true);
           }
           return slot;
@@ -88,7 +88,7 @@ public class InMemoryStreamSessionRepository implements RuntimeStreamSessionRegi
         (_, slot) -> {
           if (slot.state != State.TERMINAL) {
             if (slot.starters == 0) {
-              slot.startersDrained = new CompletableFuture<>();
+              slot.startersDrained.set(new CompletableFuture<>());
             }
             slot.inFlight++;
             slot.starters++;
@@ -177,7 +177,7 @@ public class InMemoryStreamSessionRepository implements RuntimeStreamSessionRegi
         (_, slot) -> {
           found.set(true);
           slot.state = State.TERMINAL;
-          slot.session = null;
+          slot.session.set(null);
           return slot;
         });
     return found.get();
@@ -210,7 +210,7 @@ public class InMemoryStreamSessionRepository implements RuntimeStreamSessionRegi
   public void awaitTranscodeStarts(UUID sessionId) {
     var slot = slots.get(sessionId);
     if (slot != null) {
-      slot.startersDrained.join();
+      slot.startersDrained.get().join();
     }
   }
 
@@ -229,7 +229,7 @@ public class InMemoryStreamSessionRepository implements RuntimeStreamSessionRegi
     slots.computeIfPresent(
         sessionId,
         (_, slot) -> {
-          var session = slot.session;
+          var session = slot.session.get();
           if (session != null && accessedAt.isAfter(session.getLastAccessedAt())) {
             session.setLastAccessedAt(accessedAt);
           }
@@ -247,7 +247,7 @@ public class InMemoryStreamSessionRepository implements RuntimeStreamSessionRegi
             slot.state = State.RUNNING;
           }
           if (slot.state != State.TERMINAL) {
-            slot.session = session;
+            slot.session.set(session);
           }
           return slot;
         });
@@ -259,7 +259,7 @@ public class InMemoryStreamSessionRepository implements RuntimeStreamSessionRegi
     if (slot == null || slot.state == State.TERMINAL) {
       return Optional.empty();
     }
-    return Optional.ofNullable(slot.session);
+    return Optional.ofNullable(slot.session.get());
   }
 
   @Override
@@ -268,9 +268,8 @@ public class InMemoryStreamSessionRepository implements RuntimeStreamSessionRegi
     slots.computeIfPresent(
         sessionId,
         (_, slot) -> {
-          removed.set(slot.session);
+          removed.set(slot.session.getAndSet(null));
           slot.state = State.TERMINAL;
-          slot.session = null;
           slot.runtimeStopped = true;
           slot.reclaimRequested = true;
           return reclaimable(slot) ? null : slot;
@@ -283,7 +282,7 @@ public class InMemoryStreamSessionRepository implements RuntimeStreamSessionRegi
     return Collections.unmodifiableList(
         slots.values().stream()
             .filter(slot -> slot.state != State.TERMINAL)
-            .map(slot -> slot.session)
+            .map(slot -> slot.session.get())
             .filter(java.util.Objects::nonNull)
             .toList());
   }
@@ -301,7 +300,7 @@ public class InMemoryStreamSessionRepository implements RuntimeStreamSessionRegi
     slot.inFlight--;
     slot.starters--;
     if (slot.starters == 0) {
-      slot.startersDrained.complete(null);
+      slot.startersDrained.get().complete(null);
     }
   }
 

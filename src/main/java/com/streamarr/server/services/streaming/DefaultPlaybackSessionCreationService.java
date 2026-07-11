@@ -66,18 +66,20 @@ public class DefaultPlaybackSessionCreationService implements PlaybackSessionCre
         throw new SessionNotFoundException(streamSessionId);
       }
 
-      if (!transactionRetry.execute(
-          () ->
-              lifecycleTransactions.activate(
-                  authority, streamingProperties.provisioningTimeout()))) {
+      if (!Boolean.TRUE.equals(
+          transactionRetry.execute(
+              () ->
+                  lifecycleTransactions.activate(
+                      authority, streamingProperties.provisioningTimeout())))) {
         throw new SessionNotFoundException(streamSessionId);
       }
 
       var playbackToken =
           playbackTokenIssuer.issue(
               command.sourceIdentity(), session, playbackTokenValidity(session));
-      if (!transactionRetry.execute(
-          () -> lifecycleTransactions.completeCreation(streamSessionId))) {
+      if (!Boolean.TRUE.equals(
+          transactionRetry.execute(
+              () -> lifecycleTransactions.completeCreation(streamSessionId)))) {
         throw new SessionNotFoundException(streamSessionId);
       }
 
