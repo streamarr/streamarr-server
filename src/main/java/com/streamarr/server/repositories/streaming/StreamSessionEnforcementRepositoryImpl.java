@@ -17,6 +17,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
@@ -136,25 +137,42 @@ public class StreamSessionEnforcementRepositoryImpl implements StreamSessionEnfo
 
   @Override
   public Optional<Instant> touchIfPlaybackRequestMatches(PlaybackRequestAuthority authority) {
-    var statementTimestamp =
-        DSL.function(DSL.name("statement_timestamp"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    var requestMatches =
+        STREAM_SESSION
+            .ID
+            .eq(authority.streamSessionId())
+            .and(STREAM_SESSION.STATUS.eq(StreamSessionStatus.ACTIVE))
+            .and(STREAM_SESSION.AUTH_SESSION_ID.eq(authority.authSessionId()))
+            .and(STREAM_SESSION.ACCOUNT_ID.eq(authority.accountId()))
+            .and(STREAM_SESSION.HOUSEHOLD_ID.eq(authority.householdId()))
+            .and(STREAM_SESSION.PROFILE_ID.eq(authority.profileId()))
+            .andExists(
+                liveIdentityAuthority(
+                    authority.authSessionId(),
+                    authority.accountId(),
+                    authority.householdId(),
+                    authority.profileId()))
+            .andExists(mediaSource(STREAM_SESSION.MEDIA_FILE_ID));
+    return monotonicTouch(requestMatches);
+  }
+
+  @Override
+  public Optional<Instant> touchIfActiveAndOwnedBy(UUID streamSessionId, UUID profileId) {
+    var activeOwnership =
+        STREAM_SESSION
+            .ID
+            .eq(streamSessionId)
+            .and(STREAM_SESSION.PROFILE_ID.eq(profileId))
+            .and(STREAM_SESSION.STATUS.eq(StreamSessionStatus.ACTIVE));
+    return monotonicTouch(activeOwnership);
+  }
+
+  private Optional<Instant> monotonicTouch(Condition authorityMatches) {
     return dsl.update(STREAM_SESSION)
         .set(
             STREAM_SESSION.LAST_ACCESSED_AT,
-            DSL.greatest(STREAM_SESSION.LAST_ACCESSED_AT, statementTimestamp))
-        .where(STREAM_SESSION.ID.eq(authority.streamSessionId()))
-        .and(STREAM_SESSION.STATUS.eq(StreamSessionStatus.ACTIVE))
-        .and(STREAM_SESSION.AUTH_SESSION_ID.eq(authority.authSessionId()))
-        .and(STREAM_SESSION.ACCOUNT_ID.eq(authority.accountId()))
-        .and(STREAM_SESSION.HOUSEHOLD_ID.eq(authority.householdId()))
-        .and(STREAM_SESSION.PROFILE_ID.eq(authority.profileId()))
-        .andExists(
-            liveIdentityAuthority(
-                authority.authSessionId(),
-                authority.accountId(),
-                authority.householdId(),
-                authority.profileId()))
-        .andExists(mediaSource(STREAM_SESSION.MEDIA_FILE_ID))
+            DSL.greatest(STREAM_SESSION.LAST_ACCESSED_AT, statementTimestamp()))
+        .where(authorityMatches)
         .returning(STREAM_SESSION.LAST_ACCESSED_AT)
         .fetchOptional(STREAM_SESSION.LAST_ACCESSED_AT)
         .map(java.time.OffsetDateTime::toInstant);

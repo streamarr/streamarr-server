@@ -40,6 +40,12 @@ public class TransactionalStreamSessionLifecycle implements StreamSessionLifecyc
   }
 
   @Override
+  @Transactional(propagation = Propagation.MANDATORY)
+  public Optional<Instant> touchIfActiveAndOwnedBy(UUID streamSessionId, UUID profileId) {
+    return repository.touchIfActiveAndOwnedBy(streamSessionId, profileId);
+  }
+
+  @Override
   @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
   public List<UUID> findTerminatingIds(int limit) {
     return repository.findTerminatingIds(limit);

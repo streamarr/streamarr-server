@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming.local;
 
 import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.server.services.streaming.CommittedStreamSessionTimeline;
 import com.streamarr.server.services.streaming.RuntimeSessionReservation;
 import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
 import com.streamarr.server.services.streaming.RuntimeTranscodeStart;
@@ -232,6 +233,20 @@ public class InMemoryStreamSessionRepository implements RuntimeStreamSessionRegi
           var session = slot.session.get();
           if (session != null && accessedAt.isAfter(session.getLastAccessedAt())) {
             session.setLastAccessedAt(accessedAt);
+          }
+          return slot;
+        });
+  }
+
+  @Override
+  public void mirrorCommittedTimeline(CommittedStreamSessionTimeline timeline) {
+    slots.computeIfPresent(
+        timeline.streamSessionId(),
+        (_, slot) -> {
+          var session = slot.session.get();
+          if (session != null) {
+            session.mirrorCommittedPlaybackState(
+                timeline.positionSeconds(), timeline.state(), timeline.accessedAt());
           }
           return slot;
         });

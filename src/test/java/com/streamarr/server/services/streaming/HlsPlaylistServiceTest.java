@@ -432,7 +432,8 @@ class HlsPlaylistServiceTest {
   void shouldKeepTheFullSegmentCountWhenPlaybackAdvances() {
     // The playlist timeline is absolute: 120s / 6s = 20 segments, always.
     var session = createSession(ContainerFormat.MPEGTS, TranscodeMode.FULL_TRANSCODE, 120);
-    session.updatePlaybackState(90, PlaybackState.PLAYING);
+    session.mirrorCommittedPlaybackState(
+        90, PlaybackState.PLAYING, session.getPlaybackSnapshot().accessedAt());
 
     var playlist = service.generateMediaPlaylist(session, "test-token");
 

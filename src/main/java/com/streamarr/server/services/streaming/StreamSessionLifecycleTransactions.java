@@ -18,6 +18,8 @@ public interface StreamSessionLifecycleTransactions {
 
   Optional<Instant> touchIfPlaybackRequestMatches(PlaybackRequestAuthority authority);
 
+  Optional<Instant> touchIfActiveAndOwnedBy(UUID streamSessionId, UUID profileId);
+
   List<UUID> findTerminatingIds(int limit);
 
   List<UUID> findTerminatingIdsAfter(UUID afterId, int limit);

@@ -8,9 +8,11 @@ import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.repositories.streaming.SaveWatchProgress;
 import com.streamarr.server.repositories.streaming.SessionProgressRepository;
+import com.streamarr.server.services.streaming.StreamSessionLifecycleTransactions;
 import com.streamarr.server.services.streaming.StreamSessionRepository;
 import com.streamarr.server.services.watchprogress.events.ItemWatchedEvent;
 import com.streamarr.server.services.watchprogress.events.SessionProgressChangedEvent;
+import com.streamarr.server.services.watchprogress.events.StreamSessionTimelineCommittedEvent;
 import java.time.Instant;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +31,7 @@ public class SessionProgressService {
   private final MediaFileRepository mediaFileRepository;
   private final WatchProgressProperties properties;
   private final WatchStatusService watchStatusService;
+  private final StreamSessionLifecycleTransactions lifecycleTransactions;
   private final ApplicationEventPublisher eventPublisher;
 
   @Transactional
@@ -52,24 +55,36 @@ public class SessionProgressService {
       throw new SessionNotFoundException(sessionId);
     }
 
-    session.updatePlaybackState(positionSeconds, state);
+    var committedAccess =
+        lifecycleTransactions
+            .touchIfActiveAndOwnedBy(sessionId, profileId)
+            .orElseThrow(() -> new SessionNotFoundException(sessionId));
 
     var durationSeconds = (int) session.getMediaProbe().duration().toSeconds();
-    if (durationSeconds <= 0) {
-      return;
+    if (durationSeconds > 0) {
+      var percentComplete = Math.min(positionSeconds * 100.0 / durationSeconds, 100.0);
+      var context =
+          new PlaybackContext(
+              sessionId,
+              session.getMediaFileId(),
+              positionSeconds,
+              percentComplete,
+              durationSeconds);
+
+      if (state == PlaybackState.STOPPED) {
+        handleStoppedPlayback(profileId, context);
+      } else {
+        persistProgress(profileId, context, state);
+      }
     }
 
-    var percentComplete = Math.min(positionSeconds * 100.0 / durationSeconds, 100.0);
-    var context =
-        new PlaybackContext(
-            sessionId, session.getMediaFileId(), positionSeconds, percentComplete, durationSeconds);
-
-    if (state == PlaybackState.STOPPED) {
-      handleStoppedPlayback(profileId, context);
-      return;
-    }
-
-    persistProgress(profileId, context, state);
+    eventPublisher.publishEvent(
+        StreamSessionTimelineCommittedEvent.builder()
+            .sessionId(sessionId)
+            .positionSeconds(positionSeconds)
+            .state(state)
+            .accessedAt(committedAccess)
+            .build());
   }
 
   private record PlaybackContext(

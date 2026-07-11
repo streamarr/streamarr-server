@@ -106,7 +106,8 @@ class InMemoryStreamSessionRepositoryTest {
     var session = StreamSessionFixture.buildMpegtsSession();
     repository.save(session);
 
-    session.updatePlaybackState(300, PlaybackState.PLAYING);
+    session.mirrorCommittedPlaybackState(
+        300, PlaybackState.PLAYING, session.getPlaybackSnapshot().accessedAt());
     repository.save(session);
 
     assertThat(repository.count()).isEqualTo(1);

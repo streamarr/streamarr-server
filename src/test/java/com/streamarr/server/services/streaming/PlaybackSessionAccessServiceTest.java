@@ -134,6 +134,11 @@ class PlaybackSessionAccessServiceTest {
     }
 
     @Override
+    public Optional<Instant> touchIfActiveAndOwnedBy(UUID streamSessionId, UUID profileId) {
+      throw unexpectedDatabaseAccess();
+    }
+
+    @Override
     public List<UUID> findTerminatingIds(int limit) {
       throw unexpectedDatabaseAccess();
     }

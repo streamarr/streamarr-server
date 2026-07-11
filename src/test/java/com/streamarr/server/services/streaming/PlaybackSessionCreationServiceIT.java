@@ -1742,6 +1742,11 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
     }
 
     @Override
+    public Optional<Instant> touchIfActiveAndOwnedBy(UUID streamSessionId, UUID profileId) {
+      return delegate.touchIfActiveAndOwnedBy(streamSessionId, profileId);
+    }
+
+    @Override
     public List<UUID> findTerminatingIds(int limit) {
       return delegate.findTerminatingIds(limit);
     }

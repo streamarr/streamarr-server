@@ -27,7 +27,10 @@ import com.streamarr.server.fakes.FakeWatchHistoryRepository;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.services.watchprogress.events.ItemWatchedEvent;
 import com.streamarr.server.services.watchprogress.events.SessionProgressChangedEvent;
+import com.streamarr.server.services.watchprogress.events.StreamSessionTimelineCommittedEvent;
 import com.streamarr.server.services.watchprogress.events.WatchStatusChangedEvent;
+import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
@@ -82,6 +85,7 @@ class SessionProgressServiceTest {
             mediaFileRepository,
             properties,
             watchStatusService,
+            new TimelineLifecycleTransactions(),
             eventPublisher);
   }
 
@@ -109,25 +113,33 @@ class SessionProgressServiceTest {
   class TimelineReporting {
 
     @Test
-    @DisplayName("Should update session snapshot position when timeline reported")
-    void shouldUpdateSessionSnapshotPositionWhenTimelineReported() {
+    @DisplayName("Should publish committed timeline position when timeline reported")
+    void shouldPublishCommittedTimelinePositionWhenTimelineReported() {
       var session = addSession();
 
       service.reportStreamSessionTimeline(
           PROFILE_ID, session.getSessionId(), 300, PlaybackState.PLAYING);
 
-      assertThat(session.getPlaybackSnapshot().positionSeconds()).isEqualTo(300);
+      var events = eventPublisher.getEventsOfType(StreamSessionTimelineCommittedEvent.class);
+      assertThat(events)
+          .singleElement()
+          .extracting(StreamSessionTimelineCommittedEvent::sessionId)
+          .isEqualTo(session.getSessionId());
+      assertThat(events.getFirst().positionSeconds()).isEqualTo(300);
     }
 
     @Test
-    @DisplayName("Should update session snapshot state when timeline reported")
-    void shouldUpdateSessionSnapshotStateWhenTimelineReported() {
+    @DisplayName("Should publish committed timeline state and access when timeline reported")
+    void shouldPublishCommittedTimelineStateAndAccessWhenTimelineReported() {
       var session = addSession();
 
       service.reportStreamSessionTimeline(
           PROFILE_ID, session.getSessionId(), 300, PlaybackState.PAUSED);
 
-      assertThat(session.getPlaybackSnapshot().state()).isEqualTo(PlaybackState.PAUSED);
+      var event =
+          eventPublisher.getEventsOfType(StreamSessionTimelineCommittedEvent.class).getFirst();
+      assertThat(event.state()).isEqualTo(PlaybackState.PAUSED);
+      assertThat(event.accessedAt()).isEqualTo(Instant.parse("2026-07-11T00:00:00Z"));
     }
 
     @Test
@@ -201,8 +213,8 @@ class SessionProgressServiceTest {
     }
 
     @Test
-    @DisplayName("Should return early when duration is zero")
-    void shouldReturnEarlyWhenDurationIsZero() {
+    @DisplayName("Should publish runtime timeline without progress when duration is zero")
+    void shouldPublishRuntimeTimelineWithoutProgressWhenDurationIsZero() {
       var session = StreamSessionFixture.zeroDurationSessionBuilder().profileId(PROFILE_ID).build();
       sessionRepository.save(session);
 
@@ -210,6 +222,10 @@ class SessionProgressServiceTest {
           PROFILE_ID, session.getSessionId(), 300, PlaybackState.PLAYING);
 
       assertThat(sessionProgressRepository.count()).isZero();
+      assertThat(eventPublisher.getEventsOfType(StreamSessionTimelineCommittedEvent.class))
+          .singleElement()
+          .extracting(StreamSessionTimelineCommittedEvent::sessionId)
+          .isEqualTo(session.getSessionId());
     }
 
     @Test
@@ -238,6 +254,8 @@ class SessionProgressServiceTest {
           .isInstanceOf(SessionNotFoundException.class);
 
       assertThat(sessionProgressRepository.count()).isZero();
+      assertThat(eventPublisher.getEventsOfType(StreamSessionTimelineCommittedEvent.class))
+          .isEmpty();
     }
 
     @Test
@@ -540,6 +558,8 @@ class SessionProgressServiceTest {
 
       assertThat(eventPublisher.getEventsOfType(SessionProgressChangedEvent.class)).isEmpty();
       assertThat(eventPublisher.getEventsOfType(ItemWatchedEvent.class)).isEmpty();
+      assertThat(eventPublisher.getEventsOfType(StreamSessionTimelineCommittedEvent.class))
+          .hasSize(1);
     }
   }
 
@@ -755,5 +775,15 @@ class SessionProgressServiceTest {
             .build();
     sessionRepository.save(session);
     return session;
+  }
+
+  private static final class TimelineLifecycleTransactions
+      extends com.streamarr.server.services.streaming
+          .UnsupportedStreamSessionLifecycleTransactions {
+
+    @Override
+    public Optional<Instant> touchIfActiveAndOwnedBy(UUID streamSessionId, UUID profileId) {
+      return Optional.of(Instant.parse("2026-07-11T00:00:00Z"));
+    }
   }
 }

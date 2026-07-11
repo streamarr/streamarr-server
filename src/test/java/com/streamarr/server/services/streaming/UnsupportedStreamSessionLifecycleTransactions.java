@@ -31,6 +31,11 @@ public class UnsupportedStreamSessionLifecycleTransactions
   }
 
   @Override
+  public Optional<Instant> touchIfActiveAndOwnedBy(UUID streamSessionId, UUID profileId) {
+    throw unsupported();
+  }
+
+  @Override
   public List<UUID> findTerminatingIds(int limit) {
     throw unsupported();
   }

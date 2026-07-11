@@ -41,9 +41,13 @@ public class StreamSession {
     return profileId != null && profileId.equals(candidateProfileId);
   }
 
-  public void updatePlaybackState(int positionSeconds, PlaybackState state) {
+  public void mirrorCommittedPlaybackState(
+      int positionSeconds, PlaybackState state, Instant accessedAt) {
     playbackSnapshot.updateAndGet(
-        current -> new PlaybackSnapshot(positionSeconds, state, Instant.now()));
+        current ->
+            accessedAt.isBefore(current.accessedAt())
+                ? current
+                : new PlaybackSnapshot(positionSeconds, state, accessedAt));
   }
 
   public PlaybackSnapshot getPlaybackSnapshot() {

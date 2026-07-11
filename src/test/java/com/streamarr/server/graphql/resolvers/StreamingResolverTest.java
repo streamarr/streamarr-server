@@ -568,7 +568,7 @@ class StreamingResolverTest {
   private static class NoopSessionProgressService extends SessionProgressService {
 
     NoopSessionProgressService() {
-      super(null, null, null, null, null, null);
+      super(null, null, null, null, null, null, null);
     }
 
     @Override
@@ -596,6 +596,11 @@ class StreamingResolverTest {
     @Override
     public Optional<Instant> touchIfPlaybackRequestMatches(PlaybackRequestAuthority authority) {
       return Optional.empty();
+    }
+
+    @Override
+    public Optional<Instant> touchIfActiveAndOwnedBy(UUID streamSessionId, UUID profileId) {
+      return Optional.of(Instant.EPOCH);
     }
 
     @Override
