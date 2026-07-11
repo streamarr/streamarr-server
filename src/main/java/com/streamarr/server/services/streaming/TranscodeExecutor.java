@@ -10,6 +10,9 @@ public interface TranscodeExecutor {
 
   void stop(UUID sessionId);
 
+  /** Final process-level shutdown drain after per-session graceful stops have been attempted. */
+  void forceStopAll();
+
   boolean isRunning(UUID sessionId);
 
   boolean isRunning(UUID sessionId, String variantLabel);

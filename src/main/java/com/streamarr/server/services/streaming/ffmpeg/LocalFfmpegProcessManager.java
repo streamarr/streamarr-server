@@ -78,6 +78,40 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
     }
   }
 
+  @Override
+  public void forceStopAll() {
+    var failures = new java.util.ArrayList<RuntimeException>();
+    for (var entry : List.copyOf(processes.entrySet())) {
+      try {
+        forceStop(entry.getKey(), entry.getValue());
+      } catch (RuntimeException exception) {
+        failures.add(exception);
+      }
+    }
+    if (!failures.isEmpty()) {
+      throw failures.getFirst();
+    }
+  }
+
+  private void forceStop(ProcessKey key, ManagedProcess managed) {
+    try {
+      if (managed.process().isAlive()) {
+        managed.process().destroyForcibly();
+        if (!managed.process().waitFor(GRACEFUL_SHUTDOWN_SECONDS, TimeUnit.SECONDS)) {
+          throw new TranscodeException(TranscodeException.GENERIC_MESSAGE);
+        }
+      }
+    } catch (InterruptedException exception) {
+      Thread.currentThread().interrupt();
+      throw new TranscodeException(TranscodeException.GENERIC_MESSAGE, exception);
+    } finally {
+      if (!managed.process().isAlive()) {
+        managed.drainer().close();
+        processes.remove(key, managed);
+      }
+    }
+  }
+
   private void shutdownManagedProcess(ManagedProcess managed, UUID sessionId) {
     if (managed == null) {
       return;

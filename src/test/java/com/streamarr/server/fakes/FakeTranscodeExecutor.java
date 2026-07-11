@@ -19,6 +19,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   private final Set<ProcessKey> started = new HashSet<>();
   private final Set<UUID> stopped = new HashSet<>();
   private final List<TranscodeRequest> startedRequests = new ArrayList<>();
+  private int forceStopAllAttempts;
 
   @Override
   public TranscodeHandle start(TranscodeRequest request) {
@@ -33,6 +34,12 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   public void stop(UUID sessionId) {
     running.removeIf(key -> key.sessionId().equals(sessionId));
     stopped.add(sessionId);
+  }
+
+  @Override
+  public void forceStopAll() {
+    forceStopAllAttempts++;
+    running.clear();
   }
 
   @Override
@@ -66,6 +73,10 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     return running.size();
   }
 
+  public int getForceStopAllAttempts() {
+    return forceStopAllAttempts;
+  }
+
   public void markDead(UUID sessionId) {
     running.removeIf(key -> key.sessionId().equals(sessionId));
   }
@@ -83,5 +94,6 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     started.clear();
     stopped.clear();
     startedRequests.clear();
+    forceStopAllAttempts = 0;
   }
 }

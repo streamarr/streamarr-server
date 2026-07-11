@@ -119,6 +119,40 @@ class HlsStreamingServiceTest {
   }
 
   @Test
+  @DisplayName("Should reject runtime creation when reservation attachment is refused")
+  void shouldRejectRuntimeCreationWhenReservationAttachmentIsRefused() {
+    var file = seedMediaFile();
+    var streamSessionId = UUID.randomUUID();
+    var rejectingRegistry = new RejectingAttachRegistry();
+    var reservation = rejectingRegistry.reserve(streamSessionId).orElseThrow();
+    var rejectingService = createService(transcodeExecutor, rejectingRegistry);
+
+    assertThatThrownBy(
+            () ->
+                rejectingService.createSession(
+                    runtimeCreationCommand(streamSessionId, file.getId(), reservation)))
+        .isInstanceOf(com.streamarr.server.exceptions.SessionNotFoundException.class);
+    assertThat(transcodeExecutor.getStarted()).doesNotContain(streamSessionId);
+  }
+
+  @Test
+  @DisplayName("Should reject runtime creation when transcode startup cannot begin")
+  void shouldRejectRuntimeCreationWhenTranscodeStartupCannotBegin() {
+    var file = seedMediaFile();
+    var streamSessionId = UUID.randomUUID();
+    var rejectingRegistry = new RejectingTranscodeStartRegistry();
+    var reservation = rejectingRegistry.reserve(streamSessionId).orElseThrow();
+    var rejectingService = createService(transcodeExecutor, rejectingRegistry);
+
+    assertThatThrownBy(
+            () ->
+                rejectingService.createSession(
+                    runtimeCreationCommand(streamSessionId, file.getId(), reservation)))
+        .isInstanceOf(com.streamarr.server.exceptions.SessionNotFoundException.class);
+    assertThat(transcodeExecutor.getStarted()).doesNotContain(streamSessionId);
+  }
+
+  @Test
   @DisplayName("Should fence a reserved session before runtime shutdown returns")
   void shouldFenceReservedSessionBeforeRuntimeShutdownReturns() {
     var streamSessionId = UUID.randomUUID();
@@ -176,6 +210,67 @@ class HlsStreamingServiceTest {
     assertThat(blockingExecutor.isRunning(streamSessionId)).isFalse();
   }
 
+  @Test
+  @DisplayName("Should isolate a stop failure while shutting down runtime sessions")
+  void shouldIsolateStopFailureWhileShuttingDownRuntimeSessions() {
+    var shutdownExecutor = new SelectiveStopFailureTranscodeExecutor();
+    var shutdownRegistry = new OrderedFenceRegistry();
+    var shutdownService = createService(shutdownExecutor, shutdownRegistry);
+    var failingSession =
+        RuntimeStreamSessionTestDriver.create(
+            shutdownService,
+            shutdownRegistry,
+            seedMediaFile().getId(),
+            UUID.randomUUID(),
+            defaultOptions());
+    var healthySession =
+        RuntimeStreamSessionTestDriver.create(
+            shutdownService,
+            shutdownRegistry,
+            seedMediaFile().getId(),
+            UUID.randomUUID(),
+            defaultOptions());
+    shutdownExecutor.failStopping(failingSession.getSessionId());
+    shutdownRegistry.fenceInOrder(failingSession.getSessionId(), healthySession.getSessionId());
+
+    assertThatNoException().isThrownBy(shutdownService::shutdownRuntime);
+
+    assertThat(shutdownExecutor.isRunning(healthySession.getSessionId())).isFalse();
+    assertThat(shutdownExecutor.isRunning(failingSession.getSessionId())).isFalse();
+    assertThat(shutdownExecutor.getStopped()).contains(healthySession.getSessionId());
+    assertThat(shutdownExecutor.getForceStopAllAttempts()).isEqualTo(1);
+    assertThat(shutdownService.getAllSessions()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should retain failed late startup bookkeeping when its stop fails")
+  void shouldRetainFailedLateStartupBookkeepingWhenItsStopFails() {
+    var file = seedMediaFile();
+    var streamSessionId = UUID.randomUUID();
+    var rejectingRegistry = new RejectingCompletedStartRegistry();
+    var reservation = rejectingRegistry.reserve(streamSessionId).orElseThrow();
+    var failingExecutor = new StopFailureTranscodeExecutor();
+    var rejectingService = createService(failingExecutor, rejectingRegistry);
+
+    assertThatThrownBy(
+            () ->
+                rejectingService.createSession(
+                    runtimeCreationCommand(streamSessionId, file.getId(), reservation)))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("stop failed");
+
+    rejectingRegistry.releaseReservation(reservation);
+    assertThat(rejectingRegistry.releaseTerminal(streamSessionId)).isFalse();
+    assertThat(rejectingRegistry.reserve(streamSessionId)).isEmpty();
+    assertThat(failingExecutor.isRunning(streamSessionId)).isTrue();
+
+    assertThat(rejectingService.terminateRuntime(streamSessionId)).isTrue();
+    assertThat(failingExecutor.isRunning(streamSessionId)).isFalse();
+    var replacement = rejectingRegistry.reserve(streamSessionId);
+    assertThat(replacement).isPresent();
+    rejectingRegistry.releaseReservation(replacement.orElseThrow());
+  }
+
   private HlsStreamingService createService(
       TranscodeExecutor executor, RuntimeStreamSessionRegistry repository) {
     return new HlsStreamingService(
@@ -199,6 +294,18 @@ class HlsStreamingServiceTest {
     return StreamingOptions.builder()
         .quality(VideoQuality.AUTO)
         .supportedCodecs(List.of("h264"))
+        .build();
+  }
+
+  private CreateRuntimeStreamSessionCommand runtimeCreationCommand(
+      UUID streamSessionId, UUID mediaFileId, RuntimeSessionReservation reservation) {
+    return CreateRuntimeStreamSessionCommand.builder()
+        .streamSessionId(streamSessionId)
+        .mediaFileId(mediaFileId)
+        .profileId(UUID.randomUUID())
+        .options(defaultOptions())
+        .initialLastAccessedAt(Instant.now())
+        .reservation(reservation)
         .build();
   }
 
@@ -1078,6 +1185,11 @@ class HlsStreamingServiceTest {
     }
 
     @Override
+    public void forceStopAll() {
+      delegate.forceStopAll();
+    }
+
+    @Override
     public boolean isRunning(UUID sessionId) {
       return delegate.isRunning(sessionId);
     }
@@ -1100,6 +1212,77 @@ class HlsStreamingServiceTest {
         throw new IllegalStateException(
             "Interrupted while controlling transcode startup", exception);
       }
+    }
+  }
+
+  private static final class RejectingAttachRegistry extends FakeStreamSessionRepository {
+
+    @Override
+    public boolean attach(RuntimeSessionReservation reservation, StreamSession session) {
+      return false;
+    }
+  }
+
+  private static final class RejectingTranscodeStartRegistry extends FakeStreamSessionRepository {
+
+    @Override
+    public java.util.Optional<RuntimeTranscodeStart> beginTranscodeStart(UUID sessionId) {
+      return java.util.Optional.empty();
+    }
+  }
+
+  private static final class SelectiveStopFailureTranscodeExecutor extends FakeTranscodeExecutor {
+
+    private UUID failingSessionId;
+
+    void failStopping(UUID sessionId) {
+      failingSessionId = sessionId;
+    }
+
+    @Override
+    public void stop(UUID sessionId) {
+      if (sessionId.equals(failingSessionId)) {
+        throw new IllegalStateException("stop failed");
+      }
+      super.stop(sessionId);
+    }
+  }
+
+  private static final class OrderedFenceRegistry extends FakeStreamSessionRepository {
+
+    private List<UUID> fenceOrder = List.of();
+
+    private void fenceInOrder(UUID first, UUID second) {
+      fenceOrder = List.of(first, second);
+    }
+
+    @Override
+    public java.util.Collection<UUID> fenceAll() {
+      super.fenceAll();
+      return fenceOrder;
+    }
+  }
+
+  private static final class RejectingCompletedStartRegistry extends FakeStreamSessionRepository {
+
+    @Override
+    public boolean completeTranscodeStart(RuntimeTranscodeStart start) {
+      terminalize(start.sessionId());
+      return super.completeTranscodeStart(start);
+    }
+  }
+
+  private static final class StopFailureTranscodeExecutor extends FakeTranscodeExecutor {
+
+    private boolean failNextStop = true;
+
+    @Override
+    public void stop(UUID sessionId) {
+      if (failNextStop) {
+        failNextStop = false;
+        throw new IllegalStateException("stop failed");
+      }
+      super.stop(sessionId);
     }
   }
 }

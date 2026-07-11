@@ -123,6 +123,20 @@ class LocalTranscodeExecutorTest {
   }
 
   @Test
+  @DisplayName("Should force stop every transcode during final shutdown drain")
+  void shouldForceStopEveryTranscodeDuringFinalShutdownDrain() {
+    var first = createRequest(TranscodeMode.FULL_TRANSCODE, "h264");
+    var second = createRequest(TranscodeMode.FULL_TRANSCODE, "h264");
+    executor.start(first);
+    executor.start(second);
+
+    executor.forceStopAll();
+
+    assertThat(executor.isRunning(first.sessionId())).isFalse();
+    assertThat(executor.isRunning(second.sessionId())).isFalse();
+  }
+
+  @Test
   @DisplayName("Should report running when session is active")
   void shouldReportRunningWhenSessionIsActive() {
     var request = createRequest(TranscodeMode.FULL_TRANSCODE, "h264");

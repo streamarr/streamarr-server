@@ -135,6 +135,31 @@ class LocalFfmpegProcessManagerTest {
   }
 
   @Test
+  @DisplayName("Should forcibly drain every tracked process during final shutdown")
+  void shouldForciblyDrainEveryTrackedProcessDuringFinalShutdown() {
+    var firstSessionId = UUID.randomUUID();
+    var secondSessionId = UUID.randomUUID();
+    var first =
+        manager.startProcess(
+            firstSessionId, StreamSession.defaultVariant(), List.of("sleep", "30"), tempDir);
+    var second =
+        manager.startProcess(
+            secondSessionId, StreamSession.defaultVariant(), List.of("sleep", "30"), tempDir);
+
+    try {
+      manager.forceStopAll();
+
+      assertThat(first.isAlive()).isFalse();
+      assertThat(second.isAlive()).isFalse();
+      assertThat(manager.isRunning(firstSessionId)).isFalse();
+      assertThat(manager.isRunning(secondSessionId)).isFalse();
+    } finally {
+      manager.stopProcess(firstSessionId);
+      manager.stopProcess(secondSessionId);
+    }
+  }
+
+  @Test
   @DisplayName("Should report running for specific variant")
   void shouldReportRunningForSpecificVariant() {
     var sessionId = UUID.randomUUID();

@@ -123,6 +123,7 @@ public class HlsStreamingService implements StreamingService {
       sessionRepository.awaitTranscodeStarts(sessionId);
       stopForShutdown(sessionId);
     }
+    transcodeExecutor.forceStopAll();
   }
 
   private void stopForShutdown(UUID sessionId) {

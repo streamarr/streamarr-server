@@ -50,6 +50,11 @@ public class LocalTranscodeExecutor implements TranscodeExecutor {
   }
 
   @Override
+  public void forceStopAll() {
+    processManager.forceStopAll();
+  }
+
+  @Override
   public boolean isRunning(UUID sessionId) {
     return processManager.isRunning(sessionId);
   }
