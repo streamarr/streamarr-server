@@ -1848,13 +1848,10 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
         .accountId(source.accountId())
         .role(source.role())
         .sessionId(source.sessionId())
-        .sessionVersion(source.sessionVersion())
         .scope(com.streamarr.server.services.auth.TokenScope.PLAYBACK)
         .householdId(source.householdId())
         .householdRole(source.householdRole())
-        .membershipVersion(source.membershipVersion())
         .profileId(source.profileId())
-        .policyVersion(source.policyVersion())
         .streamSessionId(candidateStreamSessionId)
         .build();
   }
@@ -1865,13 +1862,10 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
         .accountId(source.accountId())
         .role(source.role())
         .sessionId(sessionId)
-        .sessionVersion(source.sessionVersion())
         .scope(source.scope())
         .householdId(source.householdId())
         .householdRole(source.householdRole())
-        .membershipVersion(source.membershipVersion())
         .profileId(profileId)
-        .policyVersion(source.policyVersion())
         .streamSessionId(source.streamSessionId())
         .build();
   }
@@ -1956,7 +1950,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
     private boolean observedActiveAuthority;
 
     private ObservingFailingPlaybackTokenIssuer(StreamSessionStateProbe stateProbe) {
-      super(null, null, null);
+      super(null, null);
       this.stateProbe = stateProbe;
     }
 

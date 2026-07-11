@@ -1176,7 +1176,6 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
             tokenProperties,
             pastClock,
             membershipRepository,
-            profileRepository,
             accountProfileRepository);
 
     return pastIssuer

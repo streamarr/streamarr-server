@@ -35,7 +35,7 @@ public class AuthTestSupportConfig {
         refreshTokenService,
         accessTokenIssuer,
         AuthTestSupport.expiredIssuer(
-            tokenProperties, membershipRepository, profileRepository, accountProfileRepository),
+            tokenProperties, membershipRepository, accountProfileRepository),
         passwordEncoder);
   }
 }

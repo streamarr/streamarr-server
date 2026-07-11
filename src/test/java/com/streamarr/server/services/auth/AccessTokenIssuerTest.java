@@ -61,7 +61,6 @@ class AccessTokenIssuerTest {
           properties,
           Clock.systemUTC(),
           membershipRepository,
-          profileRepository,
           accountProfileRepository);
 
   @Test
@@ -75,19 +74,15 @@ class AccessTokenIssuerTest {
             .sessionVersion(7)
             .build();
     var householdId = UUID.randomUUID();
-    var membership =
-        membershipRepository.grantMembership(
-            HouseholdMembership.builder()
-                .accountId(account.getId())
-                .householdId(householdId)
-                .householdRole(HouseholdRole.OWNER)
-                .build());
+    membershipRepository.grantMembership(
+        HouseholdMembership.builder()
+            .accountId(account.getId())
+            .householdId(householdId)
+            .householdRole(HouseholdRole.OWNER)
+            .build());
     var profile =
         profileRepository.save(
-            ProfileFixture.defaultProfileBuilder()
-                .householdId(householdId)
-                .policyVersion(5)
-                .build());
+            ProfileFixture.defaultProfileBuilder().householdId(householdId).build());
     accountProfileRepository.save(
         AccountProfile.builder()
             .accountId(account.getId())
@@ -111,16 +106,13 @@ class AccessTokenIssuerTest {
     assertThat(decoded.getSubject()).isEqualTo(account.getId().toString());
     assertThat(decoded.getClaimAsString(TokenClaims.SESSION_ID))
         .isEqualTo(session.getId().toString());
-    assertThat(decoded.<Long>getClaim(TokenClaims.SESSION_VERSION)).isEqualTo(7L);
     assertThat(decoded.getClaimAsString(TokenClaims.SCOPE)).isEqualTo("profile");
     assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ID))
         .isEqualTo(householdId.toString());
     assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ROLE)).isEqualTo("OWNER");
-    assertThat(decoded.<Long>getClaim(TokenClaims.MEMBERSHIP_VERSION))
-        .isEqualTo(membership.version());
     assertThat(decoded.getClaimAsString(TokenClaims.PROFILE_ID))
         .isEqualTo(profile.getId().toString());
-    assertThat(decoded.<Long>getClaim(TokenClaims.POLICY_VERSION)).isEqualTo(5L);
+    assertThat(decoded.getClaims()).doesNotContainKeys("sv", "mv", "pv");
     assertThat(decoded.getClaimAsString(TokenClaims.ROLE)).isEqualTo("USER");
     assertThat(Duration.between(decoded.getIssuedAt(), decoded.getExpiresAt()))
         .isEqualTo(properties.accessTokenTtl());
@@ -215,7 +207,6 @@ class AccessTokenIssuerTest {
         properties,
         Clock.fixed(now, ZoneOffset.UTC),
         membershipRepository,
-        profileRepository,
         accountProfileRepository);
   }
 
@@ -236,13 +227,12 @@ class AccessTokenIssuerTest {
     var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
     var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
     var householdId = UUID.randomUUID();
-    var membership =
-        membershipRepository.grantMembership(
-            HouseholdMembership.builder()
-                .accountId(account.getId())
-                .householdId(householdId)
-                .householdRole(HouseholdRole.PARENT)
-                .build());
+    membershipRepository.grantMembership(
+        HouseholdMembership.builder()
+            .accountId(account.getId())
+            .householdId(householdId)
+            .householdRole(HouseholdRole.PARENT)
+            .build());
 
     var token =
         issuer.issue(
@@ -259,8 +249,7 @@ class AccessTokenIssuerTest {
     assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ID))
         .isEqualTo(householdId.toString());
     assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ROLE)).isEqualTo("PARENT");
-    assertThat(decoded.<Long>getClaim(TokenClaims.MEMBERSHIP_VERSION))
-        .isEqualTo(membership.version());
+    assertThat(decoded.getClaims()).doesNotContainKey("mv");
     assertThat(decoded.getClaimAsString(TokenClaims.PROFILE_ID)).isNull();
   }
 
@@ -315,38 +304,6 @@ class AccessTokenIssuerTest {
     assertThatThrownBy(contextBuilder::build)
         .isInstanceOf(NullPointerException.class)
         .hasMessage("session");
-  }
-
-  @Test
-  @DisplayName("Should reject profile token when profile row missing")
-  void shouldRejectProfileTokenWhenProfileRowMissing() {
-    var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
-    var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
-    var householdId = UUID.randomUUID();
-    var missingProfileId = UUID.randomUUID();
-    membershipRepository.grantMembership(
-        HouseholdMembership.builder()
-            .accountId(account.getId())
-            .householdId(householdId)
-            .householdRole(HouseholdRole.OWNER)
-            .build());
-    accountProfileRepository.save(
-        AccountProfile.builder()
-            .accountId(account.getId())
-            .householdId(householdId)
-            .profileId(missingProfileId)
-            .build());
-
-    var context =
-        TokenContext.builder()
-            .account(account)
-            .session(session)
-            .householdId(householdId)
-            .profileId(missingProfileId)
-            .build();
-
-    assertThatThrownBy(() -> issuer.issue(context))
-        .isInstanceOf(ProfileAccessDeniedException.class);
   }
 
   private NimbusJwtDecoder buildDecoder() {

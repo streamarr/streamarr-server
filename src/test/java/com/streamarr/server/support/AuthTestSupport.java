@@ -129,7 +129,6 @@ public class AuthTestSupport {
   static AccessTokenIssuer expiredIssuer(
       AuthTokenProperties properties,
       HouseholdMembershipRepository membershipRepository,
-      ProfileRepository profileRepository,
       AccountProfileRepository accountProfileRepository) {
     var cryptoConfig = new TokenCryptoConfig();
     // Rewind past the configured TTL so the minted token is expired even when
@@ -143,7 +142,6 @@ public class AuthTestSupport {
         properties,
         pastClock,
         membershipRepository,
-        profileRepository,
         accountProfileRepository);
   }
 
