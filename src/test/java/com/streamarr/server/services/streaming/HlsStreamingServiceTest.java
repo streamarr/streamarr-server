@@ -251,11 +251,9 @@ class HlsStreamingServiceTest {
     var reservation = rejectingRegistry.reserve(streamSessionId).orElseThrow();
     var failingExecutor = new StopFailureTranscodeExecutor();
     var rejectingService = createService(failingExecutor, rejectingRegistry);
+    var command = runtimeCreationCommand(streamSessionId, file.getId(), reservation);
 
-    assertThatThrownBy(
-            () ->
-                rejectingService.createSession(
-                    runtimeCreationCommand(streamSessionId, file.getId(), reservation)))
+    assertThatThrownBy(() -> rejectingService.createSession(command))
         .isInstanceOf(IllegalStateException.class)
         .hasMessage("stop failed");
 

@@ -75,15 +75,16 @@ class StreamSessionTransactionRetryTest {
   @DisplayName("Should preserve interrupt status when default retry backoff is interrupted")
   void shouldPreserveInterruptStatusWhenDefaultRetryBackoffIsInterrupted() {
     Thread.currentThread().interrupt();
+    var retry = new StreamSessionTransactionRetry();
+    var retryableFailure = databaseFailure("40P01");
 
     try {
       assertThatThrownBy(
               () ->
-                  new StreamSessionTransactionRetry()
-                      .execute(
-                          () -> {
-                            throw databaseFailure("40P01");
-                          }))
+                  retry.execute(
+                      () -> {
+                        throw retryableFailure;
+                      }))
           .isInstanceOf(IllegalStateException.class)
           .hasMessage("Interrupted during stream transaction retry")
           .hasCauseInstanceOf(InterruptedException.class);
