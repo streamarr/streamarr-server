@@ -388,26 +388,28 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
   @DisplayName("Should reject a scan when library deletion is pending")
   void shouldRejectScanWhenLibraryDeletionIsPending() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
-    deletionTransactions.prepareLibraryDeletion(library.getId());
+    var libraryId = library.getId();
+    deletionTransactions.prepareLibraryDeletion(libraryId);
 
-    assertThatThrownBy(() -> libraryManagementService.scanLibrary(library.getId()))
+    assertThatThrownBy(() -> libraryManagementService.scanLibrary(libraryId))
         .isInstanceOf(LibraryNotFoundException.class)
-        .hasMessageContaining(library.getId().toString());
+        .hasMessageContaining(libraryId.toString());
 
-    assertThat(intentExists("library_deletion_intent", "library_id", library.getId())).isTrue();
+    assertThat(intentExists("library_deletion_intent", "library_id", libraryId)).isTrue();
   }
 
   @Test
   @DisplayName("Should reject a refresh when library deletion is pending")
   void shouldRejectRefreshWhenLibraryDeletionIsPending() {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
-    deletionTransactions.prepareLibraryDeletion(library.getId());
+    var libraryId = library.getId();
+    deletionTransactions.prepareLibraryDeletion(libraryId);
 
-    assertThatThrownBy(() -> libraryManagementService.refreshLibrary(library.getId()))
+    assertThatThrownBy(() -> libraryManagementService.refreshLibrary(libraryId))
         .isInstanceOf(LibraryNotFoundException.class)
-        .hasMessageContaining(library.getId().toString());
+        .hasMessageContaining(libraryId.toString());
 
-    assertThat(intentExists("library_deletion_intent", "library_id", library.getId())).isTrue();
+    assertThat(intentExists("library_deletion_intent", "library_id", libraryId)).isTrue();
   }
 
   @Test
@@ -473,9 +475,10 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
         .isEmpty();
 
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
-    assertThatThrownBy(() -> deletionTransactions.resumeLibraryDeletion(library.getId()))
+    var libraryId = library.getId();
+    assertThatThrownBy(() -> deletionTransactions.resumeLibraryDeletion(libraryId))
         .isInstanceOf(LibraryNotFoundException.class);
-    assertThat(deletionTransactions.finalizeLibraryDeletion(library.getId())).isFalse();
+    assertThat(deletionTransactions.finalizeLibraryDeletion(libraryId)).isFalse();
 
     var movie =
         movieRepository.saveAndFlush(
@@ -484,14 +487,14 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
         mediaFileRepository.saveAllAndFlush(
             List.of(
                 MediaFile.builder()
-                    .libraryId(library.getId())
+                    .libraryId(libraryId)
                     .mediaId(movie.getId())
                     .filepathUri("file:///stale-deletion/first.mkv")
                     .filename("first.mkv")
                     .status(MediaFileStatus.MATCHED)
                     .build(),
                 MediaFile.builder()
-                    .libraryId(library.getId())
+                    .libraryId(libraryId)
                     .mediaId(movie.getId())
                     .filepathUri("file:///stale-deletion/second.mkv")
                     .filename("second.mkv")

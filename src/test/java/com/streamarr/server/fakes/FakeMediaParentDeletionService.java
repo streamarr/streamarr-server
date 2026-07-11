@@ -1,6 +1,7 @@
 package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.LibraryStatus;
+import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.exceptions.LibraryRefreshInProgressException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
@@ -54,7 +55,7 @@ public class FakeMediaParentDeletionService implements MediaParentDeletionServic
         mediaFileIds.stream().flatMap(id -> mediaFileRepository.findById(id).stream()).toList();
     var collectableIds =
         mediaFiles.stream()
-            .map(file -> file.getMediaId())
+            .map(MediaFile::getMediaId)
             .filter(java.util.Objects::nonNull)
             .collect(Collectors.toSet());
     mediaFileRepository.deleteAll(mediaFiles);
