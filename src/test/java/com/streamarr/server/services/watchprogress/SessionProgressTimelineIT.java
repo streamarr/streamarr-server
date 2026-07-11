@@ -165,21 +165,18 @@ class SessionProgressTimelineIT extends AbstractIntegrationTest {
   @DisplayName("Should reject runtime session when durable session is missing")
   void shouldRejectRuntimeSessionWhenDurableSessionIsMissing() {
     var fixture = activeTimelineFixture();
+    var profileId = identity.profile().getId();
+    var streamSessionId = fixture.runtime().getSessionId();
     var initialSnapshot = fixture.runtime().getPlaybackSnapshot();
-    dsl.deleteFrom(STREAM_SESSION)
-        .where(STREAM_SESSION.ID.eq(fixture.runtime().getSessionId()))
-        .execute();
+    dsl.deleteFrom(STREAM_SESSION).where(STREAM_SESSION.ID.eq(streamSessionId)).execute();
 
     assertThatThrownBy(
             () ->
                 service.reportStreamSessionTimeline(
-                    identity.profile().getId(),
-                    fixture.runtime().getSessionId(),
-                    300,
-                    PlaybackState.PLAYING))
+                    profileId, streamSessionId, 300, PlaybackState.PLAYING))
         .isInstanceOf(SessionNotFoundException.class);
 
-    assertThat(progressRepository.findBySessionId(fixture.runtime().getSessionId())).isEmpty();
+    assertThat(progressRepository.findBySessionId(streamSessionId)).isEmpty();
     assertThat(fixture.runtime().getPlaybackSnapshot()).isEqualTo(initialSnapshot);
   }
 
@@ -187,41 +184,37 @@ class SessionProgressTimelineIT extends AbstractIntegrationTest {
   @DisplayName("Should reject timeline when durable session belongs to another profile")
   void shouldRejectTimelineWhenDurableSessionBelongsToAnotherProfile() {
     var fixture = timelineFixture(StreamSessionStatus.ACTIVE, alternateProfileId, INITIAL_ACCESS);
+    var profileId = identity.profile().getId();
+    var streamSessionId = fixture.runtime().getSessionId();
     var initialSnapshot = fixture.runtime().getPlaybackSnapshot();
 
     assertThatThrownBy(
             () ->
                 service.reportStreamSessionTimeline(
-                    identity.profile().getId(),
-                    fixture.runtime().getSessionId(),
-                    300,
-                    PlaybackState.PLAYING))
+                    profileId, streamSessionId, 300, PlaybackState.PLAYING))
         .isInstanceOf(SessionNotFoundException.class);
 
-    assertThat(durableAccess(fixture.runtime().getSessionId())).isEqualTo(INITIAL_ACCESS);
-    assertThat(progressRepository.findBySessionId(fixture.runtime().getSessionId())).isEmpty();
+    assertThat(durableAccess(streamSessionId)).isEqualTo(INITIAL_ACCESS);
+    assertThat(progressRepository.findBySessionId(streamSessionId)).isEmpty();
     assertThat(fixture.runtime().getPlaybackSnapshot()).isEqualTo(initialSnapshot);
   }
 
   @Test
   @DisplayName("Should reject timeline when durable session is not active")
   void shouldRejectTimelineWhenDurableSessionIsNotActive() {
-    var fixture =
-        timelineFixture(
-            StreamSessionStatus.PROVISIONING, identity.profile().getId(), INITIAL_ACCESS);
+    var profileId = identity.profile().getId();
+    var fixture = timelineFixture(StreamSessionStatus.PROVISIONING, profileId, INITIAL_ACCESS);
+    var streamSessionId = fixture.runtime().getSessionId();
     var initialSnapshot = fixture.runtime().getPlaybackSnapshot();
 
     assertThatThrownBy(
             () ->
                 service.reportStreamSessionTimeline(
-                    identity.profile().getId(),
-                    fixture.runtime().getSessionId(),
-                    300,
-                    PlaybackState.PLAYING))
+                    profileId, streamSessionId, 300, PlaybackState.PLAYING))
         .isInstanceOf(SessionNotFoundException.class);
 
-    assertThat(durableAccess(fixture.runtime().getSessionId())).isEqualTo(INITIAL_ACCESS);
-    assertThat(progressRepository.findBySessionId(fixture.runtime().getSessionId())).isEmpty();
+    assertThat(durableAccess(streamSessionId)).isEqualTo(INITIAL_ACCESS);
+    assertThat(progressRepository.findBySessionId(streamSessionId)).isEmpty();
     assertThat(fixture.runtime().getPlaybackSnapshot()).isEqualTo(initialSnapshot);
   }
 
@@ -269,10 +262,11 @@ class SessionProgressTimelineIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should require an outer transaction for owned timeline touch")
   void shouldRequireOuterTransactionForOwnedTimelineTouch() {
+    var streamSessionId = UUID.randomUUID();
+    var profileId = identity.profile().getId();
+
     assertThatThrownBy(
-            () ->
-                lifecycleTransactions.touchIfActiveAndOwnedBy(
-                    UUID.randomUUID(), identity.profile().getId()))
+            () -> lifecycleTransactions.touchIfActiveAndOwnedBy(streamSessionId, profileId))
         .isInstanceOf(IllegalTransactionStateException.class);
   }
 
