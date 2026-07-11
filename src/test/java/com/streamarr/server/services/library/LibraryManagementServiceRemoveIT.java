@@ -71,6 +71,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.bean.override.convention.TestBean;
+import org.springframework.transaction.IllegalTransactionStateException;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Isolated
 @Tag("IntegrationTest")
@@ -108,6 +111,10 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
   @Autowired private MediaParentDeletionRetryWorker deletionRetryWorker;
 
   @Autowired private MediaParentDeletionTransactions deletionTransactions;
+
+  @Autowired private MediaParentDeletionService mediaParentDeletionService;
+
+  @Autowired private PlatformTransactionManager transactionManager;
 
   @Autowired private AuthTestSupport authTestSupport;
 
@@ -147,6 +154,30 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
     movieRepository.deleteAll();
     libraryRepository.deleteAll();
     FAKE_EXECUTOR.reset();
+  }
+
+  @Test
+  @DisplayName("Should reject media parent mutations inside ambient transactions")
+  void shouldRejectMediaParentMutationsInsideAmbientTransactions() {
+    var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+
+    assertRejectsAmbientTransaction(
+        () -> mediaParentDeletionService.deleteLibrary(library.getId()));
+    assertRejectsAmbientTransaction(
+        () -> mediaParentDeletionService.resumeLibraryDeletion(library.getId()));
+    assertRejectsAmbientTransaction(
+        () -> mediaParentDeletionService.deleteMediaFiles(library.getId(), Set.of()));
+    assertRejectsAmbientTransaction(
+        () -> mediaParentDeletionService.resumeMediaFileDeletion(UUID.randomUUID()));
+
+    assertThat(libraryRepository.findById(library.getId())).isPresent();
+    assertThat(intentExists("library_deletion_intent", "library_id", library.getId())).isFalse();
+  }
+
+  private void assertRejectsAmbientTransaction(Runnable mutation) {
+    var transaction = new TransactionTemplate(transactionManager);
+    assertThatThrownBy(() -> transaction.executeWithoutResult(_ -> mutation.run()))
+        .isInstanceOf(IllegalTransactionStateException.class);
   }
 
   @Test

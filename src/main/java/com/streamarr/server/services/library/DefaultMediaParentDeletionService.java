@@ -6,6 +6,8 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 @Slf4j
 @Service
@@ -16,21 +18,25 @@ public class DefaultMediaParentDeletionService implements MediaParentDeletionSer
   private final StreamSessionCleanup streamCleanup;
 
   @Override
+  @Transactional(propagation = Propagation.NEVER)
   public void deleteLibrary(UUID libraryId) {
     finish(transactions.prepareLibraryDeletion(libraryId));
   }
 
   @Override
+  @Transactional(propagation = Propagation.NEVER)
   public void resumeLibraryDeletion(UUID libraryId) {
     finish(transactions.resumeLibraryDeletion(libraryId));
   }
 
   @Override
+  @Transactional(propagation = Propagation.NEVER)
   public void deleteMediaFiles(UUID libraryId, Set<UUID> mediaFileIds) {
     finish(transactions.prepareMediaFileDeletions(libraryId, mediaFileIds));
   }
 
   @Override
+  @Transactional(propagation = Propagation.NEVER)
   public void resumeMediaFileDeletion(UUID mediaFileId) {
     finish(transactions.resumeMediaFileDeletion(mediaFileId));
   }
