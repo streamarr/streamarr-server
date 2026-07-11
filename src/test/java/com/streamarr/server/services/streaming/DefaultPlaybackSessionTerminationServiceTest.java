@@ -4,9 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.fixtures.StreamSessionFixture;
-import com.streamarr.server.repositories.streaming.MediaStreamTermination;
-import com.streamarr.server.repositories.streaming.PlaybackRequestAuthority;
-import com.streamarr.server.repositories.streaming.StreamSessionAuthority;
 import com.streamarr.server.repositories.streaming.StreamSessionTermination;
 import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRepository;
 import java.sql.SQLException;
@@ -15,7 +12,6 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -83,7 +79,8 @@ class DefaultPlaybackSessionTerminationServiceTest {
     }
   }
 
-  private static final class RecordingLifecycle implements StreamSessionLifecycleTransactions {
+  private static final class RecordingLifecycle
+      extends UnsupportedStreamSessionLifecycleTransactions {
 
     private final boolean terminalizationFails;
     private final List<StreamSessionTermination> terminations = new ArrayList<>();
@@ -102,73 +99,6 @@ class DefaultPlaybackSessionTerminationServiceTest {
       }
       terminations.add(termination);
       return true;
-    }
-
-    @Override
-    public Optional<Instant> admit(
-        StreamSessionAuthority authority, java.time.Duration provisioningTimeout) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public boolean activate(
-        StreamSessionAuthority authority, java.time.Duration provisioningTimeout) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public Optional<Instant> touchIfPlaybackRequestMatches(PlaybackRequestAuthority authority) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public List<UUID> findTerminatingIds(int limit) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public List<UUID> findTerminatingIdsAfter(UUID afterId, int limit) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public List<UUID> terminalizeByMediaFiles(MediaStreamTermination termination) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public List<UUID> terminalizeMissingMediaSources(Instant terminalAt) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public boolean recordTerminationIntent(StreamSessionTermination termination) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public List<StreamSessionTermination> findTerminationIntents() {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public boolean completeCreation(UUID streamSessionId) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public boolean replayTerminationIntent(UUID streamSessionId) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public boolean deleteTerminationIntent(UUID streamSessionId) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public boolean deleteTerminating(UUID streamSessionId) {
-      throw new UnsupportedOperationException();
     }
   }
 }

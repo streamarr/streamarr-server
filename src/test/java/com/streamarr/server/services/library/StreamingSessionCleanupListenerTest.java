@@ -5,16 +5,12 @@ import static org.assertj.core.api.Assertions.assertThatNoException;
 
 import com.streamarr.server.domain.streaming.StreamSessionTerminalReason;
 import com.streamarr.server.repositories.streaming.MediaStreamTermination;
-import com.streamarr.server.repositories.streaming.PlaybackRequestAuthority;
-import com.streamarr.server.repositories.streaming.StreamSessionAuthority;
-import com.streamarr.server.repositories.streaming.StreamSessionTermination;
 import com.streamarr.server.services.library.events.LibraryRemovedEvent;
-import com.streamarr.server.services.streaming.StreamSessionLifecycleTransactions;
+import com.streamarr.server.services.streaming.UnsupportedStreamSessionLifecycleTransactions;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -80,7 +76,7 @@ class StreamingSessionCleanupListenerTest {
   }
 
   private static final class FakeLifecycleTransactions
-      implements StreamSessionLifecycleTransactions {
+      extends UnsupportedStreamSessionLifecycleTransactions {
 
     private MediaStreamTermination termination;
     private List<UUID> affectedStreamIds = List.of();
@@ -97,73 +93,6 @@ class StreamingSessionCleanupListenerTest {
         throw new IllegalStateException("simulated terminalization failure");
       }
       return affectedStreamIds;
-    }
-
-    @Override
-    public List<UUID> terminalizeMissingMediaSources(Instant terminalAt) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public Optional<Instant> admit(
-        StreamSessionAuthority authority, java.time.Duration provisioningTimeout) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public boolean activate(
-        StreamSessionAuthority authority, java.time.Duration provisioningTimeout) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public Optional<Instant> touchIfPlaybackRequestMatches(PlaybackRequestAuthority authority) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public List<UUID> findTerminatingIds(int limit) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public List<UUID> findTerminatingIdsAfter(UUID afterId, int limit) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public boolean terminalize(StreamSessionTermination requestedTermination) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public boolean recordTerminationIntent(StreamSessionTermination requestedTermination) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public List<StreamSessionTermination> findTerminationIntents() {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public boolean completeCreation(UUID streamSessionId) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public boolean replayTerminationIntent(UUID streamSessionId) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public boolean deleteTerminationIntent(UUID streamSessionId) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public boolean deleteTerminating(UUID streamSessionId) {
-      throw new UnsupportedOperationException();
     }
   }
 }

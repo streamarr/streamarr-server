@@ -3,16 +3,12 @@ package com.streamarr.server.services.streaming;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.streaming.StreamSessionTerminalReason;
-import com.streamarr.server.repositories.streaming.MediaStreamTermination;
-import com.streamarr.server.repositories.streaming.PlaybackRequestAuthority;
-import com.streamarr.server.repositories.streaming.StreamSessionAuthority;
 import com.streamarr.server.repositories.streaming.StreamSessionTermination;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.IntStream;
@@ -188,7 +184,8 @@ class TerminatingStreamSessionCleanupWorkerTest {
     }
   }
 
-  private static final class CleanupLifecycle implements StreamSessionLifecycleTransactions {
+  private static final class CleanupLifecycle
+      extends UnsupportedStreamSessionLifecycleTransactions {
 
     private final List<UUID> terminatingIds;
     private final boolean reconciliationFails;
@@ -231,28 +228,6 @@ class TerminatingStreamSessionCleanupWorkerTest {
     }
 
     @Override
-    public Optional<Instant> admit(
-        StreamSessionAuthority authority, java.time.Duration provisioningTimeout) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public boolean activate(
-        StreamSessionAuthority authority, java.time.Duration provisioningTimeout) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public Optional<Instant> touchIfPlaybackRequestMatches(PlaybackRequestAuthority authority) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public List<UUID> terminalizeByMediaFiles(MediaStreamTermination termination) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
     public List<UUID> terminalizeMissingMediaSources(Instant terminalAt) {
       reconciliationAttempts++;
       if (reconciliationFails) {
@@ -281,11 +256,6 @@ class TerminatingStreamSessionCleanupWorkerTest {
     }
 
     @Override
-    public boolean completeCreation(UUID streamSessionId) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
     public boolean replayTerminationIntent(UUID streamSessionId) {
       replayAttemptedIds.add(streamSessionId);
       if (failingReplayIds.contains(streamSessionId)) {
@@ -299,11 +269,6 @@ class TerminatingStreamSessionCleanupWorkerTest {
     public boolean deleteTerminationIntent(UUID streamSessionId) {
       return terminationIntents.removeIf(
           termination -> termination.streamSessionId().equals(streamSessionId));
-    }
-
-    @Override
-    public boolean deleteTerminating(UUID streamSessionId) {
-      throw new UnsupportedOperationException();
     }
   }
 }
