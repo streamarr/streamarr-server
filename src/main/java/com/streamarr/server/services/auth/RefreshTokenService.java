@@ -46,7 +46,7 @@ public class RefreshTokenService {
 
   @Transactional
   public IssuedRefreshToken createSession(UserAccount account, String deviceName) {
-    return createSession(
+    return createSessionInternal(
         CreateAuthSessionCommand.builder()
             .accountId(account.getId())
             .deviceName(deviceName)
@@ -55,6 +55,10 @@ public class RefreshTokenService {
 
   @Transactional
   public IssuedRefreshToken createSession(CreateAuthSessionCommand command) {
+    return createSessionInternal(command);
+  }
+
+  private IssuedRefreshToken createSessionInternal(CreateAuthSessionCommand command) {
     var session =
         sessionRepository.save(
             AuthSession.builder()
