@@ -8,7 +8,7 @@ Accepted
 
 * Issue #213's version counters are retired. Access and playback tokens no longer carry `sv`, `mv`, or `pv`; the validation/cache/listener pipeline and its database columns are removed.
 * The persisted playback-enforcement lifecycle in link:0017-playback-enforcement-lifecycle.adoc[ADR 0017] and atomic authorization-session revocation are implemented. Its joint stream-session/authorization-session authority is playback's sole revocation channel.
-* Distributed transcoding topology A (issue #76) is the recommended direction, not ratified; a future ADR 0018 decides the transport.
+* link:0018-direct-fenced-worker-control.adoc[ADR 0018] accepts topology A and direct mTLS gRPC for optional distributed transcoding; the remote path is not implemented or enabled yet.
 
 == Context
 
@@ -77,7 +77,7 @@ Playback tokens are not exempt from mandatory expiry: they carry a concrete `exp
 
 Signing keys are configuration: rotation starts issuing with a new key while old keys remain verification-only until every token they signed has expired, which short access-token TTLs keep brief.
 Tokens are signed asymmetrically (ES256, P-256), each carrying its key's RFC 7638 thumbprint as `kid`: only the media server holds the private key, and verifiers need public keys only.
-This is defense-in-depth and optionality rather than a present operational requirement: the recommended segment-serving topology for the transcode split (issue #76, topology A) proxies segments through the API server, so transcode workers never verify a playback token — but keeping the minting key private to the media server preserves worker-as-verifier and edge-verifier topologies without ever placing a signing secret beside FFmpeg and untrusted media.
+This is defense-in-depth and optionality rather than a present operational requirement: link:0018-direct-fenced-worker-control.adoc[ADR 0018]'s accepted topology A proxies segments through the API server, so transcode workers never verify a playback token — but keeping the minting key private to the media server preserves worker-as-verifier and edge-verifier topologies without ever placing a signing secret beside FFmpeg and untrusted media.
 Symmetric HMAC signing would be simpler and equivalent in a single process; it was set aside to keep those topologies open.
 A public key is never sufficient authorization, though: signature-plus-expiry checking alone cannot see revocation — for playback that authority is the stream-session row and authorization session together (link:0017-playback-enforcement-lifecycle.adoc[ADR 0017]), so any future external verifier must check that joint authority or be handed short-lived signed URLs that encode the check.
 The public verification keys are served at `/.well-known/jwks.json` (revisiting an earlier deferral: shipping ES256 without its discovery surface left the design incomplete, and the endpoint is pure public data).
@@ -198,6 +198,7 @@ Explicitly deferred from v1:
 
 * link:0015-authorization-profiles-and-content-controls.adoc[ADR 0015: Authorization, Profiles, and Content Controls]
 * link:0017-playback-enforcement-lifecycle.adoc[ADR 0017: Persisted Playback-Enforcement Lifecycle]
+* link:0018-direct-fenced-worker-control.adoc[ADR 0018: Direct, Fenced Worker Control]
 * https://github.com/streamarr/streamarr-server/issues/41[Issue #41: Authentication & User Management]
 * https://github.com/streamarr/streamarr-server/issues/163[Issue #163: Replace placeholder user ID with authenticated user from Spring Security]
 * https://github.com/streamarr/streamarr-server/issues/211[Issue #211: Persist stream sessions in PostgreSQL]

@@ -8,7 +8,7 @@ Accepted
 
 * Persisted admission and locked activation, the per-request gate, runtime terminal fencing, first-wins terminalization, leased compensation, durable cleanup retry, media-parent deletion choreography, timeline integration, retention reaping, and restart reconciliation are implemented.
 * Atomic authorization-session revocation is integrated and issue #213's version counters are retired. The joint stream-session/authorization-session authority is the sole playback revocation channel.
-* The single-streaming-instance boundary holds until the distributed control plane (issue #76); `PROVISIONING` here is a local admission state, not #76's distributed capacity reservation.
+* The single-streaming-instance boundary holds until link:0018-direct-fenced-worker-control.adoc[ADR 0018]'s accepted distributed control plane is implemented; `PROVISIONING` here is local admission, not a projected or physical worker-capacity claim.
 * Media-deletion choreography and its restrictive foreign key are one invariant: authoritative parent deletion cannot bypass terminal cleanup.
 
 == Context
@@ -106,7 +106,7 @@ Graceful runtime shutdown drops only process-local directory registrations; it p
 * Every lifecycle transition is a conditional statement; read-check-write sequences in Java are structurally excluded.
 * Cleanup is durable: crash windows between terminalization, teardown, and deletion are covered by the retained `TERMINATING` row and periodic retry.
 * Parent deletion becomes choreography rather than cascade — future account/profile/grant management must route through it.
-* The single-instance boundary is explicit; the distributed control plane extends this machine (owner, generation, leases) rather than replacing it.
+* The single-instance boundary is explicit; ADR 0018 extends this machine with an exact owner, generation, durable command intent, and desired-versus-observed reconciliation rather than replacing it.
 
 == Rejected Alternatives
 
@@ -115,12 +115,13 @@ Graceful runtime shutdown drops only process-local directory registrations; it p
 * Admission serialized against revocation with `SELECT … FOR SHARE` on the auth session before the grant check — manually reproduced as a PostgreSQL deadlock (`40P01`) with concurrent grant deletion; `FOR UPDATE` strengthens the same lock inversion. Admission is a conditional checkpoint; activation is the linearization point.
 * A generic durable save/upsert for the stream row — runtime saves after suspend/resume/relocate could resurrect revoked or deleted rows; only explicit conditional lifecycle operations exist.
 * `DELETE … RETURNING` with best-effort cleanup — deletion removes the only retry marker; the terminal state is retained until external teardown succeeds.
-* Distributed `RESERVED` semantics for local admission — #76's reservation is an atomic worker-capacity claim; local `PROVISIONING` claims no capacity, so the states are named differently on purpose.
+* Distributed physical-admission semantics for local admission — ADR 0018 splits projected control-plane capacity from atomic worker `StartJob` admission; local `PROVISIONING` claims neither.
 
 == References
 
 * link:0016-authentication-mechanisms-and-session-security.adoc[ADR 0016: Authentication Mechanisms and Session Security]
 * link:0013-stream-decision-architecture.adoc[ADR 0013: Stream Decision Architecture]
+* link:0018-direct-fenced-worker-control.adoc[ADR 0018: Direct, Fenced Worker Control]
 * https://github.com/streamarr/streamarr-server/issues/211[Issue #211: Persist stream sessions in PostgreSQL]
 * https://github.com/streamarr/streamarr-server/issues/213[Issue #213: Retire token version counters]
 * https://github.com/streamarr/streamarr-server/issues/76[Issue #76: Distributed transcoding control plane]

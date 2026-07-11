@@ -1,0 +1,385 @@
+= ADR 0018: Direct, Fenced Worker Control for Optional Distributed Transcoding
+
+== Status
+
+Accepted
+
+=== Implementation status
+
+* Streamarr still executes every transcode in the media-server process.
+* No remote worker, worker listener, certificate authority, registration path, or distributed playback route is enabled yet.
+* The implementation phases described here introduce the local application boundary before they introduce a remote transport.
+* Distributed playback remains disabled until the durable command lifecycle and topology-A segment gate are complete.
+
+== Context
+
+link:0004-processbuilder-over-jni.adoc[ADR 0004] keeps FFmpeg behind a process boundary, link:0013-stream-decision-architecture.adoc[ADR 0013] defines typed stream decisions, and link:0017-playback-enforcement-lifecycle.adoc[ADR 0017] makes the persisted stream row part of playback authority.
+The current `TranscodeExecutor` is still a process-shaped local interface: it starts one rendition at a time, carries host-local paths, exposes process health, and relies on caller-managed ordering.
+Those assumptions cannot safely express one complete adaptive ladder, an exact remote owner, an unknown RPC outcome, or a stale command arriving after relocation.
+
+Distributed transcoding is optional for a minority of self-hosted installations.
+Its default must therefore cost an ordinary installation no extra service, port, certificate, configuration, background thread, discovery work, or failure mode.
+Installations that enable it need a design that remains correct across control-plane replicas, worker restarts, lost responses, and partial network failure without giving workers Streamarr database or token-signing access.
+
+The evidence and rejected alternatives are recorded in:
+
+* link:../spikes/0018-artifact-and-runtime-footprint.adoc[Artifact and runtime footprint]
+* link:../spikes/0018-control-trust-and-capacity.adoc[Control trust and capacity]
+* link:../spikes/0018-segment-and-source-data-planes.adoc[Segment and source data planes]
+
+== Decision
+
+=== Local default and enablement gates
+
+Local execution remains the default adapter.
+When distributed configuration is absent, Streamarr creates no gRPC channel or server, starts no worker discovery or heartbeat task, opens no worker port, reads no worker certificate, and requires no broker or additional process.
+The server artifact may carry the gRPC/protobuf dependency overhead once the remote client lands, capped at a measured 15 MiB increase over the frozen baseline.
+Operational simplicity wins over publishing separate local and distributed media-server images.
+
+Enablement is staged:
+
+. Convert to the conventional reactor in a behavior-neutral, move-only Sonar preflight.
+. Extract a behavior-preserving local complete-ladder boundary and engine without remote execution.
+. Add the protobuf contract and compatibility checks without wiring a network path.
+. Add worker identity, registration, heartbeat, and observation without accepting mutating remote jobs.
+. Add the durable, fenced command lifecycle while distributed playback remains disabled.
+. Add the measured segment plane and topology-A playback gate, then enable remote assignment only after restart and failure-injection coverage passes.
+. Add deployment adapters and mixed-version hardening.
+
+=== Artifact and dependency boundary
+
+Use one repository and one conventional Maven reactor so the engine, schema, server adapters, and worker change atomically.
+Maven requires an aggregator to use `pom` packaging, so the root becomes the build parent and the existing application moves structurally into `streamarr-server/`.
+The first reactor shape is:
+
+----
+streamarr-transcode-engine
+  JDK-oriented execution model, FFmpeg planning/process lifecycle, local segments
+
+streamarr-transcode-contract
+  streamarr.transcode.v1 protobuf schema and generated gRPC transport types
+
+streamarr-server
+  application-owned TranscodeWorkerPort, local adapter, control plane, optional remote client
+
+streamarr-transcode-worker
+  narrow Spring Boot executable, engine adapter, gRPC server
+
+streamarr-coverage
+  build-only aggregate JaCoCo report
+----
+
+The server depends on the engine.
+It does not depend on the contract until a remote client adapter exists.
+The worker depends on the engine and contract, never the server.
+The engine never depends on Spring, JPA, Flyway, jOOQ, GraphQL, authentication, protobuf, or gRPC.
+The contract depends only on protobuf/gRPC schema runtimes.
+Build rules and architecture tests enforce those directions.
+
+Application records and ports remain outside generated protobuf code.
+The application-owned complete-ladder port lives in the server because it expresses the playback use case.
+Execution value types shared by the local server adapter and worker live in the engine.
+Server and worker transport adapters map those values to and from protobuf; the local adapter never serializes through protobuf.
+No separate application-API module is introduced until a second non-server application demonstrates that it removes rather than moves coupling.
+
+The worker is a narrow Spring Boot application using Boot 4.1's official gRPC server starter and shaded Netty.
+It uses environment-backed configuration, SSL bundles, deterministic lifecycle ownership, gRPC health, observability, and graceful shutdown.
+The measured worker-only cost is accepted because only distributed installations launch it and FFmpeg dominates their runtime load; reimplementing certificate, health, drain, and telemetry lifecycle by hand would create greater security and operations risk.
+The worker still excludes GraphQL, JPA, Flyway, jOOQ, authentication repositories, and the media-server application context.
+
+The structural move lands before behavior in its own draft pull request.
+If Sonar does not preserve moved-file lineage and reports the existing application as new code, stop that slice and resolve the structural-analysis policy explicitly; never hide the move with exclusions or adopt a permanently exceptional reactor merely to evade the tool.
+
+=== Complete-ladder worker boundary
+
+Introduce an application-owned `TranscodeWorkerPort` instead of extending the process-shaped
+`TranscodeExecutor` across a network boundary.
+One `StartJob` owns the complete requested variant ladder or publishes none of it.
+Every generation writes to worker-local staging that the segment gateway cannot resolve.
+Startup readiness requires every rendition process to remain alive and produce its required initialization/playlist artifacts plus the first playable segment.
+Only after every rendition reaches that point does the worker atomically publish the generation; a start failure compensates every process and discards staging.
+If one rendition later dies, the complete job fails and stops rather than silently serving a partial ladder; recovery chooses a new generation and may deliberately choose a different complete ladder.
+The local adapter preserves the same staging, readiness, publication, and compensation rule.
+One playback lifecycle fence surrounds the complete ladder, not one fence per FFmpeg process.
+
+The port accepts a typed `StartJobCommand` envelope containing:
+
+* `command_id` and the exact target `worker_id` and `boot_id` recorded with durable command intent;
+* a `TranscodeJobSpec` with `session_id`, `job_id`, monotonically increasing generation, one
+  portable `MediaSourceRef`, the complete typed rendition ladder and stream decisions, and bounded
+  execution and segment-output parameters.
+
+The command envelope owns delivery and fencing identity; the job specification owns execution
+intent and never contains transport retry state. `StopJobCommand` uses the same envelope identity
+with the exact job and generation. Read-only inspection names its target but has no command id.
+
+It returns typed admission and observation results.
+Inspection reports per-rendition state so the controller can still detect one dead member of a ladder.
+Every mutation carries target worker, target boot, `job_id`, and generation; a delayed old-boot start or stop is rejected and cannot affect a replacement.
+PID and `java.lang.Process` remain engine-local diagnostics.
+`forceStopAll` remains an engine/runtime shutdown operation and is never a remote method.
+
+=== Protobuf contract and compatibility
+
+Remote control uses protobuf package `streamarr.transcode.v1` over gRPC.
+The schema carries typed values, never `google.protobuf.Any`, embedded JSON, raw FFmpeg arguments, API-local `Path`, or process PID.
+Generated sources stay under Maven `target` directories and are not committed.
+Maven downloads pinned platform-specific `protoc` and grpc-java generators; developer-installed generators are not required.
+
+Evolution is additive within `v1`.
+Removed field names and numbers are reserved, unknown enum values are rejected at adapter boundaries, and compatibility ranges are advertised during registration.
+Buf format, lint, and breaking checks compare the proposed schema against the pull request's actual base revision.
+Generated sources are excluded from Sonar issue, duplication, and coverage analysis while the hand-written mappers remain covered.
+The protobuf service defines a typed `ReadSegment` request and bounded `SegmentChunk` stream after the byte-plane spike selected gRPC; media bytes remain data-plane payload while `MediaSourceRef` and every semantic command use the same versioned schema discipline.
+
+=== Service ownership and PostgreSQL
+
+The media-server control plane alone owns PostgreSQL.
+It stores desired job state, selected worker and generation, projected capacity, durable command intent and attempts, observations, and cleanup state.
+Workers receive no database credential and PostgreSQL is not their service API or message bus.
+
+Every mutation follows:
+
+----
+commit desired state + command intent
+  → dispatch after commit to the exact worker
+  → worker idempotently applies the exact generation
+  → record the observation
+  → reconcile desired versus observed state
+----
+
+The command row is the recovery record, not a promise of delivery.
+The dispatcher scans pending work after startup and on a bounded cadence.
+PostgreSQL `LISTEN/NOTIFY` may reduce wake-up latency inside the control plane, but notification loss cannot lose work and no worker consumes it.
+`SKIP LOCKED` coordinates dispatcher replicas only.
+
+Distributed job, command, and cleanup records are lifecycle authority, not cascade-owned children of a stream session, authorization session, media row, or worker registration.
+Parent or source deletion first terminalizes the exact job and writes its cleanup intent in the same transaction; restrictive deletion choreography preserves the identifiers needed to stop or quarantine the worker generation.
+Cleanup remains independently durable until the exact generation is acknowledged absent or authoritative boot cleanup proves it absent.
+A missing source never prevents stop or cleanup.
+Pending, unknown-outcome, and cleanup-bearing commands are never compacted.
+After acknowledged terminal cleanup and a bounded retry/reconciliation retention window, a command may compact to the smallest tombstone that still binds its command id, canonical digest, and result; compaction must not make a delayed duplicate executable again.
+
+=== Identity, connection direction, and discovery
+
+Direct mutual-TLS gRPC is the initial transport.
+Each worker runs one application-owned gRPC endpoint for job control and bounded segment streaming.
+The worker initiates registration and periodic heartbeat RPCs to the control plane and advertises that endpoint.
+The control plane validates the registration, dials the advertised endpoint, and accepts it only when the peer certificate names the same worker.
+The control plane then creates or reuses a channel for that exact worker; DNS or round-robin load balancing never chooses job ownership.
+
+Worker identity is stable across process restarts; `boot_id` is a new random UUID for every worker process.
+The installation UUID is the SPIFFE trust domain and the identity URI is:
+
+----
+spiffe://<installation-uuid>/streamarr/control/<control-node-id>
+spiffe://<installation-uuid>/streamarr/worker/<worker-id>
+----
+
+`boot_id` is process incarnation only and never enters the certificate identity.
+The URI SAN, registered `worker_id`, heartbeat identity, and advertised endpoint must agree.
+TLS validation always checks the installation chain, validity, EKU, revocation, and exact expected URI identity; using SPIFFE identity instead of DNS naming never disables certificate verification.
+An endpoint becomes ready only after the control plane dials it and a nonce proof returns the registered worker identity, `boot_id`, and certificate.
+The controller persists a binding epoch over worker, boot, endpoint, and certificate.
+A new `boot_id`, endpoint replacement, certificate replacement, revocation, or incompatible protocol advertisement advances that epoch and invalidates the old channel and observations.
+Reuse of the endpoint by another identity is rejected.
+
+The initial topology requires the media server to reach each worker's advertised endpoint.
+Workers behind outbound-only NAT, intermittently connected workers, and remote leaf sites are explicitly unsupported until the NATS escalation path is justified.
+Kubernetes discovery supplies candidate endpoints through an adapter, but never replaces application identity or exact-worker selection.
+
+=== Certificate bootstrap, rotation, and recovery
+
+Distributed mode provides a built-in private root and online issuing intermediate because administrator-provisioned PKI would dominate the operational cost for the intended home-server deployment.
+Administrator-provided certificates are a deferred adapter, not a second bootstrap path in the initial release.
+The worker and control-plane certificates use separate key pairs from access-token signing.
+
+The first bootstrap node creates one installation-scoped CA secret at a dedicated persistent path and records the installation id, public chain, and root fingerprint in PostgreSQL.
+Every control-plane replica mounts that same secret, verifies it against the recorded fingerprint, and refuses distributed startup on a missing or mismatched root; replicas never generate independent authorities.
+The private CA key is never stored in PostgreSQL, logged, exported through the API, reused for JWT signing, or copied to a worker.
+Backups of distributed configuration must include this secret; losing it requires explicitly re-enrolling workers under a new trust domain.
+Certificate issuance and issuer/root rotation use a PostgreSQL-backed singleton leadership lease so only one replica performs signing transitions at a time.
+
+An administrator mints a worker-specific 256-bit, single-use enrollment token whose digest and roughly ten-minute expiry are stored in PostgreSQL.
+The enrollment bundle contains the control endpoint, trust-bundle fingerprint, and token.
+The worker generates its private key locally, pins the supplied fingerprint before revealing the token, and submits a CSR containing its requested worker identity.
+The issuer ignores requested SAN authority and writes the worker identity bound to the grant.
+Issuance first durably claims the request and fixes its worker, public-key digest, serial, validity, and extensions; the leader signs without holding a database transaction, then atomically stores the certificate DER/chain and consumes the grant before returning any certificate.
+A retry after a lost response returns that stored certificate for the same request and key, while another key or worker is rejected; an expired in-progress claim may be safely re-signed from its fixed parameters because no certificate is delivered before the storing transaction commits.
+
+Worker certificates initially live seven days and rotate near half-life with jitter through an RPC authenticated by the current certificate; lifetime remains configurable after outage/recovery testing.
+Rotation permits a bounded overlap while the control plane replaces channels.
+Revocation marks the worker in authoritative control-plane state, rejects future registration/rotation, invalidates channels, and denies the certificate serial even before its natural expiry.
+Workers receive a signed revocation update so a revoked control certificate is denied per RPC without worker database access, including on an already-open channel.
+CA rotation and trust-domain replacement use explicit overlap and worker re-enrollment; they are never silent in-place key replacement.
+grpc-java credential-manager reload APIs are experimental, so live leaf reload, peer-identity verification, channel drain, and revocation are executable P5-B gates before remote mutation is enabled.
+
+=== Desired state, fencing, and idempotency
+
+`session_id` names Streamarr playback authority.
+`job_id` names one distributed execution for that session.
+Generation orders replacements of that job.
+`command_id` identifies one durable mutation attempt and is the idempotency key.
+`target_boot_id` binds that intent to one worker process and is checked before idempotency lookup or any side effect.
+
+Within one `boot_id`, the worker retains enough local job metadata to survive control-channel reconnects.
+For each job it atomically records the highest accepted generation and the result associated with each retained command id until control acknowledgement or terminal cleanup.
+Any command whose target worker or boot differs from the current process is rejected, even when the command id is unknown after restart.
+A lower generation is rejected.
+A duplicate command returns its prior result.
+The canonical mutation digest covers every envelope and specification field except `command_id`;
+reusing a command id with a different digest is rejected.
+The same job, generation, and spec under a new command id returns the existing allocation, while conflicting content is rejected rather than reinterpreted.
+A higher generation fences and cleans the prior generation before it can publish observable output.
+
+Idempotency state is boot-scoped rather than silently trusted across a process restart.
+Before allocation, the worker durably journals the boot, job, generation, unique staging/output directory, and `ADMITTING` state; after spawn it adds process-group/PID and process-start identity and retains the record through acknowledged cleanup.
+Supported deployment adapters also own the worker process tree through a container/cgroup or operating-system job boundary so worker exit terminates descendants.
+Before a new boot advertises ready, it scans the journal and managed output root, kills or quarantines every prior-boot process and segment directory, and fails readiness when it cannot prove cleanup; an `ADMITTING` record covers a crash between intent and complete process registration.
+The controller observes the new `boot_id` and creates fresh intent, normally at a higher generation; it never retargets an old-boot command.
+
+Start is all-or-nothing for the complete ladder.
+Stop is idempotent and succeeds when the exact generation is already absent.
+Terminal control-plane authority never transitions back to running from a late observation.
+Stale workers cannot publish observations, serve segments, or acknowledge cleanup for a replacement generation.
+
+=== Capacity has two authorities
+
+The control plane owns a transactionally consistent projected capacity claim across its replicas.
+The worker owns physical CPU/GPU admission.
+Neither authority claims what only the other can know.
+
+The control plane transaction creates a provisional desired assignment, projected claim keyed to worker and boot, and start-command intent carrying that same target.
+`StartJob` first rejects a mismatched target boot, then performs one atomic physical admission for the complete ladder and either accepts all required slots or starts nothing.
+There is no separate `ReserveJob` RPC in `v1`; the spike found no useful work that must occur between physical reservation and start, and an extra lease would add expiry and unknown-outcome states without increasing safety.
+
+On acceptance the controller records observed running state only after revalidating current authority.
+On rejection it releases the projected claim and may select another eligible worker.
+On timeout or connection loss, the result is unknown: the controller retries the same idempotent command against the same worker or inspects it before any reassignment.
+It never guesses that a timed-out start failed and starts the same generation elsewhere.
+
+=== RPC deadlines, retries, and reconciliation
+
+Every RPC has an explicit deadline.
+`StartJob` and `StopJob` are retryable only with the same command id, job id, worker id, target boot, and generation.
+Automatic retry is limited to transport failures that cannot change those fields; an exhausted call becomes unknown and enters reconciliation.
+Inspection, health, and list operations are read-only and may retry.
+Heartbeat is replaced by the next heartbeat rather than replayed.
+Enrollment retries only the same enrollment request id and public key so an unknown issuance outcome returns the same identity; another key requires a new grant.
+
+The worker reports supported protocol range, capabilities, drain state, `boot_id`, jobs, and per-rendition observations.
+The controller rejects incompatible ranges and does not assign new work to a draining worker.
+Control-plane restart reconstructs dispatch and reconciliation from PostgreSQL.
+Worker restart presents a new `boot_id`, finishes prior-boot quarantine before readiness, and cannot make an old or unrecognized job authoritative.
+
+grpc-java Netty owns HTTP/2 transport event loops.
+Application handlers run as blocking work on a dedicated virtual-thread-per-task executor and never block a Netty event loop.
+No reactive or actor domain model is introduced.
+
+=== Portable source data
+
+The first source adapter is a read-only shared mount.
+`MediaSourceRef` contains a logical library/mount id and a normalized relative key, never an absolute server path or URI.
+The media server derives it from the authoritative library root and media file.
+The worker maps the logical id to its configured local root.
+
+Both sides reject absolute keys, `..` traversal, normalization escape, and symbolic-link escape after resolving real paths.
+The worker opens the source read-only and FFmpeg never receives control-plane credentials.
+A ranged internal source endpoint and short-lived signed source URL are additive future adapters behind the same reference.
+Scan-time cached probe metadata remains the preferred way to remove API-side source probing from playback startup, but that storage change is outside this ADR's first implementation.
+
+=== Worker-local segments and topology A
+
+Segments stay worker-local.
+Clients continue to request every manifest, playlist, initialization segment, and media segment through Streamarr's existing playback gate:
+
+----
+client → Streamarr authoritative playback gate → selected worker → Streamarr → client
+----
+
+Workers receive neither playback JWTs, JWKS material, raw account credentials, nor signing keys.
+The server authorizes the request against link:0017-playback-enforcement-lifecycle.adoc[ADR 0017], resolves the current worker and generation, then retrieves bytes over the authenticated worker channel.
+A request admitted before revocation may finish; the first gate after committed revocation denies.
+
+The measured initial byte transport is gRPC server streaming on the worker's existing mTLS channel.
+A typed `ReadSegment` request names target worker/boot, job, generation, rendition, and segment; each `SegmentChunk` carries at most 64 KiB.
+Mutual TLS authenticates the exact control and worker identities, and the worker rejects stale or unknown ownership before opening the file.
+Rendition and segment identifiers must belong to that job's published manifest and are never treated as unchecked filesystem paths.
+HTTP/2 flow control, bounded reads, and response readiness limit queued data, cancellation stops disk reads promptly, and neither endpoint buffers the whole segment.
+The current `SegmentStore.readSegment()` `byte[]` boundary must become a streaming source before remote routing is enabled.
+Mid-stream retry is not transparent after bytes reach the client; Streamarr aborts that response and lets the HLS client request the segment again.
+
+Both spike candidates exceeded a 1 GbE payload ceiling, so throughput beyond that deployment budget does not decide the protocol.
+gRPC allocated less, stopped server read-ahead sooner after cancellation, had much tighter high-concurrency first-byte tails, completed every fork, and avoids a second listener, authentication surface, and deployment port.
+P5-D must repeat the benchmark through the actual two-JVM, two-hop proxy before enablement; if gRPC cannot satisfy bounded-memory, cancellation, and link-throughput gates there, amend this ADR and reconsider authenticated raw HTTP rather than weakening those gates.
+Public worker redirects and shared mutable output are not part of topology A.
+
+=== Kubernetes and broker escalation
+
+Kubernetes is a deployment adapter for warm worker processes, endpoint observation, drain, and vendor device-plugin resources.
+Pod, node, label, taint, and device-plugin types never enter the scheduling domain model.
+The control plane still selects an exact application worker identity and the worker still performs physical admission.
+No privileged worker is used where a vendor device plugin supplies the device.
+
+No broker is mandatory.
+NATS with JetStream is the first escalation only when a measured requirement appears: outbound-only workers, intermittently connected workers with waiting work, remote leaf sites, durable backlog/redelivery/DLQ, or independent lifecycle consumers.
+Protobuf remains the payload, PostgreSQL remains durable command intent, the control plane still selects the worker, and commands use worker-specific subjects rather than queue-group roulette.
+Kafka and Redpanda are rejected for this home-server control workload because their operational and resource cost buys throughput and log-retention characteristics Streamarr does not need.
+
+=== Explicitly deferred
+
+* NATS/JetStream transport and outbound-only workers.
+* Object-storage topology and direct-to-worker client redirects.
+* Ranged or signed source delivery beyond the shared-mount adapter.
+* Scan-time persistence of complete probe metadata.
+* Kubernetes Dynamic Resource Allocation until driver maturity and measured benefit justify it.
+* Offline re-encoding orchestration; it may reuse engine and worker plumbing but not the playback control-plane interface.
+
+== Consequences
+
+* Ordinary local installations retain one process and their existing behavior.
+* The conventional reactor requires one large source-tree move; a move-only pull request isolates Git/Sonar lineage risk before engine behavior changes.
+* The eventual server transport may add at most 15 MiB to the packaged baseline and must allocate no remote sockets or threads while disabled.
+* Distributed installations add application-owned mTLS endpoints, a private CA secret, worker enrollment, and worker mount mappings; those costs appear only when the feature is enabled.
+* The control plane can recover from crashes and lost RPC responses because desired state and command intent survive in PostgreSQL while workers apply idempotent generations.
+* PostgreSQL remains load-bearing for control-plane correctness but is not coupled to worker deployment or used as inter-service delivery.
+* A worker compromise exposes its readable media mounts, active segment data, and its own workload credential, but not Streamarr's database, account credentials, refresh tokens, playback JWTs, or signing keys.
+* Topology A spends one extra internal byte hop and media-server bandwidth to keep authorization, public TLS, and client routing in one place.
+* Direct worker endpoints are simple and lightweight but exclude outbound-only/NAT-isolated workers until the broker escalation.
+* One complete-ladder owner removes partial adaptive sets and makes capacity rejection explicit.
+* Protobuf makes compatibility a tested contract, but generated types and transport adapters add build machinery that must remain outside domain services.
+
+== Rejected Alternatives
+
+* PostgreSQL tables or notifications as the worker message bus — workers would need database credentials and schema coupling, while notifications still would not provide delivery.
+* A mandatory broker — it adds an always-on service for a feature most installations will not use; durable intent plus idempotent direct RPC is sufficient for the initial connected topology.
+* Kafka or Redpanda — their log throughput and partition model do not justify their home-server footprint here.
+* Round-robin gRPC, DNS scheduling, or a required service mesh — capability and physical capacity belong to exact workers, not interchangeable endpoints.
+* A separate `ReserveJob` lease — `StartJob` can atomically admit and start the complete ladder without another unknown-outcome and expiry protocol.
+* REST/JSON control messages — protobuf supplies typed evolution and generated clients without raw transport objects entering the application model.
+* Raw FFmpeg arguments, SSH, rffmpeg, or runtime-downloaded binaries — they export command construction and host trust instead of a bounded job contract, and repeat failure modes visible in older distributed-transcode projects.
+* Worker database access or playback-token verification — it widens the most exposed tier and duplicates the authoritative playback gate.
+* One common worker certificate — a compromised worker could impersonate every worker and endpoint binding would be meaningless.
+* Unauthenticated worker APIs — a LAN is not a trust boundary.
+* Per-rendition scheduling or soft capacity — partial ladders and silent truncation violate the playback contract.
+* Shared mutable segment output — stale owners could overwrite or serve a replacement generation.
+* Public worker redirects initially — they move TLS, reachability, authorization derivatives, and cache exposure to every worker before bandwidth pressure exists.
+* A second raw-HTTPS segment listener initially — its ordinary-concurrency throughput was higher, but both candidates exceeded the link budget while gRPC had safer cancellation/tail behavior, no stall, and one less port and authentication surface.
+* A root server JAR that also aggregates modules — Maven 3.9.16 rejects non-`pom` aggregators.
+* A nested reactor outside the root server project — it builds, but makes ordinary Maven, Paketo, IDE, jOOQ, coverage, Sonar, and release commands exceptional forever.
+* A hand-written plain-Java worker launcher — it saved measured startup and memory, but would reimplement TLS reload, health, configuration, drain, and observability already supplied by the official Boot gRPC stack.
+* A separate repository — independent release cadence would make schema compatibility and whole-stack changes harder before the boundary stabilizes.
+
+== References
+
+* link:0004-processbuilder-over-jni.adoc[ADR 0004: ProcessBuilder over JNI]
+* link:0008-server-generated-hls-playlists.adoc[ADR 0008: Server-Generated HLS Playlists]
+* link:0013-stream-decision-architecture.adoc[ADR 0013: Stream Decision Architecture]
+* link:0016-authentication-mechanisms-and-session-security.adoc[ADR 0016: Authentication Mechanisms and Session Security]
+* link:0017-playback-enforcement-lifecycle.adoc[ADR 0017: Persisted Playback-Enforcement Lifecycle]
+* https://github.com/streamarr/streamarr-server/issues/76[Issue #76: Distributed transcoding]
+* https://grpc.io/docs/guides/[gRPC reliability and transport guides]
+* https://spiffe.io/docs/latest/spiffe-specs/spiffe-id/[SPIFFE identity specification]
+* https://docs.nats.io/nats-concepts/jetstream[NATS JetStream delivery model]
+* https://github.com/UnicornTranscoder/UnicornTranscoder[UnicornTranscoder]
+* https://github.com/celesrenata/clusterjellyfin[clusterjellyfin]

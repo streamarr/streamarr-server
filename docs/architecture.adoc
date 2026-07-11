@@ -114,6 +114,52 @@ See link:adr/0007-transcode-first-with-smart-remux.adoc[ADR 0007],
 link:adr/0009-h264-plus-av1-codec-strategy.adoc[ADR 0009],
 link:adr/0013-stream-decision-architecture.adoc[ADR 0013].
 
+== Optional Distributed Transcoding
+
+link:adr/0018-direct-fenced-worker-control.adoc[ADR 0018] accepts an optional distributed
+control plane, but the current implementation remains local-only and opens no worker listener.
+The extraction preserves the local path as the default:
+
+----
+Local (default)
+
+control plane → application TranscodeWorkerPort → local FFmpeg engine
+----
+
+When distributed execution is implemented and explicitly enabled, PostgreSQL remains private to
+the control plane. It stores desired state, exact-worker assignment, generation, projected
+capacity, command intent, observations, and cleanup state. Workers receive no database credential
+and never consume database notifications.
+
+----
+Remote (accepted, not yet implemented)
+
+commit desired state + command intent in PostgreSQL
+  → dispatch protobuf over direct mTLS gRPC to the selected worker
+  → atomically admit and start one complete rendition ladder
+  → record observation and reconcile desired versus observed state
+  → relay worker-local segment bytes through Streamarr's playback gate
+----
+
+The worker registers and heartbeats outbound to the control plane, while the control plane must be
+able to dial the worker's advertised endpoint. The peer certificate, `worker_id`, endpoint, and
+per-process `boot_id` are bound together; a replacement invalidates old channels and observations.
+This first topology therefore does not support outbound-only or NAT-isolated workers.
+
+The remote contract uses `streamarr.transcode.v1` protobuf messages with command, job, session, and
+generation identity. Mutations are idempotent and generation-fenced. The control plane owns its
+projected capacity claim; the worker owns atomic physical admission inside `StartJob`. One worker
+owns the complete adaptive ladder, and PID, raw FFmpeg arguments, host paths, playback tokens, and
+signing material never cross the boundary.
+
+Sources use a logical mount/library id plus normalized relative key. Segments remain worker-local
+and return as bounded protobuf `SegmentChunk` streams over the selected worker's existing mTLS
+gRPC channel only after the authoritative playback gate succeeds. Streamarr translates that
+internal stream to the client's HLS HTTP response; workers expose no second byte-serving listener.
+NATS/JetStream is deferred until outbound-only or intermittently connected workers, remote leaf
+sites, or durable broker backlog become real requirements; Kafka and Redpanda are not part of this
+home-server control path.
+
 == Authentication and Revocation
 
 Identity, sessions, and token security follow
@@ -143,12 +189,12 @@ because a refetch on unknown `kid` can be answered with the cached pre-rotation 
 blank signing key generates an ephemeral key pair at startup (tokens die on restart; sessions
 recover through refresh).
 
-ES256 exists for the planned transcode split: horizontally scaled transcode nodes running
+ES256 also preserves verifier optionality for the accepted transcode split: horizontally scaled transcode nodes running
 FFmpeg are the most exposed tier and must never hold a token-minting secret. Signature
 verification alone never authorizes a request, though -- revocation is authoritative state,
 not signature checking. Every playlist, init, and segment request consults ADR 0017's joint
 stream-session/authorization-session authority; the first gate evaluated after committed session
-revocation denies. Under the recommended proxy topology for the transcode split (issue #76),
+revocation denies. Under ADR 0018's accepted proxy topology,
 workers never verify playback tokens at all.
 The public verification keys are served at `/.well-known/jwks.json` (ADR 0016).
 
@@ -209,4 +255,7 @@ See link:adr/[Architecture Decision Records] for detailed rationale. Summary:
 
 | Stream decision architecture
 | Per-stream decision records compose into TranscodeDecision; mode resolution considers all stream types (link:adr/0013-stream-decision-architecture.adoc[ADR 0013])
+
+| Optional distributed transcoding
+| Local by default; exact-worker protobuf/mTLS control, no worker database access, and topology-A bounded gRPC segment relay when enabled (link:adr/0018-direct-fenced-worker-control.adoc[ADR 0018])
 |===
