@@ -868,11 +868,10 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
         .execute();
 
     var first = lifecycleTransactions.terminalizeExpiredActiveSessions(Duration.ofHours(24), 1);
-    var second = lifecycleTransactions.terminalizeExpiredActiveSessions(Duration.ofHours(24), 1);
-    var third = lifecycleTransactions.terminalizeExpiredActiveSessions(Duration.ofHours(24), 1);
-
     assertThat(first).hasSize(1);
+    var second = lifecycleTransactions.terminalizeExpiredActiveSessions(Duration.ofHours(24), 1);
     assertThat(second).hasSize(1);
+    var third = lifecycleTransactions.terminalizeExpiredActiveSessions(Duration.ofHours(24), 1);
     assertThat(third).hasSize(1);
     assertThat(java.util.stream.Stream.of(first, second, third).flatMap(List::stream))
         .containsExactlyInAnyOrderElementsOf(sessionIds);

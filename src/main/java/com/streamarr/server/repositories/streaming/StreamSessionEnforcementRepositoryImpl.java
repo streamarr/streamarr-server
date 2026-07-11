@@ -191,7 +191,11 @@ public class StreamSessionEnforcementRepositoryImpl implements StreamSessionEnfo
             .orderBy(STREAM_SESSION.LAST_ACCESSED_AT, STREAM_SESSION.ID)
             .limit(limit)
             .forUpdate()
-            .skipLocked();
+            .skipLocked()
+            .fetch(STREAM_SESSION.ID);
+    if (candidates.isEmpty()) {
+      return List.of();
+    }
     return dsl.update(STREAM_SESSION)
         .set(STREAM_SESSION.STATUS, StreamSessionStatus.TERMINATING)
         .set(STREAM_SESSION.TERMINAL_AT, statementTimestamp())
@@ -296,7 +300,11 @@ public class StreamSessionEnforcementRepositoryImpl implements StreamSessionEnfo
             .orderBy(STREAM_SESSION.ID)
             .limit(limit)
             .forUpdate()
-            .skipLocked();
+            .skipLocked()
+            .fetch(STREAM_SESSION.ID);
+    if (candidates.isEmpty()) {
+      return List.of();
+    }
     var revokedAt =
         dsl.select(AUTH_SESSION.REVOKED_AT)
             .from(AUTH_SESSION)
