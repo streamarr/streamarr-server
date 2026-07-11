@@ -6,15 +6,15 @@ Accepted
 
 === Implementation status
 
-* PR-A1 implements persisted admission and activation, the per-request gate, the runtime terminal fence, owner destroy, first-wins terminalization, a leased durable compensation guard, and terminating-row cleanup retry. It also adds a fail-closed media-existence gate plus missing-media reconciliation as a bridge to PR-A2a. Owner destroy moved forward because leaving the existing mutation on runtime-only teardown would leak every durable A1 row.
-* PR-A2a completes media-parent deletion choreography and its restrictive foreign key. PR-A2b completes timeline transaction integration. PR-A2c completes full retention/terminating reaping, restart reconciliation, and the remaining interleaving matrix. A1's leased guard already supplies bounded provisioning/startup recovery. PR-B1 completes atomic revocation integration, and version-counter retirement completes the transition in PR-B2 (issue #213).
+* Persisted admission and locked activation, the per-request gate, runtime terminal fencing, first-wins terminalization, leased compensation, durable cleanup retry, media-parent deletion choreography, timeline integration, retention reaping, and restart reconciliation are implemented.
+* Atomic authorization-session revocation is integrated and issue #213's version counters are retired. The joint stream-session/authorization-session authority is the sole playback revocation channel.
 * The single-streaming-instance boundary holds until the distributed control plane (issue #76); `PROVISIONING` here is a local admission state, not #76's distributed capacity reservation.
-* Media-deletion choreography and its restrictive foreign key land together in PR-A2a — a `RESTRICT` constraint never ships ahead of the deletion workflow that satisfies it. Until then, a missing media row fails the request gate and the cleanup worker terminalizes the orphan as `SOURCE_DELETED`; this bridge does not replace parent-deletion retry choreography.
+* Media-deletion choreography and its restrictive foreign key are one invariant: authoritative parent deletion cannot bypass terminal cleanup.
 
 == Context
 
-link:0016-authentication-mechanisms-and-session-security.adoc[ADR 0016] moves playback revocation from per-request version counters to persisted enforcement state.
-Before PR-A1, stream sessions lived only in a per-JVM map: a playback token was signature-portable, but nothing durable recorded whether the session it named could still be served, no revocation survived a restart, and a stale-but-unexpired access token could mint playback authority that outlived its own staleness bound.
+link:0016-authentication-mechanisms-and-session-security.adoc[ADR 0016] defines playback revocation in persisted enforcement state rather than token version counters.
+Before persisted enforcement, stream sessions lived only in a per-JVM map: a playback token was signature-portable, but nothing durable recorded whether the session it named could still be served, no revocation survived a restart, and a stale-but-unexpired access token could mint playback authority that outlived its own staleness bound.
 This ADR fixes the persisted state machine, the authority predicates, and the concurrency and cleanup contracts that make the stream row a trustworthy enforcement record.
 
 == Decision
@@ -25,7 +25,7 @@ The stream row and the authorization session *together* form playback's enforcem
 Because the playback token does not exist until activation, two predicates stay distinct:
 
 * `sourceAuthorityMatches` — evaluated at admission and activation: the profile-scoped *source* token matches the row's authorization-session id, account, household, and profile; the authorization session is unrevoked; the owning account is enabled; the current profile grant and referenced media source exist.
-* `playbackRequestMatches` — evaluated only at the request gate: `sourceAuthorityMatches` plus `PLAYBACK` scope, `requestedId == token.streamSessionId == row.id`, and row status `ACTIVE`. Before PR-A2a installs the media foreign key and deletion choreography, the gate independently requires the referenced media row to exist.
+* `playbackRequestMatches` — evaluated only at the request gate: `sourceAuthorityMatches` plus `PLAYBACK` scope, `requestedId == token.streamSessionId == row.id`, and row status `ACTIVE`.
 
 Without the enabled-account condition, disabling an account stops refresh but an already-issued playback token — whose validity spans a media traversal plus retention — would keep playing.
 
@@ -102,7 +102,7 @@ Graceful runtime shutdown drops only process-local directory registrations; it p
 == Consequences
 
 * Playback enforcement survives restarts and is revocable mid-stream without per-request version counters.
-* A stale-but-unexpired access token cannot mint playback authority that outlives its staleness bound: admission and activation re-check the live authorization session, and the gate re-checks it per request.
+* A stale-but-unexpired access token cannot mint playback authority after the implemented predicates fail: admission and activation re-check the authorization session, enabled account, membership/profile grant, and media source, and the gate re-checks them per request. Authoritative role and content-policy evaluation remains the deferred ADR 0015 work.
 * Every lifecycle transition is a conditional statement; read-check-write sequences in Java are structurally excluded.
 * Cleanup is durable: crash windows between terminalization, teardown, and deletion are covered by the retained `TERMINATING` row and periodic retry.
 * Parent deletion becomes choreography rather than cascade — future account/profile/grant management must route through it.

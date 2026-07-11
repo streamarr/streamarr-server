@@ -6,8 +6,8 @@ Accepted
 
 === Implementation status
 
-* Version counters remain operative and load-bearing through PR-B1 of the revocation transition; they retire in PR-B2 (issue #213). Until then access and playback tokens continue to carry version claims.
-* The persisted playback-enforcement lifecycle this ADR's revocation model relies on is specified in link:0017-playback-enforcement-lifecycle.adoc[ADR 0017] and lands with issue #211 (PR-A); PR-B1 integrates atomic revocation; PR-B2 completes the transition.
+* Issue #213's version counters are retired. Access and playback tokens no longer carry `sv`, `mv`, or `pv`; the validation/cache/listener pipeline and its database columns are removed.
+* The persisted playback-enforcement lifecycle in link:0017-playback-enforcement-lifecycle.adoc[ADR 0017] and atomic authorization-session revocation are implemented. Its joint stream-session/authorization-session authority is playback's sole revocation channel.
 * Distributed transcoding topology A (issue #76) is the recommended direction, not ratified; a future ADR 0018 decides the transport.
 
 == Context
@@ -57,8 +57,11 @@ Requests use short-lived access tokens in one of three explicit scopes:
 
 A profile token must name a profile that belongs to its household, and the server enforces that.
 Scopes nest rather than exclude: a household token also reaches account-scoped surfaces, and a profile token also reaches the household- and account-scoped surfaces of its own household.
-A client therefore holds one access token at a time and upgrades it by selecting a household or profile; nesting widens context, never privilege, because every surface still applies ADR 0015's role and policy checks.
-The selected context is session state, not client state: the session row remembers the active household and profile, login auto-selection and the selection endpoints write it, and refresh re-derives scope from it only after a single account-profile lookup revalidates (account, stored household, stored profile) — selecting or switching a household always clears the stored profile first, so a stale selection can never mint a mismatched household/profile token, and failed revalidation downgrades to the highest valid scope.
+A client therefore holds one access token at a time and upgrades it by selecting a household or profile; nesting widens context, never privilege in the model, because each surface must still apply ADR 0015's role and policy checks through the authorization facade.
+Complete authoritative role and policy revalidation across every API surface is a migration end state recorded in ADR 0015, not a claim about current implementation.
+The selected context is session state, not client state: the session row remembers the active household and profile, login auto-selection and the selection endpoints write it, and refresh re-derives scope from it only after a single account-profile lookup revalidates (account, stored household, stored profile) — selecting or switching a household always clears the stored profile first, so a stale selection can never mint a mismatched household/profile token, and failed revalidation downgrades to the highest valid scope rather than revoking an otherwise live session.
+After profile-grant loss, refresh mints household scope when membership remains; after membership loss, it clears both selections and mints account scope.
+Refresh is refused for an invalid or expired refresh token, a revoked session such as logout, password change, or reuse detection, or a missing or disabled account — not for context loss alone.
 In Spring Security terms, each scope becomes a granted authority and the nesting is a declared authority hierarchy — published as a `RoleHierarchy` bean that request-level and method-level authorization auto-detect — so request and method rules demand only the minimum scope.
 Every access token authorizes requests only within the context chain it names, and carries enough account, session, and — where selected — household and profile identity for the server to validate the session and the ADR 0015 authorization model.
 This makes access tokens self-contained and server-signed — validating one needs the public verification key set, not a database read — while refresh tokens stay opaque random secrets the server knows only by digest.
@@ -67,6 +70,7 @@ Token expiry is strict and mandatory.
 RFC 7519 §4.1.4 makes `exp` optional; Streamarr makes it mandatory with zero leeway — a token is valid only while `now < exp` — because access-token expiry is the outer bound of the revocation model, and the default validator's clock skew and missing-`exp` tolerance would silently extend it.
 A past-expiry failure keeps the machine-readable `EXPIRED_TOKEN` refresh-and-retry signal; a token without `exp` is malformed and maps to `INVALID_TOKEN`.
 The configured access-token TTL validates against a fifteen-minute ceiling (ten-minute default): bounded API staleness is a security property configuration must not silently stretch.
+This is an upper bound on authentication, not a promise every operation succeeds until then; refresh, selection, stream creation, and other authoritative checkpoints may deny or downgrade earlier.
 A selection token is a new JWT whose expiry is capped by its source authorization — `exp = min(now + TTL, source exp)`, with the source expiry read from the validated token, never reparsed — so selection changes context, never authority, and repeated selection cannot extend access.
 Only setup, login, refresh, and successful password reauthentication start a fresh TTL.
 Playback tokens are not exempt from mandatory expiry: they carry a concrete `exp` at session-retention scale, as described below.
@@ -79,26 +83,22 @@ A public key is never sufficient authorization, though: signature-plus-expiry ch
 The public verification keys are served at `/.well-known/jwks.json` (revisiting an earlier deferral: shipping ES256 without its discovery surface left the design incomplete, and the endpoint is pure public data).
 It serves only public JWKs — current plus retired, each carrying `kid`, `use: sig`, and `alg: ES256` so verifier key selectors need no out-of-band knowledge; private material never appears in a response, and a test pins that.
 The endpoint is permitAll and cookie-blind like the pre-auth endpoints (a stale `Path=/` access cookie must not 401 a key fetch); `Cache-Control: max-age` paces polling, and refetch-on-unknown-`kid` remains the rotation mechanism — which makes rotation two-phase: the incoming public key is prepublished through `AUTH_TOKEN_VERIFICATION_KEYS` at least one cache window before it starts signing, because a shared cache may answer an unknown-`kid` refetch with the pre-rotation key set (runbook in architecture.adoc).
-Serving keys grants no authority: revocation is the condition for *using* them, and it binds every JWKS consumer — during the transition below that means the counter feed; after it, the joint playback authority of link:0017-playback-enforcement-lifecycle.adoc[ADR 0017].
+Serving keys grants no authority: revocation is the condition for *using* them, and every playback verifier must consult the joint authority in link:0017-playback-enforcement-lifecycle.adoc[ADR 0017] or receive a shorter-lived derivative credential whose issuer did so.
 
 Revocation runs on two channels, matched to what each surface can tolerate.
-API surfaces accept bounded staleness: access tokens live only minutes, revocation prevents renewal, and access-token expiry bounds the residual API authorization window — an invalidated session's tokens keep ordinary API reach for at most one access-token lifetime, and the strict-expiry rule above makes that bound hard.
+API surfaces accept bounded staleness: access tokens live only minutes, session revocation prevents renewal, membership or profile-grant loss downgrades the next refresh, and access-token expiry bounds the residual API authorization window — an issued token keeps ordinary API reach for at most its remaining lifetime, and the strict-expiry rule above makes that bound hard.
 Role and context claims share that bound: they are honored as issued for the token's remaining life, which is current behavior and an accepted trade, not an oversight — content-policy enforcement against authoritative state is a deferred obligation tracked with the content-control work, not something claims-based authorization provides today.
-Playback tolerates no staleness bound, because playback-token validity spans a media traversal plus a retention window; its per-request enforcement authority becomes the persisted stream-session row and the authorization session *together*, specified in ADR 0017 — a playback request is then served only while its stream row is `ACTIVE`, its authorization session is unrevoked, and its owning account is enabled (during the counter transition, the per-request version check carries this role, and account disablement does not yet terminate active playback).
-Membership and profile-grant removal fail closed structurally: the stream row's composite foreign keys bind it to the grant chain, and parent deletion routes through the terminal-cleanup choreography rather than silently erasing enforcement state.
+Playback accepts no post-commit stale-authorization window, because playback-token validity spans a media traversal plus a retention window; its per-request enforcement authority is the persisted stream-session row and the authorization session *together*, specified in ADR 0017 — a request gated before an authority change commits may finish, while the first gate evaluated afterward denies unless the stream row is `ACTIVE`, the authorization session is unrevoked, the owning account is enabled, the persisted grant chain still exists, and the referenced media source exists.
+Membership and profile-grant deletion fail closed structurally: the stream row's composite foreign keys bind it to the grant chain, so deletion is rejected while affected playback exists.
+Future account/profile/grant management must route deletion through terminal cleanup rather than silently erasing enforcement state.
 A password change immediately invalidates renewal and playback authority while the prior access token retains only its bounded ordinary API window.
-PR-B1 implements revoke-and-replace: the caller's old session and streams are revoked and a replacement session with fresh credentials is issued.
-While counters remain operative through PR-B1, they additionally reject the prior JWT immediately; PR-B2 retires that transitional channel and leaves the bounded ordinary API window described above.
+Password change uses revoke-and-replace: the caller's old session and streams are revoked and a replacement session with fresh credentials is issued.
 
-Until that transition completes (issue #213, PR-B2), restriction, membership, password, and session changes propagate through *version counters*, and this mechanism remains normative and load-bearing:
-Postgres holds the authoritative session, membership, and profile-policy counters; each instance caches them in memory.
-When an instance changes one, it bumps the Postgres counter and publishes the new version through `LISTEN`/`NOTIFY`; every other instance applies it to its cached counter monotonically (highest version wins), so duplicate or out-of-order delivery cannot regress state.
-The `LISTEN` subscriber holds its own dedicated Postgres connection, separate from the transactional Hikari pool.
-That connection must reach Postgres directly or through a session-mode pooler: `LISTEN` does not survive transaction-mode pooling, so PgBouncer in transaction mode silently breaks notifications.
-On instance start and whenever the notification connection is unavailable, caching is suspended and every counter lookup reads through to Postgres; successful reads are not installed until `LISTEN` succeeds again, so a missed notification cannot strand a stale refill.
-Once the feed is listening, the empty cache fills from Postgres on first touch and each request checks its token's embedded versions against the in-memory value, so the healthy hot path needs no database round-trip.
-When an authoritative counter cannot be read, validation fails closed rather than trusting a token's embedded versions.
-Retiring the counters removes this machinery, the version claims, and the session-mode-pooler constraint; there is no point in the transition where playback lacks both counter validation and persisted enforcement.
+The counter-retirement release is intentionally not rolling-compatible with its predecessor.
+It accepts legacy JWTs carrying now-ignored version claims only until their immutable `exp`, and every refresh emits a counter-free JWT; the predecessor rejects those new tokens, the new release stops writes on which predecessor validation depends, and migration `V051__Drop_Token_Version_Counters.sql` removes columns mapped by the predecessor.
+Because Streamarr has not shipped to production, the accepted deployment is a coordinated full-fleet stop, migration, and start; the two binaries must never serve concurrently, and rollback after V051 requires a restoring migration or database restore.
+A zero-downtime retirement would instead require three fully deployed compatibility releases: first stop validating counters while retaining claims, writes, mappings, and schema; then stop emitting and writing counters and remove mappings while retaining the columns; only then drop the columns.
+The operational cutover and its optional access-token drain are recorded in `architecture.adoc`.
 
 How a client presents tokens depends on what it can protect.
 Native apps — iOS, Android, TV — send access tokens as `Authorization: Bearer` headers and keep refresh tokens in platform-secure storage.
@@ -110,7 +110,7 @@ Streaming is the third carrier: playlist-driven players — AVPlayer above all �
 Same tokens, different carrier, not a weaker channel: playback-URL tokens authorize nothing but playback, and the server redacts them from its own request logs and traces.
 Logs the server does not own — a reverse proxy in front of a self-hosted install — will record these URLs, which is exactly why the token's playback-only scope and binding to a single stream session bound what a captured URL is worth.
 Playback-token validity is the probed media duration plus the configured session-retention window — one full traversal plus a bounded cumulative budget for pauses and slow playback, rather than a fixed minutes-scale TTL; this is the concrete `exp` mandatory expiry demands.
-VOD players fetch playlists once and then request segments for hours, so the token is not renewed from its own authority; the absolute expiry remains the captured-URL exposure backstop, while revocation stays instant through per-request enforcement — the version check during the transition, the ADR 0017 joint authority after it — and idle session reaping may end playback sooner.
+VOD players fetch playlists once and then request segments for hours, so the token is not renewed from its own authority; the absolute expiry remains the captured-URL exposure backstop, while ADR 0017's per-request joint authority denies the first gate after committed revocation and idle session reaping may end playback sooner.
 
 Renewal is a server contract before it is client code.
 The server never slides an access token or re-issues one on its own authority; renewal always passes through the refresh endpoint — except the password-change flow, which requires password reauthentication and therefore earns its fresh credentials.
@@ -172,11 +172,11 @@ Explicitly deferred from v1:
 * Refresh-token revocation, rotation with reuse detection, digest-at-rest storage, and playback-authority revocation are required server features, not optional client behavior.
 * One token model has three carriers — bearer headers for native apps, `httpOnly` cookies plus CSRF protection for browsers, session-bound playback-URL tokens for streaming — and no carrier weakens validation.
 * Access-token `exp` is inviolable and the TTL ceiling is a security parameter: bounded API staleness is only sound while both hold.
-* API-surface revocation is bounded by the access-token TTL; instant revocation is a playback property, carried by the joint authority of link:0017-playback-enforcement-lifecycle.adoc[ADR 0017] once the counter transition completes.
+* API-surface revocation is bounded by the access-token TTL; playback's joint authority in link:0017-playback-enforcement-lifecycle.adoc[ADR 0017] denies the first request gate evaluated after revocation commits.
 * Refresh races are resolved on the server — the rotation grace window — and merely smoothed by the web client's service worker, so a browser without a live worker degrades to slower renewal, never to spurious logout.
 * Login and PIN throttling are Streamarr code that reserves budget inline before password verification, not framework features.
-* Cross-instance invalidation rides Postgres version counters and `LISTEN`/`NOTIFY` during the transition, adding no Redis or other new infrastructure; after PR-B2 revocation state rides ordinary PostgreSQL rows and the pooler-mode constraint disappears.
-* While the counter feed is live, the invalidation listener must never borrow and hold a connection from the transactional Hikari pool, even while reconnecting or backing off.
+* Cross-instance playback revocation rides ordinary PostgreSQL enforcement rows, with no dedicated notification connection, shared cache, or pooler-mode constraint.
+* Counter retirement trades per-request ordinary-API invalidation for a hard, configurable bound of at most fifteen minutes from token issuance and removes a second playback authority.
 * OAuth providers are authentication inputs to local accounts, not replacements for the account/profile/household model.
 
 == Rejected Alternatives
@@ -184,11 +184,11 @@ Explicitly deferred from v1:
 * Spring Security's default `DelegatingPasswordEncoder` id — it still encodes with bcrypt, OWASP puts Argon2id first, and the delegating mechanism makes the stronger default free.
 * An application-managed salt column — the encoded password string already carries algorithm, parameters, and salt; a separate column invites custom crypto handling.
 * Converting only service-layer passwords to `char[]` or `byte[]` — surrounding framework layers retain or recreate immutable strings, adding copies without delivering end-to-end erasure.
-* Redis or any shared cache for cross-instance invalidation — Postgres version counters with `LISTEN`/`NOTIFY` cover v1 without new infrastructure.
+* Redis or any shared cache for cross-instance invalidation — playback consults ordinary PostgreSQL enforcement rows, while ordinary API surfaces deliberately accept the bounded access-token lifetime.
 * CORS configuration for the browser client — the client is same-origin by construction (development tooling proxies API paths; production serves the client from the application origin), so no CORS policy exists and adding one would only widen the attack surface.
 * Sliding or self-renewing access tokens — re-issuing near expiry on the access token's own authority makes the short-lived credential immortal for whoever holds it, yields no rotation theft signal, lets active clients outrun the TTL backstop for missed invalidations, and skips the refresh endpoint's authoritative database checkpoint.
 * Short access-token TTLs as the sole revocation mechanism *for playback* — bounded staleness is accepted for API surfaces, but playback-URL tokens have no refresh channel: playlist-driven players fetch segment URLs once and replay them for hours, so playback validity must ride the stream-session lifetime and only a per-request authority check can revoke it mid-stream; TTL stays a backstop, never the guard.
-* Version counters as the permanent revocation authority — playback is their only load-bearing case once the stream-session row exists, one authority beats two, and retiring the feed removes the version claims, the dedicated-listener plumbing, and the session-mode-pooler constraint; they remain normative only until PR-B2 lands.
+* Version counters as the permanent revocation authority — once the stream-session row exists, playback is their only load-bearing case; one authority beats two, and retirement removes version claims, dedicated-listener plumbing, and the session-mode-pooler constraint.
 * Script-readable browser token storage (`localStorage` or plain cookies) — `httpOnly` cookies plus CSRF protection confine XSS to riding a session rather than stealing it.
 * `Authorization` headers on streaming segment requests — playlist-driven players cannot attach them, so playback URLs carry the token instead.
 * Profile PINs as an authentication or MFA factor — low-entropy convenience gates guard viewing context, never accounts.

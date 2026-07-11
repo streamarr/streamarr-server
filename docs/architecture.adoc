@@ -66,7 +66,7 @@ The metadata provider abstraction (`MetadataProvider<T>`) allows swapping TMDB f
 
 == Service Communication
 
-Services coordinate library lifecycle events using Spring Application Events rather than direct method calls. `LibraryManagementService` publishes events; interested services listen and react independently.
+Services use direct collaborators for synchronous request/response and invariant-preserving work, and Spring Application Events for decoupled post-commit side effects.
 
 ----
 addLibrary()
@@ -78,9 +78,12 @@ scanLibrary()
         → OrphanedMediaFileCleanupService (remove orphaned files)
 
 removeLibrary()
-    → LibraryRemovedEvent
-        → DirectoryWatchingService (unregister watcher)
-        → StreamingSessionCleanupListener (terminate sessions)
+    → MediaParentDeletionService
+        → persist deletion intent and terminalize affected streams
+        → clean up FFmpeg and segments (retry durably on failure)
+        → delete media and library parents
+        → LibraryRemovedEvent
+            → DirectoryWatchingService (unregister watcher)
 ----
 
 Side effects triggered by transactional operations use `@TransactionalEventListener(AFTER_COMMIT)` to ensure they only execute after a successful commit. Non-transactional publishers use `@EventListener` for synchronous, same-thread delivery.
@@ -111,16 +114,20 @@ See link:adr/0007-transcode-first-with-smart-remux.adoc[ADR 0007],
 link:adr/0009-h264-plus-av1-codec-strategy.adoc[ADR 0009],
 link:adr/0013-stream-decision-architecture.adoc[ADR 0013].
 
-== Authentication and Invalidation
+== Authentication and Revocation
 
 Identity, sessions, and token security follow
 link:adr/0015-authorization-profiles-and-content-controls.adoc[ADR 0015] and
 link:adr/0016-authentication-mechanisms-and-session-security.adoc[ADR 0016]: ES256-signed access
-tokens with nested scopes, digest-only rotating refresh tokens, and per-request version-counter
-checks that fail closed. The browser client is same-origin by construction -- development
-tooling proxies the API paths and production serves the client from the application origin --
-so no CORS configuration exists and none should be added (recorded as a rejected alternative in
-ADR 0016).
+tokens with nested scopes and strict expiry, digest-only rotating refresh tokens, and persisted
+playback enforcement. Ordinary API role and context claims are honored for only the token's
+bounded remaining lifetime; refresh revalidates stored context and downgrades when a membership or
+profile grant has disappeared. Routing through the authorization facade establishes one policy
+boundary, but does not make every current decision an authoritative database read -- ADR 0015
+records that remaining migration. The browser client is same-origin by construction -- development
+tooling proxies the API paths and production serves the client from the application origin -- so no
+CORS configuration exists and none should be added (recorded as a rejected alternative in ADR
+0016).
 
 Tokens are signed with an EC P-256 key (`AUTH_TOKEN_SIGNING_KEY`, base64 PKCS#8; generate with
 `openssl ecparam -name prime256v1 -genkey -noout | openssl pkcs8 -topk8 -nocrypt -outform DER |
@@ -139,30 +146,38 @@ recover through refresh).
 ES256 exists for the planned transcode split: horizontally scaled transcode nodes running
 FFmpeg are the most exposed tier and must never hold a token-minting secret. Signature
 verification alone never authorizes a request, though -- revocation is authoritative state,
-not signature checking. During the version-counter transition that means the per-request
-counter checks below; after the counters retire (issue #213), playback revocation rides the
-persisted stream-session enforcement authority (ADR 0017), and under the recommended proxy
-topology for the transcode split (issue #76) workers never verify playback tokens at all.
+not signature checking. Every playlist, init, and segment request consults ADR 0017's joint
+stream-session/authorization-session authority; the first gate evaluated after committed session
+revocation denies. Under the recommended proxy topology for the transcode split (issue #76),
+workers never verify playback tokens at all.
 The public verification keys are served at `/.well-known/jwks.json` (ADR 0016).
 
-NOTE: The version-counter invalidation described below is transitional -- normative and
-load-bearing until the counter retirement (issue #213, PR-B2) lands, retired with it. The
-target revocation model is recorded in ADR 0016 and ADR 0017.
+=== Counter-retirement cutover
 
-Cross-instance token invalidation rides PostgreSQL LISTEN/NOTIFY: counter bumps call
-`pg_notify` inside the bumping transaction, and each instance's `CounterNotificationListener`
-applies them to its local version cache over one dedicated (non-Hikari) connection. The listener
-suspends caching on startup and every connection loss, so every counter lookup reads through to
-PostgreSQL while notifications might be missed; caching resumes from an empty state only after
-`LISTEN` succeeds. A `SELECT 1` liveness probe per poll (with TCP keepalive and a bounded socket
-timeout) turns a silently dead connection into a reconnect, and a health indicator reports the
-feed's state.
+CAUTION: Migration `V051__Drop_Token_Version_Counters.sql` is a coordinated, non-rolling cutover.
+Drain and stop every counter-using instance before the first counter-free instance starts, and
+never run the two versions concurrently.
 
-CAUTION: PgBouncer in transaction-pooling mode does not deliver LISTEN/NOTIFY. The listener's
-dedicated connection must reach PostgreSQL directly (or through session-mode pooling), even when
-application traffic goes through a transaction-mode pooler -- set
-`AUTH_COUNTER_LISTENER_JDBC_URL` (and credentials, if they differ) to give the listener its own
-endpoint.
+. Back up PostgreSQL, then drain and stop the complete pre-retirement fleet.
+. To guarantee that a JWT invalidated only by the retired counter mechanism cannot regain ordinary
+  API authentication, keep the application stopped for the configured access-token TTL -- ten
+  minutes by default and never more than fifteen. Skipping this optional drain accepts only the
+  token's already-bounded remaining lifetime; refresh and playback still consult the implemented
+  session, grant, account, and media authority described in ADRs 0016 and 0017.
+. Start one counter-free instance without routing traffic to it so Flyway applies V051, then start
+  only counter-free instances and restore traffic.
+
+Existing refresh tokens remain valid, and the new decoder accepts unexpired legacy JWTs carrying
+extra `sv`, `mv`, or `pv` claims. Active playback is interrupted because restart intentionally does
+not reconstruct the process-local runtime registry. After V051, do not start or roll back to a
+counter-using binary without a restoring migration or database restore.
+
+The versions are incompatible in three ways: the old decoder rejects new claimless JWTs; the new
+binary no longer performs writes on which old validation depends; and V051 removes columns and a
+sequence mapped by the old binary. A truly rolling retirement would therefore require three fully
+deployed compatibility releases: stop validation while retaining emission, writes, mappings, and
+schema; then stop emission and writes and remove mappings while retaining the columns; only then
+drop the columns.
 
 == Key Design Decisions
 
