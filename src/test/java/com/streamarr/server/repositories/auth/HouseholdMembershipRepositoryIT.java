@@ -52,15 +52,14 @@ class HouseholdMembershipRepositoryIT extends AbstractIntegrationTest {
   void shouldRejectDuplicateMembershipWhenAlreadyGranted() {
     var membership = newMembership(HouseholdRole.MEMBER);
     membershipRepository.grantMembership(membership);
+    var duplicate =
+        HouseholdMembership.builder()
+            .accountId(membership.getAccountId())
+            .householdId(membership.getHouseholdId())
+            .householdRole(HouseholdRole.PARENT)
+            .build();
 
-    assertThatThrownBy(
-            () ->
-                membershipRepository.grantMembership(
-                    HouseholdMembership.builder()
-                        .accountId(membership.getAccountId())
-                        .householdId(membership.getHouseholdId())
-                        .householdRole(HouseholdRole.PARENT)
-                        .build()))
+    assertThatThrownBy(() -> membershipRepository.grantMembership(duplicate))
         .isInstanceOf(DataIntegrityViolationException.class);
 
     assertThat(

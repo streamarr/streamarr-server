@@ -69,7 +69,7 @@ class IdentitySchemaIT extends AbstractIntegrationTest {
         .contains("id")
         .doesNotContain("membership_version");
     assertThat(columnNames("profile")).contains("id").doesNotContain("policy_version");
-    assertThat(sequenceNames()).doesNotContain("household_membership_version_seq");
+    assertThat(sequenceNames()).isEmpty();
   }
 
   @Test
