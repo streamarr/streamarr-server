@@ -7,8 +7,7 @@ import com.streamarr.server.controllers.auth.ChangePasswordRequest;
 import com.streamarr.server.controllers.auth.LoginRequest;
 import com.streamarr.server.controllers.auth.RefreshRequest;
 import com.streamarr.server.controllers.auth.SetupRequest;
-import com.streamarr.server.domain.auth.AuthSession;
-import com.streamarr.server.fixtures.AccountFixture;
+import com.streamarr.server.repositories.auth.AccountCredential;
 import java.time.Instant;
 import java.util.UUID;
 import java.util.stream.Stream;
@@ -56,17 +55,18 @@ class SensitiveAuthValueRedactionTest {
   }
 
   private static Stream<Object> secretBearingValues() {
-    var account = AccountFixture.defaultAccountBuilder().build();
-    var session = AuthSession.builder().accountId(UUID.randomUUID()).deviceName("device").build();
-
     return Stream.of(
         new LoginRequest("user@example.com", SECRET_MARKER, "device", false),
         new SetupRequest("user@example.com", "User", SECRET_MARKER, "Home", "Profile", false),
         new ChangePasswordRequest(SECRET_MARKER, SECRET_MARKER),
         new RefreshRequest(SECRET_MARKER),
+        new AccountCredential(UUID.randomUUID(), SECRET_MARKER),
         new TokenRefreshService.RefreshedTokens(null, SECRET_MARKER),
         ChangePasswordCommand.builder().currentPassword(SECRET_MARKER).newPassword(SECRET_MARKER),
         PasswordChangeResult.builder().rawRefreshToken(SECRET_MARKER),
+        PasswordChangeCompletionCommand.builder()
+            .expectedPasswordHash(SECRET_MARKER)
+            .newPasswordHash(SECRET_MARKER),
         AuthTokensResponse.builder().accessToken(SECRET_MARKER).refreshToken(SECRET_MARKER),
         ChangePasswordCommand.builder()
             .accountId(UUID.randomUUID())
@@ -74,10 +74,12 @@ class SensitiveAuthValueRedactionTest {
             .currentPassword(SECRET_MARKER)
             .newPassword(SECRET_MARKER)
             .build(),
-        PasswordChangeResult.builder()
-            .account(account)
-            .session(session)
-            .rawRefreshToken(SECRET_MARKER)
+        PasswordChangeResult.builder().rawRefreshToken(SECRET_MARKER).build(),
+        PasswordChangeCompletionCommand.builder()
+            .accountId(UUID.randomUUID())
+            .sessionId(UUID.randomUUID())
+            .expectedPasswordHash(SECRET_MARKER)
+            .newPasswordHash(SECRET_MARKER)
             .build(),
         AuthTokensResponse.builder()
             .accessToken(SECRET_MARKER)
@@ -97,6 +99,12 @@ class SensitiveAuthValueRedactionTest {
             .sessionId(UUID.randomUUID())
             .currentPassword(SECRET_MARKER)
             .newPassword(SECRET_MARKER)
+            .build(),
+        PasswordChangeCompletionCommand.builder()
+            .accountId(UUID.randomUUID())
+            .sessionId(UUID.randomUUID())
+            .expectedPasswordHash(SECRET_MARKER)
+            .newPasswordHash(SECRET_MARKER)
             .build());
   }
 }

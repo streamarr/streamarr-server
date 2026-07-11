@@ -12,6 +12,7 @@ import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.media.Movie;
+import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.jooq.generated.enums.StreamSessionStatus;
 import com.streamarr.server.repositories.LibraryRepository;
@@ -31,6 +32,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import javax.sql.DataSource;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterEach;
@@ -39,9 +41,19 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
+import org.springframework.security.oauth2.jwt.JwtEncodingException;
 
 @Tag("IntegrationTest")
 @DisplayName("Session Revocation Service Integration Tests")
+@Import(SessionRevocationServiceIT.FailingJwtEncoderConfig.class)
 class SessionRevocationServiceIT extends AbstractIntegrationTest {
 
   private static final Instant FIRST_REVOCATION = Instant.parse("2026-07-11T12:34:56Z");
@@ -49,6 +61,9 @@ class SessionRevocationServiceIT extends AbstractIntegrationTest {
   @Autowired private AuthTestSupport authTestSupport;
   @Autowired private RefreshTokenService refreshTokenService;
   @Autowired private SessionRevocationService sessionRevocationService;
+  @Autowired private PasswordChangeService passwordChangeService;
+  @Autowired private TokenRefreshService tokenRefreshService;
+  @Autowired private LoginService loginService;
   @Autowired private AuthSessionRepository authSessionRepository;
   @Autowired private RefreshTokenRepository refreshTokenRepository;
   @Autowired private LibraryRepository libraryRepository;
@@ -56,6 +71,7 @@ class SessionRevocationServiceIT extends AbstractIntegrationTest {
   @Autowired private StreamSessionLifecycleTransactions lifecycleTransactions;
   @Autowired private DSLContext dsl;
   @Autowired private DataSource dataSource;
+  @Autowired private FailingJwtEncoder failingJwtEncoder;
 
   private final java.util.List<UUID> streamSessionIds = new ArrayList<>();
   private final java.util.List<UUID> movieIds = new ArrayList<>();
@@ -70,6 +86,7 @@ class SessionRevocationServiceIT extends AbstractIntegrationTest {
 
   @AfterEach
   void cleanUp() {
+    failingJwtEncoder.reset();
     dsl.deleteFrom(STREAM_SESSION).where(STREAM_SESSION.ID.in(streamSessionIds)).execute();
     movieRepository.deleteAllById(movieIds);
     movieRepository.flush();
@@ -88,6 +105,41 @@ class SessionRevocationServiceIT extends AbstractIntegrationTest {
     assertThat(streamTerminalReason(streamSessionId))
         .isEqualTo(
             com.streamarr.server.jooq.generated.enums.StreamSessionTerminalReason.AUTH_REVOKED);
+  }
+
+  @Test
+  @DisplayName(
+      "Should terminate caller streams and mint an isolated replacement on password change")
+  void shouldTerminateCallerStreamsAndMintIsolatedReplacementWhenPasswordChanged() {
+    var streamSessionId = saveStream(StreamSessionStatus.ACTIVE);
+
+    var result =
+        passwordChangeService.changePassword(
+            ChangePasswordCommand.builder()
+                .accountId(identity.account().getId())
+                .sessionId(identity.session().getId())
+                .currentPassword(AuthTestSupport.PASSWORD)
+                .newPassword(UUID.randomUUID().toString())
+                .build());
+
+    assertThat(streamStatus(streamSessionId)).isEqualTo(StreamSessionStatus.TERMINATING);
+    assertThat(streamTerminalReason(streamSessionId))
+        .isEqualTo(
+            com.streamarr.server.jooq.generated.enums.StreamSessionTerminalReason.AUTH_REVOKED);
+    assertThat(authSessionRepository.findById(identity.session().getId()).orElseThrow())
+        .satisfies(
+            session -> {
+              assertThat(session.getRevokedAt()).isNotNull();
+              assertThat(session.getRevokedReason())
+                  .isEqualTo(SessionRevocationReason.PASSWORD_CHANGE);
+            });
+    assertThat(authSessionRepository.findByAccountId(identity.account().getId()))
+        .filteredOn(session -> session.getRevokedAt() == null)
+        .singleElement()
+        .satisfies(
+            replacement ->
+                assertThat(replacement.getId()).isNotEqualTo(identity.session().getId()));
+    assertThat(tokenRefreshService.refresh(result.rawRefreshToken()).accessToken()).isNotNull();
   }
 
   @Test
@@ -165,6 +217,51 @@ class SessionRevocationServiceIT extends AbstractIntegrationTest {
     assertThat(authSessionVersion()).isZero();
     assertThat(refreshTokenStatus(originalTokenId)).isEqualTo(RefreshTokenStatus.ACTIVE);
     assertThat(streamStatus(streamSessionId)).isEqualTo(StreamSessionStatus.ACTIVE);
+  }
+
+  @Test
+  @DisplayName(
+      "Should roll back password, sessions, refresh tokens, and streams when JWT encoding fails")
+  void shouldRollBackPasswordSessionsRefreshTokensAndStreamsWhenJwtEncodingFails() {
+    var streamSessionId = saveStream(StreamSessionStatus.ACTIVE);
+    var newPassword = UUID.randomUUID().toString();
+    failingJwtEncoder.failNextEncoding();
+
+    assertThatThrownBy(
+            () ->
+                passwordChangeService.changePassword(
+                    ChangePasswordCommand.builder()
+                        .accountId(identity.account().getId())
+                        .sessionId(identity.session().getId())
+                        .currentPassword(AuthTestSupport.PASSWORD)
+                        .newPassword(newPassword)
+                        .build()))
+        .isInstanceOf(JwtEncodingException.class)
+        .hasMessageContaining("injected JWT encoding failure");
+
+    assertThat(authSessionRepository.findByAccountId(identity.account().getId()))
+        .singleElement()
+        .satisfies(
+            session -> {
+              assertThat(session.getId()).isEqualTo(identity.session().getId());
+              assertThat(session.getRevokedAt()).isNull();
+              assertThat(session.getSessionVersion()).isZero();
+            });
+    assertThat(streamStatus(streamSessionId)).isEqualTo(StreamSessionStatus.ACTIVE);
+    assertThat(tokenRefreshService.refresh(identity.rawRefreshToken()).accessToken()).isNotNull();
+    assertThat(login(AuthTestSupport.PASSWORD, "rollback-old-password")).isNotNull();
+    assertThatThrownBy(() -> login(newPassword, "rollback-new-password"))
+        .isInstanceOf(InvalidCredentialsException.class);
+  }
+
+  private LoginResult login(String password, String source) {
+    return loginService.login(
+        LoginCommand.builder()
+            .email(identity.account().getEmail())
+            .password(password)
+            .deviceName("rollback-test-device")
+            .source(source)
+            .build());
   }
 
   @Test
@@ -462,5 +559,41 @@ class SessionRevocationServiceIT extends AbstractIntegrationTest {
                 identity.session().getId()))
         .fetchSingle(
             com.streamarr.server.jooq.generated.tables.AuthSession.AUTH_SESSION.SESSION_VERSION);
+  }
+
+  @TestConfiguration(proxyBeanMethods = false)
+  static class FailingJwtEncoderConfig {
+
+    @Bean
+    @Primary
+    FailingJwtEncoder failingJwtEncoder(@Qualifier("jwtEncoder") JwtEncoder delegate) {
+      return new FailingJwtEncoder(delegate);
+    }
+  }
+
+  static final class FailingJwtEncoder implements JwtEncoder {
+
+    private final JwtEncoder delegate;
+    private final AtomicBoolean failNextEncoding = new AtomicBoolean();
+
+    private FailingJwtEncoder(JwtEncoder delegate) {
+      this.delegate = delegate;
+    }
+
+    void failNextEncoding() {
+      failNextEncoding.set(true);
+    }
+
+    void reset() {
+      failNextEncoding.set(false);
+    }
+
+    @Override
+    public Jwt encode(JwtEncoderParameters parameters) throws JwtEncodingException {
+      if (failNextEncoding.getAndSet(false)) {
+        throw new JwtEncodingException("injected JWT encoding failure");
+      }
+      return delegate.encode(parameters);
+    }
   }
 }

@@ -9,6 +9,7 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -91,5 +92,15 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
 
     return JooqQueryHelper.nativeQuery(entityManager, query, AuthSession.class).stream()
         .findFirst();
+  }
+
+  @Override
+  public List<UUID> lockIdsByAccountIdOrderById(UUID accountId) {
+    return dsl.select(AUTH_SESSION.ID)
+        .from(AUTH_SESSION)
+        .where(AUTH_SESSION.ACCOUNT_ID.eq(accountId))
+        .orderBy(AUTH_SESSION.ID)
+        .forUpdate()
+        .fetch(AUTH_SESSION.ID);
   }
 }

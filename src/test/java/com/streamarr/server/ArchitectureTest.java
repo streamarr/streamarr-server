@@ -1,12 +1,20 @@
 package com.streamarr.server;
 
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.methods;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noMethods;
 
+import com.streamarr.server.domain.auth.SessionRevocationReason;
+import com.streamarr.server.repositories.auth.AuthSessionRepositoryCustom;
+import com.streamarr.server.repositories.auth.RefreshTokenRepositoryCustom;
+import com.streamarr.server.repositories.streaming.StreamSessionEnforcementRepository;
+import com.streamarr.server.services.auth.SessionRevocationService;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
+import java.time.Instant;
+import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.springframework.transaction.annotation.Transactional;
@@ -104,4 +112,52 @@ class ArchitectureTest {
           .dependOnClassesThat()
           .resideInAPackage("..services.auth..")
           .as("Auth repositories must remain below auth services in the dependency direction");
+
+  @ArchTest
+  static final ArchRule authSessionRevocationMustUseTheAtomicService =
+      methods()
+          .that()
+          .areDeclaredInClassesThat()
+          .areAssignableTo(AuthSessionRepositoryCustom.class)
+          .and()
+          .haveName("revoke")
+          .and()
+          .haveRawParameterTypes(UUID.class, SessionRevocationReason.class, Instant.class)
+          .should()
+          .onlyBeCalled()
+          .byClassesThat()
+          .haveFullyQualifiedName(SessionRevocationService.class.getName())
+          .as("Auth-session revocation must go through SessionRevocationService");
+
+  @ArchTest
+  static final ArchRule refreshFamilyRevocationMustUseTheAtomicService =
+      methods()
+          .that()
+          .areDeclaredInClassesThat()
+          .areAssignableTo(RefreshTokenRepositoryCustom.class)
+          .and()
+          .haveName("revokeAllForSession")
+          .and()
+          .haveRawParameterTypes(UUID.class, Instant.class)
+          .should()
+          .onlyBeCalled()
+          .byClassesThat()
+          .haveFullyQualifiedName(SessionRevocationService.class.getName())
+          .as("Refresh-family revocation must go through SessionRevocationService");
+
+  @ArchTest
+  static final ArchRule authStreamTerminationMustUseTheAtomicService =
+      methods()
+          .that()
+          .areDeclaredInClassesThat()
+          .areAssignableTo(StreamSessionEnforcementRepository.class)
+          .and()
+          .haveName("terminalizeByAuthSession")
+          .and()
+          .haveRawParameterTypes(UUID.class, Instant.class)
+          .should()
+          .onlyBeCalled()
+          .byClassesThat()
+          .haveFullyQualifiedName(SessionRevocationService.class.getName())
+          .as("Auth-session stream termination must go through SessionRevocationService");
 }

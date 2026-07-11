@@ -1,8 +1,11 @@
 package com.streamarr.server.repositories.auth;
 
+import java.util.Optional;
 import java.util.UUID;
 
 public interface UserAccountRepositoryCustom {
+
+  Optional<AccountCredential> findCredentialById(UUID accountId);
 
   /**
    * Locks an enabled account only while its password hash still matches the caller's snapshot. This

@@ -46,9 +46,23 @@ public class RefreshTokenService {
 
   @Transactional
   public IssuedRefreshToken createSession(UserAccount account, String deviceName) {
+    return createSession(
+        CreateAuthSessionCommand.builder()
+            .accountId(account.getId())
+            .deviceName(deviceName)
+            .build());
+  }
+
+  @Transactional
+  public IssuedRefreshToken createSession(CreateAuthSessionCommand command) {
     var session =
         sessionRepository.save(
-            AuthSession.builder().accountId(account.getId()).deviceName(deviceName).build());
+            AuthSession.builder()
+                .accountId(command.accountId())
+                .deviceName(command.deviceName())
+                .activeHouseholdId(command.activeHouseholdId())
+                .activeProfileId(command.activeProfileId())
+                .build());
 
     var rawToken = generateRawToken();
     tokenRepository.save(buildActiveToken(session, rawToken, clock.instant()));
@@ -59,21 +73,6 @@ public class RefreshTokenService {
   /** Revokes the session and its whole token family; the version bump kills live access tokens. */
   public void logout(java.util.UUID sessionId) {
     sessionRevocationService.revoke(sessionId, SessionRevocationReason.LOGOUT, clock.instant());
-  }
-
-  /**
-   * Replaces the session's refresh token family with one fresh ACTIVE token — the one-ACTIVE
-   * invariant holds because everything else is revoked first.
-   */
-  @Transactional
-  public IssuedRefreshToken reissueFor(AuthSession session) {
-    var now = clock.instant();
-    tokenRepository.revokeAllForSession(session.getId(), now);
-
-    var rawToken = generateRawToken();
-    tokenRepository.save(buildActiveToken(session, rawToken, now));
-
-    return new IssuedRefreshToken(rawToken, session);
   }
 
   // Reuse detection must survive its own exception and any enclosing rollback: the family

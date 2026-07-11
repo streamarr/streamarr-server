@@ -852,7 +852,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     changePassword(deviceA.get("accessToken").asString(), PASSWORD, "a brand new passphrase!")
         .andExpect(status().isOk());
 
-    // Device B's access token dies immediately (account-wide sv bump) and its refresh is revoked.
+    // Device B's own session is revoked, which transitionally bumps its sv and revokes its refresh.
     mockMvc
         .perform(
             get("/api/images/{id}", UUID.randomUUID())
@@ -869,8 +869,9 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should keep caller session with fresh tokens when password changed")
-  void shouldKeepCallerSessionWithFreshTokensWhenPasswordChanged() throws Exception {
+  @DisplayName(
+      "Should replace caller session with an isolated refresh family when password changed")
+  void shouldReplaceCallerSessionWithIsolatedRefreshFamilyWhenPasswordChanged() throws Exception {
     seedSingleProfileIdentity();
     var login = objectMapper.readTree(loginResponseBody());
     var oldAccessToken = login.get("accessToken").asString();
@@ -886,8 +887,12 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
                 .andReturn()
                 .getResponse()
                 .getContentAsString());
+    var oldSessionId = decodeToken(oldAccessToken).getClaimAsString(TokenClaims.SESSION_ID);
+    var replacementSessionId =
+        decodeToken(changed.get("accessToken").asString()).getClaimAsString(TokenClaims.SESSION_ID);
 
     // The fresh tokens work; every pre-change credential is dead — including the caller's own.
+    assertThat(replacementSessionId).isNotEqualTo(oldSessionId);
     mockMvc
         .perform(
             get("/api/images/{id}", UUID.randomUUID())
@@ -898,20 +903,19 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
             get("/api/images/{id}", UUID.randomUUID())
                 .header("Authorization", "Bearer " + oldAccessToken))
         .andExpect(status().isUnauthorized());
-    mockMvc
-        .perform(
-            post("/api/auth/refresh")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(refreshBody(changed.get("refreshToken").asString())))
-        .andExpect(status().isOk());
-    // Last on purpose: replaying the swept pre-change refresh token is reuse detection, which
-    // revokes the caller's session and its fresh family (fail-closed) — nothing works after this.
+    // Reuse detection is scoped to the old SID and cannot damage the replacement family.
     mockMvc
         .perform(
             post("/api/auth/refresh")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(refreshBody(oldRefreshToken)))
         .andExpect(status().isUnauthorized());
+    mockMvc
+        .perform(
+            post("/api/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(refreshBody(changed.get("refreshToken").asString())))
+        .andExpect(status().isOk());
   }
 
   @Test

@@ -4,6 +4,8 @@ import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import java.time.Instant;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -21,6 +23,14 @@ public class FakeAuthSessionRepository extends FakeJpaRepository<AuthSession>
   public Optional<AuthSession> lockById(UUID sessionId) {
     // Single-JVM fake: the row lock is a no-op; the guard logic is what the unit tests exercise.
     return findById(sessionId);
+  }
+
+  @Override
+  public List<UUID> lockIdsByAccountIdOrderById(UUID accountId) {
+    return findByAccountId(accountId).stream()
+        .map(AuthSession::getId)
+        .sorted(Comparator.naturalOrder())
+        .toList();
   }
 
   @Override

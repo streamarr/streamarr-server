@@ -70,12 +70,9 @@ public class AuthController {
                 .newPassword(request.newPassword())
                 .build());
 
-    var context = sessionScopeService.revalidateStoredContext(result.account(), result.session());
-    var accessToken = accessTokenIssuer.issue(context);
-
     return respond(
         HttpStatus.OK,
-        accessToken,
+        result.accessToken(),
         result.rawRefreshToken(),
         StreamarrBearerTokenResolver.usedAccessCookie(httpRequest));
   }

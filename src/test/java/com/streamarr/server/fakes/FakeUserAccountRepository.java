@@ -1,6 +1,7 @@
 package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.repositories.auth.AccountCredential;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import java.sql.SQLException;
 import java.util.Optional;
@@ -9,6 +10,12 @@ import org.springframework.dao.DataIntegrityViolationException;
 
 public class FakeUserAccountRepository extends FakeJpaRepository<UserAccount>
     implements UserAccountRepository {
+
+  @Override
+  public Optional<AccountCredential> findCredentialById(java.util.UUID accountId) {
+    return findById(accountId)
+        .map(account -> new AccountCredential(account.getId(), account.getPasswordHash()));
+  }
 
   @Override
   public boolean lockIfCredentialsUnchanged(java.util.UUID accountId, String expectedPasswordHash) {

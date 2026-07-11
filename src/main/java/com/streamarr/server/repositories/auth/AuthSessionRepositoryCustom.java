@@ -3,6 +3,7 @@ package com.streamarr.server.repositories.auth;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -15,9 +16,8 @@ public interface AuthSessionRepositoryCustom {
   Optional<Long> revoke(UUID sessionId, SessionRevocationReason reason, Instant now);
 
   /**
-   * Bumps an unrevoked session's version counter without revoking it — every outstanding access
-   * token dies while the session and refresh-token family stay alive for fresh issuance (password
-   * change keeps the caller logged in).
+   * Bumps an unrevoked session's version counter without revoking it, invalidating outstanding
+   * access tokens while the session and refresh-token family remain live.
    */
   Optional<Long> bumpVersion(UUID sessionId, Instant now);
 
@@ -34,4 +34,6 @@ public interface AuthSessionRepositoryCustom {
    * on the session row — a successor can never be inserted onto a just-revoked session.
    */
   Optional<AuthSession> lockById(UUID sessionId);
+
+  List<UUID> lockIdsByAccountIdOrderById(UUID accountId);
 }
