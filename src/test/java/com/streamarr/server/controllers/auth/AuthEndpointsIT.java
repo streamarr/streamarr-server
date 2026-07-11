@@ -1154,7 +1154,6 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
             .id(UUID.randomUUID().toString())
             .claim(TokenClaims.ROLE, account.getAccountRole().name())
             .claim(TokenClaims.SESSION_ID, session.getId().toString())
-            .claim(TokenClaims.SESSION_VERSION, session.getSessionVersion())
             .claim(TokenClaims.SCOPE, "account");
     customizeClaims.accept(claims);
 

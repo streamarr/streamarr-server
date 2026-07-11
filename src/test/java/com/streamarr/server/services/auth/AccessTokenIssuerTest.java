@@ -67,12 +67,7 @@ class AccessTokenIssuerTest {
   @DisplayName("Should nest scopes when issuing profile token")
   void shouldNestScopesWhenIssuingProfileToken() {
     var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
-    var session =
-        AuthSession.builder()
-            .id(UUID.randomUUID())
-            .accountId(account.getId())
-            .sessionVersion(7)
-            .build();
+    var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
     var householdId = UUID.randomUUID();
     membershipRepository.grantMembership(
         HouseholdMembership.builder()
@@ -158,12 +153,7 @@ class AccessTokenIssuerTest {
   @DisplayName("Should issue account scoped token when no context selected")
   void shouldIssueAccountScopedTokenWhenNoContextSelected() {
     var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
-    var session =
-        AuthSession.builder()
-            .id(UUID.randomUUID())
-            .accountId(account.getId())
-            .sessionVersion(2)
-            .build();
+    var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
 
     var token = issuer.issue(TokenContext.builder().account(account).session(session).build());
 
@@ -212,12 +202,7 @@ class AccessTokenIssuerTest {
 
   private TokenContext accountContext() {
     var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
-    var session =
-        AuthSession.builder()
-            .id(UUID.randomUUID())
-            .accountId(account.getId())
-            .sessionVersion(1)
-            .build();
+    var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
     return TokenContext.builder().account(account).session(session).build();
   }
 

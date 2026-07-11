@@ -177,7 +177,6 @@ class TokenCryptoConfigTest {
                 .issueTime(Date.from(Instant.now()))
                 .expirationTime(Date.from(Instant.now().plusSeconds(600)))
                 .claim(TokenClaims.SESSION_ID, sessionId.toString())
-                .claim(TokenClaims.SESSION_VERSION, 0L)
                 .build());
     hmacToken.sign(new MACSigner(new byte[32]));
     var token = hmacToken.serialize();
@@ -197,7 +196,6 @@ class TokenCryptoConfigTest {
                     .issueTime(Date.from(Instant.now()))
                     .expirationTime(Date.from(Instant.now().plusSeconds(600)))
                     .claim(TokenClaims.SESSION_ID, sessionId.toString())
-                    .claim(TokenClaims.SESSION_VERSION, 0L)
                     .build())
             .serialize();
 
@@ -235,7 +233,6 @@ class TokenCryptoConfigTest {
                 .issueTime(Date.from(Instant.now()))
                 .claim(TokenClaims.ROLE, AccountRole.USER.name())
                 .claim(TokenClaims.SESSION_ID, sessionId.toString())
-                .claim(TokenClaims.SESSION_VERSION, 0L)
                 .claim(TokenClaims.SCOPE, TokenScope.ACCOUNT.claimValue())
                 .build());
     expiryFreeToken.sign(new ECDSASigner(keys.signingKey()));
@@ -366,7 +363,6 @@ class TokenCryptoConfigTest {
             .expiresAt(now.plusSeconds(600))
             .claim(TokenClaims.ROLE, AccountRole.USER.name())
             .claim(TokenClaims.SESSION_ID, sessionId.toString())
-            .claim(TokenClaims.SESSION_VERSION, 0L)
             .claim(TokenClaims.SCOPE, TokenScope.ACCOUNT.claimValue());
     customizer.accept(claims);
     return encoder

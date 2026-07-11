@@ -6,9 +6,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.repository.Repository;
 
-/**
- * Deliberately narrowed so membership grants and revocations cannot bypass version invalidation.
- */
+/** Deliberately narrowed so every grant, role change, and revocation uses an explicit contract. */
 public interface HouseholdMembershipRepository
     extends Repository<HouseholdMembership, UUID>, HouseholdMembershipRepositoryCustom {
 
