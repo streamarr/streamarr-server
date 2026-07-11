@@ -23,7 +23,6 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.fakes.FakeAccountProfileRepository;
-import com.streamarr.server.fakes.FakeHouseholdMembershipRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
@@ -173,7 +172,7 @@ class StreamingResolverTest {
 
     @Bean
     AccountProfileRepository accountProfileRepository() {
-      return new FakeAccountProfileRepository(new FakeHouseholdMembershipRepository());
+      return new FakeAccountProfileRepository();
     }
 
     @Bean

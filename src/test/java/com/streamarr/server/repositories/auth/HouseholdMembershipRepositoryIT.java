@@ -1,7 +1,7 @@
 package com.streamarr.server.repositories.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.AccountProfile;
@@ -10,15 +10,14 @@ import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
-import com.streamarr.server.services.auth.TokenVersionCache;
-import java.time.Duration;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import javax.sql.DataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 
 @Tag("IntegrationTest")
 @DisplayName("Household Membership Repository Integration Tests")
@@ -34,333 +33,252 @@ class HouseholdMembershipRepositoryIT extends AbstractIntegrationTest {
 
   @Autowired private AccountProfileRepository accountProfileRepository;
 
-  @Autowired private TokenVersionCache tokenVersionCache;
-  @Autowired private DataSource dataSource;
+  @Test
+  @DisplayName("Should persist membership when granted")
+  void shouldPersistMembershipWhenGranted() {
+    var membership = newMembership(HouseholdRole.MEMBER);
+
+    membershipRepository.grantMembership(membership);
+
+    assertThat(
+            membershipRepository.findByAccountIdAndHouseholdId(
+                membership.getAccountId(), membership.getHouseholdId()))
+        .hasValueSatisfying(
+            persisted -> assertThat(persisted.getHouseholdRole()).isEqualTo(HouseholdRole.MEMBER));
+  }
 
   @Test
-  @DisplayName("Should advance version when membership revoked")
-  void shouldAdvanceVersionWhenMembershipRevoked() {
-    var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
-    var household = householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
-    var membership =
-        HouseholdMembership.builder()
-            .accountId(account.getId())
-            .householdId(household.getId())
-            .householdRole(HouseholdRole.MEMBER)
-            .build();
-    var granted = membershipRepository.grantMembership(membership);
+  @DisplayName("Should reject duplicate membership when already granted")
+  void shouldRejectDuplicateMembershipWhenAlreadyGranted() {
+    var membership = newMembership(HouseholdRole.MEMBER);
+    membershipRepository.grantMembership(membership);
 
-    var revoked =
-        membershipRepository.revokeMembership(account.getId(), household.getId()).orElseThrow();
+    assertThatThrownBy(
+            () ->
+                membershipRepository.grantMembership(
+                    HouseholdMembership.builder()
+                        .accountId(membership.getAccountId())
+                        .householdId(membership.getHouseholdId())
+                        .householdRole(HouseholdRole.PARENT)
+                        .build()))
+        .isInstanceOf(DataIntegrityViolationException.class);
 
-    assertThat(revoked.version()).isGreaterThan(granted.version());
     assertThat(
-            membershipRepository.findByAccountIdAndHouseholdId(account.getId(), household.getId()))
+            membershipRepository.findByAccountIdAndHouseholdId(
+                membership.getAccountId(), membership.getHouseholdId()))
+        .hasValueSatisfying(
+            persisted -> assertThat(persisted.getHouseholdRole()).isEqualTo(HouseholdRole.MEMBER));
+  }
+
+  @Test
+  @DisplayName("Should persist role when membership role changed")
+  void shouldPersistRoleWhenMembershipRoleChanged() {
+    var membership = newMembership(HouseholdRole.MEMBER);
+    membershipRepository.grantMembership(membership);
+
+    assertThat(
+            membershipRepository.changeRole(
+                HouseholdMembership.builder()
+                    .accountId(membership.getAccountId())
+                    .householdId(membership.getHouseholdId())
+                    .householdRole(HouseholdRole.PARENT)
+                    .build()))
+        .isTrue();
+    assertThat(
+            membershipRepository.findByAccountIdAndHouseholdId(
+                membership.getAccountId(), membership.getHouseholdId()))
+        .hasValueSatisfying(
+            persisted -> assertThat(persisted.getHouseholdRole()).isEqualTo(HouseholdRole.PARENT));
+  }
+
+  @Test
+  @DisplayName("Should return false when changing role for absent membership")
+  void shouldReturnFalseWhenChangingRoleForAbsentMembership() {
+    var membership = newMembership(HouseholdRole.PARENT);
+
+    assertThat(membershipRepository.changeRole(membership)).isFalse();
+    assertThat(
+            membershipRepository.findByAccountIdAndHouseholdId(
+                membership.getAccountId(), membership.getHouseholdId()))
         .isEmpty();
   }
 
   @Test
-  @DisplayName("Should refresh warmed version cache when membership revoked")
-  void shouldRefreshWarmedVersionCacheWhenMembershipRevoked() {
-    var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
-    var household = householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
-    var granted =
-        membershipRepository.grantMembership(
-            HouseholdMembership.builder()
-                .accountId(account.getId())
-                .householdId(household.getId())
-                .householdRole(HouseholdRole.MEMBER)
-                .build());
-    assertThat(tokenVersionCache.membershipVersion(account.getId(), household.getId()))
-        .contains(granted.version());
+  @DisplayName("Should remove membership when revoked")
+  void shouldRemoveMembershipWhenRevoked() {
+    var membership = newMembership(HouseholdRole.MEMBER);
+    membershipRepository.grantMembership(membership);
 
-    var revoked =
-        membershipRepository.revokeMembership(account.getId(), household.getId()).orElseThrow();
-
-    assertThat(tokenVersionCache.membershipVersion(account.getId(), household.getId()))
-        .contains(revoked.version());
+    assertThat(
+            membershipRepository.revokeMembership(
+                membership.getAccountId(), membership.getHouseholdId()))
+        .isTrue();
+    assertThat(
+            membershipRepository.findByAccountIdAndHouseholdId(
+                membership.getAccountId(), membership.getHouseholdId()))
+        .isEmpty();
   }
 
   @Test
-  @DisplayName("Should advance revocation beyond profile grant and revoke")
-  void shouldAdvanceRevocationBeyondProfileGrantAndRevoke() {
-    var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
-    var household = householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
+  @DisplayName("Should return false when revoking absent membership")
+  void shouldReturnFalseWhenRevokingAbsentMembership() {
+    var membership = newMembership(HouseholdRole.MEMBER);
+
+    assertThat(
+            membershipRepository.revokeMembership(
+                membership.getAccountId(), membership.getHouseholdId()))
+        .isFalse();
+  }
+
+  @Test
+  @DisplayName("Should allow membership to be regranted after revocation")
+  void shouldAllowMembershipToBeRegrantedAfterRevocation() {
+    var membership = newMembership(HouseholdRole.MEMBER);
+    membershipRepository.grantMembership(membership);
+    assertThat(
+            membershipRepository.revokeMembership(
+                membership.getAccountId(), membership.getHouseholdId()))
+        .isTrue();
+
     membershipRepository.grantMembership(
         HouseholdMembership.builder()
-            .accountId(account.getId())
-            .householdId(household.getId())
-            .householdRole(HouseholdRole.MEMBER)
+            .accountId(membership.getAccountId())
+            .householdId(membership.getHouseholdId())
+            .householdRole(HouseholdRole.PARENT)
             .build());
+
+    assertThat(membershipRepository.findByAccountId(membership.getAccountId()))
+        .singleElement()
+        .satisfies(
+            persisted -> assertThat(persisted.getHouseholdRole()).isEqualTo(HouseholdRole.PARENT));
+  }
+
+  @Test
+  @DisplayName("Should match one legal ordering when membership grant and revocation race")
+  void shouldMatchOneLegalOrderingWhenMembershipGrantAndRevocationRace() throws Exception {
+    var membership = newMembership(HouseholdRole.MEMBER);
+    var ready = new CountDownLatch(2);
+    var start = new CountDownLatch(1);
+
+    boolean grantCompleted;
+    boolean revoked;
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var grant =
+          executor.submit(
+              () -> {
+                awaitRace(ready, start);
+                membershipRepository.grantMembership(membership);
+                return true;
+              });
+      var revoke =
+          executor.submit(
+              () -> {
+                awaitRace(ready, start);
+                return membershipRepository.revokeMembership(
+                    membership.getAccountId(), membership.getHouseholdId());
+              });
+
+      assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+      start.countDown();
+      grantCompleted = grant.get(10, TimeUnit.SECONDS);
+      revoked = revoke.get(10, TimeUnit.SECONDS);
+    }
+
+    var membershipPresent =
+        membershipRepository
+            .findByAccountIdAndHouseholdId(membership.getAccountId(), membership.getHouseholdId())
+            .isPresent();
+    assertThat(new GrantRevocationOutcome(grantCompleted, revoked, membershipPresent))
+        .isIn(
+            new GrantRevocationOutcome(true, false, true),
+            new GrantRevocationOutcome(true, true, false));
+  }
+
+  @Test
+  @DisplayName(
+      "Should not resurrect membership or leave profile link when role change and revocation race")
+  void shouldNotResurrectMembershipOrLeaveProfileLinkWhenRoleChangeAndRevocationRace()
+      throws Exception {
+    var membership = newMembership(HouseholdRole.MEMBER);
+    membershipRepository.grantMembership(membership);
     var profile =
         profileRepository.save(
-            ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
+            ProfileFixture.defaultProfileBuilder()
+                .householdId(membership.getHouseholdId())
+                .build());
     var link =
         AccountProfile.builder()
-            .accountId(account.getId())
-            .householdId(household.getId())
+            .accountId(membership.getAccountId())
+            .householdId(membership.getHouseholdId())
             .profileId(profile.getId())
             .build();
     accountProfileRepository.linkProfile(link);
-    accountProfileRepository.revokeProfileLink(link);
-    var versionAfterProfileChanges =
-        membershipRepository
-            .findByAccountIdAndHouseholdId(account.getId(), household.getId())
-            .orElseThrow()
-            .getMembershipVersion();
-
-    var revoked =
-        membershipRepository.revokeMembership(account.getId(), household.getId()).orElseThrow();
-
-    assertThat(revoked.version()).isGreaterThan(versionAfterProfileChanges);
-  }
-
-  @Test
-  @DisplayName("Should advance version when household role changed")
-  void shouldAdvanceVersionWhenHouseholdRoleChanged() {
-    var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
-    var household = householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
-    var granted =
-        membershipRepository.grantMembership(
-            HouseholdMembership.builder()
-                .accountId(account.getId())
-                .householdId(household.getId())
-                .householdRole(HouseholdRole.MEMBER)
-                .build());
-
-    var roleChanged =
-        membershipRepository
-            .changeRole(
-                HouseholdMembership.builder()
-                    .accountId(account.getId())
-                    .householdId(household.getId())
-                    .householdRole(HouseholdRole.PARENT)
-                    .build())
-            .orElseThrow();
-
-    assertThat(roleChanged.version()).isGreaterThan(granted.version());
-    assertThat(
-            membershipRepository
-                .findByAccountIdAndHouseholdId(account.getId(), household.getId())
-                .orElseThrow()
-                .getHouseholdRole())
-        .isEqualTo(HouseholdRole.PARENT);
-  }
-
-  @Test
-  @DisplayName("Should refresh warmed version cache when household role changed")
-  void shouldRefreshWarmedVersionCacheWhenHouseholdRoleChanged() {
-    var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
-    var household = householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
-    var granted =
-        membershipRepository.grantMembership(
-            HouseholdMembership.builder()
-                .accountId(account.getId())
-                .householdId(household.getId())
-                .householdRole(HouseholdRole.MEMBER)
-                .build());
-    assertThat(tokenVersionCache.membershipVersion(account.getId(), household.getId()))
-        .contains(granted.version());
-
-    var roleChanged =
-        membershipRepository
-            .changeRole(
-                HouseholdMembership.builder()
-                    .accountId(account.getId())
-                    .householdId(household.getId())
-                    .householdRole(HouseholdRole.PARENT)
-                    .build())
-            .orElseThrow();
-
-    assertThat(tokenVersionCache.membershipVersion(account.getId(), household.getId()))
-        .contains(roleChanged.version());
-  }
-
-  @Test
-  @DisplayName("Should not reuse version when membership revoked and regranted")
-  void shouldNotReuseVersionWhenMembershipRevokedAndRegranted() {
-    var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
-    var household = householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
-    var membership =
+    var roleChange =
         HouseholdMembership.builder()
-            .accountId(account.getId())
-            .householdId(household.getId())
-            .householdRole(HouseholdRole.MEMBER)
+            .accountId(membership.getAccountId())
+            .householdId(membership.getHouseholdId())
+            .householdRole(HouseholdRole.PARENT)
             .build();
-    var firstGrant = membershipRepository.grantMembership(membership);
-    assertThat(tokenVersionCache.membershipVersion(account.getId(), household.getId()))
-        .contains(firstGrant.version());
-    var revoked =
-        membershipRepository.revokeMembership(account.getId(), household.getId()).orElseThrow();
-    assertThat(tokenVersionCache.membershipVersion(account.getId(), household.getId()))
-        .contains(revoked.version());
+    var ready = new CountDownLatch(2);
+    var start = new CountDownLatch(1);
 
-    var regranted =
-        membershipRepository.grantMembership(
-            HouseholdMembership.builder()
-                .accountId(account.getId())
-                .householdId(household.getId())
-                .householdRole(HouseholdRole.MEMBER)
-                .build());
+    boolean roleChanged;
+    boolean revoked;
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var changeRole =
+          executor.submit(
+              () -> {
+                awaitRace(ready, start);
+                return membershipRepository.changeRole(roleChange);
+              });
+      var revoke =
+          executor.submit(
+              () -> {
+                awaitRace(ready, start);
+                return membershipRepository.revokeMembership(
+                    membership.getAccountId(), membership.getHouseholdId());
+              });
 
-    assertThat(revoked.version()).isGreaterThan(firstGrant.version());
-    assertThat(regranted.version()).isGreaterThan(revoked.version());
-    assertThat(tokenVersionCache.membershipVersion(account.getId(), household.getId()))
-        .contains(regranted.version());
+      assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+      start.countDown();
+      roleChanged = changeRole.get(10, TimeUnit.SECONDS);
+      revoked = revoke.get(10, TimeUnit.SECONDS);
+    }
+
+    assertThat(new RoleChangeRevocationOutcome(roleChanged, revoked))
+        .isIn(
+            new RoleChangeRevocationOutcome(true, true),
+            new RoleChangeRevocationOutcome(false, true));
+    assertThat(
+            membershipRepository.findByAccountIdAndHouseholdId(
+                membership.getAccountId(), membership.getHouseholdId()))
+        .isEmpty();
+    assertThat(
+            accountProfileRepository.findByAccountIdAndHouseholdIdAndProfileId(
+                link.getAccountId(), link.getHouseholdId(), link.getProfileId()))
+        .isEmpty();
   }
 
-  @Test
-  @DisplayName("Should allocate regrant version after concurrent revocation commits")
-  void shouldAllocateRegrantVersionAfterConcurrentRevocationCommits() throws Exception {
+  private static void awaitRace(CountDownLatch ready, CountDownLatch start)
+      throws InterruptedException {
+    ready.countDown();
+    if (!start.await(10, TimeUnit.SECONDS)) {
+      throw new AssertionError("race did not start before the timeout");
+    }
+  }
+
+  private HouseholdMembership newMembership(HouseholdRole householdRole) {
     var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
     var household = householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
-    membershipRepository.grantMembership(
-        HouseholdMembership.builder()
-            .accountId(account.getId())
-            .householdId(household.getId())
-            .householdRole(HouseholdRole.MEMBER)
-            .build());
-    installPausedRevokeTrigger();
-
-    long sequenceWhileRevokePaused;
-    long sequenceWhileGrantWaiting;
-    boolean grantCompletedBeforeRevokeReleased;
-    long revokedVersion;
-    long regrantedVersion;
-    try (var blocker = dataSource.getConnection();
-        var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      blocker.createStatement().execute("SELECT pg_advisory_lock(2068675309)");
-      try {
-        var revoke =
-            executor.submit(
-                () ->
-                    membershipRepository
-                        .revokeMembership(account.getId(), household.getId())
-                        .orElseThrow());
-        await()
-            .atMost(Duration.ofSeconds(10))
-            .untilAsserted(() -> assertThat(hasAdvisoryLockWaiter()).isTrue());
-        sequenceWhileRevokePaused = currentMembershipSequenceValue();
-
-        var regrant =
-            executor.submit(
-                () ->
-                    membershipRepository.grantMembership(
-                        HouseholdMembership.builder()
-                            .accountId(account.getId())
-                            .householdId(household.getId())
-                            .householdRole(HouseholdRole.MEMBER)
-                            .build()));
-        await()
-            .atMost(Duration.ofSeconds(10))
-            .until(
-                () ->
-                    regrant.isDone()
-                        || currentMembershipSequenceValue() != sequenceWhileRevokePaused
-                        || lockWaiterCount() >= 2);
-        sequenceWhileGrantWaiting = currentMembershipSequenceValue();
-        grantCompletedBeforeRevokeReleased = regrant.isDone();
-
-        blocker.createStatement().execute("SELECT pg_advisory_unlock(2068675309)");
-        revokedVersion = revoke.get(10, TimeUnit.SECONDS).version();
-        regrantedVersion = regrant.get(10, TimeUnit.SECONDS).version();
-      } finally {
-        blocker.createStatement().execute("SELECT pg_advisory_unlock(2068675309)");
-      }
-    } finally {
-      dropPausedRevokeTrigger();
-    }
-
-    assertThat(grantCompletedBeforeRevokeReleased)
-        .as("regrant must wait for the revocation transaction")
-        .isFalse();
-    assertThat(sequenceWhileGrantWaiting)
-        .as("regrant must not reserve a version before revocation commits")
-        .isEqualTo(sequenceWhileRevokePaused);
-    assertThat(regrantedVersion).isGreaterThan(revokedVersion);
-    assertThat(
-            membershipRepository
-                .findByAccountIdAndHouseholdId(account.getId(), household.getId())
-                .orElseThrow()
-                .getMembershipVersion())
-        .isEqualTo(regrantedVersion);
+    return HouseholdMembership.builder()
+        .accountId(account.getId())
+        .householdId(household.getId())
+        .householdRole(householdRole)
+        .build();
   }
 
-  private void installPausedRevokeTrigger() throws Exception {
-    try (var connection = dataSource.getConnection();
-        var statement = connection.createStatement()) {
-      statement.execute(
-          """
-          CREATE OR REPLACE FUNCTION pause_membership_revoke_for_test()
-          RETURNS trigger
-          LANGUAGE plpgsql
-          AS $function$
-          BEGIN
-            PERFORM pg_advisory_xact_lock(2068675309);
-            RETURN NEW;
-          END;
-          $function$
-          """);
-      statement.execute(
-          """
-          CREATE TRIGGER pause_membership_revoke_for_test
-          BEFORE UPDATE ON household_membership
-          FOR EACH ROW EXECUTE FUNCTION pause_membership_revoke_for_test()
-          """);
-    }
-  }
+  private record GrantRevocationOutcome(
+      boolean grantCompleted, boolean revoked, boolean membershipPresent) {}
 
-  private boolean hasAdvisoryLockWaiter() throws Exception {
-    try (var connection = dataSource.getConnection();
-        var statement =
-            connection.prepareStatement(
-                """
-                SELECT EXISTS (
-                  SELECT 1
-                  FROM pg_stat_activity
-                  WHERE datname = current_database()
-                    AND wait_event_type = 'Lock'
-                    AND wait_event = 'advisory'
-                )
-                """);
-        var result = statement.executeQuery()) {
-      result.next();
-      return result.getBoolean(1);
-    }
-  }
-
-  private long lockWaiterCount() throws Exception {
-    try (var connection = dataSource.getConnection();
-        var statement =
-            connection.prepareStatement(
-                """
-                SELECT COUNT(*)
-                FROM pg_stat_activity
-                WHERE datname = current_database()
-                  AND wait_event_type = 'Lock'
-                """);
-        var result = statement.executeQuery()) {
-      result.next();
-      return result.getLong(1);
-    }
-  }
-
-  private long currentMembershipSequenceValue() throws Exception {
-    try (var connection = dataSource.getConnection();
-        var statement =
-            connection.prepareStatement("SELECT last_value FROM household_membership_version_seq");
-        var result = statement.executeQuery()) {
-      result.next();
-      return result.getLong(1);
-    }
-  }
-
-  private void dropPausedRevokeTrigger() throws Exception {
-    try (var connection = dataSource.getConnection();
-        var statement = connection.createStatement()) {
-      statement.execute(
-          "DROP TRIGGER IF EXISTS pause_membership_revoke_for_test ON household_membership");
-      statement.execute("DROP FUNCTION IF EXISTS pause_membership_revoke_for_test()");
-    }
-  }
+  private record RoleChangeRevocationOutcome(boolean roleChanged, boolean revoked) {}
 }

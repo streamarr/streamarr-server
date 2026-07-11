@@ -10,7 +10,6 @@ import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.fixtures.HouseholdFixture;
 import com.streamarr.server.fixtures.ProfileFixture;
-import com.streamarr.server.services.auth.TokenVersionCache;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -31,130 +30,82 @@ class AccountProfileRepositoryIT extends AbstractIntegrationTest {
 
   @Autowired private AccountProfileRepository accountProfileRepository;
 
-  @Autowired private TokenVersionCache tokenVersionCache;
-
   @Test
-  @DisplayName("Should refresh warmed version cache when profile linked")
-  void shouldRefreshWarmedVersionCacheWhenProfileLinked() {
-    var seeded = seedMembershipWithUnlinkedProfile();
-    var initialVersion = membershipVersionOf(seeded.membership());
-    assertThat(
-            tokenVersionCache.membershipVersion(
-                seeded.link().getAccountId(), seeded.link().getHouseholdId()))
-        .contains(initialVersion);
+  @DisplayName("Should persist profile link when linked")
+  void shouldPersistProfileLinkWhenLinked() {
+    var link = newUnlinkedProfile();
 
-    accountProfileRepository.linkProfile(seeded.link());
-
-    var linkedVersion = membershipVersionOf(seeded.membership());
-    assertThat(
-            tokenVersionCache.membershipVersion(
-                seeded.link().getAccountId(), seeded.link().getHouseholdId()))
-        .contains(linkedVersion);
-  }
-
-  @Test
-  @DisplayName("Should bump membership version when profile link revoked")
-  void shouldBumpMembershipVersionWhenProfileLinkRevoked() {
-    var seeded = seedMembershipWithUnlinkedProfile();
-    var initialVersion = membershipVersionOf(seeded.membership());
-
-    accountProfileRepository.linkProfile(seeded.link());
-
-    var linkedVersion = membershipVersionOf(seeded.membership());
-    assertThat(linkedVersion).isGreaterThan(initialVersion);
-    assertThat(
-            tokenVersionCache.membershipVersion(
-                seeded.link().getAccountId(), seeded.link().getHouseholdId()))
-        .contains(linkedVersion);
-
-    var revoked = accountProfileRepository.revokeProfileLink(seeded.link());
-
-    var revokedVersion = membershipVersionOf(seeded.membership());
-    assertThat(revoked).isTrue();
-    assertThat(revokedVersion).isGreaterThan(linkedVersion);
-    assertThat(
-            tokenVersionCache.membershipVersion(
-                seeded.link().getAccountId(), seeded.link().getHouseholdId()))
-        .contains(revokedVersion);
-    assertThat(accountProfileRepository.findAll())
-        .noneMatch(remaining -> seeded.link().getProfileId().equals(remaining.getProfileId()));
-  }
-
-  @Test
-  @DisplayName("Should not bump membership version when revoking absent link")
-  void shouldNotBumpMembershipVersionWhenRevokingAbsentLink() {
-    var seeded = seedMembershipWithUnlinkedProfile();
-    var initialVersion = membershipVersionOf(seeded.membership());
-
-    var revoked = accountProfileRepository.revokeProfileLink(seeded.link());
-
-    assertThat(revoked).isFalse();
-    assertThat(membershipVersionOf(seeded.membership())).isEqualTo(initialVersion);
-  }
-
-  @Test
-  @DisplayName("Should not bump membership version when duplicate link rejected")
-  void shouldNotBumpMembershipVersionWhenDuplicateLinkRejected() {
-    var seeded = seedMembershipWithUnlinkedProfile();
-    var link = seeded.link();
     accountProfileRepository.linkProfile(link);
-    var linkedVersion = membershipVersionOf(seeded.membership());
+
+    assertThat(
+            accountProfileRepository.findByAccountIdAndHouseholdIdAndProfileId(
+                link.getAccountId(), link.getHouseholdId(), link.getProfileId()))
+        .hasValueSatisfying(
+            persisted -> {
+              assertThat(persisted.getAccountId()).isEqualTo(link.getAccountId());
+              assertThat(persisted.getHouseholdId()).isEqualTo(link.getHouseholdId());
+              assertThat(persisted.getProfileId()).isEqualTo(link.getProfileId());
+            });
+  }
+
+  @Test
+  @DisplayName("Should remove profile link when revoked")
+  void shouldRemoveProfileLinkWhenRevoked() {
+    var link = newUnlinkedProfile();
+    accountProfileRepository.linkProfile(link);
+
+    assertThat(accountProfileRepository.revokeProfileLink(link)).isTrue();
+    assertThat(
+            accountProfileRepository.findByAccountIdAndHouseholdIdAndProfileId(
+                link.getAccountId(), link.getHouseholdId(), link.getProfileId()))
+        .isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should return false when revoking absent profile link")
+  void shouldReturnFalseWhenRevokingAbsentProfileLink() {
+    var link = newUnlinkedProfile();
+
+    assertThat(accountProfileRepository.revokeProfileLink(link)).isFalse();
+    assertThat(
+            accountProfileRepository.findByAccountIdAndHouseholdIdAndProfileId(
+                link.getAccountId(), link.getHouseholdId(), link.getProfileId()))
+        .isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should reject duplicate profile link when already linked")
+  void shouldRejectDuplicateProfileLinkWhenAlreadyLinked() {
+    var link = newUnlinkedProfile();
+    accountProfileRepository.linkProfile(link);
 
     assertThatThrownBy(() -> accountProfileRepository.linkProfile(link))
         .isInstanceOf(DataIntegrityViolationException.class)
         .hasMessageContaining("uq_account_profile_account_profile");
-
-    assertThat(membershipVersionOf(seeded.membership())).isEqualTo(linkedVersion);
+    assertThat(
+            accountProfileRepository.findByAccountIdAndHouseholdId(
+                link.getAccountId(), link.getHouseholdId()))
+        .singleElement()
+        .satisfies(
+            persisted -> assertThat(persisted.getProfileId()).isEqualTo(link.getProfileId()));
   }
 
-  @Test
-  @DisplayName("Should advance membership audit timestamp when version bumped")
-  void shouldAdvanceMembershipAuditTimestampWhenVersionBumped() {
-    var seeded = seedMembershipWithUnlinkedProfile();
-    var savedAt = seeded.membership().getLastModifiedOn();
-
-    accountProfileRepository.linkProfile(seeded.link());
-
-    var reloaded =
-        householdMembershipRepository.findById(seeded.membership().getId()).orElseThrow();
-    assertThat(reloaded.getLastModifiedOn()).isAfter(savedAt);
-  }
-
-  private record SeededMembership(HouseholdMembership membership, AccountProfile link) {}
-
-  private SeededMembership seedMembershipWithUnlinkedProfile() {
+  private AccountProfile newUnlinkedProfile() {
     var account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
     var household = householdRepository.save(HouseholdFixture.defaultHouseholdBuilder().build());
-    var membership =
-        grantMembership(
-            HouseholdMembership.builder()
-                .accountId(account.getId())
-                .householdId(household.getId())
-                .householdRole(HouseholdRole.OWNER)
-                .build());
+    householdMembershipRepository.grantMembership(
+        HouseholdMembership.builder()
+            .accountId(account.getId())
+            .householdId(household.getId())
+            .householdRole(HouseholdRole.OWNER)
+            .build());
     var profile =
         profileRepository.save(
             ProfileFixture.defaultProfileBuilder().householdId(household.getId()).build());
-    var link =
-        AccountProfile.builder()
-            .accountId(account.getId())
-            .householdId(household.getId())
-            .profileId(profile.getId())
-            .build();
-    return new SeededMembership(membership, link);
-  }
-
-  private long membershipVersionOf(HouseholdMembership membership) {
-    return householdMembershipRepository
-        .findById(membership.getId())
-        .orElseThrow()
-        .getMembershipVersion();
-  }
-
-  private HouseholdMembership grantMembership(HouseholdMembership membership) {
-    householdMembershipRepository.grantMembership(membership);
-    return householdMembershipRepository
-        .findByAccountIdAndHouseholdId(membership.getAccountId(), membership.getHouseholdId())
-        .orElseThrow();
+    return AccountProfile.builder()
+        .accountId(account.getId())
+        .householdId(household.getId())
+        .profileId(profile.getId())
+        .build();
   }
 }

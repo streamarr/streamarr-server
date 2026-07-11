@@ -43,7 +43,7 @@ class SetupServiceTest {
       new FakeHouseholdMembershipRepository();
   private final FakeProfileRepository profileRepository = new FakeProfileRepository();
   private final FakeAccountProfileRepository accountProfileRepository =
-      new FakeAccountProfileRepository(membershipRepository);
+      new FakeAccountProfileRepository();
   private final FakeServerBootstrapRepository bootstrapRepository =
       new FakeServerBootstrapRepository();
   private final FakeSessionProgressRepository sessionProgressRepository =
@@ -99,8 +99,6 @@ class SetupServiceTest {
     assertThat(membership.getAccountId()).isEqualTo(admin.getId());
     assertThat(membership.getHouseholdId()).isEqualTo(household.getId());
     assertThat(membership.getHouseholdRole()).isEqualTo(HouseholdRole.OWNER);
-    assertThat(membership.getMembershipVersion()).isPositive();
-
     var profile = profileRepository.findById(result.profile().getId()).orElseThrow();
     assertThat(profile.getHouseholdId()).isEqualTo(household.getId());
     assertThat(profile.getName()).isEqualTo("Andrew");

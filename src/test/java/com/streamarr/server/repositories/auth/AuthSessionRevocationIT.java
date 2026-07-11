@@ -11,7 +11,11 @@ import com.streamarr.server.domain.auth.UserAccount;
 import com.streamarr.server.fixtures.AccountFixture;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -38,24 +42,57 @@ class AuthSessionRevocationIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should bump session version once when revoked twice")
-  void shouldBumpSessionVersionOnceWhenRevokedTwice() {
+  @DisplayName("Should report only the first revocation and preserve its details")
+  void shouldReportOnlyFirstRevocationAndPreserveItsDetails() {
     account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
     var session = saveSession();
-    var now = Instant.now();
+    var firstRevokedAt = Instant.parse("2026-07-11T12:34:56Z");
+    var secondRevokedAt = firstRevokedAt.plusSeconds(1);
 
     var firstRevoke =
-        authSessionRepository.revoke(session.getId(), SessionRevocationReason.TOKEN_REUSE, now);
+        authSessionRepository.revoke(
+            session.getId(), SessionRevocationReason.TOKEN_REUSE, firstRevokedAt);
     var secondRevoke =
-        authSessionRepository.revoke(session.getId(), SessionRevocationReason.LOGOUT, now);
+        authSessionRepository.revoke(
+            session.getId(), SessionRevocationReason.LOGOUT, secondRevokedAt);
 
-    assertThat(firstRevoke).contains(1L);
-    assertThat(secondRevoke).isEmpty();
+    assertThat(firstRevoke).isTrue();
+    assertThat(secondRevoke).isFalse();
 
     var revoked = authSessionRepository.findById(session.getId()).orElseThrow();
-    assertThat(revoked.getSessionVersion()).isEqualTo(1L);
-    assertThat(revoked.getRevokedAt()).isNotNull();
+    assertThat(revoked.getRevokedAt()).isEqualTo(firstRevokedAt);
     assertThat(revoked.getRevokedReason()).isEqualTo(SessionRevocationReason.TOKEN_REUSE);
+  }
+
+  @Test
+  @DisplayName("Should choose exactly one revocation when two revokers race")
+  void shouldChooseExactlyOneRevocationWhenTwoRevokersRace() throws Exception {
+    account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    var session = saveSession();
+    var firstAttempt =
+        new RevocationAttempt(
+            SessionRevocationReason.TOKEN_REUSE, Instant.parse("2026-07-11T12:34:56Z"));
+    var secondAttempt =
+        new RevocationAttempt(
+            SessionRevocationReason.LOGOUT, Instant.parse("2026-07-11T12:35:56Z"));
+    var start = new CountDownLatch(1);
+
+    boolean firstWon;
+    boolean secondWon;
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var first = executor.submit(() -> revokeWhenReleased(session.getId(), firstAttempt, start));
+      var second = executor.submit(() -> revokeWhenReleased(session.getId(), secondAttempt, start));
+
+      start.countDown();
+      firstWon = first.get(10, TimeUnit.SECONDS);
+      secondWon = second.get(10, TimeUnit.SECONDS);
+    }
+
+    assertThat(List.of(firstWon, secondWon)).containsExactlyInAnyOrder(true, false);
+    var winningAttempt = firstWon ? firstAttempt : secondAttempt;
+    var revoked = authSessionRepository.findById(session.getId()).orElseThrow();
+    assertThat(revoked.getRevokedAt()).isEqualTo(winningAttempt.revokedAt());
+    assertThat(revoked.getRevokedReason()).isEqualTo(winningAttempt.reason());
   }
 
   @Test
@@ -126,10 +163,18 @@ class AuthSessionRevocationIT extends AbstractIntegrationTest {
         AuthSession.builder().accountId(account.getId()).deviceName("revocation-test").build());
   }
 
+  private boolean revokeWhenReleased(
+      UUID sessionId, RevocationAttempt attempt, CountDownLatch start) throws InterruptedException {
+    start.await();
+    return authSessionRepository.revoke(sessionId, attempt.reason(), attempt.revokedAt());
+  }
+
   private RefreshToken.RefreshTokenBuilder<?, ?> tokenBuilder(AuthSession session) {
     return RefreshToken.builder()
         .sessionId(session.getId())
         .digest("digest-" + UUID.randomUUID())
         .expiresAt(Instant.now().plus(Duration.ofDays(30)));
   }
+
+  private record RevocationAttempt(SessionRevocationReason reason, Instant revokedAt) {}
 }

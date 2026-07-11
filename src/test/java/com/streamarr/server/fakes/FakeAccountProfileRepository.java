@@ -8,12 +8,6 @@ import java.util.UUID;
 public class FakeAccountProfileRepository extends FakeJpaRepository<AccountProfile>
     implements AccountProfileRepository {
 
-  private final FakeHouseholdMembershipRepository membershipRepository;
-
-  public FakeAccountProfileRepository(FakeHouseholdMembershipRepository membershipRepository) {
-    this.membershipRepository = membershipRepository;
-  }
-
   @Override
   public Optional<AccountProfile> findByAccountIdAndHouseholdIdAndProfileId(
       UUID accountId, UUID householdId, UUID profileId) {
@@ -47,7 +41,6 @@ public class FakeAccountProfileRepository extends FakeJpaRepository<AccountProfi
   @Override
   public void linkProfile(AccountProfile link) {
     save(link);
-    bumpMembershipVersion(link);
   }
 
   @Override
@@ -61,20 +54,6 @@ public class FakeAccountProfileRepository extends FakeJpaRepository<AccountProfi
                         && link.getHouseholdId().equals(entry.getValue().getHouseholdId())
                         && link.getProfileId().equals(entry.getValue().getProfileId()));
 
-    if (!removed) {
-      return false;
-    }
-
-    bumpMembershipVersion(link);
-    return true;
-  }
-
-  private void bumpMembershipVersion(AccountProfile link) {
-    membershipRepository.database.values().stream()
-        .filter(
-            membership ->
-                link.getAccountId().equals(membership.getAccountId())
-                    && link.getHouseholdId().equals(membership.getHouseholdId()))
-        .forEach(membershipRepository::bumpVersion);
+    return removed;
   }
 }

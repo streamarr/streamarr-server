@@ -1147,7 +1147,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
     assertThat(
             householdMembershipRepository.revokeMembership(
                 testIdentity.account().getId(), testIdentity.household().getId()))
-        .isPresent();
+        .isTrue();
 
     assertBoundedContextStaleness(accessToken);
   }

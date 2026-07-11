@@ -22,53 +22,26 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
 
   private final DSLContext dsl;
   private final AuditorAware<UUID> auditorAware;
-  private final CounterChangePublisher counterChangePublisher;
 
   @PersistenceContext private final EntityManager entityManager;
 
   @Override
   @Transactional
-  public Optional<Long> revoke(UUID sessionId, SessionRevocationReason reason, Instant now) {
+  public boolean revoke(UUID sessionId, SessionRevocationReason reason, Instant now) {
     var nowOffset = now.atOffset(ZoneOffset.UTC);
 
-    var updated =
-        dsl.update(AUTH_SESSION)
+    return dsl.update(AUTH_SESSION)
             .set(AUTH_SESSION.REVOKED_AT, nowOffset)
             .set(
                 AUTH_SESSION.REVOKED_REASON,
                 com.streamarr.server.jooq.generated.enums.SessionRevocationReason.valueOf(
                     reason.name()))
-            .set(AUTH_SESSION.SESSION_VERSION, AUTH_SESSION.SESSION_VERSION.plus(1))
             .set(AUTH_SESSION.LAST_MODIFIED_ON, nowOffset)
             .set(AUTH_SESSION.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
             .where(AUTH_SESSION.ID.eq(sessionId))
             .and(AUTH_SESSION.REVOKED_AT.isNull())
-            .returning(AUTH_SESSION.SESSION_VERSION)
-            .fetchOne();
-
-    var bumped = Optional.ofNullable(updated).map(row -> row.get(AUTH_SESSION.SESSION_VERSION));
-    bumped.ifPresent(version -> counterChangePublisher.publishSession(sessionId, version));
-    return bumped;
-  }
-
-  @Override
-  @Transactional
-  public Optional<Long> bumpVersion(UUID sessionId, Instant now) {
-    var nowOffset = now.atOffset(ZoneOffset.UTC);
-
-    var updated =
-        dsl.update(AUTH_SESSION)
-            .set(AUTH_SESSION.SESSION_VERSION, AUTH_SESSION.SESSION_VERSION.plus(1))
-            .set(AUTH_SESSION.LAST_MODIFIED_ON, nowOffset)
-            .set(AUTH_SESSION.LAST_MODIFIED_BY, auditorAware.getCurrentAuditor().orElse(null))
-            .where(AUTH_SESSION.ID.eq(sessionId))
-            .and(AUTH_SESSION.REVOKED_AT.isNull())
-            .returning(AUTH_SESSION.SESSION_VERSION)
-            .fetchOne();
-
-    var bumped = Optional.ofNullable(updated).map(row -> row.get(AUTH_SESSION.SESSION_VERSION));
-    bumped.ifPresent(version -> counterChangePublisher.publishSession(sessionId, version));
-    return bumped;
+            .execute()
+        > 0;
   }
 
   @Override

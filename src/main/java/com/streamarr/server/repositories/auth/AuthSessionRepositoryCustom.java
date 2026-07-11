@@ -9,22 +9,13 @@ import java.util.UUID;
 
 public interface AuthSessionRepositoryCustom {
 
-  /**
-   * Revokes an unrevoked session and bumps its version counter in one statement. Returns the new
-   * session version, or empty when the session was already revoked (no double bump).
-   */
-  Optional<Long> revoke(UUID sessionId, SessionRevocationReason reason, Instant now);
-
-  /**
-   * Bumps an unrevoked session's version counter without revoking it, invalidating outstanding
-   * access tokens while the session and refresh-token family remain live.
-   */
-  Optional<Long> bumpVersion(UUID sessionId, Instant now);
+  /** Revokes an unrevoked session. Returns false when it was missing or already revoked. */
+  boolean revoke(UUID sessionId, SessionRevocationReason reason, Instant now);
 
   /**
    * Persists only the remembered household/profile selection when the session is still live.
-   * Returns false when the session is missing or revoked; revocation and version fields are never
-   * written from the supplied entity.
+   * Returns false when the session is missing or revoked; revocation fields are never written from
+   * the supplied entity.
    */
   boolean updateSelectionIfLive(AuthSession session, Instant now);
 

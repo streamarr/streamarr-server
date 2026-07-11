@@ -167,7 +167,6 @@ class SessionRevocationServiceIT extends AbstractIntegrationTest {
     assertThat(streamStatus(streamSessionId)).isEqualTo(StreamSessionStatus.TERMINATING);
     assertThat(authRevokedAt()).isEqualTo(FIRST_REVOCATION);
     assertThat(authRevocationReason()).isEqualTo(SessionRevocationReason.TOKEN_REUSE);
-    assertThat(authSessionVersion()).isEqualTo(1L);
   }
 
   @Test
@@ -215,7 +214,6 @@ class SessionRevocationServiceIT extends AbstractIntegrationTest {
     }
 
     assertThat(authRevokedAtOrNull()).isNull();
-    assertThat(authSessionVersion()).isZero();
     assertThat(refreshTokenStatus(originalTokenId)).isEqualTo(RefreshTokenStatus.ACTIVE);
     assertThat(streamStatus(streamSessionId)).isEqualTo(StreamSessionStatus.ACTIVE);
   }
@@ -245,7 +243,6 @@ class SessionRevocationServiceIT extends AbstractIntegrationTest {
             session -> {
               assertThat(session.getId()).isEqualTo(identity.session().getId());
               assertThat(session.getRevokedAt()).isNull();
-              assertThat(session.getSessionVersion()).isZero();
             });
     assertThat(streamStatus(streamSessionId)).isEqualTo(StreamSessionStatus.ACTIVE);
     assertThat(tokenRefreshService.refresh(identity.rawRefreshToken()).accessToken()).isNotNull();
@@ -548,17 +545,6 @@ class SessionRevocationServiceIT extends AbstractIntegrationTest {
             .fetchSingle(
                 com.streamarr.server.jooq.generated.tables.AuthSession.AUTH_SESSION.REVOKED_REASON)
             .getLiteral());
-  }
-
-  private long authSessionVersion() {
-    return dsl.select(
-            com.streamarr.server.jooq.generated.tables.AuthSession.AUTH_SESSION.SESSION_VERSION)
-        .from(com.streamarr.server.jooq.generated.tables.AuthSession.AUTH_SESSION)
-        .where(
-            com.streamarr.server.jooq.generated.tables.AuthSession.AUTH_SESSION.ID.eq(
-                identity.session().getId()))
-        .fetchSingle(
-            com.streamarr.server.jooq.generated.tables.AuthSession.AUTH_SESSION.SESSION_VERSION);
   }
 
   @TestConfiguration(proxyBeanMethods = false)

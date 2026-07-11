@@ -51,7 +51,7 @@ class AccessTokenIssuerTest {
       new FakeHouseholdMembershipRepository();
   private final FakeProfileRepository profileRepository = new FakeProfileRepository();
   private final FakeAccountProfileRepository accountProfileRepository =
-      new FakeAccountProfileRepository(membershipRepository);
+      new FakeAccountProfileRepository();
 
   private final TokenCryptoConfig cryptoConfig = new TokenCryptoConfig();
 

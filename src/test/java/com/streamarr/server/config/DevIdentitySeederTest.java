@@ -38,7 +38,7 @@ class DevIdentitySeederTest {
           new FakeHouseholdRepository(),
           membershipRepository,
           new FakeProfileRepository(),
-          new FakeAccountProfileRepository(membershipRepository),
+          new FakeAccountProfileRepository(),
           bootstrapRepository,
           new FakeSessionProgressRepository(),
           new FakeWatchHistoryRepository(),
