@@ -8,10 +8,8 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
 
 @Slf4j
-@Component
 public class LocalFfmpegProcessManager implements FfmpegProcessManager {
 
   private static final long GRACEFUL_SHUTDOWN_SECONDS = 5;

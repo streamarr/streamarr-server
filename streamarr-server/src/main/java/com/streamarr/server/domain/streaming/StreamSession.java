@@ -15,8 +15,6 @@ import lombok.Getter;
 @Builder
 public class StreamSession {
 
-  private static final String DEFAULT_VARIANT = "default";
-
   private final UUID sessionId;
   private final UUID mediaFileId;
   // The owning profile, stamped at creation — playback tokens bind to it.
@@ -65,11 +63,11 @@ public class StreamSession {
   }
 
   public TranscodeHandle getHandle() {
-    return variantHandles.get(DEFAULT_VARIANT);
+    return variantHandles.get(TranscodeRequest.DEFAULT_VARIANT);
   }
 
   public void setHandle(TranscodeHandle handle) {
-    variantHandles.put(DEFAULT_VARIANT, handle);
+    variantHandles.put(TranscodeRequest.DEFAULT_VARIANT, handle);
   }
 
   public void setVariantHandle(String variantLabel, TranscodeHandle handle) {
@@ -87,9 +85,5 @@ public class StreamSession {
 
   public boolean hasActiveTranscodes() {
     return variantHandles.values().stream().anyMatch(h -> h.status() == TranscodeStatus.ACTIVE);
-  }
-
-  public static String defaultVariant() {
-    return DEFAULT_VARIANT;
   }
 }

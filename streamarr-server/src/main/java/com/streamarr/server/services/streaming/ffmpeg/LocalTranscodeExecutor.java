@@ -1,6 +1,5 @@
 package com.streamarr.server.services.streaming.ffmpeg;
 
-import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeJob;
 import com.streamarr.server.domain.streaming.TranscodeMode;
@@ -81,7 +80,7 @@ public class LocalTranscodeExecutor implements TranscodeExecutor {
   }
 
   private Path resolveOutputDir(TranscodeRequest request) {
-    if (StreamSession.defaultVariant().equals(request.variantLabel())) {
+    if (TranscodeRequest.DEFAULT_VARIANT.equals(request.variantLabel())) {
       return segmentStore.getOutputDirectory(request.sessionId());
     }
 

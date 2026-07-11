@@ -18,7 +18,9 @@ public record TranscodeRequest(
     String variantLabel,
     int startNumber) {
 
+  public static final String DEFAULT_VARIANT = "default";
+
   public TranscodeRequest {
-    variantLabel = variantLabel != null ? variantLabel : StreamSession.defaultVariant();
+    variantLabel = variantLabel != null ? variantLabel : DEFAULT_VARIANT;
   }
 }

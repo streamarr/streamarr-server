@@ -369,7 +369,7 @@ public class HlsStreamingService implements StreamingService {
             .width(probe.width())
             .height(probe.height())
             .bitrate(probe.bitrate())
-            .variantLabel(StreamSession.defaultVariant())
+            .variantLabel(TranscodeRequest.DEFAULT_VARIANT)
             .startNumber(startNumber)
             .build();
     var handle = startTranscode(request);

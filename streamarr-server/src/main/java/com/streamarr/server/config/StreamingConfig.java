@@ -22,6 +22,7 @@ import com.streamarr.server.services.streaming.TranscodeDecisionService;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegCommandBuilder;
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegProcessManager;
+import com.streamarr.server.services.streaming.ffmpeg.LocalFfmpegProcessManager;
 import com.streamarr.server.services.streaming.ffmpeg.LocalFfprobeService;
 import com.streamarr.server.services.streaming.ffmpeg.LocalTranscodeExecutor;
 import com.streamarr.server.services.streaming.ffmpeg.TranscodeCapabilityService;
@@ -51,6 +52,11 @@ public class StreamingConfig {
   @Bean
   public FfmpegCommandBuilder ffmpegCommandBuilder(FfmpegPaths ffmpegPaths) {
     return new FfmpegCommandBuilder(ffmpegPaths.ffmpeg());
+  }
+
+  @Bean
+  public LocalFfmpegProcessManager localFfmpegProcessManager() {
+    return new LocalFfmpegProcessManager();
   }
 
   @Bean
