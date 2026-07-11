@@ -49,6 +49,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -407,8 +408,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
     var staleCandidate = lifecycleTransactions.findTerminationIntents().getFirst();
 
     var completed = lifecycleTransactions.completeCreation(streamSessionId);
-    var replayed =
-        lifecycleTransactions.replayTerminationIntent(staleCandidate.streamSessionId());
+    var replayed = lifecycleTransactions.replayTerminationIntent(staleCandidate.streamSessionId());
 
     assertThat(completed).isTrue();
     assertThat(replayed).isFalse();
@@ -658,18 +658,19 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
   @DisplayName("Should preserve a later durable access timestamp when playback is touched")
   void shouldPreserveLaterDurableAccessTimestampWhenPlaybackIsTouched() {
     var created = createPlaybackSession();
-    var futureAccess = clock.instant().plus(Duration.ofMinutes(5));
+    var futureAccess = Instant.parse("2030-01-02T03:04:05.123456789Z");
     dsl.update(STREAM_SESSION)
         .set(STREAM_SESSION.LAST_ACCESSED_AT, futureAccess.atOffset(ZoneOffset.UTC))
         .where(STREAM_SESSION.ID.eq(streamSessionId))
         .execute();
 
     var result = playbackAccessService().access(streamSessionId, playbackIdentity(created));
+    var storedAccess = postgresTimestamp(futureAccess);
 
     assertThat(result).isPresent();
     assertThat(new StreamSessionStateProbe(dsl).lastAccessedAt(streamSessionId))
-        .contains(futureAccess);
-    assertThat(result.orElseThrow().getLastAccessedAt()).isEqualTo(futureAccess);
+        .contains(storedAccess);
+    assertThat(result.orElseThrow().getLastAccessedAt()).isEqualTo(storedAccess);
   }
 
   @Test
@@ -896,7 +897,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
   @DisplayName("Should preserve terminal marker when authoritative parents are deleted")
   void shouldPreserveTerminalMarkerWhenAuthoritativeParentsAreDeleted() {
     createPlaybackSession();
-    var terminalAt = clock.instant();
+    var terminalAt = Instant.parse("2030-01-02T03:04:05.123456789Z");
     assertThat(
             lifecycleTransactions.terminalize(
                 StreamSessionTermination.builder()
@@ -925,7 +926,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
     assertThat(stateProbe.terminalReason(streamSessionId))
         .contains(
             com.streamarr.server.jooq.generated.enums.StreamSessionTerminalReason.AUTH_REVOKED);
-    assertThat(stateProbe.terminalAt(streamSessionId)).contains(terminalAt);
+    assertThat(stateProbe.terminalAt(streamSessionId)).contains(postgresTimestamp(terminalAt));
   }
 
   @Test
@@ -993,8 +994,8 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
   @DisplayName("Should preserve the first terminal reason and timestamp")
   void shouldPreserveFirstTerminalReasonAndTimestamp() {
     createPlaybackSession();
-    var firstAt = clock.instant().minusSeconds(5);
-    var secondAt = clock.instant();
+    var firstAt = Instant.parse("2030-01-02T03:04:05.123456789Z");
+    var secondAt = Instant.parse("2030-01-02T03:04:06.987654321Z");
 
     var firstTransition =
         lifecycleTransactions.terminalize(
@@ -1017,7 +1018,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
     assertThat(stateProbe.terminalReason(streamSessionId))
         .contains(
             com.streamarr.server.jooq.generated.enums.StreamSessionTerminalReason.AUTH_REVOKED);
-    assertThat(stateProbe.terminalAt(streamSessionId)).contains(firstAt);
+    assertThat(stateProbe.terminalAt(streamSessionId)).contains(postgresTimestamp(firstAt));
   }
 
   @Test
@@ -1051,9 +1052,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
                 sessionAuthority, streamingProperties.provisioningTimeout()))
         .isTrue();
     dsl.update(STREAM_SESSION_TERMINATION_INTENT)
-        .set(
-            STREAM_SESSION_TERMINATION_INTENT.REPLAY_AFTER,
-            Instant.EPOCH.atOffset(ZoneOffset.UTC))
+        .set(STREAM_SESSION_TERMINATION_INTENT.REPLAY_AFTER, Instant.EPOCH.atOffset(ZoneOffset.UTC))
         .where(STREAM_SESSION_TERMINATION_INTENT.STREAM_SESSION_ID.eq(sessionId))
         .execute();
     return sessionId;
@@ -1080,6 +1079,10 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
         .from(STREAM_SESSION_TERMINATION_INTENT)
         .where(STREAM_SESSION_TERMINATION_INTENT.STREAM_SESSION_ID.eq(sessionId))
         .fetchSingle(STREAM_SESSION_TERMINATION_INTENT.ARMED);
+  }
+
+  private static Instant postgresTimestamp(Instant timestamp) {
+    return timestamp.plusNanos(500).truncatedTo(ChronoUnit.MICROS);
   }
 
   private AuthenticatedIdentity sourceIdentity(TestIdentity identity) {
