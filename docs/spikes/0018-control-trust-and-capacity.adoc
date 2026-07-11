@@ -1,0 +1,174 @@
+= ADR 0018 Spike: Control Trust and Capacity
+
+== Scope
+
+This bounded spike tests the identity, endpoint-binding, idempotency, fencing, and two-authority capacity decisions in link:../adr/0018-direct-fenced-worker-control.adoc[ADR 0018].
+It is executable contract evidence, not production transport code.
+The disposable harness stayed under `/private/tmp` and no spike implementation entered the repository.
+
+Baseline commit: `02091f81e1d14272e5a770e8e114b95991a81ffa`.
+
+Environment:
+
+----
+Darwin 25.5.0 arm64
+OpenJDK 25.0.1
+Apache Maven 3.9.16
+Python 3.14.6
+----
+
+== Questions
+
+* Can physical capacity be checked separately from mutation without over-admission?
+* Can one `StartJob` atomically admit a complete ladder and subsume a separate reservation lease?
+* What must duplicate, lost-response, stale-generation, and worker-restart behavior mean?
+* How is an advertised endpoint bound to the registered worker rather than trusted as payload?
+* Which certificate bootstrap is proportionate for an optional home-server feature?
+* Which connection directions work without a service mesh, and what reachability do they exclude?
+
+== Disposable model
+
+The model represents one boot epoch of a worker with an atomic lock around command lookup, generation fencing, complete-ladder capacity admission, and result recording.
+A deliberately broken comparison performs capacity check and mutation separately.
+A registry model binds authenticated SPIFFE identity, worker id, `boot_id`, endpoint, and certificate fingerprint before returning a channel epoch.
+A controller model loses a successful start response, restarts from durable intent, inspects the worker, and records the existing allocation.
+
+Command:
+
+----
+python3 /private/tmp/streamarr-p5a0-control-spike/control_plane_sim.py
+----
+
+Observed result:
+
+----
+PASS: characterization: split capacity check over-admits
+PASS: simultaneous final-slot StartJob (500 rounds)
+PASS: duplicate StartJob and lost response
+PASS: same command ID with different payload
+PASS: lower generation
+PASS: worker restart boot_id fence
+PASS: endpoint/certificate identity binding
+PASS: control restart reconciliation
+----
+
+The characterization synchronizes two callers after both see one free slot and before either mutation.
+Both start, consuming two units from capacity one.
+The atomic model repeats the same synchronized final-slot race 500 times; exactly one complete ladder starts in every round.
+This reproduces the check-then-act failure and validates why physical admission belongs inside one worker operation.
+
+The duplicate and lost-response cases establish three distinct rules:
+
+* the same command id and canonical request digest returns the recorded result;
+* the same command id with different content is a conflict;
+* the same job, generation, and spec under a different command id returns the existing allocation rather than starting twice.
+
+The restart case establishes that `boot_id` is an execution epoch.
+Every mutation carries its target worker and boot, and the worker rejects a mismatch before idempotency lookup or side effects.
+The disposable harness does not model operating-system process ownership, so production additionally requires a crash-durable worker journal written before allocation and a container, cgroup, or operating-system job boundary that owns descendants.
+A new process must use those records to clean or quarantine prior-boot processes and generation directories before advertising ready, and must fail readiness when it cannot prove cleanup.
+Control restart recovery scans durable intent and inspects before redispatch; it does not infer failure from a lost response.
+
+== Trust decision
+
+Use an opt-in built-in Streamarr CA with a private root and online issuing intermediate.
+Requiring an administrator to create and rotate a private PKI would dominate the operational cost for the intended audience.
+An external issuer remains possible later because identities follow the SPIFFE URI shape, but the first release implements one bootstrap path.
+
+The trust domain is the installation UUID.
+Stable identities are:
+
+----
+spiffe://<installation-uuid>/streamarr/control/<control-node-uuid>
+spiffe://<installation-uuid>/streamarr/worker/<worker-uuid>
+----
+
+`boot_id` is a process incarnation and never a certificate identity.
+Each leaf contains one exact URI SAN and client/server authentication usage.
+Endpoint addresses are locators, not certificate identity.
+
+An enrollment grant is worker-specific, contains a 256-bit random single-use token, expires after roughly ten minutes, and is stored only as a digest.
+The operator transfers the token with the control endpoint and root fingerprint.
+The worker pins that fingerprint before sending the token, creates its private key locally, and submits a CSR.
+The issuer writes the identity from the grant rather than trusting CSR SAN authority.
+
+The first bootstrap node creates one installation CA secret and stores its public chain and
+fingerprint in PostgreSQL. Every control-plane replica mounts that same secret and refuses
+distributed startup if it is absent or mismatched. A PostgreSQL singleton leadership lease owns
+certificate signing and rotation, preventing replicas from creating competing authorities.
+
+Issuance first durably claims the enrollment request and fixes its worker, public-key digest,
+serial, validity, and extensions. The leader signs outside the database transaction, then
+atomically stores the certificate DER/chain and consumes the grant before returning it. A retry
+with the same request and key returns the stored certificate after a lost response; another key or
+worker is rejected. An expired claim may be signed again from the fixed parameters because no
+certificate is delivered before the storing transaction commits.
+
+CA and node private keys live in owner-only persistent state volumes, separate from PostgreSQL and
+JWT signing. The database and trust state must be backed up together; a mismatched restore requires
+re-enrollment.
+
+Leaf certificates initially live seven days and renew near half-life with jitter.
+This accepts a longer offline credential window than a datacenter SVID in exchange for several days of home-server outage tolerance.
+Authoritative revocation still removes the worker from scheduling, closes channels, invalidates its binding epoch, and distributes a signed revocation update that workers check per RPC.
+Root or issuer rotation is an explicit dual-trust maintenance operation.
+
+grpc-java exposes reloadable credential managers, but the advanced APIs are experimental.
+P5-B must prove live reload, old-channel drain, exact URI verification, expiry, and revocation with real mTLS before any mutating worker method is enabled.
+
+== Endpoint and connection decision
+
+Enrollment, registration, rotation, and heartbeat travel worker to control plane.
+Health proof, job mutation, inspection, and segment retrieval travel control plane to the exact worker.
+Registration derives worker identity from the TLS peer and rejects a mismatched payload id.
+
+Registration alone does not make an endpoint ready.
+The control plane dials the advertised endpoint, expects that worker's exact identity, sends a nonce proof, and requires the same `boot_id` and certificate observed during registration.
+Worker, boot, endpoint, and certificate form an increasing binding epoch; any change closes stale channels and invalidates old observations.
+
+This topology works on one LAN, a Compose network, a Kubernetes network, or an operator-provided VPN/port mapping without a service mesh.
+A worker-initiated unary registration connection is not a reverse unary-RPC tunnel.
+Outbound-only and CGNAT workers need a later bidirectional command stream or NATS transport, and their segment-return path must be solved at the same time.
+UPnP, STUN, and TURN are outside the design.
+
+== Capacity decision
+
+PostgreSQL owns a projected claim across control-plane replicas.
+The claim, desired assignment, and command intent are committed in one transaction by a conditional update or row lock.
+The worker owns physical admission and atomically accepts every required unit for the complete ladder or none.
+Every rendition writes into generation-scoped staging hidden from segment lookup.
+The worker atomically publishes the generation only after every rendition is alive and has produced its initialization data, playlist, and first playable segment; any startup failure publishes nothing, and a later rendition death fails the complete job.
+
+`StartJob` subsumes physical reservation.
+No measured operation needs to occur between a worker hold and process startup, so `ReserveJob` would add a lease id, TTL, expiry, unknown result, compensation, and restart protocol without closing a gap.
+It is reconsidered only if source staging, GPU partitioning, or another measured operation genuinely requires a physical hold before start.
+
+A timed-out start remains unknown.
+The controller retains its projected claim and retries the identical command against the identical worker/boot or inspects that job.
+It releases or reassigns only after authoritative rejection, confirmed absence, a boot change, or terminal authority.
+
+== Required production tests
+
+The later implementation repeats these contracts through public interfaces with real gRPC and PostgreSQL:
+
+* simultaneous final-slot admission;
+* duplicate `StartJob` and conflicting command digest;
+* successful start with a lost response;
+* lower-generation start and stop, plus an unknown command targeting an old boot;
+* worker restart and old-boot command rejection;
+* crash between admission journaling and process registration;
+* prior-boot process/segment quarantine and readiness refusal when cleanup is unprovable;
+* certificate/worker mismatch and endpoint reuse;
+* replicated-control startup with one CA fingerprint and conflicting-secret refusal;
+* lost-response enrollment issuance, concurrent issuers, expiry, revocation, leaf rotation, and old-channel drain;
+* all-rendition startup publication and later single-rendition death;
+* control-plane restart with pending and successfully applied intents.
+
+== References
+
+* https://spiffe.io/docs/latest/spiffe-specs/spiffe-id/[SPIFFE identity specification]
+* https://spiffe.io/docs/latest/spiffe-specs/x509-svid/[SPIFFE X.509-SVID profile]
+* https://spiffe.io/docs/latest/spiffe-specs/spiffe_trust_domain_and_bundle/[SPIFFE trust-domain and bundle profile]
+* https://github.com/grpc/grpc-java/security[grpc-java transport security]
+* https://grpc.io/docs/guides/keepalive/[gRPC keepalive]
+* https://kubernetes.io/docs/reference/access-authn-authz/kubelet-tls-bootstrapping/[Kubernetes TLS bootstrap]

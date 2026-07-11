@@ -1,0 +1,205 @@
+= ADR 0018 Spike: Artifact and Runtime Footprint
+
+== Scope
+
+This bounded spike selects the repository artifact boundary and worker runtime for link:../adr/0018-direct-fenced-worker-control.adoc[ADR 0018].
+Every prototype lived under `/private/tmp/streamarr-p5-a0-artifact-spike-02091f81`; no spike implementation entered the repository.
+
+Baseline commit: `02091f81e1d14272e5a770e8e114b95991a81ffa`.
+
+Environment:
+
+----
+Darwin 25.5.0 arm64
+Oracle OpenJDK 25.0.1
+Apache Maven 3.9.16
+grpc-java 1.80.0
+protobuf-java 4.34.2
+Spring Boot 4.1.0
+----
+
+== Frozen baseline
+
+The exact B2 executable JAR is 143,562,940 bytes (136.91 MiB).
+The merged JaCoCo report covers 7,717 of 7,958 lines (96.97%) and 1,884 of 2,075 branches (90.80%).
+The current `src` tree contains 45,420 production and 56,439 test Java lines, 101,859 total.
+
+These values describe the frozen input, not an acceptance exception for future code.
+Every later pull request still needs its normal new-code coverage, duplication, issue, hotspot, and line-count gates.
+
+Baseline commands:
+
+----
+git rev-parse HEAD
+./mvnw verify
+stat -f '%z %N' target/server-0.0.1-SNAPSHOT.jar
+xmllint --xpath 'string(/report/counter[@type="LINE"]/@covered)' \
+  target/site/jacoco-merged-test-coverage-report/jacoco.xml
+xmllint --xpath 'string(/report/counter[@type="LINE"]/@missed)' \
+  target/site/jacoco-merged-test-coverage-report/jacoco.xml
+find src/main/java -name '*.java' -print0 | xargs -0 wc -l
+find src/test/java -name '*.java' -print0 | xargs -0 wc -l
+----
+
+== Reactor alternatives
+
+Three same-repository layouts were exercised.
+
+=== Root server JAR as aggregator
+
+The attractive low-churn idea was to keep the root application JAR and add `<modules>` beside it.
+Maven rejected the model before any build:
+
+----
+'packaging' with value 'jar' is invalid.
+Aggregator projects require 'pom' as packaging.
+----
+
+Characterization command:
+
+----
+./mvnw -f /private/tmp/streamarr-p5-a0-artifact-spike-02091f81/rootjar/pom.xml validate
+----
+
+This is not a viable Maven reactor.
+
+=== Nested reactor around the root server
+
+A separate `build/reactor/pom.xml` successfully aggregated modules outside its own directory, including the root server JAR.
+Maven topologically sorted deliberately misordered declarations and `-pl :split-server -am` built contract, engine, then server.
+
+----
+./mvnw \
+  -f /private/tmp/streamarr-p5-a0-artifact-spike-02091f81/splitreactor/build/reactor/pom.xml \
+  -pl :split-server -am package
+----
+
+Observed order:
+
+----
+split-contract
+split-engine
+split-server
+----
+
+The layout is technically valid but permanently exceptional:
+
+* ordinary `./mvnw verify` cannot resolve an uninstalled sibling engine and may silently omit module tests after local installation;
+* every full command needs the nested `-f` path or global Maven configuration that changes unrelated goal behavior;
+* `${maven.multiModuleProjectDirectory}` becomes `build/reactor`, so coverage paths escape through `../../`;
+* independent child POMs duplicate plugin and dependency management unless another nested parent is introduced;
+* Paketo needs custom reactor arguments and explicit artifact selection;
+* IDE import, Renovate, jOOQ generation, Sonar, CI, and release tooling must all understand the exception.
+
+One controlled structural move is cheaper than preserving those footguns indefinitely.
+
+=== Conventional root POM
+
+A root `packaging=pom` parent with ordinary server and worker child modules built successfully with the standard command shape:
+
+----
+./mvnw -f /private/tmp/streamarr-p5-a0-artifact-spike-02091f81/rootpom/pom.xml package
+----
+
+Select the conventional layout:
+
+----
+pom.xml                          root parent and aggregator
+streamarr-transcode-contract/    protobuf schema/generated transport
+streamarr-transcode-engine/      execution model and FFmpeg engine
+streamarr-server/                existing Spring Boot application
+streamarr-transcode-worker/      narrow worker application
+streamarr-coverage/              aggregate JaCoCo report
+----
+
+The application source tree must move into `streamarr-server/` without package renaming or behavior changes.
+The root owns shared version, compiler, formatting, Checkstyle, JaCoCo, and dependency management.
+Spring Boot packaging and Flyway/jOOQ generation stay server-only.
+Paketo selects `streamarr-server` through its documented multi-module build/module controls; the worker receives its own image and tag.
+
+== Sonar move risk
+
+The conventional conversion structurally moves more than 100,000 Java lines.
+Git can recognize exact renames, but Sonar does not promise that every moved-file lineage will remain old code in pull-request analysis.
+
+Make the conversion a behavior-neutral, move-only draft pull request before extraction or package renaming.
+Run exact-head Sonar immediately.
+If Sonar preserves the lineage, continue under ordinary gates.
+If it treats the application as roughly 45,000 new production lines, stop and resolve the structural-analysis policy explicitly.
+Do not add exclusions, distort new-code settings, mix behavior into the move, or adopt the nested reactor merely to evade analysis.
+
+After the move, use a dedicated `streamarr-coverage` module with `jacoco:report-aggregate`.
+Point each analyzed module at one reactor-level XML report and assert that the report exists and contains the moved engine classes before Sonar runs.
+Generated protobuf sources remain outside issue, duplication, and coverage analysis.
+
+== Worker runtime comparison
+
+Two minimal executable workers implemented one protobuf-capable unary gRPC service with shaded Netty.
+The plain worker owned its launcher and lifecycle directly.
+The Boot worker used Spring Boot 4.1's official `spring-boot-starter-grpc-server`.
+
+Both ran unloaded with:
+
+----
+-Xms16m -Xmx64m -XX:+UseSerialGC
+----
+
+[cols="1,1,1",options="header"]
+|===
+|Measurement |Plain Java |Spring Boot 4.1
+|Packaged JAR |18.98 MiB |28.83 MiB
+|Runtime artifacts |21 |46
+|Median startup, three runs |164 ms |791 ms
+|JVM threads |14 |16
+|Listening sockets |1 |1
+|Median idle RSS |45.5 MiB |123.0 MiB
+|===
+
+macOS RSS was noisy: plain ranged 33.7-63.0 MiB and Boot 54.3-129.2 MiB.
+Treat RSS as directional; artifact size, startup, and thread counts were steadier.
+
+Choose the Boot worker despite its measured distributed-only overhead.
+The official stack supplies consistent configuration, SSL bundles/mTLS integration, lifecycle, health, interceptors, graceful shutdown, and observability.
+Reimplementing those security and operations boundaries in a custom launcher would save memory but create more bespoke code at the most exposed tier.
+FFmpeg will dominate the resource use of installations that opt into a worker.
+
+The worker remains narrow.
+Using Boot does not permit GraphQL, JPA, Flyway, jOOQ, authentication repositories, token signing, or media-server domain wiring in its dependency graph.
+
+== Local zero-tax contract
+
+The future server-side contract, stubs, and remote client are projected to add about 14.28 MiB to the packaged baseline.
+Accept at most a 15 MiB packaged-server increase.
+If the implemented path exceeds it, revisit transport artifact splitting rather than silently moving the budget.
+
+With distributed mode absent or disabled, require exactly:
+
+* no worker process;
+* no gRPC or segment listener;
+* no gRPC transport, heartbeat, registration, or discovery thread;
+* no channel or endpoint resolution;
+* no certificate, worker, or broker configuration requirement;
+* unchanged local FFmpeg behavior.
+
+Pin these properties with an application-context integration test and an exact-process startup/socket/thread measurement after the real remote client lands.
+The server remains one published image; operational simplicity is worth the bounded binary overhead.
+
+== Later build gates
+
+* `./mvnw verify` from the repository root builds every module and executes every test/plugin once.
+* Reactor order places contract and engine before their consumers and coverage last.
+* Only the server runs Flyway/jOOQ generation and Spring Boot application packaging.
+* The aggregate JaCoCo XML contains server and engine classes and is non-empty before Sonar.
+* The ordinary local server starts without distributed configuration and opens no worker resource.
+* Paketo builds the explicit server artifact; a separate worker build produces the worker image.
+* Preview/release workflows, `spring-boot:run`, jOOQ generation, IDE import, Renovate, Snyk, and Sonar all discover the intended modules.
+* The move-only pull request remains behavior-neutral and uses the exact frozen B2 lineage.
+
+== References
+
+* https://maven.apache.org/guides/mini/guide-multiple-modules.html[Maven reactor guide]
+* https://docs.sonarsource.com/sonarqube-server/analyzing-source-code/scanners/sonarscanner-for-maven[SonarScanner for Maven]
+* https://docs.sonarsource.com/sonarqube-server/2025.5/analyzing-source-code/test-coverage/java-test-coverage[Sonar Java coverage aggregation]
+* https://docs.spring.io/spring-boot/reference/io/grpc.html[Spring Boot gRPC]
+* https://docs.spring.io/spring-grpc/reference/server.html[Spring gRPC server]
+* https://paketo.io/docs/howto/java/[Paketo Java multi-module builds]
