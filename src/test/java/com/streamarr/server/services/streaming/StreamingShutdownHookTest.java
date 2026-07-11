@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNoException;
 
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.fixtures.StreamSessionFixture;
@@ -49,11 +50,25 @@ class StreamingShutdownHookTest {
     assertThat(service.getDestroyedIds()).isEmpty();
   }
 
+  @Test
+  @DisplayName("Should isolate a runtime shutdown failure")
+  void shouldIsolateRuntimeShutdownFailure() {
+    var service = new TrackingStreamingService();
+    service.failShutdown();
+    var hook = new StreamingShutdownHook(service);
+
+    assertThatNoException().isThrownBy(hook::onShutdown);
+
+    assertThat(service.getShutdownAttempts()).isEqualTo(1);
+  }
+
   private static class TrackingStreamingService implements StreamingService {
 
     private final ConcurrentHashMap<UUID, StreamSession> sessions = new ConcurrentHashMap<>();
     private final List<UUID> destroyedIds = new ArrayList<>();
     private final List<UUID> shutdownIds = new ArrayList<>();
+    private boolean shutdownFails;
+    private int shutdownAttempts;
 
     void addSession(StreamSession session) {
       sessions.put(session.getSessionId(), session);
@@ -67,8 +82,20 @@ class StreamingShutdownHookTest {
       return List.copyOf(shutdownIds);
     }
 
+    int getShutdownAttempts() {
+      return shutdownAttempts;
+    }
+
+    void failShutdown() {
+      shutdownFails = true;
+    }
+
     @Override
     public void shutdownRuntime() {
+      shutdownAttempts++;
+      if (shutdownFails) {
+        throw new IllegalStateException("simulated runtime shutdown failure");
+      }
       shutdownIds.addAll(sessions.keySet());
       sessions.clear();
     }

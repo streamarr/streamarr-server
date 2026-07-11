@@ -10,6 +10,7 @@ import com.streamarr.server.repositories.streaming.StreamSessionTermination;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -114,6 +115,55 @@ class TerminatingStreamSessionCleanupWorkerTest {
     assertThat(cleanup.cleanedIds).containsExactly(streamSessionId);
   }
 
+  @Test
+  @DisplayName("Should continue cleanup when termination intents cannot be loaded")
+  void shouldContinueCleanupWhenTerminationIntentsCannotBeLoaded() {
+    var terminatingId = UUID.randomUUID();
+    var lifecycle = new CleanupLifecycle(List.of(terminatingId));
+    lifecycle.failIntentLoading();
+    var cleanup = new IsolatingCleanup(Set.of());
+    var worker =
+        new TerminatingStreamSessionCleanupWorker(
+            lifecycle, cleanup, new StreamSessionTransactionRetry(_ -> {}), Clock.systemUTC());
+
+    worker.cleanupTerminating();
+
+    assertThat(lifecycle.reconciliationAttempts).isEqualTo(1);
+    assertThat(cleanup.cleanedIds).containsExactly(terminatingId);
+  }
+
+  @Test
+  @DisplayName("Should continue replaying termination intents when one replay fails")
+  void shouldContinueReplayingTerminationIntentsWhenOneReplayFails() {
+    var failingId = UUID.randomUUID();
+    var succeedingId = UUID.randomUUID();
+    var lifecycle = new CleanupLifecycle(List.of());
+    lifecycle.recordTerminationIntent(terminationIntent(failingId));
+    lifecycle.recordTerminationIntent(terminationIntent(succeedingId));
+    lifecycle.failReplayFor(failingId);
+    var worker =
+        new TerminatingStreamSessionCleanupWorker(
+            lifecycle,
+            new IsolatingCleanup(Set.of()),
+            new StreamSessionTransactionRetry(_ -> {}),
+            Clock.systemUTC());
+
+    worker.cleanupTerminating();
+
+    assertThat(lifecycle.replayAttemptedIds).containsExactly(failingId, succeedingId);
+    assertThat(lifecycle.findTerminationIntents())
+        .extracting(StreamSessionTermination::streamSessionId)
+        .containsExactly(failingId);
+  }
+
+  private static StreamSessionTermination terminationIntent(UUID streamSessionId) {
+    return StreamSessionTermination.builder()
+        .streamSessionId(streamSessionId)
+        .reason(StreamSessionTerminalReason.STARTUP_FAILURE)
+        .terminalAt(Instant.now())
+        .build();
+  }
+
   private static final class IsolatingCleanup implements StreamSessionCleanup {
 
     private final Set<UUID> failingIds;
@@ -143,6 +193,10 @@ class TerminatingStreamSessionCleanupWorkerTest {
     private final List<UUID> terminatingIds;
     private final boolean reconciliationFails;
     private final List<StreamSessionTermination> terminationIntents = new ArrayList<>();
+    private final List<UUID> replayAttemptedIds = new ArrayList<>();
+    private final Set<UUID> failingReplayIds = new HashSet<>();
+    private boolean intentLoadingFails;
+    private int reconciliationAttempts;
 
     private CleanupLifecycle(List<UUID> terminatingIds) {
       this(terminatingIds, false);
@@ -151,6 +205,14 @@ class TerminatingStreamSessionCleanupWorkerTest {
     private CleanupLifecycle(List<UUID> terminatingIds, boolean reconciliationFails) {
       this.terminatingIds = terminatingIds;
       this.reconciliationFails = reconciliationFails;
+    }
+
+    private void failIntentLoading() {
+      intentLoadingFails = true;
+    }
+
+    private void failReplayFor(UUID streamSessionId) {
+      failingReplayIds.add(streamSessionId);
     }
 
     @Override
@@ -192,6 +254,7 @@ class TerminatingStreamSessionCleanupWorkerTest {
 
     @Override
     public List<UUID> terminalizeMissingMediaSources(Instant terminalAt) {
+      reconciliationAttempts++;
       if (reconciliationFails) {
         throw new IllegalStateException("simulated reconciliation failure");
       }
@@ -211,6 +274,9 @@ class TerminatingStreamSessionCleanupWorkerTest {
 
     @Override
     public List<StreamSessionTermination> findTerminationIntents() {
+      if (intentLoadingFails) {
+        throw new IllegalStateException("simulated intent loading failure");
+      }
       return List.copyOf(terminationIntents);
     }
 
@@ -221,6 +287,10 @@ class TerminatingStreamSessionCleanupWorkerTest {
 
     @Override
     public boolean replayTerminationIntent(UUID streamSessionId) {
+      replayAttemptedIds.add(streamSessionId);
+      if (failingReplayIds.contains(streamSessionId)) {
+        throw new IllegalStateException("simulated intent replay failure");
+      }
       return terminationIntents.removeIf(
           termination -> termination.streamSessionId().equals(streamSessionId));
     }

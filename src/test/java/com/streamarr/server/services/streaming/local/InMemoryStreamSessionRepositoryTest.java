@@ -271,4 +271,20 @@ class InMemoryStreamSessionRepositoryTest {
       waiting.get(5, TimeUnit.SECONDS);
     }
   }
+
+  @Test
+  @DisplayName("Should refuse reservations and runtime transitions after shutdown fence")
+  void shouldRefuseReservationsAndRuntimeTransitionsAfterShutdownFence() {
+    var session = StreamSessionFixture.buildMpegtsSession();
+    var reservation = repository.reserve(session.getSessionId()).orElseThrow();
+    assertThat(repository.attach(reservation, session)).isTrue();
+
+    assertThat(repository.fenceAll()).containsExactly(session.getSessionId());
+
+    assertThat(repository.reserve(UUID.randomUUID())).isEmpty();
+    assertThat(repository.attach(reservation, session)).isFalse();
+    assertThat(repository.beginTranscodeStart(session.getSessionId())).isEmpty();
+    assertThat(repository.markRunning(reservation)).isFalse();
+    assertThat(repository.findById(session.getSessionId())).isEmpty();
+  }
 }

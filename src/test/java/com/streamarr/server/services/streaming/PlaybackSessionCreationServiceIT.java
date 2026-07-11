@@ -36,6 +36,7 @@ import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
+import com.streamarr.server.repositories.streaming.MediaStreamTermination;
 import com.streamarr.server.repositories.streaming.StreamSessionAuthority;
 import com.streamarr.server.repositories.streaming.StreamSessionTermination;
 import com.streamarr.server.services.auth.AccessToken;
@@ -52,6 +53,7 @@ import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -402,6 +404,30 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should roll back activation when the compensation guard is missing")
+  void shouldRollBackActivationWhenCompensationGuardIsMissing() {
+    streamSessionId = UUID.randomUUID();
+    var sessionAuthority = authority(streamSessionId, sourceIdentity());
+    assertThat(
+            lifecycleTransactions.admit(
+                sessionAuthority, streamingProperties.provisioningTimeout()))
+        .isPresent();
+    assertThat(lifecycleTransactions.deleteTerminationIntent(streamSessionId)).isTrue();
+
+    assertThatThrownBy(
+            () ->
+                lifecycleTransactions.activate(
+                    sessionAuthority, streamingProperties.provisioningTimeout()))
+        .isInstanceOf(org.springframework.dao.InvalidDataAccessApiUsageException.class)
+        .hasMessage("Stream session compensation guard is missing")
+        .hasRootCauseInstanceOf(IllegalStateException.class);
+
+    assertThat(new StreamSessionStateProbe(dsl).status(streamSessionId))
+        .contains(StreamSessionStatus.PROVISIONING);
+    assertThat(lifecycleTransactions.deleteTerminationIntent(streamSessionId)).isFalse();
+  }
+
+  @Test
   @DisplayName("Should ignore a stale guard candidate when creation completion wins")
   void shouldIgnoreStaleGuardCandidateWhenCreationCompletionWins() {
     streamSessionId = prepareExpiredActiveGuard();
@@ -428,6 +454,40 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
     assertThat(completed).isFalse();
     assertThat(new StreamSessionStateProbe(dsl).status(streamSessionId))
         .contains(StreamSessionStatus.TERMINATING);
+  }
+
+  @Test
+  @DisplayName("Should refuse termination-intent replay when the session is missing")
+  void shouldRefuseTerminationIntentReplayWhenSessionIsMissing() {
+    var replayed = lifecycleTransactions.replayTerminationIntent(UUID.randomUUID());
+
+    assertThat(replayed).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should complete replay and delete the intent when termination already won")
+  void shouldCompleteReplayAndDeleteIntentWhenTerminationAlreadyWon() {
+    streamSessionId = UUID.randomUUID();
+    var sessionAuthority = authority(streamSessionId, sourceIdentity());
+    assertThat(
+            lifecycleTransactions.admit(
+                sessionAuthority, streamingProperties.provisioningTimeout()))
+        .isPresent();
+    assertThat(
+            lifecycleTransactions.terminalize(
+                StreamSessionTermination.builder()
+                    .streamSessionId(streamSessionId)
+                    .reason(StreamSessionTerminalReason.OWNER_DESTROY)
+                    .terminalAt(clock.instant())
+                    .build()))
+        .isTrue();
+
+    var replayed = lifecycleTransactions.replayTerminationIntent(streamSessionId);
+
+    assertThat(replayed).isTrue();
+    assertThat(new StreamSessionStateProbe(dsl).status(streamSessionId))
+        .contains(StreamSessionStatus.TERMINATING);
+    assertThat(lifecycleTransactions.deleteTerminationIntent(streamSessionId)).isFalse();
   }
 
   @Test
@@ -507,6 +567,67 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
     assertThat(TRANSCODE_EXECUTOR.startAttempts()).isZero();
     assertThat(new StreamSessionStateProbe(dsl).countForAuthSession(testIdentity.session().getId()))
         .isZero();
+  }
+
+  @Test
+  @DisplayName("Should refuse admission when the media source is missing")
+  void shouldRefuseAdmissionWhenMediaSourceIsMissing() {
+    mediaFileRepository.deleteById(mediaFileId);
+    mediaFileRepository.flush();
+
+    var admitted =
+        lifecycleTransactions.admit(
+            authority(UUID.randomUUID(), sourceIdentity()),
+            streamingProperties.provisioningTimeout());
+
+    assertThat(admitted).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should leave playback unchanged when no media sources are terminalized")
+  void shouldLeavePlaybackUnchangedWhenNoMediaSourcesAreTerminalized() {
+    createPlaybackSession();
+
+    var terminalized =
+        lifecycleTransactions.terminalizeByMediaFiles(
+            MediaStreamTermination.builder()
+                .mediaFileIds(Set.of())
+                .reason(StreamSessionTerminalReason.SOURCE_DELETED)
+                .terminalAt(clock.instant())
+                .build());
+
+    assertThat(terminalized).isEmpty();
+    assertThat(new StreamSessionStateProbe(dsl).status(streamSessionId))
+        .contains(StreamSessionStatus.ACTIVE);
+  }
+
+  @Test
+  @DisplayName("Should return the next page of terminating sessions after the keyset")
+  void shouldReturnNextPageOfTerminatingSessionsAfterKeyset() {
+    var sessionIds =
+        List.of(
+            UUID.fromString("11111111-1111-1111-1111-111111111111"),
+            UUID.fromString("11111111-1111-1111-1111-111111111112"),
+            UUID.fromString("11111111-1111-1111-1111-111111111113"));
+    var identity = sourceIdentity();
+    for (var sessionId : sessionIds) {
+      assertThat(
+              lifecycleTransactions.admit(
+                  authority(sessionId, identity), streamingProperties.provisioningTimeout()))
+          .isPresent();
+      assertThat(
+              lifecycleTransactions.terminalize(
+                  StreamSessionTermination.builder()
+                      .streamSessionId(sessionId)
+                      .reason(StreamSessionTerminalReason.OWNER_DESTROY)
+                      .terminalAt(clock.instant())
+                      .build()))
+          .isTrue();
+    }
+
+    var page = lifecycleTransactions.findTerminatingIdsAfter(sessionIds.getFirst(), 1);
+
+    assertThat(page).containsExactly(sessionIds.get(1));
   }
 
   @Test
@@ -838,6 +959,34 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
     } finally {
       authTestSupport.deleteIdentity(otherIdentity);
     }
+  }
+
+  @Test
+  @DisplayName("Should refuse activation when the requested auth session does not exist")
+  void shouldRefuseActivationWhenRequestedAuthSessionDoesNotExist() {
+    streamSessionId = UUID.randomUUID();
+    var admittedAuthority = authority(streamSessionId, sourceIdentity());
+    assertThat(
+            lifecycleTransactions.admit(
+                admittedAuthority, streamingProperties.provisioningTimeout()))
+        .isPresent();
+    var missingAuthAuthority =
+        StreamSessionAuthority.builder()
+            .streamSessionId(streamSessionId)
+            .authSessionId(UUID.randomUUID())
+            .accountId(admittedAuthority.accountId())
+            .householdId(admittedAuthority.householdId())
+            .profileId(admittedAuthority.profileId())
+            .mediaFileId(admittedAuthority.mediaFileId())
+            .build();
+
+    var activated =
+        lifecycleTransactions.activate(
+            missingAuthAuthority, streamingProperties.provisioningTimeout());
+
+    assertThat(activated).isFalse();
+    assertThat(new StreamSessionStateProbe(dsl).status(streamSessionId))
+        .contains(StreamSessionStatus.PROVISIONING);
   }
 
   @Test

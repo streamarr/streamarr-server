@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNoException;
 
 import com.streamarr.server.domain.streaming.StreamSessionTerminalReason;
 import com.streamarr.server.repositories.streaming.MediaStreamTermination;
@@ -61,15 +62,40 @@ class StreamingSessionCleanupListenerTest {
     assertThat(lifecycleTransactions.termination).isNull();
   }
 
+  @Test
+  @DisplayName("Should isolate a durable terminalization failure")
+  void shouldIsolateDurableTerminalizationFailure() {
+    var mediaFileId = UUID.randomUUID();
+    lifecycleTransactions.failTerminalization();
+
+    assertThatNoException()
+        .isThrownBy(
+            () ->
+                listener.onLibraryRemoved(
+                    new LibraryRemovedEvent("/library/path", Set.of(mediaFileId))));
+
+    assertThat(lifecycleTransactions.termination.mediaFileIds()).containsExactly(mediaFileId);
+    assertThat(lifecycleTransactions.termination.reason())
+        .isEqualTo(StreamSessionTerminalReason.SOURCE_DELETED);
+  }
+
   private static final class FakeLifecycleTransactions
       implements StreamSessionLifecycleTransactions {
 
     private MediaStreamTermination termination;
     private List<UUID> affectedStreamIds = List.of();
+    private boolean terminalizationFails;
+
+    private void failTerminalization() {
+      terminalizationFails = true;
+    }
 
     @Override
     public List<UUID> terminalizeByMediaFiles(MediaStreamTermination requestedTermination) {
       termination = requestedTermination;
+      if (terminalizationFails) {
+        throw new IllegalStateException("simulated terminalization failure");
+      }
       return affectedStreamIds;
     }
 
