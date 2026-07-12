@@ -214,8 +214,9 @@ class LocalTranscodeWorkerAdapterTest {
     var repeated = adapter.start(startCommand(target, specification));
 
     assertThat(failed.observation().state()).isEqualTo(TranscodeJobState.FAILED);
-    assertThat(repeated).isEqualTo(new StartJobResult.Accepted(failed.observation()));
-    assertThat(repeated).isNotEqualTo(initial);
+    assertThat(repeated)
+        .isEqualTo(new StartJobResult.Accepted(failed.observation()))
+        .isNotEqualTo(initial);
     assertThat(catalog.resolvedSources()).containsExactly(specification.source());
     assertThat(processManager.getStarted()).containsExactly(specification.jobRef().jobId());
   }

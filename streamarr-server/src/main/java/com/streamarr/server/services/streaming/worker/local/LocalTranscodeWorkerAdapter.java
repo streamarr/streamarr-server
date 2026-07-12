@@ -265,7 +265,9 @@ public class LocalTranscodeWorkerAdapter implements TranscodeWorkerPort {
         }
         case STARTUP_FAILED, CLEANUP_PENDING ->
             recordAdmittedAttempt(inFlight.specification(), resolvedSource);
-        case JOB_CONFLICT, SESSION_CONFLICT, INVALID_SPECIFICATION, SHUTTING_DOWN -> {}
+        case JOB_CONFLICT, SESSION_CONFLICT, INVALID_SPECIFICATION, SHUTTING_DOWN -> {
+          // These failures admit no work, so discarding the in-flight marker is sufficient.
+        }
       }
     }
 
