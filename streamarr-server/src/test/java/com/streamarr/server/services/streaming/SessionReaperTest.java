@@ -2,13 +2,15 @@ package com.streamarr.server.services.streaming;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.StreamSession;
-import com.streamarr.server.domain.streaming.TranscodeHandle;
-import com.streamarr.server.domain.streaming.TranscodeStatus;
-import com.streamarr.server.fakes.FakeTranscodeExecutor;
+import com.streamarr.server.fakes.FakePlaybackTranscodeJobService;
 import com.streamarr.server.fixtures.StreamSessionFixture;
-import java.nio.file.Path;
+import com.streamarr.transcode.engine.model.TranscodeJobState;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Collection;
@@ -20,17 +22,19 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 @Tag("UnitTest")
+@DisplayName("Session Reaper Tests")
 class SessionReaperTest {
 
-  private FakeTranscodeExecutor executor;
+  private FakePlaybackTranscodeJobService transcodeJobs;
   private InMemoryStreamingService streamingService;
   private SessionReaper reaper;
 
   @BeforeEach
   void setUp() {
-    executor = new FakeTranscodeExecutor();
+    transcodeJobs = new FakePlaybackTranscodeJobService();
     streamingService = new InMemoryStreamingService();
     var properties =
         StreamingProperties.builder()
@@ -38,232 +42,115 @@ class SessionReaperTest {
             .sessionTimeout(Duration.ofSeconds(60))
             .sessionRetention(Duration.ofHours(24))
             .build();
-    reaper = new SessionReaper(streamingService, executor, properties);
+    reaper = new SessionReaper(streamingService, transcodeJobs, properties);
   }
 
   @Test
-  @DisplayName("Should mark handle as suspended when session is idle past timeout")
-  void shouldMarkHandleAsSuspendedWhenIdlePastTimeout() {
-    var session = buildSession(Instant.now().minusSeconds(120));
-    streamingService.addSession(session);
+  @DisplayName("Should suspend an idle running whole job without removing its session")
+  void shouldSuspendIdleRunningWholeJobWithoutRemovingItsSession() {
+    var session = idleSession();
+    transcodeJobs.observe(session.getSessionId(), TranscodeJobState.RUNNING, 0);
 
     reaper.reapSessions();
 
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.SUSPENDED);
+    assertThat(transcodeJobs.suspensionAttempts()).containsExactly(session.getSessionId());
+    assertThat(streamingService.accessSession(session.getSessionId())).contains(session);
   }
 
   @Test
-  @DisplayName("Should preserve session when suspending idle session")
-  void shouldPreserveSessionWhenSuspendingIdleSession() {
-    var session = buildSession(Instant.now().minusSeconds(120));
-    streamingService.addSession(session);
+  @DisplayName("Should suspend an idle admitting whole job")
+  void shouldSuspendIdleAdmittingWholeJob() {
+    var session = idleSession();
+    transcodeJobs.observe(session.getSessionId(), TranscodeJobState.ADMITTING, 0);
 
     reaper.reapSessions();
 
-    assertThat(streamingService.accessSession(session.getSessionId())).isPresent();
+    assertThat(transcodeJobs.suspensionAttempts()).containsExactly(session.getSessionId());
   }
 
   @Test
-  @DisplayName("Should preserve durable session for persistence retention reaper")
-  void shouldPreserveDurableSessionForPersistenceRetentionReaper() {
-    var session = buildSession(Instant.now().minusSeconds(90_000));
-    streamingService.addSession(session);
+  @DisplayName("Should not suspend a recently accessed running whole job")
+  void shouldNotSuspendRecentlyAccessedRunningWholeJob() {
+    var session = addSession(Instant.now().minusSeconds(10));
+    transcodeJobs.observe(session.getSessionId(), TranscodeJobState.RUNNING, 0);
 
     reaper.reapSessions();
 
-    assertThat(streamingService.accessSession(session.getSessionId())).isPresent();
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.SUSPENDED);
+    assertThat(transcodeJobs.suspensionAttempts()).isEmpty();
   }
 
   @Test
-  @DisplayName("Should not suspend session when already suspended")
-  void shouldNotSuspendSessionWhenAlreadySuspended() {
-    var session = buildSession(Instant.now().minusSeconds(120));
-    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
-    streamingService.addSession(session);
+  @DisplayName("Should treat a completed whole job as terminal output rather than a dead process")
+  void shouldTreatCompletedWholeJobAsTerminalOutputRatherThanDeadProcess() {
+    var session = idleSession();
+    transcodeJobs.observe(session.getSessionId(), TranscodeJobState.COMPLETED, 0);
 
     reaper.reapSessions();
 
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.SUSPENDED);
-    assertThat(streamingService.accessSession(session.getSessionId())).isPresent();
+    assertThat(transcodeJobs.suspensionAttempts()).isEmpty();
   }
 
   @Test
-  @DisplayName("Should not suspend session when handles are failed")
-  void shouldNotSuspendSessionWhenHandlesAreFailed() {
-    var session = buildSession(Instant.now().minusSeconds(120));
-    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.FAILED));
-    streamingService.addSession(session);
+  @DisplayName("Should report a failed whole job without discarding replacement authority")
+  void shouldReportFailedWholeJobWithoutDiscardingReplacementAuthority() {
+    var session = addSession(Instant.now().minusSeconds(10));
+    transcodeJobs.observe(session.getSessionId(), TranscodeJobState.FAILED, 0);
+    var logger = (Logger) LoggerFactory.getLogger(SessionReaper.class);
+    var appender = new ListAppender<ILoggingEvent>();
+    appender.start();
+    logger.addAppender(appender);
 
-    reaper.reapSessions();
+    try {
+      reaper.reapSessions();
+    } finally {
+      logger.detachAppender(appender);
+    }
 
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.FAILED);
-    assertThat(streamingService.accessSession(session.getSessionId())).isPresent();
+    assertThat(transcodeJobs.suspensionAttempts()).isEmpty();
+    assertThat(appender.list)
+        .filteredOn(event -> event.getLevel() == Level.WARN)
+        .extracting(ILoggingEvent::getFormattedMessage)
+        .anyMatch(message -> message.contains(session.getSessionId().toString()));
   }
 
   @Test
-  @DisplayName("Should stop executor when suspending idle session")
-  void shouldStopExecutorWhenSuspendingIdleSession() {
-    var session = buildSession(Instant.now().minusSeconds(120));
-    streamingService.addSession(session);
+  @DisplayName("Should fail closed when active whole-job inspection is unavailable")
+  void shouldFailClosedWhenActiveWholeJobInspectionIsUnavailable() {
+    var session = idleSession();
+    transcodeJobs.observe(session.getSessionId(), TranscodeJobState.RUNNING, 0);
+    transcodeJobs.makeInspectionUnavailable(session.getSessionId());
 
     reaper.reapSessions();
 
-    assertThat(executor.getStopped()).contains(session.getSessionId());
+    assertThat(transcodeJobs.suspensionAttempts()).isEmpty();
   }
 
   @Test
-  @DisplayName("Should preserve session when recently accessed")
-  void shouldPreserveSessionWhenRecentlyAccessed() {
-    var session = buildSession(Instant.now().minusSeconds(10));
-    streamingService.addSession(session);
+  @DisplayName("Should ignore a session with no active whole job")
+  void shouldIgnoreSessionWithNoActiveWholeJob() {
+    idleSession();
 
     reaper.reapSessions();
 
-    assertThat(streamingService.accessSession(session.getSessionId())).isPresent();
+    assertThat(transcodeJobs.suspensionAttempts()).isEmpty();
   }
 
-  @Test
-  @DisplayName("Should update handle to failed when FFmpeg process dies")
-  void shouldUpdateHandleToFailedWhenFfmpegProcessDies() {
-    var session = buildSession(Instant.now().minusSeconds(10));
-    session.setHandle(new TranscodeHandle(1234L, TranscodeStatus.ACTIVE));
-    streamingService.addSession(session);
-    executor.markDead(session.getSessionId());
-
-    reaper.reapSessions();
-
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.FAILED);
-    assertThat(session.getHandle().processId()).isEqualTo(1234L);
+  private StreamSession idleSession() {
+    return addSession(Instant.now().minusSeconds(120));
   }
 
-  @Test
-  @DisplayName("Should not change handle when FFmpeg process is running")
-  void shouldNotChangeHandleWhenFfmpegProcessIsRunning() {
-    var session = buildSession(Instant.now().minusSeconds(10));
-    session.setHandle(new TranscodeHandle(1234L, TranscodeStatus.ACTIVE));
-    streamingService.addSession(session);
-    executor.start(
-        com.streamarr.transcode.engine.model.RenditionRequest.builder()
-            .sessionId(session.getSessionId())
-            .sourcePath(Path.of("/media/movie.mkv"))
-            .seekPosition(0)
-            .segmentDuration(6)
-            .framerate(24.0)
-            .transcodeDecision(session.getTranscodeDecision())
-            .width(1920)
-            .height(1080)
-            .bitrate(5_000_000)
-            .build());
-
-    reaper.reapSessions();
-
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
-  }
-
-  @Test
-  @DisplayName("Should mark specific variant as failed when only that process dies")
-  void shouldMarkSpecificVariantAsFailedWhenOnlyThatProcessDies() {
-    var session = buildAbrSession(Instant.now().minusSeconds(10));
-    streamingService.addSession(session);
-
-    executor.markDead(session.getSessionId(), "1080p");
-
-    reaper.reapSessions();
-
-    assertThat(session.getVariantHandle("1080p").status()).isEqualTo(TranscodeStatus.FAILED);
-    assertThat(session.getVariantHandle("720p").status()).isEqualTo(TranscodeStatus.ACTIVE);
-  }
-
-  @Test
-  @DisplayName("Should not change handles when all variants are running")
-  void shouldNotChangeHandlesWhenAllVariantsRunning() {
-    var session = buildAbrSession(Instant.now().minusSeconds(10));
-    streamingService.addSession(session);
-
-    reaper.reapSessions();
-
-    assertThat(session.getVariantHandle("1080p").status()).isEqualTo(TranscodeStatus.ACTIVE);
-    assertThat(session.getVariantHandle("720p").status()).isEqualTo(TranscodeStatus.ACTIVE);
-  }
-
-  @Test
-  @DisplayName("Should skip already failed handles when suspending idle session")
-  void shouldSkipAlreadyFailedHandlesWhenSuspendingIdleSession() {
-    var session = buildSession(Instant.now().minusSeconds(120));
-    session.setVariantHandle("1080p", new TranscodeHandle(100L, TranscodeStatus.ACTIVE));
-    session.setVariantHandle("720p", new TranscodeHandle(101L, TranscodeStatus.FAILED));
-
-    executor.start(
-        com.streamarr.transcode.engine.model.RenditionRequest.builder()
-            .sessionId(session.getSessionId())
-            .sourcePath(Path.of("/media/movie.mkv"))
-            .seekPosition(0)
-            .segmentDuration(6)
-            .framerate(24.0)
-            .transcodeDecision(session.getTranscodeDecision())
-            .width(1920)
-            .height(1080)
-            .bitrate(5_000_000)
-            .variantLabel("1080p")
-            .build());
-
-    streamingService.addSession(session);
-
-    reaper.reapSessions();
-
-    assertThat(session.getVariantHandle("1080p").status()).isEqualTo(TranscodeStatus.SUSPENDED);
-    assertThat(session.getVariantHandle("720p").status()).isEqualTo(TranscodeStatus.FAILED);
-  }
-
-  private StreamSession buildSession(Instant lastAccessedAt) {
+  private StreamSession addSession(Instant lastAccessedAt) {
     var session = StreamSessionFixture.buildMpegtsSession();
     session.setLastAccessedAt(lastAccessedAt);
+    streamingService.addSession(session);
     return session;
   }
 
-  private StreamSession buildAbrSession(Instant lastAccessedAt) {
-    var session = StreamSessionFixture.buildMpegtsSession();
-    session.setLastAccessedAt(lastAccessedAt);
-
-    session.setVariantHandle("1080p", new TranscodeHandle(100L, TranscodeStatus.ACTIVE));
-    session.setVariantHandle("720p", new TranscodeHandle(101L, TranscodeStatus.ACTIVE));
-
-    executor.start(
-        com.streamarr.transcode.engine.model.RenditionRequest.builder()
-            .sessionId(session.getSessionId())
-            .sourcePath(Path.of("/media/movie.mkv"))
-            .seekPosition(0)
-            .segmentDuration(6)
-            .framerate(24.0)
-            .transcodeDecision(session.getTranscodeDecision())
-            .width(1920)
-            .height(1080)
-            .bitrate(5_000_000)
-            .variantLabel("1080p")
-            .build());
-    executor.start(
-        com.streamarr.transcode.engine.model.RenditionRequest.builder()
-            .sessionId(session.getSessionId())
-            .sourcePath(Path.of("/media/movie.mkv"))
-            .seekPosition(0)
-            .segmentDuration(6)
-            .framerate(24.0)
-            .transcodeDecision(session.getTranscodeDecision())
-            .width(1280)
-            .height(720)
-            .bitrate(3_000_000)
-            .variantLabel("720p")
-            .build());
-
-    return session;
-  }
-
-  private static class InMemoryStreamingService implements StreamingService {
+  private static final class InMemoryStreamingService implements StreamingService {
 
     private final ConcurrentHashMap<UUID, StreamSession> sessions = new ConcurrentHashMap<>();
 
-    void addSession(StreamSession session) {
+    private void addSession(StreamSession session) {
       sessions.put(session.getSessionId(), session);
     }
 

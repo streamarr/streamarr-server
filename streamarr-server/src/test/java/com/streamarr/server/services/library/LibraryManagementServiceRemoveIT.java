@@ -22,8 +22,9 @@ import com.streamarr.server.exceptions.LibraryNotFoundException;
 import com.streamarr.server.exceptions.LibraryRefreshInProgressException;
 import com.streamarr.server.exceptions.LibraryScanInProgressException;
 import com.streamarr.server.fakes.FakeFfprobeService;
+import com.streamarr.server.fakes.FakeMediaSourceCatalog;
+import com.streamarr.server.fakes.FakePlaybackTranscodeJobService;
 import com.streamarr.server.fakes.FakeSegmentStore;
-import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.jooq.generated.enums.StreamSessionStatus;
 import com.streamarr.server.jooq.generated.enums.StreamSessionTerminalReason;
@@ -42,9 +43,11 @@ import com.streamarr.server.services.streaming.CreatePlaybackSessionCommand;
 import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.server.services.streaming.PersistedStreamSessionReaper;
 import com.streamarr.server.services.streaming.PlaybackSessionCreationService;
+import com.streamarr.server.services.streaming.PlaybackTranscodeJobService;
+import com.streamarr.server.services.streaming.RuntimeTranscodeCleanup;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.StreamingService;
-import com.streamarr.server.services.streaming.TranscodeExecutor;
+import com.streamarr.server.services.streaming.source.MediaSourceCatalog;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
 import java.io.IOException;
@@ -124,17 +127,23 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
 
   @Autowired private DSLContext dsl;
 
-  @TestBean TranscodeExecutor transcodeExecutor;
+  @TestBean PlaybackTranscodeJobService playbackTranscodeJobService;
+  @TestBean MediaSourceCatalog libraryMediaSourceCatalog;
   @TestBean FfprobeService ffprobeService;
   @TestBean SegmentStore segmentStore;
 
-  private static final StopFailingTranscodeExecutor FAKE_EXECUTOR =
-      new StopFailingTranscodeExecutor();
+  private static final FakePlaybackTranscodeJobService FAKE_TRANSCODE_JOBS =
+      new FakePlaybackTranscodeJobService();
+  private static final FakeMediaSourceCatalog FAKE_SOURCE_CATALOG = new FakeMediaSourceCatalog();
   private static final FakeFfprobeService FAKE_FFPROBE = new FakeFfprobeService();
   private static final FakeSegmentStore FAKE_SEGMENT_STORE = new FakeSegmentStore();
 
-  static TranscodeExecutor transcodeExecutor() {
-    return FAKE_EXECUTOR;
+  static PlaybackTranscodeJobService playbackTranscodeJobService() {
+    return FAKE_TRANSCODE_JOBS;
+  }
+
+  static MediaSourceCatalog libraryMediaSourceCatalog() {
+    return FAKE_SOURCE_CATALOG;
   }
 
   static FfprobeService ffprobeService() {
@@ -153,7 +162,7 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
     seriesRepository.deleteAll();
     movieRepository.deleteAll();
     libraryRepository.deleteAll();
-    FAKE_EXECUTOR.reset();
+    FAKE_TRANSCODE_JOBS.reset();
   }
 
   @Test
@@ -305,9 +314,9 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
       assertThat(streamingService.getActiveSessionCount())
           .as("Streaming session should be terminated when library is removed")
           .isZero();
-      assertThat(FAKE_EXECUTOR.getStopped())
-          .as("Transcode process should be stopped")
-          .contains(fixture.streamSessionId());
+      assertThat(FAKE_TRANSCODE_JOBS.terminalCleanupAttempts())
+          .as("Exact transcode cleanup should be attempted once")
+          .containsExactly(fixture.streamSessionId());
     } finally {
       cleanupFixture(fixture);
     }
@@ -319,7 +328,8 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
     var fixture = createActiveStream("Retained Streaming Movie", "/test/retained-streaming.mkv");
 
     try {
-      FAKE_EXECUTOR.failStopFor(fixture.streamSessionId());
+      FAKE_TRANSCODE_JOBS.returnTerminalCleanup(
+          fixture.streamSessionId(), RuntimeTranscodeCleanup.PENDING);
 
       libraryManagementService.removeLibrary(fixture.libraryId());
 
@@ -330,6 +340,8 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
           .isTrue();
       assertThat(intentExists("media_file_deletion_intent", "media_file_id", fixture.mediaFileId()))
           .isTrue();
+      assertThat(FAKE_TRANSCODE_JOBS.terminalCleanupAttempts())
+          .containsExactly(fixture.streamSessionId());
     } finally {
       cleanupFixture(fixture);
     }
@@ -341,10 +353,12 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
     var fixture = createActiveStream("Retried Streaming Movie", "/test/retried-streaming.mkv");
 
     try {
-      FAKE_EXECUTOR.failStopFor(fixture.streamSessionId());
+      FAKE_TRANSCODE_JOBS.returnTerminalCleanup(
+          fixture.streamSessionId(), RuntimeTranscodeCleanup.PENDING);
       libraryManagementService.removeLibrary(fixture.libraryId());
 
-      FAKE_EXECUTOR.allowStopFor(fixture.streamSessionId());
+      FAKE_TRANSCODE_JOBS.returnTerminalCleanup(
+          fixture.streamSessionId(), RuntimeTranscodeCleanup.COMPLETE);
       deletionRetryWorker.retryPending();
 
       assertThat(libraryRepository.findById(fixture.libraryId())).isEmpty();
@@ -352,6 +366,8 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
       assertStreamMissing(fixture.streamSessionId());
       assertThat(intentExists("library_deletion_intent", "library_id", fixture.libraryId()))
           .isFalse();
+      assertThat(FAKE_TRANSCODE_JOBS.terminalCleanupAttempts())
+          .containsExactly(fixture.streamSessionId(), fixture.streamSessionId());
     } finally {
       cleanupFixture(fixture);
     }
@@ -433,7 +449,8 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
         createActiveStream("Orphaned Streaming Movie", "/test/missing-orphaned-streaming.mkv");
 
     try {
-      FAKE_EXECUTOR.failStopFor(fixture.streamSessionId());
+      FAKE_TRANSCODE_JOBS.returnTerminalCleanup(
+          fixture.streamSessionId(), RuntimeTranscodeCleanup.PENDING);
 
       orphanedMediaFileCleanupService.cleanupOrphanedFiles(fixture.library());
 
@@ -443,7 +460,8 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
           .isTrue();
       assertThat(deletionTransactions.finalizeMediaFileDeletion(fixture.mediaFileId())).isFalse();
 
-      FAKE_EXECUTOR.allowStopFor(fixture.streamSessionId());
+      FAKE_TRANSCODE_JOBS.returnTerminalCleanup(
+          fixture.streamSessionId(), RuntimeTranscodeCleanup.COMPLETE);
       deletionRetryWorker.retryPending();
 
       assertThat(mediaFileRepository.findById(fixture.mediaFileId())).isEmpty();
@@ -452,6 +470,8 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
       assertStreamMissing(fixture.streamSessionId());
       assertThat(intentExists("media_file_deletion_intent", "media_file_id", fixture.mediaFileId()))
           .isFalse();
+      assertThat(FAKE_TRANSCODE_JOBS.terminalCleanupAttempts())
+          .containsExactly(fixture.streamSessionId(), fixture.streamSessionId());
     } finally {
       cleanupFixture(fixture);
     }
@@ -817,7 +837,8 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
   }
 
   private void cleanupFixture(ActiveStreamFixture fixture) {
-    FAKE_EXECUTOR.allowStopFor(fixture.streamSessionId());
+    FAKE_TRANSCODE_JOBS.returnTerminalCleanup(
+        fixture.streamSessionId(), RuntimeTranscodeCleanup.COMPLETE);
     deletionRetryWorker.retryPending();
     streamingService.terminateRuntime(fixture.streamSessionId());
     dsl.deleteFrom(STREAM_SESSION).where(STREAM_SESSION.ID.eq(fixture.streamSessionId())).execute();
@@ -854,33 +875,6 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
 
     private UUID libraryId() {
       return library.getId();
-    }
-  }
-
-  private static final class StopFailingTranscodeExecutor extends FakeTranscodeExecutor {
-
-    private final Set<UUID> stopFailures = new java.util.HashSet<>();
-
-    private void failStopFor(UUID streamSessionId) {
-      stopFailures.add(streamSessionId);
-    }
-
-    private void allowStopFor(UUID streamSessionId) {
-      stopFailures.remove(streamSessionId);
-    }
-
-    @Override
-    public void stop(UUID streamSessionId) {
-      if (stopFailures.contains(streamSessionId)) {
-        throw new IllegalStateException("simulated stop failure");
-      }
-      super.stop(streamSessionId);
-    }
-
-    @Override
-    public void reset() {
-      super.reset();
-      stopFailures.clear();
     }
   }
 }

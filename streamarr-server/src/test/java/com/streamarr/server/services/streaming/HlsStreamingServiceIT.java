@@ -7,16 +7,16 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.streaming.StreamingOptions;
-import com.streamarr.server.domain.streaming.TranscodeHandle;
-import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.MediaFileNotFoundException;
 import com.streamarr.server.fakes.FakeFfprobeService;
+import com.streamarr.server.fakes.FakeMediaSourceCatalog;
+import com.streamarr.server.fakes.FakePlaybackTranscodeJobService;
 import com.streamarr.server.fakes.FakeSegmentStore;
-import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
+import com.streamarr.server.services.streaming.source.MediaSourceCatalog;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,16 +35,19 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   @Autowired private MediaFileRepository mediaFileRepository;
   @Autowired private LibraryRepository libraryRepository;
 
-  @TestBean TranscodeExecutor transcodeExecutor;
+  @TestBean PlaybackTranscodeJobService playbackTranscodeJobService;
   @TestBean FfprobeService ffprobeService;
   @TestBean SegmentStore segmentStore;
+  @TestBean MediaSourceCatalog libraryMediaSourceCatalog;
 
-  private static final FakeTranscodeExecutor FAKE_EXECUTOR = new FakeTranscodeExecutor();
+  private static final FakePlaybackTranscodeJobService FAKE_TRANSCODE_JOBS =
+      new FakePlaybackTranscodeJobService();
   private static final FakeFfprobeService FAKE_FFPROBE = new FakeFfprobeService();
   private static final FakeSegmentStore FAKE_SEGMENT_STORE = new FakeSegmentStore();
+  private static final FakeMediaSourceCatalog FAKE_SOURCE_CATALOG = new FakeMediaSourceCatalog();
 
-  static TranscodeExecutor transcodeExecutor() {
-    return FAKE_EXECUTOR;
+  static PlaybackTranscodeJobService playbackTranscodeJobService() {
+    return FAKE_TRANSCODE_JOBS;
   }
 
   static FfprobeService ffprobeService() {
@@ -55,10 +58,15 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
     return FAKE_SEGMENT_STORE;
   }
 
+  static MediaSourceCatalog libraryMediaSourceCatalog() {
+    return FAKE_SOURCE_CATALOG;
+  }
+
   private MediaFile savedMediaFile;
 
   @BeforeEach
   void setUp() {
+    FAKE_TRANSCODE_JOBS.reset();
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
 
     var file =
@@ -89,7 +97,12 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
 
     assertThat(session.getMediaProbe()).isNotNull();
     assertThat(session.getTranscodeDecision()).isNotNull();
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
+    assertThat(FAKE_TRANSCODE_JOBS.inspectActive(session.getSessionId()))
+        .isInstanceOfSatisfying(
+            ActiveTranscodeJobInspection.Observed.class,
+            active ->
+                assertThat(active.observation().state())
+                    .isEqualTo(com.streamarr.transcode.engine.model.TranscodeJobState.RUNNING));
   }
 
   @Test
@@ -128,15 +141,14 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   @DisplayName("Should resume transcode when segment requested from suspended session")
   void shouldResumeTranscodeWhenSegmentRequestedFromSuspendedSession() {
     var session = createSession(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
-
-    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
-    FAKE_EXECUTOR.markDead(session.getSessionId());
+    var startsBefore = FAKE_TRANSCODE_JOBS.startCommands().size();
+    FAKE_TRANSCODE_JOBS.suspend(session.getSessionId());
 
     streamingService.resumeSessionIfNeeded(session.getSessionId(), "segment0.ts");
 
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
-    assertThat(FAKE_EXECUTOR.isRunning(session.getSessionId())).isTrue();
+    assertThat(FAKE_TRANSCODE_JOBS.startCommands()).hasSize(startsBefore + 1);
+    assertThat(FAKE_TRANSCODE_JOBS.inspectActive(session.getSessionId()))
+        .isInstanceOf(ActiveTranscodeJobInspection.Observed.class);
   }
 
   private StreamingOptions defaultOptions() {

@@ -2,15 +2,17 @@ package com.streamarr.server.config;
 
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.auth.PlaybackTokenIssuer;
-import com.streamarr.server.services.concurrency.MutexFactoryProvider;
+import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.streaming.DefaultPlaybackSessionAccessService;
 import com.streamarr.server.services.streaming.DefaultPlaybackSessionCreationService;
 import com.streamarr.server.services.streaming.DefaultPlaybackSessionTerminationService;
+import com.streamarr.server.services.streaming.DefaultPlaybackTranscodeJobService;
 import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.server.services.streaming.HlsStreamingService;
 import com.streamarr.server.services.streaming.PlaybackSessionAccessService;
 import com.streamarr.server.services.streaming.PlaybackSessionCreationService;
 import com.streamarr.server.services.streaming.PlaybackSessionTerminationService;
+import com.streamarr.server.services.streaming.PlaybackTranscodeJobService;
 import com.streamarr.server.services.streaming.QualityLadderService;
 import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
 import com.streamarr.server.services.streaming.SegmentStore;
@@ -19,20 +21,24 @@ import com.streamarr.server.services.streaming.StreamSessionLifecycleTransaction
 import com.streamarr.server.services.streaming.StreamSessionTransactionRetry;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.streaming.TranscodeDecisionService;
-import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.services.streaming.ffmpeg.LocalFfprobeService;
-import com.streamarr.server.services.streaming.ffmpeg.LocalTranscodeExecutor;
 import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRepository;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
+import com.streamarr.server.services.streaming.source.MediaSourceCatalog;
+import com.streamarr.server.services.streaming.worker.TranscodeWorkerPort;
+import com.streamarr.server.services.streaming.worker.WorkerTarget;
+import com.streamarr.server.services.streaming.worker.local.LocalTranscodeWorkerAdapter;
 import com.streamarr.transcode.engine.ffmpeg.FfmpegCommandBuilder;
 import com.streamarr.transcode.engine.ffmpeg.FfmpegProcessManager;
 import com.streamarr.transcode.engine.ffmpeg.LocalFfmpegProcessManager;
 import com.streamarr.transcode.engine.ffmpeg.TranscodeCapabilityService;
+import com.streamarr.transcode.engine.job.LocalTranscodeEngine;
 import com.streamarr.transcode.engine.segment.LocalSegmentStorage;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.time.Clock;
+import java.util.UUID;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import tools.jackson.databind.ObjectMapper;
@@ -40,12 +46,15 @@ import tools.jackson.databind.ObjectMapper;
 @Configuration
 public class StreamingConfig {
 
-  @Bean
+  /** Reserved stable identity for the in-process worker across application boots. */
+  static final UUID LOCAL_WORKER_ID = UUID.fromString("00000000-0000-4000-8000-000000000001");
+
+  @Bean(destroyMethod = "")
   public LocalSegmentStorage localSegmentStorage(StreamingProperties properties) {
     return new LocalSegmentStorage(Path.of(properties.segmentBasePath()));
   }
 
-  @Bean
+  @Bean(destroyMethod = "")
   public LocalSegmentStore segmentStore(LocalSegmentStorage storage) {
     return new LocalSegmentStore(storage);
   }
@@ -98,14 +107,32 @@ public class StreamingConfig {
         });
   }
 
-  @Bean
-  public TranscodeExecutor transcodeExecutor(
+  @Bean(destroyMethod = "shutdown")
+  public LocalTranscodeEngine localTranscodeEngine(
       FfmpegCommandBuilder commandBuilder,
       FfmpegProcessManager processManager,
-      LocalSegmentStore segmentStore,
+      LocalSegmentStorage segmentStorage,
       TranscodeCapabilityService capabilityService) {
-    return new LocalTranscodeExecutor(
-        commandBuilder, processManager, segmentStore, capabilityService);
+    return LocalTranscodeEngine.builder()
+        .commandBuilder(commandBuilder)
+        .processManager(processManager)
+        .segmentStorage(segmentStorage)
+        .capabilityService(capabilityService)
+        .build();
+  }
+
+  @Bean
+  public WorkerTarget localWorkerTarget() {
+    return new WorkerTarget(LOCAL_WORKER_ID, UUID.randomUUID());
+  }
+
+  @Bean
+  public TranscodeWorkerPort transcodeWorkerPort(
+      WorkerTarget localWorkerTarget,
+      MediaSourceCatalog mediaSourceCatalog,
+      LocalTranscodeEngine localTranscodeEngine) {
+    return new LocalTranscodeWorkerAdapter(
+        localWorkerTarget, mediaSourceCatalog, localTranscodeEngine);
   }
 
   @Bean
@@ -114,26 +141,47 @@ public class StreamingConfig {
   }
 
   @Bean
+  public MutexFactory<UUID> streamingLifecycleMutexFactory() {
+    return new MutexFactory<>();
+  }
+
+  @Bean
+  public PlaybackTranscodeJobService playbackTranscodeJobService(
+      TranscodeWorkerPort worker,
+      WorkerTarget workerTarget,
+      RuntimeStreamSessionRegistry runtimeRegistry,
+      MutexFactory<UUID> streamingLifecycleMutexFactory) {
+    return DefaultPlaybackTranscodeJobService.builder()
+        .worker(worker)
+        .workerTarget(workerTarget)
+        .runtimeRegistry(runtimeRegistry)
+        .sessionMutexes(streamingLifecycleMutexFactory)
+        .build();
+  }
+
+  @Bean
   public StreamingService streamingService(
       MediaFileRepository mediaFileRepository,
-      TranscodeExecutor transcodeExecutor,
       SegmentStore segmentStore,
       FfprobeService ffprobeService,
       TranscodeDecisionService transcodeDecisionService,
       QualityLadderService qualityLadderService,
       StreamingProperties properties,
       RuntimeStreamSessionRegistry streamSessionRepository,
-      MutexFactoryProvider mutexFactoryProvider) {
+      MutexFactory<UUID> streamingLifecycleMutexFactory,
+      PlaybackTranscodeJobService playbackTranscodeJobService,
+      MediaSourceCatalog mediaSourceCatalog) {
     return new HlsStreamingService(
         mediaFileRepository,
-        transcodeExecutor,
         segmentStore,
         ffprobeService,
         transcodeDecisionService,
         qualityLadderService,
         properties,
         streamSessionRepository,
-        mutexFactoryProvider.getMutexFactory());
+        streamingLifecycleMutexFactory,
+        playbackTranscodeJobService,
+        mediaSourceCatalog);
   }
 
   @Bean

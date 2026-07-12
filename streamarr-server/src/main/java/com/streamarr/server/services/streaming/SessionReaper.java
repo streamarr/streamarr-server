@@ -2,8 +2,7 @@ package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.StreamSession;
-import com.streamarr.server.domain.streaming.TranscodeHandle;
-import com.streamarr.server.domain.streaming.TranscodeStatus;
+import com.streamarr.transcode.engine.model.TranscodeJobState;
 import java.time.Instant;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,7 +15,7 @@ import org.springframework.stereotype.Component;
 public class SessionReaper {
 
   private final StreamingService streamingService;
-  private final TranscodeExecutor transcodeExecutor;
+  private final PlaybackTranscodeJobService playbackTranscodeJobService;
   private final StreamingProperties properties;
 
   @Scheduled(fixedDelayString = "${streaming.reaper-interval-ms:15000}")
@@ -28,13 +27,29 @@ public class SessionReaper {
   }
 
   private void processSession(StreamSession session, Instant now) {
-    if (isIdle(session, now) && session.hasActiveTranscodes()) {
-      log.info("Suspending idle session {}", session.getSessionId());
-      suspendSession(session);
+    switch (playbackTranscodeJobService.inspectActive(session.getSessionId())) {
+      case ActiveTranscodeJobInspection.None _ -> {}
+      case ActiveTranscodeJobInspection.Unavailable(var jobRef) ->
+          log.warn(
+              "Unable to inspect active transcode for session {} job {}",
+              session.getSessionId(),
+              jobRef);
+      case ActiveTranscodeJobInspection.Observed(var observation, _) ->
+          processObservation(session, now, observation.state());
+    }
+  }
+
+  private void processObservation(StreamSession session, Instant now, TranscodeJobState state) {
+    if (isIdle(session, now)
+        && (state == TranscodeJobState.ADMITTING || state == TranscodeJobState.RUNNING)) {
+      suspendSession(session.getSessionId());
       return;
     }
-
-    handleDeadProcesses(session);
+    if (state == TranscodeJobState.FAILED) {
+      log.warn(
+          "Transcode failed for session {}; missing output may be replaced",
+          session.getSessionId());
+    }
   }
 
   private boolean isIdle(StreamSession session, Instant now) {
@@ -42,37 +57,10 @@ public class SessionReaper {
     return idleSeconds > properties.sessionTimeout().toSeconds();
   }
 
-  private void suspendSession(StreamSession session) {
-    transcodeExecutor.stop(session.getSessionId());
-    for (var entry : session.getVariantHandles().entrySet()) {
-      var handle = entry.getValue();
-      if (handle.status() != TranscodeStatus.ACTIVE) {
-        continue;
-      }
-
-      session.setVariantHandle(
-          entry.getKey(),
-          new TranscodeHandle(handle.processId(), TranscodeStatus.SUSPENDED, handle.startNumber()));
-    }
-  }
-
-  private void handleDeadProcesses(StreamSession session) {
-    for (var entry : session.getVariantHandles().entrySet()) {
-      var label = entry.getKey();
-      var handle = entry.getValue();
-
-      if (handle.status() != TranscodeStatus.ACTIVE) {
-        continue;
-      }
-
-      if (transcodeExecutor.isRunning(session.getSessionId(), label)) {
-        continue;
-      }
-
-      log.warn("FFmpeg process died for session {} variant {}", session.getSessionId(), label);
-      session.setVariantHandle(
-          label,
-          new TranscodeHandle(handle.processId(), TranscodeStatus.FAILED, handle.startNumber()));
+  private void suspendSession(java.util.UUID sessionId) {
+    log.info("Suspending idle session {}", sessionId);
+    if (playbackTranscodeJobService.suspend(sessionId) == RuntimeTranscodeCleanup.PENDING) {
+      log.warn("Suspension cleanup remains pending for session {}", sessionId);
     }
   }
 }

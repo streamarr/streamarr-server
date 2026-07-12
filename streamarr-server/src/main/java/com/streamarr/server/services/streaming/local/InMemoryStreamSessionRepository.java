@@ -41,7 +41,7 @@ public class InMemoryStreamSessionRepository implements RuntimeStreamSessionRegi
     private int starters;
     private final AtomicReference<CompletableFuture<Void>> startersDrained =
         new AtomicReference<>(CompletableFuture.completedFuture(null));
-    private boolean runtimeStopped;
+    private boolean runtimeStopped = true;
     private boolean reclaimRequested;
 
     private Slot(int inFlight) {

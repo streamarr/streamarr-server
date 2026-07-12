@@ -542,8 +542,8 @@ class InMemoryStreamSessionRepositoryTest {
   }
 
   @Test
-  @DisplayName("Should expose cleanup candidates without exposing an empty reservation")
-  void shouldExposeCleanupCandidatesWithoutExposingEmptyReservation() {
+  @DisplayName("Should expose only runtime sessions that still require cleanup")
+  void shouldExposeOnlyRuntimeSessionsThatStillRequireCleanup() {
     var session = StreamSessionFixture.buildMpegtsSession();
     var reservation = repository.reserve(session.getSessionId()).orElseThrow();
 
@@ -553,9 +553,6 @@ class InMemoryStreamSessionRepositoryTest {
     assertThat(repository.snapshotCleanupCandidateIds()).containsExactly(session.getSessionId());
 
     assertThat(repository.terminalize(session.getSessionId())).isTrue();
-    assertThat(repository.snapshotCleanupCandidateIds()).containsExactly(session.getSessionId());
-
-    repository.markRuntimeStopped(session.getSessionId());
     assertThat(repository.snapshotCleanupCandidateIds()).isEmpty();
   }
 

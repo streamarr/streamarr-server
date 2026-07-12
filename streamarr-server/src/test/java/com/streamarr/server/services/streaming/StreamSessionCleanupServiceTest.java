@@ -7,11 +7,20 @@ import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
+import com.streamarr.server.fakes.FakeMediaSourceCatalog;
 import com.streamarr.server.fakes.FakeSegmentStore;
-import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRepository;
+import com.streamarr.server.services.streaming.worker.InspectJobQuery;
+import com.streamarr.server.services.streaming.worker.InspectJobRejection;
+import com.streamarr.server.services.streaming.worker.InspectJobResult;
+import com.streamarr.server.services.streaming.worker.StartJobCommand;
+import com.streamarr.server.services.streaming.worker.StartJobResult;
+import com.streamarr.server.services.streaming.worker.StopJobCommand;
+import com.streamarr.server.services.streaming.worker.StopJobResult;
+import com.streamarr.server.services.streaming.worker.TranscodeWorkerPort;
+import com.streamarr.server.services.streaming.worker.WorkerTarget;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -20,6 +29,9 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -29,30 +41,35 @@ import org.junit.jupiter.api.Test;
 class StreamSessionCleanupServiceTest {
 
   @Test
-  @DisplayName("Should retain durable marker while runtime starter is in flight")
-  void shouldRetainDurableMarkerWhileRuntimeStarterIsInFlight() {
+  @DisplayName("Should retain durable marker and wait while runtime starter is in flight")
+  void shouldRetainDurableMarkerAndWaitWhileRuntimeStarterIsInFlight() throws Exception {
     var streamSessionId = UUID.randomUUID();
-    var runtimeRegistry = new InMemoryStreamSessionRepository();
+    var runtimeRegistry = new SignalingAwaitRegistry();
     var reservation = runtimeRegistry.reserve(streamSessionId).orElseThrow();
     var starter = runtimeRegistry.beginTranscodeStart(streamSessionId).orElseThrow();
     var lifecycle = new RecordingLifecycle();
     var segmentStore = new FakeSegmentStore();
+    var worker = new SignalingAbsentStopWorker();
     var cleanupService =
         new StreamSessionCleanupService(
-            runtimeService(runtimeRegistry, segmentStore),
+            runtimeService(runtimeRegistry, segmentStore, worker),
             lifecycle,
             segmentStore,
             new StreamSessionTransactionRetry(_ -> {}),
             new MutexFactoryProvider());
 
-    cleanupService.cleanup(streamSessionId);
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var cleanup = executor.submit(() -> cleanupService.cleanup(streamSessionId));
 
-    assertThat(lifecycle.deletedIds).isEmpty();
+      assertThat(worker.awaitStop()).isTrue();
+      assertThat(runtimeRegistry.awaitEntered()).isTrue();
+      assertThat(lifecycle.deletedIds).isEmpty();
 
-    runtimeRegistry.releaseReservation(reservation);
-    assertThat(runtimeRegistry.completeTranscodeStart(starter)).isFalse();
-    runtimeRegistry.finishRejectedTranscodeStart(starter, false);
-    cleanupService.cleanup(streamSessionId);
+      runtimeRegistry.releaseReservation(reservation);
+      assertThat(runtimeRegistry.completeTranscodeStart(starter)).isFalse();
+      runtimeRegistry.finishRejectedTranscodeStart(starter, false);
+      cleanup.get(5, TimeUnit.SECONDS);
+    }
 
     assertThat(lifecycle.deletedIds).containsExactly(streamSessionId);
   }
@@ -190,12 +207,13 @@ class StreamSessionCleanupServiceTest {
     var streamSessionId = UUID.randomUUID();
     var runtimeRegistry = new InMemoryStreamSessionRepository();
     runtimeRegistry.save(StreamSession.builder().sessionId(streamSessionId).build());
+    retainUncertainJob(runtimeRegistry, streamSessionId);
     var segmentStore = new FakeSegmentStore();
     segmentStore.addSegment(streamSessionId, "segment.ts", new byte[] {1});
-    var transcodeExecutor = new RetryableStopExecutor();
+    var transcodeWorker = new RetryableStopWorker();
     var cleanupService =
         new StreamSessionCleanupService(
-            runtimeService(runtimeRegistry, segmentStore, transcodeExecutor),
+            runtimeService(runtimeRegistry, segmentStore, transcodeWorker),
             new RecordingLifecycle(),
             segmentStore,
             new StreamSessionTransactionRetry(_ -> {}),
@@ -203,12 +221,12 @@ class StreamSessionCleanupServiceTest {
 
     cleanupService.reconcileUnbackedRuntimeAndStorage();
 
-    assertThat(transcodeExecutor.stopAttempts).isEqualTo(1);
+    assertThat(transcodeWorker.stopAttempts).isEqualTo(2);
     assertThat(segmentStore.segmentExists(streamSessionId, "segment.ts")).isTrue();
 
     cleanupService.reconcileUnbackedRuntimeAndStorage();
 
-    assertThat(transcodeExecutor.stopAttempts).isEqualTo(2);
+    assertThat(transcodeWorker.stopAttempts).isEqualTo(3);
     assertThat(segmentStore.segmentExists(streamSessionId, "segment.ts")).isFalse();
   }
 
@@ -218,11 +236,12 @@ class StreamSessionCleanupServiceTest {
     var streamSessionId = UUID.randomUUID();
     var runtimeRegistry = new InMemoryStreamSessionRepository();
     runtimeRegistry.save(StreamSession.builder().sessionId(streamSessionId).build());
+    retainUncertainJob(runtimeRegistry, streamSessionId);
     var segmentStore = new FakeSegmentStore();
-    var transcodeExecutor = new RetryableStopExecutor();
+    var transcodeWorker = new RetryableStopWorker();
     var cleanupService =
         new StreamSessionCleanupService(
-            runtimeService(runtimeRegistry, segmentStore, transcodeExecutor),
+            runtimeService(runtimeRegistry, segmentStore, transcodeWorker),
             new RecordingLifecycle(),
             segmentStore,
             new StreamSessionTransactionRetry(_ -> {}),
@@ -231,28 +250,42 @@ class StreamSessionCleanupServiceTest {
     cleanupService.reconcileUnbackedRuntimeAndStorage();
     cleanupService.reconcileUnbackedRuntimeAndStorage();
 
-    assertThat(transcodeExecutor.stopAttempts).isEqualTo(2);
+    assertThat(transcodeWorker.stopAttempts).isEqualTo(3);
   }
 
   private StreamingService runtimeService(
       RuntimeStreamSessionRegistry runtimeRegistry, SegmentStore segmentStore) {
-    return runtimeService(runtimeRegistry, segmentStore, new FakeTranscodeExecutor());
+    return runtimeService(runtimeRegistry, segmentStore, new AbsentStopWorker());
   }
 
   private StreamingService runtimeService(
       RuntimeStreamSessionRegistry runtimeRegistry,
       SegmentStore segmentStore,
-      TranscodeExecutor transcodeExecutor) {
+      TranscodeWorkerPort worker) {
+    var transcodeJobs =
+        DefaultPlaybackTranscodeJobService.builder()
+            .worker(worker)
+            .workerTarget(new WorkerTarget(UUID.randomUUID(), UUID.randomUUID()))
+            .runtimeRegistry(runtimeRegistry)
+            .sessionMutexes(new MutexFactory<>())
+            .build();
     return new HlsStreamingService(
         new FakeMediaFileRepository(),
-        transcodeExecutor,
         segmentStore,
         new FakeFfprobeService(),
         new TranscodeDecisionService(),
         new QualityLadderService(),
         StreamingProperties.builder().segmentDuration(Duration.ofSeconds(6)).build(),
         runtimeRegistry,
-        new MutexFactory<>());
+        new MutexFactory<>(),
+        transcodeJobs,
+        new FakeMediaSourceCatalog());
+  }
+
+  private static void retainUncertainJob(
+      RuntimeStreamSessionRegistry runtimeRegistry, UUID streamSessionId) {
+    var start = runtimeRegistry.beginTranscodeStart(streamSessionId).orElseThrow();
+    runtimeRegistry.abortTranscodeStart(start);
   }
 
   private static final class RecordingLifecycle
@@ -330,17 +363,65 @@ class StreamSessionCleanupServiceTest {
     }
   }
 
-  private static final class RetryableStopExecutor extends FakeTranscodeExecutor {
+  private static class AbsentStopWorker implements TranscodeWorkerPort {
+
+    @Override
+    public StartJobResult start(StartJobCommand command) {
+      throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public StopJobResult stop(StopJobCommand command) {
+      return new StopJobResult.AlreadyAbsent(command.jobRef());
+    }
+
+    @Override
+    public InspectJobResult inspect(InspectJobQuery query) {
+      return new InspectJobResult.Rejected(InspectJobRejection.TARGET_MISMATCH);
+    }
+  }
+
+  private static final class RetryableStopWorker extends AbsentStopWorker {
 
     private int stopAttempts;
 
     @Override
-    public void stop(UUID sessionId) {
+    public StopJobResult stop(StopJobCommand command) {
       stopAttempts++;
-      if (stopAttempts == 1) {
-        throw new IllegalStateException("simulated runtime stop failure");
+      if (stopAttempts <= 2) {
+        return new StopJobResult.CleanupPending(command.jobRef());
       }
-      super.stop(sessionId);
+      return super.stop(command);
+    }
+  }
+
+  private static final class SignalingAbsentStopWorker extends AbsentStopWorker {
+
+    private final CountDownLatch stopEntered = new CountDownLatch(1);
+
+    @Override
+    public StopJobResult stop(StopJobCommand command) {
+      stopEntered.countDown();
+      return super.stop(command);
+    }
+
+    private boolean awaitStop() throws InterruptedException {
+      return stopEntered.await(5, TimeUnit.SECONDS);
+    }
+  }
+
+  private static final class SignalingAwaitRegistry extends InMemoryStreamSessionRepository {
+
+    private final CountDownLatch awaitEntered = new CountDownLatch(1);
+
+    @Override
+    public void awaitTranscodeStarts(UUID sessionId) {
+      awaitEntered.countDown();
+      super.awaitTranscodeStarts(sessionId);
+    }
+
+    private boolean awaitEntered() throws InterruptedException {
+      return awaitEntered.await(5, TimeUnit.SECONDS);
     }
   }
 

@@ -28,12 +28,10 @@ import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamSessionTerminalReason;
 import com.streamarr.server.domain.streaming.StreamingOptions;
-import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakeSegmentStore;
-import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.jooq.generated.enums.StreamSessionStatus;
 import com.streamarr.server.repositories.LibraryRepository;
@@ -56,9 +54,26 @@ import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.library.MediaParentDeletionService;
 import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRepository;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
+import com.streamarr.server.services.streaming.source.MediaSourceCatalog;
+import com.streamarr.server.services.streaming.source.MediaSourceUnavailableException;
+import com.streamarr.server.services.streaming.worker.InspectJobQuery;
+import com.streamarr.server.services.streaming.worker.InspectJobResult;
+import com.streamarr.server.services.streaming.worker.StartJobCommand;
+import com.streamarr.server.services.streaming.worker.StartJobRejection;
+import com.streamarr.server.services.streaming.worker.StartJobResult;
+import com.streamarr.server.services.streaming.worker.StopJobCommand;
+import com.streamarr.server.services.streaming.worker.StopJobResult;
+import com.streamarr.server.services.streaming.worker.TranscodeWorkerPort;
+import com.streamarr.server.services.streaming.worker.WorkerTarget;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
-import com.streamarr.transcode.engine.model.RenditionRequest;
+import com.streamarr.transcode.engine.model.MediaSourceRef;
+import com.streamarr.transcode.engine.model.RenditionObservation;
+import com.streamarr.transcode.engine.model.RenditionSpec;
+import com.streamarr.transcode.engine.model.RenditionState;
+import com.streamarr.transcode.engine.model.TranscodeJobObservation;
+import com.streamarr.transcode.engine.model.TranscodeJobRef;
+import com.streamarr.transcode.engine.model.TranscodeJobState;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.SQLException;
@@ -71,6 +86,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -101,17 +118,22 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
 
   private static final IllegalStateException TOKEN_FAILURE =
       new IllegalStateException("simulated playback token encoding failure");
-  private static final IllegalStateException TRANSCODE_FAILURE =
-      new IllegalStateException("simulated second variant startup failure");
-  private static final ControllableTranscodeExecutor TRANSCODE_EXECUTOR =
-      new ControllableTranscodeExecutor();
   private static final FakeFfprobeService FFPROBE_SERVICE = new FakeFfprobeService();
   private static final ObservingFailingSegmentStore SEGMENT_STORE =
       new ObservingFailingSegmentStore();
+  private static final WorkerTarget WORKER_TARGET =
+      new WorkerTarget(
+          UUID.fromString("70000000-0000-0000-0000-000000000001"),
+          UUID.fromString("70000000-0000-0000-0000-000000000002"));
+  private static final ControllableTranscodeWorker TRANSCODE_WORKER =
+      new ControllableTranscodeWorker();
+  private static final FakeMediaSourceCatalog MEDIA_SOURCE_CATALOG = new FakeMediaSourceCatalog();
 
-  @TestBean TranscodeExecutor transcodeExecutor;
   @TestBean FfprobeService ffprobeService;
   @TestBean SegmentStore segmentStore;
+  @TestBean TranscodeWorkerPort transcodeWorkerPort;
+  @TestBean WorkerTarget workerTarget;
+  @TestBean MediaSourceCatalog libraryMediaSourceCatalog;
 
   @Autowired private StreamingService streamingService;
   @Autowired private PlaybackSessionCreationService playbackSessionCreationService;
@@ -145,10 +167,6 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
   private UUID mediaFileId;
   private UUID streamSessionId;
 
-  static TranscodeExecutor transcodeExecutor() {
-    return TRANSCODE_EXECUTOR;
-  }
-
   static FfprobeService ffprobeService() {
     return FFPROBE_SERVICE;
   }
@@ -157,9 +175,21 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
     return SEGMENT_STORE;
   }
 
+  static TranscodeWorkerPort transcodeWorkerPort() {
+    return TRANSCODE_WORKER;
+  }
+
+  static WorkerTarget workerTarget() {
+    return WORKER_TARGET;
+  }
+
+  static MediaSourceCatalog libraryMediaSourceCatalog() {
+    return MEDIA_SOURCE_CATALOG;
+  }
+
   @BeforeEach
   void setUp() {
-    TRANSCODE_EXECUTOR.reset();
+    TRANSCODE_WORKER.reset();
     FFPROBE_SERVICE.setDefaultProbe(defaultProbe("h264"));
     SEGMENT_STORE.reset(dsl);
     testIdentity = authTestSupport.createIdentity();
@@ -174,6 +204,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
     var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
     libraryId = library.getId();
     mediaFileId = saveMediaFile(libraryId).getId();
+    MEDIA_SOURCE_CATALOG.reset(mediaFileId, libraryId);
   }
 
   @AfterEach
@@ -225,7 +256,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
             com.streamarr.server.jooq.generated.enums.StreamSessionTerminalReason.STARTUP_FAILURE);
     assertThat(stateProbe.activeCount(streamSessionId)).isZero();
     assertThat(streamingService.getActiveSessionCount()).isZero();
-    assertThat(TRANSCODE_EXECUTOR.isRunning(streamSessionId)).isFalse();
+    assertThat(TRANSCODE_WORKER.isRunning(streamSessionId)).isFalse();
 
     SEGMENT_STORE.allowDeletion();
     cleanupWorker.reapPersistedSessions();
@@ -390,7 +421,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
     streamSessionId = created.sessionId();
 
     assertThat(retryingLifecycle.activationAttempts()).isEqualTo(3);
-    assertThat(TRANSCODE_EXECUTOR.startAttempts()).isEqualTo(1);
+    assertThat(TRANSCODE_WORKER.startAttempts()).isEqualTo(1);
     assertThat(new StreamSessionStateProbe(dsl).status(streamSessionId))
         .contains(StreamSessionStatus.ACTIVE);
   }
@@ -563,7 +594,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should commit provisioning authority before FFmpeg starts")
   void shouldCommitProvisioningAuthorityBeforeFfmpegStarts() {
-    TRANSCODE_EXECUTOR.observeFirstStart(
+    TRANSCODE_WORKER.observeFirstStart(
         sessionId ->
             new StreamSessionStateProbe(dsl)
                 .status(sessionId)
@@ -572,7 +603,56 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
 
     createPlaybackSession();
 
-    assertThat(TRANSCODE_EXECUTOR.observedProvisioningAtFirstStart()).isTrue();
+    assertThat(TRANSCODE_WORKER.observedProvisioningAtFirstStart()).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should submit one complete ladder while durable authority is provisioning")
+  void shouldSubmitOneCompleteLadderWhileDurableAuthorityIsProvisioning() throws Exception {
+    FFPROBE_SERVICE.setDefaultProbe(defaultProbe("hevc"));
+    TRANSCODE_WORKER.blockNextStart();
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var creation =
+          executor.submit(
+              () ->
+                  playbackSessionCreationService.create(
+                      CreatePlaybackSessionCommand.builder()
+                          .mediaFileId(mediaFileId)
+                          .options(defaultOptions())
+                          .sourceIdentity(sourceIdentity())
+                          .build()));
+
+      try {
+        assertThat(TRANSCODE_WORKER.awaitBlockedStart())
+            .as("the whole-ladder worker start was reached")
+            .isTrue();
+
+        var startCommand = TRANSCODE_WORKER.blockedStartCommand();
+        var specification = startCommand.specification();
+        streamSessionId = specification.sessionId();
+
+        assertThat(new StreamSessionStateProbe(dsl).status(streamSessionId))
+            .contains(StreamSessionStatus.PROVISIONING);
+        assertThat(TRANSCODE_WORKER.startCommands()).containsExactly(startCommand);
+        assertThat(startCommand.target()).isEqualTo(WORKER_TARGET);
+        assertThat(specification.jobRef().jobId()).isEqualTo(streamSessionId);
+        assertThat(specification.jobRef().generation()).isEqualTo(1);
+        assertThat(specification.source())
+            .isEqualTo(MEDIA_SOURCE_CATALOG.referenceFor(mediaFileId));
+        assertThat(specification.renditions()).containsExactlyElementsOf(completeLadder());
+      } finally {
+        TRANSCODE_WORKER.releaseStart();
+      }
+
+      var created = creation.get(5, TimeUnit.SECONDS);
+      streamSessionId = created.sessionId();
+
+      assertThat(created.playbackToken().value()).isNotBlank();
+      assertThat(TRANSCODE_WORKER.startCommands()).hasSize(1);
+      assertThat(new StreamSessionStateProbe(dsl).status(streamSessionId))
+          .contains(StreamSessionStatus.ACTIVE);
+    }
   }
 
   @Test
@@ -591,7 +671,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
                                 .sourceIdentity(sourceIdentity())
                                 .build())))
         .isInstanceOf(org.springframework.transaction.IllegalTransactionStateException.class);
-    assertThat(TRANSCODE_EXECUTOR.startAttempts()).isZero();
+    assertThat(TRANSCODE_WORKER.startAttempts()).isZero();
     assertThat(new StreamSessionStateProbe(dsl).countForAuthSession(testIdentity.session().getId()))
         .isZero();
   }
@@ -620,7 +700,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
     assertThatThrownBy(this::createPlaybackSession)
         .isInstanceOf(com.streamarr.server.exceptions.SessionNotFoundException.class);
 
-    assertThat(TRANSCODE_EXECUTOR.getStartedRequests()).isEmpty();
+    assertThat(TRANSCODE_WORKER.startCommands()).isEmpty();
     assertThat(new StreamSessionStateProbe(dsl).countForAuthSession(testIdentity.session().getId()))
         .isZero();
   }
@@ -638,7 +718,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
     assertThatThrownBy(this::createPlaybackSession)
         .isInstanceOf(com.streamarr.server.exceptions.SessionNotFoundException.class);
 
-    assertThat(TRANSCODE_EXECUTOR.getStartedRequests()).isEmpty();
+    assertThat(TRANSCODE_WORKER.startCommands()).isEmpty();
     assertThat(new StreamSessionStateProbe(dsl).countForAuthSession(testIdentity.session().getId()))
         .isZero();
   }
@@ -668,7 +748,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
                                 .values(mediaFileId)
                                 .execute();
                             deletionPrepared.countDown();
-                            ControllableTranscodeExecutor.await(allowDeletionCommit);
+                            await(allowDeletionCommit);
                           }));
       assertThat(deletionPrepared.await(5, TimeUnit.SECONDS)).isTrue();
 
@@ -912,7 +992,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
                             .forUpdate()
                             .fetchSingle();
                         rowLocked.countDown();
-                        ControllableTranscodeExecutor.await(releaseLock);
+                        await(releaseLock);
                       }));
       assertThat(rowLocked.await(5, TimeUnit.SECONDS)).isTrue();
 
@@ -1092,7 +1172,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
 
   private void assertNewPlaybackAndNextSegmentRefused(
       String accessToken, ApiPlaybackSession created) throws Exception {
-    var startsBeforeRefusedCreation = TRANSCODE_EXECUTOR.getStartedRequests().size();
+    var startsBeforeRefusedCreation = TRANSCODE_WORKER.startCommands().size();
     var rowsBeforeRefusedCreation =
         new StreamSessionStateProbe(dsl).countForAuthSession(testIdentity.session().getId());
     var refusedCreation =
@@ -1115,7 +1195,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
     assertThat(List.of(refusedCreation.getStatus(), nextSegment.getStatus()))
         .containsExactly(200, 404);
     assertThat(refusedCreation.getContentAsString()).contains("SESSION_NOT_FOUND");
-    assertThat(TRANSCODE_EXECUTOR.getStartedRequests()).hasSize(startsBeforeRefusedCreation);
+    assertThat(TRANSCODE_WORKER.startCommands()).hasSize(startsBeforeRefusedCreation);
     assertThat(new StreamSessionStateProbe(dsl).countForAuthSession(testIdentity.session().getId()))
         .isEqualTo(rowsBeforeRefusedCreation);
   }
@@ -1176,7 +1256,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
     assertThat(SEGMENT_STORE.observedTerminatingAuthority()).isTrue();
     assertThat(new StreamSessionStateProbe(dsl).status(streamSessionId)).isEmpty();
     assertThat(streamingService.getActiveSessionCount()).isZero();
-    assertThat(TRANSCODE_EXECUTOR.isRunning(streamSessionId)).isFalse();
+    assertThat(TRANSCODE_WORKER.isRunning(streamSessionId)).isFalse();
   }
 
   @Test
@@ -1303,7 +1383,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
     assertThat(access).isEmpty();
     assertThat(new StreamSessionStateProbe(dsl).status(streamSessionId)).isEmpty();
     assertThat(streamingService.getActiveSessionCount()).isZero();
-    assertThat(TRANSCODE_EXECUTOR.isRunning(streamSessionId)).isFalse();
+    assertThat(TRANSCODE_WORKER.isRunning(streamSessionId)).isFalse();
   }
 
   @Test
@@ -1323,7 +1403,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
                         .build()))
         .isInstanceOf(com.streamarr.server.exceptions.SessionNotFoundException.class);
 
-    assertThat(TRANSCODE_EXECUTOR.getStartedRequests()).isEmpty();
+    assertThat(TRANSCODE_WORKER.startCommands()).isEmpty();
     assertThat(new StreamSessionStateProbe(dsl).countForAuthSession(testIdentity.session().getId()))
         .isZero();
   }
@@ -1338,7 +1418,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
     assertThatThrownBy(this::createPlaybackSession)
         .isInstanceOf(com.streamarr.server.exceptions.SessionNotFoundException.class);
 
-    assertThat(TRANSCODE_EXECUTOR.getStartedRequests()).isEmpty();
+    assertThat(TRANSCODE_WORKER.startCommands()).isEmpty();
     assertThat(new StreamSessionStateProbe(dsl).countForAuthSession(testIdentity.session().getId()))
         .isZero();
   }
@@ -1362,7 +1442,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
                         .build()))
         .isInstanceOf(com.streamarr.server.exceptions.SessionNotFoundException.class);
 
-    assertThat(TRANSCODE_EXECUTOR.getStartedRequests()).isEmpty();
+    assertThat(TRANSCODE_WORKER.startCommands()).isEmpty();
     assertThat(new StreamSessionStateProbe(dsl).countForAuthSession(testIdentity.session().getId()))
         .isZero();
   }
@@ -1383,7 +1463,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
                         .build()))
         .isInstanceOf(com.streamarr.server.exceptions.SessionNotFoundException.class);
 
-    assertThat(TRANSCODE_EXECUTOR.getStartedRequests()).isEmpty();
+    assertThat(TRANSCODE_WORKER.startCommands()).isEmpty();
     assertThat(new StreamSessionStateProbe(dsl).countForAuthSession(testIdentity.session().getId()))
         .isZero();
   }
@@ -1392,7 +1472,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
   @DisplayName("Should leave no playable runtime when auth is revoked during startup")
   void shouldLeaveNoPlayableRuntimeWhenAuthIsRevokedDuringStartup() throws Exception {
     SEGMENT_STORE.failDeletion();
-    TRANSCODE_EXECUTOR.blockNextStart();
+    TRANSCODE_WORKER.blockNextStart();
     var identity = sourceIdentity();
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
@@ -1405,12 +1485,12 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
                           .options(defaultOptions())
                           .sourceIdentity(identity)
                           .build()));
-      assertThat(TRANSCODE_EXECUTOR.awaitBlockedStart()).isTrue();
-      streamSessionId = TRANSCODE_EXECUTOR.blockedSessionId();
+      assertThat(TRANSCODE_WORKER.awaitBlockedStart()).isTrue();
+      streamSessionId = TRANSCODE_WORKER.blockedSessionId();
 
       sessionRevocationService.revoke(
           testIdentity.session().getId(), SessionRevocationReason.LOGOUT, clock.instant());
-      TRANSCODE_EXECUTOR.releaseStart();
+      TRANSCODE_WORKER.releaseStart();
 
       assertThatThrownBy(() -> creation.get(5, TimeUnit.SECONDS))
           .hasCauseInstanceOf(com.streamarr.server.exceptions.SessionNotFoundException.class);
@@ -1423,7 +1503,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
             com.streamarr.server.jooq.generated.enums.StreamSessionTerminalReason.AUTH_REVOKED);
     assertThat(stateProbe.activeCount(streamSessionId)).isZero();
     assertThat(streamingService.getActiveSessionCount()).isZero();
-    assertThat(TRANSCODE_EXECUTOR.isRunning(streamSessionId)).isFalse();
+    assertThat(TRANSCODE_WORKER.isRunning(streamSessionId)).isFalse();
   }
 
   @Test
@@ -1510,7 +1590,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
                             SessionRevocationReason.LOGOUT,
                             clock.instant());
                         revocationUpdated.countDown();
-                        ControllableTranscodeExecutor.await(allowRevocationCommit);
+                        await(allowRevocationCommit);
                       }));
       assertThat(revocationUpdated.await(5, TimeUnit.SECONDS)).isTrue();
       var activation =
@@ -1579,7 +1659,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
   @DisplayName("Should leave no playable runtime when media deletion starts during startup")
   void shouldLeaveNoPlayableRuntimeWhenMediaDeletionStartsDuringStartup() throws Exception {
     SEGMENT_STORE.failDeletion();
-    TRANSCODE_EXECUTOR.blockNextStart();
+    TRANSCODE_WORKER.blockNextStart();
     var identity = sourceIdentity();
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
@@ -1592,29 +1672,41 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
                           .options(defaultOptions())
                           .sourceIdentity(identity)
                           .build()));
-      assertThat(TRANSCODE_EXECUTOR.awaitBlockedStart()).isTrue();
-      streamSessionId = TRANSCODE_EXECUTOR.blockedSessionId();
+      assertThat(TRANSCODE_WORKER.awaitBlockedStart()).isTrue();
+      streamSessionId = TRANSCODE_WORKER.blockedSessionId();
 
-      mediaParentDeletionService.deleteMediaFiles(libraryId, Set.of(mediaFileId));
-      TRANSCODE_EXECUTOR.releaseStart();
+      var deletion =
+          executor.submit(
+              () -> mediaParentDeletionService.deleteMediaFiles(libraryId, Set.of(mediaFileId)));
+      try {
+        org.awaitility.Awaitility.await()
+            .atMost(Duration.ofSeconds(5))
+            .untilAsserted(
+                () ->
+                    assertThat(new StreamSessionStateProbe(dsl).status(streamSessionId))
+                        .contains(StreamSessionStatus.TERMINATING));
+      } finally {
+        TRANSCODE_WORKER.releaseStart();
+      }
 
       assertThatThrownBy(() -> creation.get(5, TimeUnit.SECONDS))
           .hasCauseInstanceOf(com.streamarr.server.exceptions.SessionNotFoundException.class);
+      deletion.get(5, TimeUnit.SECONDS);
     }
 
     var stateProbe = new StreamSessionStateProbe(dsl);
     assertThat(stateProbe.status(streamSessionId)).contains(StreamSessionStatus.TERMINATING);
     assertThat(stateProbe.activeCount(streamSessionId)).isZero();
     assertThat(streamingService.getActiveSessionCount()).isZero();
-    assertThat(TRANSCODE_EXECUTOR.isRunning(streamSessionId)).isFalse();
+    assertThat(TRANSCODE_WORKER.isRunning(streamSessionId)).isFalse();
   }
 
   @Test
-  @DisplayName("Should stop partial ladder when a later variant fails to start")
-  void shouldStopPartialLadderWhenLaterVariantFailsToStart() {
+  @DisplayName("Should compensate whole job when worker startup fails")
+  void shouldCompensateWholeJobWhenWorkerStartupFails() {
     SEGMENT_STORE.failDeletion();
     FFPROBE_SERVICE.setDefaultProbe(defaultProbe("hevc"));
-    TRANSCODE_EXECUTOR.failOnStart(2, TRANSCODE_FAILURE);
+    TRANSCODE_WORKER.rejectNextStart(StartJobRejection.STARTUP_FAILED);
 
     assertThatThrownBy(
             () ->
@@ -1624,13 +1716,16 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
                         .options(defaultOptions())
                         .sourceIdentity(sourceIdentity())
                         .build()))
-        .isSameAs(TRANSCODE_FAILURE);
+        .isInstanceOf(TranscodeJobStartException.class);
 
-    streamSessionId = TRANSCODE_EXECUTOR.attemptedSessionId();
+    streamSessionId = TRANSCODE_WORKER.attemptedSessionId();
     var stateProbe = new StreamSessionStateProbe(dsl);
-    assertThat(TRANSCODE_EXECUTOR.startAttempts()).isEqualTo(2);
-    assertThat(TRANSCODE_EXECUTOR.getStartedRequests()).hasSize(1);
-    assertThat(TRANSCODE_EXECUTOR.isRunning(streamSessionId)).isFalse();
+    var submitted = TRANSCODE_WORKER.startCommands().getFirst();
+    assertThat(TRANSCODE_WORKER.startAttempts()).isEqualTo(1);
+    assertThat(TRANSCODE_WORKER.stopCommands())
+        .extracting(StopJobCommand::jobRef)
+        .containsExactly(submitted.specification().jobRef());
+    assertThat(TRANSCODE_WORKER.isRunning(streamSessionId)).isFalse();
     assertThat(streamingService.getActiveSessionCount()).isZero();
     assertThat(stateProbe.status(streamSessionId)).contains(StreamSessionStatus.TERMINATING);
   }
@@ -1824,7 +1919,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
     assertThat(List.of(ordinaryApi.getStatus(), refusedCreation.getStatus()))
         .containsExactly(404, 200);
     assertThat(refusedCreation.getContentAsString()).contains("SESSION_NOT_FOUND");
-    assertThat(TRANSCODE_EXECUTOR.getStartedRequests()).isEmpty();
+    assertThat(TRANSCODE_WORKER.startCommands()).isEmpty();
     assertThat(new StreamSessionStateProbe(dsl).countForAuthSession(testIdentity.session().getId()))
         .isZero();
   }
@@ -1879,14 +1974,15 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
       RuntimeStreamSessionRegistry runtimeRegistry, SegmentStore restartSegmentStore) {
     return new HlsStreamingService(
         new FakeMediaFileRepository(),
-        new FakeTranscodeExecutor(),
         restartSegmentStore,
         new FakeFfprobeService(),
         new TranscodeDecisionService(),
         new QualityLadderService(),
         streamingProperties,
         runtimeRegistry,
-        new MutexFactory<>());
+        new MutexFactory<>(),
+        new com.streamarr.server.fakes.FakePlaybackTranscodeJobService(),
+        new com.streamarr.server.fakes.FakeMediaSourceCatalog());
   }
 
   private MediaFile saveMediaFile(UUID owningLibraryId) {
@@ -1904,6 +2000,23 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
     return StreamingOptions.builder()
         .quality(VideoQuality.AUTO)
         .supportedCodecs(List.of("h264"))
+        .build();
+  }
+
+  private static List<RenditionSpec> completeLadder() {
+    return List.of(
+        rendition("1080p", 1920, 1080, 5_000_000L),
+        rendition("720p", 1280, 720, 3_000_000L),
+        rendition("480p", 854, 480, 1_500_000L),
+        rendition("360p", 640, 360, 800_000L));
+  }
+
+  private static RenditionSpec rendition(String label, int width, int height, long bitrate) {
+    return RenditionSpec.builder()
+        .label(label)
+        .width(width)
+        .height(height)
+        .videoBitrate(bitrate)
         .build();
   }
 
@@ -2081,47 +2194,63 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
     }
   }
 
-  private static final class ControllableTranscodeExecutor extends FakeTranscodeExecutor {
+  private static void await(CountDownLatch latch) {
+    try {
+      latch.await();
+    } catch (InterruptedException exception) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException("Interrupted while awaiting test coordination", exception);
+    }
+  }
 
+  private static final class ControllableTranscodeWorker implements TranscodeWorkerPort {
+
+    private final CopyOnWriteArrayList<StartJobCommand> startCommands =
+        new CopyOnWriteArrayList<>();
+    private final CopyOnWriteArrayList<StopJobCommand> stopCommands = new CopyOnWriteArrayList<>();
+    private final ConcurrentHashMap<TranscodeJobRef, TranscodeJobObservation> runningJobs =
+        new ConcurrentHashMap<>();
     private volatile CountDownLatch startEntered;
     private volatile CountDownLatch allowStart;
-    private volatile UUID blockedSessionId;
-    private volatile UUID attemptedSessionId;
-    private volatile RuntimeException startFailure;
     private volatile Function<UUID, Boolean> firstStartObserver;
     private volatile boolean observedProvisioningAtFirstStart;
-    private volatile int failOnAttempt;
-    private int startAttempts;
+    private volatile StartJobRejection nextStartRejection;
 
     private void blockNextStart() {
       startEntered = new CountDownLatch(1);
       allowStart = new CountDownLatch(1);
-      blockedSessionId = null;
     }
 
     private boolean awaitBlockedStart() throws InterruptedException {
       return startEntered.await(5, TimeUnit.SECONDS);
     }
 
+    private StartJobCommand blockedStartCommand() {
+      return startCommands.getFirst();
+    }
+
     private UUID blockedSessionId() {
-      return blockedSessionId;
+      return blockedStartCommand().specification().sessionId();
     }
 
-    private void releaseStart() {
-      allowStart.countDown();
+    private List<StartJobCommand> startCommands() {
+      return List.copyOf(startCommands);
     }
 
-    private void failOnStart(int attempt, RuntimeException failure) {
-      failOnAttempt = attempt;
-      startFailure = failure;
+    private List<StopJobCommand> stopCommands() {
+      return List.copyOf(stopCommands);
     }
 
     private int startAttempts() {
-      return startAttempts;
+      return startCommands.size();
     }
 
     private UUID attemptedSessionId() {
-      return attemptedSessionId;
+      return startCommands.getLast().specification().sessionId();
+    }
+
+    private boolean isRunning(UUID sessionId) {
+      return runningJobs.keySet().stream().anyMatch(jobRef -> jobRef.jobId().equals(sessionId));
     }
 
     private void observeFirstStart(Function<UUID, Boolean> observer) {
@@ -2132,47 +2261,111 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
       return observedProvisioningAtFirstStart;
     }
 
+    private void rejectNextStart(StartJobRejection rejection) {
+      nextStartRejection = rejection;
+    }
+
+    private void releaseStart() {
+      var release = allowStart;
+      if (release != null) {
+        release.countDown();
+      }
+    }
+
+    private void reset() {
+      releaseStart();
+      startCommands.clear();
+      stopCommands.clear();
+      runningJobs.clear();
+      startEntered = null;
+      allowStart = null;
+      firstStartObserver = null;
+      observedProvisioningAtFirstStart = false;
+      nextStartRejection = null;
+    }
+
     @Override
-    public TranscodeHandle start(RenditionRequest request) {
-      attemptedSessionId = request.sessionId();
-      startAttempts++;
-      if (startAttempts == 1 && firstStartObserver != null) {
-        observedProvisioningAtFirstStart = firstStartObserver.apply(request.sessionId());
+    public StartJobResult start(StartJobCommand command) {
+      startCommands.add(command);
+      if (startCommands.size() == 1 && firstStartObserver != null) {
+        observedProvisioningAtFirstStart =
+            firstStartObserver.apply(command.specification().sessionId());
       }
       var entered = startEntered;
       if (entered != null && entered.getCount() > 0) {
-        blockedSessionId = request.sessionId();
         entered.countDown();
         await(allowStart);
       }
-      if (startAttempts == failOnAttempt) {
-        throw startFailure;
+      var rejection = nextStartRejection;
+      if (rejection != null) {
+        nextStartRejection = null;
+        return new StartJobResult.Rejected(rejection);
       }
-      return super.start(request);
+      var accepted = accepted(command);
+      runningJobs.put(command.specification().jobRef(), accepted.observation());
+      return accepted;
     }
 
     @Override
-    public void reset() {
-      super.reset();
-      startEntered = null;
-      allowStart = null;
-      blockedSessionId = null;
-      attemptedSessionId = null;
-      startFailure = null;
-      firstStartObserver = null;
-      observedProvisioningAtFirstStart = false;
-      failOnAttempt = 0;
-      startAttempts = 0;
+    public StopJobResult stop(StopJobCommand command) {
+      stopCommands.add(command);
+      runningJobs.remove(command.jobRef());
+      return new StopJobResult.Stopped(command.jobRef());
     }
 
-    private static void await(CountDownLatch latch) {
-      try {
-        latch.await();
-      } catch (InterruptedException exception) {
-        Thread.currentThread().interrupt();
-        throw new IllegalStateException(
-            "Interrupted while controlling transcode startup", exception);
+    @Override
+    public InspectJobResult inspect(InspectJobQuery query) {
+      var running = runningJobs.get(query.jobRef());
+      if (running != null) {
+        return new InspectJobResult.Observed(running);
       }
+      return new InspectJobResult.Observed(
+          TranscodeJobObservation.builder()
+              .jobRef(query.jobRef())
+              .state(TranscodeJobState.ABSENT)
+              .renditions(List.of())
+              .build());
+    }
+
+    private static StartJobResult.Accepted accepted(StartJobCommand command) {
+      var specification = command.specification();
+      var runningRenditions =
+          specification.renditions().stream()
+              .map(rendition -> new RenditionObservation(rendition.label(), RenditionState.RUNNING))
+              .toList();
+      return new StartJobResult.Accepted(
+          TranscodeJobObservation.builder()
+              .jobRef(specification.jobRef())
+              .state(TranscodeJobState.RUNNING)
+              .renditions(runningRenditions)
+              .build());
+    }
+  }
+
+  private static final class FakeMediaSourceCatalog implements MediaSourceCatalog {
+
+    private UUID mediaFileId;
+    private MediaSourceRef source;
+
+    private void reset(UUID mediaFileId, UUID libraryId) {
+      this.mediaFileId = mediaFileId;
+      source = new MediaSourceRef(libraryId, "movies/test.mkv");
+    }
+
+    @Override
+    public MediaSourceRef referenceFor(UUID candidateMediaFileId) {
+      if (!candidateMediaFileId.equals(mediaFileId)) {
+        throw new MediaSourceUnavailableException();
+      }
+      return source;
+    }
+
+    @Override
+    public Path resolve(MediaSourceRef candidateSource) {
+      if (!candidateSource.equals(source)) {
+        throw new MediaSourceUnavailableException();
+      }
+      return Path.of("/library").resolve(candidateSource.relativeKey());
     }
   }
 

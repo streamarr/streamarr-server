@@ -4,16 +4,19 @@ import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
-import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.MaxConcurrentTranscodesException;
 import com.streamarr.server.exceptions.MediaFileNotFoundException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.library.FilepathCodec;
+import com.streamarr.server.services.streaming.source.MediaSourceCatalog;
 import com.streamarr.transcode.engine.model.QualityVariant;
 import com.streamarr.transcode.engine.model.RenditionRequest;
+import com.streamarr.transcode.engine.model.RenditionSpec;
 import com.streamarr.transcode.engine.model.TranscodeDecision;
+import com.streamarr.transcode.engine.model.TranscodeExecutionParameters;
+import com.streamarr.transcode.engine.model.TranscodeJobState;
 import com.streamarr.transcode.engine.model.TranscodeMode;
 import java.time.Duration;
 import java.time.Instant;
@@ -36,7 +39,6 @@ public class HlsStreamingService implements StreamingService {
   private static final Duration FORWARD_RELOCATION_GAP = Duration.ofSeconds(24);
 
   private final MediaFileRepository mediaFileRepository;
-  private final TranscodeExecutor transcodeExecutor;
   private final SegmentStore segmentStore;
   private final FfprobeService ffprobeService;
   private final TranscodeDecisionService transcodeDecisionService;
@@ -44,6 +46,8 @@ public class HlsStreamingService implements StreamingService {
   private final StreamingProperties properties;
   private final RuntimeStreamSessionRegistry sessionRepository;
   private final MutexFactory<UUID> resumeMutex;
+  private final PlaybackTranscodeJobService playbackTranscodeJobService;
+  private final MediaSourceCatalog mediaSourceCatalog;
 
   @Override
   public StreamSession createSession(CreateRuntimeStreamSessionCommand command) {
@@ -107,8 +111,10 @@ public class HlsStreamingService implements StreamingService {
   @Override
   public boolean terminateRuntime(UUID sessionId) {
     sessionRepository.terminalize(sessionId);
-    transcodeExecutor.stop(sessionId);
-    sessionRepository.markRuntimeStopped(sessionId);
+    if (playbackTranscodeJobService.cleanupTerminal(sessionId) == RuntimeTranscodeCleanup.PENDING) {
+      log.warn("Cleanup remains pending for streaming session {}", sessionId);
+      return false;
+    }
     segmentStore.deleteSession(sessionId);
     var quiescent = sessionRepository.releaseTerminal(sessionId);
     log.info("Destroyed streaming session {}", sessionId);
@@ -118,20 +124,15 @@ public class HlsStreamingService implements StreamingService {
   @Override
   public void shutdownRuntime() {
     var sessionIds = sessionRepository.fenceAll();
-    sessionIds.forEach(this::stopForShutdown);
     for (var sessionId : sessionIds) {
-      sessionRepository.awaitTranscodeStarts(sessionId);
-      stopForShutdown(sessionId);
-    }
-    transcodeExecutor.forceStopAll();
-  }
-
-  private void stopForShutdown(UUID sessionId) {
-    try {
-      transcodeExecutor.stop(sessionId);
-      sessionRepository.markRuntimeStopped(sessionId);
-    } catch (RuntimeException exception) {
-      log.warn("Failed to stop stream session {} during shutdown", sessionId, exception);
+      try {
+        if (playbackTranscodeJobService.cleanupTerminal(sessionId)
+            == RuntimeTranscodeCleanup.PENDING) {
+          log.warn("Cleanup remains pending for stream session {} during shutdown", sessionId);
+        }
+      } catch (RuntimeException exception) {
+        log.warn("Failed to clean stream session {} during shutdown", sessionId, exception);
+      }
     }
   }
 
@@ -167,35 +168,45 @@ public class HlsStreamingService implements StreamingService {
 
   @Override
   public void resumeSessionIfNeeded(UUID sessionId, String segmentName) {
-    var session = sessionRepository.findById(sessionId).orElse(null);
-    if (session == null) {
-      return;
-    }
-
-    if (segmentStore.segmentExists(sessionId, segmentName)) {
-      return;
-    }
-
-    if (session.isSuspended()) {
-      resumeWithLock(sessionId, segmentName);
-      return;
-    }
-
-    if (!requiresRelocation(session, segmentName)) {
-      return;
-    }
-
-    relocateWithLock(sessionId, segmentName);
-  }
-
-  private void resumeWithLock(UUID sessionId, String segmentName) {
     var lock = resumeMutex.getMutex(sessionId);
     lock.lock();
-
     try {
-      doResume(sessionId, segmentName);
+      resumeOrRelocate(sessionId, segmentName);
     } finally {
       lock.unlock();
+    }
+  }
+
+  private void resumeOrRelocate(UUID sessionId, String segmentName) {
+    var session = sessionRepository.findById(sessionId).orElse(null);
+    if (session == null || segmentStore.segmentExists(sessionId, segmentName)) {
+      return;
+    }
+
+    switch (playbackTranscodeJobService.inspectActive(sessionId)) {
+      case ActiveTranscodeJobInspection.None _ -> startAtRequestedSegment(session, segmentName);
+      case ActiveTranscodeJobInspection.Unavailable(var jobRef) ->
+          log.warn(
+              "Active transcode inspection unavailable for session {} job {}", sessionId, jobRef);
+      case ActiveTranscodeJobInspection.Observed(var observation, var startNumber) ->
+          resumeObserved(session, segmentName, observation.state(), startNumber);
+    }
+  }
+
+  private void resumeObserved(
+      StreamSession session, String segmentName, TranscodeJobState state, int startNumber) {
+    switch (state) {
+      case ADMITTING, RUNNING -> {
+        if (requiresRelocation(session.getSessionId(), segmentName, startNumber)) {
+          startAtRequestedSegment(session, segmentName);
+        }
+      }
+      case COMPLETED, STOPPED, ABSENT -> startAtRequestedSegment(session, segmentName);
+      case FAILED -> {
+        log.warn(
+            "Transcode failed for session {}; replacing missing output", session.getSessionId());
+        startAtRequestedSegment(session, segmentName);
+      }
     }
   }
 
@@ -204,9 +215,8 @@ public class HlsStreamingService implements StreamingService {
    * needs the encoder relocated when it lies behind that start (it will never be produced) or so
    * far ahead of produced output that waiting would stall the player longer than restarting.
    */
-  private boolean requiresRelocation(StreamSession session, String segmentName) {
+  private boolean requiresRelocation(UUID sessionId, String segmentName, int startNumber) {
     var requestedIndex = parseSegmentIndex(segmentName);
-    var startNumber = activeStartNumber(session);
     if (requestedIndex < startNumber) {
       return true;
     }
@@ -216,42 +226,7 @@ public class HlsStreamingService implements StreamingService {
       return false;
     }
 
-    return !segmentStore.segmentExists(
-        session.getSessionId(), siblingSegmentName(segmentName, probeIndex));
-  }
-
-  private void relocateWithLock(UUID sessionId, String segmentName) {
-    var lock = resumeMutex.getMutex(sessionId);
-    lock.lock();
-
-    try {
-      doRelocate(sessionId, segmentName);
-    } finally {
-      lock.unlock();
-    }
-  }
-
-  private void doRelocate(UUID sessionId, String segmentName) {
-    var session = sessionRepository.findById(sessionId).orElse(null);
-    if (session == null || !requiresRelocation(session, segmentName)) {
-      return;
-    }
-
-    if (segmentStore.segmentExists(sessionId, segmentName)) {
-      return;
-    }
-
-    var segmentIndex = parseSegmentIndex(segmentName);
-    transcodeExecutor.stop(sessionId);
-    startTranscodes(session, segmentIndex * segmentDurationSeconds(), segmentIndex);
-    log.info("Relocated transcode for session {} to segment {}", sessionId, segmentIndex);
-  }
-
-  private int activeStartNumber(StreamSession session) {
-    return session.getVariantHandles().values().stream()
-        .mapToInt(TranscodeHandle::startNumber)
-        .max()
-        .orElse(0);
+    return !segmentStore.segmentExists(sessionId, siblingSegmentName(segmentName, probeIndex));
   }
 
   private int forwardGapSegments() {
@@ -267,19 +242,14 @@ public class HlsStreamingService implements StreamingService {
     return SEGMENT_INDEX_PATTERN.matcher(segmentName).replaceFirst("segment" + index);
   }
 
-  private void doResume(UUID sessionId, String segmentName) {
-    var session = sessionRepository.findById(sessionId).orElse(null);
-    if (session == null || !session.isSuspended()) {
-      return;
-    }
-
+  private void startAtRequestedSegment(StreamSession session, String segmentName) {
     var segmentIndex = parseSegmentIndex(segmentName);
-    var resumeSeek = segmentIndex * (int) properties.segmentDuration().toSeconds();
+    var resumeSeek = segmentIndex * segmentDurationSeconds();
 
     startTranscodes(session, resumeSeek, segmentIndex);
     log.info(
-        "Resumed suspended session {} at segment {} (seek {}s)",
-        sessionId,
+        "Started replacement transcode for session {} at segment {} (seek {}s)",
+        session.getSessionId(),
         segmentIndex,
         resumeSeek);
   }
@@ -330,11 +300,21 @@ public class HlsStreamingService implements StreamingService {
   private int availableTranscodeSlots() {
     var activeTranscodes =
         sessionRepository.findAll().stream()
-            .filter(s -> !s.isSuspended())
             .filter(s -> requiresTranscode(s.getTranscodeDecision().transcodeMode()))
+            .filter(this::consumesTranscodeCapacity)
             .mapToInt(s -> Math.max(1, s.getVariants().size()))
             .sum();
     return properties.maxConcurrentTranscodes() - activeTranscodes;
+  }
+
+  private boolean consumesTranscodeCapacity(StreamSession session) {
+    return switch (playbackTranscodeJobService.inspectActive(session.getSessionId())) {
+      case ActiveTranscodeJobInspection.None _ -> false;
+      case ActiveTranscodeJobInspection.Unavailable _ -> true;
+      case ActiveTranscodeJobInspection.Observed(var observation, _) ->
+          observation.state() == TranscodeJobState.ADMITTING
+              || observation.state() == TranscodeJobState.RUNNING;
+    };
   }
 
   private boolean requiresTranscode(TranscodeMode mode) {
@@ -348,88 +328,57 @@ public class HlsStreamingService implements StreamingService {
   }
 
   private void startTranscodes(StreamSession session, int seekPosition, int startNumber) {
-    if (session.getVariants().isEmpty()) {
-      startSingleTranscode(session, seekPosition, startNumber);
-      return;
-    }
-
-    startVariantTranscodes(session, session.getVariants(), seekPosition, startNumber);
-  }
-
-  private void startSingleTranscode(StreamSession session, int seekPosition, int startNumber) {
     var probe = session.getMediaProbe();
-    var request =
-        RenditionRequest.builder()
+    playbackTranscodeJobService.start(
+        StartPlaybackTranscodeJobCommand.builder()
             .sessionId(session.getSessionId())
-            .sourcePath(session.getSourcePath())
-            .seekPosition(seekPosition)
-            .segmentDuration((int) properties.segmentDuration().toSeconds())
-            .framerate(probe.framerate())
-            .transcodeDecision(session.getTranscodeDecision())
-            .width(probe.width())
-            .height(probe.height())
-            .bitrate(probe.bitrate())
-            .variantLabel(RenditionRequest.DEFAULT_VARIANT)
-            .startNumber(startNumber)
-            .build();
-    var handle = startTranscode(request);
-
-    session.setHandle(handle);
+            .source(mediaSourceCatalog.referenceFor(session.getMediaFileId()))
+            .decision(session.getTranscodeDecision())
+            .execution(
+                TranscodeExecutionParameters.builder()
+                    .seekPosition(seekPosition)
+                    .segmentDuration(segmentDurationSeconds())
+                    .framerate(executionFramerate(session))
+                    .startNumber(startNumber)
+                    .startupTimeout(properties.transcodeStartupTimeout())
+                    .build())
+            .renditions(renditions(session))
+            .build());
   }
 
-  private void startVariantTranscodes(
-      StreamSession session, List<QualityVariant> variants, int seekPosition, int startNumber) {
-    for (var variant : variants) {
-      var request =
-          RenditionRequest.builder()
-              .sessionId(session.getSessionId())
-              .sourcePath(session.getSourcePath())
-              .seekPosition(seekPosition)
-              .segmentDuration((int) properties.segmentDuration().toSeconds())
-              .framerate(session.getMediaProbe().framerate())
-              .transcodeDecision(session.getTranscodeDecision())
-              .width(variant.width())
-              .height(variant.height())
-              .bitrate(variant.videoBitrate())
-              .variantLabel(variant.label())
-              .startNumber(startNumber)
-              .build();
-      var handle = startTranscode(request);
-
-      session.setVariantHandle(variant.label(), handle);
+  private List<RenditionSpec> renditions(StreamSession session) {
+    if (session.getVariants().isEmpty()) {
+      var probe = session.getMediaProbe();
+      return List.of(
+          new RenditionSpec(
+              RenditionRequest.DEFAULT_VARIANT,
+              probe.width(),
+              probe.height(),
+              defaultRenditionBitrate(session)));
     }
+    return session.getVariants().stream()
+        .map(
+            variant ->
+                new RenditionSpec(
+                    variant.label(), variant.width(), variant.height(), variant.videoBitrate()))
+        .toList();
   }
 
-  private TranscodeHandle startTranscode(RenditionRequest request) {
-    var start =
-        sessionRepository
-            .beginTranscodeStart(request.sessionId())
-            .orElseThrow(
-                () ->
-                    new com.streamarr.server.exceptions.SessionNotFoundException(
-                        request.sessionId()));
-    TranscodeHandle handle;
-    try {
-      handle = transcodeExecutor.start(request);
-    } catch (RuntimeException exception) {
-      sessionRepository.abortTranscodeStart(start);
-      throw exception;
+  private double executionFramerate(StreamSession session) {
+    var framerate = session.getMediaProbe().framerate();
+    if (requiresVideoTranscode(session.getTranscodeDecision().transcodeMode())
+        || (Double.isFinite(framerate) && framerate > 0)) {
+      return framerate;
     }
-    if (sessionRepository.completeTranscodeStart(start)) {
-      return handle;
-    }
-    finishRejectedStart(start);
-    throw new com.streamarr.server.exceptions.SessionNotFoundException(request.sessionId());
+    return 1.0;
   }
 
-  private void finishRejectedStart(RuntimeTranscodeStart start) {
-    try {
-      transcodeExecutor.stop(start.sessionId());
-      sessionRepository.finishRejectedTranscodeStart(start, true);
-    } catch (RuntimeException exception) {
-      sessionRepository.finishRejectedTranscodeStart(start, false);
-      throw exception;
+  private long defaultRenditionBitrate(StreamSession session) {
+    var bitrate = session.getMediaProbe().bitrate();
+    if (requiresVideoTranscode(session.getTranscodeDecision().transcodeMode()) || bitrate > 0) {
+      return bitrate;
     }
+    return 1;
   }
 
   private static int parseSegmentIndex(String segmentName) {
