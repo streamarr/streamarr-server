@@ -7,6 +7,7 @@ import static org.awaitility.Awaitility.await;
 
 import com.streamarr.transcode.engine.error.TranscodeException;
 import com.streamarr.transcode.engine.model.RenditionRequest;
+import com.streamarr.transcode.engine.model.TranscodeJobRef;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
@@ -25,20 +26,44 @@ class LocalFfmpegProcessManagerTest {
 
   private final LocalFfmpegProcessManager manager = new LocalFfmpegProcessManager();
 
+  private static TranscodeJobRef jobRef(UUID sessionId) {
+    return new TranscodeJobRef(sessionId, 1L);
+  }
+
+  private static FfmpegProcessKey processKey(UUID sessionId, String renditionLabel) {
+    return new FfmpegProcessKey(jobRef(sessionId), renditionLabel);
+  }
+
+  private Process startProcess(
+      UUID sessionId, String renditionLabel, List<String> command, Path workingDir) {
+    return manager.startProcess(processKey(sessionId, renditionLabel), command, workingDir);
+  }
+
+  private void stopJob(UUID sessionId) {
+    manager.stopJob(jobRef(sessionId));
+  }
+
+  private boolean isRunning(UUID sessionId) {
+    return manager.isRunning(jobRef(sessionId));
+  }
+
+  private boolean isRunning(UUID sessionId, String renditionLabel) {
+    return manager.isRunning(processKey(sessionId, renditionLabel));
+  }
+
   @Test
   @DisplayName("Should report running when process is started")
   void shouldReportRunningWhenProcessIsStarted() {
     var sessionId = UUID.randomUUID();
 
     var process =
-        manager.startProcess(
-            sessionId, RenditionRequest.DEFAULT_VARIANT, List.of("sleep", "30"), tempDir);
+        startProcess(sessionId, RenditionRequest.DEFAULT_VARIANT, List.of("sleep", "30"), tempDir);
 
     assertThat(process).isNotNull();
     assertThat(process.isAlive()).isTrue();
-    assertThat(manager.isRunning(sessionId)).isTrue();
+    assertThat(isRunning(sessionId)).isTrue();
 
-    manager.stopProcess(sessionId);
+    stopJob(sessionId);
   }
 
   @Test
@@ -46,18 +71,103 @@ class LocalFfmpegProcessManagerTest {
   void shouldStopProcessGracefullyWhenRequested() {
     var sessionId = UUID.randomUUID();
 
-    manager.startProcess(
-        sessionId, RenditionRequest.DEFAULT_VARIANT, List.of("sleep", "30"), tempDir);
+    startProcess(sessionId, RenditionRequest.DEFAULT_VARIANT, List.of("sleep", "30"), tempDir);
 
-    manager.stopProcess(sessionId);
+    stopJob(sessionId);
 
-    assertThat(manager.isRunning(sessionId)).isFalse();
+    assertThat(isRunning(sessionId)).isFalse();
   }
 
   @Test
   @DisplayName("Should report not running when session is unknown")
   void shouldReportNotRunningWhenSessionIsUnknown() {
-    assertThat(manager.isRunning(UUID.randomUUID())).isFalse();
+    assertThat(isRunning(UUID.randomUUID())).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should observe an unknown process as absent")
+  void shouldObserveAnUnknownProcessAsAbsent() {
+    var observation = manager.observe(processKey(UUID.randomUUID(), "unknown"));
+
+    assertThat(observation.state()).isEqualTo(FfmpegProcessState.ABSENT);
+    assertThat(observation.exitCode()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should observe a live process as running")
+  void shouldObserveALiveProcessAsRunning() {
+    var sessionId = UUID.randomUUID();
+    var key = processKey(sessionId, "running");
+    manager.startProcess(key, List.of("bash", "-c", "read -r -n 1"), tempDir);
+
+    try {
+      var observation = manager.observe(key);
+
+      assertThat(observation.state()).isEqualTo(FfmpegProcessState.RUNNING);
+      assertThat(observation.exitCode()).isEmpty();
+    } finally {
+      stopJob(sessionId);
+    }
+  }
+
+  @Test
+  @DisplayName("Should retain a clean process completion with its exit code")
+  void shouldRetainACleanProcessCompletionWithItsExitCode() throws Exception {
+    var key = processKey(UUID.randomUUID(), "completed");
+    var process = manager.startProcess(key, List.of("true"), tempDir);
+    process.waitFor();
+
+    var observation = manager.observe(key);
+
+    assertThat(observation.state()).isEqualTo(FfmpegProcessState.COMPLETED);
+    assertThat(observation.exitCode()).hasValue(0);
+    assertThat(manager.observe(key)).isEqualTo(observation);
+  }
+
+  @Test
+  @DisplayName("Should retain a failed process with its nonzero exit code")
+  void shouldRetainAFailedProcessWithItsNonzeroExitCode() throws Exception {
+    var key = processKey(UUID.randomUUID(), "failed");
+    var process = manager.startProcess(key, List.of("bash", "-c", "exit 7"), tempDir);
+    process.waitFor();
+
+    var observation = manager.observe(key);
+
+    assertThat(observation.state()).isEqualTo(FfmpegProcessState.FAILED);
+    assertThat(observation.exitCode()).hasValue(7);
+    assertThat(manager.observe(key)).isEqualTo(observation);
+  }
+
+  @Test
+  @DisplayName("Should retain requested process stop separately from natural completion")
+  void shouldRetainRequestedProcessStopSeparatelyFromNaturalCompletion() {
+    var key = processKey(UUID.randomUUID(), "stopped");
+    manager.startProcess(key, List.of("bash", "-c", "read -r -n 1"), tempDir);
+
+    manager.stopProcess(key);
+    var observation = manager.observe(key);
+
+    assertThat(observation.state()).isEqualTo(FfmpegProcessState.STOPPED);
+    assertThat(observation.exitCode()).hasValue(0);
+    assertThat(manager.observe(key)).isEqualTo(observation);
+  }
+
+  @Test
+  @DisplayName("Should replace a terminal observation when the exact process restarts")
+  void shouldReplaceATerminalObservationWhenTheExactProcessRestarts() {
+    var key = processKey(UUID.randomUUID(), "restarted");
+    var gracefulCommand = List.of("bash", "-c", "read -r -n 1");
+    manager.startProcess(key, gracefulCommand, tempDir);
+    manager.stopProcess(key);
+    assertThat(manager.observe(key).state()).isEqualTo(FfmpegProcessState.STOPPED);
+
+    manager.startProcess(key, gracefulCommand, tempDir);
+
+    try {
+      assertThat(manager.observe(key).state()).isEqualTo(FfmpegProcessState.RUNNING);
+    } finally {
+      manager.stopProcess(key);
+    }
   }
 
   @Test
@@ -66,13 +176,12 @@ class LocalFfmpegProcessManagerTest {
     var sessionId = UUID.randomUUID();
 
     var process =
-        manager.startProcess(
-            sessionId, RenditionRequest.DEFAULT_VARIANT, List.of("echo", "done"), tempDir);
+        startProcess(sessionId, RenditionRequest.DEFAULT_VARIANT, List.of("echo", "done"), tempDir);
     process.waitFor();
 
     await().pollDelay(Duration.ofMillis(100)).until(() -> true);
 
-    assertThat(manager.isRunning(sessionId)).isFalse();
+    assertThat(isRunning(sessionId)).isFalse();
   }
 
   @Test
@@ -80,7 +189,7 @@ class LocalFfmpegProcessManagerTest {
   void shouldNotThrowWhenStoppingAlreadyStoppedSession() {
     var sessionId = UUID.randomUUID();
 
-    assertThatNoException().isThrownBy(() -> manager.stopProcess(sessionId));
+    assertThatNoException().isThrownBy(() -> stopJob(sessionId));
   }
 
   @Test
@@ -88,16 +197,38 @@ class LocalFfmpegProcessManagerTest {
   void shouldTrackMultipleVariantsPerSession() {
     var sessionId = UUID.randomUUID();
 
-    manager.startProcess(sessionId, "1080p", List.of("sleep", "30"), tempDir);
-    manager.startProcess(sessionId, "720p", List.of("sleep", "30"), tempDir);
-    manager.startProcess(sessionId, "480p", List.of("sleep", "30"), tempDir);
+    startProcess(sessionId, "1080p", List.of("sleep", "30"), tempDir);
+    startProcess(sessionId, "720p", List.of("sleep", "30"), tempDir);
+    startProcess(sessionId, "480p", List.of("sleep", "30"), tempDir);
 
-    assertThat(manager.isRunning(sessionId)).isTrue();
-    assertThat(manager.isRunning(sessionId, "1080p")).isTrue();
-    assertThat(manager.isRunning(sessionId, "720p")).isTrue();
-    assertThat(manager.isRunning(sessionId, "480p")).isTrue();
+    assertThat(isRunning(sessionId)).isTrue();
+    assertThat(isRunning(sessionId, "1080p")).isTrue();
+    assertThat(isRunning(sessionId, "720p")).isTrue();
+    assertThat(isRunning(sessionId, "480p")).isTrue();
 
-    manager.stopProcess(sessionId);
+    stopJob(sessionId);
+  }
+
+  @Test
+  @DisplayName("Should isolate the same rendition across exact job generations")
+  void shouldIsolateTheSameRenditionAcrossExactJobGenerations() {
+    var jobId = UUID.randomUUID();
+    var firstJob = new TranscodeJobRef(jobId, 1L);
+    var secondJob = new TranscodeJobRef(jobId, 2L);
+    var firstKey = new FfmpegProcessKey(firstJob, "720p");
+    var secondKey = new FfmpegProcessKey(secondJob, "720p");
+    var gracefulCommand = List.of("bash", "-c", "read -r -n 1");
+    manager.startProcess(firstKey, gracefulCommand, tempDir);
+    manager.startProcess(secondKey, gracefulCommand, tempDir);
+
+    try {
+      manager.stopJob(firstJob);
+
+      assertThat(manager.observe(firstKey).state()).isEqualTo(FfmpegProcessState.STOPPED);
+      assertThat(manager.observe(secondKey).state()).isEqualTo(FfmpegProcessState.RUNNING);
+    } finally {
+      manager.stopJob(secondJob);
+    }
   }
 
   @Test
@@ -106,15 +237,15 @@ class LocalFfmpegProcessManagerTest {
     var sessionId = UUID.randomUUID();
     var variant = RenditionRequest.DEFAULT_VARIANT;
     var command = List.of("sleep", "30");
-    var first = manager.startProcess(sessionId, variant, command, tempDir);
+    var first = startProcess(sessionId, variant, command, tempDir);
 
-    assertThatThrownBy(() -> manager.startProcess(sessionId, variant, command, tempDir))
+    assertThatThrownBy(() -> startProcess(sessionId, variant, command, tempDir))
         .isInstanceOf(TranscodeException.class)
         .hasMessage(TranscodeException.GENERIC_MESSAGE);
 
     assertThat(first.isAlive()).isTrue();
-    assertThat(manager.isRunning(sessionId, variant)).isTrue();
-    manager.stopProcess(sessionId);
+    assertThat(isRunning(sessionId, variant)).isTrue();
+    stopJob(sessionId);
     assertThat(first.isAlive()).isFalse();
   }
 
@@ -123,16 +254,16 @@ class LocalFfmpegProcessManagerTest {
   void shouldStopAllVariantsWhenStoppingSession() {
     var sessionId = UUID.randomUUID();
 
-    manager.startProcess(sessionId, "1080p", List.of("sleep", "30"), tempDir);
-    manager.startProcess(sessionId, "720p", List.of("sleep", "30"), tempDir);
-    manager.startProcess(sessionId, "480p", List.of("sleep", "30"), tempDir);
+    startProcess(sessionId, "1080p", List.of("sleep", "30"), tempDir);
+    startProcess(sessionId, "720p", List.of("sleep", "30"), tempDir);
+    startProcess(sessionId, "480p", List.of("sleep", "30"), tempDir);
 
-    manager.stopProcess(sessionId);
+    stopJob(sessionId);
 
-    assertThat(manager.isRunning(sessionId)).isFalse();
-    assertThat(manager.isRunning(sessionId, "1080p")).isFalse();
-    assertThat(manager.isRunning(sessionId, "720p")).isFalse();
-    assertThat(manager.isRunning(sessionId, "480p")).isFalse();
+    assertThat(isRunning(sessionId)).isFalse();
+    assertThat(isRunning(sessionId, "1080p")).isFalse();
+    assertThat(isRunning(sessionId, "720p")).isFalse();
+    assertThat(isRunning(sessionId, "480p")).isFalse();
   }
 
   @Test
@@ -141,10 +272,10 @@ class LocalFfmpegProcessManagerTest {
     var firstSessionId = UUID.randomUUID();
     var secondSessionId = UUID.randomUUID();
     var first =
-        manager.startProcess(
+        startProcess(
             firstSessionId, RenditionRequest.DEFAULT_VARIANT, List.of("sleep", "30"), tempDir);
     var second =
-        manager.startProcess(
+        startProcess(
             secondSessionId, RenditionRequest.DEFAULT_VARIANT, List.of("sleep", "30"), tempDir);
 
     try {
@@ -152,11 +283,11 @@ class LocalFfmpegProcessManagerTest {
 
       assertThat(first.isAlive()).isFalse();
       assertThat(second.isAlive()).isFalse();
-      assertThat(manager.isRunning(firstSessionId)).isFalse();
-      assertThat(manager.isRunning(secondSessionId)).isFalse();
+      assertThat(isRunning(firstSessionId)).isFalse();
+      assertThat(isRunning(secondSessionId)).isFalse();
     } finally {
-      manager.stopProcess(firstSessionId);
-      manager.stopProcess(secondSessionId);
+      stopJob(firstSessionId);
+      stopJob(secondSessionId);
     }
   }
 
@@ -164,12 +295,12 @@ class LocalFfmpegProcessManagerTest {
   @DisplayName("Should remove naturally completed process during final shutdown")
   void shouldRemoveNaturallyCompletedProcessDuringFinalShutdown() throws Exception {
     var sessionId = UUID.randomUUID();
-    var process = manager.startProcess(sessionId, "completed", List.of("true"), tempDir);
+    var process = startProcess(sessionId, "completed", List.of("true"), tempDir);
     process.waitFor();
 
     manager.forceStopAll();
 
-    assertThat(manager.isRunning(sessionId, "completed")).isFalse();
+    assertThat(isRunning(sessionId, "completed")).isFalse();
   }
 
   @Test
@@ -177,12 +308,12 @@ class LocalFfmpegProcessManagerTest {
   void shouldAcceptGracefulQuitResponseWhenStoppingProcess() {
     var sessionId = UUID.randomUUID();
     var process =
-        manager.startProcess(sessionId, "graceful", List.of("bash", "-c", "read -r -n 1"), tempDir);
+        startProcess(sessionId, "graceful", List.of("bash", "-c", "read -r -n 1"), tempDir);
 
-    manager.stopProcess(sessionId);
+    stopJob(sessionId);
 
     assertThat(process.isAlive()).isFalse();
-    assertThat(manager.isRunning(sessionId, "graceful")).isFalse();
+    assertThat(isRunning(sessionId, "graceful")).isFalse();
   }
 
   @Test
@@ -191,19 +322,19 @@ class LocalFfmpegProcessManagerTest {
   void shouldStopEveryVariantAndRestoreInterruptionWhenSessionStopIsInterrupted() {
     var sessionId = UUID.randomUUID();
     var gracefulCommand = List.of("bash", "-c", "read -r -n 1");
-    var first = manager.startProcess(sessionId, "first", gracefulCommand, tempDir);
-    var second = manager.startProcess(sessionId, "second", gracefulCommand, tempDir);
+    var first = startProcess(sessionId, "first", gracefulCommand, tempDir);
+    var second = startProcess(sessionId, "second", gracefulCommand, tempDir);
 
     try {
       Thread.currentThread().interrupt();
 
-      assertThatThrownBy(() -> manager.stopProcess(sessionId))
+      assertThatThrownBy(() -> stopJob(sessionId))
           .isInstanceOf(TranscodeException.class)
           .hasMessage(TranscodeException.GENERIC_MESSAGE);
       assertThat(Thread.currentThread().isInterrupted()).isTrue();
       assertThat(first.isAlive()).isFalse();
       assertThat(second.isAlive()).isFalse();
-      assertThat(manager.isRunning(sessionId)).isFalse();
+      assertThat(isRunning(sessionId)).isFalse();
     } finally {
       Thread.interrupted();
       manager.forceStopAll();
@@ -214,14 +345,14 @@ class LocalFfmpegProcessManagerTest {
   @DisplayName("Should finish cleanup when session stop is interrupted while waiting")
   void shouldFinishCleanupWhenSessionStopIsInterruptedWhileWaiting() {
     var sessionId = UUID.randomUUID();
-    var process = manager.startProcess(sessionId, "waiting", List.of("sleep", "30"), tempDir);
+    var process = startProcess(sessionId, "waiting", List.of("sleep", "30"), tempDir);
     var failure = new AtomicReference<RuntimeException>();
     var stopThread =
         Thread.ofVirtual()
             .start(
                 () -> {
                   try {
-                    manager.stopProcess(sessionId);
+                    stopJob(sessionId);
                   } catch (RuntimeException exception) {
                     failure.set(exception);
                   }
@@ -240,7 +371,7 @@ class LocalFfmpegProcessManagerTest {
       assertThat(failure.get()).isInstanceOf(TranscodeException.class);
       assertThat(stopThread.isInterrupted()).isTrue();
       assertThat(process.isAlive()).isFalse();
-      assertThat(manager.isRunning(sessionId)).isFalse();
+      assertThat(isRunning(sessionId)).isFalse();
     } finally {
       stopThread.interrupt();
       manager.forceStopAll();
@@ -252,12 +383,12 @@ class LocalFfmpegProcessManagerTest {
   void shouldReportRunningForSpecificVariant() {
     var sessionId = UUID.randomUUID();
 
-    manager.startProcess(sessionId, "720p", List.of("sleep", "30"), tempDir);
+    startProcess(sessionId, "720p", List.of("sleep", "30"), tempDir);
 
-    assertThat(manager.isRunning(sessionId, "720p")).isTrue();
-    assertThat(manager.isRunning(sessionId, "360p")).isFalse();
+    assertThat(isRunning(sessionId, "720p")).isTrue();
+    assertThat(isRunning(sessionId, "360p")).isFalse();
 
-    manager.stopProcess(sessionId);
+    stopJob(sessionId);
   }
 
   @Test
@@ -267,7 +398,7 @@ class LocalFfmpegProcessManagerTest {
 
     var command = List.of("/nonexistent-binary-12345");
 
-    assertThatThrownBy(() -> manager.startProcess(sessionId, "default", command, tempDir))
+    assertThatThrownBy(() -> startProcess(sessionId, "default", command, tempDir))
         .isInstanceOf(TranscodeException.class)
         .hasMessage(TranscodeException.GENERIC_MESSAGE);
   }
@@ -282,7 +413,7 @@ class LocalFfmpegProcessManagerTest {
     var script = "for i in $(seq 1 5000); do echo \"stderr line $i\" >&2; done; exit 0";
 
     var process =
-        manager.startProcess(
+        startProcess(
             sessionId, RenditionRequest.DEFAULT_VARIANT, List.of("bash", "-c", script), tempDir);
 
     await()
@@ -293,7 +424,7 @@ class LocalFfmpegProcessManagerTest {
               assertThat(process.exitValue()).isZero();
             });
 
-    manager.stopProcess(sessionId);
+    stopJob(sessionId);
   }
 
   @Test
@@ -302,7 +433,7 @@ class LocalFfmpegProcessManagerTest {
     var sessionId = UUID.randomUUID();
 
     var process =
-        manager.startProcess(
+        startProcess(
             sessionId,
             RenditionRequest.DEFAULT_VARIANT,
             List.of("bash", "-c", "echo 'error output' >&2; exit 1"),
@@ -312,7 +443,7 @@ class LocalFfmpegProcessManagerTest {
     await().pollDelay(Duration.ofMillis(200)).until(() -> true);
 
     // isRunning triggers cleanup + logExitDetails — should not throw
-    assertThatNoException().isThrownBy(() -> manager.isRunning(sessionId));
-    assertThat(manager.isRunning(sessionId)).isFalse();
+    assertThatNoException().isThrownBy(() -> isRunning(sessionId));
+    assertThat(isRunning(sessionId)).isFalse();
   }
 }

@@ -1,18 +1,22 @@
 package com.streamarr.transcode.engine.ffmpeg;
 
+import com.streamarr.transcode.engine.model.TranscodeJobRef;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.UUID;
 
 public interface FfmpegProcessManager {
 
-  Process startProcess(UUID sessionId, String variantLabel, List<String> command, Path workingDir);
+  Process startProcess(FfmpegProcessKey key, List<String> command, Path workingDir);
 
-  void stopProcess(UUID sessionId);
+  void stopProcess(FfmpegProcessKey key);
+
+  void stopJob(TranscodeJobRef jobRef);
 
   void forceStopAll();
 
-  boolean isRunning(UUID sessionId);
+  boolean isRunning(TranscodeJobRef jobRef);
 
-  boolean isRunning(UUID sessionId, String variantLabel);
+  boolean isRunning(FfmpegProcessKey key);
+
+  FfmpegProcessObservation observe(FfmpegProcessKey key);
 }

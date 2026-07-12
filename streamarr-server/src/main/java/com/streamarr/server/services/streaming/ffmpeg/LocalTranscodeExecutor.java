@@ -5,10 +5,12 @@ import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.transcode.engine.ffmpeg.FfmpegCommandBuilder;
+import com.streamarr.transcode.engine.ffmpeg.FfmpegProcessKey;
 import com.streamarr.transcode.engine.ffmpeg.FfmpegProcessManager;
 import com.streamarr.transcode.engine.ffmpeg.TranscodeCapabilityService;
 import com.streamarr.transcode.engine.model.RenditionJob;
 import com.streamarr.transcode.engine.model.RenditionRequest;
+import com.streamarr.transcode.engine.model.TranscodeJobRef;
 import com.streamarr.transcode.engine.model.TranscodeMode;
 import java.nio.file.Path;
 import java.util.UUID;
@@ -18,6 +20,8 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @RequiredArgsConstructor
 public class LocalTranscodeExecutor implements TranscodeExecutor {
+
+  private static final long LEGACY_JOB_GENERATION = 1L;
 
   private final FfmpegCommandBuilder commandBuilder;
   private final FfmpegProcessManager processManager;
@@ -33,7 +37,7 @@ public class LocalTranscodeExecutor implements TranscodeExecutor {
 
     var process =
         processManager.startProcess(
-            request.sessionId(), request.variantLabel(), command, job.outputDir());
+            processKey(request.sessionId(), request.variantLabel()), command, job.outputDir());
 
     log.info(
         "Started transcode for session {} variant {} (encoder: {}, PID: {})",
@@ -47,7 +51,7 @@ public class LocalTranscodeExecutor implements TranscodeExecutor {
 
   @Override
   public void stop(UUID sessionId) {
-    processManager.stopProcess(sessionId);
+    processManager.stopJob(jobRef(sessionId));
     log.info("Stopped transcode for session {}", sessionId);
   }
 
@@ -58,12 +62,12 @@ public class LocalTranscodeExecutor implements TranscodeExecutor {
 
   @Override
   public boolean isRunning(UUID sessionId) {
-    return processManager.isRunning(sessionId);
+    return processManager.isRunning(jobRef(sessionId));
   }
 
   @Override
   public boolean isRunning(UUID sessionId, String variantLabel) {
-    return processManager.isRunning(sessionId, variantLabel);
+    return processManager.isRunning(processKey(sessionId, variantLabel));
   }
 
   @Override
@@ -97,5 +101,13 @@ public class LocalTranscodeExecutor implements TranscodeExecutor {
     }
 
     return capabilityService.resolveEncoder(request.transcodeDecision().videoCodecFamily());
+  }
+
+  private static FfmpegProcessKey processKey(UUID sessionId, String renditionLabel) {
+    return new FfmpegProcessKey(jobRef(sessionId), renditionLabel);
+  }
+
+  private static TranscodeJobRef jobRef(UUID sessionId) {
+    return new TranscodeJobRef(sessionId, LEGACY_JOB_GENERATION);
   }
 }

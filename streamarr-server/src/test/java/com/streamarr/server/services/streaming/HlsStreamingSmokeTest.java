@@ -17,9 +17,11 @@ import com.streamarr.server.services.streaming.ffmpeg.LocalTranscodeExecutor;
 import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRepository;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.transcode.engine.ffmpeg.FfmpegCommandBuilder;
+import com.streamarr.transcode.engine.ffmpeg.FfmpegProcessKey;
 import com.streamarr.transcode.engine.ffmpeg.LocalFfmpegProcessManager;
 import com.streamarr.transcode.engine.ffmpeg.TranscodeCapabilityService;
 import com.streamarr.transcode.engine.model.ContainerFormat;
+import com.streamarr.transcode.engine.model.TranscodeJobRef;
 import com.streamarr.transcode.engine.model.TranscodeMode;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -357,6 +359,8 @@ class HlsStreamingSmokeTest {
   @DisplayName("Should not deadlock when FFmpeg produces verbose stderr output")
   void shouldNotDeadlockWhenFfmpegProducesVerboseStderrOutput() {
     var sessionId = UUID.randomUUID();
+    var jobRef = new TranscodeJobRef(sessionId, 1L);
+    var processKey = new FfmpegProcessKey(jobRef, "deadlock-test");
     var processManager = new LocalFfmpegProcessManager();
 
     // -loglevel debug produces ~200KB+ of stderr for a 10s video, well beyond the ~64KB pipe
@@ -365,8 +369,7 @@ class HlsStreamingSmokeTest {
     var command =
         List.of("ffmpeg", "-loglevel", "debug", "-i", TEST_VIDEO.toString(), "-f", "null", "-");
 
-    var process =
-        processManager.startProcess(sessionId, "deadlock-test", command, TEST_VIDEO.getParent());
+    var process = processManager.startProcess(processKey, command, TEST_VIDEO.getParent());
 
     await()
         .atMost(Duration.ofSeconds(30))
@@ -376,6 +379,6 @@ class HlsStreamingSmokeTest {
               assertThat(process.exitValue()).isZero();
             });
 
-    processManager.stopProcess(sessionId);
+    processManager.stopJob(jobRef);
   }
 }
