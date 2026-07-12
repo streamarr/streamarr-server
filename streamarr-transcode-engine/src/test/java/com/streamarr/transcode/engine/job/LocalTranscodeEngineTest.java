@@ -543,6 +543,7 @@ class LocalTranscodeEngineTest {
     engine.start(nextJob, source);
 
     assertThat(engine.releaseObservation(original.jobRef())).isTrue();
+    assertThat(engine.releaseObservation(failedReplacement.jobRef())).isTrue();
   }
 
   @Test
@@ -609,6 +610,79 @@ class LocalTranscodeEngineTest {
     engine.shutdown();
 
     assertThat(segmentStorage.segmentExists(original.sessionId(), "segment0.ts")).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should withdraw fallback when the current failed generation is stopped")
+  void shouldWithdrawFallbackWhenCurrentFailedGenerationIsStopped() throws IOException {
+    var jobId = UUID.randomUUID();
+    var original =
+        withJobRef(jobSpecification(List.of(defaultRendition())), new TranscodeJobRef(jobId, 1));
+    var failedTemplate = jobSpecification(List.of(defaultRendition()), Duration.ofMillis(50));
+    var failedReplacement =
+        new TranscodeJobSpec(
+            original.sessionId(),
+            new TranscodeJobRef(jobId, 2),
+            original.source(),
+            original.decision(),
+            failedTemplate.execution(),
+            original.renditions());
+    var newest = withJobRef(original, new TranscodeJobRef(jobId, 3));
+    var source = Files.createFile(tempDir.resolve("movie.mkv"));
+    processManager.onStart(
+        (key, outputDirectory) -> {
+          if (!key.jobRef().equals(failedReplacement.jobRef())) {
+            writeStartupArtifacts(
+                outputDirectory, "generation-" + key.jobRef().generation(), ".ts");
+          }
+        });
+    engine.start(original, source);
+    assertThatThrownBy(() -> engine.start(failedReplacement, source))
+        .isInstanceOf(TranscodeException.class);
+
+    assertThat(engine.stop(failedReplacement.jobRef()).state())
+        .isEqualTo(TranscodeJobState.STOPPED);
+
+    assertThat(segmentStorage.segmentExists(original.sessionId(), "segment0.ts")).isFalse();
+    engine.start(newest, source);
+    assertThat(engine.stop(original.jobRef()).state()).isEqualTo(TranscodeJobState.STOPPED);
+    assertThat(segmentStorage.readSegment(original.sessionId(), "segment0.ts"))
+        .isEqualTo("generation-3".getBytes());
+    assertThat(engine.releaseObservation(original.jobRef())).isTrue();
+    assertThat(engine.releaseObservation(failedReplacement.jobRef())).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should retain current stop authority while a fallback remains published")
+  void shouldRetainCurrentStopAuthorityWhileFallbackRemainsPublished() throws IOException {
+    var jobId = UUID.randomUUID();
+    var original =
+        withJobRef(jobSpecification(List.of(defaultRendition())), new TranscodeJobRef(jobId, 1));
+    var failedTemplate = jobSpecification(List.of(defaultRendition()), Duration.ofMillis(50));
+    var failedReplacement =
+        new TranscodeJobSpec(
+            original.sessionId(),
+            new TranscodeJobRef(jobId, 2),
+            original.source(),
+            original.decision(),
+            failedTemplate.execution(),
+            original.renditions());
+    var source = Files.createFile(tempDir.resolve("movie.mkv"));
+    processManager.onStart(
+        (key, outputDirectory) -> {
+          if (key.jobRef().equals(original.jobRef())) {
+            writeStartupArtifacts(outputDirectory, "fallback", ".ts");
+          }
+        });
+    engine.start(original, source);
+    assertThatThrownBy(() -> engine.start(failedReplacement, source))
+        .isInstanceOf(TranscodeException.class);
+
+    var released = engine.releaseObservation(failedReplacement.jobRef());
+    var stopState = engine.stop(failedReplacement.jobRef()).state();
+    var fallbackVisible = segmentStorage.segmentExists(original.sessionId(), "segment0.ts");
+
+    assertThat(released + ":" + stopState + ":" + fallbackVisible).isEqualTo("false:STOPPED:false");
   }
 
   @Test

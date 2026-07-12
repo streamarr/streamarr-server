@@ -50,6 +50,9 @@ public class LocalTranscodeEngine {
   @Builder.Default
   private final ConcurrentHashMap<UUID, UUID> sessionOwnerBySessionId = new ConcurrentHashMap<>();
 
+  @Builder.Default
+  private final ConcurrentHashMap<UUID, TranscodeJobRef> publications = new ConcurrentHashMap<>();
+
   @Builder.Default private final Object lifecycleMonitor = new Object();
   private volatile boolean shuttingDown;
 
@@ -61,7 +64,7 @@ public class LocalTranscodeEngine {
       if (!existing.startup().isDone() || existing.startup().isCompletedExceptionally()) {
         return await(existing.startup());
       }
-      if (existing.cleanupComplete || existing.published) {
+      if (existing.cleanupComplete || isPublished(existing)) {
         return existing.observation.get();
       }
       return await(existing.startup());
@@ -84,11 +87,7 @@ public class LocalTranscodeEngine {
       synchronized (lifecycleMonitor) {
         assertAdmitted(run);
         segmentStorage.publish(generation);
-        runs.values().stream()
-            .filter(
-                candidate -> candidate.specification.sessionId().equals(specification.sessionId()))
-            .forEach(candidate -> candidate.published = false);
-        run.published = true;
+        publications.put(specification.sessionId(), specification.jobRef());
         run.observation.set(started);
       }
       run.startup().complete(started);
@@ -142,8 +141,7 @@ public class LocalTranscodeEngine {
                 observation(run.specification, TranscodeJobState.STOPPED, RenditionState.STOPPED));
             return run.observation.get();
           }
-          segmentStorage.withdraw(run.specification.sessionId(), jobRef);
-          run.published = false;
+          withdrawPublication(run.specification.sessionId());
           run.observation.set(
               observation(run.specification, TranscodeJobState.FAILED, RenditionState.FAILED));
           run.cleanupComplete = true;
@@ -178,17 +176,17 @@ public class LocalTranscodeEngine {
           return run.observation.get();
         }
         synchronized (lifecycleMonitor) {
-          if (run.published
-              && highestGenerationByJobId.getOrDefault(jobRef.jobId(), 0L) == jobRef.generation()) {
-            segmentStorage.withdraw(run.specification.sessionId(), jobRef);
-            run.published = false;
-          } else if (!run.published && !run.cleanupComplete && run.generation.get() != null) {
+          var current =
+              highestGenerationByJobId.getOrDefault(jobRef.jobId(), 0L) == jobRef.generation();
+          if (current && publications.containsKey(run.specification.sessionId())) {
+            withdrawPublication(run.specification.sessionId());
+          } else if (!isPublished(run) && !run.cleanupComplete && run.generation.get() != null) {
             segmentStorage.discard(run.generation.get());
           }
           run.observation.set(
               observation(run.specification, TranscodeJobState.STOPPED, RenditionState.STOPPED));
           run.cleanupComplete = true;
-          if (highestGenerationByJobId.getOrDefault(jobRef.jobId(), 0L) == jobRef.generation()) {
+          if (current) {
             sessionOwnerBySessionId.remove(run.specification.sessionId(), jobRef.jobId());
           }
           return run.observation.get();
@@ -204,13 +202,13 @@ public class LocalTranscodeEngine {
     if (run == null) {
       return true;
     }
-    if (!run.cleanupComplete || run.published) {
-      return false;
-    }
-    if (!processManager.releaseJobObservation(jobRef)) {
-      return false;
-    }
     synchronized (lifecycleMonitor) {
+      if (!run.cleanupComplete || isPublished(run) || holdsFallbackStopAuthority(run)) {
+        return false;
+      }
+      if (!processManager.releaseJobObservation(jobRef)) {
+        return false;
+      }
       runs.remove(jobRef, run);
       if (highestGenerationByJobId.getOrDefault(jobRef.jobId(), 0L) == jobRef.generation()) {
         sessionOwnerBySessionId.remove(run.specification.sessionId(), jobRef.jobId());
@@ -233,9 +231,8 @@ public class LocalTranscodeEngine {
       snapshot.forEach(
           run -> {
             synchronized (run.monitor) {
-              if (run.published) {
-                segmentStorage.withdraw(run.specification.sessionId(), run.specification.jobRef());
-                run.published = false;
+              if (isPublished(run)) {
+                withdrawPublication(run.specification.sessionId());
               } else if (!run.cleanupComplete && run.generation.get() != null) {
                 segmentStorage.discard(run.generation.get());
               }
@@ -323,7 +320,7 @@ public class LocalTranscodeEngine {
           throw new TranscodeException("Superseded transcode process is still running");
         }
         synchronized (run.monitor) {
-          if (!run.published && !run.cleanupComplete && run.generation.get() != null) {
+          if (!isPublished(run) && !run.cleanupComplete && run.generation.get() != null) {
             segmentStorage.discard(run.generation.get());
           }
           run.observation.set(
@@ -376,6 +373,27 @@ public class LocalTranscodeEngine {
       }
       throw exception;
     }
+  }
+
+  private boolean isPublished(JobRun run) {
+    return run.specification.jobRef().equals(publications.get(run.specification.sessionId()));
+  }
+
+  private boolean holdsFallbackStopAuthority(JobRun run) {
+    var jobRef = run.specification.jobRef();
+    var sessionId = run.specification.sessionId();
+    return publications.containsKey(sessionId)
+        && highestGenerationByJobId.getOrDefault(jobRef.jobId(), 0L) == jobRef.generation()
+        && jobRef.jobId().equals(sessionOwnerBySessionId.get(sessionId));
+  }
+
+  private void withdrawPublication(UUID sessionId) {
+    var jobRef = publications.get(sessionId);
+    if (jobRef == null) {
+      return;
+    }
+    segmentStorage.withdraw(sessionId, jobRef);
+    publications.remove(sessionId, jobRef);
   }
 
   private void startRendition(
@@ -569,7 +587,6 @@ public class LocalTranscodeEngine {
     private final AtomicReference<SegmentGeneration> generation = new AtomicReference<>();
     private final AtomicReference<TranscodeJobObservation> observation = new AtomicReference<>();
     private volatile boolean cancelled;
-    private volatile boolean published;
     private volatile boolean cleanupComplete;
 
     private JobRun(TranscodeJobSpec specification, Path resolvedSource) {
