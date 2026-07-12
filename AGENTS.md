@@ -4,9 +4,9 @@
 - `./mvnw verify` — full build: unit tests (Surefire, `*Test`) + integration tests (Failsafe, `*IT`) + Checkstyle + Spotless
 - `./mvnw test` — unit tests only
 - `./mvnw spotless:apply` — format before committing
-- `./mvnw -pl streamarr-server generate-sources -Pgenerate-jooq-code` — regenerate jOOQ classes after adding a migration. Requires the local Postgres from `docker compose up -d`; migrates it, then generates into `streamarr-server/src/main/java/com/streamarr/server/jooq/generated` (checked in — commit regenerated files with the migration)
-- Smoke tests (`@Tag("SmokeTest")`, e.g. `HlsStreamingSmokeTest`) are excluded from all normal builds; run with `./mvnw -pl streamarr-server test -Dsurefire.excludedGroups=`
-- Local run: `docker compose up -d` (PostgreSQL), then `./mvnw -pl streamarr-server spring-boot:run`. Every config value has an env-var default except `TMDB_API_TOKEN` (required for metadata enrichment); `IMAGE_STORAGE_PATH` and `STREAMING_SEGMENT_BASE_PATH` default to empty
+- `./mvnw -pl :streamarr-server -am package -DskipTests -Pgenerate-jooq-code` — regenerate jOOQ classes after adding a migration. The package phase builds reactor dependencies first; it requires the local Postgres from `docker compose up -d`, migrates it, then generates into `streamarr-server/src/main/java/com/streamarr/server/jooq/generated` (checked in — commit regenerated files with the migration)
+- Smoke tests (`@Tag("SmokeTest")`, e.g. `HlsStreamingSmokeTest`) are excluded from all normal builds; run with `./mvnw -pl :streamarr-server -am test -Dsurefire.excludedGroups=`
+- Local run: `docker compose up -d` (PostgreSQL), then `./mvnw -pl :streamarr-server -am spring-boot:run`. Every config value has an env-var default except `TMDB_API_TOKEN` (required for metadata enrichment); `IMAGE_STORAGE_PATH` and `STREAMING_SEGMENT_BASE_PATH` default to empty
 
 ## Engineering Philosophy
 

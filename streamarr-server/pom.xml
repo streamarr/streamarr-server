@@ -230,6 +230,7 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
+                    <skip>false</skip>
                     <!-- Local runs get the dev profile; the packaged artifact must never
                          self-activate it (see PackagedConfigurationTest). -->
                     <profiles>
@@ -307,7 +308,8 @@
                                 <fileSet>
                                     <directory>${project.build.directory}/jacoco-output/</directory>
                                     <includes>
-                                        <include>*.exec</include>
+                                        <include>jacoco-unit-tests.exec</include>
+                                        <include>jacoco-integration-tests.exec</include>
                                     </includes>
                                 </fileSet>
                             </fileSets>
