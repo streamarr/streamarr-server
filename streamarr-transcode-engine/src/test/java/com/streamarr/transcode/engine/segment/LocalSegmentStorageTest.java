@@ -75,9 +75,10 @@ class LocalSegmentStorageTest {
     var sessionId = UUID.randomUUID();
 
     var renditionDirectory = storage.getOutputDirectory(sessionId, "720p");
+    var sessionDirectory = storage.getOutputDirectory(sessionId);
 
     assertThat(renditionDirectory).isDirectory();
-    assertThat(renditionDirectory.getParent()).isEqualTo(storage.getOutputDirectory(sessionId));
+    assertThat(renditionDirectory).hasParent(sessionDirectory);
   }
 
   @Test
@@ -269,6 +270,8 @@ class LocalSegmentStorageTest {
   @Test
   @DisplayName("Should observe a generation published after waiting begins")
   void shouldObserveGenerationPublishedAfterWaitingBegins() throws Exception {
+    var observedStorage = new ObservableSegmentStorage(tempDir);
+    storage = observedStorage;
     var sessionId = UUID.randomUUID();
     var generation =
         writeGeneration(sessionId, new TranscodeJobRef(UUID.randomUUID(), 1), "published-later");
@@ -282,10 +285,11 @@ class LocalSegmentStorageTest {
                     sessionId, "720p/segment0.ts", java.time.Duration.ofSeconds(2));
               });
       assertThat(entered.await(1, TimeUnit.SECONDS)).isTrue();
-      Thread.sleep(150);
+      assertThat(observedStorage.awaitFirstSegmentCheck()).isTrue();
       assertThat(waiting.isDone()).isFalse();
 
       storage.publish(generation);
+      observedStorage.allowSegmentChecks();
 
       assertThat(waiting.get(1, TimeUnit.SECONDS)).isTrue();
     }
@@ -294,6 +298,8 @@ class LocalSegmentStorageTest {
   @Test
   @DisplayName("Should stop observing a generation withdrawn while waiting")
   void shouldStopObservingGenerationWithdrawnWhileWaiting() throws Exception {
+    var observedStorage = new ObservableSegmentStorage(tempDir);
+    storage = observedStorage;
     var sessionId = UUID.randomUUID();
     var generation =
         storage.prepareGeneration(sessionId, new TranscodeJobRef(UUID.randomUUID(), 1));
@@ -309,10 +315,11 @@ class LocalSegmentStorageTest {
                     sessionId, "720p/segment1.ts", java.time.Duration.ofMillis(400));
               });
       assertThat(entered.await(1, TimeUnit.SECONDS)).isTrue();
-      Thread.sleep(150);
+      assertThat(observedStorage.awaitFirstSegmentCheck()).isTrue();
 
       storage.withdraw(sessionId, generation.jobRef());
       writeSegment(generation, "segment1.ts", "too-late");
+      observedStorage.allowSegmentChecks();
 
       assertThat(waiting.get(1, TimeUnit.SECONDS)).isFalse();
     }
@@ -418,10 +425,10 @@ class LocalSegmentStorageTest {
   @DisplayName("Should reject a staging directory symlink outside managed storage")
   void shouldRejectStagingDirectorySymlinkOutsideManagedStorage() throws IOException {
     var sessionId = UUID.randomUUID();
+    var jobRef = new TranscodeJobRef(UUID.randomUUID(), 1);
     Files.createSymbolicLink(tempDir.resolve(".staging"), externalDir.toAbsolutePath());
 
-    assertThatThrownBy(
-            () -> storage.prepareGeneration(sessionId, new TranscodeJobRef(UUID.randomUUID(), 1)))
+    assertThatThrownBy(() -> storage.prepareGeneration(sessionId, jobRef))
         .isInstanceOf(InvalidSegmentPathException.class);
     assertThat(externalDir.resolve(sessionId.toString())).doesNotExist();
   }
@@ -641,8 +648,10 @@ class LocalSegmentStorageTest {
   @Test
   @DisplayName("Should reject traversal while waiting for a segment")
   void shouldRejectTraversalWhileWaitingForSegment() {
-    assertThatThrownBy(
-            () -> storage.waitForSegment(UUID.randomUUID(), "../segment0.ts", Duration.ofMillis(1)))
+    var sessionId = UUID.randomUUID();
+    var timeout = Duration.ofMillis(1);
+
+    assertThatThrownBy(() -> storage.waitForSegment(sessionId, "../segment0.ts", timeout))
         .isInstanceOf(InvalidSegmentPathException.class);
   }
 
@@ -676,13 +685,12 @@ class LocalSegmentStorageTest {
   void shouldReportGenerationPreparationFailureWhenBaseBecomesFile() throws IOException {
     var managedBase = Files.createDirectory(tempDir.resolve("managed"));
     storage = new LocalSegmentStorage(managedBase);
+    var sessionId = UUID.randomUUID();
+    var jobRef = new TranscodeJobRef(UUID.randomUUID(), 1);
     Files.delete(managedBase);
     Files.createFile(managedBase);
 
-    assertThatThrownBy(
-            () ->
-                storage.prepareGeneration(
-                    UUID.randomUUID(), new TranscodeJobRef(UUID.randomUUID(), 1)))
+    assertThatThrownBy(() -> storage.prepareGeneration(sessionId, jobRef))
         .isInstanceOf(UncheckedIOException.class)
         .hasMessage("Failed to prepare segment generation");
   }
@@ -717,9 +725,10 @@ class LocalSegmentStorageTest {
   void shouldReportSessionDeletionVerificationFailureWhenBaseDisappears() throws IOException {
     var managedBase = Files.createDirectory(tempDir.resolve("managed"));
     storage = new LocalSegmentStorage(managedBase);
+    var sessionId = UUID.randomUUID();
     Files.delete(managedBase);
 
-    assertThatThrownBy(() -> storage.deleteSession(UUID.randomUUID()))
+    assertThatThrownBy(() -> storage.deleteSession(sessionId))
         .isInstanceOf(UncheckedIOException.class)
         .hasMessage("Failed to verify session storage");
   }
@@ -735,5 +744,42 @@ class LocalSegmentStorageTest {
       SegmentGeneration generation, String segmentName, String segmentContents) throws IOException {
     var renditionDirectory = Files.createDirectories(generation.outputDirectory().resolve("720p"));
     Files.writeString(renditionDirectory.resolve(segmentName), segmentContents);
+  }
+
+  private static final class ObservableSegmentStorage extends LocalSegmentStorage {
+
+    private final CountDownLatch firstSegmentCheck = new CountDownLatch(1);
+    private final CountDownLatch segmentChecksAllowed = new CountDownLatch(1);
+
+    private ObservableSegmentStorage(Path baseDir) {
+      super(baseDir);
+    }
+
+    @Override
+    public boolean segmentExists(UUID sessionId, String segmentName) {
+      var exists = super.segmentExists(sessionId, segmentName);
+      firstSegmentCheck.countDown();
+      awaitSegmentChecksAllowed();
+      return exists;
+    }
+
+    private boolean awaitFirstSegmentCheck() throws InterruptedException {
+      return firstSegmentCheck.await(1, TimeUnit.SECONDS);
+    }
+
+    private void allowSegmentChecks() {
+      segmentChecksAllowed.countDown();
+    }
+
+    private void awaitSegmentChecksAllowed() {
+      try {
+        if (!segmentChecksAllowed.await(1, TimeUnit.SECONDS)) {
+          throw new IllegalStateException("Segment checks were not released");
+        }
+      } catch (InterruptedException exception) {
+        Thread.currentThread().interrupt();
+        throw new IllegalStateException("Interrupted while awaiting segment checks", exception);
+      }
+    }
   }
 }

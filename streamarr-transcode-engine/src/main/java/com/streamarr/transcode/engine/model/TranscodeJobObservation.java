@@ -13,7 +13,7 @@ public record TranscodeJobObservation(
     if (jobRef == null || state == null || renditions == null) {
       throw new IllegalArgumentException("Transcode job observation values are required");
     }
-    if (renditions.stream().anyMatch(rendition -> rendition == null)) {
+    if (renditions.stream().anyMatch(java.util.Objects::isNull)) {
       throw new IllegalArgumentException("Transcode job observation values are required");
     }
     if ((state == TranscodeJobState.ABSENT) != renditions.isEmpty()) {

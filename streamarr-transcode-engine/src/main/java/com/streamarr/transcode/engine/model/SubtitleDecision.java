@@ -6,6 +6,8 @@ import java.util.OptionalInt;
 public record SubtitleDecision(
     SubtitleMode mode, Optional<String> codec, OptionalInt streamIndex, Optional<String> language) {
 
+  // Optional components are part of this public record boundary and share its validation contract.
+  @SuppressWarnings("java:S2789")
   public SubtitleDecision {
     if (mode == null || codec == null || streamIndex == null || language == null) {
       throw new IllegalArgumentException("Subtitle decision values are required");

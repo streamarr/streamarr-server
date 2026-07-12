@@ -85,7 +85,7 @@ public class LocalSegmentStorage {
       }
       try {
         Thread.sleep(POLL_INTERVAL.toMillis());
-      } catch (InterruptedException exception) {
+      } catch (InterruptedException _) {
         Thread.currentThread().interrupt();
         return false;
       }
@@ -96,7 +96,7 @@ public class LocalSegmentStorage {
   public boolean segmentExists(UUID sessionId, String segmentName) {
     try {
       return anyExists(resolveSegmentPaths(sessionId, segmentName));
-    } catch (TranscodeException exception) {
+    } catch (TranscodeException _) {
       return false;
     }
   }
@@ -177,7 +177,7 @@ public class LocalSegmentStorage {
         }
         return Optional.of(contents);
       }
-    } catch (NoSuchFileException exception) {
+    } catch (NoSuchFileException _) {
       return Optional.empty();
     } catch (IOException exception) {
       throw new UncheckedIOException("Failed to read staged artifact", exception);
@@ -254,7 +254,7 @@ public class LocalSegmentStorage {
         (_, candidate) -> {
           publishedGenerations.computeIfPresent(
               sessionId,
-              (__, current) -> {
+              (_, current) -> {
                 if (!current.jobRef().equals(jobRef)) {
                   return current;
                 }

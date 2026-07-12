@@ -24,6 +24,7 @@ public class FakeFfmpegProcessManager implements FfmpegProcessManager {
       new HashMap<>();
   private final Set<UUID> started = new HashSet<>();
   private final Set<UUID> stopped = new HashSet<>();
+  private boolean observationReleaseAllowed = true;
 
   @Override
   public Process startProcess(FfmpegProcessKey key, List<String> command, Path workingDir) {
@@ -74,7 +75,7 @@ public class FakeFfmpegProcessManager implements FfmpegProcessManager {
 
   @Override
   public boolean releaseJobObservation(TranscodeJobRef jobRef) {
-    if (isRunning(jobRef)) {
+    if (!observationReleaseAllowed || isRunning(jobRef)) {
       return false;
     }
     terminalObservations.keySet().removeIf(key -> key.jobRef().equals(jobRef));
@@ -94,6 +95,10 @@ public class FakeFfmpegProcessManager implements FfmpegProcessManager {
 
   public Set<UUID> getStopped() {
     return Set.copyOf(stopped);
+  }
+
+  public void preventObservationRelease() {
+    observationReleaseAllowed = false;
   }
 
   private static class StubProcess extends Process {

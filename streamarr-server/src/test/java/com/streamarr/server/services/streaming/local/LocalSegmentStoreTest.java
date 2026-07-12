@@ -238,6 +238,19 @@ class LocalSegmentStoreTest {
   }
 
   @Test
+  @DisplayName("Should reject segment path traversal for wait and existence checks")
+  void shouldRejectSegmentPathTraversalForWaitAndExistenceChecks() {
+    var sessionId = UUID.randomUUID();
+    var timeout = Duration.ofMillis(1);
+    store.getOutputDirectory(sessionId);
+
+    assertThatThrownBy(() -> store.waitForSegment(sessionId, "../segment0.ts", timeout))
+        .isInstanceOf(InvalidSegmentPathException.class);
+    assertThatThrownBy(() -> store.segmentExists(sessionId, "../segment0.ts"))
+        .isInstanceOf(InvalidSegmentPathException.class);
+  }
+
+  @Test
   @DisplayName("Should read segment when name includes valid subdirectory")
   void shouldReadSegmentWhenNameIncludesValidSubdirectory() throws IOException {
     var sessionId = UUID.randomUUID();

@@ -41,21 +41,27 @@ class TranscodeJobSpecTest {
   @Test
   @DisplayName("Should reject job specification when rendition ladder contains an absent value")
   void shouldRejectJobSpecificationWhenRenditionLadderContainsAbsentValue() {
-    assertThatThrownBy(() -> specification(java.util.Arrays.asList(rendition("720p"), null)))
+    var renditions = java.util.Arrays.asList(rendition("720p"), null);
+
+    assertThatThrownBy(() -> specification(renditions))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
   @DisplayName("Should reject job specification when rendition labels are duplicated")
   void shouldRejectJobSpecificationWhenRenditionLabelsAreDuplicated() {
-    assertThatThrownBy(() -> specification(List.of(rendition("720p"), rendition("720p"))))
+    var renditions = List.of(rendition("720p"), rendition("720p"));
+
+    assertThatThrownBy(() -> specification(renditions))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
   @DisplayName("Should reject rendition labels that collide on case-insensitive storage")
   void shouldRejectRenditionLabelsThatCollideOnCaseInsensitiveStorage() {
-    assertThatThrownBy(() -> specification(List.of(rendition("720p"), rendition("720P"))))
+    var renditions = List.of(rendition("720p"), rendition("720P"));
+
+    assertThatThrownBy(() -> specification(renditions))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
@@ -89,7 +95,9 @@ class TranscodeJobSpecTest {
   }
 
   private static void assertThatThrownByUnsupportedMutation(List<RenditionSpec> renditions) {
-    org.assertj.core.api.Assertions.assertThatThrownBy(() -> renditions.add(rendition("360p")))
+    var addedRendition = rendition("360p");
+
+    org.assertj.core.api.Assertions.assertThatThrownBy(() -> renditions.add(addedRendition))
         .isInstanceOf(UnsupportedOperationException.class);
   }
 

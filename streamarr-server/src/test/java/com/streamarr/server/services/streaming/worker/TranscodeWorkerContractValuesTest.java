@@ -58,30 +58,13 @@ class TranscodeWorkerContractValuesTest {
     assertThat(command.commandId()).isEqualTo(commandId);
     assertThat(command.target()).isEqualTo(target);
     assertThat(command.specification()).isEqualTo(specification);
-    assertThatThrownBy(
-            () ->
-                StartJobCommand.builder()
-                    .commandId(null)
-                    .target(target)
-                    .specification(specification)
-                    .build())
-        .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(
-            () ->
-                StartJobCommand.builder()
-                    .commandId(commandId)
-                    .target(null)
-                    .specification(specification)
-                    .build())
-        .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(
-            () ->
-                StartJobCommand.builder()
-                    .commandId(commandId)
-                    .target(target)
-                    .specification(null)
-                    .build())
-        .isInstanceOf(IllegalArgumentException.class);
+    var missingCommandId = StartJobCommand.builder().target(target).specification(specification);
+    var missingTarget = StartJobCommand.builder().commandId(commandId).specification(specification);
+    var missingSpecification = StartJobCommand.builder().commandId(commandId).target(target);
+
+    assertThatThrownBy(missingCommandId::build).isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(missingTarget::build).isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(missingSpecification::build).isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
@@ -97,15 +80,13 @@ class TranscodeWorkerContractValuesTest {
     assertThat(command.commandId()).isEqualTo(commandId);
     assertThat(command.target()).isEqualTo(target);
     assertThat(command.jobRef()).isEqualTo(jobRef);
-    assertThatThrownBy(
-            () -> StopJobCommand.builder().commandId(null).target(target).jobRef(jobRef).build())
-        .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(
-            () -> StopJobCommand.builder().commandId(commandId).target(null).jobRef(jobRef).build())
-        .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(
-            () -> StopJobCommand.builder().commandId(commandId).target(target).jobRef(null).build())
-        .isInstanceOf(IllegalArgumentException.class);
+    var missingCommandId = StopJobCommand.builder().target(target).jobRef(jobRef);
+    var missingTarget = StopJobCommand.builder().commandId(commandId).jobRef(jobRef);
+    var missingJobRef = StopJobCommand.builder().commandId(commandId).target(target);
+
+    assertThatThrownBy(missingCommandId::build).isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(missingTarget::build).isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(missingJobRef::build).isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test

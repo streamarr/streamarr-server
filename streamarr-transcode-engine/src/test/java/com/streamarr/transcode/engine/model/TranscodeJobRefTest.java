@@ -17,7 +17,9 @@ class TranscodeJobRefTest {
   @ValueSource(longs = {0, -1})
   @DisplayName("Should reject job reference when generation is not positive")
   void shouldRejectJobReferenceWhenGenerationIsNotPositive(long generation) {
-    assertThatThrownBy(() -> new TranscodeJobRef(UUID.randomUUID(), generation))
+    var jobId = UUID.randomUUID();
+
+    assertThatThrownBy(() -> new TranscodeJobRef(jobId, generation))
         .isInstanceOf(IllegalArgumentException.class);
   }
 

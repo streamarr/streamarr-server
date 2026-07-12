@@ -1,10 +1,12 @@
 package com.streamarr.server.services.streaming.ffmpeg;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.fakes.FakeFfmpegProcessManager;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
+import com.streamarr.transcode.engine.error.TranscodeException;
 import com.streamarr.transcode.engine.ffmpeg.FfmpegCommandBuilder;
 import com.streamarr.transcode.engine.ffmpeg.FfmpegProcessKey;
 import com.streamarr.transcode.engine.ffmpeg.FfmpegProcessState;
@@ -139,6 +141,19 @@ class LocalTranscodeExecutorTest {
     var key =
         new FfmpegProcessKey(new TranscodeJobRef(request.sessionId(), 1), request.variantLabel());
     assertThat(processManager.observe(key).state()).isEqualTo(FfmpegProcessState.ABSENT);
+  }
+
+  @Test
+  @DisplayName("Should reject stop when terminal observation cleanup is pending")
+  void shouldRejectStopWhenTerminalObservationCleanupIsPending() {
+    var request = createRequest(TranscodeMode.FULL_TRANSCODE, "h264", "720p");
+    var sessionId = request.sessionId();
+    executor.start(request);
+    processManager.preventObservationRelease();
+
+    assertThatThrownBy(() -> executor.stop(sessionId))
+        .isInstanceOf(TranscodeException.class)
+        .hasMessage("Transcode cleanup is still pending");
   }
 
   @Test

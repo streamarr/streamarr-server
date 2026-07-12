@@ -26,6 +26,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 import lombok.Builder;
 
 @Builder
@@ -61,7 +62,7 @@ public class LocalTranscodeEngine {
         return await(existing.startup());
       }
       if (existing.cleanupComplete || existing.published) {
-        return existing.observation;
+        return existing.observation.get();
       }
       return await(existing.startup());
     }
@@ -72,7 +73,7 @@ public class LocalTranscodeEngine {
       assertAdmitted(run);
       generation =
           segmentStorage.prepareGeneration(specification.sessionId(), specification.jobRef());
-      run.generation = generation;
+      run.generation.set(generation);
       for (var rendition : specification.renditions()) {
         assertAdmitted(run);
         startRendition(specification, resolvedSource, generation, rendition);
@@ -88,13 +89,14 @@ public class LocalTranscodeEngine {
                 candidate -> candidate.specification.sessionId().equals(specification.sessionId()))
             .forEach(candidate -> candidate.published = false);
         run.published = true;
-        run.observation = started;
+        run.observation.set(started);
       }
       run.startup().complete(started);
       return started;
     } catch (RuntimeException exception) {
       var failure = compensate(run, generation, exception);
-      run.observation = observation(specification, TranscodeJobState.FAILED, RenditionState.FAILED);
+      run.observation.set(
+          observation(specification, TranscodeJobState.FAILED, RenditionState.FAILED));
       run.startup().completeExceptionally(failure);
       throw failure;
     }
@@ -105,17 +107,17 @@ public class LocalTranscodeEngine {
     if (run == null) {
       return absent(jobRef);
     }
-    if (run.observation.state() != TranscodeJobState.RUNNING) {
-      return run.observation;
+    if (run.observation.get().state() != TranscodeJobState.RUNNING) {
+      return run.observation.get();
     }
     try {
-      assertProcessesHealthy(run.specification, run.generation);
-      var healthy = healthyObservation(run.specification, run.generation);
+      assertProcessesHealthy(run.specification, run.generation.get());
+      var healthy = healthyObservation(run.specification, run.generation.get());
       synchronized (lifecycleMonitor) {
-        if (run.observation.state() == TranscodeJobState.RUNNING) {
-          run.observation = healthy;
+        if (run.observation.get().state() == TranscodeJobState.RUNNING) {
+          run.observation.set(healthy);
         }
-        return run.observation;
+        return run.observation.get();
       }
     } catch (RuntimeException exception) {
       if (exception instanceof TranscodeEngineException engineException
@@ -133,19 +135,19 @@ public class LocalTranscodeEngine {
       if (processManager.isRunning(jobRef)) {
         throw new IllegalStateException("Exact transcode processes remain active");
       }
-      synchronized (run) {
+      synchronized (run.monitor) {
         synchronized (lifecycleMonitor) {
-          if (run.cancelled || run.observation.state() == TranscodeJobState.STOPPED) {
-            run.observation =
-                observation(run.specification, TranscodeJobState.STOPPED, RenditionState.STOPPED);
-            return run.observation;
+          if (run.cancelled || run.observation.get().state() == TranscodeJobState.STOPPED) {
+            run.observation.set(
+                observation(run.specification, TranscodeJobState.STOPPED, RenditionState.STOPPED));
+            return run.observation.get();
           }
           segmentStorage.withdraw(run.specification.sessionId(), jobRef);
           run.published = false;
-          run.observation =
-              observation(run.specification, TranscodeJobState.FAILED, RenditionState.FAILED);
+          run.observation.set(
+              observation(run.specification, TranscodeJobState.FAILED, RenditionState.FAILED));
           run.cleanupComplete = true;
-          return run.observation;
+          return run.observation.get();
         }
       }
     } catch (RuntimeException cleanupFailure) {
@@ -159,8 +161,8 @@ public class LocalTranscodeEngine {
       return absent(jobRef);
     }
     synchronized (lifecycleMonitor) {
-      if (run.observation.state() == TranscodeJobState.STOPPED && run.cleanupComplete) {
-        return run.observation;
+      if (run.observation.get().state() == TranscodeJobState.STOPPED && run.cleanupComplete) {
+        return run.observation.get();
       }
       run.cancelled = true;
     }
@@ -171,25 +173,25 @@ public class LocalTranscodeEngine {
       if (processManager.isRunning(jobRef)) {
         throw new IllegalStateException("Exact transcode processes remain active");
       }
-      synchronized (run) {
-        if (run.observation.state() == TranscodeJobState.STOPPED && run.cleanupComplete) {
-          return run.observation;
+      synchronized (run.monitor) {
+        if (run.observation.get().state() == TranscodeJobState.STOPPED && run.cleanupComplete) {
+          return run.observation.get();
         }
         synchronized (lifecycleMonitor) {
           if (run.published
               && highestGenerationByJobId.getOrDefault(jobRef.jobId(), 0L) == jobRef.generation()) {
             segmentStorage.withdraw(run.specification.sessionId(), jobRef);
             run.published = false;
-          } else if (!run.published && !run.cleanupComplete && run.generation != null) {
-            segmentStorage.discard(run.generation);
+          } else if (!run.published && !run.cleanupComplete && run.generation.get() != null) {
+            segmentStorage.discard(run.generation.get());
           }
-          run.observation =
-              observation(run.specification, TranscodeJobState.STOPPED, RenditionState.STOPPED);
+          run.observation.set(
+              observation(run.specification, TranscodeJobState.STOPPED, RenditionState.STOPPED));
           run.cleanupComplete = true;
           if (highestGenerationByJobId.getOrDefault(jobRef.jobId(), 0L) == jobRef.generation()) {
             sessionOwnerBySessionId.remove(run.specification.sessionId(), jobRef.jobId());
           }
-          return run.observation;
+          return run.observation.get();
         }
       }
     } catch (RuntimeException exception) {
@@ -230,15 +232,16 @@ public class LocalTranscodeEngine {
       processManager.forceStopAll();
       snapshot.forEach(
           run -> {
-            synchronized (run) {
+            synchronized (run.monitor) {
               if (run.published) {
                 segmentStorage.withdraw(run.specification.sessionId(), run.specification.jobRef());
                 run.published = false;
-              } else if (!run.cleanupComplete && run.generation != null) {
-                segmentStorage.discard(run.generation);
+              } else if (!run.cleanupComplete && run.generation.get() != null) {
+                segmentStorage.discard(run.generation.get());
               }
-              run.observation =
-                  observation(run.specification, TranscodeJobState.STOPPED, RenditionState.STOPPED);
+              run.observation.set(
+                  observation(
+                      run.specification, TranscodeJobState.STOPPED, RenditionState.STOPPED));
               run.cleanupComplete = true;
             }
           });
@@ -319,12 +322,12 @@ public class LocalTranscodeEngine {
         if (processManager.isRunning(jobRef)) {
           throw new TranscodeException("Superseded transcode process is still running");
         }
-        synchronized (run) {
-          if (!run.published && !run.cleanupComplete && run.generation != null) {
-            segmentStorage.discard(run.generation);
+        synchronized (run.monitor) {
+          if (!run.published && !run.cleanupComplete && run.generation.get() != null) {
+            segmentStorage.discard(run.generation.get());
           }
-          run.observation =
-              observation(run.specification, TranscodeJobState.STOPPED, RenditionState.STOPPED);
+          run.observation.set(
+              observation(run.specification, TranscodeJobState.STOPPED, RenditionState.STOPPED));
           run.cleanupComplete = true;
         }
       }
@@ -562,8 +565,9 @@ public class LocalTranscodeEngine {
     private final TranscodeJobSpec specification;
     private final Path resolvedSource;
     private final CompletableFuture<TranscodeJobObservation> startup = new CompletableFuture<>();
-    private volatile SegmentGeneration generation;
-    private volatile TranscodeJobObservation observation;
+    private final Object monitor = new Object();
+    private final AtomicReference<SegmentGeneration> generation = new AtomicReference<>();
+    private final AtomicReference<TranscodeJobObservation> observation = new AtomicReference<>();
     private volatile boolean cancelled;
     private volatile boolean published;
     private volatile boolean cleanupComplete;
@@ -571,9 +575,9 @@ public class LocalTranscodeEngine {
     private JobRun(TranscodeJobSpec specification, Path resolvedSource) {
       this.specification = specification;
       this.resolvedSource = resolvedSource;
-      observation =
+      observation.set(
           LocalTranscodeEngine.observation(
-              specification, TranscodeJobState.ADMITTING, RenditionState.STARTING);
+              specification, TranscodeJobState.ADMITTING, RenditionState.STARTING));
     }
 
     private CompletableFuture<TranscodeJobObservation> startup() {

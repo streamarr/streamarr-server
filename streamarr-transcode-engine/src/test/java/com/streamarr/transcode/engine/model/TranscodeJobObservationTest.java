@@ -35,11 +35,10 @@ class TranscodeJobObservationTest {
     assertThat(observation.renditions())
         .extracting(RenditionObservation::label)
         .containsExactly("720p");
-    assertThatThrownBy(
-            () ->
-                observation
-                    .renditions()
-                    .add(new RenditionObservation("360p", RenditionState.STARTING)))
+    var snapshot = observation.renditions();
+    var addedRendition = new RenditionObservation("360p", RenditionState.STARTING);
+
+    assertThatThrownBy(() -> snapshot.add(addedRendition))
         .isInstanceOf(UnsupportedOperationException.class);
   }
 
@@ -61,12 +60,11 @@ class TranscodeJobObservationTest {
   @Test
   @DisplayName("Should reject job observation when a rendition entry is absent")
   void shouldRejectJobObservationWhenRenditionEntryIsAbsent() {
+    var jobRef = new TranscodeJobRef(UUID.randomUUID(), 1);
+    var renditions = java.util.Collections.<RenditionObservation>singletonList(null);
+
     assertThatThrownBy(
-            () ->
-                new TranscodeJobObservation(
-                    new TranscodeJobRef(UUID.randomUUID(), 1),
-                    TranscodeJobState.RUNNING,
-                    java.util.Collections.singletonList(null)))
+            () -> new TranscodeJobObservation(jobRef, TranscodeJobState.RUNNING, renditions))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Transcode job observation values are required");
   }
@@ -78,13 +76,11 @@ class TranscodeJobObservationTest {
         List.of(
             new RenditionObservation("720p", RenditionState.STOPPED),
             new RenditionObservation("720p", RenditionState.FAILED));
+    var jobRef = new TranscodeJobRef(UUID.randomUUID(), 1);
 
     assertThatThrownBy(
             () ->
-                new TranscodeJobObservation(
-                    new TranscodeJobRef(UUID.randomUUID(), 1),
-                    TranscodeJobState.FAILED,
-                    duplicateRenditions))
+                new TranscodeJobObservation(jobRef, TranscodeJobState.FAILED, duplicateRenditions))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
@@ -95,13 +91,11 @@ class TranscodeJobObservationTest {
         List.of(
             new RenditionObservation("720p", RenditionState.STOPPED),
             new RenditionObservation("720P", RenditionState.FAILED));
+    var jobRef = new TranscodeJobRef(UUID.randomUUID(), 1);
 
     assertThatThrownBy(
             () ->
-                new TranscodeJobObservation(
-                    new TranscodeJobRef(UUID.randomUUID(), 1),
-                    TranscodeJobState.FAILED,
-                    collidingRenditions))
+                new TranscodeJobObservation(jobRef, TranscodeJobState.FAILED, collidingRenditions))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
@@ -110,11 +104,22 @@ class TranscodeJobObservationTest {
   @DisplayName("Should reject job observation when state contradicts rendition snapshot")
   void shouldRejectJobObservationWhenStateContradictsRenditionSnapshot(
       TranscodeJobState state, List<RenditionObservation> renditions) {
-    assertThatThrownBy(
-            () ->
-                new TranscodeJobObservation(
-                    new TranscodeJobRef(UUID.randomUUID(), 1), state, renditions))
+    var jobRef = new TranscodeJobRef(UUID.randomUUID(), 1);
+
+    assertThatThrownBy(() -> new TranscodeJobObservation(jobRef, state, renditions))
         .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @ParameterizedTest
+  @MethodSource("validMixedStates")
+  @DisplayName("Should accept job observation when mixed rendition states agree")
+  void shouldAcceptJobObservationWhenMixedRenditionStatesAgree(
+      TranscodeJobState state, List<RenditionObservation> renditions) {
+    var observation =
+        new TranscodeJobObservation(new TranscodeJobRef(UUID.randomUUID(), 1), state, renditions);
+
+    assertThat(observation.state()).isEqualTo(state);
+    assertThat(observation.renditions()).containsExactlyElementsOf(renditions);
   }
 
   static Stream<Arguments> contradictoryStates() {
@@ -133,6 +138,16 @@ class TranscodeJobObservationTest {
             TranscodeJobState.RUNNING,
             List.of(new RenditionObservation("720p", RenditionState.COMPLETED))),
         Arguments.of(
+            TranscodeJobState.RUNNING,
+            List.of(
+                new RenditionObservation("720p", RenditionState.RUNNING),
+                new RenditionObservation("480p", RenditionState.FAILED))),
+        Arguments.of(
+            TranscodeJobState.RUNNING,
+            List.of(
+                new RenditionObservation("720p", RenditionState.RUNNING),
+                new RenditionObservation("480p", RenditionState.STARTING))),
+        Arguments.of(
             TranscodeJobState.COMPLETED,
             List.of(new RenditionObservation("720p", RenditionState.RUNNING))),
         Arguments.of(
@@ -144,7 +159,26 @@ class TranscodeJobObservationTest {
                 new RenditionObservation("720p", RenditionState.FAILED),
                 new RenditionObservation("480p", RenditionState.RUNNING))),
         Arguments.of(
+            TranscodeJobState.FAILED,
+            List.of(
+                new RenditionObservation("720p", RenditionState.FAILED),
+                new RenditionObservation("480p", RenditionState.STARTING))),
+        Arguments.of(
             TranscodeJobState.STOPPED,
             List.of(new RenditionObservation("720p", RenditionState.RUNNING))));
+  }
+
+  static Stream<Arguments> validMixedStates() {
+    return Stream.of(
+        Arguments.of(
+            TranscodeJobState.RUNNING,
+            List.of(
+                new RenditionObservation("720p", RenditionState.RUNNING),
+                new RenditionObservation("480p", RenditionState.COMPLETED))),
+        Arguments.of(
+            TranscodeJobState.FAILED,
+            List.of(
+                new RenditionObservation("720p", RenditionState.FAILED),
+                new RenditionObservation("480p", RenditionState.COMPLETED))));
   }
 }

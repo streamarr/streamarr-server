@@ -188,6 +188,8 @@ public final class FakeFfmpegProcessManager implements FfmpegProcessManager {
     }
 
     @Override
-    public void destroy() {}
+    public void destroy() {
+      // The stub represents an already-completed process, so destruction has no further effect.
+    }
   }
 }

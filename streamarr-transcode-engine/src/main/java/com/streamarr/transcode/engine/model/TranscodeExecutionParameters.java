@@ -25,7 +25,7 @@ public record TranscodeExecutionParameters(
       throw new IllegalArgumentException("Startup timeout must be positive");
     }
     try {
-      startupTimeout.toNanos();
+      startupTimeout = Duration.ofNanos(startupTimeout.toNanos());
     } catch (ArithmeticException exception) {
       throw new IllegalArgumentException(
           "Startup timeout must fit nanosecond precision", exception);
