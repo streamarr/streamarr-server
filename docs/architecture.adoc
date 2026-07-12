@@ -152,7 +152,10 @@ projected capacity claim; the worker owns atomic physical admission inside `Star
 owns the complete adaptive ladder, and PID, raw FFmpeg arguments, host paths, playback tokens, and
 signing material never cross the boundary.
 
-Sources use a logical mount/library id plus normalized relative key. Segments remain worker-local
+Sources use a logical mount/library id plus normalized relative key. Shared source mounts are
+read-only from Streamarr's perspective and are trusted not to change path identity between
+resolution and FFmpeg open; real-path checks reject escape at each resolution but are not
+filesystem capability handles. Segments remain worker-local
 and return as bounded protobuf `SegmentChunk` streams over the selected worker's existing mTLS
 gRPC channel only after the authoritative playback gate succeeds. Streamarr translates that
 internal stream to the client's HLS HTTP response; workers expose no second byte-serving listener.
