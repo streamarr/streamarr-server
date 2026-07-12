@@ -22,6 +22,31 @@ class TranscodeCapabilityServiceTest {
   }
 
   @Test
+  @DisplayName("Should report unavailable when FFmpeg version check fails")
+  void shouldReportUnavailableWhenFfmpegVersionCheckFails() {
+    var service =
+        new TranscodeCapabilityService(
+            "ffmpeg",
+            command -> {
+              throw new IllegalStateException("simulated process failure");
+            });
+
+    service.detectCapabilities();
+
+    assertThat(service.isFfmpegAvailable()).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should restore interruption when FFmpeg version check is interrupted")
+  void shouldRestoreInterruptionWhenFfmpegVersionCheckIsInterrupted() {
+    var service =
+        new TranscodeCapabilityService("ffmpeg", command -> interruptingProcess("ffmpeg 7.0"));
+
+    assertRestoresInterruption(service::detectCapabilities);
+    assertThat(service.isFfmpegAvailable()).isFalse();
+  }
+
+  @Test
   @DisplayName("Should report CPU only when no GPU detected")
   void shouldReportCpuOnlyWhenNoGpuDetected() {
     var outputs =
@@ -40,10 +65,44 @@ class TranscodeCapabilityServiceTest {
   }
 
   @Test
+  @DisplayName("Should report CPU only when encoder discovery fails")
+  void shouldReportCpuOnlyWhenEncoderDiscoveryFails() {
+    var service =
+        new TranscodeCapabilityService(
+            "ffmpeg",
+            command -> {
+              if (String.join(" ", command).contains("-version")) {
+                return createProcess("ffmpeg version 7.0", 0);
+              }
+              throw new IllegalStateException("simulated encoder discovery failure");
+            });
+
+    service.detectCapabilities();
+
+    assertThat(service.isFfmpegAvailable()).isTrue();
+    assertThat(service.getHardwareEncodingCapability().available()).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should restore interruption when encoder discovery is interrupted")
+  void shouldRestoreInterruptionWhenEncoderDiscoveryIsInterrupted() {
+    var outputs =
+        Map.of(
+            "ffmpeg", createProcess("ffmpeg version 7.0", 0),
+            "encoders", interruptingProcess("V....D h264_nvenc encoder"));
+    var service =
+        new TranscodeCapabilityService("ffmpeg", command -> resolveProcess(command, outputs));
+
+    assertRestoresInterruption(service::detectCapabilities);
+    assertThat(service.getHardwareEncodingCapability().available()).isFalse();
+  }
+
+  @Test
   @DisplayName("Should detect NVENC capability when NVENC encoders are available")
   void shouldDetectNvencCapabilityWhenNvencEncodersAreAvailable() {
     var encoderOutput =
         """
+        unrelated encoder output
         V....D h264_nvenc           NVIDIA NVENC H.264 encoder (codec h264)
         V....D hevc_nvenc           NVIDIA NVENC hevc encoder (codec hevc)
         V....D av1_nvenc            NVIDIA NVENC av1 encoder (codec av1)
@@ -52,7 +111,7 @@ class TranscodeCapabilityServiceTest {
     var outputs =
         Map.of(
             "ffmpeg", createProcess("ffmpeg version 7.0", 0),
-            "hwaccels", createProcess("Hardware acceleration methods:\ncuda\n", 0),
+            "hwaccels", createProcess("Hardware acceleration methods:\n\ncuda\n", 0),
             "encoders", createProcess(encoderOutput, 0));
 
     var service =
@@ -139,6 +198,52 @@ class TranscodeCapabilityServiceTest {
 
     assertThat(service.getHardwareEncodingCapability().available()).isTrue();
     assertThat(service.resolveEncoder("h264")).isEqualTo("h264_qsv");
+  }
+
+  @Test
+  @DisplayName("Should keep detected encoders when accelerator discovery fails")
+  void shouldKeepDetectedEncodersWhenAcceleratorDiscoveryFails() {
+    var encoderOutput =
+        """
+        V....D h264_nvenc           NVIDIA NVENC H.264 encoder (codec h264)
+        """;
+    var service =
+        new TranscodeCapabilityService(
+            "ffmpeg",
+            command -> {
+              var commandLine = String.join(" ", command);
+              if (commandLine.contains("-version")) {
+                return createProcess("ffmpeg version 7.0", 0);
+              }
+              if (commandLine.contains("-encoders")) {
+                return createProcess(encoderOutput, 0);
+              }
+              throw new IllegalStateException("simulated accelerator discovery failure");
+            });
+
+    service.detectCapabilities();
+
+    assertThat(service.getHardwareEncodingCapability().encoders()).contains("h264_nvenc");
+    assertThat(service.getHardwareEncodingCapability().accelerator()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should restore interruption when accelerator discovery is interrupted")
+  void shouldRestoreInterruptionWhenAcceleratorDiscoveryIsInterrupted() {
+    var encoderOutput =
+        """
+        V....D h264_nvenc           NVIDIA NVENC H.264 encoder (codec h264)
+        """;
+    var outputs =
+        Map.of(
+            "ffmpeg", createProcess("ffmpeg version 7.0", 0),
+            "encoders", createProcess(encoderOutput, 0),
+            "hwaccels", interruptingProcess("cuda"));
+    var service =
+        new TranscodeCapabilityService("ffmpeg", command -> resolveProcess(command, outputs));
+
+    assertRestoresInterruption(service::detectCapabilities);
+    assertThat(service.getHardwareEncodingCapability().accelerator()).isEmpty();
   }
 
   private Process resolveProcess(String[] command, Map<String, Process> outputs) {
@@ -284,5 +389,23 @@ class TranscodeCapabilityServiceTest {
 
   private Process createProcess(String stdout, int exitCode) {
     return new CapabilityProcessFake(stdout, exitCode);
+  }
+
+  private Process interruptingProcess(String stdout) {
+    return new CapabilityProcessFake(stdout, 0) {
+      @Override
+      public int waitFor() throws InterruptedException {
+        throw new InterruptedException("simulated interruption");
+      }
+    };
+  }
+
+  private void assertRestoresInterruption(Runnable action) {
+    try {
+      action.run();
+      assertThat(Thread.currentThread().isInterrupted()).isTrue();
+    } finally {
+      Thread.interrupted();
+    }
   }
 }
