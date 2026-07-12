@@ -8,7 +8,7 @@ Accepted
 
 * Streamarr still executes every transcode in the media-server process through `PlaybackTranscodeJobService`, the application-owned `TranscodeWorkerPort`, `LocalTranscodeWorkerAdapter`, and the extracted `LocalTranscodeEngine`.
 * The former rendition-at-a-time, process-shaped `TranscodeExecutor` and its process-handle state have been removed from the server application.
-* No enrolled remote worker, worker listener, certificate authority, registration path, or distributed playback route is enabled yet.
+* The server now contains inert trust-material primitives for the P-256 root, issuer, dedicated revocation signer, and exact certificate-profile validation. No certificate-authority storage or bootstrap, signing lease, enrolled remote worker, worker listener, registration path, or distributed playback route is enabled yet.
 * The completed local extraction introduced the application boundary without introducing a remote transport.
 * The generated-only `streamarr-transcode-contract` module defines the versioned worker transport and compatibility gates. The narrow worker executable depends on it and the engine; the server still depends on neither the contract nor the worker.
 * The worker packages Boot's official gRPC server and shaded Netty, but its unenrolled configuration disables the server, reflection, health service, health scheduler, and all application executors. It exposes no control service until the trust and enrollment slice can enable one with valid credentials.
@@ -212,6 +212,12 @@ Every control-plane replica mounts that same secret, verifies it against the rec
 The private CA key is never stored in PostgreSQL, logged, exported through the API, reused for JWT signing, or copied to a worker.
 Backups of distributed configuration must include this secret; losing it requires explicitly re-enrolling workers under a new trust domain.
 Certificate issuance and issuer/root rotation use a PostgreSQL-backed singleton leadership lease so only one replica performs signing transitions at a time.
+
+The root, online issuing intermediate, and revocation signer use P-256 and `SHA256withECDSA`.
+All three use distinct keys, exact critical and non-critical extension sets, and validated SKI/AKI linkage from each child to its issuer.
+The root is a path-length-one signing CA, the intermediate is path-length zero, and both carry the exact canonical `spiffe://<installation-id>` trust domain.
+The revocation signer is not a TLS identity: it has digital-signature usage only and the critical UUID-derived Streamarr purpose OID `2.25.191220049025548712607526882177286901536`.
+The UUID-derived `2.25` arc avoids claiming an unassigned private-enterprise number.
 
 An administrator mints a worker-specific 256-bit, single-use enrollment token whose digest and roughly ten-minute expiry are stored in PostgreSQL.
 The out-of-band enrollment bundle contains the control endpoint, a versioned public trust bundle, the SHA-256 fingerprint of its exact root DER, and the token.
