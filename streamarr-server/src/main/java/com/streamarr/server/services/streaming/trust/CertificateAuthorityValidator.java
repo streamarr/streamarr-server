@@ -1,8 +1,11 @@
 package com.streamarr.server.services.streaming.trust;
 
+import java.io.IOException;
 import java.security.AlgorithmParameters;
+import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.security.Signature;
+import java.security.cert.CertificateParsingException;
 import java.security.cert.X509Certificate;
 import java.security.interfaces.ECPrivateKey;
 import java.security.interfaces.ECPublicKey;
@@ -94,7 +97,8 @@ final class CertificateAuthorityValidator {
   }
 
   private void requireSigningCertificate(
-      X509Certificate certificate, int pathLength, UUID installationId) throws Exception {
+      X509Certificate certificate, int pathLength, UUID installationId)
+      throws CertificateParsingException {
     requireEqual(certificate.getBasicConstraints(), pathLength);
     requireEqual(certificate.getKeyUsage(), keyUsages(5, 6));
     requireEqual(certificate.getExtendedKeyUsage(), null);
@@ -113,7 +117,8 @@ final class CertificateAuthorityValidator {
     requireCommonExtensions(certificate);
   }
 
-  private void requireRevocationSigner(X509Certificate certificate) throws Exception {
+  private void requireRevocationSigner(X509Certificate certificate)
+      throws CertificateParsingException {
     requireEqual(certificate.getBasicConstraints(), -1);
     requireEqual(certificate.getKeyUsage(), keyUsages(0));
     requireEqual(certificate.getSubjectAlternativeNames(), null);
@@ -142,7 +147,7 @@ final class CertificateAuthorityValidator {
   }
 
   private void requireP256(java.security.PrivateKey privateKey, X509Certificate certificate)
-      throws Exception {
+      throws GeneralSecurityException {
     var ecPrivateKey = requireEcPrivateKey(privateKey);
     var ecPublicKey = requireEcPublicKey(certificate);
     var expected = expectedP256Parameters();
@@ -152,7 +157,7 @@ final class CertificateAuthorityValidator {
 
   private void requireKeyIdentifiers(
       X509Certificate root, X509Certificate issuer, X509Certificate revocationSigner)
-      throws Exception {
+      throws GeneralSecurityException, IOException {
     var extensionUtils = new JcaX509ExtensionUtils();
     var rootIdentifier =
         extensionUtils.createSubjectKeyIdentifier(root.getPublicKey()).getKeyIdentifier();
@@ -175,20 +180,20 @@ final class CertificateAuthorityValidator {
         authorityKeyIdentifier(revocationSigner), revocationAuthorityIdentifier);
   }
 
-  private byte[] subjectKeyIdentifier(X509Certificate certificate) throws Exception {
+  private byte[] subjectKeyIdentifier(X509Certificate certificate) throws IOException {
     return SubjectKeyIdentifier.getInstance(
             decodedExtensionValue(certificate, Extension.subjectKeyIdentifier.getId()))
         .getKeyIdentifier();
   }
 
   private AuthorityKeyIdentifier authorityKeyIdentifier(X509Certificate certificate)
-      throws Exception {
+      throws IOException {
     return AuthorityKeyIdentifier.getInstance(
         decodedExtensionValue(certificate, Extension.authorityKeyIdentifier.getId()));
   }
 
   private ASN1Primitive decodedExtensionValue(X509Certificate certificate, String oid)
-      throws Exception {
+      throws IOException {
     var encoded = ASN1OctetString.getInstance(certificate.getExtensionValue(oid)).getOctets();
     return ASN1Primitive.fromByteArray(encoded);
   }
@@ -200,7 +205,7 @@ final class CertificateAuthorityValidator {
   }
 
   private void requireAuthorityIdentifier(
-      AuthorityKeyIdentifier actual, AuthorityKeyIdentifier expected) throws Exception {
+      AuthorityKeyIdentifier actual, AuthorityKeyIdentifier expected) throws IOException {
     requireIdentifier(actual.getEncoded(), expected.getEncoded());
   }
 
@@ -215,7 +220,7 @@ final class CertificateAuthorityValidator {
   }
 
   private void requireMatchingKey(java.security.PrivateKey privateKey, X509Certificate certificate)
-      throws Exception {
+      throws GeneralSecurityException {
     var signer = Signature.getInstance(SIGNATURE_ALGORITHM);
     signer.initSign(privateKey);
     signer.update(KEY_MATCH_CHALLENGE);
@@ -251,7 +256,7 @@ final class CertificateAuthorityValidator {
     return new X500Principal(BuiltInCertificateAuthority.subjectName(installationId, role));
   }
 
-  private ECParameterSpec expectedP256Parameters() throws Exception {
+  private ECParameterSpec expectedP256Parameters() throws GeneralSecurityException {
     var parameters = AlgorithmParameters.getInstance("EC");
     parameters.init(new ECGenParameterSpec("secp256r1"));
     return parameters.getParameterSpec(ECParameterSpec.class);
@@ -278,7 +283,8 @@ final class CertificateAuthorityValidator {
     requireEqual(actual.getCofactor(), expected.getCofactor());
   }
 
-  private List<String> uriSubjectAlternativeNames(X509Certificate certificate) throws Exception {
+  private List<String> uriSubjectAlternativeNames(X509Certificate certificate)
+      throws CertificateParsingException {
     return Optional.ofNullable(certificate.getSubjectAlternativeNames()).orElse(List.of()).stream()
         .map(this::uriSubjectAlternativeName)
         .toList();

@@ -56,65 +56,14 @@ class BuiltInCertificateAuthorityTest {
     var issuer = material.issuerCertificate();
     var revocationSigner = material.revocationSignerCertificate();
 
-    root.verify(root.getPublicKey());
-    issuer.verify(root.getPublicKey());
-    revocationSigner.verify(issuer.getPublicKey());
-
-    assertThat(material.rootPrivateKey()).isInstanceOf(ECPrivateKey.class);
-    assertThat(material.issuerPrivateKey()).isInstanceOf(ECPrivateKey.class);
-    assertThat(material.revocationSignerPrivateKey()).isInstanceOf(ECPrivateKey.class);
-    assertThat((ECPublicKey) root.getPublicKey())
-        .extracting(key -> key.getParams().getCurve().getField().getFieldSize())
-        .isEqualTo(256);
-    assertThat((ECPublicKey) issuer.getPublicKey())
-        .extracting(key -> key.getParams().getCurve().getField().getFieldSize())
-        .isEqualTo(256);
-    assertThat((ECPublicKey) revocationSigner.getPublicKey())
-        .extracting(key -> key.getParams().getCurve().getField().getFieldSize())
-        .isEqualTo(256);
-
-    assertThat(root.getBasicConstraints()).isEqualTo(1);
-    assertThat(issuer.getBasicConstraints()).isZero();
-    assertThat(revocationSigner.getBasicConstraints()).isEqualTo(-1);
-    assertThat(root.getSubjectX500Principal().getName())
-        .isEqualTo("CN=Streamarr Installation 7afbbbed-3492-4b71-909d-8acb50ffdcc2 Root CA");
-    assertThat(issuer.getSubjectX500Principal().getName())
-        .isEqualTo("CN=Streamarr Installation 7afbbbed-3492-4b71-909d-8acb50ffdcc2 Issuing CA");
-    assertThat(revocationSigner.getSubjectX500Principal().getName())
-        .isEqualTo(
-            "CN=Streamarr Installation 7afbbbed-3492-4b71-909d-8acb50ffdcc2 Revocation Signer");
-    assertThat(root.getKeyUsage()).containsExactly(keyUsages(5, 6));
-    assertThat(issuer.getKeyUsage()).containsExactly(keyUsages(5, 6));
-    assertThat(revocationSigner.getKeyUsage()).containsExactly(keyUsages(0));
-
-    assertThat(root.getCriticalExtensionOIDs())
-        .contains(Extension.basicConstraints.getId(), Extension.keyUsage.getId());
-    assertThat(issuer.getCriticalExtensionOIDs())
-        .contains(Extension.basicConstraints.getId(), Extension.keyUsage.getId());
-    assertThat(revocationSigner.getCriticalExtensionOIDs())
-        .contains(
-            Extension.basicConstraints.getId(),
-            Extension.keyUsage.getId(),
-            Extension.extendedKeyUsage.getId());
-
-    var trustDomain = URI.create("spiffe://" + INSTALLATION_ID);
-    assertThat(uriSubjectAlternativeNames(root)).containsExactly(trustDomain);
-    assertThat(uriSubjectAlternativeNames(issuer)).containsExactly(trustDomain);
-    assertThat(revocationSigner.getSubjectAlternativeNames()).isNull();
-    assertThat(root.getExtendedKeyUsage()).isNull();
-    assertThat(issuer.getExtendedKeyUsage()).isNull();
-    assertThat(revocationSigner.getExtendedKeyUsage())
-        .containsExactly(BuiltInCertificateAuthority.REVOCATION_SIGNING_EKU_OID);
-
-    assertThat(root.getNotBefore().toInstant()).isBefore(ISSUED_AT);
-    assertThat(issuer.getNotBefore()).isEqualTo(root.getNotBefore());
-    assertThat(revocationSigner.getNotBefore()).isEqualTo(root.getNotBefore());
-    assertThat(issuer.getNotAfter()).isBeforeOrEqualTo(root.getNotAfter());
-    assertThat(revocationSigner.getNotAfter()).isBeforeOrEqualTo(issuer.getNotAfter());
-
-    assertThat(sha256(root.getEncoded())).hasSize(32);
-    assertThat(sha256(issuer.getEncoded())).hasSize(32);
-    assertThat(sha256(revocationSigner.getEncoded())).hasSize(32);
+    verifyCertificateSignatures(root, issuer, revocationSigner);
+    verifyPrivateKeyProfiles(material);
+    verifyPublicKeyProfiles(root, issuer, revocationSigner);
+    verifyAuthorityRoleProfiles(root, issuer, revocationSigner);
+    verifyExtensionProfiles(root, issuer, revocationSigner);
+    verifyTrustDomainProfiles(root, issuer, revocationSigner);
+    verifyValidityProfiles(root, issuer, revocationSigner);
+    verifyCertificateDigests(root, issuer, revocationSigner);
     authority.validate(material, INSTALLATION_ID, ISSUED_AT);
   }
 
@@ -175,8 +124,9 @@ class BuiltInCertificateAuthorityTest {
   void shouldRejectAuthorityMaterialWhenItBelongsToAnotherInstallation() {
     var authority = new BuiltInCertificateAuthority();
     var material = authority.create(INSTALLATION_ID, ISSUED_AT);
+    var otherInstallation = UUID.randomUUID();
 
-    assertThatThrownBy(() -> authority.validate(material, UUID.randomUUID(), ISSUED_AT))
+    assertThatThrownBy(() -> authority.validate(material, otherInstallation, ISSUED_AT))
         .isInstanceOf(InstallationTrustException.class)
         .hasMessageContaining("different installation");
   }
@@ -199,11 +149,9 @@ class BuiltInCertificateAuthorityTest {
   void shouldRejectAuthorityMaterialWhenCertificatesHaveExpired() {
     var authority = new BuiltInCertificateAuthority();
     var material = authority.create(INSTALLATION_ID, ISSUED_AT);
+    var expiredAt = ISSUED_AT.plus(Duration.ofDays(4_000));
 
-    assertThatThrownBy(
-            () ->
-                authority.validate(
-                    material, INSTALLATION_ID, ISSUED_AT.plus(Duration.ofDays(4_000))))
+    assertThatThrownBy(() -> authority.validate(material, INSTALLATION_ID, expiredAt))
         .isInstanceOf(InstallationTrustException.class)
         .hasMessageContaining("invalid")
         .hasCauseInstanceOf(CertificateExpiredException.class);
@@ -357,6 +305,93 @@ class BuiltInCertificateAuthorityTest {
     assertThatThrownBy(() -> authority.validate(malformed, INSTALLATION_ID, ISSUED_AT))
         .isInstanceOf(InstallationTrustException.class)
         .hasMessageContaining("invalid");
+  }
+
+  private static void verifyCertificateSignatures(
+      X509Certificate root, X509Certificate issuer, X509Certificate revocationSigner)
+      throws Exception {
+    root.verify(root.getPublicKey());
+    issuer.verify(root.getPublicKey());
+    revocationSigner.verify(issuer.getPublicKey());
+  }
+
+  private static void verifyPrivateKeyProfiles(CertificateAuthorityMaterial material) {
+    assertThat(material.rootPrivateKey()).isInstanceOf(ECPrivateKey.class);
+    assertThat(material.issuerPrivateKey()).isInstanceOf(ECPrivateKey.class);
+    assertThat(material.revocationSignerPrivateKey()).isInstanceOf(ECPrivateKey.class);
+  }
+
+  private static void verifyPublicKeyProfiles(
+      X509Certificate root, X509Certificate issuer, X509Certificate revocationSigner) {
+    assertThat((ECPublicKey) root.getPublicKey())
+        .extracting(key -> key.getParams().getCurve().getField().getFieldSize())
+        .isEqualTo(256);
+    assertThat((ECPublicKey) issuer.getPublicKey())
+        .extracting(key -> key.getParams().getCurve().getField().getFieldSize())
+        .isEqualTo(256);
+    assertThat((ECPublicKey) revocationSigner.getPublicKey())
+        .extracting(key -> key.getParams().getCurve().getField().getFieldSize())
+        .isEqualTo(256);
+  }
+
+  private static void verifyAuthorityRoleProfiles(
+      X509Certificate root, X509Certificate issuer, X509Certificate revocationSigner) {
+    assertThat(root.getBasicConstraints()).isEqualTo(1);
+    assertThat(issuer.getBasicConstraints()).isZero();
+    assertThat(revocationSigner.getBasicConstraints()).isEqualTo(-1);
+    assertThat(root.getSubjectX500Principal().getName())
+        .isEqualTo("CN=Streamarr Installation 7afbbbed-3492-4b71-909d-8acb50ffdcc2 Root CA");
+    assertThat(issuer.getSubjectX500Principal().getName())
+        .isEqualTo("CN=Streamarr Installation 7afbbbed-3492-4b71-909d-8acb50ffdcc2 Issuing CA");
+    assertThat(revocationSigner.getSubjectX500Principal().getName())
+        .isEqualTo(
+            "CN=Streamarr Installation 7afbbbed-3492-4b71-909d-8acb50ffdcc2 Revocation Signer");
+    assertThat(root.getKeyUsage()).containsExactly(keyUsages(5, 6));
+    assertThat(issuer.getKeyUsage()).containsExactly(keyUsages(5, 6));
+    assertThat(revocationSigner.getKeyUsage()).containsExactly(keyUsages(0));
+  }
+
+  private static void verifyExtensionProfiles(
+      X509Certificate root, X509Certificate issuer, X509Certificate revocationSigner) {
+    assertThat(root.getCriticalExtensionOIDs())
+        .contains(Extension.basicConstraints.getId(), Extension.keyUsage.getId());
+    assertThat(issuer.getCriticalExtensionOIDs())
+        .contains(Extension.basicConstraints.getId(), Extension.keyUsage.getId());
+    assertThat(revocationSigner.getCriticalExtensionOIDs())
+        .contains(
+            Extension.basicConstraints.getId(),
+            Extension.keyUsage.getId(),
+            Extension.extendedKeyUsage.getId());
+  }
+
+  private static void verifyTrustDomainProfiles(
+      X509Certificate root, X509Certificate issuer, X509Certificate revocationSigner)
+      throws Exception {
+    var trustDomain = URI.create("spiffe://" + INSTALLATION_ID);
+    assertThat(uriSubjectAlternativeNames(root)).containsExactly(trustDomain);
+    assertThat(uriSubjectAlternativeNames(issuer)).containsExactly(trustDomain);
+    assertThat(revocationSigner.getSubjectAlternativeNames()).isNull();
+    assertThat(root.getExtendedKeyUsage()).isNull();
+    assertThat(issuer.getExtendedKeyUsage()).isNull();
+    assertThat(revocationSigner.getExtendedKeyUsage())
+        .containsExactly(BuiltInCertificateAuthority.REVOCATION_SIGNING_EKU_OID);
+  }
+
+  private static void verifyValidityProfiles(
+      X509Certificate root, X509Certificate issuer, X509Certificate revocationSigner) {
+    assertThat(root.getNotBefore().toInstant()).isBefore(ISSUED_AT);
+    assertThat(issuer.getNotBefore()).isEqualTo(root.getNotBefore());
+    assertThat(revocationSigner.getNotBefore()).isEqualTo(root.getNotBefore());
+    assertThat(issuer.getNotAfter()).isBeforeOrEqualTo(root.getNotAfter());
+    assertThat(revocationSigner.getNotAfter()).isBeforeOrEqualTo(issuer.getNotAfter());
+  }
+
+  private static void verifyCertificateDigests(
+      X509Certificate root, X509Certificate issuer, X509Certificate revocationSigner)
+      throws Exception {
+    assertThat(sha256(root.getEncoded())).hasSize(32);
+    assertThat(sha256(issuer.getEncoded())).hasSize(32);
+    assertThat(sha256(revocationSigner.getEncoded())).hasSize(32);
   }
 
   private static CertificateAuthorityMaterial withUnexpectedRootExtension(
