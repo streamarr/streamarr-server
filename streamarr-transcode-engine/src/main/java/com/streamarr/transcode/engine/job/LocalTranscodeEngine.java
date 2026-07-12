@@ -15,7 +15,6 @@ import com.streamarr.transcode.engine.model.TranscodeJobObservation;
 import com.streamarr.transcode.engine.model.TranscodeJobRef;
 import com.streamarr.transcode.engine.model.TranscodeJobSpec;
 import com.streamarr.transcode.engine.model.TranscodeJobState;
-import com.streamarr.transcode.engine.model.TranscodeMode;
 import com.streamarr.transcode.engine.segment.LocalSegmentStorage;
 import com.streamarr.transcode.engine.segment.SegmentGeneration;
 import java.nio.charset.StandardCharsets;
@@ -61,13 +60,13 @@ public class LocalTranscodeEngine {
     var admission = admit(specification, resolvedSource);
     if (!admission.owner()) {
       var existing = admission.run();
-      if (!existing.startup().isDone() || existing.startup().isCompletedExceptionally()) {
-        return await(existing.startup());
+      if (!existing.startup.isDone() || existing.startup.isCompletedExceptionally()) {
+        return await(existing.startup);
       }
       if (existing.cleanupComplete || isPublished(existing)) {
         return existing.observation.get();
       }
-      return await(existing.startup());
+      return await(existing.startup);
     }
     var run = admission.run();
     SegmentGeneration generation = null;
@@ -90,13 +89,13 @@ public class LocalTranscodeEngine {
         publications.put(specification.sessionId(), specification.jobRef());
         run.observation.set(started);
       }
-      run.startup().complete(started);
+      run.startup.complete(started);
       return started;
     } catch (RuntimeException exception) {
       var failure = compensate(run, generation, exception);
       run.observation.set(
           observation(specification, TranscodeJobState.FAILED, RenditionState.FAILED));
-      run.startup().completeExceptionally(failure);
+      run.startup.completeExceptionally(failure);
       throw failure;
     }
   }
@@ -166,7 +165,7 @@ public class LocalTranscodeEngine {
     }
     try {
       processManager.stopJob(jobRef);
-      run.startup().handle((_, _) -> null).join();
+      run.startup.handle((_, _) -> null).join();
       processManager.stopJob(jobRef);
       if (processManager.isRunning(jobRef)) {
         throw new IllegalStateException("Exact transcode processes remain active");
@@ -226,7 +225,7 @@ public class LocalTranscodeEngine {
     }
     try {
       processManager.forceStopAll();
-      snapshot.forEach(run -> run.startup().handle((_, _) -> null).join());
+      snapshot.forEach(run -> run.startup.handle((_, _) -> null).join());
       processManager.forceStopAll();
       snapshot.forEach(
           run -> {
@@ -274,7 +273,7 @@ public class LocalTranscodeEngine {
               TranscodeEngineException.Reason.JOB_CONFLICT,
               "Transcode job content conflicts with its exact identity");
         }
-        return new Admission(existing, false);
+        return new Admission(existing, false, List.of());
       }
       var jobRef = specification.jobRef();
       var boundSessionId = sessionIdByJobId.get(jobRef.jobId());
@@ -297,8 +296,9 @@ public class LocalTranscodeEngine {
       var run = new JobRun(specification, resolvedSource);
       var superseded =
           runs.values().stream()
-              .filter(candidate -> candidate.jobId().equals(jobRef.jobId()))
-              .filter(candidate -> candidate.generation() < jobRef.generation())
+              .filter(candidate -> candidate.specification.jobRef().jobId().equals(jobRef.jobId()))
+              .filter(
+                  candidate -> candidate.specification.jobRef().generation() < jobRef.generation())
               .toList();
       superseded.forEach(candidate -> candidate.cancelled = true);
       highestGenerationByJobId.put(jobRef.jobId(), jobRef.generation());
@@ -314,7 +314,7 @@ public class LocalTranscodeEngine {
       for (var run : superseded) {
         var jobRef = run.specification.jobRef();
         processManager.stopJob(jobRef);
-        run.startup().handle((_, _) -> null).join();
+        run.startup.handle((_, _) -> null).join();
         processManager.stopJob(jobRef);
         if (processManager.isRunning(jobRef)) {
           throw new TranscodeException("Superseded transcode process is still running");
@@ -433,19 +433,17 @@ public class LocalTranscodeEngine {
 
   private Path outputDirectory(
       TranscodeJobSpec specification, SegmentGeneration generation, RenditionSpec rendition) {
-    if (specification.renditions().size() == 1
-        && RenditionRequest.DEFAULT_VARIANT.equals(rendition.label())) {
-      return generation.outputDirectory();
-    }
-    return segmentStorage.prepareRenditionDirectory(generation, rendition.label());
+    return specification.renditions().size() == 1
+            && RenditionRequest.DEFAULT_VARIANT.equals(rendition.label())
+        ? generation.outputDirectory()
+        : segmentStorage.prepareRenditionDirectory(generation, rendition.label());
   }
 
   private String resolveEncoder(TranscodeJobSpec specification) {
-    var mode = specification.decision().transcodeMode();
-    if (mode == TranscodeMode.REMUX || mode == TranscodeMode.AUDIO_TRANSCODE) {
-      return "copy";
-    }
-    return capabilityService.resolveEncoder(specification.decision().videoCodecFamily());
+    return switch (specification.decision().transcodeMode()) {
+      case REMUX, AUDIO_TRANSCODE -> "copy";
+      default -> capabilityService.resolveEncoder(specification.decision().videoCodecFamily());
+    };
   }
 
   private void awaitReadiness(JobRun run, SegmentGeneration generation) {
@@ -535,11 +533,10 @@ public class LocalTranscodeEngine {
 
   private static String artifactName(
       TranscodeJobSpec specification, RenditionSpec rendition, String filename) {
-    if (specification.renditions().size() == 1
-        && RenditionRequest.DEFAULT_VARIANT.equals(rendition.label())) {
-      return filename;
-    }
-    return rendition.label() + "/" + filename;
+    return specification.renditions().size() == 1
+            && RenditionRequest.DEFAULT_VARIANT.equals(rendition.label())
+        ? filename
+        : rendition.label() + "/" + filename;
   }
 
   private boolean nonEmpty(SegmentGeneration generation, String relativeName) {
@@ -571,12 +568,7 @@ public class LocalTranscodeEngine {
     return new TranscodeJobObservation(specification.jobRef(), jobState, renditions);
   }
 
-  private record Admission(JobRun run, boolean owner, List<JobRun> superseded) {
-
-    private Admission(JobRun run, boolean owner) {
-      this(run, owner, List.of());
-    }
-  }
+  private record Admission(JobRun run, boolean owner, List<JobRun> superseded) {}
 
   private static final class JobRun {
 
@@ -597,20 +589,8 @@ public class LocalTranscodeEngine {
               specification, TranscodeJobState.ADMITTING, RenditionState.STARTING));
     }
 
-    private CompletableFuture<TranscodeJobObservation> startup() {
-      return startup;
-    }
-
     private boolean matches(TranscodeJobSpec otherSpecification, Path otherSource) {
       return specification.equals(otherSpecification) && resolvedSource.equals(otherSource);
-    }
-
-    private UUID jobId() {
-      return specification.jobRef().jobId();
-    }
-
-    private long generation() {
-      return specification.jobRef().generation();
     }
   }
 }
