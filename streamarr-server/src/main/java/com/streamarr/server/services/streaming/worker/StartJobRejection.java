@@ -1,0 +1,11 @@
+package com.streamarr.server.services.streaming.worker;
+
+public enum StartJobRejection {
+  TARGET_MISMATCH,
+  STALE_GENERATION,
+  COMMAND_CONFLICT,
+  JOB_CONFLICT,
+  CAPACITY_EXHAUSTED,
+  INVALID_SPECIFICATION,
+  STARTUP_FAILED
+}
