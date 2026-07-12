@@ -1,14 +1,14 @@
 package com.streamarr.server.services.streaming;
 
-import com.streamarr.server.domain.streaming.AudioDecision;
-import com.streamarr.server.domain.streaming.AudioMode;
-import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.StreamingOptions;
-import com.streamarr.server.domain.streaming.SubtitleDecision;
-import com.streamarr.server.domain.streaming.SubtitleMode;
-import com.streamarr.server.domain.streaming.TranscodeDecision;
-import com.streamarr.server.domain.streaming.TranscodeMode;
+import com.streamarr.transcode.engine.model.AudioDecision;
+import com.streamarr.transcode.engine.model.AudioMode;
+import com.streamarr.transcode.engine.model.ContainerFormat;
+import com.streamarr.transcode.engine.model.SubtitleDecision;
+import com.streamarr.transcode.engine.model.SubtitleMode;
+import com.streamarr.transcode.engine.model.TranscodeDecision;
+import com.streamarr.transcode.engine.model.TranscodeMode;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;

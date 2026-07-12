@@ -1,6 +1,5 @@
 package com.streamarr.server.controllers;
 
-import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.exceptions.InvalidSegmentPathException;
 import com.streamarr.server.services.authorization.AuthorizationService;
@@ -8,6 +7,7 @@ import com.streamarr.server.services.streaming.HlsPlaylistService;
 import com.streamarr.server.services.streaming.PlaybackSessionAccessService;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.StreamingService;
+import com.streamarr.transcode.engine.model.ContainerFormat;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.UUID;

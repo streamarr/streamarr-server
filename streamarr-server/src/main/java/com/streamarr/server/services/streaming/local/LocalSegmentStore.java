@@ -1,8 +1,8 @@
 package com.streamarr.server.services.streaming.local;
 
 import com.streamarr.server.exceptions.InvalidSegmentPathException;
-import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.streaming.SegmentStore;
+import com.streamarr.transcode.engine.error.TranscodeException;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.FileVisitResult;

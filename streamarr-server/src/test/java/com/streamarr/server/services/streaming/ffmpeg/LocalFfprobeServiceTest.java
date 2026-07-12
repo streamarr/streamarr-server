@@ -5,7 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 
 import com.streamarr.server.exceptions.FfmpegNotAvailableException;
-import com.streamarr.server.exceptions.TranscodeException;
+import com.streamarr.transcode.engine.error.TranscodeException;
 import java.nio.file.Path;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;

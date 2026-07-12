@@ -2,15 +2,18 @@ package com.streamarr.server.services.streaming.ffmpeg;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.domain.streaming.AudioDecision;
-import com.streamarr.server.domain.streaming.ContainerFormat;
-import com.streamarr.server.domain.streaming.SubtitleDecision;
-import com.streamarr.server.domain.streaming.TranscodeDecision;
-import com.streamarr.server.domain.streaming.TranscodeMode;
-import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.fakes.FakeFfmpegProcessManager;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
+import com.streamarr.transcode.engine.ffmpeg.FfmpegCommandBuilder;
+import com.streamarr.transcode.engine.ffmpeg.HardwareEncodingCapability;
+import com.streamarr.transcode.engine.ffmpeg.TranscodeCapabilityService;
+import com.streamarr.transcode.engine.model.AudioDecision;
+import com.streamarr.transcode.engine.model.ContainerFormat;
+import com.streamarr.transcode.engine.model.SubtitleDecision;
+import com.streamarr.transcode.engine.model.TranscodeDecision;
+import com.streamarr.transcode.engine.model.TranscodeMode;
+import com.streamarr.transcode.engine.model.TranscodeRequest;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Set;

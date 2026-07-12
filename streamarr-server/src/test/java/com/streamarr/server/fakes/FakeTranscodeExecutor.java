@@ -1,9 +1,9 @@
 package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.streaming.TranscodeHandle;
-import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
+import com.streamarr.transcode.engine.model.TranscodeRequest;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;

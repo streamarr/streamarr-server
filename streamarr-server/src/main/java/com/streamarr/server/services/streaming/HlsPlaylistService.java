@@ -1,9 +1,9 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.config.StreamingProperties;
-import com.streamarr.server.domain.streaming.AudioMode;
-import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.transcode.engine.model.AudioMode;
+import com.streamarr.transcode.engine.model.ContainerFormat;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;

@@ -1,6 +1,6 @@
 package com.streamarr.server.config.health;
 
-import com.streamarr.server.services.streaming.ffmpeg.TranscodeCapabilityService;
+import com.streamarr.transcode.engine.ffmpeg.TranscodeCapabilityService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.health.contributor.Health;
 import org.springframework.boot.health.contributor.HealthIndicator;

@@ -1,7 +1,7 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.domain.streaming.TranscodeHandle;
-import com.streamarr.server.domain.streaming.TranscodeRequest;
+import com.streamarr.transcode.engine.model.TranscodeRequest;
 import java.util.UUID;
 
 public interface TranscodeExecutor {

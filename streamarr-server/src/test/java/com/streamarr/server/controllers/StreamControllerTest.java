@@ -12,7 +12,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.HouseholdRole;
-import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.fakes.FakeSegmentStore;
@@ -23,6 +22,7 @@ import com.streamarr.server.services.streaming.CreateRuntimeStreamSessionCommand
 import com.streamarr.server.services.streaming.HlsPlaylistService;
 import com.streamarr.server.services.streaming.PlaybackSessionAccessService;
 import com.streamarr.server.services.streaming.StreamingService;
+import com.streamarr.transcode.engine.model.ContainerFormat;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Collection;

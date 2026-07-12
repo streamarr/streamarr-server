@@ -2,7 +2,7 @@ package com.streamarr.server.config.health;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.services.streaming.ffmpeg.TranscodeCapabilityService;
+import com.streamarr.transcode.engine.ffmpeg.TranscodeCapabilityService;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;

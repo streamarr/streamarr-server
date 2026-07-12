@@ -1,7 +1,7 @@
 package com.streamarr.server.fakes;
 
-import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.streaming.SegmentStore;
+import com.streamarr.transcode.engine.error.TranscodeException;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;

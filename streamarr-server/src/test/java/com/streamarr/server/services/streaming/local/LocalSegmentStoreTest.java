@@ -5,7 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.exceptions.InvalidSegmentPathException;
-import com.streamarr.server.exceptions.TranscodeException;
+import com.streamarr.transcode.engine.error.TranscodeException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;

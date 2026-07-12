@@ -29,7 +29,6 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamSessionTerminalReason;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
-import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
@@ -59,6 +58,7 @@ import com.streamarr.server.services.streaming.local.InMemoryStreamSessionReposi
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
+import com.streamarr.transcode.engine.model.TranscodeRequest;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.SQLException;

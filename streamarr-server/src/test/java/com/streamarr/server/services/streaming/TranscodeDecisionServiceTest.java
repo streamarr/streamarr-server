@@ -2,11 +2,11 @@ package com.streamarr.server.services.streaming;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.streamarr.server.domain.streaming.AudioMode;
-import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.StreamingOptions;
-import com.streamarr.server.domain.streaming.TranscodeMode;
+import com.streamarr.transcode.engine.model.AudioMode;
+import com.streamarr.transcode.engine.model.ContainerFormat;
+import com.streamarr.transcode.engine.model.TranscodeMode;
 import java.time.Duration;
 import java.util.List;
 import java.util.OptionalInt;

@@ -1,8 +1,8 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.domain.streaming.MediaProbe;
-import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamingOptions;
+import com.streamarr.transcode.engine.model.QualityVariant;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.stereotype.Service;

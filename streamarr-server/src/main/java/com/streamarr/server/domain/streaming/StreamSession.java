@@ -1,5 +1,8 @@
 package com.streamarr.server.domain.streaming;
 
+import com.streamarr.transcode.engine.model.QualityVariant;
+import com.streamarr.transcode.engine.model.TranscodeDecision;
+import com.streamarr.transcode.engine.model.TranscodeRequest;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Collections;

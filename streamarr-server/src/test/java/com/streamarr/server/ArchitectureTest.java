@@ -21,10 +21,23 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Tag("UnitTest")
 @DisplayName("Architecture Rules")
-@AnalyzeClasses(
-    packages = "com.streamarr.server",
-    importOptions = ImportOption.DoNotIncludeTests.class)
+@AnalyzeClasses(packages = "com.streamarr", importOptions = ImportOption.DoNotIncludeTests.class)
 class ArchitectureTest {
+
+  @ArchTest
+  static final ArchRule transcodeEngineMustRemainFrameworkFree =
+      noClasses()
+          .that()
+          .resideInAPackage("com.streamarr.transcode.engine..")
+          .should()
+          .dependOnClassesThat()
+          .resideOutsideOfPackages(
+              "com.streamarr.transcode.engine..",
+              "java..",
+              "lombok..",
+              "org.jspecify..",
+              "org.slf4j..")
+          .as("Transcode engine must remain independent of application and framework code");
 
   @ArchTest
   static final ArchRule domainMustNotDependOnOuterLayers =
