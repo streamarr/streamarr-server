@@ -47,7 +47,7 @@ class CertificateAuthoritySigningLeaseRepositoryIT extends AbstractIntegrationTe
 
   @Test
   @DisplayName("Should grant exactly one signing lease when owners acquire concurrently")
-  void shouldGrantExactlyOneSigningLeaseWhenOwnersAcquireConcurrently() throws Exception {
+  void shouldGrantExactlyOneSigningLeaseWhenOwnersAcquireConcurrently() {
     var start = new CountDownLatch(1);
     var results = new CopyOnWriteArrayList<Boolean>();
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {

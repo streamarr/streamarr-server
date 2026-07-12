@@ -64,7 +64,7 @@ public class CertificateAuthoritySigningLeaseRepositoryImpl
             TRANSCODE_CA_SIGNING_LEASE.OWNER_ID,
             TRANSCODE_CA_SIGNING_LEASE.FENCING_EPOCH,
             TRANSCODE_CA_SIGNING_LEASE.LEASE_UNTIL)
-        .fetchOptional(record -> toLease(record, databaseTime.toInstant()));
+        .fetchOptional(leaseRecord -> toLease(leaseRecord, databaseTime.toInstant()));
   }
 
   @Override
@@ -102,7 +102,7 @@ public class CertificateAuthoritySigningLeaseRepositoryImpl
             TRANSCODE_CA_SIGNING_LEASE.OWNER_ID,
             TRANSCODE_CA_SIGNING_LEASE.FENCING_EPOCH,
             TRANSCODE_CA_SIGNING_LEASE.LEASE_UNTIL)
-        .fetchOptional(record -> toLease(record, databaseTime.toInstant()));
+        .fetchOptional(leaseRecord -> toLease(leaseRecord, databaseTime.toInstant()));
   }
 
   @Override
@@ -137,12 +137,12 @@ public class CertificateAuthoritySigningLeaseRepositoryImpl
   }
 
   private CertificateSigningLease toLease(
-      TranscodeCaSigningLeaseRecord record, java.time.Instant databaseTime) {
-    var leaseUntil = record.getLeaseUntil().toInstant();
+      TranscodeCaSigningLeaseRecord leaseRecord, java.time.Instant databaseTime) {
+    var leaseUntil = leaseRecord.getLeaseUntil().toInstant();
     return CertificateSigningLease.builder()
-        .operation(CertificateAuthorityOperation.valueOf(record.getOperation().getLiteral()))
-        .ownerId(record.getOwnerId())
-        .fencingEpoch(record.getFencingEpoch())
+        .operation(CertificateAuthorityOperation.valueOf(leaseRecord.getOperation().getLiteral()))
+        .ownerId(leaseRecord.getOwnerId())
+        .fencingEpoch(leaseRecord.getFencingEpoch())
         .databaseTime(databaseTime)
         .leaseUntil(leaseUntil)
         .build();
