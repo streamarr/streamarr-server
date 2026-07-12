@@ -87,6 +87,43 @@ jobs:
             exit 1
           fi
 
+          if ! grep -Fq '<class name="com/streamarr/transcode/worker/WorkerGrpcConfiguration"' "${report}"; then
+            echo "::error::Aggregate JaCoCo report does not contain the transcode worker"
+            exit 1
+          fi
+
+          worker_jars=(streamarr-transcode-worker/target/streamarr-transcode-worker-*.jar)
+          worker_jar="${worker_jars[0]}"
+          if [[ ! -f "${worker_jar}" ]]; then
+            echo "::error::Packaged transcode worker artifact is missing"
+            exit 1
+          fi
+
+          if ! jar tf "${worker_jar}" | grep -E '^BOOT-INF/lib/streamarr-transcode-engine-[^/]+\.jar$' >/dev/null; then
+            echo "::error::Packaged transcode worker does not contain the transcode engine"
+            exit 1
+          fi
+
+          if ! jar tf "${worker_jar}" | grep -E '^BOOT-INF/lib/streamarr-transcode-contract-[^/]+\.jar$' >/dev/null; then
+            echo "::error::Packaged transcode worker does not contain the protobuf contract"
+            exit 1
+          fi
+
+          if ! jar tf "${worker_jar}" | grep -E '^BOOT-INF/lib/grpc-netty-shaded-[^/]+\.jar$' >/dev/null; then
+            echo "::error::Packaged transcode worker does not contain shaded Netty"
+            exit 1
+          fi
+
+          if ! jar tf "${worker_jar}" | grep -E '^BOOT-INF/lib/grpc-services-[^/]+\.jar$' >/dev/null; then
+            echo "::error::Packaged transcode worker does not contain gRPC health services"
+            exit 1
+          fi
+
+          if jar tf "${worker_jar}" | grep -E '^BOOT-INF/lib/(streamarr-server|grpc-netty-[0-9])' >/dev/null; then
+            echo "::error::Packaged transcode worker crossed its runtime boundary"
+            exit 1
+          fi
+
           server_jars=(streamarr-server/target/streamarr-server-*.jar)
           server_jar="${server_jars[0]}"
           if [[ ! -f "${server_jar}" ]]; then
@@ -96,6 +133,11 @@ jobs:
 
           if ! jar tf "${server_jar}" | grep -E '^BOOT-INF/lib/streamarr-transcode-engine-[^/]+\.jar$' >/dev/null; then
             echo "::error::Packaged server does not contain the transcode engine"
+            exit 1
+          fi
+
+          if jar tf "${server_jar}" | grep -E '^BOOT-INF/lib/(streamarr-transcode-(worker|contract)|spring-boot-grpc-server|spring-grpc-core|grpc-services|grpc-netty-shaded)-' >/dev/null; then
+            echo "::error::Packaged server contains distributed-worker runtime dependencies"
             exit 1
           fi
 

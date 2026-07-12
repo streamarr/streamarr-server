@@ -124,6 +124,10 @@ link:adr/0013-stream-decision-architecture.adoc[ADR 0013].
 
 link:adr/0018-direct-fenced-worker-control.adoc[ADR 0018] accepts an optional distributed
 control plane, but the current implementation remains local-only and opens no worker listener.
+A narrow worker executable now packages the engine, protobuf contract, and shaded gRPC runtime;
+until trust and enrollment land, its server, reflection, health service, health scheduler, and all
+executors are disabled. The media-server artifact contains neither the worker nor its protobuf
+contract, so an ordinary local installation gains no distributed runtime resource.
 The extraction preserves the local path as the default:
 
 ----

@@ -1,0 +1,16 @@
+spring:
+  application:
+    name: streamarr-transcode-worker
+  main:
+    web-application-type: none
+  grpc:
+    server:
+      enabled: false
+      address: 127.0.0.1
+      port: 9090
+      reflection:
+        enabled: false
+      health:
+        enabled: false
+        schedule:
+          enabled: false

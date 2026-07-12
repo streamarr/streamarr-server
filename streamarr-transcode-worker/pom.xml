@@ -65,6 +65,16 @@
                 <artifactId>maven-compiler-plugin</artifactId>
             </plugin>
             <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <skip>false</skip>
+                    <mainClass>
+                        com.streamarr.transcode.worker.StreamarrTranscodeWorkerApplication
+                    </mainClass>
+                </configuration>
+            </plugin>
+            <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-enforcer-plugin</artifactId>
                 <executions>
@@ -103,7 +113,10 @@
                                     </message>
                                     <excludes>
                                         <exclude>com.streamarr:streamarr-server</exclude>
+                                        <exclude>com.zaxxer:HikariCP</exclude>
                                         <exclude>com.netflix.graphql.dgs:*</exclude>
+                                        <exclude>com.graphql-java:*</exclude>
+                                        <exclude>jakarta.persistence:*</exclude>
                                         <exclude>org.springframework.boot:spring-boot-starter-data-jpa</exclude>
                                         <exclude>org.springframework.boot:spring-boot-starter-data-jdbc</exclude>
                                         <exclude>org.springframework.boot:spring-boot-starter-flyway</exclude>
@@ -112,6 +125,12 @@
                                         <exclude>org.springframework.boot:spring-boot-starter-oauth2-*</exclude>
                                         <exclude>org.springframework.boot:spring-boot-starter-security</exclude>
                                         <exclude>org.springframework.boot:spring-boot-starter-web*</exclude>
+                                        <exclude>org.springframework.data:*</exclude>
+                                        <exclude>org.springframework.security:*</exclude>
+                                        <exclude>org.springframework:spring-orm</exclude>
+                                        <exclude>org.springframework:spring-jdbc</exclude>
+                                        <exclude>org.springframework:spring-web*</exclude>
+                                        <exclude>org.postgresql:postgresql</exclude>
                                         <exclude>org.flywaydb:*</exclude>
                                         <exclude>org.hibernate.orm:*</exclude>
                                         <exclude>org.hibernate:*</exclude>
@@ -119,6 +138,7 @@
                                         <exclude>io.grpc:grpc-netty</exclude>
                                         <exclude>io.netty:*</exclude>
                                         <exclude>io.projectreactor:*</exclude>
+                                        <exclude>org.reactivestreams:*</exclude>
                                     </excludes>
                                 </bannedDependencies>
                             </rules>
@@ -200,6 +220,13 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-failsafe-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <worker.packaged-jar>
+                            ${project.build.directory}/${project.build.finalName}.jar
+                        </worker.packaged-jar>
+                    </systemPropertyVariables>
+                </configuration>
                 <executions>
                     <execution>
                         <goals>

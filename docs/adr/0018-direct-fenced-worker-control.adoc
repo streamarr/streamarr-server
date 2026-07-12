@@ -8,9 +8,10 @@ Accepted
 
 * Streamarr still executes every transcode in the media-server process through `PlaybackTranscodeJobService`, the application-owned `TranscodeWorkerPort`, `LocalTranscodeWorkerAdapter`, and the extracted `LocalTranscodeEngine`.
 * The former rendition-at-a-time, process-shaped `TranscodeExecutor` and its process-handle state have been removed from the server application.
-* No remote worker, worker listener, certificate authority, registration path, or distributed playback route is enabled yet.
+* No enrolled remote worker, worker listener, certificate authority, registration path, or distributed playback route is enabled yet.
 * The completed local extraction introduced the application boundary without introducing a remote transport.
-* The generated-only `streamarr-transcode-contract` module defines the versioned worker transport and compatibility gates; neither the server nor a worker runtime depends on it yet.
+* The generated-only `streamarr-transcode-contract` module defines the versioned worker transport and compatibility gates. The narrow worker executable depends on it and the engine; the server still depends on neither the contract nor the worker.
+* The worker packages Boot's official gRPC server and shaded Netty, but its unenrolled configuration disables the server, reflection, health service, health scheduler, and all application executors. It exposes no control service until the trust and enrollment slice can enable one with valid credentials.
 * Distributed playback remains disabled until the durable command lifecycle and topology-A segment gate are complete.
 
 == Context
