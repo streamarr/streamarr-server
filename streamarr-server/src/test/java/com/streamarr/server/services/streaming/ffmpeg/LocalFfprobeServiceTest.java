@@ -8,9 +8,13 @@ import com.streamarr.server.exceptions.FfmpegNotAvailableException;
 import com.streamarr.transcode.engine.error.TranscodeException;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import tools.jackson.databind.ObjectMapper;
 
 @Tag("UnitTest")
@@ -85,9 +89,11 @@ class LocalFfprobeServiceTest {
     assertThat(probe.bitrate()).isZero();
   }
 
-  @Test
-  @DisplayName("Should parse fraction framerate when rate is expressed as fraction")
-  void shouldParseFractionFramerateWhenRateIsExpressedAsFraction() {
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("framerateCases")
+  @DisplayName("Should parse supported framerate representations")
+  void shouldParseSupportedFramerateRepresentations(
+      String scenario, String rateFields, double expectedFramerate) {
     var json =
         """
         {
@@ -97,11 +103,7 @@ class LocalFfprobeServiceTest {
               "codec_name": "h264",
               "width": 1280,
               "height": 720,
-              "r_frame_rate": "30/1"
-            },
-            {
-              "codec_type": "audio",
-              "codec_name": "aac"
+              %s
             }
           ],
           "format": {
@@ -109,43 +111,27 @@ class LocalFfprobeServiceTest {
             "bit_rate": "3000000"
           }
         }
-        """;
+        """
+            .formatted(rateFields);
 
     var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
 
     var probe = service.probe(Path.of("/test/movie.mkv"));
 
-    assertThat(probe.framerate()).isCloseTo(30.0, within(0.001));
+    assertThat(probe.framerate()).as(scenario).isCloseTo(expectedFramerate, within(0.001));
   }
 
-  @Test
-  @DisplayName("Should prefer average framerate when real base framerate is unavailable")
-  void shouldPreferAverageFramerateWhenRealBaseFramerateIsUnavailable() {
-    var json =
-        """
-        {
-          "streams": [
-            {
-              "codec_type": "video",
-              "codec_name": "h264",
-              "width": 1920,
-              "height": 1080,
-              "avg_frame_rate": "24000/1001",
-              "r_frame_rate": "0/0"
-            }
-          ],
-          "format": {
-            "duration": "3600.0",
-            "bit_rate": "5000000"
-          }
-        }
-        """;
-
-    var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
-
-    var probe = service.probe(Path.of("/test/movie.mkv"));
-
-    assertThat(probe.framerate()).isCloseTo(23.976, within(0.001));
+  static Stream<Arguments> framerateCases() {
+    return Stream.of(
+        Arguments.of("fraction rate", "\"r_frame_rate\": \"30/1\"", 30.0),
+        Arguments.of(
+            "average rate when real base rate is unavailable",
+            """
+            "avg_frame_rate": "24000/1001",
+            "r_frame_rate": "0/0"
+            """,
+            23.976),
+        Arguments.of("simple rate", "\"r_frame_rate\": \"25\"", 25.0));
   }
 
   @Test
@@ -325,39 +311,6 @@ class LocalFfprobeServiceTest {
 
     assertThat(probe.audioBitrate()).isEmpty();
     assertThat(probe.audioChannels()).hasValue(2);
-  }
-
-  @Test
-  @DisplayName("Should parse simple framerate when not expressed as fraction")
-  void shouldParseSimpleFramerateWhenNotExpressedAsFraction() {
-    var json =
-        """
-        {
-          "streams": [
-            {
-              "codec_type": "video",
-              "codec_name": "h264",
-              "width": 1920,
-              "height": 1080,
-              "r_frame_rate": "25"
-            },
-            {
-              "codec_type": "audio",
-              "codec_name": "aac"
-            }
-          ],
-          "format": {
-            "duration": "60.0",
-            "bit_rate": "5000000"
-          }
-        }
-        """;
-
-    var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
-
-    var probe = service.probe(Path.of("/test/movie.mkv"));
-
-    assertThat(probe.framerate()).isCloseTo(25.0, within(0.001));
   }
 
   @Test

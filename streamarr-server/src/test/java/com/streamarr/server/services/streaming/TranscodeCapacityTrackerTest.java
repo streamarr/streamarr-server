@@ -89,10 +89,12 @@ class TranscodeCapacityTrackerTest {
   @DisplayName("Should reject nonpositive capacity values")
   void shouldRejectNonpositiveCapacityValues() {
     var tracker = new TranscodeCapacityTracker();
+    var totalCapacitySession = UUID.randomUUID();
+    var exactCapacitySession = UUID.randomUUID();
 
-    assertThatThrownBy(() -> tracker.claimUpTo(UUID.randomUUID(), 0, 1))
+    assertThatThrownBy(() -> tracker.claimUpTo(totalCapacitySession, 0, 1))
         .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(() -> tracker.claimExact(UUID.randomUUID(), 1, 0))
+    assertThatThrownBy(() -> tracker.claimExact(exactCapacitySession, 1, 0))
         .isInstanceOf(IllegalArgumentException.class);
   }
 }

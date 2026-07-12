@@ -122,15 +122,14 @@ class HlsStreamingServiceTest {
     useTranscodeProbe();
     var rejectingRegistry = new RejectingAttachRegistry();
     var rejectingService = createService(rejectingRegistry);
+    var mediaFileId = seedMediaFile().getId();
+    var profileId = UUID.randomUUID();
+    var options = fullHdOptions();
 
     assertThatThrownBy(
             () ->
                 RuntimeStreamSessionTestDriver.create(
-                    rejectingService,
-                    rejectingRegistry,
-                    seedMediaFile().getId(),
-                    UUID.randomUUID(),
-                    fullHdOptions()))
+                    rejectingService, rejectingRegistry, mediaFileId, profileId, options))
         .isInstanceOf(com.streamarr.server.exceptions.SessionNotFoundException.class);
 
     assertThat(
@@ -146,15 +145,14 @@ class HlsStreamingServiceTest {
   void shouldReleaseClaimedTranscodeCapacityAfterFailedStartupCleanup() {
     useTranscodeProbe();
     transcodeJobService.failStartsWith(new IllegalStateException("startup failed"));
+    var mediaFileId = seedMediaFile().getId();
+    var profileId = UUID.randomUUID();
+    var options = fullHdOptions();
 
     assertThatThrownBy(
             () ->
                 RuntimeStreamSessionTestDriver.create(
-                    service,
-                    runtimeRegistry,
-                    seedMediaFile().getId(),
-                    UUID.randomUUID(),
-                    fullHdOptions()))
+                    service, runtimeRegistry, mediaFileId, profileId, options))
         .isInstanceOf(IllegalStateException.class);
 
     assertThat(
@@ -606,7 +604,8 @@ class HlsStreamingServiceTest {
             seedMediaFile().getId(),
             UUID.randomUUID(),
             fullHdOptions());
-    limitedJobs.suspend(suspended.getSessionId());
+    var suspendedSessionId = suspended.getSessionId();
+    limitedJobs.suspend(suspendedSessionId);
     RuntimeStreamSessionTestDriver.create(
         limitedService,
         limitedRegistry,
@@ -616,7 +615,7 @@ class HlsStreamingServiceTest {
     var startsBeforeResume = limitedJobs.startCommands().size();
 
     assertThatThrownBy(
-            () -> limitedService.resumeSessionIfNeeded(suspended.getSessionId(), "segment100.ts"))
+            () -> limitedService.resumeSessionIfNeeded(suspendedSessionId, "segment100.ts"))
         .isInstanceOf(MaxConcurrentTranscodesException.class);
     assertThat(limitedJobs.startCommands()).hasSize(startsBeforeResume);
   }
