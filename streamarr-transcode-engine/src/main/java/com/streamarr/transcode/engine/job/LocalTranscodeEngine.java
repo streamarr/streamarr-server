@@ -44,6 +44,10 @@ public class LocalTranscodeEngine {
   private final ConcurrentHashMap<UUID, Long> highestGenerationByJobId = new ConcurrentHashMap<>();
 
   @Builder.Default
+  private final ConcurrentHashMap<UUID, Long> highestStoppedGenerationByJobId =
+      new ConcurrentHashMap<>();
+
+  @Builder.Default
   private final ConcurrentHashMap<UUID, UUID> sessionIdByJobId = new ConcurrentHashMap<>();
 
   @Builder.Default
@@ -153,11 +157,13 @@ public class LocalTranscodeEngine {
   }
 
   public TranscodeJobObservation stop(TranscodeJobRef jobRef) {
-    var run = runs.get(jobRef);
-    if (run == null) {
-      return absent(jobRef);
-    }
+    JobRun run;
     synchronized (lifecycleMonitor) {
+      run = runs.get(jobRef);
+      if (run == null) {
+        highestStoppedGenerationByJobId.merge(jobRef.jobId(), jobRef.generation(), Math::max);
+        return absent(jobRef);
+      }
       if (run.observation.get().state() == TranscodeJobState.STOPPED && run.cleanupComplete) {
         return run.observation.get();
       }
@@ -288,7 +294,7 @@ public class LocalTranscodeEngine {
             TranscodeEngineException.Reason.SESSION_CONFLICT,
             "Transcode session is already owned by a different job");
       }
-      var highestGeneration = highestGenerationByJobId.getOrDefault(jobRef.jobId(), 0L);
+      var highestGeneration = highestFencedGeneration(jobRef.jobId());
       if (jobRef.generation() <= highestGeneration) {
         throw new TranscodeEngineException(
             TranscodeEngineException.Reason.STALE_GENERATION, "Transcode job generation is stale");
@@ -335,8 +341,7 @@ public class LocalTranscodeEngine {
 
   private void assertAdmitted(JobRun run) {
     var jobRef = run.specification.jobRef();
-    if (run.cancelled
-        || highestGenerationByJobId.getOrDefault(jobRef.jobId(), 0L) > jobRef.generation()) {
+    if (run.cancelled || highestFencedGeneration(jobRef.jobId()) > jobRef.generation()) {
       throw new TranscodeEngineException(
           TranscodeEngineException.Reason.STALE_GENERATION,
           "Transcode job generation was superseded");
@@ -385,6 +390,12 @@ public class LocalTranscodeEngine {
     return publications.containsKey(sessionId)
         && highestGenerationByJobId.getOrDefault(jobRef.jobId(), 0L) == jobRef.generation()
         && jobRef.jobId().equals(sessionOwnerBySessionId.get(sessionId));
+  }
+
+  private long highestFencedGeneration(UUID jobId) {
+    return Math.max(
+        highestGenerationByJobId.getOrDefault(jobId, 0L),
+        highestStoppedGenerationByJobId.getOrDefault(jobId, 0L));
   }
 
   private void withdrawPublication(UUID sessionId) {

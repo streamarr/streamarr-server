@@ -910,6 +910,59 @@ class LocalTranscodeEngineTest {
   }
 
   @Test
+  @DisplayName("Should fence an absent exact generation while allowing a higher generation")
+  void shouldFenceAbsentExactGenerationWhileAllowingHigherGeneration() throws IOException {
+    var jobId = UUID.randomUUID();
+    var template = jobSpecification(List.of(defaultRendition()));
+    var lower = withJobRef(template, new TranscodeJobRef(jobId, 1));
+    var absent = withJobRef(template, new TranscodeJobRef(jobId, 2));
+    var higher = withJobRef(template, new TranscodeJobRef(jobId, 3));
+    var source = Files.createFile(tempDir.resolve("movie.mkv"));
+    processManager.onStart(
+        (_, outputDirectory) -> writeStartupArtifacts(outputDirectory, "segment", ".ts"));
+
+    var stopped = engine.stop(absent.jobRef());
+    var duplicate = engine.stop(absent.jobRef());
+
+    assertThat(stopped.state()).isEqualTo(TranscodeJobState.ABSENT);
+    assertThat(duplicate).isEqualTo(stopped);
+    assertThatThrownBy(() -> engine.start(lower, source))
+        .isInstanceOfSatisfying(
+            TranscodeEngineException.class,
+            exception ->
+                assertThat(exception.reason())
+                    .isEqualTo(TranscodeEngineException.Reason.STALE_GENERATION));
+    assertThatThrownBy(() -> engine.start(absent, source))
+        .isInstanceOfSatisfying(
+            TranscodeEngineException.class,
+            exception ->
+                assertThat(exception.reason())
+                    .isEqualTo(TranscodeEngineException.Reason.STALE_GENERATION));
+    assertThat(engine.start(higher, source).state()).isEqualTo(TranscodeJobState.RUNNING);
+    assertThat(processManager.startedKeys())
+        .containsExactly(new FfmpegProcessKey(higher.jobRef(), "default"));
+  }
+
+  @Test
+  @DisplayName("Should keep an absent future fence separate from published fallback authority")
+  void shouldKeepAbsentFutureFenceSeparateFromPublishedFallbackAuthority() throws IOException {
+    var jobId = UUID.randomUUID();
+    var template = jobSpecification(List.of(defaultRendition()));
+    var published = withJobRef(template, new TranscodeJobRef(jobId, 1));
+    var absentFuture = new TranscodeJobRef(jobId, 2);
+    var source = Files.createFile(tempDir.resolve("movie.mkv"));
+    processManager.onStart(
+        (_, outputDirectory) -> writeStartupArtifacts(outputDirectory, "segment", ".ts"));
+    engine.start(published, source);
+
+    assertThat(engine.stop(absentFuture).state()).isEqualTo(TranscodeJobState.ABSENT);
+    assertThat(engine.stop(published.jobRef()).state()).isEqualTo(TranscodeJobState.STOPPED);
+
+    assertThat(segmentStorage.segmentExists(published.sessionId(), "segment0.ts")).isFalse();
+    assertThat(engine.releaseObservation(published.jobRef())).isTrue();
+  }
+
+  @Test
   @DisplayName("Should retain a published job when stop cleanup fails and complete on retry")
   void shouldRetainPublishedJobWhenStopCleanupFailsAndCompleteOnRetry() throws IOException {
     var specification = jobSpecification(List.of(defaultRendition()));
@@ -1322,6 +1375,10 @@ class LocalTranscodeEngineTest {
     }
     assertThat(processManager.startedKeys())
         .containsExactly(new FfmpegProcessKey(specification.jobRef(), "480p"));
+    assertThat(segmentStorage.segmentExists(specification.sessionId(), "480p/segment0.ts"))
+        .isFalse();
+    assertThat(segmentStorage.segmentExists(specification.sessionId(), "1080p/segment0.ts"))
+        .isFalse();
   }
 
   @ParameterizedTest(name = "{0}")
