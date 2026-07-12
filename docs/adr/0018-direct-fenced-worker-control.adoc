@@ -8,7 +8,7 @@ Accepted
 
 * Streamarr still executes every transcode in the media-server process through `PlaybackTranscodeJobService`, the application-owned `TranscodeWorkerPort`, `LocalTranscodeWorkerAdapter`, and the extracted `LocalTranscodeEngine`.
 * The former rendition-at-a-time, process-shaped `TranscodeExecutor` and its process-handle state have been removed from the server application.
-* The server now contains inert trust-material primitives for the P-256 root, issuer, dedicated revocation signer, and exact certificate-profile validation. No certificate-authority storage or bootstrap, signing lease, enrolled remote worker, worker listener, registration path, or distributed playback route is enabled yet.
+* The server now contains inert trust-material primitives for the P-256 root, issuer, dedicated revocation signer, exact certificate-profile validation, and durable owner-only PKCS#12 storage. No certificate-authority bootstrap, signing lease, enrolled remote worker, worker listener, registration path, or distributed playback route is enabled yet.
 * The completed local extraction introduced the application boundary without introducing a remote transport.
 * The generated-only `streamarr-transcode-contract` module defines the versioned worker transport and compatibility gates. The narrow worker executable depends on it and the engine; the server still depends on neither the contract nor the worker.
 * The worker packages Boot's official gRPC server and shaded Netty, but its unenrolled configuration disables the server, reflection, health service, health scheduler, and all application executors. It exposes no control service until the trust and enrollment slice can enable one with valid credentials.
@@ -212,6 +212,22 @@ Every control-plane replica mounts that same secret, verifies it against the rec
 The private CA key is never stored in PostgreSQL, logged, exported through the API, reused for JWT signing, or copied to a worker.
 Backups of distributed configuration must include this secret; losing it requires explicitly re-enrolling workers under a new trust domain.
 Certificate issuance and issuer/root rotation use a PostgreSQL-backed singleton leadership lease so only one replica performs signing transitions at a time.
+
+The built-in authority is one PKCS#12 file containing fixed root, issuer, and revocation-signer aliases and their chains.
+Its empty PKCS#12 protection value is not presented as encryption: a POSIX owner-only directory and a regular file created as `0600` and thereafter required to retain only owner permission bits, both owned by the process's effective numeric user id, are the at-rest security boundary, avoiding a fixed or adjacent password that would add no independent protection.
+Before probing the final filename, storage resolves the full ancestor namespace component by component and operates on the resulting symlink-free path.
+Every ancestor directory must be owned by root or the effective user; a group/other-writable ancestor is accepted only with the sticky bit, and entries traversed through a sticky directory plus every symbolic-link entry must also have a trusted owner.
+Protected symbolic links are expanded with cycle and depth bounds, ambiguous parent-traversal components are rejected, and the dedicated parent and secret themselves must remain real, non-link entries.
+This deliberately rejects a `0770` fsGroup-writable volume above a secure child: deployers must mount or chown the dedicated trust directory directly, or make the shared ancestor sticky.
+macOS extended ACLs are rejected on the dedicated parent and secret; deny-only ancestor ACLs are accepted, while every allow entry or malformed ACL is rejected.
+Where the Java file provider exposes the POSIX mode but not effective ACL entries, a fixed `/bin/ls -ldeb` metadata command runs with a cleared environment and fails closed on ambiguous output or command failure.
+Its merged output is redirected to an owner-only temporary file and removed after parsing when the filesystem permits, avoiding a bounded-pipe stall without exposing trust material; a cleanup failure can leave only owner-readable path metadata.
+This avoids granting native access to the server's entire unnamed module and adds no permission or process to the local-only runtime; the one-shot command has a five-second bound and runs only while distributed trust storage is being inspected.
+Initial publication writes and forces a same-directory temporary inode, then atomically creates the final name as a no-clobber hard link; an existing final name is loaded and validated, never overwritten.
+A newly created secure container is forced through its ancestor before any secret is written; ordinary loads need only traverse that ancestor.
+Before publication, the prepared container is read back and its root SPIFFE trust domain must match the material's declared installation id.
+Every successful load forces the containing directory, so the creator, a publication-race loser, and a post-crash adopter all establish the final name's durability before returning; storage that cannot provide directory `fsync` fails closed.
+The following bootstrap slice will publish database state only after that file is durable, recover a crash between file and database commits by adopting the exact file, and fail closed when database state has a missing or mismatched file.
 
 The root, online issuing intermediate, and revocation signer use P-256 and `SHA256withECDSA`.
 All three use distinct keys, exact critical and non-critical extension sets, and validated SKI/AKI linkage from each child to its issuer.
