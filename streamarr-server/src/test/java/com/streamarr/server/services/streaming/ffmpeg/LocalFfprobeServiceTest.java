@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.within;
 import com.streamarr.server.exceptions.FfmpegNotAvailableException;
 import com.streamarr.transcode.engine.error.TranscodeException;
 import java.nio.file.Path;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -58,6 +59,33 @@ class LocalFfprobeServiceTest {
   }
 
   @Test
+  @DisplayName("Should preserve unavailable format bitrate when ffprobe omits it")
+  void shouldPreserveUnavailableFormatBitrateWhenFfprobeOmitsIt() {
+    var json =
+        """
+        {
+          "streams": [
+            {
+              "codec_type": "video",
+              "codec_name": "h264",
+              "width": 1920,
+              "height": 1080,
+              "r_frame_rate": "24/1"
+            }
+          ],
+          "format": {
+            "duration": "3600.0"
+          }
+        }
+        """;
+    var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
+
+    var probe = service.probe(Path.of("/test/movie.mkv"));
+
+    assertThat(probe.bitrate()).isZero();
+  }
+
+  @Test
   @DisplayName("Should parse fraction framerate when rate is expressed as fraction")
   void shouldParseFractionFramerateWhenRateIsExpressedAsFraction() {
     var json =
@@ -88,6 +116,72 @@ class LocalFfprobeServiceTest {
     var probe = service.probe(Path.of("/test/movie.mkv"));
 
     assertThat(probe.framerate()).isCloseTo(30.0, within(0.001));
+  }
+
+  @Test
+  @DisplayName("Should prefer average framerate when real base framerate is unavailable")
+  void shouldPreferAverageFramerateWhenRealBaseFramerateIsUnavailable() {
+    var json =
+        """
+        {
+          "streams": [
+            {
+              "codec_type": "video",
+              "codec_name": "h264",
+              "width": 1920,
+              "height": 1080,
+              "avg_frame_rate": "24000/1001",
+              "r_frame_rate": "0/0"
+            }
+          ],
+          "format": {
+            "duration": "3600.0",
+            "bit_rate": "5000000"
+          }
+        }
+        """;
+
+    var service = new LocalFfprobeService(objectMapper, path -> createFakeProcess(json, 0));
+
+    var probe = service.probe(Path.of("/test/movie.mkv"));
+
+    assertThat(probe.framerate()).isCloseTo(23.976, within(0.001));
+  }
+
+  @Test
+  @DisplayName("Should use average framerate when real base framerate is missing or malformed")
+  void shouldUseAverageFramerateWhenRealBaseFramerateIsMissingOrMalformed() {
+    var jsonTemplate =
+        """
+        {
+          "streams": [
+            {
+              "codec_type": "video",
+              "codec_name": "h264",
+              "width": 1920,
+              "height": 1080,
+              %s
+              "avg_frame_rate": "25/1"
+            }
+          ],
+          "format": {
+            "duration": "3600.0",
+            "bit_rate": "5000000"
+          }
+        }
+        """;
+    var missingRealRate = jsonTemplate.formatted("");
+    var malformedRealRate = jsonTemplate.formatted("\"r_frame_rate\": \"N/A\",");
+
+    var missingProbe =
+        new LocalFfprobeService(objectMapper, path -> createFakeProcess(missingRealRate, 0))
+            .probe(Path.of("/test/missing-rate.mkv"));
+    var malformedProbe =
+        new LocalFfprobeService(objectMapper, path -> createFakeProcess(malformedRealRate, 0))
+            .probe(Path.of("/test/malformed-rate.mkv"));
+
+    assertThat(List.of(missingProbe.framerate(), malformedProbe.framerate()))
+        .containsExactly(25.0, 25.0);
   }
 
   @Test

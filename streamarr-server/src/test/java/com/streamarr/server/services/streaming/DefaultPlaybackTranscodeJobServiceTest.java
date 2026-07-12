@@ -89,6 +89,27 @@ class DefaultPlaybackTranscodeJobServiceTest {
   }
 
   @Test
+  @DisplayName("Should fail closed when a newer replacement job is unresolved")
+  void shouldFailClosedWhenNewerReplacementJobIsUnresolved() {
+    var registry = new InMemoryStreamSessionRepository();
+    var sessionId = UUID.randomUUID();
+    registry.reserve(sessionId).orElseThrow();
+    var worker = new FakeTranscodeWorker();
+    var service = service(worker, registry);
+    var active = service.start(command(sessionId));
+    worker.observe(
+        TranscodeJobObservation.builder()
+            .jobRef(active.jobRef())
+            .state(TranscodeJobState.STOPPED)
+            .renditions(List.of(new RenditionObservation("default", RenditionState.STOPPED)))
+            .build());
+    var replacement = registry.beginTranscodeStart(sessionId).orElseThrow();
+
+    assertThat(service.inspectActive(sessionId))
+        .isEqualTo(new ActiveTranscodeJobInspection.Unavailable(replacement.jobRef()));
+  }
+
+  @Test
   @DisplayName("Should report no active job when runtime has no published authority")
   void shouldReportNoActiveJobWhenRuntimeHasNoPublishedAuthority() {
     var registry = new InMemoryStreamSessionRepository();
@@ -382,6 +403,32 @@ class DefaultPlaybackTranscodeJobServiceTest {
 
     assertThat(worker.startCommands()).isEmpty();
     assertThat(worker.stopCommands()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should release an undispatched start when job specification construction fails")
+  void shouldReleaseUndispatchedStartWhenJobSpecificationConstructionFails() {
+    var registry = new InMemoryStreamSessionRepository();
+    var sessionId = UUID.randomUUID();
+    registry.reserve(sessionId).orElseThrow();
+    var worker = new FakeTranscodeWorker();
+    var service = service(worker, registry);
+    var valid = command(sessionId);
+    var duplicateLabels =
+        new StartPlaybackTranscodeJobCommand(
+            valid.sessionId(),
+            valid.source(),
+            valid.decision(),
+            valid.execution(),
+            List.of(
+                new RenditionSpec("1080p", 1920, 1080, 5_000_000L),
+                new RenditionSpec("1080P", 1280, 720, 3_000_000L)));
+
+    assertThatThrownBy(() -> service.start(duplicateLabels))
+        .isInstanceOf(IllegalArgumentException.class);
+
+    assertThat(registry.snapshotTranscodeJobRefs(sessionId)).isEmpty();
+    assertThat(worker.startCommands()).isEmpty();
   }
 
   @ParameterizedTest

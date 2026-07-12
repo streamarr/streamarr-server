@@ -149,9 +149,10 @@ class HlsStreamingSmokeTest {
             runtimeRegistry,
             new MutexFactory<>(),
             transcodeJobs,
-            sourceCatalog);
+            sourceCatalog,
+            new TranscodeCapacityTracker());
 
-    playlistService = new HlsPlaylistService(properties);
+    playlistService = new HlsPlaylistService(properties, new QualityLadderService());
   }
 
   @AfterEach

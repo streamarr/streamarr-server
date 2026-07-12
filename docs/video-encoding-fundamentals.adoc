@@ -117,7 +117,9 @@ ABR only applies when the transcode mode is `FULL_TRANSCODE` and the requested q
 | 360p  | 640x360   | 800 kbps | 64 kbps
 |===
 
-Tiers are filtered by the source resolution (no upscaling) and any client-declared constraints (`maxHeight`, `maxBitrate`). A 720p source produces at most 720p, 480p, and 360p variants.
+Tiers are filtered by the source resolution (no upscaling) and any client-declared constraints (`maxWidth`, `maxHeight`, `maxBitrate`). A 720p source produces at most 720p, 480p, and 360p variants.
+
+An explicit quality selects one rendition at that target resolution instead of an adaptive ladder. The same width, height, and bitrate constraints determine both the FFmpeg request and the master-playlist metadata; sources are never upscaled. Explicit UHD uses a 15 Mbps target when the source can supply 2160p.
 
 === Why Not REMUX or PARTIAL_TRANSCODE?
 

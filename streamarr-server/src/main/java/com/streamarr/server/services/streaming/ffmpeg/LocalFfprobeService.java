@@ -66,9 +66,9 @@ public class LocalFfprobeService implements FfprobeService {
         .audioBitrate(audioStream.map(s -> optionalLong(s, BIT_RATE)).orElse(OptionalLong.empty()))
         .width(videoStream.get("width").asInt())
         .height(videoStream.get("height").asInt())
-        .framerate(parseFrameRate(videoStream.get("r_frame_rate").asString()))
+        .framerate(parseFrameRate(videoStream))
         .duration(parseDuration(format.get("duration").asString()))
-        .bitrate(format.get(BIT_RATE).asLong())
+        .bitrate(optionalLong(format, BIT_RATE).orElse(0))
         .containerFormat(optionalString(format, "format_name"))
         .streams(parseAllStreams(root))
         .build();
@@ -168,13 +168,29 @@ public class LocalFfprobeService implements FfprobeService {
     }
   }
 
-  private double parseFrameRate(String rFrameRate) {
-    var parts = rFrameRate.split("/");
-    if (parts.length == 2) {
-      return Double.parseDouble(parts[0]) / Double.parseDouble(parts[1]);
+  private double parseFrameRate(JsonNode videoStream) {
+    var realBaseFramerate =
+        optionalString(videoStream, "r_frame_rate")
+            .map(LocalFfprobeService::parseFrameRate)
+            .orElse(Double.NaN);
+    if (Double.isFinite(realBaseFramerate) && realBaseFramerate > 0) {
+      return realBaseFramerate;
     }
+    return optionalString(videoStream, "avg_frame_rate")
+        .map(LocalFfprobeService::parseFrameRate)
+        .orElse(realBaseFramerate);
+  }
 
-    return Double.parseDouble(rFrameRate);
+  private static double parseFrameRate(String frameRate) {
+    try {
+      var parts = frameRate.split("/");
+      if (parts.length == 2) {
+        return Double.parseDouble(parts[0]) / Double.parseDouble(parts[1]);
+      }
+      return Double.parseDouble(frameRate);
+    } catch (NumberFormatException _) {
+      return Double.NaN;
+    }
   }
 
   private Duration parseDuration(String durationStr) {

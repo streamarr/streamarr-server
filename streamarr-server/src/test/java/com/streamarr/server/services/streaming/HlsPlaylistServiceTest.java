@@ -7,6 +7,7 @@ import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
+import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.transcode.engine.model.AudioDecision;
 import com.streamarr.transcode.engine.model.ContainerFormat;
 import com.streamarr.transcode.engine.model.QualityVariant;
@@ -41,7 +42,7 @@ class HlsPlaylistServiceTest {
             .segmentDuration(Duration.ofSeconds(6))
             .sessionTimeout(Duration.ofSeconds(60))
             .build();
-    service = new HlsPlaylistService(properties);
+    service = new HlsPlaylistService(properties, new QualityLadderService());
   }
 
   private StreamSession createSession(
@@ -192,6 +193,40 @@ class HlsPlaylistServiceTest {
     return session;
   }
 
+  private StreamSession createVideoTranscodeSession(
+      long sourceBitrate, VideoQuality quality, Integer maxBitrate) {
+    return StreamSession.builder()
+        .sessionId(UUID.randomUUID())
+        .mediaFileId(UUID.randomUUID())
+        .mediaProbe(
+            MediaProbe.builder()
+                .duration(Duration.ofMinutes(120))
+                .framerate(23.976)
+                .width(1920)
+                .height(1080)
+                .videoCodec("hevc")
+                .audioCodec("aac")
+                .bitrate(sourceBitrate)
+                .build())
+        .transcodeDecision(
+            TranscodeDecision.builder()
+                .transcodeMode(TranscodeMode.VIDEO_TRANSCODE)
+                .videoCodecFamily("h264")
+                .audioDecision(AudioDecision.copy("aac", 2, 128_000))
+                .subtitleDecision(SubtitleDecision.exclude())
+                .containerFormat(ContainerFormat.MPEGTS)
+                .needsKeyframeAlignment(false)
+                .build())
+        .options(
+            StreamingOptions.builder()
+                .quality(quality)
+                .maxBitrate(maxBitrate)
+                .supportedCodecs(List.of("h264"))
+                .build())
+        .createdAt(Instant.now())
+        .build();
+  }
+
   @Test
   @DisplayName("Should start with EXTM3U when generating master playlist")
   void shouldStartWithExtm3uWhenGeneratingMasterPlaylist() {
@@ -214,6 +249,26 @@ class HlsPlaylistServiceTest {
         .contains("#EXT-X-STREAM-INF:")
         .contains("BANDWIDTH=")
         .contains("RESOLUTION=1920x1080");
+  }
+
+  @Test
+  @DisplayName("Should advertise usable bandwidth when source bitrate is unavailable")
+  void shouldAdvertiseUsableBandwidthWhenSourceBitrateIsUnavailable() {
+    var session = createVideoTranscodeSession(0, VideoQuality.FULL_HD_1080P, null);
+
+    var playlist = service.generateMasterPlaylist(session, "test-token");
+
+    assertThat(playlist).contains("BANDWIDTH=5128000");
+  }
+
+  @Test
+  @DisplayName("Should advertise the constrained explicit-quality rendition")
+  void shouldAdvertiseConstrainedExplicitQualityRendition() {
+    var session = createVideoTranscodeSession(8_000_000, VideoQuality.HIGH_720P, 2_000_000);
+
+    var playlist = service.generateMasterPlaylist(session, "test-token");
+
+    assertThat(playlist).contains("BANDWIDTH=2128000").contains("RESOLUTION=1280x720");
   }
 
   @Test

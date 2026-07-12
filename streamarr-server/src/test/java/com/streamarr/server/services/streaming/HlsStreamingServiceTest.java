@@ -60,6 +60,7 @@ class HlsStreamingServiceTest {
   private FakeFfprobeService ffprobeService;
   private FakePlaybackTranscodeJobService transcodeJobService;
   private FakeMediaSourceCatalog mediaSourceCatalog;
+  private TranscodeCapacityTracker transcodeCapacityTracker;
   private StreamingProperties properties;
   private RuntimeStreamSessionRegistry runtimeRegistry;
   private HlsStreamingService service;
@@ -71,6 +72,7 @@ class HlsStreamingServiceTest {
     ffprobeService = new FakeFfprobeService();
     transcodeJobService = new FakePlaybackTranscodeJobService();
     mediaSourceCatalog = new FakeMediaSourceCatalog();
+    transcodeCapacityTracker = new TranscodeCapacityTracker();
     properties =
         StreamingProperties.builder()
             .maxConcurrentTranscodes(3)
@@ -93,7 +95,8 @@ class HlsStreamingServiceTest {
             runtimeRegistry,
             new MutexFactory<>(),
             transcodeJobService,
-            mediaSourceCatalog);
+            mediaSourceCatalog,
+            transcodeCapacityTracker);
   }
 
   @Test
@@ -111,6 +114,55 @@ class HlsStreamingServiceTest {
                     runtimeCreationCommand(streamSessionId, file.getId(), reservation)))
         .isInstanceOf(com.streamarr.server.exceptions.SessionNotFoundException.class);
     assertThat(transcodeJobService.startCommands()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should release claimed transcode capacity when attachment is refused")
+  void shouldReleaseClaimedTranscodeCapacityWhenAttachmentIsRefused() {
+    useTranscodeProbe();
+    var rejectingRegistry = new RejectingAttachRegistry();
+    var rejectingService = createService(rejectingRegistry);
+
+    assertThatThrownBy(
+            () ->
+                RuntimeStreamSessionTestDriver.create(
+                    rejectingService,
+                    rejectingRegistry,
+                    seedMediaFile().getId(),
+                    UUID.randomUUID(),
+                    fullHdOptions()))
+        .isInstanceOf(com.streamarr.server.exceptions.SessionNotFoundException.class);
+
+    assertThat(
+            transcodeCapacityTracker.claimExact(
+                UUID.randomUUID(),
+                properties.maxConcurrentTranscodes(),
+                properties.maxConcurrentTranscodes()))
+        .isTrue();
+  }
+
+  @Test
+  @DisplayName("Should release claimed transcode capacity after failed startup cleanup")
+  void shouldReleaseClaimedTranscodeCapacityAfterFailedStartupCleanup() {
+    useTranscodeProbe();
+    transcodeJobService.failStartsWith(new IllegalStateException("startup failed"));
+
+    assertThatThrownBy(
+            () ->
+                RuntimeStreamSessionTestDriver.create(
+                    service,
+                    runtimeRegistry,
+                    seedMediaFile().getId(),
+                    UUID.randomUUID(),
+                    fullHdOptions()))
+        .isInstanceOf(IllegalStateException.class);
+
+    assertThat(
+            transcodeCapacityTracker.claimExact(
+                UUID.randomUUID(),
+                properties.maxConcurrentTranscodes(),
+                properties.maxConcurrentTranscodes()))
+        .isTrue();
   }
 
   @Test
@@ -210,7 +262,8 @@ class HlsStreamingServiceTest {
         repository,
         new MutexFactory<>(),
         transcodeJobService,
-        mediaSourceCatalog);
+        mediaSourceCatalog,
+        transcodeCapacityTracker);
   }
 
   private StreamSession createSession(UUID mediaFileId, UUID profileId, StreamingOptions options) {
@@ -466,7 +519,8 @@ class HlsStreamingServiceTest {
             limitedRegistry,
             new MutexFactory<>(),
             blockingJobs,
-            mediaSourceCatalog);
+            mediaSourceCatalog,
+            new TranscodeCapacityTracker());
     ffprobeService.setDefaultProbe(
         MediaProbe.builder()
             .duration(Duration.ofMinutes(120))
@@ -506,6 +560,284 @@ class HlsStreamingServiceTest {
         worker.releaseStart();
       }
       assertThat(first.get(5, java.util.concurrent.TimeUnit.SECONDS)).isNotNull();
+    }
+
+    assertThat(secondOutcome).isInstanceOf(MaxConcurrentTranscodesException.class);
+  }
+
+  @Test
+  @DisplayName("Should not resume a suspended transcode after its capacity was reassigned")
+  void shouldNotResumeSuspendedTranscodeAfterCapacityWasReassigned() {
+    var limitedProperties =
+        StreamingProperties.builder()
+            .maxConcurrentTranscodes(1)
+            .segmentDuration(Duration.ofSeconds(6))
+            .sessionTimeout(Duration.ofSeconds(60))
+            .build();
+    var limitedRegistry = new FakeStreamSessionRepository();
+    var limitedJobs = new FakePlaybackTranscodeJobService();
+    var limitedService =
+        new HlsStreamingService(
+            mediaFileRepository,
+            segmentStore,
+            ffprobeService,
+            new TranscodeDecisionService(),
+            new QualityLadderService(),
+            limitedProperties,
+            limitedRegistry,
+            new MutexFactory<>(),
+            limitedJobs,
+            mediaSourceCatalog,
+            new TranscodeCapacityTracker());
+    ffprobeService.setDefaultProbe(
+        MediaProbe.builder()
+            .duration(Duration.ofMinutes(120))
+            .framerate(23.976)
+            .width(1920)
+            .height(1080)
+            .videoCodec("hevc")
+            .audioCodec("aac")
+            .bitrate(5_000_000L)
+            .build());
+    var suspended =
+        RuntimeStreamSessionTestDriver.create(
+            limitedService,
+            limitedRegistry,
+            seedMediaFile().getId(),
+            UUID.randomUUID(),
+            fullHdOptions());
+    limitedJobs.suspend(suspended.getSessionId());
+    RuntimeStreamSessionTestDriver.create(
+        limitedService,
+        limitedRegistry,
+        seedMediaFile().getId(),
+        UUID.randomUUID(),
+        fullHdOptions());
+    var startsBeforeResume = limitedJobs.startCommands().size();
+
+    assertThatThrownBy(
+            () -> limitedService.resumeSessionIfNeeded(suspended.getSessionId(), "segment100.ts"))
+        .isInstanceOf(MaxConcurrentTranscodesException.class);
+    assertThat(limitedJobs.startCommands()).hasSize(startsBeforeResume);
+  }
+
+  @Test
+  @DisplayName("Should start independent transcodes concurrently when capacity permits")
+  void shouldStartIndependentTranscodesConcurrentlyWhenCapacityPermits() throws Exception {
+    var worker = new ParallelStartWorker();
+    var limitedProperties =
+        StreamingProperties.builder()
+            .maxConcurrentTranscodes(2)
+            .segmentDuration(Duration.ofSeconds(6))
+            .sessionTimeout(Duration.ofSeconds(60))
+            .build();
+    var limitedRegistry = new FakeStreamSessionRepository();
+    var jobs =
+        DefaultPlaybackTranscodeJobService.builder()
+            .worker(worker)
+            .workerTarget(worker.target())
+            .runtimeRegistry(limitedRegistry)
+            .sessionMutexes(new MutexFactory<>())
+            .build();
+    var limitedService =
+        new HlsStreamingService(
+            mediaFileRepository,
+            segmentStore,
+            ffprobeService,
+            new TranscodeDecisionService(),
+            new QualityLadderService(),
+            limitedProperties,
+            limitedRegistry,
+            new MutexFactory<>(),
+            jobs,
+            mediaSourceCatalog,
+            new TranscodeCapacityTracker());
+    ffprobeService.setDefaultProbe(
+        MediaProbe.builder()
+            .duration(Duration.ofMinutes(120))
+            .framerate(23.976)
+            .width(1920)
+            .height(1080)
+            .videoCodec("hevc")
+            .audioCodec("aac")
+            .bitrate(5_000_000L)
+            .build());
+    var firstFile = seedMediaFile();
+    var secondFile = seedMediaFile();
+    boolean secondReachedWorker;
+
+    try (var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
+      var first =
+          executor.submit(
+              () ->
+                  RuntimeStreamSessionTestDriver.create(
+                      limitedService,
+                      limitedRegistry,
+                      firstFile.getId(),
+                      UUID.randomUUID(),
+                      fullHdOptions()));
+      assertThat(worker.awaitFirstStart()).isTrue();
+      var second =
+          executor.submit(
+              () ->
+                  RuntimeStreamSessionTestDriver.create(
+                      limitedService,
+                      limitedRegistry,
+                      secondFile.getId(),
+                      UUID.randomUUID(),
+                      fullHdOptions()));
+      try {
+        secondReachedWorker = worker.awaitSecondStart();
+      } finally {
+        worker.releaseFirstStart();
+      }
+      assertThat(first.get(5, java.util.concurrent.TimeUnit.SECONDS)).isNotNull();
+      assertThat(second.get(5, java.util.concurrent.TimeUnit.SECONDS)).isNotNull();
+    }
+
+    assertThat(secondReachedWorker).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should admit only one concurrent transcode when one slot remains")
+  void shouldAdmitOnlyOneConcurrentTranscodeWhenOneSlotRemains() throws Exception {
+    var limitedRegistry = new FakeStreamSessionRepository();
+    var capacityTracker = new CoordinatedCapacityTracker();
+    var limitedProperties =
+        StreamingProperties.builder()
+            .maxConcurrentTranscodes(1)
+            .segmentDuration(Duration.ofSeconds(6))
+            .sessionTimeout(Duration.ofSeconds(60))
+            .build();
+    var limitedService =
+        new HlsStreamingService(
+            mediaFileRepository,
+            segmentStore,
+            ffprobeService,
+            new TranscodeDecisionService(),
+            new QualityLadderService(),
+            limitedProperties,
+            limitedRegistry,
+            new MutexFactory<>(),
+            transcodeJobService,
+            mediaSourceCatalog,
+            capacityTracker);
+    ffprobeService.setDefaultProbe(
+        MediaProbe.builder()
+            .duration(Duration.ofMinutes(120))
+            .framerate(23.976)
+            .width(1920)
+            .height(1080)
+            .videoCodec("hevc")
+            .audioCodec("aac")
+            .bitrate(5_000_000L)
+            .build());
+    var firstFile = seedMediaFile();
+    var secondFile = seedMediaFile();
+
+    List<Throwable> outcomes;
+    try (var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
+      var first =
+          executor.submit(
+              () ->
+                  catchThrowable(
+                      () ->
+                          RuntimeStreamSessionTestDriver.create(
+                              limitedService,
+                              limitedRegistry,
+                              firstFile.getId(),
+                              UUID.randomUUID(),
+                              fullHdOptions())));
+      var second =
+          executor.submit(
+              () ->
+                  catchThrowable(
+                      () ->
+                          RuntimeStreamSessionTestDriver.create(
+                              limitedService,
+                              limitedRegistry,
+                              secondFile.getId(),
+                              UUID.randomUUID(),
+                              fullHdOptions())));
+      outcomes = new java.util.ArrayList<>();
+      outcomes.add(first.get(5, java.util.concurrent.TimeUnit.SECONDS));
+      outcomes.add(second.get(5, java.util.concurrent.TimeUnit.SECONDS));
+    }
+
+    assertThat(outcomes).filteredOn(java.util.Objects::isNull).hasSize(1);
+    assertThat(outcomes).filteredOn(MaxConcurrentTranscodesException.class::isInstance).hasSize(1);
+  }
+
+  @Test
+  @DisplayName("Should retain transcode capacity while a replacement job is unresolved")
+  void shouldRetainTranscodeCapacityWhileReplacementJobIsUnresolved() throws Exception {
+    var worker = new BlockingReplacementWorker();
+    var limitedProperties =
+        StreamingProperties.builder()
+            .maxConcurrentTranscodes(1)
+            .segmentDuration(Duration.ofSeconds(6))
+            .sessionTimeout(Duration.ofSeconds(60))
+            .build();
+    var limitedRegistry = new FakeStreamSessionRepository();
+    var jobs =
+        DefaultPlaybackTranscodeJobService.builder()
+            .worker(worker)
+            .workerTarget(worker.target())
+            .runtimeRegistry(limitedRegistry)
+            .sessionMutexes(new MutexFactory<>())
+            .build();
+    var limitedService =
+        new HlsStreamingService(
+            mediaFileRepository,
+            segmentStore,
+            ffprobeService,
+            new TranscodeDecisionService(),
+            new QualityLadderService(),
+            limitedProperties,
+            limitedRegistry,
+            new MutexFactory<>(),
+            jobs,
+            mediaSourceCatalog,
+            new TranscodeCapacityTracker());
+    ffprobeService.setDefaultProbe(
+        MediaProbe.builder()
+            .duration(Duration.ofMinutes(120))
+            .framerate(23.976)
+            .width(1920)
+            .height(1080)
+            .videoCodec("hevc")
+            .audioCodec("aac")
+            .bitrate(5_000_000L)
+            .build());
+    var first =
+        RuntimeStreamSessionTestDriver.create(
+            limitedService,
+            limitedRegistry,
+            seedMediaFile().getId(),
+            UUID.randomUUID(),
+            fullHdOptions());
+    var secondFile = seedMediaFile();
+    Throwable secondOutcome;
+
+    try (var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
+      var replacement =
+          executor.submit(
+              () -> limitedService.resumeSessionIfNeeded(first.getSessionId(), "segment100.ts"));
+      assertThat(worker.awaitReplacement()).isTrue();
+      try {
+        secondOutcome =
+            catchThrowable(
+                () ->
+                    RuntimeStreamSessionTestDriver.create(
+                        limitedService,
+                        limitedRegistry,
+                        secondFile.getId(),
+                        UUID.randomUUID(),
+                        fullHdOptions()));
+      } finally {
+        worker.releaseReplacement();
+      }
+      replacement.get(5, java.util.concurrent.TimeUnit.SECONDS);
     }
 
     assertThat(secondOutcome).isInstanceOf(MaxConcurrentTranscodesException.class);
@@ -687,6 +1019,70 @@ class HlsStreamingServiceTest {
   }
 
   @Test
+  @DisplayName("Should create video-transcode session when source bitrate is unavailable")
+  void shouldCreateVideoTranscodeSessionWhenSourceBitrateIsUnavailable() {
+    ffprobeService.setDefaultProbe(
+        MediaProbe.builder()
+            .duration(Duration.ofMinutes(120))
+            .framerate(23.976)
+            .width(1920)
+            .height(1080)
+            .videoCodec("hevc")
+            .audioCodec("aac")
+            .bitrate(0)
+            .build());
+    var file = seedMediaFile();
+    var options =
+        StreamingOptions.builder()
+            .quality(VideoQuality.FULL_HD_1080P)
+            .supportedCodecs(List.of("h264"))
+            .supportedAudioCodecs(List.of("aac"))
+            .build();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), options);
+
+    assertThat(session.getTranscodeDecision().transcodeMode())
+        .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(transcodeJobService.startCommands().getLast().renditions())
+        .singleElement()
+        .extracting(com.streamarr.transcode.engine.model.RenditionSpec::videoBitrate)
+        .isEqualTo(5_000_000L);
+  }
+
+  @Test
+  @DisplayName("Should create low-resolution auto transcode when source bitrate is unavailable")
+  void shouldCreateLowResolutionAutoTranscodeWhenSourceBitrateIsUnavailable() {
+    ffprobeService.setDefaultProbe(
+        MediaProbe.builder()
+            .duration(Duration.ofMinutes(120))
+            .framerate(23.976)
+            .width(320)
+            .height(180)
+            .videoCodec("hevc")
+            .audioCodec("aac")
+            .bitrate(0)
+            .build());
+    var file = seedMediaFile();
+    var options =
+        StreamingOptions.builder()
+            .quality(VideoQuality.AUTO)
+            .supportedCodecs(List.of("h264"))
+            .supportedAudioCodecs(List.of("aac"))
+            .build();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), options);
+
+    assertThat(session.getVariants())
+        .singleElement()
+        .extracting(com.streamarr.transcode.engine.model.QualityVariant::videoBitrate)
+        .isEqualTo(800_000L);
+    assertThat(transcodeJobService.startCommands().getLast().renditions())
+        .singleElement()
+        .extracting(com.streamarr.transcode.engine.model.RenditionSpec::videoBitrate)
+        .isEqualTo(800_000L);
+  }
+
+  @Test
   @DisplayName("Should create remux session when source framerate is unavailable")
   void shouldCreateRemuxSessionWhenSourceFramerateIsUnavailable() {
     ffprobeService.setDefaultProbe(
@@ -756,6 +1152,36 @@ class HlsStreamingServiceTest {
   }
 
   @Test
+  @DisplayName("Should create video-transcode session when source framerate is unavailable")
+  void shouldCreateVideoTranscodeSessionWhenSourceFramerateIsUnavailable() {
+    ffprobeService.setDefaultProbe(
+        MediaProbe.builder()
+            .duration(Duration.ofMinutes(120))
+            .framerate(Double.NaN)
+            .width(1920)
+            .height(1080)
+            .videoCodec("hevc")
+            .audioCodec("aac")
+            .bitrate(5_000_000L)
+            .build());
+    var file = seedMediaFile();
+    var options =
+        StreamingOptions.builder()
+            .quality(VideoQuality.AUTO)
+            .supportedCodecs(List.of("h264"))
+            .supportedAudioCodecs(List.of("aac"))
+            .build();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), options);
+
+    assertThat(session.getTranscodeDecision().transcodeMode())
+        .isEqualTo(TranscodeMode.VIDEO_TRANSCODE);
+    assertThat(transcodeJobService.startCommands().getLast().execution().framerate())
+        .isFinite()
+        .isPositive();
+  }
+
+  @Test
   @DisplayName("Should use single variant when explicit quality is specified")
   void shouldUseSingleVariantWhenExplicitQualityIsSpecified() {
     ffprobeService.setDefaultProbe(
@@ -773,6 +1199,7 @@ class HlsStreamingServiceTest {
     var options =
         StreamingOptions.builder()
             .quality(VideoQuality.HIGH_720P)
+            .maxBitrate(2_000_000)
             .supportedCodecs(List.of("h264"))
             .build();
 
@@ -782,7 +1209,12 @@ class HlsStreamingServiceTest {
     assertThat(transcodeJobService.startCommands().getLast().renditions())
         .singleElement()
         .satisfies(
-            rendition -> assertThat(rendition.label()).isEqualTo(RenditionRequest.DEFAULT_VARIANT));
+            rendition -> {
+              assertThat(rendition.label()).isEqualTo(RenditionRequest.DEFAULT_VARIANT);
+              assertThat(rendition.width()).isEqualTo(1280);
+              assertThat(rendition.height()).isEqualTo(720);
+              assertThat(rendition.videoBitrate()).isEqualTo(2_000_000L);
+            });
   }
 
   @Test
@@ -928,7 +1360,8 @@ class HlsStreamingServiceTest {
             limitedRegistry,
             new MutexFactory<>(),
             new FakePlaybackTranscodeJobService(),
-            new FakeMediaSourceCatalog());
+            new FakeMediaSourceCatalog(),
+            new TranscodeCapacityTracker());
 
     ffprobeService.setDefaultProbe(
         MediaProbe.builder()
@@ -1323,6 +1756,19 @@ class HlsStreamingServiceTest {
     return List.copyOf(sessions);
   }
 
+  private void useTranscodeProbe() {
+    ffprobeService.setDefaultProbe(
+        MediaProbe.builder()
+            .duration(Duration.ofMinutes(120))
+            .framerate(23.976)
+            .width(1920)
+            .height(1080)
+            .videoCodec("hevc")
+            .audioCodec("aac")
+            .bitrate(5_000_000L)
+            .build());
+  }
+
   private static StreamingOptions fullHdOptions() {
     return StreamingOptions.builder()
         .quality(VideoQuality.FULL_HD_1080P)
@@ -1350,6 +1796,193 @@ class HlsStreamingServiceTest {
     public java.util.Collection<UUID> fenceAll() {
       super.fenceAll();
       return fenceOrder;
+    }
+  }
+
+  private static final class CoordinatedCapacityTracker extends TranscodeCapacityTracker {
+
+    private final java.util.concurrent.CountDownLatch claims =
+        new java.util.concurrent.CountDownLatch(2);
+
+    @Override
+    public int claimUpTo(UUID sessionId, int requestedSlots, int maximumSlots) {
+      claims.countDown();
+      try {
+        if (!claims.await(5, java.util.concurrent.TimeUnit.SECONDS)) {
+          throw new IllegalStateException("Concurrent capacity claims did not arrive");
+        }
+      } catch (InterruptedException exception) {
+        Thread.currentThread().interrupt();
+        throw new IllegalStateException(exception);
+      }
+      return super.claimUpTo(sessionId, requestedSlots, maximumSlots);
+    }
+  }
+
+  private static final class ParallelStartWorker implements TranscodeWorkerPort {
+
+    private final WorkerTarget target = new WorkerTarget(UUID.randomUUID(), UUID.randomUUID());
+    private final java.util.concurrent.atomic.AtomicInteger starts =
+        new java.util.concurrent.atomic.AtomicInteger();
+    private final java.util.concurrent.CountDownLatch firstStartEntered =
+        new java.util.concurrent.CountDownLatch(1);
+    private final java.util.concurrent.CountDownLatch secondStartEntered =
+        new java.util.concurrent.CountDownLatch(1);
+    private final java.util.concurrent.CountDownLatch allowFirstStart =
+        new java.util.concurrent.CountDownLatch(1);
+
+    private WorkerTarget target() {
+      return target;
+    }
+
+    private boolean awaitFirstStart() throws InterruptedException {
+      return firstStartEntered.await(5, java.util.concurrent.TimeUnit.SECONDS);
+    }
+
+    private boolean awaitSecondStart() throws InterruptedException {
+      return secondStartEntered.await(1, java.util.concurrent.TimeUnit.SECONDS);
+    }
+
+    private void releaseFirstStart() {
+      allowFirstStart.countDown();
+    }
+
+    @Override
+    public StartJobResult start(StartJobCommand command) {
+      var attempt = starts.incrementAndGet();
+      if (attempt == 1) {
+        firstStartEntered.countDown();
+        BlockingTranscodeWorker.await(allowFirstStart);
+      } else {
+        secondStartEntered.countDown();
+      }
+      var specification = command.specification();
+      return new StartJobResult.Accepted(
+          TranscodeJobObservation.builder()
+              .jobRef(specification.jobRef())
+              .state(TranscodeJobState.RUNNING)
+              .renditions(
+                  specification.renditions().stream()
+                      .map(
+                          rendition ->
+                              new RenditionObservation(rendition.label(), RenditionState.RUNNING))
+                      .toList())
+              .build());
+    }
+
+    @Override
+    public StopJobResult stop(StopJobCommand command) {
+      return new StopJobResult.Stopped(command.jobRef());
+    }
+
+    @Override
+    public InspectJobResult inspect(InspectJobQuery query) {
+      return new InspectJobResult.Observed(
+          TranscodeJobObservation.builder()
+              .jobRef(query.jobRef())
+              .state(TranscodeJobState.RUNNING)
+              .renditions(List.of(new RenditionObservation("default", RenditionState.RUNNING)))
+              .build());
+    }
+  }
+
+  private static final class BlockingReplacementWorker implements TranscodeWorkerPort {
+
+    private final WorkerTarget target = new WorkerTarget(UUID.randomUUID(), UUID.randomUUID());
+    private final java.util.concurrent.atomic.AtomicInteger starts =
+        new java.util.concurrent.atomic.AtomicInteger();
+    private final java.util.concurrent.ConcurrentHashMap<
+            com.streamarr.transcode.engine.model.TranscodeJobRef, TranscodeJobObservation>
+        observations = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.concurrent.CountDownLatch replacementEntered =
+        new java.util.concurrent.CountDownLatch(1);
+    private final java.util.concurrent.CountDownLatch allowReplacement =
+        new java.util.concurrent.CountDownLatch(1);
+    private volatile com.streamarr.transcode.engine.model.TranscodeJobRef firstJobRef;
+
+    private WorkerTarget target() {
+      return target;
+    }
+
+    private boolean awaitReplacement() throws InterruptedException {
+      return replacementEntered.await(5, java.util.concurrent.TimeUnit.SECONDS);
+    }
+
+    private void releaseReplacement() {
+      allowReplacement.countDown();
+    }
+
+    @Override
+    public StartJobResult start(StartJobCommand command) {
+      var attempt = starts.incrementAndGet();
+      if (attempt == 1) {
+        firstJobRef = command.specification().jobRef();
+      }
+      if (attempt == 2) {
+        observations.computeIfPresent(
+            firstJobRef,
+            (_, current) -> observation(current.jobRef(), TranscodeJobState.STOPPED, current));
+        replacementEntered.countDown();
+        BlockingTranscodeWorker.await(allowReplacement);
+      }
+      var accepted =
+          observation(
+              command.specification().jobRef(),
+              TranscodeJobState.RUNNING,
+              command.specification().renditions().stream()
+                  .map(
+                      rendition ->
+                          new RenditionObservation(rendition.label(), RenditionState.RUNNING))
+                  .toList());
+      observations.put(accepted.jobRef(), accepted);
+      return new StartJobResult.Accepted(accepted);
+    }
+
+    @Override
+    public StopJobResult stop(StopJobCommand command) {
+      observations.computeIfPresent(
+          command.jobRef(),
+          (_, current) -> observation(current.jobRef(), TranscodeJobState.STOPPED, current));
+      return new StopJobResult.Stopped(command.jobRef());
+    }
+
+    @Override
+    public InspectJobResult inspect(InspectJobQuery query) {
+      var observed = observations.get(query.jobRef());
+      if (observed == null) {
+        observed =
+            TranscodeJobObservation.builder()
+                .jobRef(query.jobRef())
+                .state(TranscodeJobState.ABSENT)
+                .renditions(List.of())
+                .build();
+      }
+      return new InspectJobResult.Observed(observed);
+    }
+
+    private static TranscodeJobObservation observation(
+        com.streamarr.transcode.engine.model.TranscodeJobRef jobRef,
+        TranscodeJobState state,
+        TranscodeJobObservation template) {
+      var renditionState =
+          state == TranscodeJobState.STOPPED ? RenditionState.STOPPED : RenditionState.RUNNING;
+      return observation(
+          jobRef,
+          state,
+          template.renditions().stream()
+              .map(rendition -> new RenditionObservation(rendition.label(), renditionState))
+              .toList());
+    }
+
+    private static TranscodeJobObservation observation(
+        com.streamarr.transcode.engine.model.TranscodeJobRef jobRef,
+        TranscodeJobState state,
+        List<RenditionObservation> renditions) {
+      return TranscodeJobObservation.builder()
+          .jobRef(jobRef)
+          .state(state)
+          .renditions(renditions)
+          .build();
     }
   }
 

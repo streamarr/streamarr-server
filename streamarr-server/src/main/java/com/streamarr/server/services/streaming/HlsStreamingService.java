@@ -12,7 +12,6 @@ import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.library.FilepathCodec;
 import com.streamarr.server.services.streaming.source.MediaSourceCatalog;
 import com.streamarr.transcode.engine.model.QualityVariant;
-import com.streamarr.transcode.engine.model.RenditionRequest;
 import com.streamarr.transcode.engine.model.RenditionSpec;
 import com.streamarr.transcode.engine.model.TranscodeDecision;
 import com.streamarr.transcode.engine.model.TranscodeExecutionParameters;
@@ -34,6 +33,7 @@ import lombok.extern.slf4j.Slf4j;
 public class HlsStreamingService implements StreamingService {
 
   private static final Pattern SEGMENT_INDEX_PATTERN = Pattern.compile("segment(\\d+)");
+  private static final double FALLBACK_VIDEO_FRAMERATE = 30.0;
 
   /** Beyond this lead, restarting the encoder beats waiting for it to catch up. */
   private static final Duration FORWARD_RELOCATION_GAP = Duration.ofSeconds(24);
@@ -48,6 +48,7 @@ public class HlsStreamingService implements StreamingService {
   private final MutexFactory<UUID> resumeMutex;
   private final PlaybackTranscodeJobService playbackTranscodeJobService;
   private final MediaSourceCatalog mediaSourceCatalog;
+  private final TranscodeCapacityTracker transcodeCapacityTracker;
 
   @Override
   public StreamSession createSession(CreateRuntimeStreamSessionCommand command) {
@@ -61,8 +62,17 @@ public class HlsStreamingService implements StreamingService {
 
     var probe = ffprobeService.probe(FilepathCodec.decode(mediaFile.getFilepathUri()));
     var decision = transcodeDecisionService.decide(probe, options);
+    return createSession(command, probe, decision);
+  }
+
+  private StreamSession createSession(
+      CreateRuntimeStreamSessionCommand command, MediaProbe probe, TranscodeDecision decision) {
+    var mediaFileId = command.mediaFileId();
+    var profileId = command.profileId();
+    var options = command.options();
     var variants = resolveVariants(probe, options, decision);
-    variants = enforceCapacityLimits(decision.transcodeMode(), variants);
+    variants =
+        claimTranscodeCapacity(command.streamSessionId(), decision.transcodeMode(), variants);
 
     var sessionId = command.streamSessionId();
     var now = Instant.now();
@@ -81,6 +91,7 @@ public class HlsStreamingService implements StreamingService {
     session.setLastAccessedAt(command.initialLastAccessedAt());
 
     if (!sessionRepository.attach(command.reservation(), session)) {
+      transcodeCapacityTracker.release(sessionId);
       throw new com.streamarr.server.exceptions.SessionNotFoundException(sessionId);
     }
     startTranscodes(session, 0, 0);
@@ -114,6 +125,7 @@ public class HlsStreamingService implements StreamingService {
       log.warn("Cleanup remains pending for streaming session {}", sessionId);
       return false;
     }
+    transcodeCapacityTracker.release(sessionId);
     segmentStore.deleteSession(sessionId);
     var quiescent = sessionRepository.releaseTerminal(sessionId);
     log.info("Destroyed streaming session {}", sessionId);
@@ -125,10 +137,12 @@ public class HlsStreamingService implements StreamingService {
     var sessionIds = sessionRepository.fenceAll();
     for (var sessionId : sessionIds) {
       try {
-        if (playbackTranscodeJobService.cleanupTerminal(sessionId)
-            == RuntimeTranscodeCleanup.PENDING) {
+        var cleanup = playbackTranscodeJobService.cleanupTerminal(sessionId);
+        if (cleanup == RuntimeTranscodeCleanup.PENDING) {
           log.warn("Cleanup remains pending for stream session {} during shutdown", sessionId);
+          continue;
         }
+        transcodeCapacityTracker.release(sessionId);
       } catch (RuntimeException exception) {
         log.warn("Failed to clean stream session {} during shutdown", sessionId, exception);
       }
@@ -245,6 +259,7 @@ public class HlsStreamingService implements StreamingService {
     var segmentIndex = parseSegmentIndex(segmentName);
     var resumeSeek = segmentIndex * segmentDurationSeconds();
 
+    claimExactTranscodeCapacity(session);
     startTranscodes(session, resumeSeek, segmentIndex);
     log.info(
         "Started replacement transcode for session {} at segment {} (seek {}s)",
@@ -270,44 +285,46 @@ public class HlsStreamingService implements StreamingService {
     return options.quality() == null || options.quality() == VideoQuality.AUTO;
   }
 
-  private List<QualityVariant> enforceCapacityLimits(
-      TranscodeMode mode, List<QualityVariant> variants) {
-    if (!variants.isEmpty()) {
-      return capVariantsToAvailableSlots(variants);
+  private List<QualityVariant> claimTranscodeCapacity(
+      UUID sessionId, TranscodeMode mode, List<QualityVariant> variants) {
+    if (!requiresTranscode(mode)) {
+      return variants;
     }
-
-    if (requiresTranscode(mode)) {
-      enforceTranscodeLimit();
-    }
-
-    return variants;
-  }
-
-  private List<QualityVariant> capVariantsToAvailableSlots(List<QualityVariant> variants) {
-    var slotsAvailable = availableTranscodeSlots();
-    if (slotsAvailable <= 0) {
+    reconcileInactiveTranscodeCapacity();
+    var requestedSlots = Math.max(1, variants.size());
+    var admittedSlots =
+        transcodeCapacityTracker.claimUpTo(
+            sessionId, requestedSlots, properties.maxConcurrentTranscodes());
+    if (admittedSlots == 0) {
       throw new MaxConcurrentTranscodesException(properties.maxConcurrentTranscodes());
     }
-
-    if (variants.size() > slotsAvailable) {
-      return variants.subList(0, slotsAvailable);
+    if (variants.size() > admittedSlots) {
+      return variants.subList(0, admittedSlots);
     }
-
     return variants;
   }
 
-  private int availableTranscodeSlots() {
-    var activeTranscodes =
-        sessionRepository.findAll().stream()
-            .filter(s -> requiresTranscode(s.getTranscodeDecision().transcodeMode()))
-            .filter(this::consumesTranscodeCapacity)
-            .mapToInt(s -> Math.max(1, s.getVariants().size()))
-            .sum();
-    return properties.maxConcurrentTranscodes() - activeTranscodes;
+  private void claimExactTranscodeCapacity(StreamSession session) {
+    if (!requiresTranscode(session.getTranscodeDecision().transcodeMode())) {
+      return;
+    }
+    var slots = Math.max(1, session.getVariants().size());
+    if (!transcodeCapacityTracker.claimExact(
+        session.getSessionId(), slots, properties.maxConcurrentTranscodes())) {
+      throw new MaxConcurrentTranscodesException(properties.maxConcurrentTranscodes());
+    }
   }
 
-  private boolean consumesTranscodeCapacity(StreamSession session) {
-    return switch (playbackTranscodeJobService.inspectActive(session.getSessionId())) {
+  private void reconcileInactiveTranscodeCapacity() {
+    for (var claim : transcodeCapacityTracker.activeClaims()) {
+      if (!consumesTranscodeCapacity(claim.sessionId())) {
+        transcodeCapacityTracker.releaseActive(claim);
+      }
+    }
+  }
+
+  private boolean consumesTranscodeCapacity(UUID sessionId) {
+    return switch (playbackTranscodeJobService.inspectActive(sessionId)) {
       case ActiveTranscodeJobInspection.None _ -> false;
       case ActiveTranscodeJobInspection.Unavailable _ -> true;
       case ActiveTranscodeJobInspection.Observed(var observation, _) ->
@@ -320,40 +337,33 @@ public class HlsStreamingService implements StreamingService {
     return mode != TranscodeMode.REMUX;
   }
 
-  private void enforceTranscodeLimit() {
-    if (availableTranscodeSlots() <= 0) {
-      throw new MaxConcurrentTranscodesException(properties.maxConcurrentTranscodes());
-    }
-  }
-
   private void startTranscodes(StreamSession session, int seekPosition, int startNumber) {
-    var probe = session.getMediaProbe();
-    playbackTranscodeJobService.start(
-        StartPlaybackTranscodeJobCommand.builder()
-            .sessionId(session.getSessionId())
-            .source(mediaSourceCatalog.referenceFor(session.getMediaFileId()))
-            .decision(session.getTranscodeDecision())
-            .execution(
-                TranscodeExecutionParameters.builder()
-                    .seekPosition(seekPosition)
-                    .segmentDuration(segmentDurationSeconds())
-                    .framerate(executionFramerate(session))
-                    .startNumber(startNumber)
-                    .startupTimeout(properties.transcodeStartupTimeout())
-                    .build())
-            .renditions(renditions(session))
-            .build());
+    try {
+      playbackTranscodeJobService.start(
+          StartPlaybackTranscodeJobCommand.builder()
+              .sessionId(session.getSessionId())
+              .source(mediaSourceCatalog.referenceFor(session.getMediaFileId()))
+              .decision(session.getTranscodeDecision())
+              .execution(
+                  TranscodeExecutionParameters.builder()
+                      .seekPosition(seekPosition)
+                      .segmentDuration(segmentDurationSeconds())
+                      .framerate(executionFramerate(session))
+                      .startNumber(startNumber)
+                      .startupTimeout(properties.transcodeStartupTimeout())
+                      .build())
+              .renditions(renditions(session))
+              .build());
+    } finally {
+      if (requiresTranscode(session.getTranscodeDecision().transcodeMode())) {
+        transcodeCapacityTracker.markActive(session.getSessionId());
+      }
+    }
   }
 
   private List<RenditionSpec> renditions(StreamSession session) {
     if (session.getVariants().isEmpty()) {
-      var probe = session.getMediaProbe();
-      return List.of(
-          new RenditionSpec(
-              RenditionRequest.DEFAULT_VARIANT,
-              probe.width(),
-              probe.height(),
-              defaultRenditionBitrate(session)));
+      return List.of(qualityLadderService.resolveDefaultRendition(session));
     }
     return session.getVariants().stream()
         .map(
@@ -365,19 +375,13 @@ public class HlsStreamingService implements StreamingService {
 
   private double executionFramerate(StreamSession session) {
     var framerate = session.getMediaProbe().framerate();
-    if (requiresVideoTranscode(session.getTranscodeDecision().transcodeMode())
-        || (Double.isFinite(framerate) && framerate > 0)) {
+    if (Double.isFinite(framerate) && framerate > 0) {
       return framerate;
     }
-    return 1.0;
-  }
-
-  private long defaultRenditionBitrate(StreamSession session) {
-    var bitrate = session.getMediaProbe().bitrate();
-    if (requiresVideoTranscode(session.getTranscodeDecision().transcodeMode()) || bitrate > 0) {
-      return bitrate;
+    if (requiresVideoTranscode(session.getTranscodeDecision().transcodeMode())) {
+      return FALLBACK_VIDEO_FRAMERATE;
     }
-    return 1;
+    return 1.0;
   }
 
   private static int parseSegmentIndex(String segmentName) {

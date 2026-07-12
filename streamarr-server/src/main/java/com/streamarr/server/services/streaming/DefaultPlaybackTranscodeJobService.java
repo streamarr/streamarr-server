@@ -15,6 +15,7 @@ import com.streamarr.transcode.engine.model.TranscodeJobRef;
 import com.streamarr.transcode.engine.model.TranscodeJobSpec;
 import com.streamarr.transcode.engine.model.TranscodeJobState;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.Builder;
@@ -59,6 +60,10 @@ public class DefaultPlaybackTranscodeJobService implements PlaybackTranscodeJobS
       return inspectUnpublished(sessionId);
     }
     var jobRef = active.orElseThrow();
+    var newerIssued = newestIssuedAfter(sessionId, jobRef);
+    if (newerIssued.isPresent()) {
+      return new ActiveTranscodeJobInspection.Unavailable(newerIssued.orElseThrow());
+    }
     var specification = specificationsByJobRef.get(jobRef);
     if (specification == null) {
       return new ActiveTranscodeJobInspection.Unavailable(jobRef);
@@ -67,6 +72,10 @@ public class DefaultPlaybackTranscodeJobService implements PlaybackTranscodeJobS
       var result = worker.inspect(new InspectJobQuery(workerTarget, jobRef));
       if (result instanceof InspectJobResult.Observed(var observation)
           && jobRef.equals(observation.jobRef())) {
+        newerIssued = newestIssuedAfter(sessionId, jobRef);
+        if (newerIssued.isPresent()) {
+          return new ActiveTranscodeJobInspection.Unavailable(newerIssued.orElseThrow());
+        }
         return new ActiveTranscodeJobInspection.Observed(
             observation, specification.execution().startNumber());
       }
@@ -74,6 +83,12 @@ public class DefaultPlaybackTranscodeJobService implements PlaybackTranscodeJobS
       // Inspection is fail-closed: uncertainty must not authorize a replacement.
     }
     return new ActiveTranscodeJobInspection.Unavailable(jobRef);
+  }
+
+  private Optional<TranscodeJobRef> newestIssuedAfter(UUID sessionId, TranscodeJobRef active) {
+    return runtimeRegistry.snapshotTranscodeJobRefs(sessionId).stream()
+        .filter(jobRef -> jobRef.generation() > active.generation())
+        .max(java.util.Comparator.comparingLong(TranscodeJobRef::generation));
   }
 
   private ActiveTranscodeJobInspection inspectUnpublished(UUID sessionId) {
@@ -128,7 +143,13 @@ public class DefaultPlaybackTranscodeJobService implements PlaybackTranscodeJobS
         runtimeRegistry
             .beginTranscodeStart(command.sessionId())
             .orElseThrow(() -> new SessionNotFoundException(command.sessionId()));
-    var specification = specification(command, start.jobRef());
+    TranscodeJobSpec specification;
+    try {
+      specification = specification(command, start.jobRef());
+    } catch (RuntimeException exception) {
+      runtimeRegistry.finishRejectedTranscodeStart(start, true);
+      throw exception;
+    }
     specificationsByJobRef.put(start.jobRef(), specification);
 
     StartJobResult result;

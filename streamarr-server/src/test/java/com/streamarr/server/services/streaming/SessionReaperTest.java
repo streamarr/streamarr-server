@@ -30,19 +30,23 @@ class SessionReaperTest {
 
   private FakePlaybackTranscodeJobService transcodeJobs;
   private InMemoryStreamingService streamingService;
+  private TranscodeCapacityTracker transcodeCapacityTracker;
+  private StreamingProperties properties;
   private SessionReaper reaper;
 
   @BeforeEach
   void setUp() {
     transcodeJobs = new FakePlaybackTranscodeJobService();
     streamingService = new InMemoryStreamingService();
-    var properties =
+    transcodeCapacityTracker = new TranscodeCapacityTracker();
+    properties =
         StreamingProperties.builder()
             .segmentDuration(Duration.ofSeconds(6))
             .sessionTimeout(Duration.ofSeconds(60))
             .sessionRetention(Duration.ofHours(24))
             .build();
-    reaper = new SessionReaper(streamingService, transcodeJobs, properties);
+    reaper =
+        new SessionReaper(streamingService, transcodeJobs, properties, transcodeCapacityTracker);
   }
 
   @Test
@@ -113,6 +117,52 @@ class SessionReaperTest {
     reaper.reapSessions();
 
     assertThat(transcodeJobs.suspensionAttempts()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should not release a restarted claim from a stale completed observation")
+  void shouldNotReleaseRestartedClaimFromStaleCompletedObservation() throws Exception {
+    var session = addSession(Instant.now().minusSeconds(10));
+    var blockingJobs = new BlockingInspectionPlaybackTranscodeJobService();
+    blockingJobs.observe(session.getSessionId(), TranscodeJobState.COMPLETED, 0);
+    assertThat(transcodeCapacityTracker.claimExact(session.getSessionId(), 1, 1)).isTrue();
+    transcodeCapacityTracker.markActive(session.getSessionId());
+    var raceReaper =
+        new SessionReaper(streamingService, blockingJobs, properties, transcodeCapacityTracker);
+
+    try (var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
+      var reap = executor.submit(raceReaper::reapSessions);
+      assertThat(blockingJobs.awaitInspection()).isTrue();
+      assertThat(transcodeCapacityTracker.claimExact(session.getSessionId(), 1, 1)).isTrue();
+      transcodeCapacityTracker.markActive(session.getSessionId());
+      blockingJobs.releaseInspection();
+      reap.get(5, java.util.concurrent.TimeUnit.SECONDS);
+    }
+
+    assertThat(transcodeCapacityTracker.claimExact(UUID.randomUUID(), 1, 1)).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should not release a restarted claim after idle suspension completes")
+  void shouldNotReleaseRestartedClaimAfterIdleSuspensionCompletes() throws Exception {
+    var session = idleSession();
+    var blockingJobs = new BlockingSuspensionPlaybackTranscodeJobService();
+    blockingJobs.observe(session.getSessionId(), TranscodeJobState.RUNNING, 0);
+    assertThat(transcodeCapacityTracker.claimExact(session.getSessionId(), 1, 1)).isTrue();
+    transcodeCapacityTracker.markActive(session.getSessionId());
+    var raceReaper =
+        new SessionReaper(streamingService, blockingJobs, properties, transcodeCapacityTracker);
+
+    try (var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
+      var reap = executor.submit(raceReaper::reapSessions);
+      assertThat(blockingJobs.awaitSuspension()).isTrue();
+      assertThat(transcodeCapacityTracker.claimExact(session.getSessionId(), 1, 1)).isTrue();
+      blockingJobs.releaseSuspension();
+      reap.get(5, java.util.concurrent.TimeUnit.SECONDS);
+    }
+    transcodeCapacityTracker.markActive(session.getSessionId());
+
+    assertThat(transcodeCapacityTracker.claimExact(UUID.randomUUID(), 1, 1)).isFalse();
   }
 
   @Test
@@ -212,6 +262,65 @@ class SessionReaperTest {
     @Override
     public void resumeSessionIfNeeded(UUID sessionId, String segmentName) {
       throw new UnsupportedOperationException();
+    }
+  }
+
+  private static final class BlockingInspectionPlaybackTranscodeJobService
+      extends FakePlaybackTranscodeJobService {
+
+    private final java.util.concurrent.CountDownLatch inspectionCaptured =
+        new java.util.concurrent.CountDownLatch(1);
+    private final java.util.concurrent.CountDownLatch allowInspection =
+        new java.util.concurrent.CountDownLatch(1);
+
+    @Override
+    public ActiveTranscodeJobInspection inspectActive(UUID sessionId) {
+      var inspection = super.inspectActive(sessionId);
+      inspectionCaptured.countDown();
+      await(allowInspection);
+      return inspection;
+    }
+
+    private boolean awaitInspection() throws InterruptedException {
+      return inspectionCaptured.await(5, java.util.concurrent.TimeUnit.SECONDS);
+    }
+
+    private void releaseInspection() {
+      allowInspection.countDown();
+    }
+
+    private static void await(java.util.concurrent.CountDownLatch latch) {
+      try {
+        latch.await();
+      } catch (InterruptedException exception) {
+        Thread.currentThread().interrupt();
+        throw new IllegalStateException(exception);
+      }
+    }
+  }
+
+  private static final class BlockingSuspensionPlaybackTranscodeJobService
+      extends FakePlaybackTranscodeJobService {
+
+    private final java.util.concurrent.CountDownLatch suspensionCaptured =
+        new java.util.concurrent.CountDownLatch(1);
+    private final java.util.concurrent.CountDownLatch allowSuspension =
+        new java.util.concurrent.CountDownLatch(1);
+
+    @Override
+    public RuntimeTranscodeCleanup suspend(UUID sessionId) {
+      var cleanup = super.suspend(sessionId);
+      suspensionCaptured.countDown();
+      BlockingInspectionPlaybackTranscodeJobService.await(allowSuspension);
+      return cleanup;
+    }
+
+    private boolean awaitSuspension() throws InterruptedException {
+      return suspensionCaptured.await(5, java.util.concurrent.TimeUnit.SECONDS);
+    }
+
+    private void releaseSuspension() {
+      allowSuspension.countDown();
     }
   }
 }

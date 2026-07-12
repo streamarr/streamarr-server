@@ -279,7 +279,8 @@ class StreamSessionCleanupServiceTest {
         runtimeRegistry,
         new MutexFactory<>(),
         transcodeJobs,
-        new FakeMediaSourceCatalog());
+        new FakeMediaSourceCatalog(),
+        new TranscodeCapacityTracker());
   }
 
   private static void retainUncertainJob(

@@ -20,6 +20,7 @@ import com.streamarr.server.services.streaming.StreamSessionCleanup;
 import com.streamarr.server.services.streaming.StreamSessionLifecycleTransactions;
 import com.streamarr.server.services.streaming.StreamSessionTransactionRetry;
 import com.streamarr.server.services.streaming.StreamingService;
+import com.streamarr.server.services.streaming.TranscodeCapacityTracker;
 import com.streamarr.server.services.streaming.TranscodeDecisionService;
 import com.streamarr.server.services.streaming.ffmpeg.LocalFfprobeService;
 import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRepository;
@@ -146,6 +147,11 @@ public class StreamingConfig {
   }
 
   @Bean
+  public TranscodeCapacityTracker transcodeCapacityTracker() {
+    return new TranscodeCapacityTracker();
+  }
+
+  @Bean
   public PlaybackTranscodeJobService playbackTranscodeJobService(
       TranscodeWorkerPort worker,
       WorkerTarget workerTarget,
@@ -170,7 +176,8 @@ public class StreamingConfig {
       RuntimeStreamSessionRegistry streamSessionRepository,
       MutexFactory<UUID> streamingLifecycleMutexFactory,
       PlaybackTranscodeJobService playbackTranscodeJobService,
-      MediaSourceCatalog mediaSourceCatalog) {
+      MediaSourceCatalog mediaSourceCatalog,
+      TranscodeCapacityTracker transcodeCapacityTracker) {
     return new HlsStreamingService(
         mediaFileRepository,
         segmentStore,
@@ -181,7 +188,8 @@ public class StreamingConfig {
         streamSessionRepository,
         streamingLifecycleMutexFactory,
         playbackTranscodeJobService,
-        mediaSourceCatalog);
+        mediaSourceCatalog,
+        transcodeCapacityTracker);
   }
 
   @Bean

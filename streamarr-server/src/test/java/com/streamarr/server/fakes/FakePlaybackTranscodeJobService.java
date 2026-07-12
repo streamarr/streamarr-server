@@ -29,9 +29,13 @@ public class FakePlaybackTranscodeJobService implements PlaybackTranscodeJobServ
       new ConcurrentHashMap<>();
   private volatile RuntimeTranscodeCleanup terminalCleanup = RuntimeTranscodeCleanup.COMPLETE;
   private volatile RuntimeTranscodeCleanup suspensionCleanup = RuntimeTranscodeCleanup.COMPLETE;
+  private volatile RuntimeException startFailure;
 
   @Override
   public TranscodeJobObservation start(StartPlaybackTranscodeJobCommand command) {
+    if (startFailure != null) {
+      throw startFailure;
+    }
     starts.add(command);
     var generation =
         generations.compute(command.sessionId(), (_, current) -> current == null ? 1 : current + 1);
@@ -54,6 +58,10 @@ public class FakePlaybackTranscodeJobService implements PlaybackTranscodeJobServ
 
   public List<StartPlaybackTranscodeJobCommand> startCommands() {
     return List.copyOf(starts);
+  }
+
+  public void failStartsWith(RuntimeException failure) {
+    startFailure = failure;
   }
 
   @Override
@@ -152,5 +160,6 @@ public class FakePlaybackTranscodeJobService implements PlaybackTranscodeJobServ
     terminalCleanupFailuresBySession.clear();
     terminalCleanup = RuntimeTranscodeCleanup.COMPLETE;
     suspensionCleanup = RuntimeTranscodeCleanup.COMPLETE;
+    startFailure = null;
   }
 }

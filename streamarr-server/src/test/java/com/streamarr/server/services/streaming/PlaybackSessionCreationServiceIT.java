@@ -1982,7 +1982,8 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
         runtimeRegistry,
         new MutexFactory<>(),
         new com.streamarr.server.fakes.FakePlaybackTranscodeJobService(),
-        new com.streamarr.server.fakes.FakeMediaSourceCatalog());
+        new com.streamarr.server.fakes.FakeMediaSourceCatalog(),
+        new TranscodeCapacityTracker());
   }
 
   private MediaFile saveMediaFile(UUID owningLibraryId) {

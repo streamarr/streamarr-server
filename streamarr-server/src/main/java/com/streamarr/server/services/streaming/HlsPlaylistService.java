@@ -21,6 +21,7 @@ public class HlsPlaylistService {
           "hevc", "hvc1.1.6.L120.90");
 
   private final StreamingProperties properties;
+  private final QualityLadderService qualityLadderService;
 
   public String generateMasterPlaylist(StreamSession session, String token) {
     var decision = session.getTranscodeDecision();
@@ -39,8 +40,14 @@ public class HlsPlaylistService {
     }
 
     if (session.getVariants().isEmpty()) {
-      var probe = session.getMediaProbe();
-      appendStreamInf(sb, probe.bitrate(), probe.width(), probe.height(), codecs, hasAudio);
+      var rendition = qualityLadderService.resolveDefaultRendition(session);
+      appendStreamInf(
+          sb,
+          qualityLadderService.resolveDefaultRenditionBandwidth(session),
+          rendition.width(),
+          rendition.height(),
+          codecs,
+          hasAudio);
       sb.append("stream.m3u8?t=").append(token).append("\n");
       return sb.toString();
     }

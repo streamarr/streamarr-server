@@ -20,6 +20,7 @@ import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.streaming.CreateRuntimeStreamSessionCommand;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
 import com.streamarr.server.services.streaming.PlaybackSessionAccessService;
+import com.streamarr.server.services.streaming.QualityLadderService;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.transcode.engine.model.ContainerFormat;
 import java.time.Duration;
@@ -64,7 +65,8 @@ class StreamControllerTest {
                 .maxConcurrentTranscodes(8)
                 .segmentDuration(Duration.ofSeconds(6))
                 .sessionTimeout(Duration.ofSeconds(60))
-                .build());
+                .build(),
+            new QualityLadderService());
     boundStreamSession.set(SESSION_ID);
     controller =
         new StreamController(
