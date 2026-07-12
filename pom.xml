@@ -18,6 +18,7 @@
     <modules>
         <module>streamarr-transcode-engine</module>
         <module>streamarr-transcode-contract</module>
+        <module>streamarr-transcode-worker</module>
         <module>streamarr-server</module>
         <module>streamarr-coverage</module>
     </modules>
@@ -31,7 +32,8 @@
             ${maven.multiModuleProjectDirectory}/streamarr-coverage/target/site/jacoco-aggregate/jacoco.xml
         </sonar.coverage.jacoco.xmlReportPaths>
         <sonar.coverage.exclusions>
-            **/pom.xml, **/StreamarrServerApplication.java, **/target/generated-sources/**
+            **/pom.xml, **/StreamarrServerApplication.java,
+            **/StreamarrTranscodeWorkerApplication.java, **/target/generated-sources/**
         </sonar.coverage.exclusions>
         <sonar.test.inclusions>**/src/test/**</sonar.test.inclusions>
         <sonar.exclusions>**/jooq/generated/**, **/target/generated-sources/**</sonar.exclusions>

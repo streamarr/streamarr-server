@@ -20,6 +20,11 @@
         </dependency>
         <dependency>
             <groupId>com.streamarr</groupId>
+            <artifactId>streamarr-transcode-worker</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.streamarr</groupId>
             <artifactId>streamarr-server</artifactId>
             <version>${project.version}</version>
         </dependency>
