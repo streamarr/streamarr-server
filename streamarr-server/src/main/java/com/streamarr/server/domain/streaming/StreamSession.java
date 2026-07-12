@@ -1,15 +1,11 @@
 package com.streamarr.server.domain.streaming;
 
 import com.streamarr.transcode.engine.model.QualityVariant;
-import com.streamarr.transcode.engine.model.RenditionRequest;
 import com.streamarr.transcode.engine.model.TranscodeDecision;
-import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 import lombok.Builder;
 import lombok.Getter;
@@ -22,14 +18,10 @@ public class StreamSession {
   private final UUID mediaFileId;
   // The owning profile, stamped at creation — playback tokens bind to it.
   private final UUID profileId;
-  private final Path sourcePath;
   private final MediaProbe mediaProbe;
   private final TranscodeDecision transcodeDecision;
   private final StreamingOptions options;
   private final Instant createdAt;
-
-  @Builder.Default
-  private final Map<String, TranscodeHandle> variantHandles = new ConcurrentHashMap<>();
 
   @Builder.Default private final List<QualityVariant> variants = Collections.emptyList();
 
@@ -63,30 +55,5 @@ public class StreamSession {
   public void setLastAccessedAt(Instant accessedAt) {
     playbackSnapshot.updateAndGet(
         current -> new PlaybackSnapshot(current.positionSeconds(), current.state(), accessedAt));
-  }
-
-  public TranscodeHandle getHandle() {
-    return variantHandles.get(RenditionRequest.DEFAULT_VARIANT);
-  }
-
-  public void setHandle(TranscodeHandle handle) {
-    variantHandles.put(RenditionRequest.DEFAULT_VARIANT, handle);
-  }
-
-  public void setVariantHandle(String variantLabel, TranscodeHandle handle) {
-    variantHandles.put(variantLabel, handle);
-  }
-
-  public TranscodeHandle getVariantHandle(String variantLabel) {
-    return variantHandles.get(variantLabel);
-  }
-
-  public boolean isSuspended() {
-    return !variantHandles.isEmpty()
-        && variantHandles.values().stream().allMatch(h -> h.status() == TranscodeStatus.SUSPENDED);
-  }
-
-  public boolean hasActiveTranscodes() {
-    return variantHandles.values().stream().anyMatch(h -> h.status() == TranscodeStatus.ACTIVE);
   }
 }

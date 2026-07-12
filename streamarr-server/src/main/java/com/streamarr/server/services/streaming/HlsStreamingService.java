@@ -72,7 +72,6 @@ public class HlsStreamingService implements StreamingService {
             .sessionId(sessionId)
             .mediaFileId(mediaFileId)
             .profileId(profileId)
-            .sourcePath(FilepathCodec.decode(mediaFile.getFilepathUri()))
             .mediaProbe(probe)
             .transcodeDecision(decision)
             .options(options)

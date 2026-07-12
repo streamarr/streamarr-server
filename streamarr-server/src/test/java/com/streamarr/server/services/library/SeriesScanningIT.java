@@ -12,7 +12,6 @@ import com.streamarr.server.domain.Library;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fakes.FakeSegmentStore;
-import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.repositories.LibraryRepository;
 import com.streamarr.server.repositories.media.EpisodeRepository;
 import com.streamarr.server.repositories.media.MediaFileRepository;
@@ -20,7 +19,6 @@ import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.server.services.streaming.SegmentStore;
-import com.streamarr.server.services.streaming.TranscodeExecutor;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -45,17 +43,11 @@ class SeriesScanningIT extends AbstractWireMockIntegrationTest {
   @Autowired private EpisodeRepository episodeRepository;
   @Autowired private MediaFileRepository mediaFileRepository;
 
-  @TestBean TranscodeExecutor transcodeExecutor;
   @TestBean FfprobeService ffprobeService;
   @TestBean SegmentStore segmentStore;
 
-  private static final FakeTranscodeExecutor FAKE_EXECUTOR = new FakeTranscodeExecutor();
   private static final FakeFfprobeService FAKE_FFPROBE = new FakeFfprobeService();
   private static final FakeSegmentStore FAKE_SEGMENT_STORE = new FakeSegmentStore();
-
-  static TranscodeExecutor transcodeExecutor() {
-    return FAKE_EXECUTOR;
-  }
 
   static FfprobeService ffprobeService() {
     return FAKE_FFPROBE;

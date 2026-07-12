@@ -45,7 +45,6 @@ import com.streamarr.transcode.engine.model.ContainerFormat;
 import com.streamarr.transcode.engine.model.SubtitleDecision;
 import com.streamarr.transcode.engine.model.TranscodeDecision;
 import com.streamarr.transcode.engine.model.TranscodeMode;
-import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Collection;
@@ -203,7 +202,6 @@ class StreamingResolverTest {
         .sessionId(sessionId)
         .profileId(profileId)
         .mediaFileId(UUID.randomUUID())
-        .sourcePath(Path.of("/media/movie.mkv"))
         .mediaProbe(
             MediaProbe.builder()
                 .duration(Duration.ofMinutes(120))

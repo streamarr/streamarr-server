@@ -205,7 +205,7 @@ We follow these factors from the Twelve-Factor App methodology:
 
 - **III. Config** — All environment-specific config via environment variables, never hardcoded. Spring profiles for behavioral switches, env vars for secrets and connection strings.
 - **IV. Backing Services** — PostgreSQL, TMDB API, OTel Collector are attached resources swappable via config. No code changes to point at a different database or metadata provider.
-- **VI. Processes** — Application processes are stateless. In-memory session state (streaming sessions) is designed behind interfaces (`SegmentStore`, `TranscodeExecutor`) to allow externalization when scaling horizontally.
+- **VI. Processes** — Application processes are stateless. Runtime session, segment, and worker control state sits behind `RuntimeStreamSessionRegistry`, `SegmentStore`, and `TranscodeWorkerPort` boundaries so the default local adapters can be replaced when scaling horizontally.
 - **IX. Disposability** — Fast startup, graceful shutdown. FFmpeg processes shut down cleanly (write `q` to stdin → wait → `destroyForcibly()`). JVM shutdown hooks clean up temp directories.
 - **X. Dev/Prod Parity** — TestContainers runs real PostgreSQL in tests. Docker Compose gives identical infrastructure locally and in production. No H2 or in-memory database substitutes.
 - **XI. Logs** — Treat logs as event streams. No file-based logging. Structured output via OTel, consumed by the collector. Human-readable console output in dev.

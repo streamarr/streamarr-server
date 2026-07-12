@@ -7,7 +7,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.fakes.FakeSegmentStore;
-import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.PlaybackTokenIssuer;
@@ -15,7 +14,6 @@ import com.streamarr.server.services.streaming.CreateRuntimeStreamSessionCommand
 import com.streamarr.server.services.streaming.PlaybackSessionAccessService;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.StreamingService;
-import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.support.AuthTestSupport;
 import jakarta.servlet.http.Cookie;
 import java.time.Duration;
@@ -38,7 +36,6 @@ class StreamControllerIT extends AbstractIntegrationTest {
 
   private static final StubStreamingService STUB_SERVICE = new StubStreamingService();
   private static final FakeSegmentStore FAKE_SEGMENT_STORE = new FakeSegmentStore();
-  private static final FakeTranscodeExecutor FAKE_EXECUTOR = new FakeTranscodeExecutor();
 
   @Autowired private MockMvc mockMvc;
 
@@ -76,7 +73,6 @@ class StreamControllerIT extends AbstractIntegrationTest {
 
   @TestBean StreamingService streamingService;
   @TestBean SegmentStore segmentStore;
-  @TestBean TranscodeExecutor transcodeExecutor;
   @TestBean PlaybackSessionAccessService playbackSessionAccessService;
 
   static StreamingService streamingService() {
@@ -85,10 +81,6 @@ class StreamControllerIT extends AbstractIntegrationTest {
 
   static SegmentStore segmentStore() {
     return FAKE_SEGMENT_STORE;
-  }
-
-  static TranscodeExecutor transcodeExecutor() {
-    return FAKE_EXECUTOR;
   }
 
   static PlaybackSessionAccessService playbackSessionAccessService() {

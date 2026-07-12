@@ -14,7 +14,7 @@ Hardware encoding is ubiquitous in 2026 -- NVENC, QSV, VCN, and VideoToolbox cov
 
 Route all streams through FFmpeg regardless of transcode mode. When the source codec matches client capabilities, FFmpeg remuxes (`-c copy`) with near-zero CPU cost. When conversion is needed, FFmpeg transcodes with hardware acceleration.
 
-This gives us one code path through `TranscodeExecutor` for all sessions, whether REMUX, PARTIAL_TRANSCODE, or FULL_TRANSCODE.
+This gives us one complete-ladder job path through `TranscodeWorkerPort` and the local transcode engine for all sessions, whether REMUX, PARTIAL_TRANSCODE, or FULL_TRANSCODE.
 
 == Consequences
 

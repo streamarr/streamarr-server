@@ -4,7 +4,6 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBui
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultVariantBuilder;
 import static com.streamarr.server.fixtures.StreamSessionFixture.fullTranscodeDecision;
-import static com.streamarr.server.fixtures.StreamSessionFixture.withActiveVariantHandles;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -285,7 +284,7 @@ class StreamControllerTest {
                         .label("1080p")
                         .build()))
             .build();
-    return withActiveVariantHandles(session);
+    return session;
   }
 
   private StreamSession buildAbrSession() {
@@ -309,7 +308,7 @@ class StreamControllerTest {
                         .label("720p")
                         .build()))
             .build();
-    return withActiveVariantHandles(session);
+    return session;
   }
 
   @Test

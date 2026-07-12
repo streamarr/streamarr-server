@@ -7,15 +7,12 @@ import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.PlaybackState;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
-import com.streamarr.server.domain.streaming.TranscodeHandle;
-import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.transcode.engine.model.AudioDecision;
 import com.streamarr.transcode.engine.model.ContainerFormat;
 import com.streamarr.transcode.engine.model.QualityVariant;
 import com.streamarr.transcode.engine.model.SubtitleDecision;
 import com.streamarr.transcode.engine.model.TranscodeDecision;
 import com.streamarr.transcode.engine.model.TranscodeMode;
-import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -53,7 +50,6 @@ class HlsPlaylistServiceTest {
         StreamSession.builder()
             .sessionId(UUID.randomUUID())
             .mediaFileId(UUID.randomUUID())
-            .sourcePath(Path.of("/media/test.mkv"))
             .mediaProbe(
                 MediaProbe.builder()
                     .duration(Duration.ofSeconds(durationSeconds))
@@ -76,7 +72,6 @@ class HlsPlaylistServiceTest {
             .options(StreamingOptions.builder().supportedCodecs(List.of("h264", "av1")).build())
             .createdAt(Instant.now())
             .build();
-    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
     return session;
   }
 
@@ -86,7 +81,6 @@ class HlsPlaylistServiceTest {
         StreamSession.builder()
             .sessionId(UUID.randomUUID())
             .mediaFileId(UUID.randomUUID())
-            .sourcePath(Path.of("/media/test.mkv"))
             .mediaProbe(
                 MediaProbe.builder()
                     .duration(duration)
@@ -109,7 +103,6 @@ class HlsPlaylistServiceTest {
             .options(StreamingOptions.builder().supportedCodecs(List.of("h264", "av1")).build())
             .createdAt(Instant.now())
             .build();
-    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
     return session;
   }
 
@@ -119,7 +112,6 @@ class HlsPlaylistServiceTest {
         StreamSession.builder()
             .sessionId(UUID.randomUUID())
             .mediaFileId(UUID.randomUUID())
-            .sourcePath(Path.of("/media/test.mkv"))
             .mediaProbe(
                 MediaProbe.builder()
                     .duration(Duration.ofSeconds(120))
@@ -142,7 +134,6 @@ class HlsPlaylistServiceTest {
             .options(StreamingOptions.builder().supportedCodecs(List.of("h264", "av1")).build())
             .createdAt(Instant.now())
             .build();
-    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
     return session;
   }
 
@@ -175,7 +166,6 @@ class HlsPlaylistServiceTest {
         StreamSession.builder()
             .sessionId(UUID.randomUUID())
             .mediaFileId(UUID.randomUUID())
-            .sourcePath(Path.of("/media/test.mkv"))
             .mediaProbe(
                 MediaProbe.builder()
                     .duration(Duration.ofSeconds(durationSeconds))
@@ -199,10 +189,6 @@ class HlsPlaylistServiceTest {
             .variants(variants)
             .createdAt(Instant.now())
             .build();
-
-    for (var variant : variants) {
-      session.setVariantHandle(variant.label(), new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
-    }
     return session;
   }
 
@@ -620,7 +606,6 @@ class HlsPlaylistServiceTest {
           StreamSession.builder()
               .sessionId(UUID.randomUUID())
               .mediaFileId(UUID.randomUUID())
-              .sourcePath(Path.of("/media/test.mkv"))
               .mediaProbe(
                   MediaProbe.builder()
                       .duration(Duration.ofSeconds(120))
@@ -644,7 +629,6 @@ class HlsPlaylistServiceTest {
               .variants(List.of(variant))
               .createdAt(Instant.now())
               .build();
-      session.setVariantHandle("1080p", new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
 
       var playlist = service.generateMasterPlaylist(session, "test-token");
 

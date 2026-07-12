@@ -3,15 +3,12 @@ package com.streamarr.server.fixtures;
 import com.streamarr.server.domain.streaming.MediaProbe;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
-import com.streamarr.server.domain.streaming.TranscodeHandle;
-import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.transcode.engine.model.AudioDecision;
 import com.streamarr.transcode.engine.model.ContainerFormat;
 import com.streamarr.transcode.engine.model.QualityVariant;
 import com.streamarr.transcode.engine.model.SubtitleDecision;
 import com.streamarr.transcode.engine.model.TranscodeDecision;
 import com.streamarr.transcode.engine.model.TranscodeMode;
-import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -26,7 +23,6 @@ public final class StreamSessionFixture {
         .sessionId(UUID.randomUUID())
         .mediaFileId(UUID.randomUUID())
         .profileId(UUID.randomUUID())
-        .sourcePath(Path.of("/media/movie.mkv"))
         .mediaProbe(defaultProbeBuilder().build())
         .transcodeDecision(remuxMpegtsDecision())
         .options(StreamingOptions.builder().supportedCodecs(List.of("h264")).build())
@@ -71,21 +67,12 @@ public final class StreamSessionFixture {
     return QualityVariant.builder().audioBitrate(128_000L);
   }
 
-  public static StreamSession withActiveVariantHandles(StreamSession session) {
-    for (var variant : session.getVariants()) {
-      session.setVariantHandle(variant.label(), new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
-    }
-    return session;
-  }
-
   public static StreamSession buildMpegtsSession() {
     return buildMpegtsSessionOwnedBy(UUID.randomUUID());
   }
 
   public static StreamSession buildMpegtsSessionOwnedBy(UUID profileId) {
-    var session = defaultSessionBuilder().profileId(profileId).build();
-    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
-    return session;
+    return defaultSessionBuilder().profileId(profileId).build();
   }
 
   public static StreamSession.StreamSessionBuilder sessionWithDurationBuilder(int durationSeconds) {
@@ -95,7 +82,6 @@ public final class StreamSessionFixture {
 
   public static StreamSession.StreamSessionBuilder zeroDurationSessionBuilder() {
     return defaultSessionBuilder()
-        .sourcePath(Path.of("/media/corrupt.mkv"))
         .mediaProbe(
             defaultProbeBuilder()
                 .duration(Duration.ZERO)

@@ -6,15 +6,16 @@ Accepted
 
 === Implementation status
 
-* Streamarr still executes every transcode in the media-server process.
+* Streamarr still executes every transcode in the media-server process through `PlaybackTranscodeJobService`, the application-owned `TranscodeWorkerPort`, `LocalTranscodeWorkerAdapter`, and the extracted `LocalTranscodeEngine`.
+* The former rendition-at-a-time, process-shaped `TranscodeExecutor` and its process-handle state have been removed from the server application.
 * No remote worker, worker listener, certificate authority, registration path, or distributed playback route is enabled yet.
-* The implementation phases described here introduce the local application boundary before they introduce a remote transport.
+* The completed local extraction introduced the application boundary without introducing a remote transport.
 * Distributed playback remains disabled until the durable command lifecycle and topology-A segment gate are complete.
 
 == Context
 
 link:0004-processbuilder-over-jni.adoc[ADR 0004] keeps FFmpeg behind a process boundary, link:0013-stream-decision-architecture.adoc[ADR 0013] defines typed stream decisions, and link:0017-playback-enforcement-lifecycle.adoc[ADR 0017] makes the persisted stream row part of playback authority.
-The current `TranscodeExecutor` is still a process-shaped local interface: it starts one rendition at a time, carries host-local paths, exposes process health, and relies on caller-managed ordering.
+At the time of this decision, `TranscodeExecutor` was a process-shaped local interface: it started one rendition at a time, carried host-local paths, exposed process health, and relied on caller-managed ordering.
 Those assumptions cannot safely express one complete adaptive ladder, an exact remote owner, an unknown RPC outcome, or a stale command arriving after relocation.
 
 Distributed transcoding is optional for a minority of self-hosted installations.
@@ -92,8 +93,8 @@ If Sonar does not preserve moved-file lineage and reports the existing applicati
 
 === Complete-ladder worker boundary
 
-Introduce an application-owned `TranscodeWorkerPort` instead of extending the process-shaped
-`TranscodeExecutor` across a network boundary.
+The implementation uses an application-owned `TranscodeWorkerPort` instead of extending the former
+process-shaped `TranscodeExecutor` across a network boundary.
 One `StartJob` owns the complete requested variant ladder or publishes none of it.
 Every generation writes to worker-local staging that the segment gateway cannot resolve.
 Startup readiness requires every rendition to remain healthy -- either running, or cleanly completed

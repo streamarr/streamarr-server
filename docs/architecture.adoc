@@ -103,9 +103,15 @@ StreamingOptions (client)  +  MediaProbe (ffprobe)
             TranscodeDecision (composite)
             → TranscodeMode, ContainerFormat, needsKeyframeAlignment
                     |
-            TranscodeExecutor → resolves encoder (HW/SW)
+            PlaybackTranscodeJobService → complete-ladder lifecycle + fencing
                     |
-            FfmpegCommandBuilder → -map, codecs, keyframes, HLS args
+            TranscodeWorkerPort
+                    |
+            LocalTranscodeWorkerAdapter (default)
+                    |
+            LocalTranscodeEngine
+            ├── FfmpegCommandBuilder → -map, codecs, keyframes, HLS args
+            └── encoder selection + FFmpeg process lifecycle
                     |
             HlsPlaylistService → master + media playlists
 ----
