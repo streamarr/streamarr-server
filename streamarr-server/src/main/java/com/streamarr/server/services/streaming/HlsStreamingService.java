@@ -195,19 +195,19 @@ public class HlsStreamingService implements StreamingService {
 
   private void resumeObserved(
       StreamSession session, String segmentName, TranscodeJobState state, int startNumber) {
-    switch (state) {
-      case ADMITTING, RUNNING -> {
-        if (requiresRelocation(session.getSessionId(), segmentName, startNumber)) {
-          startAtRequestedSegment(session, segmentName);
-        }
-      }
-      case COMPLETED, STOPPED, ABSENT -> startAtRequestedSegment(session, segmentName);
-      case FAILED -> {
-        log.warn(
-            "Transcode failed for session {}; replacing missing output", session.getSessionId());
-        startAtRequestedSegment(session, segmentName);
-      }
+    var shouldRestart =
+        switch (state) {
+          case ADMITTING, RUNNING ->
+              requiresRelocation(session.getSessionId(), segmentName, startNumber);
+          case COMPLETED, FAILED, STOPPED, ABSENT -> true;
+        };
+    if (!shouldRestart) {
+      return;
     }
+    if (state == TranscodeJobState.FAILED) {
+      log.warn("Transcode failed for session {}; replacing missing output", session.getSessionId());
+    }
+    startAtRequestedSegment(session, segmentName);
   }
 
   /**

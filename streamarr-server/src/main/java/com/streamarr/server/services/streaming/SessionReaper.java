@@ -28,7 +28,9 @@ public class SessionReaper {
 
   private void processSession(StreamSession session, Instant now) {
     switch (playbackTranscodeJobService.inspectActive(session.getSessionId())) {
-      case ActiveTranscodeJobInspection.None _ -> {}
+      case ActiveTranscodeJobInspection.None _ -> {
+        // A missing active job means this session is already suspended or never needed a worker.
+      }
       case ActiveTranscodeJobInspection.Unavailable(var jobRef) ->
           log.warn(
               "Unable to inspect active transcode for session {} job {}",

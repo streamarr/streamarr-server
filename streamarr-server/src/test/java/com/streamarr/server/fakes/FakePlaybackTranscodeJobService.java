@@ -28,6 +28,7 @@ public class FakePlaybackTranscodeJobService implements PlaybackTranscodeJobServ
   private final ConcurrentHashMap<UUID, RuntimeException> terminalCleanupFailuresBySession =
       new ConcurrentHashMap<>();
   private volatile RuntimeTranscodeCleanup terminalCleanup = RuntimeTranscodeCleanup.COMPLETE;
+  private volatile RuntimeTranscodeCleanup suspensionCleanup = RuntimeTranscodeCleanup.COMPLETE;
 
   @Override
   public TranscodeJobObservation start(StartPlaybackTranscodeJobCommand command) {
@@ -64,7 +65,7 @@ public class FakePlaybackTranscodeJobService implements PlaybackTranscodeJobServ
   public RuntimeTranscodeCleanup suspend(UUID sessionId) {
     suspensions.add(sessionId);
     inspections.remove(sessionId);
-    return RuntimeTranscodeCleanup.COMPLETE;
+    return suspensionCleanup;
   }
 
   @Override
@@ -101,6 +102,10 @@ public class FakePlaybackTranscodeJobService implements PlaybackTranscodeJobServ
 
   public List<UUID> suspensionAttempts() {
     return List.copyOf(suspensions);
+  }
+
+  public void returnSuspensionCleanup(RuntimeTranscodeCleanup result) {
+    suspensionCleanup = result;
   }
 
   private static List<RenditionObservation> observedRenditions(TranscodeJobState state) {
@@ -146,5 +151,6 @@ public class FakePlaybackTranscodeJobService implements PlaybackTranscodeJobServ
     terminalCleanupBySession.clear();
     terminalCleanupFailuresBySession.clear();
     terminalCleanup = RuntimeTranscodeCleanup.COMPLETE;
+    suspensionCleanup = RuntimeTranscodeCleanup.COMPLETE;
   }
 }

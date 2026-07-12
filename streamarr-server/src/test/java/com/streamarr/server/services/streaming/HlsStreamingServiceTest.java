@@ -50,6 +50,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.slf4j.LoggerFactory;
 
 @Tag("UnitTest")
@@ -131,6 +133,30 @@ class HlsStreamingServiceTest {
                 reservation, StreamSession.builder().sessionId(streamSessionId).build()))
         .isFalse();
     assertThat(shutdownRegistry.beginTranscodeStart(streamSessionId)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should finish fencing when shutdown cleanup remains pending")
+  void shouldFinishFencingWhenShutdownCleanupRemainsPending() {
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    transcodeJobService.returnTerminalCleanup(RuntimeTranscodeCleanup.PENDING);
+    var logger = (Logger) LoggerFactory.getLogger(HlsStreamingService.class);
+    var appender = new ListAppender<ILoggingEvent>();
+    appender.start();
+    logger.addAppender(appender);
+
+    try {
+      service.shutdownRuntime();
+    } finally {
+      logger.detachAppender(appender);
+    }
+
+    assertThat(transcodeJobService.terminalCleanupAttempts())
+        .containsExactly(session.getSessionId());
+    assertThat(appender.list)
+        .filteredOn(event -> event.getLevel() == Level.WARN)
+        .extracting(ILoggingEvent::getFormattedMessage)
+        .anyMatch(message -> message.contains(session.getSessionId().toString()));
   }
 
   @Test
@@ -395,8 +421,24 @@ class HlsStreamingServiceTest {
     transcodeJobService.makeInspectionUnavailable(sessions.getFirst().getSessionId());
     var oneMore = seedMediaFile();
     var mediaFileId = oneMore.getId();
+    var profileId = UUID.randomUUID();
+    var options = fullHdOptions();
 
-    assertThatThrownBy(() -> createSession(mediaFileId, UUID.randomUUID(), fullHdOptions()))
+    assertThatThrownBy(() -> createSession(mediaFileId, profileId, options))
+        .isInstanceOf(MaxConcurrentTranscodesException.class);
+  }
+
+  @Test
+  @DisplayName("Should consume capacity while a whole job is admitting")
+  void shouldConsumeCapacityWhileWholeJobIsAdmitting() {
+    var sessions = fillTranscodeCapacity();
+    transcodeJobService.observe(sessions.getFirst().getSessionId(), TranscodeJobState.ADMITTING, 0);
+    var oneMore = seedMediaFile();
+    var mediaFileId = oneMore.getId();
+    var profileId = UUID.randomUUID();
+    var options = fullHdOptions();
+
+    assertThatThrownBy(() -> createSession(mediaFileId, profileId, options))
         .isInstanceOf(MaxConcurrentTranscodesException.class);
   }
 
@@ -668,6 +710,28 @@ class HlsStreamingServiceTest {
     var session = createSession(file.getId(), UUID.randomUUID(), options);
 
     assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
+  }
+
+  @Test
+  @DisplayName("Should use a safe execution framerate when remux source reports zero")
+  void shouldUseSafeExecutionFramerateWhenRemuxSourceReportsZero() {
+    ffprobeService.setDefaultProbe(
+        MediaProbe.builder()
+            .duration(Duration.ofMinutes(120))
+            .framerate(0)
+            .width(1920)
+            .height(1080)
+            .videoCodec("h264")
+            .audioCodec("aac")
+            .bitrate(5_000_000L)
+            .build());
+    var file = seedMediaFile();
+    var options = StreamingOptions.builder().supportedCodecs(List.of("h264")).build();
+
+    createSession(file.getId(), UUID.randomUUID(), options);
+
+    assertThat(transcodeJobService.startCommands().getLast().execution().framerate())
+        .isEqualTo(1.0);
   }
 
   @Test
@@ -1220,6 +1284,22 @@ class HlsStreamingServiceTest {
     service.resumeSessionIfNeeded(session.getSessionId(), "segment100.ts");
 
     assertThat(transcodeJobService.startCommands()).hasSize(requestsBefore);
+  }
+
+  @ParameterizedTest
+  @EnumSource(
+      value = TranscodeJobState.class,
+      names = {"COMPLETED", "FAILED", "STOPPED", "ABSENT"})
+  @DisplayName("Should restart when an observed whole job cannot produce a missing segment")
+  void shouldRestartWhenObservedWholeJobCannotProduceMissingSegment(TranscodeJobState state) {
+    var session = createSession(seedMediaFile().getId(), UUID.randomUUID(), defaultOptions());
+    transcodeJobService.observe(session.getSessionId(), state, 0);
+    var requestsBefore = transcodeJobService.startCommands().size();
+
+    service.resumeSessionIfNeeded(session.getSessionId(), "segment5.ts");
+
+    assertThat(transcodeJobService.startCommands()).hasSize(requestsBefore + 1);
+    assertLastStartPosition(5, 30);
   }
 
   @Test

@@ -69,6 +69,31 @@ class SessionReaperTest {
   }
 
   @Test
+  @DisplayName("Should retain an idle session when suspension cleanup remains pending")
+  void shouldRetainIdleSessionWhenSuspensionCleanupRemainsPending() {
+    var session = idleSession();
+    transcodeJobs.observe(session.getSessionId(), TranscodeJobState.RUNNING, 0);
+    transcodeJobs.returnSuspensionCleanup(RuntimeTranscodeCleanup.PENDING);
+    var logger = (Logger) LoggerFactory.getLogger(SessionReaper.class);
+    var appender = new ListAppender<ILoggingEvent>();
+    appender.start();
+    logger.addAppender(appender);
+
+    try {
+      reaper.reapSessions();
+    } finally {
+      logger.detachAppender(appender);
+    }
+
+    assertThat(transcodeJobs.suspensionAttempts()).containsExactly(session.getSessionId());
+    assertThat(streamingService.accessSession(session.getSessionId())).contains(session);
+    assertThat(appender.list)
+        .filteredOn(event -> event.getLevel() == Level.WARN)
+        .extracting(ILoggingEvent::getFormattedMessage)
+        .anyMatch(message -> message.contains(session.getSessionId().toString()));
+  }
+
+  @Test
   @DisplayName("Should not suspend a recently accessed running whole job")
   void shouldNotSuspendRecentlyAccessedRunningWholeJob() {
     var session = addSession(Instant.now().minusSeconds(10));
