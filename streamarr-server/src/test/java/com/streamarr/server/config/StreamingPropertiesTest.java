@@ -52,6 +52,40 @@ class StreamingPropertiesTest {
   }
 
   @Test
+  @DisplayName("Should default transcode startup timeout below provisioning timeout")
+  void shouldDefaultTranscodeStartupTimeoutBelowProvisioningTimeout() {
+    var properties = StreamingProperties.builder().build();
+
+    assertThat(properties.transcodeStartupTimeout()).isEqualTo(Duration.ofSeconds(30));
+    assertThat(properties.transcodeStartupTimeout()).isLessThan(properties.provisioningTimeout());
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"30s", "31s"})
+  @DisplayName("Should reject transcode startup timeout not below provisioning timeout")
+  void shouldRejectTranscodeStartupTimeoutNotBelowProvisioningTimeout(String startupTimeout) {
+    CONTEXT_RUNNER
+        .withPropertyValues(
+            "streaming.provisioning-timeout=30s",
+            "streaming.transcode-startup-timeout=" + startupTimeout)
+        .run(context -> assertThat(context).hasFailed());
+  }
+
+  @Test
+  @DisplayName("Should accept configured transcode startup timeout below provisioning timeout")
+  void shouldAcceptConfiguredTranscodeStartupTimeoutBelowProvisioningTimeout() {
+    CONTEXT_RUNNER
+        .withPropertyValues(
+            "streaming.provisioning-timeout=30s", "streaming.transcode-startup-timeout=29s")
+        .run(
+            context -> {
+              assertThat(context).hasNotFailed();
+              assertThat(context.getBean(StreamingProperties.class).transcodeStartupTimeout())
+                  .isEqualTo(Duration.ofSeconds(29));
+            });
+  }
+
+  @Test
   @DisplayName("Should default segment base path when null")
   void shouldDefaultSegmentBasePathWhenNull() {
     var properties = StreamingProperties.builder().build();

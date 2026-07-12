@@ -16,6 +16,7 @@ public record StreamingProperties(
     Duration segmentDuration,
     Duration sessionTimeout,
     @NotNull @DurationMin(seconds = 0, inclusive = false) Duration provisioningTimeout,
+    @NotNull @DurationMin(seconds = 0, inclusive = false) Duration transcodeStartupTimeout,
     // Session retention contributes the playback token's pause/slow-playback slack; reject a
     // non-positive value at startup rather than minting unusable tokens.
     @NotNull @DurationMin(seconds = 0, inclusive = false) Duration sessionRetention,
@@ -38,6 +39,16 @@ public record StreamingProperties(
 
     if (provisioningTimeout == null) {
       provisioningTimeout = Duration.ofMinutes(2);
+    }
+
+    if (transcodeStartupTimeout == null) {
+      transcodeStartupTimeout = Duration.ofSeconds(30);
+    }
+    if (transcodeStartupTimeout.isZero()
+        || transcodeStartupTimeout.isNegative()
+        || transcodeStartupTimeout.compareTo(provisioningTimeout) >= 0) {
+      throw new IllegalArgumentException(
+          "Transcode startup timeout must be positive and shorter than provisioning timeout");
     }
 
     if (sessionRetention == null) {

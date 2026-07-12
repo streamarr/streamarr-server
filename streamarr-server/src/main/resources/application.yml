@@ -47,6 +47,7 @@ streaming:
   segment-duration: ${STREAMING_SEGMENT_DURATION:6s}
   session-timeout: ${STREAMING_SESSION_TIMEOUT:60s}
   provisioning-timeout: ${STREAMING_PROVISIONING_TIMEOUT:2m}
+  transcode-startup-timeout: ${STREAMING_TRANSCODE_STARTUP_TIMEOUT:30s}
   session-retention: ${STREAMING_SESSION_RETENTION:24h}
   segment-base-path: ${STREAMING_SEGMENT_BASE_PATH:}
   watch-progress:
