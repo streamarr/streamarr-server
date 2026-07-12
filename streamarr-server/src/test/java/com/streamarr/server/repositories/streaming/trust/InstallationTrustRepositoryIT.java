@@ -204,9 +204,10 @@ class InstallationTrustRepositoryIT extends AbstractIntegrationTest {
             .tryAcquire(CertificateAuthorityOperation.BOOTSTRAP, UUID.randomUUID(), LEASE_DURATION)
             .orElseThrow();
     installSuppressedActivationTrigger();
+    var publication = publication();
 
     try {
-      assertThatThrownBy(() -> repository.publishInitial(lease, publication()))
+      assertThatThrownBy(() -> repository.publishInitial(lease, publication))
           .isInstanceOf(InstallationTrustException.class)
           .hasMessageContaining("publication");
       assertThat(repository.findInitialized()).isEmpty();

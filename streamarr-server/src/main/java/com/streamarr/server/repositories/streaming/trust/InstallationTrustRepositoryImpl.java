@@ -22,6 +22,7 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
@@ -94,27 +95,19 @@ public class InstallationTrustRepositoryImpl implements InstallationTrustReposit
       throw new InstallationTrustException("Installation trust singleton state is missing");
     }
     var state = states.getFirst();
-
     var rootDigest = state.value2();
-    var initializedAt = state.value3();
-    var bundleVersion = state.value4();
-    var activatedAt = state.value5();
-    var createdAt = state.value6();
-    if (rootDigest == null
-        && initializedAt == null
-        && bundleVersion == null
-        && activatedAt == null
-        && createdAt == null) {
+    var persistedState =
+        PersistedTrustState.builder()
+            .installationId(state.value1())
+            .initializedAt(state.value3())
+            .bundleVersion(state.value4())
+            .activatedAt(state.value5())
+            .createdAt(state.value6())
+            .build();
+    if (persistedState.isEmpty(rootDigest)) {
       return Optional.empty();
     }
-    if (rootDigest == null
-        || initializedAt == null
-        || bundleVersion == null
-        || activatedAt == null
-        || createdAt == null) {
-      throw new InstallationTrustException(
-          "Installation trust state is only partially initialized");
-    }
+    persistedState.requireComplete(rootDigest);
 
     var trustAnchors = new ArrayList<X509Certificate>();
     var issuers = new ArrayList<X509Certificate>();
@@ -151,14 +144,14 @@ public class InstallationTrustRepositoryImpl implements InstallationTrustReposit
 
     var bundle =
         PublicTrustBundle.builder()
-            .installationId(state.value1())
-            .version(bundleVersion)
-            .createdAt(createdAt.toInstant())
+            .installationId(persistedState.installationId())
+            .version(persistedState.bundleVersion())
+            .createdAt(persistedState.createdAt().toInstant())
             .trustAnchors(trustAnchors)
             .issuers(issuers)
             .revocationSigners(revocationSigners)
             .build();
-    return Optional.of(new InstallationTrust(state.value1(), rootDigest, bundle));
+    return Optional.of(new InstallationTrust(persistedState.installationId(), rootDigest, bundle));
   }
 
   @Override
@@ -279,8 +272,6 @@ public class InstallationTrustRepositoryImpl implements InstallationTrustReposit
             "Stored public trust certificate is not canonical DER");
       }
       return certificate;
-    } catch (InstallationTrustException e) {
-      throw e;
     } catch (java.security.cert.CertificateException e) {
       throw new InstallationTrustException(
           "Stored public trust certificate is not valid canonical DER", e);
@@ -329,5 +320,33 @@ public class InstallationTrustRepositoryImpl implements InstallationTrustReposit
 
   private Field<OffsetDateTime> statementTimestamp() {
     return DSL.function(DSL.name("statement_timestamp"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+  }
+
+  @Builder
+  private record PersistedTrustState(
+      UUID installationId,
+      OffsetDateTime initializedAt,
+      Long bundleVersion,
+      OffsetDateTime activatedAt,
+      OffsetDateTime createdAt) {
+
+    private boolean isEmpty(byte[] rootDigest) {
+      return rootDigest == null
+          && initializedAt == null
+          && bundleVersion == null
+          && activatedAt == null
+          && createdAt == null;
+    }
+
+    private void requireComplete(byte[] rootDigest) {
+      if (rootDigest == null
+          || initializedAt == null
+          || bundleVersion == null
+          || activatedAt == null
+          || createdAt == null) {
+        throw new InstallationTrustException(
+            "Installation trust state is only partially initialized");
+      }
+    }
   }
 }

@@ -87,12 +87,11 @@ class CertificateAuthoritySigningLeaseRepositoryIT extends AbstractIntegrationTe
   @Test
   @DisplayName("Should reject a signing lease duration below database precision")
   void shouldRejectSigningLeaseDurationBelowDatabasePrecision() {
+    var ownerId = UUID.randomUUID();
+    var duration = Duration.ofNanos(1);
+
     assertThatThrownBy(
-            () ->
-                repository.tryAcquire(
-                    CertificateAuthorityOperation.BOOTSTRAP,
-                    UUID.randomUUID(),
-                    Duration.ofNanos(1)))
+            () -> repository.tryAcquire(CertificateAuthorityOperation.BOOTSTRAP, ownerId, duration))
         .isInstanceOf(org.springframework.dao.InvalidDataAccessApiUsageException.class)
         .hasCauseInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("microsecond");
@@ -106,10 +105,11 @@ class CertificateAuthoritySigningLeaseRepositoryIT extends AbstractIntegrationTe
             .tryAcquire(CertificateAuthorityOperation.BOOTSTRAP, UUID.randomUUID(), LEASE_DURATION)
             .orElseThrow();
     for (var duration : List.of(Duration.ZERO, Duration.ofSeconds(-1))) {
+      var ownerId = UUID.randomUUID();
+
       assertThatThrownBy(
               () ->
-                  repository.tryAcquire(
-                      CertificateAuthorityOperation.BOOTSTRAP, UUID.randomUUID(), duration))
+                  repository.tryAcquire(CertificateAuthorityOperation.BOOTSTRAP, ownerId, duration))
           .isInstanceOf(org.springframework.dao.InvalidDataAccessApiUsageException.class)
           .hasCauseInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("positive");
@@ -123,12 +123,13 @@ class CertificateAuthoritySigningLeaseRepositoryIT extends AbstractIntegrationTe
   @Test
   @DisplayName("Should reject signing leases longer than five minutes")
   void shouldRejectSigningLeasesLongerThanFiveMinutes() {
+    var ownerId = UUID.randomUUID();
     var excessiveDuration = Duration.ofMinutes(5).plusNanos(1_000);
 
     assertThatThrownBy(
             () ->
                 repository.tryAcquire(
-                    CertificateAuthorityOperation.BOOTSTRAP, UUID.randomUUID(), excessiveDuration))
+                    CertificateAuthorityOperation.BOOTSTRAP, ownerId, excessiveDuration))
         .isInstanceOf(org.springframework.dao.InvalidDataAccessApiUsageException.class)
         .hasCauseInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("5 minutes");
