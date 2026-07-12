@@ -28,6 +28,7 @@ import com.streamarr.transcode.engine.ffmpeg.FfmpegCommandBuilder;
 import com.streamarr.transcode.engine.ffmpeg.FfmpegProcessManager;
 import com.streamarr.transcode.engine.ffmpeg.LocalFfmpegProcessManager;
 import com.streamarr.transcode.engine.ffmpeg.TranscodeCapabilityService;
+import com.streamarr.transcode.engine.segment.LocalSegmentStorage;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
@@ -40,8 +41,13 @@ import tools.jackson.databind.ObjectMapper;
 public class StreamingConfig {
 
   @Bean
-  public LocalSegmentStore segmentStore(StreamingProperties properties) {
-    return new LocalSegmentStore(Path.of(properties.segmentBasePath()));
+  public LocalSegmentStorage localSegmentStorage(StreamingProperties properties) {
+    return new LocalSegmentStorage(Path.of(properties.segmentBasePath()));
+  }
+
+  @Bean
+  public LocalSegmentStore segmentStore(LocalSegmentStorage storage) {
+    return new LocalSegmentStore(storage);
   }
 
   @Bean
