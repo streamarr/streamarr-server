@@ -126,12 +126,15 @@ link:adr/0018-direct-fenced-worker-control.adoc[ADR 0018] accepts an optional di
 control plane, but the current implementation remains local-only and opens no worker listener.
 A narrow worker executable now packages the engine, protobuf contract, and shaded gRPC runtime;
 until enrollment lands, its server, reflection, health service, health scheduler, and all executors
-are disabled. The control plane now has inert P-256 installation trust-material generation,
-exact certificate-profile, identity, and key-separation validation, and durable owner-only PKCS#12
-storage primitives. Application startup does not invoke those primitives yet; bootstrap,
-versioned public persistence, and database-clock-fenced signing leadership land in following trust
-slices. The media-server artifact contains neither the worker nor its protobuf contract, so an
-ordinary local installation still gains no distributed transport runtime resource.
+are disabled. The control plane now has P-256 installation trust-material generation, exact
+certificate-profile validation, durable owner-only PKCS#12 storage, versioned public-trust
+persistence, and database-clock-fenced signing leadership. Explicitly enabling distributed mode
+eagerly creates or verifies that authority before startup completes; this currently prepares trust
+only and does not enable remote playback. Until P5-B adds certificate rotation, this is a
+non-user-ready intermediate whose startup fails closed if its thirty-day revocation signer has
+expired. With distributed configuration absent, the trust runtime is inert. The media-server
+artifact contains neither the worker nor its protobuf contract, so an ordinary local installation
+still gains no distributed transport runtime resource.
 The extraction preserves the local path as the default:
 
 ----

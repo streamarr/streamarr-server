@@ -8,7 +8,7 @@ Accepted
 
 * Streamarr still executes every transcode in the media-server process through `PlaybackTranscodeJobService`, the application-owned `TranscodeWorkerPort`, `LocalTranscodeWorkerAdapter`, and the extracted `LocalTranscodeEngine`.
 * The former rendition-at-a-time, process-shaped `TranscodeExecutor` and its process-handle state have been removed from the server application.
-* The server now contains inert trust-material primitives for the P-256 root, issuer, dedicated revocation signer, exact certificate-profile validation, and durable owner-only PKCS#12 storage. No certificate-authority bootstrap, signing lease, enrolled remote worker, worker listener, registration path, or distributed playback route is enabled yet.
+* The server now persists versioned public installation trust and uses a database-clock, epoch-fenced singleton lease for certificate-authority operations. When distributed mode is explicitly enabled, startup eagerly creates or loads the durable owner-only PKCS#12 authority, publishes or verifies its exact public projection, and fails closed on missing or mismatched material. No enrolled remote worker, worker listener, registration path, or distributed playback route is enabled yet.
 * The completed local extraction introduced the application boundary without introducing a remote transport.
 * The generated-only `streamarr-transcode-contract` module defines the versioned worker transport and compatibility gates. The narrow worker executable depends on it and the engine; the server still depends on neither the contract nor the worker.
 * The worker packages Boot's official gRPC server and shaded Netty, but its unenrolled configuration disables the server, reflection, health service, health scheduler, and all application executors. It exposes no control service until the trust and enrollment slice can enable one with valid credentials.
@@ -211,7 +211,7 @@ The first bootstrap node creates one installation-scoped CA secret at a dedicate
 Every control-plane replica mounts that same secret, verifies it against the recorded fingerprint, and refuses distributed startup on a missing or mismatched root; replicas never generate independent authorities.
 The private CA key is never stored in PostgreSQL, logged, exported through the API, reused for JWT signing, or copied to a worker.
 Backups of distributed configuration must include this secret; losing it requires explicitly re-enrolling workers under a new trust domain.
-Certificate issuance and issuer/root rotation use a PostgreSQL-backed singleton leadership lease so only one replica performs signing transitions at a time.
+Certificate issuance and issuer/root rotation use a PostgreSQL-backed singleton leadership lease that assigns one current operation epoch and fences every public-state commit.
 
 The built-in authority is one PKCS#12 file containing fixed root, issuer, and revocation-signer aliases and their chains.
 Its empty PKCS#12 protection value is not presented as encryption: a POSIX owner-only directory and a regular file created as `0600` and thereafter required to retain only owner permission bits, both owned by the process's effective numeric user id, are the at-rest security boundary, avoiding a fixed or adjacent password that would add no independent protection.
@@ -227,7 +227,22 @@ Initial publication writes and forces a same-directory temporary inode, then ato
 A newly created secure container is forced through its ancestor before any secret is written; ordinary loads need only traverse that ancestor.
 Before publication, the prepared container is read back and its root SPIFFE trust domain must match the material's declared installation id.
 Every successful load forces the containing directory, so the creator, a publication-race loser, and a post-crash adopter all establish the final name's durability before returning; storage that cannot provide directory `fsync` fails closed.
-The following bootstrap slice will publish database state only after that file is durable, recover a crash between file and database commits by adopting the exact file, and fail closed when database state has a missing or mismatched file.
+Database publication occurs only after that file is durable.
+A crash between file publication and the database commit is recovered by adopting the exact mounted file; initialized database state with a missing or mismatched file fails distributed startup and is never silently replaced.
+PostgreSQL stores only the installation id, root fingerprint, versioned public certificate DER and digests, active-bundle pointer, and signing-leadership state -- never private key material.
+Initial reads require one canonical trust anchor, issuer, and revocation signer at ordinal zero, verify each stored digest, and require the root fingerprint to match the exact trust-anchor DER.
+
+One singleton lease assigns the current bootstrap, issuance, or rotation epoch across control-plane replicas.
+Work may overlap after a lease expires, but exact epoch checks prevent stale work from committing public state.
+Acquisition and renewal lock the singleton row before reading a fresh PostgreSQL clock value; every lease carries its operation, owner, monotonically increasing fencing epoch, database time, and expiry.
+Initial publication accepts only an exact live `BOOTSTRAP` lease, locks and rechecks it with the database clock before completing, and rolls back every public row when any final singleton transition loses.
+Signing and file I/O remain outside database transactions.
+The default signing lease is thirty seconds and cannot exceed five minutes; the bootstrap leadership retry deadline defaults to two minutes and configuration rejects values above ten minutes.
+
+`streaming.distributed.enabled` currently enables trust preparation only.
+It requires an absolute persistent `ca-secret-path`; absent distributed configuration remains inert and does not inspect storage, poll PostgreSQL, create a secret, or start a transport resource.
+This is a non-user-ready intermediate until P5-B adds rotation: the initial revocation signer expires thirty days after issuance, and any later distributed-enabled startup rejects it as expired.
+Distributed playback remains separately gated until the command lifecycle and topology-A segment plane are complete.
 
 The root, online issuing intermediate, and revocation signer use P-256 and `SHA256withECDSA`.
 All three use distinct keys, exact critical and non-critical extension sets, and validated SKI/AKI linkage from each child to its issuer.
