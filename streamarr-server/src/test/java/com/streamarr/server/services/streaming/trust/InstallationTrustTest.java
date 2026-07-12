@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming.trust;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Instant;
@@ -38,7 +39,9 @@ class InstallationTrustTest {
   @Test
   @DisplayName("Should reject a root fingerprint with the wrong length")
   void shouldRejectRootFingerprintWithWrongLength() {
-    assertThatThrownBy(() -> new InstallationTrust(INSTALLATION_ID, new byte[31], bundle))
+    var rootFingerprint = new byte[31];
+
+    assertThatThrownBy(() -> new InstallationTrust(INSTALLATION_ID, rootFingerprint, bundle))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("fingerprint");
   }
@@ -46,7 +49,10 @@ class InstallationTrustTest {
   @Test
   @DisplayName("Should reject an active bundle from another installation")
   void shouldRejectActiveBundleFromAnotherInstallation() {
-    assertThatThrownBy(() -> new InstallationTrust(UUID.randomUUID(), new byte[32], bundle))
+    var otherInstallationId = UUID.randomUUID();
+    var rootFingerprint = new byte[32];
+
+    assertThatThrownBy(() -> new InstallationTrust(otherInstallationId, rootFingerprint, bundle))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("installation");
   }
@@ -54,17 +60,30 @@ class InstallationTrustTest {
   @Test
   @DisplayName("Should reject a non-positive public trust bundle version")
   void shouldRejectNonPositivePublicTrustBundleVersion() {
-    assertThatThrownBy(
-            () ->
-                PublicTrustBundle.builder()
-                    .installationId(bundle.installationId())
-                    .version(0L)
-                    .createdAt(bundle.createdAt())
-                    .trustAnchors(bundle.trustAnchors())
-                    .issuers(bundle.issuers())
-                    .revocationSigners(bundle.revocationSigners())
-                    .build())
+    var bundleBuilder =
+        PublicTrustBundle.builder()
+            .installationId(bundle.installationId())
+            .version(0L)
+            .createdAt(bundle.createdAt())
+            .trustAnchors(bundle.trustAnchors())
+            .issuers(bundle.issuers())
+            .revocationSigners(bundle.revocationSigners());
+
+    assertThatThrownBy(bundleBuilder::build)
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("version");
+  }
+
+  @Test
+  @DisplayName("Should protect the root fingerprint from caller mutation")
+  void shouldProtectRootFingerprintFromCallerMutation() {
+    var rootFingerprint = new byte[32];
+    var trust = new InstallationTrust(INSTALLATION_ID, rootFingerprint, bundle);
+
+    rootFingerprint[0] = 1;
+    var exposedFingerprint = trust.bootstrapRootSha256();
+    exposedFingerprint[1] = 1;
+
+    assertThat(trust.bootstrapRootSha256()).containsOnly(0);
   }
 }

@@ -4,36 +4,26 @@ import java.util.Arrays;
 import java.util.Objects;
 import java.util.UUID;
 
-public final class InstallationTrust {
+public record InstallationTrust(
+    UUID installationId, byte[] bootstrapRootSha256, PublicTrustBundle activeBundle) {
 
-  private final UUID installationId;
-  private final byte[] bootstrapRootSha256;
-  private final PublicTrustBundle activeBundle;
-
-  public InstallationTrust(
-      UUID installationId, byte[] bootstrapRootSha256, PublicTrustBundle activeBundle) {
+  public InstallationTrust {
+    Objects.requireNonNull(bootstrapRootSha256);
     if (bootstrapRootSha256.length != 32) {
       throw new IllegalArgumentException("Installation trust root fingerprint must be 32 bytes");
     }
-    this.installationId = Objects.requireNonNull(installationId);
-    this.bootstrapRootSha256 = bootstrapRootSha256.clone();
-    this.activeBundle = Objects.requireNonNull(activeBundle);
+    Objects.requireNonNull(installationId);
+    bootstrapRootSha256 = bootstrapRootSha256.clone();
+    Objects.requireNonNull(activeBundle);
     if (!installationId.equals(activeBundle.installationId())) {
       throw new IllegalArgumentException(
           "Installation trust and active bundle must belong to the same installation");
     }
   }
 
-  public UUID installationId() {
-    return installationId;
-  }
-
+  @Override
   public byte[] bootstrapRootSha256() {
     return bootstrapRootSha256.clone();
-  }
-
-  public PublicTrustBundle activeBundle() {
-    return activeBundle;
   }
 
   @Override

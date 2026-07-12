@@ -50,7 +50,7 @@ class InitialTrustPublicationTest {
   void shouldOmitCertificateEncodingsFromDiagnosticText() {
     var publication = InitialTrustPublication.from(material);
 
-    assertThat(publication.toString())
-        .isEqualTo("InitialTrustPublication[installationId=" + INSTALLATION_ID + "]");
+    assertThat(publication)
+        .hasToString("InitialTrustPublication[installationId=" + INSTALLATION_ID + "]");
   }
 }

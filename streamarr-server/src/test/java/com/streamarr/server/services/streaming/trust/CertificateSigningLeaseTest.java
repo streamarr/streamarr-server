@@ -17,15 +17,15 @@ class CertificateSigningLeaseTest {
   @Test
   @DisplayName("Should reject a non-positive fencing epoch")
   void shouldRejectNonPositiveFencingEpoch() {
-    assertThatThrownBy(
-            () ->
-                CertificateSigningLease.builder()
-                    .operation(CertificateAuthorityOperation.BOOTSTRAP)
-                    .ownerId(UUID.randomUUID())
-                    .fencingEpoch(0L)
-                    .databaseTime(DATABASE_TIME)
-                    .leaseUntil(DATABASE_TIME.plusSeconds(30))
-                    .build())
+    var leaseBuilder =
+        CertificateSigningLease.builder()
+            .operation(CertificateAuthorityOperation.BOOTSTRAP)
+            .ownerId(UUID.randomUUID())
+            .fencingEpoch(0L)
+            .databaseTime(DATABASE_TIME)
+            .leaseUntil(DATABASE_TIME.plusSeconds(30));
+
+    assertThatThrownBy(leaseBuilder::build)
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("epoch");
   }
@@ -34,15 +34,15 @@ class CertificateSigningLeaseTest {
   @DisplayName("Should reject a lease that is not later than its database time")
   void shouldRejectLeaseThatIsNotLaterThanItsDatabaseTime() {
     for (var leaseUntil : java.util.List.of(DATABASE_TIME, DATABASE_TIME.minusNanos(1))) {
-      assertThatThrownBy(
-              () ->
-                  CertificateSigningLease.builder()
-                      .operation(CertificateAuthorityOperation.BOOTSTRAP)
-                      .ownerId(UUID.randomUUID())
-                      .fencingEpoch(1L)
-                      .databaseTime(DATABASE_TIME)
-                      .leaseUntil(leaseUntil)
-                      .build())
+      var leaseBuilder =
+          CertificateSigningLease.builder()
+              .operation(CertificateAuthorityOperation.BOOTSTRAP)
+              .ownerId(UUID.randomUUID())
+              .fencingEpoch(1L)
+              .databaseTime(DATABASE_TIME)
+              .leaseUntil(leaseUntil);
+
+      assertThatThrownBy(leaseBuilder::build)
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("later");
     }
