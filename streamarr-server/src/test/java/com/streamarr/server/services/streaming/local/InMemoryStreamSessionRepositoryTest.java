@@ -16,6 +16,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.stream.LongStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -71,6 +72,24 @@ class InMemoryStreamSessionRepositoryTest {
   }
 
   @Test
+  @DisplayName("Should retain exact-job cleanup when removing a visible session")
+  void shouldRetainExactJobCleanupWhenRemovingVisibleSession() {
+    var session = StreamSessionFixture.buildMpegtsSession();
+    repository.save(session);
+    var start = repository.beginTranscodeStart(session.getSessionId()).orElseThrow();
+    assertThat(repository.completeTranscodeStart(start)).isTrue();
+
+    assertThat(repository.removeById(session.getSessionId())).contains(session);
+
+    assertThat(repository.findById(session.getSessionId())).isEmpty();
+    assertThat(repository.snapshotTranscodeJobRefs(session.getSessionId()))
+        .containsExactly(start.jobRef());
+    assertThat(repository.snapshotCleanupCandidateIds()).contains(session.getSessionId());
+    repository.markTranscodeJobReleased(start.jobRef());
+    assertThat(repository.reserve(session.getSessionId())).isPresent();
+  }
+
+  @Test
   @DisplayName("Should return all saved sessions")
   void shouldReturnAllSavedSessions() {
     var session1 = StreamSessionFixture.buildMpegtsSession();
@@ -115,6 +134,328 @@ class InMemoryStreamSessionRepositoryTest {
     var found = repository.findById(session.getSessionId());
     assertThat(found).isPresent();
     assertThat(found.get().getPlaybackSnapshot().positionSeconds()).isEqualTo(300);
+  }
+
+  @Test
+  @DisplayName("Should issue exact transcode jobs monotonically for a session")
+  void shouldIssueExactTranscodeJobsMonotonicallyForSession() {
+    var sessionId = UUID.randomUUID();
+    repository.reserve(sessionId).orElseThrow();
+
+    var first = repository.beginTranscodeStart(sessionId).orElseThrow();
+    var second = repository.beginTranscodeStart(sessionId).orElseThrow();
+
+    assertThat(first.jobRef().jobId()).isEqualTo(sessionId);
+    assertThat(first.jobRef().generation()).isEqualTo(1);
+    assertThat(second.jobRef().jobId()).isEqualTo(sessionId);
+    assertThat(second.jobRef().generation()).isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName("Should expose an exact job as active only after start acceptance")
+  void shouldExposeExactJobAsActiveOnlyAfterStartAcceptance() {
+    var sessionId = UUID.randomUUID();
+    repository.reserve(sessionId).orElseThrow();
+    var start = repository.beginTranscodeStart(sessionId).orElseThrow();
+
+    assertThat(repository.activeTranscodeJobRef(sessionId)).isEmpty();
+
+    assertThat(repository.completeTranscodeStart(start)).isTrue();
+    assertThat(repository.activeTranscodeJobRef(sessionId)).contains(start.jobRef());
+  }
+
+  @Test
+  @DisplayName("Should retain an immutable exact-job cleanup snapshot after terminalization")
+  void shouldRetainImmutableExactJobCleanupSnapshotAfterTerminalization() {
+    var sessionId = UUID.randomUUID();
+    repository.reserve(sessionId).orElseThrow();
+    var first = repository.beginTranscodeStart(sessionId).orElseThrow();
+    var second = repository.beginTranscodeStart(sessionId).orElseThrow();
+
+    var beforeTerminal = repository.snapshotTranscodeJobRefs(sessionId);
+    assertThat(repository.terminalize(sessionId)).isTrue();
+
+    assertThat(repository.snapshotTranscodeJobRefs(sessionId)).isEqualTo(beforeTerminal);
+    assertThat(repository.snapshotTranscodeJobRefs(sessionId))
+        .containsExactly(first.jobRef(), second.jobRef());
+    assertThatThrownBy(() -> beforeTerminal.clear())
+        .isInstanceOf(UnsupportedOperationException.class);
+  }
+
+  @Test
+  @DisplayName("Should release only the exact transcode job proven cleaned")
+  void shouldReleaseOnlyExactTranscodeJobProvenCleaned() {
+    var sessionId = UUID.randomUUID();
+    repository.reserve(sessionId).orElseThrow();
+    var first = repository.beginTranscodeStart(sessionId).orElseThrow();
+    assertThat(repository.completeTranscodeStart(first)).isTrue();
+    var second = repository.beginTranscodeStart(sessionId).orElseThrow();
+    repository.abortTranscodeStart(second);
+    repository.terminalize(sessionId);
+
+    repository.markTranscodeJobReleased(first.jobRef());
+    repository.markTranscodeJobReleased(first.jobRef());
+
+    assertThat(repository.snapshotTranscodeJobRefs(sessionId)).containsExactly(second.jobRef());
+  }
+
+  @Test
+  @DisplayName("Should retry terminal cleanup until the exact job is released")
+  void shouldRetryTerminalCleanupUntilExactJobReleased() {
+    var sessionId = UUID.randomUUID();
+    var reservation = repository.reserve(sessionId).orElseThrow();
+    var start = repository.beginTranscodeStart(sessionId).orElseThrow();
+    assertThat(repository.completeTranscodeStart(start)).isTrue();
+    repository.releaseReservation(reservation);
+    repository.terminalize(sessionId);
+
+    assertThat(repository.releaseTerminal(sessionId)).isFalse();
+    assertThat(repository.snapshotTranscodeJobRefs(sessionId)).containsExactly(start.jobRef());
+    assertThat(repository.snapshotTranscodeJobRefs(sessionId)).containsExactly(start.jobRef());
+
+    repository.markTranscodeJobReleased(start.jobRef());
+
+    assertThat(repository.releaseTerminal(sessionId)).isTrue();
+    assertThat(repository.reserve(sessionId)).isPresent();
+  }
+
+  @Test
+  @DisplayName("Should retain an older exact job until cleanup after replacement acceptance")
+  void shouldRetainOlderExactJobUntilCleanupAfterReplacementAcceptance() {
+    var sessionId = UUID.randomUUID();
+    repository.reserve(sessionId).orElseThrow();
+    var first = repository.beginTranscodeStart(sessionId).orElseThrow();
+    assertThat(repository.completeTranscodeStart(first)).isTrue();
+    var replacement = repository.beginTranscodeStart(sessionId).orElseThrow();
+
+    assertThat(repository.snapshotTranscodeJobRefs(sessionId))
+        .containsExactly(first.jobRef(), replacement.jobRef());
+
+    assertThat(repository.completeTranscodeStart(replacement)).isTrue();
+
+    assertThat(repository.snapshotTranscodeJobRefs(sessionId))
+        .containsExactly(first.jobRef(), replacement.jobRef());
+
+    repository.markTranscodeJobReleased(first.jobRef());
+
+    assertThat(repository.snapshotTranscodeJobRefs(sessionId))
+        .containsExactly(replacement.jobRef());
+  }
+
+  @Test
+  @DisplayName("Should keep fallback active when replacement cleanup is pending")
+  void shouldKeepFallbackActiveWhenReplacementCleanupPending() {
+    var sessionId = UUID.randomUUID();
+    repository.reserve(sessionId).orElseThrow();
+    var fallback = repository.beginTranscodeStart(sessionId).orElseThrow();
+    assertThat(repository.completeTranscodeStart(fallback)).isTrue();
+    var failedReplacement = repository.beginTranscodeStart(sessionId).orElseThrow();
+
+    repository.abortTranscodeStart(failedReplacement);
+
+    assertThat(repository.activeTranscodeJobRef(sessionId)).contains(fallback.jobRef());
+    assertThat(repository.snapshotTranscodeJobRefs(sessionId))
+        .containsExactly(fallback.jobRef(), failedReplacement.jobRef());
+  }
+
+  @Test
+  @DisplayName("Should clear active authority only when that exact job is released")
+  void shouldClearActiveAuthorityOnlyWhenExactJobReleased() {
+    var sessionId = UUID.randomUUID();
+    repository.reserve(sessionId).orElseThrow();
+    var first = repository.beginTranscodeStart(sessionId).orElseThrow();
+    assertThat(repository.completeTranscodeStart(first)).isTrue();
+    var replacement = repository.beginTranscodeStart(sessionId).orElseThrow();
+    assertThat(repository.completeTranscodeStart(replacement)).isTrue();
+
+    repository.markTranscodeJobReleased(first.jobRef());
+
+    assertThat(repository.activeTranscodeJobRef(sessionId)).contains(replacement.jobRef());
+
+    repository.markTranscodeJobReleased(replacement.jobRef());
+
+    assertThat(repository.activeTranscodeJobRef(sessionId)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should not reactivate an older start after releasing a newer active job")
+  void shouldNotReactivateOlderStartAfterReleasingNewerActiveJob() {
+    var sessionId = UUID.randomUUID();
+    repository.reserve(sessionId).orElseThrow();
+    var olderStart = repository.beginTranscodeStart(sessionId).orElseThrow();
+    var newerStart = repository.beginTranscodeStart(sessionId).orElseThrow();
+    assertThat(repository.completeTranscodeStart(newerStart)).isTrue();
+    repository.markTranscodeJobReleased(newerStart.jobRef());
+    assertThat(repository.activeTranscodeJobRef(sessionId)).isEmpty();
+
+    assertThat(repository.completeTranscodeStart(olderStart)).isTrue();
+
+    assertThat(repository.activeTranscodeJobRef(sessionId)).isEmpty();
+    assertThat(repository.snapshotTranscodeJobRefs(sessionId)).containsExactly(olderStart.jobRef());
+  }
+
+  @Test
+  @DisplayName("Should retain active authority through terminal fence until broad cleanup")
+  void shouldRetainActiveAuthorityThroughTerminalFenceUntilBroadCleanup() {
+    var session = StreamSessionFixture.buildMpegtsSession();
+    var reservation = repository.reserve(session.getSessionId()).orElseThrow();
+    assertThat(repository.attach(reservation, session)).isTrue();
+    var active = repository.beginTranscodeStart(session.getSessionId()).orElseThrow();
+    assertThat(repository.completeTranscodeStart(active)).isTrue();
+    var lateStart = repository.beginTranscodeStart(session.getSessionId()).orElseThrow();
+
+    repository.terminalize(session.getSessionId());
+
+    assertThat(repository.findById(session.getSessionId())).isEmpty();
+    assertThat(repository.activeTranscodeJobRef(session.getSessionId())).contains(active.jobRef());
+
+    repository.markRuntimeStopped(session.getSessionId());
+
+    assertThat(repository.activeTranscodeJobRef(session.getSessionId())).isEmpty();
+    assertThat(repository.snapshotTranscodeJobRefs(session.getSessionId()))
+        .containsExactly(lateStart.jobRef());
+  }
+
+  @Test
+  @DisplayName("Should retain an older in-flight start after replacement acceptance")
+  void shouldRetainOlderInFlightStartAfterReplacementAcceptance() {
+    var sessionId = UUID.randomUUID();
+    repository.reserve(sessionId).orElseThrow();
+    var olderStart = repository.beginTranscodeStart(sessionId).orElseThrow();
+    var acceptedReplacement = repository.beginTranscodeStart(sessionId).orElseThrow();
+
+    assertThat(repository.completeTranscodeStart(acceptedReplacement)).isTrue();
+    assertThat(repository.snapshotTranscodeJobRefs(sessionId))
+        .containsExactly(olderStart.jobRef(), acceptedReplacement.jobRef());
+    assertThat(repository.activeTranscodeJobRef(sessionId)).contains(acceptedReplacement.jobRef());
+
+    assertThat(repository.completeTranscodeStart(olderStart)).isTrue();
+
+    assertThat(repository.snapshotTranscodeJobRefs(sessionId))
+        .containsExactly(olderStart.jobRef(), acceptedReplacement.jobRef());
+    assertThat(repository.activeTranscodeJobRef(sessionId)).contains(acceptedReplacement.jobRef());
+  }
+
+  @Test
+  @DisplayName("Should keep a late exact start fenced until exact cleanup succeeds")
+  void shouldKeepLateExactStartFencedUntilExactCleanupSucceeds() {
+    var sessionId = UUID.randomUUID();
+    var reservation = repository.reserve(sessionId).orElseThrow();
+    var active = repository.beginTranscodeStart(sessionId).orElseThrow();
+    assertThat(repository.completeTranscodeStart(active)).isTrue();
+    var lateStart = repository.beginTranscodeStart(sessionId).orElseThrow();
+    repository.releaseReservation(reservation);
+
+    repository.terminalize(sessionId);
+    repository.markRuntimeStopped(sessionId);
+    assertThat(repository.releaseTerminal(sessionId)).isFalse();
+
+    assertThat(repository.snapshotTranscodeJobRefs(sessionId)).containsExactly(lateStart.jobRef());
+    assertThat(repository.completeTranscodeStart(lateStart)).isFalse();
+    repository.finishRejectedTranscodeStart(lateStart, false);
+    assertThat(repository.snapshotTranscodeJobRefs(sessionId)).containsExactly(lateStart.jobRef());
+
+    repository.markTranscodeJobReleased(lateStart.jobRef());
+    assertThat(repository.releaseTerminal(sessionId)).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should release a rejected start without losing another active exact job")
+  void shouldReleaseRejectedStartWithoutLosingAnotherActiveExactJob() {
+    var sessionId = UUID.randomUUID();
+    var reservation = repository.reserve(sessionId).orElseThrow();
+    var active = repository.beginTranscodeStart(sessionId).orElseThrow();
+    assertThat(repository.completeTranscodeStart(active)).isTrue();
+    var rejected = repository.beginTranscodeStart(sessionId).orElseThrow();
+    repository.releaseReservation(reservation);
+    repository.terminalize(sessionId);
+
+    assertThat(repository.completeTranscodeStart(rejected)).isFalse();
+    repository.finishRejectedTranscodeStart(rejected, true);
+
+    assertThat(repository.snapshotTranscodeJobRefs(sessionId)).containsExactly(active.jobRef());
+    assertThat(repository.releaseTerminal(sessionId)).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should issue unique monotonic generations across concurrent begins")
+  void shouldIssueUniqueMonotonicGenerationsAcrossConcurrentBegins() throws Exception {
+    var sessionId = UUID.randomUUID();
+    repository.reserve(sessionId).orElseThrow();
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var begins = new ArrayList<Future<Long>>();
+      for (var attempt = 0; attempt < 64; attempt++) {
+        begins.add(
+            executor.submit(
+                () ->
+                    repository.beginTranscodeStart(sessionId).orElseThrow().jobRef().generation()));
+      }
+
+      var generations = new ArrayList<Long>();
+      for (var begin : begins) {
+        generations.add(begin.get(5, TimeUnit.SECONDS));
+      }
+
+      assertThat(generations)
+          .doesNotHaveDuplicates()
+          .containsExactlyInAnyOrderElementsOf(LongStream.rangeClosed(1, 64).boxed().toList());
+    }
+  }
+
+  @Test
+  @DisplayName("Should preserve exact-job generation high-water across slot reclamation")
+  void shouldPreserveExactJobGenerationHighWaterAcrossSlotReclamation() {
+    var sessionId = UUID.randomUUID();
+    var reservation = repository.reserve(sessionId).orElseThrow();
+    var first = repository.beginTranscodeStart(sessionId).orElseThrow();
+    assertThat(repository.completeTranscodeStart(first)).isTrue();
+    repository.releaseReservation(reservation);
+    repository.terminalize(sessionId);
+    assertThat(repository.releaseTerminal(sessionId)).isFalse();
+    repository.markTranscodeJobReleased(first.jobRef());
+
+    repository.reserve(sessionId).orElseThrow();
+    var replacement = repository.beginTranscodeStart(sessionId).orElseThrow();
+
+    assertThat(replacement.jobRef().generation()).isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName("Should restore cleanup obligation when a new exact job begins")
+  void shouldRestoreCleanupObligationWhenNewExactJobBegins() {
+    var sessionId = UUID.randomUUID();
+    var reservation = repository.reserve(sessionId).orElseThrow();
+    var first = repository.beginTranscodeStart(sessionId).orElseThrow();
+    assertThat(repository.completeTranscodeStart(first)).isTrue();
+    repository.markTranscodeJobReleased(first.jobRef());
+
+    var replacement = repository.beginTranscodeStart(sessionId).orElseThrow();
+    assertThat(repository.completeTranscodeStart(replacement)).isTrue();
+    repository.releaseReservation(reservation);
+    repository.terminalize(sessionId);
+
+    assertThat(repository.snapshotTranscodeJobRefs(sessionId))
+        .containsExactly(replacement.jobRef());
+    assertThat(repository.releaseTerminal(sessionId)).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should retain a released exact job until its in-flight start settles")
+  void shouldRetainReleasedExactJobUntilInFlightStartSettles() {
+    var sessionId = UUID.randomUUID();
+    var reservation = repository.reserve(sessionId).orElseThrow();
+    var inFlight = repository.beginTranscodeStart(sessionId).orElseThrow();
+    repository.releaseReservation(reservation);
+    repository.terminalize(sessionId);
+
+    repository.markTranscodeJobReleased(inFlight.jobRef());
+
+    assertThat(repository.snapshotTranscodeJobRefs(sessionId)).containsExactly(inFlight.jobRef());
+    assertThat(repository.completeTranscodeStart(inFlight)).isFalse();
+    repository.finishRejectedTranscodeStart(inFlight, false);
+    assertThat(repository.snapshotTranscodeJobRefs(sessionId)).isEmpty();
+    assertThat(repository.releaseTerminal(sessionId)).isTrue();
   }
 
   @Test

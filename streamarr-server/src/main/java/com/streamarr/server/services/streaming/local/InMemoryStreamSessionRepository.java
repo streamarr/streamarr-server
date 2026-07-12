@@ -5,9 +5,11 @@ import com.streamarr.server.services.streaming.CommittedStreamSessionTimeline;
 import com.streamarr.server.services.streaming.RuntimeSessionReservation;
 import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
 import com.streamarr.server.services.streaming.RuntimeTranscodeStart;
+import com.streamarr.transcode.engine.model.TranscodeJobRef;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -30,6 +32,11 @@ public class InMemoryStreamSessionRepository implements RuntimeStreamSessionRegi
     private volatile State state = State.STARTING;
     private Instant latestTimelineAccessedAt = Instant.MIN;
     private final AtomicReference<StreamSession> session = new AtomicReference<>();
+    private final LinkedHashSet<TranscodeJobRef> jobRefs = new LinkedHashSet<>();
+    private final LinkedHashSet<TranscodeJobRef> startingJobRefs = new LinkedHashSet<>();
+    private final LinkedHashSet<TranscodeJobRef> releasedJobRefs = new LinkedHashSet<>();
+    private TranscodeJobRef activeJobRef;
+    private long highestAcceptedJobGeneration;
     private int inFlight;
     private int starters;
     private final AtomicReference<CompletableFuture<Void>> startersDrained =
@@ -43,6 +50,8 @@ public class InMemoryStreamSessionRepository implements RuntimeStreamSessionRegi
   }
 
   private final ConcurrentHashMap<UUID, Slot> slots = new ConcurrentHashMap<>();
+  private final ConcurrentHashMap<UUID, Long> highestIssuedGenerationByJobId =
+      new ConcurrentHashMap<>();
   private final Object reservationMonitor = new Object();
   private boolean acceptingReservations = true;
 
@@ -94,7 +103,14 @@ public class InMemoryStreamSessionRepository implements RuntimeStreamSessionRegi
             }
             slot.inFlight++;
             slot.starters++;
-            start.set(new RuntimeTranscodeStart(sessionId, slot.generation));
+            var jobGeneration =
+                highestIssuedGenerationByJobId.compute(
+                    sessionId, (_, current) -> current == null ? 1L : Math.incrementExact(current));
+            var jobRef = new TranscodeJobRef(sessionId, jobGeneration);
+            slot.jobRefs.add(jobRef);
+            slot.startingJobRefs.add(jobRef);
+            slot.runtimeStopped = false;
+            start.set(new RuntimeTranscodeStart(sessionId, slot.generation, jobRef));
           }
           return slot;
         });
@@ -107,13 +123,19 @@ public class InMemoryStreamSessionRepository implements RuntimeStreamSessionRegi
     slots.computeIfPresent(
         start.sessionId(),
         (_, slot) -> {
-          if (!matches(slot, start.generation())) {
+          if (!matches(slot, start.slotGeneration())) {
             return slot;
           }
-          if (slot.state == State.TERMINAL) {
+          if (slot.state == State.TERMINAL
+              || !slot.startingJobRefs.contains(start.jobRef())
+              || slot.releasedJobRefs.contains(start.jobRef())) {
             return slot;
           }
-          finishStarter(slot);
+          finishStarter(slot, start.jobRef());
+          if (start.jobRef().generation() > slot.highestAcceptedJobGeneration) {
+            slot.activeJobRef = start.jobRef();
+            slot.highestAcceptedJobGeneration = start.jobRef().generation();
+          }
           accepted.set(true);
           return slot;
         });
@@ -130,15 +152,63 @@ public class InMemoryStreamSessionRepository implements RuntimeStreamSessionRegi
     finishStart(start, stopped);
   }
 
+  @Override
+  public List<TranscodeJobRef> snapshotTranscodeJobRefs(UUID sessionId) {
+    var snapshot = new AtomicReference<List<TranscodeJobRef>>(List.of());
+    slots.computeIfPresent(
+        sessionId,
+        (_, slot) -> {
+          snapshot.set(List.copyOf(slot.jobRefs));
+          return slot;
+        });
+    return snapshot.get();
+  }
+
+  @Override
+  public Optional<TranscodeJobRef> activeTranscodeJobRef(UUID sessionId) {
+    var active = new AtomicReference<TranscodeJobRef>();
+    slots.computeIfPresent(
+        sessionId,
+        (_, slot) -> {
+          active.set(slot.activeJobRef);
+          return slot;
+        });
+    return Optional.ofNullable(active.get());
+  }
+
+  @Override
+  public void markTranscodeJobReleased(TranscodeJobRef jobRef) {
+    slots.computeIfPresent(
+        jobRef.jobId(),
+        (_, slot) -> {
+          if (slot.startingJobRefs.contains(jobRef)) {
+            slot.releasedJobRefs.add(jobRef);
+            return slot;
+          }
+          slot.jobRefs.remove(jobRef);
+          slot.releasedJobRefs.remove(jobRef);
+          if (jobRef.equals(slot.activeJobRef)) {
+            slot.activeJobRef = null;
+          }
+          slot.runtimeStopped = slot.jobRefs.isEmpty();
+          return reclaimable(slot) ? null : slot;
+        });
+  }
+
   private void finishStart(RuntimeTranscodeStart start, boolean stopped) {
     slots.computeIfPresent(
         start.sessionId(),
         (_, slot) -> {
-          if (!matches(slot, start.generation())) {
+          if (!matches(slot, start.slotGeneration())) {
             return slot;
           }
-          finishStarter(slot);
-          slot.runtimeStopped = stopped;
+          if (!finishStarter(slot, start.jobRef())) {
+            return slot;
+          }
+          if (stopped || slot.releasedJobRefs.remove(start.jobRef())) {
+            slot.jobRefs.remove(start.jobRef());
+          }
+          slot.runtimeStopped = slot.jobRefs.isEmpty();
           return reclaimable(slot) ? null : slot;
         });
   }
@@ -190,7 +260,10 @@ public class InMemoryStreamSessionRepository implements RuntimeStreamSessionRegi
     slots.computeIfPresent(
         sessionId,
         (_, slot) -> {
-          slot.runtimeStopped = true;
+          slot.jobRefs.removeIf(jobRef -> !slot.startingJobRefs.contains(jobRef));
+          slot.releasedJobRefs.retainAll(slot.jobRefs);
+          slot.activeJobRef = null;
+          slot.runtimeStopped = slot.jobRefs.isEmpty();
           return reclaimable(slot) ? null : slot;
         });
   }
@@ -297,7 +370,7 @@ public class InMemoryStreamSessionRepository implements RuntimeStreamSessionRegi
         (_, slot) -> {
           removed.set(slot.session.getAndSet(null));
           slot.state = State.TERMINAL;
-          slot.runtimeStopped = true;
+          slot.runtimeStopped = slot.jobRefs.isEmpty();
           slot.reclaimRequested = true;
           return reclaimable(slot) ? null : slot;
         });
@@ -327,12 +400,16 @@ public class InMemoryStreamSessionRepository implements RuntimeStreamSessionRegi
     return slot.session.get() != null || (slot.state == State.TERMINAL && !slot.runtimeStopped);
   }
 
-  private static void finishStarter(Slot slot) {
+  private static boolean finishStarter(Slot slot, TranscodeJobRef jobRef) {
+    if (!slot.startingJobRefs.remove(jobRef)) {
+      return false;
+    }
     slot.inFlight--;
     slot.starters--;
     if (slot.starters == 0) {
       slot.startersDrained.get().complete(null);
     }
+    return true;
   }
 
   private static boolean reclaimable(Slot slot) {
