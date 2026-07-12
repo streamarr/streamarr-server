@@ -6,7 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.transcode.engine.error.TranscodeException;
-import com.streamarr.transcode.engine.model.TranscodeRequest;
+import com.streamarr.transcode.engine.model.RenditionRequest;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
@@ -32,7 +32,7 @@ class LocalFfmpegProcessManagerTest {
 
     var process =
         manager.startProcess(
-            sessionId, TranscodeRequest.DEFAULT_VARIANT, List.of("sleep", "30"), tempDir);
+            sessionId, RenditionRequest.DEFAULT_VARIANT, List.of("sleep", "30"), tempDir);
 
     assertThat(process).isNotNull();
     assertThat(process.isAlive()).isTrue();
@@ -47,7 +47,7 @@ class LocalFfmpegProcessManagerTest {
     var sessionId = UUID.randomUUID();
 
     manager.startProcess(
-        sessionId, TranscodeRequest.DEFAULT_VARIANT, List.of("sleep", "30"), tempDir);
+        sessionId, RenditionRequest.DEFAULT_VARIANT, List.of("sleep", "30"), tempDir);
 
     manager.stopProcess(sessionId);
 
@@ -67,7 +67,7 @@ class LocalFfmpegProcessManagerTest {
 
     var process =
         manager.startProcess(
-            sessionId, TranscodeRequest.DEFAULT_VARIANT, List.of("echo", "done"), tempDir);
+            sessionId, RenditionRequest.DEFAULT_VARIANT, List.of("echo", "done"), tempDir);
     process.waitFor();
 
     await().pollDelay(Duration.ofMillis(100)).until(() -> true);
@@ -104,7 +104,7 @@ class LocalFfmpegProcessManagerTest {
   @DisplayName("Should reject duplicate variant without replacing its running process")
   void shouldRejectDuplicateVariantWithoutReplacingItsRunningProcess() {
     var sessionId = UUID.randomUUID();
-    var variant = TranscodeRequest.DEFAULT_VARIANT;
+    var variant = RenditionRequest.DEFAULT_VARIANT;
     var command = List.of("sleep", "30");
     var first = manager.startProcess(sessionId, variant, command, tempDir);
 
@@ -142,10 +142,10 @@ class LocalFfmpegProcessManagerTest {
     var secondSessionId = UUID.randomUUID();
     var first =
         manager.startProcess(
-            firstSessionId, TranscodeRequest.DEFAULT_VARIANT, List.of("sleep", "30"), tempDir);
+            firstSessionId, RenditionRequest.DEFAULT_VARIANT, List.of("sleep", "30"), tempDir);
     var second =
         manager.startProcess(
-            secondSessionId, TranscodeRequest.DEFAULT_VARIANT, List.of("sleep", "30"), tempDir);
+            secondSessionId, RenditionRequest.DEFAULT_VARIANT, List.of("sleep", "30"), tempDir);
 
     try {
       manager.forceStopAll();
@@ -283,7 +283,7 @@ class LocalFfmpegProcessManagerTest {
 
     var process =
         manager.startProcess(
-            sessionId, TranscodeRequest.DEFAULT_VARIANT, List.of("bash", "-c", script), tempDir);
+            sessionId, RenditionRequest.DEFAULT_VARIANT, List.of("bash", "-c", script), tempDir);
 
     await()
         .atMost(Duration.ofSeconds(10))
@@ -304,7 +304,7 @@ class LocalFfmpegProcessManagerTest {
     var process =
         manager.startProcess(
             sessionId,
-            TranscodeRequest.DEFAULT_VARIANT,
+            RenditionRequest.DEFAULT_VARIANT,
             List.of("bash", "-c", "echo 'error output' >&2; exit 1"),
             tempDir);
     process.waitFor();

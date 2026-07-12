@@ -25,8 +25,8 @@ import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeStreamSessionRepository;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.services.concurrency.MutexFactory;
+import com.streamarr.transcode.engine.model.RenditionRequest;
 import com.streamarr.transcode.engine.model.TranscodeMode;
-import com.streamarr.transcode.engine.model.TranscodeRequest;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -1057,10 +1057,10 @@ class HlsStreamingServiceTest {
             .subList(requestsBefore, transcodeExecutor.getStartedRequests().size());
 
     assertThat(resumeRequests).hasSize(variantLabels.size());
-    assertThat(resumeRequests).extracting(TranscodeRequest::startNumber).containsOnly(5);
-    assertThat(resumeRequests).extracting(TranscodeRequest::seekPosition).containsOnly(30);
+    assertThat(resumeRequests).extracting(RenditionRequest::startNumber).containsOnly(5);
+    assertThat(resumeRequests).extracting(RenditionRequest::seekPosition).containsOnly(30);
     assertThat(resumeRequests)
-        .extracting(TranscodeRequest::variantLabel)
+        .extracting(RenditionRequest::variantLabel)
         .containsExactlyInAnyOrderElementsOf(variantLabels);
     for (var label : variantLabels) {
       assertThat(session.getVariantHandle(label).status()).isEqualTo(TranscodeStatus.ACTIVE);
@@ -1163,7 +1163,7 @@ class HlsStreamingServiceTest {
     private final CountDownLatch allowStart = new CountDownLatch(1);
 
     @Override
-    public TranscodeHandle start(TranscodeRequest request) {
+    public TranscodeHandle start(RenditionRequest request) {
       startEntered.countDown();
       await(allowStart);
       return delegate.start(request);

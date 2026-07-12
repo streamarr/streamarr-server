@@ -58,7 +58,7 @@ import com.streamarr.server.services.streaming.local.InMemoryStreamSessionReposi
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.server.support.AuthTestSupport;
 import com.streamarr.server.support.AuthTestSupport.TestIdentity;
-import com.streamarr.transcode.engine.model.TranscodeRequest;
+import com.streamarr.transcode.engine.model.RenditionRequest;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.SQLException;
@@ -2133,7 +2133,7 @@ class PlaybackSessionCreationServiceIT extends AbstractIntegrationTest {
     }
 
     @Override
-    public TranscodeHandle start(TranscodeRequest request) {
+    public TranscodeHandle start(RenditionRequest request) {
       attemptedSessionId = request.sessionId();
       startAttempts++;
       if (startAttempts == 1 && firstStartObserver != null) {

@@ -2,11 +2,11 @@ package com.streamarr.transcode.engine.ffmpeg;
 
 import com.streamarr.transcode.engine.model.AudioDecision;
 import com.streamarr.transcode.engine.model.AudioMode;
+import com.streamarr.transcode.engine.model.RenditionJob;
+import com.streamarr.transcode.engine.model.RenditionRequest;
 import com.streamarr.transcode.engine.model.SubtitleDecision;
 import com.streamarr.transcode.engine.model.SubtitleMode;
-import com.streamarr.transcode.engine.model.TranscodeJob;
 import com.streamarr.transcode.engine.model.TranscodeMode;
-import com.streamarr.transcode.engine.model.TranscodeRequest;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -35,7 +35,7 @@ public class FfmpegCommandBuilder {
   private static final Set<String> FORCE_KEYFRAME_ENCODERS =
       Set.of("libx264", "libx265", "h264_vaapi", "hevc_vaapi", "av1_vaapi");
 
-  public List<String> buildCommand(TranscodeJob job) {
+  public List<String> buildCommand(RenditionJob job) {
     var cmd = new ArrayList<String>();
     var decision = job.request().transcodeDecision();
     var mode = decision.transcodeMode();
@@ -56,7 +56,7 @@ public class FfmpegCommandBuilder {
     return List.copyOf(cmd);
   }
 
-  private void addInputArgs(List<String> cmd, TranscodeRequest request) {
+  private void addInputArgs(List<String> cmd, RenditionRequest request) {
     cmd.add(ffmpegPath);
     cmd.add("-y");
 
@@ -94,7 +94,7 @@ public class FfmpegCommandBuilder {
             "5000000"));
   }
 
-  private void addCodecArgs(List<String> cmd, TranscodeJob job) {
+  private void addCodecArgs(List<String> cmd, RenditionJob job) {
     var decision = job.request().transcodeDecision();
     var mode = decision.transcodeMode();
 
@@ -123,7 +123,7 @@ public class FfmpegCommandBuilder {
     cmd.addAll(List.of("-b:a", audio.bitrate() / 1000 + "k"));
   }
 
-  private void addScaleAndBitrateArgs(List<String> cmd, TranscodeRequest request) {
+  private void addScaleAndBitrateArgs(List<String> cmd, RenditionRequest request) {
     cmd.addAll(List.of("-vf", "scale=-2:" + request.height()));
     var bitrate = String.valueOf(request.bitrate());
     cmd.addAll(
@@ -133,7 +133,7 @@ public class FfmpegCommandBuilder {
             "-bufsize", String.valueOf(request.bitrate() * 2)));
   }
 
-  private void addKeyframeArgs(List<String> cmd, TranscodeJob job) {
+  private void addKeyframeArgs(List<String> cmd, RenditionJob job) {
     var encoder = job.videoEncoder();
 
     cmd.addAll(List.of("-forced-idr", "1"));
@@ -148,7 +148,7 @@ public class FfmpegCommandBuilder {
     }
   }
 
-  private void addGopSizeArgs(List<String> cmd, TranscodeJob job) {
+  private void addGopSizeArgs(List<String> cmd, RenditionJob job) {
     var gopSize = (int) Math.ceil(job.request().segmentDuration() * job.request().framerate());
     cmd.addAll(
         List.of(
@@ -156,7 +156,7 @@ public class FfmpegCommandBuilder {
             "-keyint_min:v:0", String.valueOf(gopSize)));
   }
 
-  private void addForceKeyframeExprArgs(List<String> cmd, TranscodeJob job) {
+  private void addForceKeyframeExprArgs(List<String> cmd, RenditionJob job) {
     cmd.addAll(
         List.of(
             "-force_key_frames:0", "expr:gte(t,n_forced*" + job.request().segmentDuration() + ")"));
@@ -167,7 +167,7 @@ public class FfmpegCommandBuilder {
   }
 
   @SuppressWarnings("java:S1301") // exhaustive enum switch preferred over if/else per project style
-  private void addHlsArgs(List<String> cmd, TranscodeJob job) {
+  private void addHlsArgs(List<String> cmd, RenditionJob job) {
     var request = job.request();
     var decision = request.transcodeDecision();
     var container = decision.containerFormat();

@@ -10,10 +10,10 @@ import com.streamarr.transcode.engine.ffmpeg.HardwareEncodingCapability;
 import com.streamarr.transcode.engine.ffmpeg.TranscodeCapabilityService;
 import com.streamarr.transcode.engine.model.AudioDecision;
 import com.streamarr.transcode.engine.model.ContainerFormat;
+import com.streamarr.transcode.engine.model.RenditionRequest;
 import com.streamarr.transcode.engine.model.SubtitleDecision;
 import com.streamarr.transcode.engine.model.TranscodeDecision;
 import com.streamarr.transcode.engine.model.TranscodeMode;
-import com.streamarr.transcode.engine.model.TranscodeRequest;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Set;
@@ -53,13 +53,13 @@ class LocalTranscodeExecutorTest {
         new LocalTranscodeExecutor(commandBuilder, processManager, segmentStore, capabilityService);
   }
 
-  private TranscodeRequest createRequest(TranscodeMode mode, String codecFamily) {
+  private RenditionRequest createRequest(TranscodeMode mode, String codecFamily) {
     return createRequest(mode, codecFamily, null);
   }
 
-  private TranscodeRequest createRequest(
+  private RenditionRequest createRequest(
       TranscodeMode mode, String codecFamily, String variantLabel) {
-    return TranscodeRequest.builder()
+    return RenditionRequest.builder()
         .sessionId(UUID.randomUUID())
         .sourcePath(Path.of("/media/movie.mkv"))
         .seekPosition(0)

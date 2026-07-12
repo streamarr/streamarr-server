@@ -5,11 +5,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.streamarr.transcode.engine.model.AudioDecision;
 import com.streamarr.transcode.engine.model.AudioMode;
 import com.streamarr.transcode.engine.model.ContainerFormat;
+import com.streamarr.transcode.engine.model.RenditionJob;
+import com.streamarr.transcode.engine.model.RenditionRequest;
 import com.streamarr.transcode.engine.model.SubtitleDecision;
 import com.streamarr.transcode.engine.model.TranscodeDecision;
-import com.streamarr.transcode.engine.model.TranscodeJob;
 import com.streamarr.transcode.engine.model.TranscodeMode;
-import com.streamarr.transcode.engine.model.TranscodeRequest;
 import java.nio.file.Path;
 import java.util.UUID;
 import java.util.stream.Stream;
@@ -26,7 +26,7 @@ class FfmpegCommandBuilderTest {
 
   private final FfmpegCommandBuilder builder = new FfmpegCommandBuilder("ffmpeg");
 
-  private TranscodeJob job(
+  private RenditionJob job(
       TranscodeMode mode,
       String codecFamily,
       String audioCodec,
@@ -36,7 +36,7 @@ class FfmpegCommandBuilderTest {
     return job(mode, codecFamily, audioCodec, container, videoEncoder, needsKeyframeAlignment, 0);
   }
 
-  private TranscodeJob job(
+  private RenditionJob job(
       TranscodeMode mode,
       String codecFamily,
       String audioCodec,
@@ -57,7 +57,7 @@ class FfmpegCommandBuilderTest {
         5_000_000L);
   }
 
-  private TranscodeJob job(
+  private RenditionJob job(
       TranscodeMode mode,
       String codecFamily,
       String audioCodec,
@@ -69,9 +69,9 @@ class FfmpegCommandBuilderTest {
       int height,
       long bitrate) {
     var audio = audioDecisionFor(mode, audioCodec);
-    return TranscodeJob.builder()
+    return RenditionJob.builder()
         .request(
-            TranscodeRequest.builder()
+            RenditionRequest.builder()
                 .sessionId(UUID.randomUUID())
                 .sourcePath(Path.of("/media/movie.mkv"))
                 .seekPosition(seekPosition)
@@ -95,7 +95,7 @@ class FfmpegCommandBuilderTest {
         .build();
   }
 
-  private TranscodeJob jobWithStartNumber(
+  private RenditionJob jobWithStartNumber(
       TranscodeMode mode,
       String codecFamily,
       String audioCodec,
@@ -104,9 +104,9 @@ class FfmpegCommandBuilderTest {
       boolean needsKeyframeAlignment,
       int startNumber) {
     var audio = audioDecisionFor(mode, audioCodec);
-    return TranscodeJob.builder()
+    return RenditionJob.builder()
         .request(
-            TranscodeRequest.builder()
+            RenditionRequest.builder()
                 .sessionId(UUID.randomUUID())
                 .sourcePath(Path.of("/media/movie.mkv"))
                 .seekPosition(0)
@@ -138,15 +138,15 @@ class FfmpegCommandBuilderTest {
     };
   }
 
-  private TranscodeJob jobWithAudio(
+  private RenditionJob jobWithAudio(
       TranscodeMode mode,
       String codecFamily,
       AudioDecision audio,
       ContainerFormat container,
       String videoEncoder) {
-    return TranscodeJob.builder()
+    return RenditionJob.builder()
         .request(
-            TranscodeRequest.builder()
+            RenditionRequest.builder()
                 .sessionId(UUID.randomUUID())
                 .sourcePath(Path.of("/media/movie.mkv"))
                 .seekPosition(0)

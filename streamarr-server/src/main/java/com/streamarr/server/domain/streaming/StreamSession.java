@@ -1,8 +1,8 @@
 package com.streamarr.server.domain.streaming;
 
 import com.streamarr.transcode.engine.model.QualityVariant;
+import com.streamarr.transcode.engine.model.RenditionRequest;
 import com.streamarr.transcode.engine.model.TranscodeDecision;
-import com.streamarr.transcode.engine.model.TranscodeRequest;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Collections;
@@ -66,11 +66,11 @@ public class StreamSession {
   }
 
   public TranscodeHandle getHandle() {
-    return variantHandles.get(TranscodeRequest.DEFAULT_VARIANT);
+    return variantHandles.get(RenditionRequest.DEFAULT_VARIANT);
   }
 
   public void setHandle(TranscodeHandle handle) {
-    variantHandles.put(TranscodeRequest.DEFAULT_VARIANT, handle);
+    variantHandles.put(RenditionRequest.DEFAULT_VARIANT, handle);
   }
 
   public void setVariantHandle(String variantLabel, TranscodeHandle handle) {

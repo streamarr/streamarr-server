@@ -12,9 +12,9 @@ import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.library.FilepathCodec;
 import com.streamarr.transcode.engine.model.QualityVariant;
+import com.streamarr.transcode.engine.model.RenditionRequest;
 import com.streamarr.transcode.engine.model.TranscodeDecision;
 import com.streamarr.transcode.engine.model.TranscodeMode;
-import com.streamarr.transcode.engine.model.TranscodeRequest;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Collection;
@@ -359,7 +359,7 @@ public class HlsStreamingService implements StreamingService {
   private void startSingleTranscode(StreamSession session, int seekPosition, int startNumber) {
     var probe = session.getMediaProbe();
     var request =
-        TranscodeRequest.builder()
+        RenditionRequest.builder()
             .sessionId(session.getSessionId())
             .sourcePath(session.getSourcePath())
             .seekPosition(seekPosition)
@@ -369,7 +369,7 @@ public class HlsStreamingService implements StreamingService {
             .width(probe.width())
             .height(probe.height())
             .bitrate(probe.bitrate())
-            .variantLabel(TranscodeRequest.DEFAULT_VARIANT)
+            .variantLabel(RenditionRequest.DEFAULT_VARIANT)
             .startNumber(startNumber)
             .build();
     var handle = startTranscode(request);
@@ -381,7 +381,7 @@ public class HlsStreamingService implements StreamingService {
       StreamSession session, List<QualityVariant> variants, int seekPosition, int startNumber) {
     for (var variant : variants) {
       var request =
-          TranscodeRequest.builder()
+          RenditionRequest.builder()
               .sessionId(session.getSessionId())
               .sourcePath(session.getSourcePath())
               .seekPosition(seekPosition)
@@ -400,7 +400,7 @@ public class HlsStreamingService implements StreamingService {
     }
   }
 
-  private TranscodeHandle startTranscode(TranscodeRequest request) {
+  private TranscodeHandle startTranscode(RenditionRequest request) {
     var start =
         sessionRepository
             .beginTranscodeStart(request.sessionId())

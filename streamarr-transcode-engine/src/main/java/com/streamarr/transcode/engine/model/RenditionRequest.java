@@ -5,7 +5,7 @@ import java.util.UUID;
 import lombok.Builder;
 
 @Builder
-public record TranscodeRequest(
+public record RenditionRequest(
     UUID sessionId,
     Path sourcePath,
     int seekPosition,
@@ -20,7 +20,7 @@ public record TranscodeRequest(
 
   public static final String DEFAULT_VARIANT = "default";
 
-  public TranscodeRequest {
+  public RenditionRequest {
     variantLabel = variantLabel != null ? variantLabel : DEFAULT_VARIANT;
   }
 }

@@ -4,4 +4,4 @@ import java.nio.file.Path;
 import lombok.Builder;
 
 @Builder
-public record TranscodeJob(TranscodeRequest request, String videoEncoder, Path outputDir) {}
+public record RenditionJob(RenditionRequest request, String videoEncoder, Path outputDir) {}

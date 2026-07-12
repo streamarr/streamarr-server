@@ -3,7 +3,7 @@ package com.streamarr.server.fakes;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
-import com.streamarr.transcode.engine.model.TranscodeRequest;
+import com.streamarr.transcode.engine.model.RenditionRequest;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -18,11 +18,11 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   private final Set<ProcessKey> running = new HashSet<>();
   private final Set<ProcessKey> started = new HashSet<>();
   private final Set<UUID> stopped = new HashSet<>();
-  private final List<TranscodeRequest> startedRequests = new ArrayList<>();
+  private final List<RenditionRequest> startedRequests = new ArrayList<>();
   private int forceStopAllAttempts;
 
   @Override
-  public TranscodeHandle start(TranscodeRequest request) {
+  public TranscodeHandle start(RenditionRequest request) {
     startedRequests.add(request);
     var key = new ProcessKey(request.sessionId(), request.variantLabel());
     running.add(key);
@@ -85,7 +85,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     running.remove(new ProcessKey(sessionId, variantLabel));
   }
 
-  public List<TranscodeRequest> getStartedRequests() {
+  public List<RenditionRequest> getStartedRequests() {
     return List.copyOf(startedRequests);
   }
 

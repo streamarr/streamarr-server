@@ -7,21 +7,21 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 @Tag("UnitTest")
-@DisplayName("Transcode Request Tests")
-class TranscodeRequestTest {
+@DisplayName("Rendition Request Tests")
+class RenditionRequestTest {
 
   @Test
   @DisplayName("Should use default variant when label is absent")
   void shouldUseDefaultVariantWhenLabelIsAbsent() {
-    var request = TranscodeRequest.builder().build();
+    var request = RenditionRequest.builder().build();
 
-    assertThat(request.variantLabel()).isEqualTo(TranscodeRequest.DEFAULT_VARIANT);
+    assertThat(request.variantLabel()).isEqualTo(RenditionRequest.DEFAULT_VARIANT);
   }
 
   @Test
   @DisplayName("Should preserve explicit variant label")
   void shouldPreserveExplicitVariantLabel() {
-    var request = TranscodeRequest.builder().variantLabel("720p").build();
+    var request = RenditionRequest.builder().variantLabel("720p").build();
 
     assertThat(request.variantLabel()).isEqualTo("720p");
   }

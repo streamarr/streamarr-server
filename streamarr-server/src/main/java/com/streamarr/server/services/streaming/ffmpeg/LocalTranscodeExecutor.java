@@ -7,9 +7,9 @@ import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.transcode.engine.ffmpeg.FfmpegCommandBuilder;
 import com.streamarr.transcode.engine.ffmpeg.FfmpegProcessManager;
 import com.streamarr.transcode.engine.ffmpeg.TranscodeCapabilityService;
-import com.streamarr.transcode.engine.model.TranscodeJob;
+import com.streamarr.transcode.engine.model.RenditionJob;
+import com.streamarr.transcode.engine.model.RenditionRequest;
 import com.streamarr.transcode.engine.model.TranscodeMode;
-import com.streamarr.transcode.engine.model.TranscodeRequest;
 import java.nio.file.Path;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -25,7 +25,7 @@ public class LocalTranscodeExecutor implements TranscodeExecutor {
   private final TranscodeCapabilityService capabilityService;
 
   @Override
-  public TranscodeHandle start(TranscodeRequest request) {
+  public TranscodeHandle start(RenditionRequest request) {
     var job = resolveJob(request);
     var command = commandBuilder.buildCommand(job);
 
@@ -71,26 +71,26 @@ public class LocalTranscodeExecutor implements TranscodeExecutor {
     return capabilityService.isFfmpegAvailable();
   }
 
-  private TranscodeJob resolveJob(TranscodeRequest request) {
+  private RenditionJob resolveJob(RenditionRequest request) {
     var videoEncoder = resolveEncoder(request);
     var outputDir = resolveOutputDir(request);
 
-    return TranscodeJob.builder()
+    return RenditionJob.builder()
         .request(request)
         .videoEncoder(videoEncoder)
         .outputDir(outputDir)
         .build();
   }
 
-  private Path resolveOutputDir(TranscodeRequest request) {
-    if (TranscodeRequest.DEFAULT_VARIANT.equals(request.variantLabel())) {
+  private Path resolveOutputDir(RenditionRequest request) {
+    if (RenditionRequest.DEFAULT_VARIANT.equals(request.variantLabel())) {
       return segmentStore.getOutputDirectory(request.sessionId());
     }
 
     return segmentStore.getOutputDirectory(request.sessionId(), request.variantLabel());
   }
 
-  private String resolveEncoder(TranscodeRequest request) {
+  private String resolveEncoder(RenditionRequest request) {
     var mode = request.transcodeDecision().transcodeMode();
     if (mode == TranscodeMode.REMUX || mode == TranscodeMode.AUDIO_TRANSCODE) {
       return "copy";

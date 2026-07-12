@@ -1,12 +1,12 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.domain.streaming.TranscodeHandle;
-import com.streamarr.transcode.engine.model.TranscodeRequest;
+import com.streamarr.transcode.engine.model.RenditionRequest;
 import java.util.UUID;
 
 public interface TranscodeExecutor {
 
-  TranscodeHandle start(TranscodeRequest request);
+  TranscodeHandle start(RenditionRequest request);
 
   void stop(UUID sessionId);
 
