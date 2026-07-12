@@ -19,4 +19,6 @@ public interface FfmpegProcessManager {
   boolean isRunning(FfmpegProcessKey key);
 
   FfmpegProcessObservation observe(FfmpegProcessKey key);
+
+  boolean releaseJobObservation(TranscodeJobRef jobRef);
 }

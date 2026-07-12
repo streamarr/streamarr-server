@@ -26,8 +26,12 @@ public class SecurityExceptionFileSystem extends FileSystem {
   private final SecurityExceptionProvider provider;
 
   public SecurityExceptionFileSystem(FileSystem delegate) {
+    this(delegate, false);
+  }
+
+  public SecurityExceptionFileSystem(FileSystem delegate, boolean checkedAccessDenial) {
     this.delegate = delegate;
-    this.provider = new SecurityExceptionProvider(delegate.provider(), this);
+    this.provider = new SecurityExceptionProvider(delegate.provider(), this, checkedAccessDenial);
   }
 
   @Override
@@ -236,10 +240,15 @@ public class SecurityExceptionFileSystem extends FileSystem {
 
     private final FileSystemProvider delegate;
     private final SecurityExceptionFileSystem fileSystem;
+    private final boolean checkedAccessDenial;
 
-    SecurityExceptionProvider(FileSystemProvider delegate, SecurityExceptionFileSystem fileSystem) {
+    SecurityExceptionProvider(
+        FileSystemProvider delegate,
+        SecurityExceptionFileSystem fileSystem,
+        boolean checkedAccessDenial) {
       this.delegate = delegate;
       this.fileSystem = fileSystem;
+      this.checkedAccessDenial = checkedAccessDenial;
     }
 
     private static Path unwrap(Path path) {
@@ -247,7 +256,10 @@ public class SecurityExceptionFileSystem extends FileSystem {
     }
 
     @Override
-    public void checkAccess(Path path, java.nio.file.AccessMode... modes) {
+    public void checkAccess(Path path, java.nio.file.AccessMode... modes) throws IOException {
+      if (checkedAccessDenial) {
+        throw new java.nio.file.AccessDeniedException(path.toString());
+      }
       throw new SecurityException("Simulated security manager denial for path: " + path);
     }
 

@@ -253,6 +253,15 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
     return retainTerminalObservation(key, managed);
   }
 
+  @Override
+  public boolean releaseJobObservation(TranscodeJobRef jobRef) {
+    if (isRunning(jobRef)) {
+      return false;
+    }
+    terminalObservations.keySet().removeIf(key -> key.jobRef().equals(jobRef));
+    return true;
+  }
+
   private FfmpegProcessObservation retainTerminalObservation(
       FfmpegProcessKey key, ManagedProcess managed) {
     if (!managed.stopRequested().get()) {

@@ -24,5 +24,11 @@ public record TranscodeExecutionParameters(
     if (startupTimeout == null || startupTimeout.isZero() || startupTimeout.isNegative()) {
       throw new IllegalArgumentException("Startup timeout must be positive");
     }
+    try {
+      startupTimeout.toNanos();
+    } catch (ArithmeticException exception) {
+      throw new IllegalArgumentException(
+          "Startup timeout must fit nanosecond precision", exception);
+    }
   }
 }

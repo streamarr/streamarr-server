@@ -2,6 +2,7 @@ package com.streamarr.transcode.engine.model;
 
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import lombok.Builder;
 
@@ -28,8 +29,8 @@ public record TranscodeJobSpec(
     }
     var labels = new HashSet<String>();
     for (var rendition : renditions) {
-      if (!labels.add(rendition.label())) {
-        throw new IllegalArgumentException("Transcode job rendition labels must be unique");
+      if (rendition == null || !labels.add(rendition.label().toLowerCase(Locale.ROOT))) {
+        throw new IllegalArgumentException("Transcode job renditions and labels must be unique");
       }
     }
     renditions = List.copyOf(renditions);

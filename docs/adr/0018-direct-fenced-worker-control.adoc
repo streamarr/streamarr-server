@@ -96,7 +96,11 @@ Introduce an application-owned `TranscodeWorkerPort` instead of extending the pr
 `TranscodeExecutor` across a network boundary.
 One `StartJob` owns the complete requested variant ladder or publishes none of it.
 Every generation writes to worker-local staging that the segment gateway cannot resolve.
-Startup readiness requires every rendition process to remain alive and produce its required initialization/playlist artifacts plus the first playable segment.
+Startup readiness requires every rendition to remain healthy -- either running, or cleanly completed
+with a terminal playlist marker -- and produce its required initialization/playlist artifacts plus
+the first playable segment.
+Segment and initialization readiness uses no-follow file metadata rather than loading media bytes;
+playlist inspection is bounded so malformed or oversized output cannot exhaust the worker heap.
 Only after every rendition reaches that point does the worker atomically publish the generation; a start failure compensates every process and discards staging.
 If one rendition later dies, the complete job fails and stops rather than silently serving a partial ladder; recovery chooses a new generation and may deliberately choose a different complete ladder.
 The local adapter preserves the same staging, readiness, publication, and compensation rule.
@@ -115,6 +119,10 @@ with the exact job and generation. Read-only inspection names its target but has
 
 It returns typed admission and observation results.
 Inspection reports per-rendition state so the controller can still detect one dead member of a ladder.
+Aggregate observations are closed: admitting has only starting renditions; running has at least one
+running rendition and otherwise only completed renditions; completed has only completed renditions;
+failed has at least one failed rendition and no active rendition; stopped has only stopped
+renditions; absent has none.
 Every mutation carries target worker, target boot, `job_id`, and generation; a delayed old-boot start or stop is rejected and cannot affect a replacement.
 PID and `java.lang.Process` remain engine-local diagnostics.
 `forceStopAll` remains an engine/runtime shutdown operation and is never a remote method.
@@ -282,8 +290,12 @@ The first source adapter is a read-only shared mount.
 `MediaSourceRef` contains a logical library/mount id and a normalized relative key, never an absolute server path or URI.
 The media server derives it from the authoritative library root and media file.
 The worker maps the logical id to its configured local root.
+Here, portable means independent of a host-specific absolute path and safe for the protocol; it does not promise that every legal source filename is representable on every worker operating system.
+An administrator using the shared-mount adapter is responsible for compatible filename semantics across the media server and selected workers.
 
-Both sides reject absolute keys, `..` traversal, normalization escape, and symbolic-link escape after resolving real paths.
+Both sides reject absolute keys, `..` traversal, normalization escape, and symbolic-link escape whenever a reference is resolved.
+The shared mount is a trusted, stable namespace for the lifetime of an admitted job: an administrator or local principal that can replace a resolved file or ancestor after validation can redirect a pathname before FFmpeg opens it.
+Streamarr does not claim pathnames are capability handles; closing that final filesystem TOCTOU window would require an OS-specific open-handle or staged-input boundary and is deferred unless the shared-mount trust assumption becomes unacceptable.
 The worker opens the source read-only and FFmpeg never receives control-plane credentials.
 A ranged internal source endpoint and short-lived signed source URL are additive future adapters behind the same reference.
 Scan-time cached probe metadata remains the preferred way to remove API-side source probing from playback startup, but that storage change is outside this ADR's first implementation.

@@ -39,9 +39,23 @@ class TranscodeJobSpecTest {
   }
 
   @Test
+  @DisplayName("Should reject job specification when rendition ladder contains an absent value")
+  void shouldRejectJobSpecificationWhenRenditionLadderContainsAbsentValue() {
+    assertThatThrownBy(() -> specification(java.util.Arrays.asList(rendition("720p"), null)))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
   @DisplayName("Should reject job specification when rendition labels are duplicated")
   void shouldRejectJobSpecificationWhenRenditionLabelsAreDuplicated() {
     assertThatThrownBy(() -> specification(List.of(rendition("720p"), rendition("720p"))))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject rendition labels that collide on case-insensitive storage")
+  void shouldRejectRenditionLabelsThatCollideOnCaseInsensitiveStorage() {
+    assertThatThrownBy(() -> specification(List.of(rendition("720p"), rendition("720P"))))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
@@ -88,9 +102,18 @@ class TranscodeJobSpecTest {
         .sessionId(UUID.randomUUID())
         .jobRef(new TranscodeJobRef(UUID.randomUUID(), 1))
         .source(new MediaSourceRef(UUID.randomUUID(), "Movies/movie.mkv"))
-        .decision(TranscodeDecision.builder().build())
+        .decision(validDecision().build())
         .execution(new TranscodeExecutionParameters(0, 6, 23.976, 0, Duration.ofSeconds(45)))
         .renditions(List.of(rendition("720p")));
+  }
+
+  private static TranscodeDecision.TranscodeDecisionBuilder validDecision() {
+    return TranscodeDecision.builder()
+        .transcodeMode(TranscodeMode.FULL_TRANSCODE)
+        .videoCodecFamily("h264")
+        .audioDecision(AudioDecision.stereoAac())
+        .subtitleDecision(SubtitleDecision.exclude())
+        .containerFormat(ContainerFormat.MPEGTS);
   }
 
   private static RenditionSpec rendition(String label) {

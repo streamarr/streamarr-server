@@ -6,6 +6,8 @@ import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.fakes.FakeFfmpegProcessManager;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.transcode.engine.ffmpeg.FfmpegCommandBuilder;
+import com.streamarr.transcode.engine.ffmpeg.FfmpegProcessKey;
+import com.streamarr.transcode.engine.ffmpeg.FfmpegProcessState;
 import com.streamarr.transcode.engine.ffmpeg.HardwareEncodingCapability;
 import com.streamarr.transcode.engine.ffmpeg.TranscodeCapabilityService;
 import com.streamarr.transcode.engine.model.AudioDecision;
@@ -13,6 +15,7 @@ import com.streamarr.transcode.engine.model.ContainerFormat;
 import com.streamarr.transcode.engine.model.RenditionRequest;
 import com.streamarr.transcode.engine.model.SubtitleDecision;
 import com.streamarr.transcode.engine.model.TranscodeDecision;
+import com.streamarr.transcode.engine.model.TranscodeJobRef;
 import com.streamarr.transcode.engine.model.TranscodeMode;
 import java.nio.file.Path;
 import java.util.Map;
@@ -123,6 +126,19 @@ class LocalTranscodeExecutorTest {
 
     assertThat(executor.isRunning(request.sessionId())).isFalse();
     assertThat(processManager.getStopped()).contains(request.sessionId());
+  }
+
+  @Test
+  @DisplayName("Should release terminal process observation when transcode is stopped")
+  void shouldReleaseTerminalProcessObservationWhenTranscodeIsStopped() {
+    var request = createRequest(TranscodeMode.FULL_TRANSCODE, "h264", "720p");
+    executor.start(request);
+
+    executor.stop(request.sessionId());
+
+    var key =
+        new FfmpegProcessKey(new TranscodeJobRef(request.sessionId(), 1), request.variantLabel());
+    assertThat(processManager.observe(key).state()).isEqualTo(FfmpegProcessState.ABSENT);
   }
 
   @Test

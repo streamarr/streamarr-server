@@ -6,8 +6,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.streamarr.transcode.engine.error.TranscodeException;
 import com.streamarr.transcode.engine.model.TranscodeJobRef;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -47,6 +49,38 @@ class LocalSegmentStorageTest {
   }
 
   @Test
+  @DisplayName("Should prepare a generation when the managed base directory is missing")
+  void shouldPrepareGenerationWhenManagedBaseDirectoryIsMissing() {
+    var missingBase = tempDir.resolve("missing/base");
+    storage = new LocalSegmentStorage(missingBase);
+
+    var generation =
+        storage.prepareGeneration(UUID.randomUUID(), new TranscodeJobRef(UUID.randomUUID(), 1));
+
+    assertThat(generation.outputDirectory()).exists().isDirectory();
+  }
+
+  @Test
+  @DisplayName("Should reject a regular file as the configured storage base")
+  void shouldRejectRegularFileAsConfiguredStorageBase() throws IOException {
+    var configuredBase = Files.createFile(tempDir.resolve("segments.file"));
+
+    assertThatThrownBy(() -> new LocalSegmentStorage(configuredBase))
+        .isInstanceOf(UncheckedIOException.class);
+  }
+
+  @Test
+  @DisplayName("Should create a legacy rendition output directory inside its session")
+  void shouldCreateLegacyRenditionOutputDirectoryInsideItsSession() {
+    var sessionId = UUID.randomUUID();
+
+    var renditionDirectory = storage.getOutputDirectory(sessionId, "720p");
+
+    assertThat(renditionDirectory).isDirectory();
+    assertThat(renditionDirectory.getParent()).isEqualTo(storage.getOutputDirectory(sessionId));
+  }
+
+  @Test
   @DisplayName("Should expose every generation artifact when the generation is published")
   void shouldExposeEveryGenerationArtifactWhenGenerationIsPublished() throws IOException {
     var sessionId = UUID.randomUUID();
@@ -61,6 +95,35 @@ class LocalSegmentStorageTest {
 
     assertThat(storage.readSegment(sessionId, "480p/segment0.ts")).isEqualTo("low".getBytes());
     assertThat(storage.readSegment(sessionId, "1080p/segment0.ts")).isEqualTo("high".getBytes());
+  }
+
+  @Test
+  @DisplayName("Should report a missing segment after searching the published timeline")
+  void shouldReportMissingSegmentAfterSearchingPublishedTimeline() throws IOException {
+    var sessionId = UUID.randomUUID();
+    var generation =
+        storage.prepareGeneration(sessionId, new TranscodeJobRef(UUID.randomUUID(), 1));
+    Files.writeString(generation.outputDirectory().resolve("stream.m3u8"), "#EXTM3U");
+    storage.publish(generation);
+
+    assertThatThrownBy(() -> storage.readSegment(sessionId, "segment0.ts"))
+        .isInstanceOf(TranscodeException.class)
+        .hasMessage("Segment not found: segment0.ts");
+  }
+
+  @Test
+  @DisplayName("Should preserve interruption while waiting for a segment")
+  void shouldPreserveInterruptionWhileWaitingForSegment() {
+    var sessionId = UUID.randomUUID();
+    storage.getOutputDirectory(sessionId);
+    Thread.currentThread().interrupt();
+
+    try {
+      assertThat(storage.waitForSegment(sessionId, "segment0.ts", Duration.ofSeconds(1))).isFalse();
+      assertThat(Thread.currentThread().isInterrupted()).isTrue();
+    } finally {
+      Thread.interrupted();
+    }
   }
 
   @Test
@@ -150,6 +213,19 @@ class LocalSegmentStorageTest {
     assertThat(withdrawn).isTrue();
     assertThat(storage.segmentExists(sessionId, "720p/segment0.ts")).isFalse();
     assertThat(storage.segmentExists(sessionId, "720p/segment1.ts")).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should reject republishing a withdrawn generation")
+  void shouldRejectRepublishingWithdrawnGeneration() throws IOException {
+    var sessionId = UUID.randomUUID();
+    var generation =
+        writeGeneration(sessionId, new TranscodeJobRef(UUID.randomUUID(), 1), "withdrawn-segment");
+    storage.publish(generation);
+    storage.withdraw(sessionId, generation.jobRef());
+
+    assertThatThrownBy(() -> storage.publish(generation)).isInstanceOf(IllegalStateException.class);
+    assertThat(storage.segmentExists(sessionId, "720p/segment0.ts")).isFalse();
   }
 
   @Test
@@ -322,6 +398,211 @@ class LocalSegmentStorageTest {
   }
 
   @Test
+  @DisplayName("Should reject a generation root replaced by an external symlink")
+  void shouldRejectGenerationRootReplacedByExternalSymlink() throws IOException {
+    var sessionId = UUID.randomUUID();
+    var generation =
+        storage.prepareGeneration(sessionId, new TranscodeJobRef(UUID.randomUUID(), 1));
+    Files.delete(generation.outputDirectory());
+    var externalGeneration = Files.createDirectories(externalDir.resolve("generation/720p"));
+    Files.writeString(externalGeneration.resolve("segment0.ts"), "external-secret");
+    Files.createSymbolicLink(
+        generation.outputDirectory(), externalGeneration.getParent().toAbsolutePath());
+    storage.publish(generation);
+
+    assertThatThrownBy(() -> storage.readSegment(sessionId, "720p/segment0.ts"))
+        .isInstanceOf(InvalidSegmentPathException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject a staging directory symlink outside managed storage")
+  void shouldRejectStagingDirectorySymlinkOutsideManagedStorage() throws IOException {
+    var sessionId = UUID.randomUUID();
+    Files.createSymbolicLink(tempDir.resolve(".staging"), externalDir.toAbsolutePath());
+
+    assertThatThrownBy(
+            () -> storage.prepareGeneration(sessionId, new TranscodeJobRef(UUID.randomUUID(), 1)))
+        .isInstanceOf(InvalidSegmentPathException.class);
+    assertThat(externalDir.resolve(sessionId.toString())).doesNotExist();
+  }
+
+  @Test
+  @DisplayName("Should reject a legacy session directory symlink outside managed storage")
+  void shouldRejectLegacySessionDirectorySymlinkOutsideManagedStorage() throws IOException {
+    var sessionId = UUID.randomUUID();
+    var externalSession = Files.createDirectories(externalDir.resolve(sessionId.toString()));
+    Files.createSymbolicLink(
+        tempDir.resolve(sessionId.toString()), externalSession.toAbsolutePath());
+
+    assertThatThrownBy(() -> storage.getOutputDirectory(sessionId, "720p"))
+        .isInstanceOf(InvalidSegmentPathException.class);
+    assertThat(externalSession.resolve("720p")).doesNotExist();
+  }
+
+  @Test
+  @DisplayName("Should delete a legacy session symlink without following its target")
+  void shouldDeleteLegacySessionSymlinkWithoutFollowingItsTarget() throws IOException {
+    var sessionId = UUID.randomUUID();
+    var externalSession = Files.createDirectories(externalDir.resolve(sessionId.toString()));
+    var externalSegment = Files.writeString(externalSession.resolve("segment0.ts"), "external");
+    var sessionLink = tempDir.resolve(sessionId.toString());
+    Files.createSymbolicLink(sessionLink, externalSession.toAbsolutePath());
+
+    storage.deleteSession(sessionId);
+
+    assertThat(Files.exists(sessionLink, java.nio.file.LinkOption.NOFOLLOW_LINKS)).isFalse();
+    assertThat(externalSegment).exists().hasContent("external");
+  }
+
+  @Test
+  @DisplayName("Should reject deletion after managed base is replaced by an external symlink")
+  void shouldRejectDeletionAfterManagedBaseIsReplacedByExternalSymlink() throws IOException {
+    var managedBase = Files.createDirectories(tempDir.resolve("managed"));
+    storage = new LocalSegmentStorage(managedBase);
+    var sessionId = UUID.randomUUID();
+    var externalSession = Files.createDirectories(externalDir.resolve(sessionId.toString()));
+    var externalSegment = Files.writeString(externalSession.resolve("segment0.ts"), "external");
+    Files.delete(managedBase);
+    Files.createSymbolicLink(managedBase, externalDir.toAbsolutePath());
+
+    assertThatThrownBy(() -> storage.deleteSession(sessionId))
+        .isInstanceOf(InvalidSegmentPathException.class);
+    assertThat(externalSegment).exists();
+  }
+
+  @Test
+  @DisplayName("Should accept a configured base symlink when storage is initialized")
+  void shouldAcceptConfiguredBaseSymlinkWhenStorageIsInitialized() throws IOException {
+    var configuredTarget = Files.createDirectories(externalDir.resolve("configured-storage"));
+    var configuredBase = tempDir.resolve("configured-storage");
+    Files.createSymbolicLink(configuredBase, configuredTarget.toAbsolutePath());
+    storage = new LocalSegmentStorage(configuredBase);
+
+    var outputDirectory = storage.getOutputDirectory(UUID.randomUUID());
+
+    assertThat(outputDirectory.toRealPath()).startsWith(configuredTarget.toRealPath());
+  }
+
+  @Test
+  @DisplayName("Should retry generation discard after configured base identity is restored")
+  void shouldRetryGenerationDiscardAfterConfiguredBaseIdentityIsRestored() throws IOException {
+    var configuredTarget = Files.createDirectories(externalDir.resolve("configured-storage"));
+    var replacementTarget = Files.createDirectories(externalDir.resolve("replacement-storage"));
+    var configuredBase = tempDir.resolve("configured-storage");
+    Files.createSymbolicLink(configuredBase, configuredTarget.toAbsolutePath());
+    storage = new LocalSegmentStorage(configuredBase);
+    var generation =
+        writeGeneration(
+            UUID.randomUUID(), new TranscodeJobRef(UUID.randomUUID(), 1), "staged-segment");
+    var generationRelativePath = configuredBase.relativize(generation.outputDirectory());
+    Files.createDirectories(replacementTarget.resolve(generationRelativePath));
+    Files.delete(configuredBase);
+    Files.createSymbolicLink(configuredBase, replacementTarget.toAbsolutePath());
+
+    assertThatThrownBy(() -> storage.discard(generation))
+        .isInstanceOf(InvalidSegmentPathException.class);
+    Files.delete(configuredBase);
+    Files.createSymbolicLink(configuredBase, configuredTarget.toAbsolutePath());
+
+    storage.discard(generation);
+
+    assertThat(generation.outputDirectory()).doesNotExist();
+  }
+
+  @Test
+  @DisplayName("Should reject session discovery through an external staging symlink")
+  void shouldRejectSessionDiscoveryThroughExternalStagingSymlink() throws IOException {
+    Files.createDirectories(externalDir.resolve(UUID.randomUUID().toString()));
+    Files.createSymbolicLink(tempDir.resolve(".staging"), externalDir.toAbsolutePath());
+
+    assertThatThrownBy(storage::snapshotStoredSessionIds)
+        .isInstanceOf(InvalidSegmentPathException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject deletion of a session symlink below an escaped staging parent")
+  void shouldRejectDeletionOfSessionSymlinkBelowEscapedStagingParent() throws IOException {
+    var sessionId = UUID.randomUUID();
+    var externalStaging = Files.createDirectories(externalDir.resolve("staging"));
+    var externalTarget = Files.createDirectories(externalDir.resolve("target"));
+    var externalSessionLink = externalStaging.resolve(sessionId.toString());
+    Files.createSymbolicLink(externalSessionLink, externalTarget.toAbsolutePath());
+    Files.createSymbolicLink(tempDir.resolve(".staging"), externalStaging.toAbsolutePath());
+
+    assertThatThrownBy(() -> storage.deleteSession(sessionId))
+        .isInstanceOf(InvalidSegmentPathException.class);
+    assertThat(Files.exists(externalSessionLink, java.nio.file.LinkOption.NOFOLLOW_LINKS)).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should reject a rendition directory symlink outside managed storage")
+  void shouldRejectRenditionDirectorySymlinkOutsideManagedStorage() throws IOException {
+    var generation =
+        storage.prepareGeneration(UUID.randomUUID(), new TranscodeJobRef(UUID.randomUUID(), 1));
+    var externalRendition = Files.createDirectories(externalDir.resolve("720p"));
+    Files.createSymbolicLink(
+        generation.outputDirectory().resolve("720p"), externalRendition.toAbsolutePath());
+
+    assertThatThrownBy(() -> storage.prepareRenditionDirectory(generation, "720p"))
+        .isInstanceOf(InvalidSegmentPathException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject a staged artifact symlink outside managed storage")
+  void shouldRejectStagedArtifactSymlinkOutsideManagedStorage() throws IOException {
+    var generation =
+        storage.prepareGeneration(UUID.randomUUID(), new TranscodeJobRef(UUID.randomUUID(), 1));
+    var renditionDirectory = storage.prepareRenditionDirectory(generation, "720p");
+    var externalManifest = Files.writeString(externalDir.resolve("stream.m3u8"), "external");
+    Files.createSymbolicLink(
+        renditionDirectory.resolve("stream.m3u8"), externalManifest.toAbsolutePath());
+
+    assertThatThrownBy(() -> storage.readStagedArtifact(generation, "720p/stream.m3u8"))
+        .isInstanceOf(InvalidSegmentPathException.class);
+    assertThatThrownBy(() -> storage.isStagedArtifactNonEmpty(generation, "720p/stream.m3u8"))
+        .isInstanceOf(InvalidSegmentPathException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject a staged directory as an artifact")
+  void shouldRejectStagedDirectoryAsArtifact() {
+    var generation =
+        storage.prepareGeneration(UUID.randomUUID(), new TranscodeJobRef(UUID.randomUUID(), 1));
+    storage.prepareRenditionDirectory(generation, "720p");
+
+    assertThatThrownBy(() -> storage.readStagedArtifact(generation, "720p"))
+        .isInstanceOf(InvalidSegmentPathException.class);
+    assertThatThrownBy(() -> storage.isStagedArtifactNonEmpty(generation, "720p"))
+        .isInstanceOf(InvalidSegmentPathException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject a staged artifact that exceeds the inspection limit")
+  void shouldRejectStagedArtifactThatExceedsInspectionLimit() throws IOException {
+    var generation =
+        storage.prepareGeneration(UUID.randomUUID(), new TranscodeJobRef(UUID.randomUUID(), 1));
+    Files.write(generation.outputDirectory().resolve("stream.m3u8"), new byte[1_048_577]);
+
+    assertThatThrownBy(() -> storage.readStagedArtifact(generation, "stream.m3u8"))
+        .isInstanceOf(TranscodeException.class)
+        .hasMessage("Staged artifact exceeds inspection limit");
+  }
+
+  @Test
+  @DisplayName("Should reject cleanup and reads through a superseded prepared generation")
+  void shouldRejectCleanupAndReadsThroughSupersededPreparedGeneration() {
+    var sessionId = UUID.randomUUID();
+    var jobId = UUID.randomUUID();
+    var superseded = storage.prepareGeneration(sessionId, new TranscodeJobRef(jobId, 1));
+    var current = storage.prepareGeneration(sessionId, new TranscodeJobRef(jobId, 2));
+
+    assertThatThrownBy(() -> storage.discard(superseded)).isInstanceOf(IllegalStateException.class);
+    assertThatThrownBy(() -> storage.readStagedArtifact(superseded, "stream.m3u8"))
+        .isInstanceOf(IllegalStateException.class);
+    assertThat(current.outputDirectory()).exists();
+  }
+
+  @Test
   @DisplayName("Should reject reusing residual artifacts for the same generation after restart")
   void shouldRejectReusingResidualArtifactsForSameGenerationAfterRestart() throws IOException {
     var sessionId = UUID.randomUUID();
@@ -331,6 +612,116 @@ class LocalSegmentStorageTest {
 
     assertThatThrownBy(() -> storage.prepareGeneration(sessionId, jobRef))
         .isInstanceOf(IllegalStateException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject a regular file at the generation root")
+  void shouldRejectRegularFileAtGenerationRoot() throws IOException {
+    var sessionId = UUID.randomUUID();
+    var jobRef = new TranscodeJobRef(UUID.randomUUID(), 1);
+    var generationRoot =
+        tempDir
+            .resolve(".staging")
+            .resolve(sessionId.toString())
+            .resolve(jobRef.jobId() + "-" + jobRef.generation());
+    Files.createDirectories(generationRoot.getParent());
+    Files.createFile(generationRoot);
+
+    assertThatThrownBy(() -> storage.prepareGeneration(sessionId, jobRef))
+        .isInstanceOf(IllegalStateException.class);
+    assertThat(generationRoot).isRegularFile();
+  }
+
+  @Test
+  @DisplayName("Should report no stored sessions before the staging layout exists")
+  void shouldReportNoStoredSessionsBeforeStagingLayoutExists() {
+    assertThat(storage.snapshotStoredSessionIds()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should reject traversal while waiting for a segment")
+  void shouldRejectTraversalWhileWaitingForSegment() {
+    assertThatThrownBy(
+            () -> storage.waitForSegment(UUID.randomUUID(), "../segment0.ts", Duration.ofMillis(1)))
+        .isInstanceOf(InvalidSegmentPathException.class);
+  }
+
+  @Test
+  @DisplayName("Should report cached session verification failure when base disappears")
+  void shouldReportCachedSessionVerificationFailureWhenBaseDisappears() throws IOException {
+    var managedBase = Files.createDirectory(tempDir.resolve("managed"));
+    storage = new LocalSegmentStorage(managedBase);
+    var sessionId = UUID.randomUUID();
+    Files.delete(storage.getOutputDirectory(sessionId));
+    Files.delete(managedBase);
+
+    assertThatThrownBy(() -> storage.getOutputDirectory(sessionId))
+        .isInstanceOf(UncheckedIOException.class)
+        .hasMessage("Failed to verify session directory");
+  }
+
+  @Test
+  @DisplayName("Should report legacy rendition creation failure when its path is a file")
+  void shouldReportLegacyRenditionCreationFailureWhenItsPathIsFile() throws IOException {
+    var sessionId = UUID.randomUUID();
+    Files.createFile(storage.getOutputDirectory(sessionId).resolve("720p"));
+
+    assertThatThrownBy(() -> storage.getOutputDirectory(sessionId, "720p"))
+        .isInstanceOf(UncheckedIOException.class)
+        .hasMessage("Failed to create variant directory");
+  }
+
+  @Test
+  @DisplayName("Should report generation preparation failure when base becomes a file")
+  void shouldReportGenerationPreparationFailureWhenBaseBecomesFile() throws IOException {
+    var managedBase = Files.createDirectory(tempDir.resolve("managed"));
+    storage = new LocalSegmentStorage(managedBase);
+    Files.delete(managedBase);
+    Files.createFile(managedBase);
+
+    assertThatThrownBy(
+            () ->
+                storage.prepareGeneration(
+                    UUID.randomUUID(), new TranscodeJobRef(UUID.randomUUID(), 1)))
+        .isInstanceOf(UncheckedIOException.class)
+        .hasMessage("Failed to prepare segment generation");
+  }
+
+  @Test
+  @DisplayName("Should report rendition preparation failure when its path is a file")
+  void shouldReportRenditionPreparationFailureWhenItsPathIsFile() throws IOException {
+    var generation =
+        storage.prepareGeneration(UUID.randomUUID(), new TranscodeJobRef(UUID.randomUUID(), 1));
+    Files.createFile(generation.outputDirectory().resolve("720p"));
+
+    assertThatThrownBy(() -> storage.prepareRenditionDirectory(generation, "720p"))
+        .isInstanceOf(UncheckedIOException.class)
+        .hasMessage("Failed to prepare rendition directory");
+  }
+
+  @Test
+  @DisplayName("Should report stored session discovery failure when base becomes a file")
+  void shouldReportStoredSessionDiscoveryFailureWhenBaseBecomesFile() throws IOException {
+    var managedBase = Files.createDirectory(tempDir.resolve("managed"));
+    storage = new LocalSegmentStorage(managedBase);
+    Files.delete(managedBase);
+    Files.createFile(managedBase);
+
+    assertThatThrownBy(storage::snapshotStoredSessionIds)
+        .isInstanceOf(UncheckedIOException.class)
+        .hasMessage("Failed to discover stored stream sessions");
+  }
+
+  @Test
+  @DisplayName("Should report session deletion verification failure when base disappears")
+  void shouldReportSessionDeletionVerificationFailureWhenBaseDisappears() throws IOException {
+    var managedBase = Files.createDirectory(tempDir.resolve("managed"));
+    storage = new LocalSegmentStorage(managedBase);
+    Files.delete(managedBase);
+
+    assertThatThrownBy(() -> storage.deleteSession(UUID.randomUUID()))
+        .isInstanceOf(UncheckedIOException.class)
+        .hasMessage("Failed to verify session storage");
   }
 
   private SegmentGeneration writeGeneration(

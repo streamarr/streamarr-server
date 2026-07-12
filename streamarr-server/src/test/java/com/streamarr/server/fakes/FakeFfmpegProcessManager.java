@@ -72,6 +72,15 @@ public class FakeFfmpegProcessManager implements FfmpegProcessManager {
         key, FfmpegProcessObservation.withoutExitCode(FfmpegProcessState.ABSENT));
   }
 
+  @Override
+  public boolean releaseJobObservation(TranscodeJobRef jobRef) {
+    if (isRunning(jobRef)) {
+      return false;
+    }
+    terminalObservations.keySet().removeIf(key -> key.jobRef().equals(jobRef));
+    return true;
+  }
+
   private void retainStopped(FfmpegProcessKey key) {
     if (running.remove(key)) {
       terminalObservations.put(

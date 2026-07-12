@@ -1,12 +1,16 @@
 package com.streamarr.transcode.engine.model;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
 @DisplayName("Audio Decision Tests")
@@ -63,6 +67,23 @@ class AudioDecisionTest {
   }
 
   @Test
+  @DisplayName("Should preserve unknown bitrate when copy decision created")
+  void shouldPreserveUnknownBitrateWhenCopyDecisionCreated() {
+    var decision = AudioDecision.copy("ac3", 6, 0L);
+
+    assertThat(decision.bitrate()).isZero();
+  }
+
+  @ParameterizedTest
+  @MethodSource("invalidAudioDecisions")
+  @DisplayName("Should reject audio decision when values are invalid for mode")
+  void shouldRejectAudioDecisionWhenValuesAreInvalidForMode(
+      AudioMode mode, String codec, int channels, long bitrate) {
+    assertThatThrownBy(() -> new AudioDecision(mode, codec, channels, bitrate))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
   @DisplayName("Should return AAC codec string when codec is unrecognized")
   void shouldReturnAacCodecStringWhenCodecIsUnrecognized() {
     var decision = new AudioDecision(AudioMode.COPY, "opus", 2, 128_000L);
@@ -79,5 +100,24 @@ class AudioDecisionTest {
     assertThat(decision.codec()).isNull();
     assertThat(decision.channels()).isZero();
     assertThat(decision.bitrate()).isZero();
+  }
+
+  static Stream<Arguments> invalidAudioDecisions() {
+    var excessiveBitrate = Long.MAX_VALUE / 2 + 1;
+    return Stream.of(
+        Arguments.of(null, "aac", 2, 128_000L),
+        Arguments.of(AudioMode.COPY, null, 2, 0L),
+        Arguments.of(AudioMode.COPY, " ", 2, 0L),
+        Arguments.of(AudioMode.COPY, "aac", 0, 0L),
+        Arguments.of(AudioMode.COPY, "aac", 2, -1L),
+        Arguments.of(AudioMode.COPY, "aac", 2, excessiveBitrate),
+        Arguments.of(AudioMode.TRANSCODE, null, 2, 128_000L),
+        Arguments.of(AudioMode.TRANSCODE, " ", 2, 128_000L),
+        Arguments.of(AudioMode.TRANSCODE, "aac", 0, 128_000L),
+        Arguments.of(AudioMode.TRANSCODE, "aac", 2, 0L),
+        Arguments.of(AudioMode.TRANSCODE, "aac", 2, excessiveBitrate),
+        Arguments.of(AudioMode.NONE, "aac", 0, 0L),
+        Arguments.of(AudioMode.NONE, null, 1, 0L),
+        Arguments.of(AudioMode.NONE, null, 0, 1L));
   }
 }

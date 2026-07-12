@@ -1,13 +1,21 @@
 package com.streamarr.transcode.engine.ffmpeg;
 
-import java.util.Objects;
 import java.util.OptionalInt;
 
 public record FfmpegProcessObservation(FfmpegProcessState state, OptionalInt exitCode) {
 
   public FfmpegProcessObservation {
-    Objects.requireNonNull(state, "state must not be null");
-    Objects.requireNonNull(exitCode, "exitCode must not be null");
+    if (state == null || exitCode == null) {
+      throw new IllegalArgumentException("Process observation values are required");
+    }
+    var terminal =
+        switch (state) {
+          case COMPLETED, FAILED, STOPPED -> true;
+          case RUNNING, ABSENT -> false;
+        };
+    if (terminal != exitCode.isPresent()) {
+      throw new IllegalArgumentException("Process state and exit code contradict");
+    }
   }
 
   public static FfmpegProcessObservation withoutExitCode(FfmpegProcessState state) {

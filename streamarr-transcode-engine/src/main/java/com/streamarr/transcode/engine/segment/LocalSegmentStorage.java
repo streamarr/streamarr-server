@@ -25,6 +25,7 @@ public class LocalSegmentStorage {
 
   private static final Duration POLL_INTERVAL = Duration.ofMillis(100);
   private static final String STAGING_DIRECTORY = ".staging";
+  private static final int MAX_STAGED_ARTIFACT_BYTES = 1_048_576;
 
   private record SegmentPublication(
       TranscodeJobRef jobRef, Optional<Path> currentRoot, List<Path> historyRoots) {
@@ -43,6 +44,7 @@ public class LocalSegmentStorage {
   private record SegmentPath(Path root, Path path) {}
 
   private final Path baseDir;
+  private final Path canonicalBaseDir;
   private final ConcurrentHashMap<UUID, Path> sessionDirs = new ConcurrentHashMap<>();
   private final ConcurrentHashMap<UUID, SegmentGeneration> currentCandidates =
       new ConcurrentHashMap<>();
@@ -50,7 +52,13 @@ public class LocalSegmentStorage {
       new ConcurrentHashMap<>();
 
   public LocalSegmentStorage(Path baseDir) {
-    this.baseDir = baseDir;
+    this.baseDir = baseDir.toAbsolutePath().normalize();
+    try {
+      Files.createDirectories(this.baseDir);
+      canonicalBaseDir = this.baseDir.toRealPath();
+    } catch (IOException exception) {
+      throw new UncheckedIOException("Failed to initialize segment storage", exception);
+    }
   }
 
   public byte[] readSegment(UUID sessionId, String segmentName) {
@@ -94,15 +102,23 @@ public class LocalSegmentStorage {
   }
 
   public Path getOutputDirectory(UUID sessionId) {
-    return sessionDirs.computeIfAbsent(sessionId, this::createSessionDirectory);
+    var sessionDirectory = sessionDirs.computeIfAbsent(sessionId, this::createSessionDirectory);
+    try {
+      requireManagedPath(sessionDirectory, sessionId.toString());
+      return sessionDirectory;
+    } catch (IOException exception) {
+      throw new UncheckedIOException("Failed to verify session directory", exception);
+    }
   }
 
   public Path getOutputDirectory(UUID sessionId, String variantLabel) {
     var sessionDir = getOutputDirectory(sessionId);
-    var variantDir = sessionDir.resolve(variantLabel);
+    var variantDir = resolveWithin(sessionDir, variantLabel);
 
     try {
+      requireManagedPath(variantDir, variantLabel);
       Files.createDirectories(variantDir);
+      requireManagedPath(variantDir, variantLabel);
       return variantDir;
     } catch (IOException exception) {
       throw new UncheckedIOException("Failed to create variant directory", exception);
@@ -117,13 +133,72 @@ public class LocalSegmentStorage {
             .resolve(jobRef.jobId() + "-" + jobRef.generation());
 
     try {
+      Files.createDirectories(baseDir);
+      requireManagedPath(outputDirectory, jobRef.jobId().toString());
       rejectResidualArtifacts(outputDirectory);
       Files.createDirectories(outputDirectory);
+      requireManagedPath(outputDirectory, jobRef.jobId().toString());
       var generation = new SegmentGeneration(sessionId, jobRef, outputDirectory);
       currentCandidates.put(sessionId, generation);
       return generation;
     } catch (IOException exception) {
       throw new UncheckedIOException("Failed to prepare segment generation", exception);
+    }
+  }
+
+  public Path prepareRenditionDirectory(SegmentGeneration generation, String label) {
+    requireCurrent(generation);
+    var outputDirectory = resolveWithin(generation.outputDirectory(), label);
+    try {
+      requireManagedPath(outputDirectory, label);
+      Files.createDirectories(outputDirectory);
+      requireManagedPath(outputDirectory, label);
+      return outputDirectory;
+    } catch (IOException exception) {
+      throw new UncheckedIOException("Failed to prepare rendition directory", exception);
+    }
+  }
+
+  public Optional<byte[]> readStagedArtifact(SegmentGeneration generation, String relativeName) {
+    requireCurrent(generation);
+    var artifact = resolveWithin(generation.outputDirectory(), relativeName);
+    try {
+      requireManagedPath(artifact, relativeName);
+      if (!Files.exists(artifact, LinkOption.NOFOLLOW_LINKS)) {
+        return Optional.empty();
+      }
+      if (!Files.isRegularFile(artifact, LinkOption.NOFOLLOW_LINKS)) {
+        throw new InvalidSegmentPathException(relativeName);
+      }
+      try (var input = Files.newInputStream(artifact, LinkOption.NOFOLLOW_LINKS)) {
+        var contents = input.readNBytes(MAX_STAGED_ARTIFACT_BYTES + 1);
+        if (contents.length > MAX_STAGED_ARTIFACT_BYTES) {
+          throw new TranscodeException("Staged artifact exceeds inspection limit");
+        }
+        return Optional.of(contents);
+      }
+    } catch (NoSuchFileException exception) {
+      return Optional.empty();
+    } catch (IOException exception) {
+      throw new UncheckedIOException("Failed to read staged artifact", exception);
+    }
+  }
+
+  public boolean isStagedArtifactNonEmpty(SegmentGeneration generation, String relativeName) {
+    requireCurrent(generation);
+    var artifact = resolveWithin(generation.outputDirectory(), relativeName);
+    try {
+      requireManagedPath(artifact, relativeName);
+      var attributes =
+          Files.readAttributes(artifact, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+      if (!attributes.isRegularFile()) {
+        throw new InvalidSegmentPathException(relativeName);
+      }
+      return attributes.size() > 0;
+    } catch (NoSuchFileException _) {
+      return false;
+    } catch (IOException exception) {
+      throw new UncheckedIOException("Failed to inspect staged artifact", exception);
     }
   }
 
@@ -162,28 +237,35 @@ public class LocalSegmentStorage {
                   .isPresent()) {
             return currentCandidate;
           }
+          requireManagedGeneration(generation.outputDirectory());
+          deleteIfExists(generation.outputDirectory());
           discarded.set(true);
           return null;
         });
     if (!discarded.get()) {
       throw new IllegalStateException("Segment generation is not owned by this storage");
     }
-    var outputDirectory = generation.outputDirectory();
-    if (Files.exists(outputDirectory, LinkOption.NOFOLLOW_LINKS)) {
-      deleteDirectoryRecursively(outputDirectory);
-    }
   }
 
   public boolean withdraw(UUID sessionId, TranscodeJobRef jobRef) {
     var withdrawn = new AtomicBoolean();
-    publishedGenerations.computeIfPresent(
+    currentCandidates.compute(
         sessionId,
-        (_, current) -> {
-          if (!current.jobRef().equals(jobRef)) {
-            return current;
+        (_, candidate) -> {
+          publishedGenerations.computeIfPresent(
+              sessionId,
+              (__, current) -> {
+                if (!current.jobRef().equals(jobRef)) {
+                  return current;
+                }
+                withdrawn.set(true);
+                return new SegmentPublication(
+                    current.jobRef(), Optional.empty(), current.historyRoots());
+              });
+          if (withdrawn.get() && candidate != null && candidate.jobRef().equals(jobRef)) {
+            return null;
           }
-          withdrawn.set(true);
-          return new SegmentPublication(current.jobRef(), Optional.empty(), current.historyRoots());
+          return candidate;
         });
     return withdrawn.get();
   }
@@ -191,8 +273,11 @@ public class LocalSegmentStorage {
   public Set<UUID> snapshotStoredSessionIds() {
     var sessionIds = new HashSet<UUID>();
     try {
+      requireManagedPath(baseDir, "storage");
+      var stagingDirectory = baseDir.resolve(STAGING_DIRECTORY);
+      requireManagedPath(stagingDirectory, STAGING_DIRECTORY);
       addStoredSessionIds(baseDir, sessionIds);
-      addStoredSessionIds(baseDir.resolve(STAGING_DIRECTORY), sessionIds);
+      addStoredSessionIds(stagingDirectory, sessionIds);
     } catch (IOException exception) {
       throw new UncheckedIOException("Failed to discover stored stream sessions", exception);
     }
@@ -200,6 +285,13 @@ public class LocalSegmentStorage {
   }
 
   public void deleteSession(UUID sessionId) {
+    try {
+      requireSafeDeletionPath(baseDir.resolve(sessionId.toString()), sessionId.toString());
+      requireSafeDeletionPath(
+          baseDir.resolve(STAGING_DIRECTORY).resolve(sessionId.toString()), sessionId.toString());
+    } catch (IOException exception) {
+      throw new UncheckedIOException("Failed to verify session storage", exception);
+    }
     currentCandidates.remove(sessionId);
     publishedGenerations.remove(sessionId);
     sessionDirs.remove(sessionId);
@@ -236,7 +328,7 @@ public class LocalSegmentStorage {
     return resolved;
   }
 
-  private static boolean anyExists(List<SegmentPath> paths) {
+  private boolean anyExists(List<SegmentPath> paths) {
     for (var path : paths) {
       try {
         verifiedSegmentPath(path, path.path().getFileName().toString());
@@ -250,11 +342,19 @@ public class LocalSegmentStorage {
     return false;
   }
 
-  private static Path verifiedSegmentPath(SegmentPath segmentPath, String segmentName)
-      throws IOException {
+  private Path verifiedSegmentPath(SegmentPath segmentPath, String segmentName) throws IOException {
+    requireBaseIdentity(segmentName);
+    var lexicalBase = baseDir;
+    var lexicalRoot = segmentPath.root().toAbsolutePath().normalize();
+    if (!lexicalRoot.startsWith(lexicalBase)) {
+      throw new InvalidSegmentPathException(segmentName);
+    }
+    var expectedRoot = canonicalBaseDir.resolve(lexicalBase.relativize(lexicalRoot));
     var realRoot = segmentPath.root().toRealPath();
     var realSegment = segmentPath.path().toRealPath();
-    if (!realSegment.startsWith(realRoot) || !Files.isRegularFile(realSegment)) {
+    if (!realRoot.equals(expectedRoot)
+        || !realSegment.startsWith(realRoot)
+        || !Files.isRegularFile(realSegment)) {
       throw new InvalidSegmentPathException(segmentName);
     }
     return realSegment;
@@ -274,7 +374,10 @@ public class LocalSegmentStorage {
     var dir = baseDir.resolve(sessionId.toString());
 
     try {
+      Files.createDirectories(baseDir);
+      requireManagedPath(dir, sessionId.toString());
       Files.createDirectories(dir);
+      requireManagedPath(dir, sessionId.toString());
       return dir;
     } catch (IOException exception) {
       throw new UncheckedIOException("Failed to create session directory", exception);
@@ -292,6 +395,58 @@ public class LocalSegmentStorage {
       if (entries.iterator().hasNext()) {
         throw new IllegalStateException("Segment generation contains residual artifacts");
       }
+    }
+  }
+
+  private void requireManagedPath(Path path, String identifier) throws IOException {
+    requireBaseIdentity(identifier);
+    var lexicalBase = baseDir;
+    var lexicalPath = path.toAbsolutePath().normalize();
+    if (!lexicalPath.startsWith(lexicalBase)) {
+      throw new InvalidSegmentPathException(identifier);
+    }
+    var current = lexicalBase;
+    var expected = canonicalBaseDir;
+    for (var component : lexicalBase.relativize(lexicalPath)) {
+      current = current.resolve(component);
+      expected = expected.resolve(component);
+      if (!Files.exists(current, LinkOption.NOFOLLOW_LINKS)) {
+        return;
+      }
+      if (!current.toRealPath().equals(expected)) {
+        throw new InvalidSegmentPathException(identifier);
+      }
+    }
+  }
+
+  private void requireCurrent(SegmentGeneration generation) {
+    if (currentCandidates.get(generation.sessionId()) != generation) {
+      throw new IllegalStateException("Segment generation is no longer current");
+    }
+  }
+
+  private void requireManagedGeneration(Path outputDirectory) {
+    try {
+      requireManagedPath(outputDirectory, outputDirectory.getFileName().toString());
+    } catch (IOException exception) {
+      throw new UncheckedIOException("Failed to verify segment generation", exception);
+    }
+  }
+
+  private void requireSafeDeletionPath(Path path, String identifier) throws IOException {
+    var lexicalPath = path.toAbsolutePath().normalize();
+    if (!lexicalPath.startsWith(baseDir)) {
+      throw new InvalidSegmentPathException(identifier);
+    }
+    requireManagedPath(path.getParent(), identifier);
+    if (!Files.isSymbolicLink(path)) {
+      requireManagedPath(path, identifier);
+    }
+  }
+
+  private void requireBaseIdentity(String identifier) throws IOException {
+    if (!baseDir.toRealPath().equals(canonicalBaseDir)) {
+      throw new InvalidSegmentPathException(identifier);
     }
   }
 
@@ -317,6 +472,11 @@ public class LocalSegmentStorage {
 
   private void deleteDirectoryRecursively(Path dir) {
     try {
+      requireSafeDeletionPath(dir, dir.getFileName().toString());
+      if (Files.isSymbolicLink(dir)) {
+        Files.deleteIfExists(dir);
+        return;
+      }
       Files.walkFileTree(
           dir,
           new SimpleFileVisitor<>() {

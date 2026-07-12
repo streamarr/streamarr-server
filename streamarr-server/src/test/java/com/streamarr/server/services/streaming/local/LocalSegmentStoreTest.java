@@ -160,14 +160,13 @@ class LocalSegmentStoreTest {
   }
 
   @Test
-  @DisplayName("Should fail stored session discovery when base path is not a directory")
-  void shouldFailStoredSessionDiscoveryWhenBasePathIsNotDirectory() throws IOException {
+  @DisplayName("Should fail fast when base path is not a directory")
+  void shouldFailFastWhenBasePathIsNotDirectory() throws IOException {
     var baseFile = Files.writeString(tempDir.resolve("segments.file"), "not a directory");
-    store = new LocalSegmentStore(baseFile);
 
-    assertThatThrownBy(store::snapshotStoredSessionIds)
+    assertThatThrownBy(() -> new LocalSegmentStore(baseFile))
         .isInstanceOf(java.io.UncheckedIOException.class)
-        .hasMessage("Failed to discover stored stream sessions");
+        .hasMessage("Failed to initialize segment storage");
   }
 
   @Test

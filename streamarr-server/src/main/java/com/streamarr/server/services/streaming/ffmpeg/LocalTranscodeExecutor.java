@@ -4,6 +4,7 @@ import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
+import com.streamarr.transcode.engine.error.TranscodeException;
 import com.streamarr.transcode.engine.ffmpeg.FfmpegCommandBuilder;
 import com.streamarr.transcode.engine.ffmpeg.FfmpegProcessKey;
 import com.streamarr.transcode.engine.ffmpeg.FfmpegProcessManager;
@@ -51,7 +52,11 @@ public class LocalTranscodeExecutor implements TranscodeExecutor {
 
   @Override
   public void stop(UUID sessionId) {
-    processManager.stopJob(jobRef(sessionId));
+    var jobRef = jobRef(sessionId);
+    processManager.stopJob(jobRef);
+    if (!processManager.releaseJobObservation(jobRef)) {
+      throw new TranscodeException("Transcode cleanup is still pending");
+    }
     log.info("Stopped transcode for session {}", sessionId);
   }
 

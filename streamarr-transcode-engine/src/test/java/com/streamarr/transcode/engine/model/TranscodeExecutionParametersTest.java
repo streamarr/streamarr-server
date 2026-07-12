@@ -54,6 +54,7 @@ class TranscodeExecutionParametersTest {
         Arguments.of(0, 6, 23.976, -1, Duration.ofSeconds(45)),
         Arguments.of(0, 6, 23.976, 0, null),
         Arguments.of(0, 6, 23.976, 0, Duration.ZERO),
-        Arguments.of(0, 6, 23.976, 0, Duration.ofSeconds(-1)));
+        Arguments.of(0, 6, 23.976, 0, Duration.ofSeconds(-1)),
+        Arguments.of(0, 6, 23.976, 0, Duration.ofSeconds(Long.MAX_VALUE)));
   }
 }

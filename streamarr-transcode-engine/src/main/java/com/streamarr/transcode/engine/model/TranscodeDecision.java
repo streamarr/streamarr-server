@@ -9,4 +9,16 @@ public record TranscodeDecision(
     AudioDecision audioDecision,
     SubtitleDecision subtitleDecision,
     ContainerFormat containerFormat,
-    boolean needsKeyframeAlignment) {}
+    boolean needsKeyframeAlignment) {
+
+  public TranscodeDecision {
+    if (transcodeMode == null
+        || videoCodecFamily == null
+        || videoCodecFamily.isBlank()
+        || audioDecision == null
+        || subtitleDecision == null
+        || containerFormat == null) {
+      throw new IllegalArgumentException("Transcode decision values are required");
+    }
+  }
+}

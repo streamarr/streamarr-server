@@ -3,16 +3,20 @@ package com.streamarr.server.services.streaming.worker;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.transcode.engine.model.AudioDecision;
+import com.streamarr.transcode.engine.model.ContainerFormat;
 import com.streamarr.transcode.engine.model.MediaSourceRef;
 import com.streamarr.transcode.engine.model.RenditionObservation;
 import com.streamarr.transcode.engine.model.RenditionSpec;
 import com.streamarr.transcode.engine.model.RenditionState;
+import com.streamarr.transcode.engine.model.SubtitleDecision;
 import com.streamarr.transcode.engine.model.TranscodeDecision;
 import com.streamarr.transcode.engine.model.TranscodeExecutionParameters;
 import com.streamarr.transcode.engine.model.TranscodeJobObservation;
 import com.streamarr.transcode.engine.model.TranscodeJobRef;
 import com.streamarr.transcode.engine.model.TranscodeJobSpec;
 import com.streamarr.transcode.engine.model.TranscodeJobState;
+import com.streamarr.transcode.engine.model.TranscodeMode;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
@@ -168,7 +172,14 @@ class TranscodeWorkerContractValuesTest {
         .sessionId(UUID.randomUUID())
         .jobRef(new TranscodeJobRef(UUID.randomUUID(), 1))
         .source(new MediaSourceRef(UUID.randomUUID(), "Movies/movie.mkv"))
-        .decision(TranscodeDecision.builder().build())
+        .decision(
+            TranscodeDecision.builder()
+                .transcodeMode(TranscodeMode.FULL_TRANSCODE)
+                .videoCodecFamily("h264")
+                .audioDecision(AudioDecision.stereoAac())
+                .subtitleDecision(SubtitleDecision.exclude())
+                .containerFormat(ContainerFormat.MPEGTS)
+                .build())
         .execution(
             TranscodeExecutionParameters.builder()
                 .seekPosition(0)

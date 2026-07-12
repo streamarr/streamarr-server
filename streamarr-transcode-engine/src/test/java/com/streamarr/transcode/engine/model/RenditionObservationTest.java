@@ -6,6 +6,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Tag("UnitTest")
 @DisplayName("Rendition Observation Tests")
@@ -28,6 +30,14 @@ class RenditionObservationTest {
     assertThatThrownBy(() -> new RenditionObservation(" ", RenditionState.RUNNING))
         .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(() -> new RenditionObservation("720p", null))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"720/p", "720\\p", ".", "..", "720\0p"})
+  @DisplayName("Should reject rendition observation when label is not one portable segment")
+  void shouldRejectRenditionObservationWhenLabelIsNotOnePortableSegment(String label) {
+    assertThatThrownBy(() -> new RenditionObservation(label, RenditionState.RUNNING))
         .isInstanceOf(IllegalArgumentException.class);
   }
 }

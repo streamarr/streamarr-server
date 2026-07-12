@@ -5,6 +5,28 @@ import lombok.Builder;
 @Builder
 public record AudioDecision(AudioMode mode, String codec, int channels, long bitrate) {
 
+  private static final long MAX_SAFE_BITRATE = Long.MAX_VALUE / 2;
+
+  public AudioDecision {
+    if (mode == null) {
+      throw new IllegalArgumentException("Audio mode is required");
+    }
+    if (mode == AudioMode.NONE && (codec != null || channels != 0 || bitrate != 0)) {
+      throw new IllegalArgumentException("Excluded audio cannot carry encoding values");
+    }
+    if (mode != AudioMode.NONE
+        && (codec == null
+            || codec.isBlank()
+            || channels < 1
+            || bitrate < 0
+            || bitrate > MAX_SAFE_BITRATE)) {
+      throw new IllegalArgumentException("Included audio values are invalid");
+    }
+    if (mode == AudioMode.TRANSCODE && bitrate == 0) {
+      throw new IllegalArgumentException("Transcoded audio bitrate must be positive");
+    }
+  }
+
   public static AudioDecision stereoAac() {
     return new AudioDecision(AudioMode.TRANSCODE, "aac", 2, 128_000L);
   }

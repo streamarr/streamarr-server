@@ -125,6 +125,91 @@ class LocalFfmpegProcessManagerTest {
   }
 
   @Test
+  @DisplayName("Should release terminal observations for the exact job")
+  void shouldReleaseTerminalObservationsForTheExactJob() throws Exception {
+    var jobRef = jobRef(UUID.randomUUID());
+    var firstKey = new FfmpegProcessKey(jobRef, "completed-first");
+    var secondKey = new FfmpegProcessKey(jobRef, "completed-second");
+    var firstProcess = manager.startProcess(firstKey, List.of("true"), tempDir);
+    var secondProcess = manager.startProcess(secondKey, List.of("true"), tempDir);
+    firstProcess.waitFor();
+    secondProcess.waitFor();
+    assertThat(manager.observe(firstKey).state()).isEqualTo(FfmpegProcessState.COMPLETED);
+    assertThat(manager.observe(secondKey).state()).isEqualTo(FfmpegProcessState.COMPLETED);
+
+    var released = manager.releaseJobObservation(jobRef);
+
+    assertThat(released).isTrue();
+    assertThat(manager.observe(firstKey).state()).isEqualTo(FfmpegProcessState.ABSENT);
+    assertThat(manager.observe(secondKey).state()).isEqualTo(FfmpegProcessState.ABSENT);
+  }
+
+  @Test
+  @DisplayName("Should refuse observation release while any exact job process is running")
+  void shouldRefuseObservationReleaseWhileAnyExactJobProcessIsRunning() throws Exception {
+    var jobRef = jobRef(UUID.randomUUID());
+    var completedKey = new FfmpegProcessKey(jobRef, "completed");
+    var runningKey = new FfmpegProcessKey(jobRef, "running");
+    var completed = manager.startProcess(completedKey, List.of("true"), tempDir);
+    completed.waitFor();
+    assertThat(manager.observe(completedKey).state()).isEqualTo(FfmpegProcessState.COMPLETED);
+    manager.startProcess(runningKey, List.of("bash", "-c", "read -r -n 1"), tempDir);
+
+    try {
+      var released = manager.releaseJobObservation(jobRef);
+
+      assertThat(released).isFalse();
+      assertThat(manager.observe(completedKey).state()).isEqualTo(FfmpegProcessState.COMPLETED);
+      assertThat(manager.observe(runningKey).state()).isEqualTo(FfmpegProcessState.RUNNING);
+    } finally {
+      manager.stopJob(jobRef);
+    }
+  }
+
+  @Test
+  @DisplayName("Should not release a newer generation through a stale job reference")
+  void shouldNotReleaseANewerGenerationThroughAStaleJobReference() throws Exception {
+    var jobId = UUID.randomUUID();
+    var firstJob = new TranscodeJobRef(jobId, 1L);
+    var secondJob = new TranscodeJobRef(jobId, 2L);
+    var firstKey = new FfmpegProcessKey(firstJob, "720p");
+    var secondKey = new FfmpegProcessKey(secondJob, "720p");
+    var firstProcess = manager.startProcess(firstKey, List.of("true"), tempDir);
+    var secondProcess = manager.startProcess(secondKey, List.of("true"), tempDir);
+    firstProcess.waitFor();
+    secondProcess.waitFor();
+    assertThat(manager.observe(firstKey).state()).isEqualTo(FfmpegProcessState.COMPLETED);
+    assertThat(manager.observe(secondKey).state()).isEqualTo(FfmpegProcessState.COMPLETED);
+
+    assertThat(manager.releaseJobObservation(firstJob)).isTrue();
+
+    assertThat(manager.observe(firstKey).state()).isEqualTo(FfmpegProcessState.ABSENT);
+    assertThat(manager.observe(secondKey).state()).isEqualTo(FfmpegProcessState.COMPLETED);
+  }
+
+  @Test
+  @DisplayName("Should release an already absent job observation idempotently")
+  void shouldReleaseAnAlreadyAbsentJobObservationIdempotently() {
+    var jobRef = jobRef(UUID.randomUUID());
+
+    assertThat(manager.releaseJobObservation(jobRef)).isTrue();
+    assertThat(manager.releaseJobObservation(jobRef)).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should release a terminal process before it has been observed")
+  void shouldReleaseATerminalProcessBeforeItHasBeenObserved() throws Exception {
+    var jobRef = jobRef(UUID.randomUUID());
+    var key = new FfmpegProcessKey(jobRef, "completed");
+    var process = manager.startProcess(key, List.of("true"), tempDir);
+    process.waitFor();
+
+    assertThat(manager.releaseJobObservation(jobRef)).isTrue();
+
+    assertThat(manager.observe(key).state()).isEqualTo(FfmpegProcessState.ABSENT);
+  }
+
+  @Test
   @DisplayName("Should retain a failed process with its nonzero exit code")
   void shouldRetainAFailedProcessWithItsNonzeroExitCode() throws Exception {
     var key = processKey(UUID.randomUUID(), "failed");

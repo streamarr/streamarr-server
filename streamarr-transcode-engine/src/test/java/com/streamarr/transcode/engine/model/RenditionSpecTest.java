@@ -49,7 +49,8 @@ class RenditionSpecTest {
         Arguments.of(" ", 1280, 720, 3_000_000L),
         Arguments.of("720p", 0, 720, 3_000_000L),
         Arguments.of("720p", 1280, 0, 3_000_000L),
-        Arguments.of("720p", 1280, 720, 0L));
+        Arguments.of("720p", 1280, 720, 0L),
+        Arguments.of("720p", 1280, 720, Long.MAX_VALUE / 2 + 1));
   }
 
   static Stream<String> unsafePortableLabels() {
