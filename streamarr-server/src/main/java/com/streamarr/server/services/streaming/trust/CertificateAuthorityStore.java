@@ -123,18 +123,12 @@ public final class CertificateAuthorityStore {
       temporary = createTemporaryFile();
       writeKeyStore(temporary, material);
       requirePublicationMatches(temporary, material);
-      try {
-        Files.createLink(secretPath, temporary);
-      } catch (FileAlreadyExistsException _) {
-        Files.deleteIfExists(temporary);
+      if (!publish(temporary)) {
         return load()
             .orElseThrow(
                 () ->
                     new CertificateAuthorityStoreException(
                         "Certificate authority publication raced without a readable winner"));
-      } catch (UnsupportedOperationException e) {
-        throw new CertificateAuthorityStoreException(
-            "Certificate authority path must support atomic hard-link publication", e);
       }
       Files.delete(temporary);
       return load()
@@ -155,6 +149,19 @@ public final class CertificateAuthorityStore {
           // A complete orphaned hard link is harmless and ignored on the next bootstrap.
         }
       }
+    }
+  }
+
+  private boolean publish(Path temporary) throws IOException {
+    try {
+      Files.createLink(secretPath, temporary);
+      return true;
+    } catch (FileAlreadyExistsException _) {
+      Files.deleteIfExists(temporary);
+      return false;
+    } catch (UnsupportedOperationException e) {
+      throw new CertificateAuthorityStoreException(
+          "Certificate authority path must support atomic hard-link publication", e);
     }
   }
 
@@ -290,14 +297,7 @@ public final class CertificateAuthorityStore {
   private void requireSecureParent() {
     var parent = secretPath.getParent();
     try {
-      if (!Files.exists(parent, LinkOption.NOFOLLOW_LINKS)) {
-        try {
-          Files.createDirectory(
-              parent, PosixFilePermissions.asFileAttribute(OWNER_DIRECTORY_PERMISSIONS));
-        } catch (FileAlreadyExistsException _) {
-          // A concurrent replica created it; the checks below still validate the winner.
-        }
-      }
+      createParentIfMissing(parent);
       if (!Files.isDirectory(parent, LinkOption.NOFOLLOW_LINKS)) {
         throw new CertificateAuthorityStoreException(
             "Certificate authority parent must be a real directory");
@@ -308,6 +308,18 @@ public final class CertificateAuthorityStore {
     } catch (IOException | UnsupportedOperationException | SecurityException e) {
       throw new CertificateAuthorityStoreException(
           "Failed to secure certificate authority parent directory", e);
+    }
+  }
+
+  private void createParentIfMissing(Path parent) throws IOException {
+    if (Files.exists(parent, LinkOption.NOFOLLOW_LINKS)) {
+      return;
+    }
+    try {
+      Files.createDirectory(
+          parent, PosixFilePermissions.asFileAttribute(OWNER_DIRECTORY_PERMISSIONS));
+    } catch (FileAlreadyExistsException _) {
+      // A concurrent replica created it; the checks below still validate the winner.
     }
   }
 

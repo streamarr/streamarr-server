@@ -58,7 +58,9 @@ class CertificateAuthorityStoreTest {
   @Test
   @DisplayName("Should reject storage path without a dedicated parent and final filename")
   void shouldRejectStoragePathWithoutDedicatedParentAndFinalFilename() {
-    assertThatThrownBy(() -> new CertificateAuthorityStore(Path.of("/")))
+    var root = Path.of("/");
+
+    assertThatThrownBy(() -> new CertificateAuthorityStore(root))
         .isInstanceOf(CertificateAuthorityStoreException.class)
         .hasMessageContaining("dedicated parent and final filename");
   }
@@ -92,20 +94,17 @@ class CertificateAuthorityStoreTest {
     assertThat(created.toString()).doesNotContain("EC Private Key", "privateValue", "S:");
     assertThat(
             new CertificateAuthorityMaterial.AuthorityChainMaterial(
-                    new CertificateAuthorityMaterial.AuthorityKeyMaterial(
-                        expected.rootPrivateKey(), expected.rootCertificate()),
-                    new CertificateAuthorityMaterial.AuthorityKeyMaterial(
-                        expected.issuerPrivateKey(), expected.issuerCertificate()),
-                    new CertificateAuthorityMaterial.AuthorityKeyMaterial(
-                        expected.revocationSignerPrivateKey(),
-                        expected.revocationSignerCertificate()))
-                .toString())
-        .isEqualTo("AuthorityChainMaterial[privateKeys=REDACTED]");
+                new CertificateAuthorityMaterial.AuthorityKeyMaterial(
+                    expected.rootPrivateKey(), expected.rootCertificate()),
+                new CertificateAuthorityMaterial.AuthorityKeyMaterial(
+                    expected.issuerPrivateKey(), expected.issuerCertificate()),
+                new CertificateAuthorityMaterial.AuthorityKeyMaterial(
+                    expected.revocationSignerPrivateKey(), expected.revocationSignerCertificate())))
+        .hasToString("AuthorityChainMaterial[privateKeys=REDACTED]");
     assertThat(
             new CertificateAuthorityMaterial.AuthorityKeyMaterial(
-                    expected.rootPrivateKey(), expected.rootCertificate())
-                .toString())
-        .isEqualTo("AuthorityKeyMaterial[privateKey=REDACTED]");
+                expected.rootPrivateKey(), expected.rootCertificate()))
+        .hasToString("AuthorityKeyMaterial[privateKey=REDACTED]");
     if (Files.getFileStore(secretPath).supportsFileAttributeView("posix")) {
       assertThat(Files.getPosixFilePermissions(secretPath))
           .isEqualTo(PosixFilePermissions.fromString("rw-------"));
@@ -118,7 +117,7 @@ class CertificateAuthorityStoreTest {
 
   @Test
   @DisplayName("Should preserve the first complete authority when creation races")
-  void shouldPreserveFirstCompleteAuthorityWhenCreationRaces() throws Exception {
+  void shouldPreserveFirstCompleteAuthorityWhenCreationRaces() {
     var first = new BuiltInCertificateAuthority().create(INSTALLATION_ID, ISSUED_AT);
     var second =
         new BuiltInCertificateAuthority()
@@ -133,7 +132,7 @@ class CertificateAuthorityStoreTest {
 
   @Test
   @DisplayName("Should converge when dedicated parent creation races")
-  void shouldConvergeWhenDedicatedParentCreationRaces() throws Exception {
+  void shouldConvergeWhenDedicatedParentCreationRaces() {
     var missingParent = directory.resolve("authority");
     var sharedSecret = missingParent.resolve("authority.p12");
     var material = new BuiltInCertificateAuthority().create(INSTALLATION_ID, ISSUED_AT);
@@ -201,13 +200,10 @@ class CertificateAuthorityStoreTest {
         Files.createDirectory(
             directory.resolve("authority"),
             PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwx------")));
-    var material = new BuiltInCertificateAuthority().create(INSTALLATION_ID, ISSUED_AT);
+    var storagePath = parent.resolve("authority.p12");
 
     try {
-      assertThatThrownBy(
-              () ->
-                  new CertificateAuthorityStore(parent.resolve("authority.p12"))
-                      .createIfAbsent(material))
+      assertThatThrownBy(() -> new CertificateAuthorityStore(storagePath))
           .isInstanceOf(CertificateAuthorityStoreException.class)
           .hasMessageContaining("protected ancestor");
     } finally {
@@ -333,12 +329,10 @@ class CertificateAuthorityStoreTest {
             directory.resolve("ancestor"),
             PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwx------")));
     runCommand(List.of("/bin/chmod", "+a", "everyone allow read", ancestor.toString()));
+    var storagePath = ancestor.resolve("authority").resolve("authority.p12");
 
     try {
-      assertThatThrownBy(
-              () ->
-                  new CertificateAuthorityStore(
-                      ancestor.resolve("authority").resolve("authority.p12")))
+      assertThatThrownBy(() -> new CertificateAuthorityStore(storagePath))
           .isInstanceOf(CertificateAuthorityStoreException.class)
           .hasMessageContaining("must not grant access");
     } finally {
@@ -352,12 +346,9 @@ class CertificateAuthorityStoreTest {
     try (var fileSystem = Jimfs.newFileSystem(Configuration.windows())) {
       var parent = fileSystem.getPath("C:\\authority");
       Files.createDirectory(parent);
-      var material = new BuiltInCertificateAuthority().create(INSTALLATION_ID, ISSUED_AT);
+      var storagePath = parent.resolve("authority.p12");
 
-      assertThatThrownBy(
-              () ->
-                  new CertificateAuthorityStore(parent.resolve("authority.p12"))
-                      .createIfAbsent(material))
+      assertThatThrownBy(() -> new CertificateAuthorityStore(storagePath))
           .isInstanceOf(CertificateAuthorityStoreException.class)
           .hasMessageContaining("requires POSIX permissions");
     }
@@ -367,13 +358,9 @@ class CertificateAuthorityStoreTest {
   @DisplayName("Should fail with storage exception when missing parent cannot enforce POSIX mode")
   void shouldFailWithStorageExceptionWhenMissingParentCannotEnforcePosixMode() throws Exception {
     try (var fileSystem = Jimfs.newFileSystem(Configuration.windows())) {
-      var material = new BuiltInCertificateAuthority().create(INSTALLATION_ID, ISSUED_AT);
+      var storagePath = fileSystem.getPath("C:\\authority").resolve("authority.p12");
 
-      assertThatThrownBy(
-              () ->
-                  new CertificateAuthorityStore(
-                          fileSystem.getPath("C:\\authority").resolve("authority.p12"))
-                      .createIfAbsent(material))
+      assertThatThrownBy(() -> new CertificateAuthorityStore(storagePath))
           .isInstanceOf(CertificateAuthorityStoreException.class)
           .hasMessageContaining("requires POSIX permissions");
     }
@@ -400,7 +387,7 @@ class CertificateAuthorityStoreTest {
       Files.setOwner(parent, foreignOwner);
       Files.setOwner(secret, foreignOwner);
 
-      assertThatThrownBy(() -> new CertificateAuthorityStore(secret).load())
+      assertThatThrownBy(() -> new CertificateAuthorityStore(secret))
           .isInstanceOf(CertificateAuthorityStoreException.class)
           .hasMessageContaining("owned by root or the current process user");
     }
@@ -491,9 +478,8 @@ class CertificateAuthorityStoreTest {
   @DisplayName("Should fail closed when the dedicated parent's ancestor is missing")
   void shouldFailClosedWhenDedicatedParentAncestorIsMissing() {
     var nestedSecret = directory.resolve("missing").resolve("authority").resolve("authority.p12");
-    var material = new BuiltInCertificateAuthority().create(INSTALLATION_ID, ISSUED_AT);
 
-    assertThatThrownBy(() -> new CertificateAuthorityStore(nestedSecret).createIfAbsent(material))
+    assertThatThrownBy(() -> new CertificateAuthorityStore(nestedSecret))
         .isInstanceOf(CertificateAuthorityStoreException.class)
         .hasMessageContaining("protected ancestor does not exist");
   }
@@ -728,8 +714,7 @@ class CertificateAuthorityStoreTest {
   }
 
   private static CopyOnWriteArrayList<CertificateAuthorityMaterial> createConcurrently(
-      Path path, int count, IntFunction<CertificateAuthorityMaterial> candidateForIndex)
-      throws Exception {
+      Path path, int count, IntFunction<CertificateAuthorityMaterial> candidateForIndex) {
     var start = new CountDownLatch(1);
     var retained = new CopyOnWriteArrayList<CertificateAuthorityMaterial>();
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
