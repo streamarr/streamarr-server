@@ -50,6 +50,11 @@ streaming:
   transcode-startup-timeout: ${STREAMING_TRANSCODE_STARTUP_TIMEOUT:30s}
   session-retention: ${STREAMING_SESSION_RETENTION:24h}
   segment-base-path: ${STREAMING_SEGMENT_BASE_PATH:}
+  distributed:
+    enabled: ${STREAMING_DISTRIBUTED_ENABLED:false}
+    ca-secret-path: ${STREAMING_DISTRIBUTED_CA_SECRET_PATH:}
+    signing-lease: ${STREAMING_DISTRIBUTED_SIGNING_LEASE:30s}
+    bootstrap-timeout: ${STREAMING_DISTRIBUTED_BOOTSTRAP_TIMEOUT:2m}
   watch-progress:
     min-played-percent: ${STREAMING_WATCH_PROGRESS_MIN_RESUME_PERCENT:5.0}
     max-played-percent: ${STREAMING_WATCH_PROGRESS_MAX_RESUME_PERCENT:90.0}

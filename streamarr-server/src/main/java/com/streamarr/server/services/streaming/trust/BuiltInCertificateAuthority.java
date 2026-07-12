@@ -5,7 +5,9 @@ import java.net.URI;
 import java.security.GeneralSecurityException;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
+import java.security.MessageDigest;
 import java.security.SecureRandom;
+import java.security.cert.CertificateEncodingException;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.security.spec.ECGenParameterSpec;
@@ -52,6 +54,36 @@ public final class BuiltInCertificateAuthority {
   public void validate(
       CertificateAuthorityMaterial material, UUID installationId, Instant databaseTime) {
     new CertificateAuthorityValidator().validate(material, installationId, databaseTime);
+  }
+
+  void requireMatches(InstallationTrust trust, CertificateAuthorityMaterial material) {
+    try {
+      var rootDer = material.rootCertificate().getEncoded();
+      if (!trust.installationId().equals(material.installationId())) {
+        throw new InstallationTrustException(
+            "Stored installation trust belongs to another installation");
+      }
+      if (!MessageDigest.isEqual(trust.bootstrapRootSha256(), sha256(rootDer))) {
+        throw new InstallationTrustException(
+            "Stored installation trust root fingerprint does not match the authority secret");
+      }
+
+      var bundle = trust.activeBundle();
+      if (bundle.version() != 1L) {
+        throw new InstallationTrustException(
+            "Stored public trust bundle has an unsupported initial version");
+      }
+      if (!bundle.installationId().equals(material.installationId())
+          || !matches(bundle.trustAnchors(), rootDer)
+          || !matches(bundle.issuers(), material.issuerCertificate().getEncoded())
+          || !matches(
+              bundle.revocationSigners(), material.revocationSignerCertificate().getEncoded())) {
+        throw new InstallationTrustException(
+            "Stored public trust bundle does not match the authority secret");
+      }
+    } catch (CertificateEncodingException e) {
+      throw new InstallationTrustException("Failed to compare installation trust certificates", e);
+    }
   }
 
   public CertificateAuthorityMaterial create(UUID installationId, Instant issuedAt) {
@@ -205,6 +237,20 @@ public final class BuiltInCertificateAuthority {
     var generator = KeyPairGenerator.getInstance("EC");
     generator.initialize(new ECGenParameterSpec("secp256r1"), secureRandom);
     return generator.generateKeyPair();
+  }
+
+  private static boolean matches(java.util.List<X509Certificate> certificates, byte[] expected)
+      throws CertificateEncodingException {
+    return certificates.size() == 1
+        && MessageDigest.isEqual(certificates.getFirst().getEncoded(), expected);
+  }
+
+  private static byte[] sha256(byte[] value) {
+    try {
+      return MessageDigest.getInstance("SHA-256").digest(value);
+    } catch (java.security.NoSuchAlgorithmException e) {
+      throw new IllegalStateException("SHA-256 is unavailable", e);
+    }
   }
 
   private BigInteger positiveSerial() {
