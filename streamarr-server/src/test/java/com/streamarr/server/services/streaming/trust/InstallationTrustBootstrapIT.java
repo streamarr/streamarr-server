@@ -27,6 +27,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import org.jooq.DSLContext;
+import org.jooq.Fields;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -98,7 +99,7 @@ class InstallationTrustBootstrapIT extends AbstractIntegrationTest {
                     TRANSCODE_TRUST_CERTIFICATE,
                     TRANSCODE_CA_SIGNING_LEASE)
                 .stream()
-                .flatMap(table -> table.fieldStream())
+                .flatMap(Fields::fieldStream)
                 .map(field -> field.getName().toLowerCase(java.util.Locale.ROOT)))
         .noneMatch(
             name -> name.contains("private") || name.contains("token") || name.contains("secret"));
