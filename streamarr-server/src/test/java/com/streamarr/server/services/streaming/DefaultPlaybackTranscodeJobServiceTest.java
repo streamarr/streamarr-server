@@ -206,55 +206,46 @@ class DefaultPlaybackTranscodeJobServiceTest {
   @DisplayName("Should reject missing or empty playback job values")
   void shouldRejectMissingOrEmptyPlaybackJobValues() {
     var valid = command(UUID.randomUUID());
+    var sessionId = valid.sessionId();
+    var source = valid.source();
+    var decision = valid.decision();
+    var execution = valid.execution();
+    var renditions = valid.renditions();
+    var emptyRenditions = List.<RenditionSpec>of();
     var nullRendition = new java.util.ArrayList<RenditionSpec>();
     nullRendition.add(null);
 
     assertThatThrownBy(
             () ->
-                new StartPlaybackTranscodeJobCommand(
-                    null, valid.source(), valid.decision(), valid.execution(), valid.renditions()))
+                new StartPlaybackTranscodeJobCommand(null, source, decision, execution, renditions))
         .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(
             () ->
                 new StartPlaybackTranscodeJobCommand(
-                    valid.sessionId(),
-                    null,
-                    valid.decision(),
-                    valid.execution(),
-                    valid.renditions()))
+                    sessionId, null, decision, execution, renditions))
         .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(
             () ->
                 new StartPlaybackTranscodeJobCommand(
-                    valid.sessionId(), valid.source(), null, valid.execution(), valid.renditions()))
+                    sessionId, source, null, execution, renditions))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(
+            () ->
+                new StartPlaybackTranscodeJobCommand(sessionId, source, decision, null, renditions))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(
+            () ->
+                new StartPlaybackTranscodeJobCommand(sessionId, source, decision, execution, null))
         .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(
             () ->
                 new StartPlaybackTranscodeJobCommand(
-                    valid.sessionId(), valid.source(), valid.decision(), null, valid.renditions()))
+                    sessionId, source, decision, execution, emptyRenditions))
         .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(
             () ->
                 new StartPlaybackTranscodeJobCommand(
-                    valid.sessionId(), valid.source(), valid.decision(), valid.execution(), null))
-        .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(
-            () ->
-                new StartPlaybackTranscodeJobCommand(
-                    valid.sessionId(),
-                    valid.source(),
-                    valid.decision(),
-                    valid.execution(),
-                    List.of()))
-        .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(
-            () ->
-                new StartPlaybackTranscodeJobCommand(
-                    valid.sessionId(),
-                    valid.source(),
-                    valid.decision(),
-                    valid.execution(),
-                    nullRendition))
+                    sessionId, source, decision, execution, nullRendition))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
