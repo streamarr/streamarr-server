@@ -86,4 +86,37 @@ class InstallationTrustTest {
 
     assertThat(trust.bootstrapRootSha256()).containsOnly(0);
   }
+
+  @Test
+  @DisplayName("Should compare installation trust by value and describe its active bundle")
+  void shouldCompareInstallationTrustByValueAndDescribeItsActiveBundle() {
+    var rootFingerprint = new byte[32];
+    var first = new InstallationTrust(INSTALLATION_ID, rootFingerprint, bundle);
+    var second = new InstallationTrust(INSTALLATION_ID, rootFingerprint, bundle);
+    var differentFingerprint = rootFingerprint.clone();
+    differentFingerprint[0] = 1;
+    var other = new InstallationTrust(INSTALLATION_ID, differentFingerprint, bundle);
+
+    assertThat(first)
+        .isEqualTo(first)
+        .isEqualTo(second)
+        .hasSameHashCodeAs(second)
+        .isNotEqualTo(other)
+        .isNotEqualTo("installation trust")
+        .hasToString(
+            "InstallationTrust[installationId=" + INSTALLATION_ID + ", activeBundleVersion=1]");
+  }
+
+  @Test
+  @DisplayName("Should reject missing installation trust values")
+  void shouldRejectMissingInstallationTrustValues() {
+    var rootFingerprint = new byte[32];
+
+    assertThatThrownBy(() -> new InstallationTrust(null, rootFingerprint, bundle))
+        .isInstanceOf(NullPointerException.class);
+    assertThatThrownBy(() -> new InstallationTrust(INSTALLATION_ID, null, bundle))
+        .isInstanceOf(NullPointerException.class);
+    assertThatThrownBy(() -> new InstallationTrust(INSTALLATION_ID, rootFingerprint, null))
+        .isInstanceOf(NullPointerException.class);
+  }
 }

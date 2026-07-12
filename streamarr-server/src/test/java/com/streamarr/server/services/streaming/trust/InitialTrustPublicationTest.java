@@ -39,10 +39,38 @@ class InitialTrustPublicationTest {
   void shouldProtectEncodedMaterialFromCallerMutation() {
     var publication = InitialTrustPublication.from(material);
     var expectedRoot = publication.rootCertificateDer();
+    var expectedIssuer = publication.issuerCertificateDer();
+    var expectedRevocationSigner = publication.revocationSignerCertificateDer();
+    var expectedFingerprint = publication.bootstrapRootSha256();
     var exposedRoot = publication.rootCertificateDer();
+    var exposedIssuer = publication.issuerCertificateDer();
+    var exposedRevocationSigner = publication.revocationSignerCertificateDer();
+    var exposedFingerprint = publication.bootstrapRootSha256();
     exposedRoot[0] = (byte) ~exposedRoot[0];
+    exposedIssuer[0] = (byte) ~exposedIssuer[0];
+    exposedRevocationSigner[0] = (byte) ~exposedRevocationSigner[0];
+    exposedFingerprint[0] = (byte) ~exposedFingerprint[0];
 
+    assertThat(publication.installationId()).isEqualTo(INSTALLATION_ID);
     assertThat(publication.rootCertificateDer()).isEqualTo(expectedRoot);
+    assertThat(publication.issuerCertificateDer()).isEqualTo(expectedIssuer);
+    assertThat(publication.revocationSignerCertificateDer()).isEqualTo(expectedRevocationSigner);
+    assertThat(publication.bootstrapRootSha256()).isEqualTo(expectedFingerprint).hasSize(32);
+  }
+
+  @Test
+  @DisplayName("Should compare unequal when publications contain different authority material")
+  void shouldCompareUnequalWhenPublicationsContainDifferentAuthorityMaterial() {
+    var publication = InitialTrustPublication.from(material);
+    var differentMaterial =
+        new BuiltInCertificateAuthority()
+            .create(INSTALLATION_ID, Instant.parse("2026-07-12T12:01:00Z"));
+    var differentPublication = InitialTrustPublication.from(differentMaterial);
+
+    assertThat(publication)
+        .isEqualTo(publication)
+        .isNotEqualTo(differentPublication)
+        .isNotEqualTo("initial trust publication");
   }
 
   @Test
