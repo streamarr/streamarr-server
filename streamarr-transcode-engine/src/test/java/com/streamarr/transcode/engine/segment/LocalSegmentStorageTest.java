@@ -77,8 +77,7 @@ class LocalSegmentStorageTest {
     var renditionDirectory = storage.getOutputDirectory(sessionId, "720p");
     var sessionDirectory = storage.getOutputDirectory(sessionId);
 
-    assertThat(renditionDirectory).isDirectory();
-    assertThat(renditionDirectory).hasParent(sessionDirectory);
+    assertThat(renditionDirectory).isDirectory().hasParent(sessionDirectory);
   }
 
   @Test
