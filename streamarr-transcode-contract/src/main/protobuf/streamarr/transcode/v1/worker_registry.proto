@@ -1,0 +1,85 @@
+syntax = "proto3";
+
+package streamarr.transcode.v1;
+
+import "google/protobuf/duration.proto";
+import "streamarr/transcode/v1/common.proto";
+import "streamarr/transcode/v1/transcode.proto";
+
+option java_multiple_files = true;
+option java_outer_classname = "WorkerRegistryProto";
+option java_package = "com.streamarr.transcode.v1";
+
+enum DrainState {
+  DRAIN_STATE_UNSPECIFIED = 0;
+  DRAIN_STATE_ACCEPTING = 1;
+  DRAIN_STATE_DRAINING = 2;
+  DRAIN_STATE_DRAINED = 3;
+}
+
+enum RegisterWorkerRejection {
+  REGISTER_WORKER_REJECTION_UNSPECIFIED = 0;
+  REGISTER_WORKER_REJECTION_IDENTITY_MISMATCH = 1;
+  REGISTER_WORKER_REJECTION_INCOMPATIBLE_PROTOCOL = 2;
+  REGISTER_WORKER_REJECTION_ENDPOINT_CONFLICT = 3;
+  REGISTER_WORKER_REJECTION_WORKER_REVOKED = 4;
+  REGISTER_WORKER_REJECTION_ACTIVE_BINDING = 5;
+}
+
+message WorkerCapabilities {
+  repeated string video_codec_families = 1;
+  repeated string encoders = 2;
+  repeated string hardware_accelerators = 3;
+  repeated Uuid source_namespace_ids = 4;
+  repeated ContainerFormat container_formats = 5;
+}
+
+message WorkerCapacity {
+  uint32 total_slots = 1;
+  uint32 occupied_slots = 2;
+}
+
+message RegisterWorkerRequest {
+  WorkerTarget target = 1;
+  WorkerEndpoint endpoint = 2;
+  ProtocolRange supported_protocol = 3;
+}
+
+message RegisterWorkerAccepted {
+  uint64 binding_epoch = 1;
+  uint32 protocol_revision = 2;
+  google.protobuf.Duration heartbeat_interval = 3;
+  SignedRevocationUpdate revocation_update = 4;
+}
+
+message RegisterWorkerResponse {
+  oneof result {
+    RegisterWorkerAccepted accepted = 1;
+    RegisterWorkerRejection rejection = 2;
+  }
+}
+
+message HeartbeatRequest {
+  WorkerTarget target = 1;
+  uint64 binding_epoch = 2;
+  uint64 sequence = 3;
+  uint32 protocol_revision = 4;
+  WorkerCapabilities capabilities = 5;
+  DrainState drain_state = 6;
+  WorkerCapacity capacity = 7;
+  repeated TranscodeJobObservation jobs = 8;
+}
+
+message HeartbeatResponse {
+  uint64 accepted_sequence = 1;
+  uint64 binding_epoch = 2;
+  SignedRevocationUpdate revocation_update = 3;
+}
+
+service WorkerRegistryService {
+  rpc RegisterWorker(RegisterWorkerRequest) returns (RegisterWorkerResponse) {
+    option idempotency_level = IDEMPOTENT;
+  }
+  // A heartbeat is superseded by the next sequence and is never replayed automatically.
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse) {}
+}

@@ -1,0 +1,136 @@
+syntax = "proto3";
+
+package streamarr.transcode.v1;
+
+import "google/protobuf/duration.proto";
+import "streamarr/transcode/v1/common.proto";
+
+option java_multiple_files = true;
+option java_outer_classname = "TranscodeProto";
+option java_package = "com.streamarr.transcode.v1";
+
+enum TranscodeMode {
+  TRANSCODE_MODE_UNSPECIFIED = 0;
+  TRANSCODE_MODE_REMUX = 1;
+  TRANSCODE_MODE_AUDIO_TRANSCODE = 2;
+  TRANSCODE_MODE_VIDEO_TRANSCODE = 3;
+  TRANSCODE_MODE_FULL_TRANSCODE = 4;
+}
+
+enum AudioMode {
+  AUDIO_MODE_UNSPECIFIED = 0;
+  AUDIO_MODE_COPY = 1;
+  AUDIO_MODE_TRANSCODE = 2;
+  AUDIO_MODE_NONE = 3;
+}
+
+enum SubtitleMode {
+  SUBTITLE_MODE_UNSPECIFIED = 0;
+  SUBTITLE_MODE_EXCLUDE = 1;
+  SUBTITLE_MODE_BURN_IN = 2;
+  SUBTITLE_MODE_SIDECAR = 3;
+  SUBTITLE_MODE_HLS = 4;
+  SUBTITLE_MODE_EMBED = 5;
+}
+
+enum ContainerFormat {
+  CONTAINER_FORMAT_UNSPECIFIED = 0;
+  CONTAINER_FORMAT_MPEG_TS = 1;
+  CONTAINER_FORMAT_FMP4 = 2;
+}
+
+enum TranscodeJobState {
+  TRANSCODE_JOB_STATE_UNSPECIFIED = 0;
+  TRANSCODE_JOB_STATE_ADMITTING = 1;
+  TRANSCODE_JOB_STATE_RUNNING = 2;
+  TRANSCODE_JOB_STATE_COMPLETED = 3;
+  TRANSCODE_JOB_STATE_FAILED = 4;
+  TRANSCODE_JOB_STATE_STOPPED = 5;
+  TRANSCODE_JOB_STATE_ABSENT = 6;
+}
+
+enum RenditionState {
+  RENDITION_STATE_UNSPECIFIED = 0;
+  RENDITION_STATE_STARTING = 1;
+  RENDITION_STATE_RUNNING = 2;
+  RENDITION_STATE_COMPLETED = 3;
+  RENDITION_STATE_FAILED = 4;
+  RENDITION_STATE_STOPPED = 5;
+  RENDITION_STATE_ABSENT = 6;
+}
+
+// The namespace is installation-defined; relative_key never contains a host-local absolute path.
+message MediaSourceRef {
+  Uuid source_namespace_id = 1;
+  string relative_key = 2;
+}
+
+message TranscodeJobRef {
+  Uuid job_id = 1;
+  uint64 generation = 2;
+}
+
+message AudioDecision {
+  AudioMode mode = 1;
+  optional string codec = 2;
+  uint32 channels = 3;
+  uint64 bitrate_bits_per_second = 4;
+}
+
+message SubtitleDecision {
+  SubtitleMode mode = 1;
+  optional string codec = 2;
+  optional uint32 stream_index = 3;
+  optional string language = 4;
+}
+
+message TranscodeDecision {
+  TranscodeMode transcode_mode = 1;
+  string video_codec_family = 2;
+  AudioDecision audio = 3;
+  SubtitleDecision subtitle = 4;
+  ContainerFormat container = 5;
+  bool force_keyframes_at_segment_boundaries = 6;
+}
+
+message TranscodeExecutionParameters {
+  uint32 seek_position_seconds = 1;
+  uint32 segment_duration_seconds = 2;
+  double framerate = 3;
+  uint32 start_number = 4;
+  google.protobuf.Duration startup_timeout = 5;
+}
+
+message RenditionSpec {
+  string label = 1;
+  uint32 width = 2;
+  uint32 height = 3;
+  uint64 bitrate_bits_per_second = 4;
+}
+
+message TranscodeJobSpec {
+  Uuid session_id = 1;
+  TranscodeJobRef job_ref = 2;
+  MediaSourceRef source = 3;
+  TranscodeDecision decision = 4;
+  TranscodeExecutionParameters execution = 5;
+  repeated RenditionSpec renditions = 6;
+}
+
+message RenditionObservation {
+  string label = 1;
+  RenditionState state = 2;
+}
+
+message TranscodeJobObservation {
+  TranscodeJobRef job_ref = 1;
+  TranscodeJobState state = 2;
+  repeated RenditionObservation renditions = 3;
+}
+
+message JobSnapshot {
+  oneof snapshot {
+    TranscodeJobObservation observation = 1;
+    TranscodeJobRef cleanup_pending = 2;
+  }
+}

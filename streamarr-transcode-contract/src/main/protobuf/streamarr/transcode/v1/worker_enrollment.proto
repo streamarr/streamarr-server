@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package streamarr.transcode.v1;
+
+import "streamarr/transcode/v1/common.proto";
+
+option java_multiple_files = true;
+option java_outer_classname = "WorkerEnrollmentProto";
+option java_package = "com.streamarr.transcode.v1";
+
+enum EnrollWorkerRejection {
+  ENROLL_WORKER_REJECTION_UNSPECIFIED = 0;
+  ENROLL_WORKER_REJECTION_INVALID_OR_EXPIRED_GRANT = 1;
+  ENROLL_WORKER_REJECTION_REQUEST_CONFLICT = 2;
+  ENROLL_WORKER_REJECTION_INVALID_CERTIFICATE_REQUEST = 3;
+  ENROLL_WORKER_REJECTION_WORKER_REVOKED = 4;
+  ENROLL_WORKER_REJECTION_SIGNING_UNAVAILABLE = 5;
+}
+
+enum RotateWorkerCertificateRejection {
+  ROTATE_WORKER_CERTIFICATE_REJECTION_UNSPECIFIED = 0;
+  ROTATE_WORKER_CERTIFICATE_REJECTION_IDENTITY_MISMATCH = 1;
+  ROTATE_WORKER_CERTIFICATE_REJECTION_REQUEST_CONFLICT = 2;
+  ROTATE_WORKER_CERTIFICATE_REJECTION_INVALID_CERTIFICATE_REQUEST = 3;
+  ROTATE_WORKER_CERTIFICATE_REJECTION_WORKER_REVOKED = 4;
+  ROTATE_WORKER_CERTIFICATE_REJECTION_SIGNING_UNAVAILABLE = 5;
+}
+
+// The single-use enrollment token is carried under the lowercase `authorization` metadata key as
+// `Streamarr-Enrollment <token>`, where token is the unpadded base64url encoding of exactly 32
+// random bytes. Generated messages can never render it through toString(). The server interceptor
+// consumes and digests it synchronously.
+message EnrollWorkerRequest {
+  Uuid request_id = 1;
+  Uuid worker_id = 2;
+  bytes certificate_signing_request_der = 3;
+}
+
+message EnrollWorkerResponse {
+  oneof result {
+    CertificateBundle certificate = 1;
+    EnrollWorkerRejection rejection = 2;
+  }
+}
+
+// Rotation is authenticated exclusively by the worker's current mTLS identity.
+message RotateWorkerCertificateRequest {
+  Uuid request_id = 1;
+  Uuid worker_id = 2;
+  bytes certificate_signing_request_der = 3;
+}
+
+message RotateWorkerCertificateResponse {
+  oneof result {
+    CertificateBundle certificate = 1;
+    RotateWorkerCertificateRejection rejection = 2;
+  }
+}
+
+service WorkerEnrollmentService {
+  rpc EnrollWorker(EnrollWorkerRequest) returns (EnrollWorkerResponse) {
+    option idempotency_level = IDEMPOTENT;
+  }
+  rpc RotateWorkerCertificate(RotateWorkerCertificateRequest) returns (RotateWorkerCertificateResponse) {
+    option idempotency_level = IDEMPOTENT;
+  }
+}

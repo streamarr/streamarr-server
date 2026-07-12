@@ -23,6 +23,41 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Set up Buf
+        uses: bufbuild/buf-action@fd21066df7214747548607aaa45548ba2b9bc1ff # v1.4.0
+        with:
+          version: '1.71.0'
+          setup_only: true
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify protobuf compatibility
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          buf format --diff --exit-code
+          buf lint --error-format github-actions
+
+          if [[ -z "${BASE_SHA}" ]]; then
+            echo "No pull-request base revision; skipping the breaking-change comparison."
+            exit 0
+          fi
+
+          if git cat-file -e "${BASE_SHA}:buf.yaml" 2>/dev/null; then
+            buf breaking \
+              --against "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git#format=git,commit=${BASE_SHA}" \
+              --error-format github-actions
+            exit 0
+          fi
+
+          if git ls-tree -r --name-only "${BASE_SHA}" \
+              -- streamarr-transcode-contract/src/main/protobuf | grep -q '\.proto$'; then
+            echo "::error::The base revision contains protobuf schemas without a Buf configuration"
+            exit 1
+          fi
+
+          echo "Initial protobuf baseline; no breaking comparison is required."
+
       - name: Set up JDK 25
         uses: actions/setup-java@1bcf9fb12cf4aa7d266a90ae39939e61372fe520 # v5
         with:

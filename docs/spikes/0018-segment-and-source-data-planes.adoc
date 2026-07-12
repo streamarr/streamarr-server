@@ -9,7 +9,7 @@ Disposable decision input, 2026-07-11. The executable harness lives only under
 == Decision taken from this spike
 
 Use typed protobuf/gRPC for control messages and topology-A segment bytes. P5-A2 defines a
-`ReadSegment` server-streaming RPC whose `SegmentChunk` payload is bounded to 64 KiB.
+`ReadSegment` server-streaming RPC whose `ReadSegmentResponse` payload is bounded to 64 KiB.
 
 Both measured transports exceeded the 1 GbE payload budget. Raw HTTP was faster at ordinary
 concurrency, but gRPC allocated less, stopped server read-ahead sooner after cancellation, had far
@@ -126,8 +126,9 @@ job/generation-scoped capability only if TLS is later terminated by an intermedi
 client class is allowed onto the endpoint. Never reuse an account, refresh, playback, worker, or
 enrollment token.
 
-Each `SegmentChunk` carries at most 64 KiB. Streamarr forwards those bytes into the existing HLS
-HTTP response without materializing a whole segment. A disconnected or cancelled downstream
+The first `ReadSegmentResponse` carries exact length/content-type metadata; each later response
+carries at most 64 KiB of data. Streamarr forwards those bytes into the existing HLS HTTP response
+without materializing a whole segment. A disconnected or cancelled downstream
 client cancels the worker stream and closes the file. Range support is not required for the first
 complete-segment path; add it only with an end-to-end client Range contract and tests.
 
@@ -271,7 +272,7 @@ benchmark with authenticated raw HTTP and amend ADR 0018 before changing transpo
 * Client and server shared a JVM, so CPU/allocation/RSS are combined and JIT work can leak into a
   scenario.
 * The gRPC method used real HTTP/2/TLS/flow control but raw 64 KiB response marshalling rather than
-  a generated protobuf `SegmentChunk`; generated-message allocation/copy cost may be higher.
+  a generated protobuf response frame; generated-message allocation/copy cost may be higher.
 * The HTTP implementation was JDK `HttpsServer`/`HttpClient` HTTP/1.1, not the eventual worker and
   Spring/Tomcat (or Netty) proxy stack.
 * The test proves bounded application reads, not zero buffering in TLS, HTTP/2, kernel socket, or

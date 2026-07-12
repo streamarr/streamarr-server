@@ -161,9 +161,9 @@ signing material never cross the boundary.
 Sources use a logical mount/library id plus normalized relative key. Shared source mounts are
 read-only from Streamarr's perspective and are trusted not to change path identity between
 resolution and FFmpeg open; real-path checks reject escape at each resolution but are not
-filesystem capability handles. Segments remain worker-local
-and return as bounded protobuf `SegmentChunk` streams over the selected worker's existing mTLS
-gRPC channel only after the authoritative playback gate succeeds. Streamarr translates that
+filesystem capability handles. Segments remain worker-local and return as bounded protobuf
+`ReadSegmentResponse` streams over the selected worker's existing mTLS gRPC channel only after the
+authoritative playback gate succeeds. Streamarr translates that
 internal stream to the client's HLS HTTP response; workers expose no second byte-serving listener.
 NATS/JetStream is deferred until outbound-only or intermittently connected workers, remote leaf
 sites, or durable broker backlog become real requirements; Kafka and Redpanda are not part of this

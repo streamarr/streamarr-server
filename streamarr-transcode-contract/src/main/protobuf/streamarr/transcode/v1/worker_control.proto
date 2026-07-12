@@ -1,0 +1,158 @@
+syntax = "proto3";
+
+package streamarr.transcode.v1;
+
+import "streamarr/transcode/v1/common.proto";
+import "streamarr/transcode/v1/transcode.proto";
+
+option java_multiple_files = true;
+option java_outer_classname = "WorkerControlProto";
+option java_package = "com.streamarr.transcode.v1";
+
+enum StartJobRejection {
+  START_JOB_REJECTION_UNSPECIFIED = 0;
+  START_JOB_REJECTION_TARGET_MISMATCH = 1;
+  START_JOB_REJECTION_STALE_GENERATION = 2;
+  START_JOB_REJECTION_COMMAND_CONFLICT = 3;
+  START_JOB_REJECTION_JOB_CONFLICT = 4;
+  START_JOB_REJECTION_CAPACITY_EXHAUSTED = 5;
+  START_JOB_REJECTION_SOURCE_UNAVAILABLE = 6;
+  START_JOB_REJECTION_INVALID_SPECIFICATION = 7;
+  START_JOB_REJECTION_STARTUP_FAILED = 8;
+  START_JOB_REJECTION_SHUTTING_DOWN = 9;
+}
+
+enum StopJobRejection {
+  STOP_JOB_REJECTION_UNSPECIFIED = 0;
+  STOP_JOB_REJECTION_TARGET_MISMATCH = 1;
+  STOP_JOB_REJECTION_STALE_GENERATION = 2;
+  STOP_JOB_REJECTION_COMMAND_CONFLICT = 3;
+}
+
+enum InspectJobRejection {
+  INSPECT_JOB_REJECTION_UNSPECIFIED = 0;
+  INSPECT_JOB_REJECTION_TARGET_MISMATCH = 1;
+}
+
+enum SegmentContentType {
+  SEGMENT_CONTENT_TYPE_UNSPECIFIED = 0;
+  SEGMENT_CONTENT_TYPE_VIDEO_MP2T = 1;
+  SEGMENT_CONTENT_TYPE_VIDEO_MP4 = 2;
+}
+
+message ProveEndpointRequest {
+  WorkerTarget target = 1;
+  // Exactly 32 unpredictable bytes supplied by the control plane.
+  bytes nonce = 2;
+}
+
+message ProveEndpointResponse {
+  WorkerTarget target = 1;
+  bytes nonce = 2;
+  bytes leaf_certificate_der = 3;
+}
+
+message StartJobRequest {
+  Uuid command_id = 1;
+  WorkerTarget target = 2;
+  TranscodeJobSpec job_spec = 3;
+}
+
+message StartJobResponse {
+  oneof result {
+    TranscodeJobObservation accepted = 1;
+    StartJobRejection rejection = 2;
+    TranscodeJobRef cleanup_pending = 3;
+  }
+}
+
+message StopJobRequest {
+  Uuid command_id = 1;
+  WorkerTarget target = 2;
+  TranscodeJobRef job_ref = 3;
+}
+
+message StopJobResponse {
+  oneof result {
+    TranscodeJobRef stopped = 1;
+    TranscodeJobRef already_absent = 2;
+    TranscodeJobRef cleanup_pending = 3;
+    StopJobRejection rejection = 4;
+  }
+}
+
+message InspectJobRequest {
+  WorkerTarget target = 1;
+  TranscodeJobRef job_ref = 2;
+}
+
+message InspectJobResponse {
+  oneof result {
+    TranscodeJobObservation observation = 1;
+    TranscodeJobRef cleanup_pending = 2;
+    InspectJobRejection rejection = 3;
+  }
+}
+
+message ListJobsRequest {
+  WorkerTarget target = 1;
+  // Inclusive range 1..256.
+  uint32 page_size = 2;
+  bytes continuation = 3;
+}
+
+message ListJobsResponse {
+  repeated JobSnapshot jobs = 1;
+  bytes next_continuation = 2;
+}
+
+message InitializationSegment {}
+
+message SegmentRef {
+  oneof segment {
+    InitializationSegment initialization = 1;
+    uint64 media_sequence = 2;
+  }
+}
+
+message ReadSegmentRequest {
+  WorkerTarget target = 1;
+  TranscodeJobRef job_ref = 2;
+  string rendition_label = 3;
+  SegmentRef segment = 4;
+}
+
+message SegmentMetadata {
+  uint64 content_length_bytes = 1;
+  SegmentContentType content_type = 2;
+}
+
+// The first frame contains metadata exactly once. Every later frame contains between 1 byte and 64
+// KiB of data, and their combined size equals metadata.content_length_bytes.
+message ReadSegmentResponse {
+  oneof frame {
+    SegmentMetadata metadata = 1;
+    bytes data = 2;
+  }
+}
+
+service WorkerControlService {
+  rpc ProveEndpoint(ProveEndpointRequest) returns (ProveEndpointResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  rpc StartJob(StartJobRequest) returns (StartJobResponse) {
+    option idempotency_level = IDEMPOTENT;
+  }
+  rpc StopJob(StopJobRequest) returns (StopJobResponse) {
+    option idempotency_level = IDEMPOTENT;
+  }
+  rpc InspectJob(InspectJobRequest) returns (InspectJobResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  rpc ListJobs(ListJobsRequest) returns (ListJobsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  rpc ReadSegment(ReadSegmentRequest) returns (stream ReadSegmentResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}

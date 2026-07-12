@@ -10,6 +10,7 @@ Accepted
 * The former rendition-at-a-time, process-shaped `TranscodeExecutor` and its process-handle state have been removed from the server application.
 * No remote worker, worker listener, certificate authority, registration path, or distributed playback route is enabled yet.
 * The completed local extraction introduced the application boundary without introducing a remote transport.
+* The generated-only `streamarr-transcode-contract` module defines the versioned worker transport and compatibility gates; neither the server nor a worker runtime depends on it yet.
 * Distributed playback remains disabled until the durable command lifecycle and topology-A segment gate are complete.
 
 == Context
@@ -137,9 +138,10 @@ Maven downloads pinned platform-specific `protoc` and grpc-java generators; deve
 
 Evolution is additive within `v1`.
 Removed field names and numbers are reserved, unknown enum values are rejected at adapter boundaries, and compatibility ranges are advertised during registration.
+`ProtocolRevision.PROTOCOL_REVISION_V1` is the named value for numeric revision 1; range and negotiation fields remain numeric so a v1 peer can observe future revisions without understanding them.
 Buf format, lint, and breaking checks compare the proposed schema against the pull request's actual base revision.
 Generated sources are excluded from Sonar issue, duplication, and coverage analysis while the hand-written mappers remain covered.
-The protobuf service defines a typed `ReadSegment` request and bounded `SegmentChunk` stream after the byte-plane spike selected gRPC; media bytes remain data-plane payload while `MediaSourceRef` and every semantic command use the same versioned schema discipline.
+The protobuf service defines a typed `ReadSegment` request and a bounded stream of `ReadSegmentResponse` byte frames after the byte-plane spike selected gRPC; media bytes remain data-plane payload while `MediaSourceRef` and every semantic command use the same versioned schema discipline.
 
 === Service ownership and PostgreSQL
 
@@ -191,6 +193,7 @@ TLS validation always checks the installation chain, validity, EKU, revocation, 
 An endpoint becomes ready only after the control plane dials it and a nonce proof returns the registered worker identity, `boot_id`, and certificate.
 The controller persists a binding epoch over worker, boot, endpoint, and certificate.
 A new `boot_id`, endpoint replacement, certificate replacement, revocation, or incompatible protocol advertisement advances that epoch and invalidates the old channel and observations.
+Registration by a different boot is rejected while the current binding lease is live; this deliberately trades a short, database-clock-based failover delay for split-brain fencing, while exact same-boot retries remain idempotent.
 Reuse of the endpoint by another identity is rejected.
 
 The initial topology requires the media server to reach each worker's advertised endpoint.
@@ -210,16 +213,23 @@ Backups of distributed configuration must include this secret; losing it require
 Certificate issuance and issuer/root rotation use a PostgreSQL-backed singleton leadership lease so only one replica performs signing transitions at a time.
 
 An administrator mints a worker-specific 256-bit, single-use enrollment token whose digest and roughly ten-minute expiry are stored in PostgreSQL.
-The enrollment bundle contains the control endpoint, trust-bundle fingerprint, and token.
-The worker generates its private key locally, pins the supplied fingerprint before revealing the token, and submits a CSR containing its requested worker identity.
+The out-of-band enrollment bundle contains the control endpoint, a versioned public trust bundle, the SHA-256 fingerprint of its exact root DER, and the token.
+The public bundle distinguishes trust anchors, issuing certificates, and a dedicated revocation-signing leaf with a Streamarr-specific purpose; no private key is included.
+The worker verifies the supplied root fingerprint, installs that trust before revealing the token, generates its private key locally, and submits a CSR containing its requested worker identity.
+The worker reads the token from an owner-readable file and sends it only as lowercase gRPC `authorization` metadata with the exact value `Streamarr-Enrollment <token>`, where `<token>` is the unpadded base64url encoding of the 32 random bytes.
+It is never an ordinary Bearer credential or a protobuf field.
 The issuer ignores requested SAN authority and writes the worker identity bound to the grant.
-Issuance first durably claims the request and fixes its worker, public-key digest, serial, validity, and extensions; the leader signs without holding a database transaction, then atomically stores the certificate DER/chain and consumes the grant before returning any certificate.
-A retry after a lost response returns that stored certificate for the same request and key, while another key or worker is rejected; an expired in-progress claim may be safely re-signed from its fixed parameters because no certificate is delivered before the storing transaction commits.
+Issuance first durably claims the request and fixes its worker, public-key digest, serial, validity, extensions, and public-trust-bundle version; the leader signs without holding a database transaction, then atomically stores the certificate bundle and consumes the grant before returning any certificate.
+A retry after a lost response returns that exact stored certificate and trust-bundle version for the same request and key, while another key or worker is rejected; an expired in-progress claim may be safely re-signed from its fixed parameters because no certificate is delivered before the storing transaction commits.
+Old public bundle versions remain available until every retained issuance result and certificate that references them has expired.
 
 Worker certificates initially live seven days and rotate near half-life with jitter through an RPC authenticated by the current certificate; lifetime remains configurable after outage/recovery testing.
 Rotation permits a bounded overlap while the control plane replaces channels.
 Revocation marks the worker in authoritative control-plane state, rejects future registration/rotation, invalidates channels, and denies the certificate serial even before its natural expiry.
 Workers receive a signed revocation update so a revoked control certificate is denied per RPC without worker database access, including on an already-open channel.
+The active issuing intermediate issues a dedicated digital-signature-only revocation signer; its certificate is carried in the pinned public bundle, and each update identifies that signer by SHA-256 of its exact DER.
+Protocol revision 1 signs the exact serialized update bytes with `SHA256withECDSA` and carries the resulting ASN.1 DER signature.
+The CA intermediate key never signs arbitrary revocation-feed bytes.
 CA rotation and trust-domain replacement use explicit overlap and worker re-enrollment; they are never silent in-place key replacement.
 grpc-java credential-manager reload APIs are experimental, so live leaf reload, peer-identity verification, channel drain, and revocation are executable P5-B gates before remote mutation is enabled.
 
@@ -315,7 +325,8 @@ The server authorizes the request against link:0017-playback-enforcement-lifecyc
 A request admitted before revocation may finish; the first gate after committed revocation denies.
 
 The measured initial byte transport is gRPC server streaming on the worker's existing mTLS channel.
-A typed `ReadSegment` request names target worker/boot, job, generation, rendition, and segment; each `SegmentChunk` carries at most 64 KiB.
+A typed `ReadSegment` request names target worker/boot, job, generation, rendition, and segment.
+The first `ReadSegmentResponse` declares the exact content length and content type; each subsequent data frame carries at most 64 KiB, and their combined size must equal the declaration.
 Mutual TLS authenticates the exact control and worker identities, and the worker rejects stale or unknown ownership before opening the file.
 Rendition and segment identifiers must belong to that job's published manifest and are never treated as unchecked filesystem paths.
 HTTP/2 flow control, bounded reads, and response readiness limit queued data, cancellation stops disk reads promptly, and neither endpoint buffers the whole segment.
