@@ -27,7 +27,8 @@ public class FakeFfmpegProcessManager implements FfmpegProcessManager {
   private boolean observationReleaseAllowed = true;
 
   @Override
-  public Process startProcess(FfmpegProcessKey key, List<String> command, Path workingDir) {
+  public synchronized Process startProcess(
+      FfmpegProcessKey key, List<String> command, Path workingDir) {
     running.add(key);
     terminalObservations.remove(key);
     started.add(key.jobRef().jobId());
@@ -35,13 +36,13 @@ public class FakeFfmpegProcessManager implements FfmpegProcessManager {
   }
 
   @Override
-  public void stopProcess(FfmpegProcessKey key) {
+  public synchronized void stopProcess(FfmpegProcessKey key) {
     retainStopped(key);
     stopped.add(key.jobRef().jobId());
   }
 
   @Override
-  public void stopJob(TranscodeJobRef jobRef) {
+  public synchronized void stopJob(TranscodeJobRef jobRef) {
     running.stream()
         .filter(key -> key.jobRef().equals(jobRef))
         .toList()
@@ -50,22 +51,22 @@ public class FakeFfmpegProcessManager implements FfmpegProcessManager {
   }
 
   @Override
-  public void forceStopAll() {
+  public synchronized void forceStopAll() {
     List.copyOf(running).forEach(this::retainStopped);
   }
 
   @Override
-  public boolean isRunning(TranscodeJobRef jobRef) {
+  public synchronized boolean isRunning(TranscodeJobRef jobRef) {
     return running.stream().anyMatch(key -> key.jobRef().equals(jobRef));
   }
 
   @Override
-  public boolean isRunning(FfmpegProcessKey key) {
+  public synchronized boolean isRunning(FfmpegProcessKey key) {
     return running.contains(key);
   }
 
   @Override
-  public FfmpegProcessObservation observe(FfmpegProcessKey key) {
+  public synchronized FfmpegProcessObservation observe(FfmpegProcessKey key) {
     if (running.contains(key)) {
       return FfmpegProcessObservation.withoutExitCode(FfmpegProcessState.RUNNING);
     }
@@ -74,7 +75,7 @@ public class FakeFfmpegProcessManager implements FfmpegProcessManager {
   }
 
   @Override
-  public boolean releaseJobObservation(TranscodeJobRef jobRef) {
+  public synchronized boolean releaseJobObservation(TranscodeJobRef jobRef) {
     if (!observationReleaseAllowed || isRunning(jobRef)) {
       return false;
     }
@@ -89,15 +90,15 @@ public class FakeFfmpegProcessManager implements FfmpegProcessManager {
     }
   }
 
-  public Set<UUID> getStarted() {
+  public synchronized Set<UUID> getStarted() {
     return Set.copyOf(started);
   }
 
-  public Set<UUID> getStopped() {
+  public synchronized Set<UUID> getStopped() {
     return Set.copyOf(stopped);
   }
 
-  public void preventObservationRelease() {
+  public synchronized void preventObservationRelease() {
     observationReleaseAllowed = false;
   }
 
