@@ -39,6 +39,11 @@
             <scope>test</scope>
         </dependency>
         <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-nop</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <groupId>org.awaitility</groupId>
             <artifactId>awaitility</artifactId>
             <version>${awaitility.version}</version>
@@ -74,6 +79,7 @@
                                         <exclude>*:*:*:*:compile</exclude>
                                         <exclude>*:*:*:*:runtime</exclude>
                                         <exclude>*:*:*:*:provided</exclude>
+                                        <exclude>*:*:*:*:system</exclude>
                                     </excludes>
                                     <includes>
                                         <include>org.projectlombok:lombok</include>
