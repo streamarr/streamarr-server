@@ -65,15 +65,53 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
         processes.entrySet().stream()
             .filter(entry -> entry.getKey().sessionId().equals(sessionId))
             .toList();
+    var failures = new java.util.ArrayList<RuntimeException>();
+    var interrupted = !entriesToStop.isEmpty() && Thread.interrupted();
 
     for (var entry : entriesToStop) {
-      shutdownManagedProcess(entry.getValue(), sessionId);
-      processes.remove(entry.getKey(), entry.getValue());
+      try {
+        shutdownManagedProcess(entry.getValue(), sessionId);
+      } catch (RuntimeException failure) {
+        failures.add(failure);
+        interrupted |= recoverInterruptedStop(entry.getKey(), entry.getValue(), failure);
+      } finally {
+        if (!entry.getValue().process().isAlive()) {
+          processes.remove(entry.getKey(), entry.getValue());
+        }
+      }
     }
 
     if (!entriesToStop.isEmpty()) {
       log.info("Stopped FFmpeg process(es) for session {}", sessionId);
     }
+
+    if (interrupted) {
+      Thread.currentThread().interrupt();
+      if (failures.isEmpty()) {
+        failures.add(new TranscodeException(TranscodeException.GENERIC_MESSAGE));
+      }
+    }
+
+    if (!failures.isEmpty()) {
+      var first = failures.getFirst();
+      failures.stream().skip(1).forEach(first::addSuppressed);
+      throw first;
+    }
+  }
+
+  private boolean recoverInterruptedStop(
+      ProcessKey key, ManagedProcess managed, RuntimeException failure) {
+    if (!Thread.interrupted()) {
+      return false;
+    }
+
+    try {
+      forceStop(key, managed);
+    } catch (RuntimeException cleanupFailure) {
+      failure.addSuppressed(cleanupFailure);
+      Thread.interrupted();
+    }
+    return true;
   }
 
   @Override

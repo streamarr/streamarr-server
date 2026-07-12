@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -156,6 +157,93 @@ class LocalFfmpegProcessManagerTest {
     } finally {
       manager.stopProcess(firstSessionId);
       manager.stopProcess(secondSessionId);
+    }
+  }
+
+  @Test
+  @DisplayName("Should remove naturally completed process during final shutdown")
+  void shouldRemoveNaturallyCompletedProcessDuringFinalShutdown() throws Exception {
+    var sessionId = UUID.randomUUID();
+    var process = manager.startProcess(sessionId, "completed", List.of("true"), tempDir);
+    process.waitFor();
+
+    manager.forceStopAll();
+
+    assertThat(manager.isRunning(sessionId, "completed")).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should accept graceful quit response when stopping process")
+  void shouldAcceptGracefulQuitResponseWhenStoppingProcess() {
+    var sessionId = UUID.randomUUID();
+    var process =
+        manager.startProcess(sessionId, "graceful", List.of("bash", "-c", "read -r -n 1"), tempDir);
+
+    manager.stopProcess(sessionId);
+
+    assertThat(process.isAlive()).isFalse();
+    assertThat(manager.isRunning(sessionId, "graceful")).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "Should stop every variant and restore interruption when session stop is interrupted")
+  void shouldStopEveryVariantAndRestoreInterruptionWhenSessionStopIsInterrupted() {
+    var sessionId = UUID.randomUUID();
+    var gracefulCommand = List.of("bash", "-c", "read -r -n 1");
+    var first = manager.startProcess(sessionId, "first", gracefulCommand, tempDir);
+    var second = manager.startProcess(sessionId, "second", gracefulCommand, tempDir);
+
+    try {
+      Thread.currentThread().interrupt();
+
+      assertThatThrownBy(() -> manager.stopProcess(sessionId))
+          .isInstanceOf(TranscodeException.class)
+          .hasMessage(TranscodeException.GENERIC_MESSAGE);
+      assertThat(Thread.currentThread().isInterrupted()).isTrue();
+      assertThat(first.isAlive()).isFalse();
+      assertThat(second.isAlive()).isFalse();
+      assertThat(manager.isRunning(sessionId)).isFalse();
+    } finally {
+      Thread.interrupted();
+      manager.forceStopAll();
+    }
+  }
+
+  @Test
+  @DisplayName("Should finish cleanup when session stop is interrupted while waiting")
+  void shouldFinishCleanupWhenSessionStopIsInterruptedWhileWaiting() {
+    var sessionId = UUID.randomUUID();
+    var process = manager.startProcess(sessionId, "waiting", List.of("sleep", "30"), tempDir);
+    var failure = new AtomicReference<RuntimeException>();
+    var stopThread =
+        Thread.ofVirtual()
+            .start(
+                () -> {
+                  try {
+                    manager.stopProcess(sessionId);
+                  } catch (RuntimeException exception) {
+                    failure.set(exception);
+                  }
+                });
+
+    try {
+      await()
+          .atMost(Duration.ofSeconds(2))
+          .until(
+              () ->
+                  stopThread.getState() == Thread.State.WAITING
+                      || stopThread.getState() == Thread.State.TIMED_WAITING);
+      stopThread.interrupt();
+      await().atMost(Duration.ofSeconds(2)).until(() -> !stopThread.isAlive());
+
+      assertThat(failure.get()).isInstanceOf(TranscodeException.class);
+      assertThat(stopThread.isInterrupted()).isTrue();
+      assertThat(process.isAlive()).isFalse();
+      assertThat(manager.isRunning(sessionId)).isFalse();
+    } finally {
+      stopThread.interrupt();
+      manager.forceStopAll();
     }
   }
 
