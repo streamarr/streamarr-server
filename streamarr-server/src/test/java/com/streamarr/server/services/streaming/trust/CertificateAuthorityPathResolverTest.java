@@ -22,7 +22,9 @@ class CertificateAuthorityPathResolverTest {
   @Test
   @DisplayName("Should reject missing secret path")
   void shouldRejectMissingSecretPath() {
-    assertThatThrownBy(() -> resolver().resolve(null))
+    var resolver = resolver();
+
+    assertThatThrownBy(() -> resolver.resolve(null))
         .isInstanceOf(CertificateAuthorityStoreException.class)
         .hasMessageContaining("path is required");
   }
@@ -31,7 +33,10 @@ class CertificateAuthorityPathResolverTest {
   @DisplayName("Should reject secret path directly below filesystem root")
   void shouldRejectSecretPathDirectlyBelowFilesystemRoot() throws Exception {
     try (var fileSystem = newFileSystem()) {
-      assertThatThrownBy(() -> resolver().resolve(fileSystem.getPath("/authority.p12")))
+      var resolver = resolver();
+      var requested = fileSystem.getPath("/authority.p12");
+
+      assertThatThrownBy(() -> resolver.resolve(requested))
           .isInstanceOf(CertificateAuthorityStoreException.class)
           .hasMessageContaining("dedicated parent and final filename");
     }
@@ -43,8 +48,9 @@ class CertificateAuthorityPathResolverTest {
     try (var fileSystem = newFileSystem()) {
       Files.createDirectory(fileSystem.getPath("/actual"));
       var requested = fileSystem.getPath("/actual/../authority/authority.p12");
+      var resolver = resolver();
 
-      assertThatThrownBy(() -> resolver().resolve(requested))
+      assertThatThrownBy(() -> resolver.resolve(requested))
           .isInstanceOf(CertificateAuthorityStoreException.class)
           .hasMessageContaining("parent traversal");
     }
@@ -62,8 +68,9 @@ class CertificateAuthorityPathResolverTest {
       Files.createSymbolicLink(base.resolve("alias"), fileSystem.getPath("real/link/.."));
 
       var requested = base.resolve("alias/authority/authority.p12");
+      var resolver = resolver();
 
-      assertThatThrownBy(() -> resolver().resolve(requested))
+      assertThatThrownBy(() -> resolver.resolve(requested))
           .isInstanceOf(CertificateAuthorityStoreException.class)
           .hasMessageContaining("parent traversal");
     }
@@ -91,8 +98,10 @@ class CertificateAuthorityPathResolverTest {
     try (var fileSystem = newFileSystem()) {
       var loop = fileSystem.getPath("/loop");
       Files.createSymbolicLink(loop, loop);
+      var requested = loop.resolve("authority/authority.p12");
+      var resolver = resolver();
 
-      assertThatThrownBy(() -> resolver().resolve(loop.resolve("authority/authority.p12")))
+      assertThatThrownBy(() -> resolver.resolve(requested))
           .isInstanceOf(CertificateAuthorityStoreException.class)
           .hasMessageContaining("symbolic-link depth or cycle");
     }
@@ -108,9 +117,10 @@ class CertificateAuthorityPathResolverTest {
         var next = index == 40 ? target : fileSystem.getPath("/link-" + (index + 1));
         Files.createSymbolicLink(link, next);
       }
+      var requested = fileSystem.getPath("/link-0/authority/authority.p12");
+      var resolver = resolver();
 
-      assertThatThrownBy(
-              () -> resolver().resolve(fileSystem.getPath("/link-0/authority/authority.p12")))
+      assertThatThrownBy(() -> resolver.resolve(requested))
           .isInstanceOf(CertificateAuthorityStoreException.class)
           .hasMessageContaining("symbolic-link depth or cycle");
     }

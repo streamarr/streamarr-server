@@ -77,9 +77,7 @@ final class MacOsAclCommandInspector {
     } catch (IOException e) {
       throw inspectionFailure(path, e);
     } catch (InterruptedException e) {
-      if (process != null) {
-        terminate(process);
-      }
+      terminate(process);
       Thread.currentThread().interrupt();
       throw inspectionFailure(path, e);
     } finally {

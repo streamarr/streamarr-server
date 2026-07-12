@@ -19,10 +19,15 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 @Tag("UnitTest")
 @DisplayName("macOS ACL Command Inspector Tests")
@@ -32,12 +37,11 @@ class MacOsAclCommandInspectorTest {
 
   @TempDir Path directory;
 
-  @Test
-  @DisplayName("Should report no extended ACL when command emits one metadata line")
-  void shouldReportNoExtendedAclWhenCommandEmitsOneMetadataLine() {
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("metadataWithoutExtendedAcl")
+  void shouldReportNoExtendedAclForMetadata(String metadata) {
     var inspector =
-        new MacOsAclCommandInspector(
-            List.of("/bin/sh", "-c", "printf '%s\\n' '-rw-------  1 owner group 0 secret'"));
+        new MacOsAclCommandInspector(List.of("/bin/sh", "-c", "printf '%s\\n' '" + metadata + "'"));
 
     assertThat(inspector.hasExtendedAcl(SECRET_PATH)).isFalse();
   }
@@ -58,16 +62,6 @@ class MacOsAclCommandInspectorTest {
   }
 
   @Test
-  @DisplayName("Should not confuse extended attributes with an extended ACL")
-  void shouldNotConfuseExtendedAttributesWithExtendedAcl() {
-    var inspector =
-        new MacOsAclCommandInspector(
-            List.of("/bin/sh", "-c", "printf '%s\\n' '-rw-------@ 1 owner group 0 secret'"));
-
-    assertThat(inspector.hasExtendedAcl(SECRET_PATH)).isFalse();
-  }
-
-  @Test
   @DisplayName("Should report extended ACL when metadata has the ACL marker")
   void shouldReportExtendedAclWhenMetadataHasAclMarker() {
     var inspector =
@@ -75,16 +69,6 @@ class MacOsAclCommandInspectorTest {
             List.of("/bin/sh", "-c", "printf '%s\\n' '-rw-------+ 1 owner group 0 secret'"));
 
     assertThat(inspector.hasExtendedAcl(SECRET_PATH)).isTrue();
-  }
-
-  @Test
-  @DisplayName("Should report no extended ACL for directory metadata")
-  void shouldReportNoExtendedAclForDirectoryMetadata() {
-    var inspector =
-        new MacOsAclCommandInspector(
-            List.of("/bin/sh", "-c", "printf '%s\\n' 'drwx------  1 owner group 0 authority'"));
-
-    assertThat(inspector.hasExtendedAcl(SECRET_PATH)).isFalse();
   }
 
   @Test
@@ -190,92 +174,10 @@ class MacOsAclCommandInspectorTest {
     assertThat(inspector.hasExtendedAcl(SECRET_PATH)).isTrue();
   }
 
-  @Test
-  @DisplayName("Should fail closed when ACL command exits unsuccessfully")
-  void shouldFailClosedWhenAclCommandExitsUnsuccessfully() {
-    var inspector =
-        new MacOsAclCommandInspector(
-            List.of("/bin/sh", "-c", "printf 'inspection failed\\n'; exit 7"));
-
-    assertThatThrownBy(() -> inspector.hasExtendedAcl(SECRET_PATH))
-        .isInstanceOf(CertificateAuthorityStoreException.class)
-        .hasMessageContaining("Failed to inspect extended ACLs");
-  }
-
-  @Test
-  @DisplayName("Should fail closed when ACL command emits no metadata")
-  void shouldFailClosedWhenAclCommandEmitsNoMetadata() {
-    var inspector = new MacOsAclCommandInspector(List.of("/bin/sh", "-c", "exit 0"));
-
-    assertThatThrownBy(() -> inspector.hasExtendedAcl(SECRET_PATH))
-        .isInstanceOf(CertificateAuthorityStoreException.class)
-        .hasMessageContaining("Failed to inspect extended ACLs");
-  }
-
-  @Test
-  @DisplayName("Should fail closed when ACL command emits unrecognized metadata")
-  void shouldFailClosedWhenAclCommandEmitsUnrecognizedMetadata() {
-    var inspector =
-        new MacOsAclCommandInspector(List.of("/bin/sh", "-c", "printf 'unexpected output\\n'"));
-
-    assertThatThrownBy(() -> inspector.hasExtendedAcl(SECRET_PATH))
-        .isInstanceOf(CertificateAuthorityStoreException.class)
-        .hasMessageContaining("Failed to inspect extended ACLs");
-  }
-
-  @Test
-  @DisplayName("Should fail closed when ACL metadata is truncated")
-  void shouldFailClosedWhenAclMetadataIsTruncated() {
-    var inspector =
-        new MacOsAclCommandInspector(List.of("/bin/sh", "-c", "printf '%s\\n' 'short'"));
-
-    assertThatThrownBy(() -> inspector.hasExtendedAcl(SECRET_PATH))
-        .isInstanceOf(CertificateAuthorityStoreException.class)
-        .hasMessageContaining("Failed to inspect extended ACLs");
-  }
-
-  @Test
-  @DisplayName("Should fail closed when ACL metadata has an unsupported file type")
-  void shouldFailClosedWhenAclMetadataHasUnsupportedFileType() {
-    var inspector =
-        new MacOsAclCommandInspector(
-            List.of("/bin/sh", "-c", "printf '%s\\n' 'lrw-------  1 owner group 0 secret'"));
-
-    assertThatThrownBy(() -> inspector.hasExtendedAcl(SECRET_PATH))
-        .isInstanceOf(CertificateAuthorityStoreException.class)
-        .hasMessageContaining("Failed to inspect extended ACLs");
-  }
-
-  @Test
-  @DisplayName("Should fail closed when ACL metadata has an invalid permission character")
-  void shouldFailClosedWhenAclMetadataHasInvalidPermissionCharacter() {
-    var inspector =
-        new MacOsAclCommandInspector(
-            List.of("/bin/sh", "-c", "printf '%s\\n' '-rw----?--  1 owner group 0 secret'"));
-
-    assertThatThrownBy(() -> inspector.hasExtendedAcl(SECRET_PATH))
-        .isInstanceOf(CertificateAuthorityStoreException.class)
-        .hasMessageContaining("Failed to inspect extended ACLs");
-  }
-
-  @Test
-  @DisplayName("Should fail closed when permission character is impossible at its mode position")
-  void shouldFailClosedWhenPermissionCharacterIsImpossibleAtItsModePosition() {
-    var inspector =
-        new MacOsAclCommandInspector(
-            List.of("/bin/sh", "-c", "printf '%s\\n' '-s--------  1 owner group 0 secret'"));
-
-    assertThatThrownBy(() -> inspector.hasExtendedAcl(SECRET_PATH))
-        .isInstanceOf(CertificateAuthorityStoreException.class)
-        .hasMessageContaining("Failed to inspect extended ACLs");
-  }
-
-  @Test
-  @DisplayName("Should fail closed when ACL metadata has an invalid marker")
-  void shouldFailClosedWhenAclMetadataHasInvalidMarker() {
-    var inspector =
-        new MacOsAclCommandInspector(
-            List.of("/bin/sh", "-c", "printf '%s\\n' '-rw-------? 1 owner group 0 secret'"));
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("invalidAclCommandOutput")
+  void shouldFailClosedWhenAclCommandOutputIsInvalid(String script) {
+    var inspector = new MacOsAclCommandInspector(List.of("/bin/sh", "-c", script));
 
     assertThatThrownBy(() -> inspector.hasExtendedAcl(SECRET_PATH))
         .isInstanceOf(CertificateAuthorityStoreException.class)
@@ -301,7 +203,7 @@ class MacOsAclCommandInspectorTest {
 
   @Test
   @DisplayName("Should terminate ACL command and fail closed when inspection times out")
-  void shouldTerminateAclCommandAndFailClosedWhenInspectionTimesOut() throws Exception {
+  void shouldTerminateAclCommandAndFailClosedWhenInspectionTimesOut() {
     var starter = new CapturingCommandStarter();
     var inspector =
         new MacOsAclCommandInspector(
@@ -393,8 +295,7 @@ class MacOsAclCommandInspectorTest {
   @Test
   @DisplayName(
       "Should terminate ACL command and preserve interruption when inspection is interrupted")
-  void shouldTerminateAclCommandAndPreserveInterruptionWhenInspectionIsInterrupted()
-      throws Exception {
+  void shouldTerminateAclCommandAndPreserveInterruptionWhenInspectionIsInterrupted() {
     var starter = new CapturingCommandStarter();
     var inspector =
         new MacOsAclCommandInspector(
@@ -435,6 +336,54 @@ class MacOsAclCommandInspectorTest {
   private static long awaitProcessId(Path pidFile) {
     await().atMost(Duration.ofSeconds(2)).until(() -> readPublishedProcessId(pidFile) >= 0L);
     return readPublishedProcessId(pidFile);
+  }
+
+  private static Stream<Arguments> metadataWithoutExtendedAcl() {
+    return Stream.of(
+        Arguments.of(
+            Named.of(
+                "Should report no extended ACL when command emits one metadata line",
+                "-rw-------  1 owner group 0 secret")),
+        Arguments.of(
+            Named.of(
+                "Should not confuse extended attributes with an extended ACL",
+                "-rw-------@ 1 owner group 0 secret")),
+        Arguments.of(
+            Named.of(
+                "Should report no extended ACL for directory metadata",
+                "drwx------  1 owner group 0 authority")));
+  }
+
+  private static Stream<Arguments> invalidAclCommandOutput() {
+    return Stream.of(
+        Arguments.of(
+            Named.of(
+                "Should fail closed when ACL command exits unsuccessfully",
+                "printf 'inspection failed\\n'; exit 7")),
+        Arguments.of(Named.of("Should fail closed when ACL command emits no metadata", "exit 0")),
+        Arguments.of(
+            Named.of(
+                "Should fail closed when ACL command emits unrecognized metadata",
+                "printf 'unexpected output\\n'")),
+        Arguments.of(
+            Named.of(
+                "Should fail closed when ACL metadata is truncated", "printf '%s\\n' 'short'")),
+        Arguments.of(
+            Named.of(
+                "Should fail closed when ACL metadata has an unsupported file type",
+                "printf '%s\\n' 'lrw-------  1 owner group 0 secret'")),
+        Arguments.of(
+            Named.of(
+                "Should fail closed when ACL metadata has an invalid permission character",
+                "printf '%s\\n' '-rw----?--  1 owner group 0 secret'")),
+        Arguments.of(
+            Named.of(
+                "Should fail closed when permission character is impossible at its mode position",
+                "printf '%s\\n' '-s--------  1 owner group 0 secret'")),
+        Arguments.of(
+            Named.of(
+                "Should fail closed when ACL metadata has an invalid marker",
+                "printf '%s\\n' '-rw-------? 1 owner group 0 secret'")));
   }
 
   private static long readPublishedProcessId(Path pidFile) {
@@ -493,7 +442,9 @@ class MacOsAclCommandInspectorTest {
     }
 
     @Override
-    public void destroy() {}
+    public void destroy() {
+      // Intentionally remains alive to simulate a process that cannot be reaped.
+    }
 
     @Override
     public Process destroyForcibly() {
