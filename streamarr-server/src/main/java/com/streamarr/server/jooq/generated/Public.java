@@ -41,6 +41,11 @@ import com.streamarr.server.jooq.generated.tables.ServerBootstrap;
 import com.streamarr.server.jooq.generated.tables.SessionProgress;
 import com.streamarr.server.jooq.generated.tables.StreamSession;
 import com.streamarr.server.jooq.generated.tables.StreamSessionTerminationIntent;
+import com.streamarr.server.jooq.generated.tables.TranscodeActiveTrustBundle;
+import com.streamarr.server.jooq.generated.tables.TranscodeCaSigningLease;
+import com.streamarr.server.jooq.generated.tables.TranscodeInstallation;
+import com.streamarr.server.jooq.generated.tables.TranscodePublicTrustBundle;
+import com.streamarr.server.jooq.generated.tables.TranscodeTrustCertificate;
 import com.streamarr.server.jooq.generated.tables.UserAccount;
 import com.streamarr.server.jooq.generated.tables.WatchHistory;
 
@@ -252,6 +257,31 @@ public class Public extends SchemaImpl {
     public final StreamSessionTerminationIntent STREAM_SESSION_TERMINATION_INTENT = StreamSessionTerminationIntent.STREAM_SESSION_TERMINATION_INTENT;
 
     /**
+     * The table <code>public.transcode_active_trust_bundle</code>.
+     */
+    public final TranscodeActiveTrustBundle TRANSCODE_ACTIVE_TRUST_BUNDLE = TranscodeActiveTrustBundle.TRANSCODE_ACTIVE_TRUST_BUNDLE;
+
+    /**
+     * The table <code>public.transcode_ca_signing_lease</code>.
+     */
+    public final TranscodeCaSigningLease TRANSCODE_CA_SIGNING_LEASE = TranscodeCaSigningLease.TRANSCODE_CA_SIGNING_LEASE;
+
+    /**
+     * The table <code>public.transcode_installation</code>.
+     */
+    public final TranscodeInstallation TRANSCODE_INSTALLATION = TranscodeInstallation.TRANSCODE_INSTALLATION;
+
+    /**
+     * The table <code>public.transcode_public_trust_bundle</code>.
+     */
+    public final TranscodePublicTrustBundle TRANSCODE_PUBLIC_TRUST_BUNDLE = TranscodePublicTrustBundle.TRANSCODE_PUBLIC_TRUST_BUNDLE;
+
+    /**
+     * The table <code>public.transcode_trust_certificate</code>.
+     */
+    public final TranscodeTrustCertificate TRANSCODE_TRUST_CERTIFICATE = TranscodeTrustCertificate.TRANSCODE_TRUST_CERTIFICATE;
+
+    /**
      * The table <code>public.user_account</code>.
      */
     public final UserAccount USER_ACCOUNT = UserAccount.USER_ACCOUNT;
@@ -314,6 +344,11 @@ public class Public extends SchemaImpl {
             SessionProgress.SESSION_PROGRESS,
             StreamSession.STREAM_SESSION,
             StreamSessionTerminationIntent.STREAM_SESSION_TERMINATION_INTENT,
+            TranscodeActiveTrustBundle.TRANSCODE_ACTIVE_TRUST_BUNDLE,
+            TranscodeCaSigningLease.TRANSCODE_CA_SIGNING_LEASE,
+            TranscodeInstallation.TRANSCODE_INSTALLATION,
+            TranscodePublicTrustBundle.TRANSCODE_PUBLIC_TRUST_BUNDLE,
+            TranscodeTrustCertificate.TRANSCODE_TRUST_CERTIFICATE,
             UserAccount.USER_ACCOUNT,
             WatchHistory.WATCH_HISTORY
         );
