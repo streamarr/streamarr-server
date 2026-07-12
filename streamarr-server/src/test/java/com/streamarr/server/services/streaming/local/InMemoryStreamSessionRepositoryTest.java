@@ -8,6 +8,7 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.services.streaming.CommittedStreamSessionTimeline;
 import com.streamarr.server.services.streaming.RuntimeSessionReservation;
+import com.streamarr.server.services.streaming.RuntimeTranscodeStart;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.UUID;
@@ -162,6 +163,52 @@ class InMemoryStreamSessionRepositoryTest {
 
     assertThat(repository.completeTranscodeStart(start)).isTrue();
     assertThat(repository.activeTranscodeJobRef(sessionId)).contains(start.jobRef());
+  }
+
+  @Test
+  @DisplayName("Should reject duplicate acceptance without changing exact active authority")
+  void shouldRejectDuplicateAcceptanceWithoutChangingExactActiveAuthority() {
+    var sessionId = UUID.randomUUID();
+    repository.reserve(sessionId).orElseThrow();
+    var start = repository.beginTranscodeStart(sessionId).orElseThrow();
+
+    assertThat(repository.completeTranscodeStart(start)).isTrue();
+
+    assertThat(repository.completeTranscodeStart(start)).isFalse();
+    assertThat(repository.activeTranscodeJobRef(sessionId)).contains(start.jobRef());
+    assertThat(repository.snapshotTranscodeJobRefs(sessionId)).containsExactly(start.jobRef());
+  }
+
+  @Test
+  @DisplayName("Should refuse activation after the exact in-flight job is released")
+  void shouldRefuseActivationAfterExactInFlightJobReleased() {
+    var sessionId = UUID.randomUUID();
+    repository.reserve(sessionId).orElseThrow();
+    var start = repository.beginTranscodeStart(sessionId).orElseThrow();
+
+    repository.markTranscodeJobReleased(start.jobRef());
+
+    assertThat(repository.completeTranscodeStart(start)).isFalse();
+    assertThat(repository.activeTranscodeJobRef(sessionId)).isEmpty();
+    assertThat(repository.snapshotTranscodeJobRefs(sessionId)).containsExactly(start.jobRef());
+
+    repository.finishRejectedTranscodeStart(start, false);
+    assertThat(repository.snapshotTranscodeJobRefs(sessionId)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should ignore a conflicting duplicate result after the exact start settles")
+  void shouldIgnoreConflictingDuplicateResultAfterExactStartSettles() {
+    var sessionId = UUID.randomUUID();
+    repository.reserve(sessionId).orElseThrow();
+    var start = repository.beginTranscodeStart(sessionId).orElseThrow();
+
+    repository.abortTranscodeStart(start);
+    repository.finishRejectedTranscodeStart(start, true);
+
+    assertThat(repository.snapshotTranscodeJobRefs(sessionId)).containsExactly(start.jobRef());
+    repository.markTranscodeJobReleased(start.jobRef());
+    assertThat(repository.snapshotTranscodeJobRefs(sessionId)).isEmpty();
   }
 
   @Test
@@ -531,6 +578,29 @@ class InMemoryStreamSessionRepositoryTest {
     assertThat(repository.completeTranscodeStart(staleStarter)).isFalse();
     assertThat(repository.markRunning(replacement)).isTrue();
     assertThat(repository.findById(session.getSessionId())).contains(session);
+  }
+
+  @Test
+  @DisplayName("Should reject a start result carrying a stale slot generation")
+  void shouldRejectStartResultCarryingStaleSlotGeneration() {
+    var sessionId = UUID.randomUUID();
+    var staleReservation = repository.reserve(sessionId).orElseThrow();
+    var staleStart = repository.beginTranscodeStart(sessionId).orElseThrow();
+    repository.releaseReservation(staleReservation);
+    repository.terminalize(sessionId);
+    repository.markRuntimeStopped(sessionId);
+    repository.releaseTerminal(sessionId);
+    repository.finishRejectedTranscodeStart(staleStart, true);
+
+    repository.reserve(sessionId).orElseThrow();
+    var currentStart = repository.beginTranscodeStart(sessionId).orElseThrow();
+    var crossedStart =
+        new RuntimeTranscodeStart(sessionId, staleStart.slotGeneration(), currentStart.jobRef());
+
+    repository.finishRejectedTranscodeStart(crossedStart, true);
+
+    assertThat(repository.completeTranscodeStart(currentStart)).isTrue();
+    assertThat(repository.activeTranscodeJobRef(sessionId)).contains(currentStart.jobRef());
   }
 
   @Test
