@@ -47,6 +47,7 @@ class ContractPolicyTest {
     var files = contractFiles();
 
     assertThat(files)
+        .isNotEmpty()
         .allSatisfy(
             file -> {
               assertThat(file.getOptions().getJavaPackage()).isEqualTo(JAVA_PACKAGE);
@@ -59,10 +60,13 @@ class ContractPolicyTest {
   @DisplayName("Should expose only typed bounded transport fields when describing the contract")
   void shouldExposeOnlyTypedBoundedTransportFieldsWhenDescribingContract() throws Exception {
     var messages = messagesByName(contractFiles());
-    var fields = messages.values().stream().flatMap(ContractPolicyTest::fields);
+    var fields = messages.values().stream().flatMap(ContractPolicyTest::fields).toList();
 
-    assertThat(messages.values()).noneMatch(message -> message.getOptions().getMapEntry());
+    assertThat(messages.values())
+        .isNotEmpty()
+        .noneMatch(message -> message.getOptions().getMapEntry());
     assertThat(fields)
+        .isNotEmpty()
         .allSatisfy(
             field -> {
               assertThat(field.getTypeName())
@@ -127,8 +131,8 @@ class ContractPolicyTest {
             .flatMap(file -> Stream.concat(file.getEnumTypeList().stream(), nestedEnums(file)))
             .toList();
 
-    assertThat(enums).isNotEmpty();
     assertThat(enums)
+        .isNotEmpty()
         .allSatisfy(
             descriptor -> {
               var zero =
