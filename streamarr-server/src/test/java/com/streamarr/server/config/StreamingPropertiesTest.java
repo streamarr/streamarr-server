@@ -1,6 +1,7 @@
 package com.streamarr.server.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
@@ -69,6 +70,16 @@ class StreamingPropertiesTest {
             "streaming.provisioning-timeout=30s",
             "streaming.transcode-startup-timeout=" + startupTimeout)
         .run(context -> assertThat(context).hasFailed());
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"PT0S", "PT-1S"})
+  @DisplayName("Should reject non-positive transcode startup timeout")
+  void shouldRejectNonPositiveTranscodeStartupTimeout(String startupTimeout) {
+    var builder =
+        StreamingProperties.builder().transcodeStartupTimeout(Duration.parse(startupTimeout));
+
+    assertThatThrownBy(builder::build).isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test

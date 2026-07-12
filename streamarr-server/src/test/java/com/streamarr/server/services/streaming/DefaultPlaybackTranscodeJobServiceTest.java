@@ -190,19 +190,71 @@ class DefaultPlaybackTranscodeJobServiceTest {
   void shouldRejectInvalidActiveInspectionValues() {
     assertThatThrownBy(() -> new ActiveTranscodeJobInspection.Observed(null, 0))
         .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(
-            () ->
-                new ActiveTranscodeJobInspection.Observed(
-                    TranscodeJobObservation.builder()
-                        .jobRef(
-                            new com.streamarr.transcode.engine.model.TranscodeJobRef(
-                                UUID.randomUUID(), 1))
-                        .state(TranscodeJobState.ABSENT)
-                        .renditions(List.of())
-                        .build(),
-                    -1))
+    var absentObservation =
+        TranscodeJobObservation.builder()
+            .jobRef(new com.streamarr.transcode.engine.model.TranscodeJobRef(UUID.randomUUID(), 1))
+            .state(TranscodeJobState.ABSENT)
+            .renditions(List.of())
+            .build();
+    assertThatThrownBy(() -> new ActiveTranscodeJobInspection.Observed(absentObservation, -1))
         .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(() -> new ActiveTranscodeJobInspection.Unavailable(null))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject missing or empty playback job values")
+  void shouldRejectMissingOrEmptyPlaybackJobValues() {
+    var valid = command(UUID.randomUUID());
+    var nullRendition = new java.util.ArrayList<RenditionSpec>();
+    nullRendition.add(null);
+
+    assertThatThrownBy(
+            () ->
+                new StartPlaybackTranscodeJobCommand(
+                    null, valid.source(), valid.decision(), valid.execution(), valid.renditions()))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(
+            () ->
+                new StartPlaybackTranscodeJobCommand(
+                    valid.sessionId(),
+                    null,
+                    valid.decision(),
+                    valid.execution(),
+                    valid.renditions()))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(
+            () ->
+                new StartPlaybackTranscodeJobCommand(
+                    valid.sessionId(), valid.source(), null, valid.execution(), valid.renditions()))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(
+            () ->
+                new StartPlaybackTranscodeJobCommand(
+                    valid.sessionId(), valid.source(), valid.decision(), null, valid.renditions()))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(
+            () ->
+                new StartPlaybackTranscodeJobCommand(
+                    valid.sessionId(), valid.source(), valid.decision(), valid.execution(), null))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(
+            () ->
+                new StartPlaybackTranscodeJobCommand(
+                    valid.sessionId(),
+                    valid.source(),
+                    valid.decision(),
+                    valid.execution(),
+                    List.of()))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(
+            () ->
+                new StartPlaybackTranscodeJobCommand(
+                    valid.sessionId(),
+                    valid.source(),
+                    valid.decision(),
+                    valid.execution(),
+                    nullRendition))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
@@ -216,7 +268,8 @@ class DefaultPlaybackTranscodeJobServiceTest {
     var service = service(worker, registry);
     var fallback = service.start(command(sessionId)).jobRef();
     worker.rejectStartsWith(StartJobRejection.STARTUP_FAILED);
-    assertThatThrownBy(() -> service.start(command(sessionId)))
+    var replacementCommand = command(sessionId);
+    assertThatThrownBy(() -> service.start(replacementCommand))
         .isInstanceOf(TranscodeJobStartException.class);
     var failedReplacement = worker.startCommands().getLast().specification().jobRef();
 
@@ -258,7 +311,8 @@ class DefaultPlaybackTranscodeJobServiceTest {
     var service = service(worker, registry);
     var fallback = service.start(command(sessionId)).jobRef();
     worker.rejectStartsWith(StartJobRejection.STARTUP_FAILED);
-    assertThatThrownBy(() -> service.start(command(sessionId)))
+    var replacementCommand = command(sessionId);
+    assertThatThrownBy(() -> service.start(replacementCommand))
         .isInstanceOf(TranscodeJobStartException.class);
     var failedReplacement = worker.startCommands().getLast().specification().jobRef();
     worker.stopWith(fallback, StopOutcome.FAILURE);
@@ -283,7 +337,8 @@ class DefaultPlaybackTranscodeJobServiceTest {
     var service = service(worker, registry);
     var fallback = service.start(command(sessionId)).jobRef();
     worker.rejectStartsWith(StartJobRejection.STARTUP_FAILED);
-    assertThatThrownBy(() -> service.start(command(sessionId)))
+    var replacementCommand = command(sessionId);
+    assertThatThrownBy(() -> service.start(replacementCommand))
         .isInstanceOf(TranscodeJobStartException.class);
     var failedHighWater = worker.startCommands().getLast().specification().jobRef();
 
@@ -357,11 +412,14 @@ class DefaultPlaybackTranscodeJobServiceTest {
     var worker = new FakeTranscodeWorker();
     worker.rejectStartsWith(rejection);
     var service = service(worker, registry);
+    var startCommand = command(sessionId);
 
     var thrown =
         org.assertj.core.api.Assertions.catchThrowableOfType(
-            () -> service.start(command(sessionId)), TranscodeJobStartException.class);
+            () -> service.start(startCommand), TranscodeJobStartException.class);
 
+    assertThat(thrown.jobRef())
+        .isEqualTo(worker.startCommands().getFirst().specification().jobRef());
     assertThat(thrown.result()).isEqualTo(new StartJobResult.Rejected(rejection));
     assertThat(registry.snapshotTranscodeJobRefs(sessionId)).isEmpty();
     assertThat(registry.activeTranscodeJobRef(sessionId)).isEmpty();
@@ -491,10 +549,11 @@ class DefaultPlaybackTranscodeJobServiceTest {
     var service = service(worker, registry);
     var fallback = service.start(command(sessionId)).jobRef();
     worker.rejectStartsWith(rejection);
+    var replacementCommand = command(sessionId);
 
     var thrown =
         org.assertj.core.api.Assertions.catchThrowableOfType(
-            () -> service.start(command(sessionId)), TranscodeJobStartException.class);
+            () -> service.start(replacementCommand), TranscodeJobStartException.class);
 
     var failed = worker.startCommands().getLast().specification().jobRef();
     assertThat(thrown.result()).isEqualTo(new StartJobResult.Rejected(rejection));
@@ -514,10 +573,11 @@ class DefaultPlaybackTranscodeJobServiceTest {
     var service = service(worker, registry);
     var fallback = service.start(command(sessionId)).jobRef();
     worker.returnCleanupPending();
+    var replacementCommand = command(sessionId);
 
     var thrown =
         org.assertj.core.api.Assertions.catchThrowableOfType(
-            () -> service.start(command(sessionId)), TranscodeJobStartException.class);
+            () -> service.start(replacementCommand), TranscodeJobStartException.class);
 
     var failed = worker.startCommands().getLast().specification().jobRef();
     assertThat(thrown.result()).isEqualTo(new StartJobResult.CleanupPending(failed));
@@ -547,8 +607,10 @@ class DefaultPlaybackTranscodeJobServiceTest {
   void shouldRetainSubmittedHighWaterWhenWorkerReportsWrongReference() {
     var fixture = replacementFixture();
     fixture.worker().acceptStartsWithWrongReference();
+    var service = fixture.service();
+    var replacementCommand = command(fixture.sessionId());
 
-    assertThatThrownBy(() -> fixture.service().start(command(fixture.sessionId())))
+    assertThatThrownBy(() -> service.start(replacementCommand))
         .isInstanceOf(TranscodeJobStartException.class);
 
     assertRetainedFailedHighWater(fixture);
@@ -559,8 +621,10 @@ class DefaultPlaybackTranscodeJobServiceTest {
   void shouldRetainSubmittedHighWaterWhenAcceptedStateIsNotSettled() {
     var fixture = replacementFixture();
     fixture.worker().acceptStartsAsFailed();
+    var service = fixture.service();
+    var replacementCommand = command(fixture.sessionId());
 
-    assertThatThrownBy(() -> fixture.service().start(command(fixture.sessionId())))
+    assertThatThrownBy(() -> service.start(replacementCommand))
         .isInstanceOf(TranscodeJobStartException.class);
 
     assertRetainedFailedHighWater(fixture);
@@ -572,9 +636,10 @@ class DefaultPlaybackTranscodeJobServiceTest {
     var fixture = replacementFixture();
     var failure = new IllegalStateException("worker response lost");
     fixture.worker().failStartsWith(failure);
+    var service = fixture.service();
+    var replacementCommand = command(fixture.sessionId());
 
-    assertThatThrownBy(() -> fixture.service().start(command(fixture.sessionId())))
-        .isSameAs(failure);
+    assertThatThrownBy(() -> service.start(replacementCommand)).isSameAs(failure);
 
     assertRetainedFailedHighWater(fixture);
   }
@@ -623,8 +688,9 @@ class DefaultPlaybackTranscodeJobServiceTest {
     var worker = new FakeTranscodeWorker();
     var service = service(worker, registry);
     var fallback = service.start(command(sessionId)).jobRef();
+    var replacementCommand = command(sessionId);
 
-    assertThatThrownBy(() -> service.start(command(sessionId)))
+    assertThatThrownBy(() -> service.start(replacementCommand))
         .isInstanceOf(com.streamarr.server.exceptions.SessionNotFoundException.class);
 
     var rejectedReplacement = worker.startCommands().getLast().specification().jobRef();
