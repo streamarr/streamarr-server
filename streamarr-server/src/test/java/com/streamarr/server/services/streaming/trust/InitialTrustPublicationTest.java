@@ -68,7 +68,6 @@ class InitialTrustPublicationTest {
     var differentPublication = InitialTrustPublication.from(differentMaterial);
 
     assertThat(publication)
-        .isEqualTo(publication)
         .isNotEqualTo(differentPublication)
         .isNotEqualTo("initial trust publication");
   }

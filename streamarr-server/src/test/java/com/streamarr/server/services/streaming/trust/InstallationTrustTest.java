@@ -98,7 +98,6 @@ class InstallationTrustTest {
     var other = new InstallationTrust(INSTALLATION_ID, differentFingerprint, bundle);
 
     assertThat(first)
-        .isEqualTo(first)
         .isEqualTo(second)
         .hasSameHashCodeAs(second)
         .isNotEqualTo(other)

@@ -31,12 +31,17 @@ public record InstallationTrust(
     if (this == other) {
       return true;
     }
-    if (!(other instanceof InstallationTrust that)) {
+    if (!(other
+        instanceof
+        InstallationTrust(
+            var thatInstallationId,
+            var thatBootstrapRootSha256,
+            var thatActiveBundle))) {
       return false;
     }
-    return installationId.equals(that.installationId)
-        && Arrays.equals(bootstrapRootSha256, that.bootstrapRootSha256)
-        && activeBundle.equals(that.activeBundle);
+    return installationId.equals(thatInstallationId)
+        && Arrays.equals(bootstrapRootSha256, thatBootstrapRootSha256)
+        && activeBundle.equals(thatActiveBundle);
   }
 
   @Override
