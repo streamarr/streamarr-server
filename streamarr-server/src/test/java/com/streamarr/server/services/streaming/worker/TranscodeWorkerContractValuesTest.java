@@ -94,14 +94,25 @@ class TranscodeWorkerContractValuesTest {
   void shouldRequireExactTargetAndGenerationForInspectionQuery() {
     var target = workerTarget();
     var jobRef = new TranscodeJobRef(UUID.randomUUID(), 3);
+    var observation = runningObservation();
 
     var query = new InspectJobQuery(target, jobRef);
 
     assertThat(query.target()).isEqualTo(target);
     assertThat(query.jobRef()).isEqualTo(jobRef);
+    assertThat(new InspectJobResult.Observed(observation).observation()).isEqualTo(observation);
+    assertThat(new InspectJobResult.CleanupPending(jobRef).jobRef()).isEqualTo(jobRef);
+    assertThat(new InspectJobResult.Rejected(InspectJobRejection.TARGET_MISMATCH).reason())
+        .isEqualTo(InspectJobRejection.TARGET_MISMATCH);
     assertThatThrownBy(() -> new InspectJobQuery(null, jobRef))
         .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(() -> new InspectJobQuery(target, null))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> new InspectJobResult.Observed(null))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> new InspectJobResult.CleanupPending(null))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> new InspectJobResult.Rejected(null))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
