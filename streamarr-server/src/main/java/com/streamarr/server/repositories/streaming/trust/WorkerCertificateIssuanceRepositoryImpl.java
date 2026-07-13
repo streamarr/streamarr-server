@@ -210,29 +210,33 @@ public class WorkerCertificateIssuanceRepositoryImpl
   }
 
   private CertificateIssuanceClaimResult.ReadyToSign toReadyToSign(
-      TranscodeWorkerCertificateIssuanceRecord record) {
-    var publicKey = SubjectPublicKeyInfo.fromDer(record.getSubjectPublicKeyInfoDer());
-    if (!publicKey.sha256().equals(new Sha256Digest(record.getSubjectPublicKeySha256()))) {
+      TranscodeWorkerCertificateIssuanceRecord issuanceRecord) {
+    var publicKey = SubjectPublicKeyInfo.fromDer(issuanceRecord.getSubjectPublicKeyInfoDer());
+    if (!publicKey.sha256().equals(new Sha256Digest(issuanceRecord.getSubjectPublicKeySha256()))) {
       throw new InstallationTrustException(
           "Stored worker subject public key digest does not match exact DER");
     }
     var parameters =
         CertificateIssuanceParameters.builder()
-            .issuerCertificateSha256(new Sha256Digest(record.getIssuerCertificateSha256()))
-            .serialNumber(CertificateSerialNumber.fromUnsignedBytes(record.getSerialNumber()))
-            .profile(WorkerCertificateProfile.fromVersion(record.getCertificateProfileVersion()))
+            .issuerCertificateSha256(new Sha256Digest(issuanceRecord.getIssuerCertificateSha256()))
+            .serialNumber(
+                CertificateSerialNumber.fromUnsignedBytes(issuanceRecord.getSerialNumber()))
+            .profile(
+                WorkerCertificateProfile.fromVersion(issuanceRecord.getCertificateProfileVersion()))
             .validity(
                 new CertificateValidity(
-                    record.getNotBefore().toInstant(), record.getNotAfter().toInstant()))
+                    issuanceRecord.getNotBefore().toInstant(),
+                    issuanceRecord.getNotAfter().toInstant()))
             .build();
     return CertificateIssuanceClaimResult.ReadyToSign.builder()
-        .requestId(record.getRequestId())
-        .workerId(record.getWorkerId())
+        .requestId(issuanceRecord.getRequestId())
+        .workerId(issuanceRecord.getWorkerId())
         .trustBundle(
-            new PublicTrustBundleRef(record.getInstallationId(), record.getTrustBundleVersion()))
+            new PublicTrustBundleRef(
+                issuanceRecord.getInstallationId(), issuanceRecord.getTrustBundleVersion()))
         .subjectPublicKeyInfo(publicKey)
         .parameters(parameters)
-        .signingFencingEpoch(record.getSigningFencingEpoch())
+        .signingFencingEpoch(issuanceRecord.getSigningFencingEpoch())
         .build();
   }
 

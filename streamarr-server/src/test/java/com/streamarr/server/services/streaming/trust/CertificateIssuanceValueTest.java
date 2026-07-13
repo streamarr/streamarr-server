@@ -27,7 +27,7 @@ class CertificateIssuanceValueTest {
 
     assertThat(subjectPublicKeyInfo.der()).containsExactly(1, 2, 3);
     assertThat(subjectPublicKeyInfo).isEqualTo(equal).hasSameHashCodeAs(equal);
-    assertThat(subjectPublicKeyInfo.equals(subjectPublicKeyInfo)).isTrue();
+    assertThat(subjectPublicKeyInfo).isEqualTo(subjectPublicKeyInfo);
     assertThat(subjectPublicKeyInfo)
         .isNotEqualTo(SubjectPublicKeyInfo.fromDer(new byte[] {1, 2, 4}))
         .isNotEqualTo(new Object());
@@ -47,18 +47,20 @@ class CertificateIssuanceValueTest {
   @DisplayName("Should require ordered whole-second certificate validity")
   void shouldRequireOrderedWholeSecondCertificateValidity() {
     var start = Instant.parse("2026-07-13T12:00:00Z");
+    var end = start.plusSeconds(1);
+    var fractionalStart = start.plusNanos(1);
+    var fractionalEnd = end.plusNanos(1);
 
-    assertThat(new CertificateValidity(start, start.plusSeconds(1)))
-        .isEqualTo(new CertificateValidity(start, start.plusSeconds(1)));
+    assertThat(new CertificateValidity(start, end)).isEqualTo(new CertificateValidity(start, end));
     for (var invalidEnd : java.util.List.of(start, start.minusSeconds(1))) {
       assertThatThrownBy(() -> new CertificateValidity(start, invalidEnd))
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("follow");
     }
-    assertThatThrownBy(() -> new CertificateValidity(start.plusNanos(1), start.plusSeconds(1)))
+    assertThatThrownBy(() -> new CertificateValidity(fractionalStart, end))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("whole-second");
-    assertThatThrownBy(() -> new CertificateValidity(start, start.plusSeconds(1).plusNanos(1)))
+    assertThatThrownBy(() -> new CertificateValidity(start, fractionalEnd))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("whole-second");
   }
