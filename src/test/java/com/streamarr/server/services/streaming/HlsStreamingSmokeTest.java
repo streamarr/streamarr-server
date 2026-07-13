@@ -18,6 +18,7 @@ import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegCommandBuilder;
+import com.streamarr.server.services.streaming.ffmpeg.FfmpegTranscodeEngine;
 import com.streamarr.server.services.streaming.ffmpeg.LocalFfmpegProcessManager;
 import com.streamarr.server.services.streaming.ffmpeg.LocalFfprobeService;
 import com.streamarr.server.services.streaming.ffmpeg.LocalTranscodeExecutor;
@@ -101,7 +102,9 @@ class HlsStreamingSmokeTest {
     var commandBuilder = new FfmpegCommandBuilder("ffmpeg");
     var processManager = new LocalFfmpegProcessManager();
     var transcodeExecutor =
-        new LocalTranscodeExecutor(commandBuilder, processManager, segmentStore, capabilityService);
+        new LocalTranscodeExecutor(
+            new FfmpegTranscodeEngine(commandBuilder, processManager, capabilityService),
+            segmentStore);
 
     var decisionService = new TranscodeDecisionService();
     var qualityLadderService = new QualityLadderService();

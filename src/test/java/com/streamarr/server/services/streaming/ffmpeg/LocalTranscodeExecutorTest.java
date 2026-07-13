@@ -47,7 +47,9 @@ class LocalTranscodeExecutorTest {
     var capabilityService = createCapabilityService(true, hwCapability);
 
     executor =
-        new LocalTranscodeExecutor(commandBuilder, processManager, segmentStore, capabilityService);
+        new LocalTranscodeExecutor(
+            new FfmpegTranscodeEngine(commandBuilder, processManager, capabilityService),
+            segmentStore);
   }
 
   private TranscodeRequest createRequest(TranscodeMode mode, String codecFamily) {
@@ -100,7 +102,9 @@ class LocalTranscodeExecutorTest {
 
     executor =
         new LocalTranscodeExecutor(
-            new FfmpegCommandBuilder("ffmpeg"), processManager, segmentStore, capabilityService);
+            new FfmpegTranscodeEngine(
+                new FfmpegCommandBuilder("ffmpeg"), processManager, capabilityService),
+            segmentStore);
 
     var request = createRequest(TranscodeMode.FULL_TRANSCODE, "av1");
 
@@ -153,7 +157,9 @@ class LocalTranscodeExecutorTest {
 
     executor =
         new LocalTranscodeExecutor(
-            new FfmpegCommandBuilder("ffmpeg"), processManager, segmentStore, capabilityService);
+            new FfmpegTranscodeEngine(
+                new FfmpegCommandBuilder("ffmpeg"), processManager, capabilityService),
+            segmentStore);
 
     assertThat(executor.isHealthy()).isFalse();
   }
