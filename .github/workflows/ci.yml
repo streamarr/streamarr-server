@@ -30,6 +30,17 @@ jobs:
           distribution: 'zulu'
           cache: maven
 
+      - name: Set up Buf
+        uses: bufbuild/buf-action@fd21066df7214747548607aaa45548ba2b9bc1ff # v1.4.0
+        with:
+          version: '1.71.0'
+          setup_only: true
+
+      - name: Validate Protobuf contract
+        run: |
+          buf format --diff --exit-code
+          buf lint
+
       - name: Build and test
         run: ./mvnw --batch-mode verify
 
