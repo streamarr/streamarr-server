@@ -19,6 +19,7 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.exceptions.TranscodeException;
+import com.streamarr.server.fakes.FakeFfmpegProcessManager;
 import com.streamarr.server.fakes.FakeSegmentProducingFfmpegProcessManager;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.TokenScope;
@@ -182,6 +183,11 @@ class RemotePlaybackIT extends AbstractIntegrationTest {
 
   private TranscodeWorker worker(Path mediaRoot, Map<String, byte[]> segments)
       throws URISyntaxException {
+    return worker(mediaRoot, new FakeSegmentProducingFfmpegProcessManager(segments));
+  }
+
+  private TranscodeWorker worker(Path mediaRoot, FakeFfmpegProcessManager processManager)
+      throws URISyntaxException {
     var configuration =
         TranscodeWorkerConfiguration.builder()
             .workerId(WORKER_ID)
@@ -199,7 +205,7 @@ class RemotePlaybackIT extends AbstractIntegrationTest {
     var engine =
         new FfmpegTranscodeEngine(
             new FfmpegCommandBuilder("ffmpeg"),
-            new FakeSegmentProducingFfmpegProcessManager(segments),
+            processManager,
             new TranscodeCapabilityService(
                 "ffmpeg",
                 _ -> {
