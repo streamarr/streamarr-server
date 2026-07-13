@@ -176,6 +176,8 @@ class SessionReaperTest {
 
     assertThat(session.getVariantHandle("1080p").status()).isEqualTo(TranscodeStatus.FAILED);
     assertThat(session.getVariantHandle("720p").status()).isEqualTo(TranscodeStatus.ACTIVE);
+    assertThat(executor.isRunning(session.getSessionId(), "720p")).isTrue();
+    assertThat(streamingService.accessSession(playbackRequest(session))).isPresent();
   }
 
   @Test
