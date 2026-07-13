@@ -90,27 +90,23 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should reject invalid worker session server configuration")
   void shouldRejectInvalidWorkerSessionServerConfiguration() {
-    assertThatThrownBy(
-            () ->
-                WorkerSessionServerConfiguration.builder()
-                    .port(-1)
-                    .trustDomain("streamarr.test")
-                    .build())
+    var negativePort =
+        WorkerSessionServerConfiguration.builder().port(-1).trustDomain("streamarr.test");
+    var excessivePort =
+        WorkerSessionServerConfiguration.builder().port(65_536).trustDomain("streamarr.test");
+    var missingTrustDomain = WorkerSessionServerConfiguration.builder().port(0);
+    var blankTrustDomain = WorkerSessionServerConfiguration.builder().port(0).trustDomain(" ");
+
+    assertThatThrownBy(negativePort::build)
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Worker session port must be between 0 and 65535");
-    assertThatThrownBy(
-            () ->
-                WorkerSessionServerConfiguration.builder()
-                    .port(65_536)
-                    .trustDomain("streamarr.test")
-                    .build())
+    assertThatThrownBy(excessivePort::build)
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Worker session port must be between 0 and 65535");
-    assertThatThrownBy(() -> WorkerSessionServerConfiguration.builder().port(0).build())
+    assertThatThrownBy(missingTrustDomain::build)
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Worker trust domain is required");
-    assertThatThrownBy(
-            () -> WorkerSessionServerConfiguration.builder().port(0).trustDomain(" ").build())
+    assertThatThrownBy(blankTrustDomain::build)
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Worker trust domain is required");
   }
