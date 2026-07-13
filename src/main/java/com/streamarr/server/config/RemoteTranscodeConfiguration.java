@@ -39,8 +39,6 @@ public class RemoteTranscodeConfiguration {
   public TranscodeExecutor remoteTranscodeExecutor(
       WorkerSessionServer workerSessionServer, RemoteTranscodeProperties properties) {
     return new RemoteTranscodeExecutor(
-        workerSessionServer,
-        properties.sourceNamespaceId(),
-        Path.of(properties.sourceRoot()));
+        workerSessionServer, properties.sourceNamespaceId(), Path.of(properties.sourceRoot()));
   }
 }

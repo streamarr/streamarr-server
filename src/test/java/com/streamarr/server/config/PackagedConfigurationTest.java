@@ -83,8 +83,7 @@ class PackagedConfigurationTest {
   @Test
   @DisplayName("Should ship an opt-in Docker Compose worker path")
   void shouldShipOptInDockerComposeWorkerPath() throws IOException {
-    var deployment =
-        Files.readString(Path.of("deploy/compose/distributed-transcoding.yml"));
+    var deployment = Files.readString(Path.of("deploy/compose/distributed-transcoding.yml"));
 
     assertThat(deployment)
         .contains(
@@ -96,8 +95,7 @@ class PackagedConfigurationTest {
   @Test
   @DisplayName("Should ship a single-server Kubernetes path with per-pod worker identity")
   void shouldShipSingleServerKubernetesPathWithPerPodWorkerIdentity() throws IOException {
-    var deployment =
-        Files.readString(Path.of("deploy/kubernetes/distributed-transcoding.yaml"));
+    var deployment = Files.readString(Path.of("deploy/kubernetes/distributed-transcoding.yaml"));
 
     assertThat(deployment)
         .contains(

@@ -20,7 +20,8 @@ public final class FakeSegmentProducingFfmpegProcessManager extends FakeFfmpegPr
   public FakeSegmentProducingFfmpegProcessManager(Map<String, byte[]> segments) {
     this.segments =
         segments.entrySet().stream()
-            .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, entry -> entry.getValue().clone()));
+            .collect(
+                Collectors.toUnmodifiableMap(Map.Entry::getKey, entry -> entry.getValue().clone()));
   }
 
   @Override

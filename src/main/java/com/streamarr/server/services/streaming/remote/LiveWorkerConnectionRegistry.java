@@ -117,8 +117,7 @@ final class LiveWorkerConnectionRegistry {
 
     private synchronized void accept() {
       var accepted =
-          WorkerSessionAccepted.newBuilder()
-              .setWorkerSessionId(toProto(workerSessionId));
+          WorkerSessionAccepted.newBuilder().setWorkerSessionId(toProto(workerSessionId));
       responseObserver.onNext(
           WorkerSessionResponse.newBuilder().setSessionAccepted(accepted).build());
     }

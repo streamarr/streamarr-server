@@ -29,8 +29,7 @@ record TranscodeWorkerSettings(
             .bootId(UUID.randomUUID())
             .availableSlots(positiveInteger(environment, PREFIX + "SLOTS", 1))
             .tlsIdentity(tlsIdentity)
-            .sourceNamespaces(
-                Map.of(sourceNamespaceId, path(environment, PREFIX + "SOURCE_ROOT")))
+            .sourceNamespaces(Map.of(sourceNamespaceId, path(environment, PREFIX + "SOURCE_ROOT")))
             .segmentBasePath(
                 optionalPath(
                     environment,
@@ -53,8 +52,7 @@ record TranscodeWorkerSettings(
     return value;
   }
 
-  private static String optional(
-      Map<String, String> environment, String key, String defaultValue) {
+  private static String optional(Map<String, String> environment, String key, String defaultValue) {
     var value = environment.get(key);
     return value == null || value.isBlank() ? defaultValue : value;
   }
@@ -63,8 +61,7 @@ record TranscodeWorkerSettings(
     return Path.of(required(environment, key));
   }
 
-  private static Path optionalPath(
-      Map<String, String> environment, String key, Path defaultValue) {
+  private static Path optionalPath(Map<String, String> environment, String key, Path defaultValue) {
     return Path.of(optional(environment, key, defaultValue.toString()));
   }
 
