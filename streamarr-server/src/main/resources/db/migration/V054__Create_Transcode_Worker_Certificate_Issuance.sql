@@ -43,14 +43,20 @@ CREATE TABLE transcode_worker_certificate_issuance
         CHECK (issuer_certificate_kind = 'ISSUER'),
     CONSTRAINT chk_transcode_worker_certificate_issuance_serial CHECK (
         CASE
-            WHEN octet_length(serial_number) BETWEEN 1 AND 20
+            WHEN octet_length(serial_number) BETWEEN 1 AND 19
                 THEN get_byte(serial_number, 0) <> 0
+            WHEN octet_length(serial_number) = 20
+                THEN get_byte(serial_number, 0) BETWEEN 1 AND 127
             ELSE FALSE
         END
     ),
     CONSTRAINT chk_transcode_worker_certificate_issuance_profile
         CHECK (certificate_profile_version = 1),
-    CONSTRAINT chk_transcode_worker_certificate_issuance_validity CHECK (not_after > not_before),
+    CONSTRAINT chk_transcode_worker_certificate_issuance_validity CHECK (
+        not_after > not_before
+        AND not_before = date_trunc('second', not_before)
+        AND not_after = date_trunc('second', not_after)
+    ),
     CONSTRAINT chk_transcode_worker_certificate_issuance_claim CHECK (
         claimed_at >= created_at AND signing_fencing_epoch > 0
     ),

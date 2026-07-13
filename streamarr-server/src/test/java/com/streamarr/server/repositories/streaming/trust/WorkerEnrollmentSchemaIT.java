@@ -20,6 +20,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 import lombok.Builder;
 import org.jooq.DSLContext;
@@ -384,6 +385,49 @@ class WorkerEnrollmentSchemaIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should reject worker certificate serial when positive DER exceeds twenty octets")
+  void shouldRejectWorkerCertificateSerialWhenPositiveDerExceedsTwentyOctets() {
+    var fixture = issuanceFixture();
+    var requestId = UUID.randomUUID();
+    insertIssuanceClaim(fixture, requestId);
+    var issuanceTable = DSL.table(DSL.name("transcode_worker_certificate_issuance"));
+    var requestIdField = DSL.field(DSL.name("request_id"), UUID.class);
+    var serialNumberField = DSL.field(DSL.name("serial_number"), byte[].class);
+    var twentyByteHighBitSerial = new byte[20];
+    twentyByteHighBitSerial[0] = (byte) 0x80;
+    var replaceSerial =
+        dsl.update(issuanceTable)
+            .set(serialNumberField, twentyByteHighBitSerial)
+            .where(requestIdField.eq(requestId));
+
+    assertConstraintViolation(replaceSerial, "chk_transcode_worker_certificate_issuance_serial");
+  }
+
+  @Test
+  @DisplayName("Should reject worker certificate validity with subsecond precision")
+  void shouldRejectWorkerCertificateValidityWithSubsecondPrecision() {
+    var fixture = issuanceFixture();
+    var requestId = UUID.randomUUID();
+    insertIssuanceClaim(fixture, requestId);
+    var issuanceTable = DSL.table(DSL.name("transcode_worker_certificate_issuance"));
+    var requestIdField = DSL.field(DSL.name("request_id"), UUID.class);
+    var notBeforeField = DSL.field(DSL.name("not_before"), OffsetDateTime.class);
+    var subsecondNotBefore =
+        fixture
+            .databaseTime()
+            .truncatedTo(ChronoUnit.SECONDS)
+            .plusNanos(123_456_000)
+            .atOffset(ZoneOffset.UTC);
+    var replaceValidity =
+        dsl.update(issuanceTable)
+            .set(notBeforeField, subsecondNotBefore)
+            .where(requestIdField.eq(requestId));
+
+    assertConstraintViolation(
+        replaceValidity, "chk_transcode_worker_certificate_issuance_validity");
+  }
+
+  @Test
   @DisplayName("Should store certificate issuance completion only as one complete result")
   void shouldStoreCertificateIssuanceCompletionOnlyAsOneCompleteResult() {
     var fixture = issuanceFixture();
@@ -527,8 +571,12 @@ class WorkerEnrollmentSchemaIT extends AbstractIntegrationTest {
             fixture.issuerDigest().bytes(),
             new byte[] {1},
             (short) 1,
-            fixture.databaseTime().atOffset(ZoneOffset.UTC),
-            fixture.databaseTime().plus(Duration.ofDays(7)).atOffset(ZoneOffset.UTC),
+            fixture.databaseTime().truncatedTo(ChronoUnit.SECONDS).atOffset(ZoneOffset.UTC),
+            fixture
+                .databaseTime()
+                .plus(Duration.ofDays(7))
+                .truncatedTo(ChronoUnit.SECONDS)
+                .atOffset(ZoneOffset.UTC),
             fixture.issuanceLease().fencingEpoch())
         .execute();
   }
