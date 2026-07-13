@@ -66,6 +66,9 @@ class SensitiveAuthValueRedactionTest {
         new RefreshRequest(SECRET_MARKER),
         new TokenRefreshService.RefreshedTokens(null, SECRET_MARKER),
         ChangePasswordCommand.builder().currentPassword(SECRET_MARKER).newPassword(SECRET_MARKER),
+        PasswordChangeCompletionCommand.builder()
+            .expectedPasswordHash(SECRET_MARKER)
+            .newPasswordHash(SECRET_MARKER),
         PasswordChangeResult.builder().rawRefreshToken(SECRET_MARKER),
         AuthTokensResponse.builder().accessToken(SECRET_MARKER).refreshToken(SECRET_MARKER),
         ChangePasswordCommand.builder()
@@ -73,6 +76,12 @@ class SensitiveAuthValueRedactionTest {
             .sessionId(UUID.randomUUID())
             .currentPassword(SECRET_MARKER)
             .newPassword(SECRET_MARKER)
+            .build(),
+        PasswordChangeCompletionCommand.builder()
+            .accountId(UUID.randomUUID())
+            .sessionId(UUID.randomUUID())
+            .expectedPasswordHash(SECRET_MARKER)
+            .newPasswordHash(SECRET_MARKER)
             .build(),
         PasswordChangeResult.builder()
             .account(account)
@@ -97,6 +106,12 @@ class SensitiveAuthValueRedactionTest {
             .sessionId(UUID.randomUUID())
             .currentPassword(SECRET_MARKER)
             .newPassword(SECRET_MARKER)
+            .build(),
+        PasswordChangeCompletionCommand.builder()
+            .accountId(UUID.randomUUID())
+            .sessionId(UUID.randomUUID())
+            .expectedPasswordHash(SECRET_MARKER)
+            .newPasswordHash(SECRET_MARKER)
             .build());
   }
 }
