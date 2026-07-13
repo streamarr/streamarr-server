@@ -11,23 +11,13 @@ public interface AuthSessionRepositoryCustom {
 
   boolean hasLivePlaybackAuthority(PlaybackAuthority authority);
 
-  /**
-   * Revokes an unrevoked session and bumps its version counter in one statement. Returns the new
-   * session version, or empty when the session was already revoked (no double bump).
-   */
-  Optional<Long> revoke(UUID sessionId, SessionRevocationReason reason, Instant now);
-
-  /**
-   * Bumps an unrevoked session's version counter without revoking it — every outstanding access
-   * token dies while the session and refresh-token family stay alive for fresh issuance (password
-   * change keeps the caller logged in).
-   */
-  Optional<Long> bumpVersion(UUID sessionId, Instant now);
+  /** Revokes a live session, returning false when it was missing or already revoked. */
+  boolean revoke(UUID sessionId, SessionRevocationReason reason, Instant now);
 
   /**
    * Persists only the remembered household/profile selection when the session is still live.
-   * Returns false when the session is missing or revoked; revocation and version fields are never
-   * written from the supplied entity.
+   * Returns false when the session is missing or revoked; revocation fields are never written from
+   * the supplied entity.
    */
   boolean updateSelectionIfLive(AuthSession session, Instant now);
 

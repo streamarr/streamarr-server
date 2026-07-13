@@ -31,7 +31,7 @@ class IdentityQueryServiceTest {
       new FakeHouseholdMembershipRepository();
   private final FakeHouseholdRepository householdRepository = new FakeHouseholdRepository();
   private final FakeAccountProfileRepository accountProfileRepository =
-      new FakeAccountProfileRepository(membershipRepository);
+      new FakeAccountProfileRepository();
   private final FakeProfileRepository profileRepository = new FakeProfileRepository();
 
   private final IdentityQueryService service =

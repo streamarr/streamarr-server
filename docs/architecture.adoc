@@ -150,30 +150,14 @@ recover through refresh).
 ES256 exists for the planned transcode split: horizontally scaled transcode nodes running
 FFmpeg are the most exposed tier and must never hold a token-minting secret. Signature
 verification alone never authorizes a request, though -- revocation is authoritative state,
-not signature checking. After issue #213, playback revocation is one indexed live-authority query
-rather than token counters or a persisted stream-session state machine. Workers never verify
+not signature checking. Playback revocation is one indexed live-authority query rather than token
+counters or a persisted stream-session state machine. Workers never verify
 playback tokens; the server remains the playback request gate and segment proxy.
 The public verification keys are served at `/.well-known/jwks.json` (ADR 0016).
 
-NOTE: Version-counter invalidation remains the current implementation until ADR 0018's live
-playback-authority gate lands and passes its adversarial tests. It is then removed in issue #213;
-the counter claims, cache, listener, publisher, columns, sequences, and dedicated connection are
-not part of the target architecture.
-
-Cross-instance token invalidation rides PostgreSQL LISTEN/NOTIFY: counter bumps call
-`pg_notify` inside the bumping transaction, and each instance's `CounterNotificationListener`
-applies them to its local version cache over one dedicated (non-Hikari) connection. The listener
-suspends caching on startup and every connection loss, so every counter lookup reads through to
-PostgreSQL while notifications might be missed; caching resumes from an empty state only after
-`LISTEN` succeeds. A `SELECT 1` liveness probe per poll (with TCP keepalive and a bounded socket
-timeout) turns a silently dead connection into a reconnect, and a health indicator reports the
-feed's state.
-
-CAUTION: PgBouncer in transaction-pooling mode does not deliver LISTEN/NOTIFY. The listener's
-dedicated connection must reach PostgreSQL directly (or through session-mode pooling), even when
-application traffic goes through a transaction-mode pooler -- set
-`AUTH_COUNTER_LISTENER_JDBC_URL` (and credentials, if they differ) to give the listener its own
-endpoint.
+V049 removed the version claims, cache, PostgreSQL notification feed, counter columns, and
+pooler-mode exception. Ordinary API tokens retain issued authority until strict expiry; refresh
+checks the live authorization session and context, and every playback request checks live authority.
 
 == Key Design Decisions
 

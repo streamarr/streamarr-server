@@ -10,7 +10,6 @@ import com.netflix.graphql.dgs.test.EnableDgsTest;
 import com.streamarr.server.domain.media.Episode;
 import com.streamarr.server.domain.media.Movie;
 import com.streamarr.server.fakes.FakeAccountProfileRepository;
-import com.streamarr.server.fakes.FakeHouseholdMembershipRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
 import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
@@ -134,8 +133,7 @@ class ContinueWatchingResolverTest {
           new ContinueWatchingResolver(
               mock(ContinueWatchingService.class),
               new SecurityContextAuthorizationService(
-                  new FakeProfileRepository(),
-                  new FakeAccountProfileRepository(new FakeHouseholdMembershipRepository())),
+                  new FakeProfileRepository(), new FakeAccountProfileRepository()),
               new PaginationService());
       var unsupported = new Object();
 

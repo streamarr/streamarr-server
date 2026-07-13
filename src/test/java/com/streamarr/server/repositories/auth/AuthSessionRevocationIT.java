@@ -38,8 +38,8 @@ class AuthSessionRevocationIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should bump session version once when revoked twice")
-  void shouldBumpSessionVersionOnceWhenRevokedTwice() {
+  @DisplayName("Should preserve first reason when session revoked twice")
+  void shouldPreserveFirstReasonWhenSessionRevokedTwice() {
     account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
     var session = saveSession();
     var now = Instant.now();
@@ -49,11 +49,10 @@ class AuthSessionRevocationIT extends AbstractIntegrationTest {
     var secondRevoke =
         authSessionRepository.revoke(session.getId(), SessionRevocationReason.LOGOUT, now);
 
-    assertThat(firstRevoke).contains(1L);
-    assertThat(secondRevoke).isEmpty();
+    assertThat(firstRevoke).isTrue();
+    assertThat(secondRevoke).isFalse();
 
     var revoked = authSessionRepository.findById(session.getId()).orElseThrow();
-    assertThat(revoked.getSessionVersion()).isEqualTo(1L);
     assertThat(revoked.getRevokedAt()).isNotNull();
     assertThat(revoked.getRevokedReason()).isEqualTo(SessionRevocationReason.TOKEN_REUSE);
   }

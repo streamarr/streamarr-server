@@ -33,8 +33,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * Guards the refresh/login context paths against the same lost-update the FOR UPDATE lock guards
  * the selection endpoints against: a session revoked (logout, password change, reuse detection)
  * between the operation that loaded the session entity and the context write must stay revoked —
- * the write touches only selection columns and must never resurrect revoked_at or regress
- * session_version.
+ * the write touches only selection columns and must never resurrect revoked_at.
  */
 @Tag("IntegrationTest")
 @DisplayName("Session Scope Revocation Safety Integration Tests")
@@ -76,12 +75,12 @@ class SessionScopeRevocationSafetyIT extends AbstractIntegrationTest {
     // The entity login/setup hands to autoSelectContext was loaded in a prior, committed
     // transaction — reload it detached to reproduce that stale snapshot.
     var staleSession = authSessionRepository.findById(session.getId()).orElseThrow();
-    var revokedVersion = revoke(session.getId());
+    revoke(session.getId());
 
     assertThatThrownBy(() -> sessionScopeService.autoSelectContext(account, staleSession))
         .isInstanceOf(AuthenticationRequiredException.class);
 
-    assertRevocationSurvived(session.getId(), revokedVersion);
+    assertRevocationSurvived(session.getId());
   }
 
   @Test
@@ -118,28 +117,28 @@ class SessionScopeRevocationSafetyIT extends AbstractIntegrationTest {
     var staleSession = authSessionRepository.findById(session.getId()).orElseThrow();
     // The profile grant is revoked, so revalidation must downgrade profile scope (a write path).
     revokeLink(account, household.getId(), profile.getId());
-    var revokedVersion = revoke(session.getId());
+    revoke(session.getId());
 
     assertThatThrownBy(() -> sessionScopeService.revalidateStoredContext(account, staleSession))
         .isInstanceOf(AuthenticationRequiredException.class);
 
-    assertRevocationSurvived(session.getId(), revokedVersion);
+    assertRevocationSurvived(session.getId());
   }
 
-  private void assertRevocationSurvived(java.util.UUID sessionId, long revokedVersion) {
+  private void assertRevocationSurvived(java.util.UUID sessionId) {
     var reloaded = authSessionRepository.findById(sessionId).orElseThrow();
     assertThat(reloaded.getRevokedAt()).isNotNull();
     assertThat(reloaded.getRevokedReason()).isEqualTo(SessionRevocationReason.LOGOUT);
-    assertThat(reloaded.getSessionVersion()).isEqualTo(revokedVersion);
   }
 
-  private long revoke(java.util.UUID sessionId) {
-    return new TransactionTemplate(transactionManager)
-        .execute(
+  private void revoke(java.util.UUID sessionId) {
+    new TransactionTemplate(transactionManager)
+        .executeWithoutResult(
             _ ->
-                authSessionRepository
-                    .revoke(sessionId, SessionRevocationReason.LOGOUT, Instant.now())
-                    .orElseThrow());
+                assertThat(
+                        authSessionRepository.revoke(
+                            sessionId, SessionRevocationReason.LOGOUT, Instant.now()))
+                    .isTrue());
   }
 
   private void revokeLink(UserAccount owner, java.util.UUID householdId, java.util.UUID profileId) {

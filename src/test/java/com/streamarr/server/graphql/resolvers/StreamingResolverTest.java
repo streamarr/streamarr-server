@@ -24,13 +24,10 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.fakes.FakeAccountProfileRepository;
-import com.streamarr.server.fakes.FakeHouseholdMembershipRepository;
 import com.streamarr.server.fakes.FakeProfileRepository;
-import com.streamarr.server.fakes.FakeVersionCounterReader;
 import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.auth.PlaybackTokenIssuer;
-import com.streamarr.server.services.auth.TokenVersionCache;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
 import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
 import com.streamarr.server.services.streaming.PlaybackRequest;
@@ -99,16 +96,10 @@ class StreamingResolverTest {
     @Bean
     PlaybackTokenIssuer playbackTokenIssuer() {
       var crypto = new TokenCryptoConfig();
-      var reader = new FakeVersionCounterReader();
-      reader.sessionVersions.put(TestIdentityConstants.SESSION_ID, 1L);
-      reader.membershipVersions.put(
-          TestIdentityConstants.ACCOUNT_ID + ":" + TestIdentityConstants.HOUSEHOLD_ID, 1L);
-      reader.profilePolicyVersions.put(TestIdentityConstants.PROFILE_ID, 1L);
-
       return new PlaybackTokenIssuer(
           crypto.jwtEncoder(crypto.tokenSigningKeys(tokenProperties())),
           java.time.Clock.systemUTC(),
-          new TokenVersionCache(reader));
+          authority -> true);
     }
 
     @Bean
@@ -118,7 +109,7 @@ class StreamingResolverTest {
 
     @Bean
     AccountProfileRepository accountProfileRepository() {
-      return new FakeAccountProfileRepository(new FakeHouseholdMembershipRepository());
+      return new FakeAccountProfileRepository();
     }
 
     @Bean

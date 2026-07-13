@@ -60,7 +60,6 @@ public class AccessTokenIssuer {
             .expiresAt(expiresAt)
             .claim(TokenClaims.ROLE, context.account().getAccountRole().name())
             .claim(TokenClaims.SESSION_ID, context.session().getId().toString())
-            .claim(TokenClaims.SESSION_VERSION, context.session().getSessionVersion())
             .claim(TokenClaims.SCOPE, scope.claimValue());
 
     if (scope != TokenScope.ACCOUNT) {
@@ -103,8 +102,7 @@ public class AccessTokenIssuer {
 
     claims
         .claim(TokenClaims.HOUSEHOLD_ID, context.householdId().toString())
-        .claim(TokenClaims.HOUSEHOLD_ROLE, membership.getHouseholdRole().name())
-        .claim(TokenClaims.MEMBERSHIP_VERSION, membership.getMembershipVersion());
+        .claim(TokenClaims.HOUSEHOLD_ROLE, membership.getHouseholdRole().name());
   }
 
   private void addProfileClaims(JwtClaimsSet.Builder claims, TokenContext context) {
@@ -114,13 +112,8 @@ public class AccessTokenIssuer {
             context.account().getId(), context.householdId(), context.profileId())
         .orElseThrow(ProfileAccessDeniedException::new);
 
-    var profile =
-        profileRepository
-            .findById(context.profileId())
-            .orElseThrow(ProfileAccessDeniedException::new);
+    profileRepository.findById(context.profileId()).orElseThrow(ProfileAccessDeniedException::new);
 
-    claims
-        .claim(TokenClaims.PROFILE_ID, context.profileId().toString())
-        .claim(TokenClaims.POLICY_VERSION, profile.getPolicyVersion());
+    claims.claim(TokenClaims.PROFILE_ID, context.profileId().toString());
   }
 }

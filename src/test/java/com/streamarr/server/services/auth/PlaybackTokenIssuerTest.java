@@ -18,7 +18,7 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
-import com.streamarr.server.fakes.FakeVersionCounterReader;
+import com.streamarr.server.fakes.FakePlaybackAuthorityGate;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.UUID;
@@ -43,14 +43,14 @@ class PlaybackTokenIssuerTest {
           .rotationGrace(Duration.ofSeconds(30))
           .build();
 
-  private final FakeVersionCounterReader reader = new FakeVersionCounterReader();
   private final TokenCryptoConfig cryptoConfig = new TokenCryptoConfig();
+  private final FakePlaybackAuthorityGate authorityGate = new FakePlaybackAuthorityGate();
 
   private final PlaybackTokenIssuer issuer =
       new PlaybackTokenIssuer(
           cryptoConfig.jwtEncoder(cryptoConfig.tokenSigningKeys(properties)),
           Clock.systemUTC(),
-          new TokenVersionCache(reader));
+          authorityGate);
 
   private final UUID accountId = UUID.randomUUID();
   private final UUID sessionId = UUID.randomUUID();
@@ -58,11 +58,8 @@ class PlaybackTokenIssuerTest {
   private final UUID profileId = UUID.randomUUID();
 
   @Test
-  @DisplayName("Should include identity and version claims when issuing")
-  void shouldIncludeIdentityAndVersionClaimsWhenIssuing() {
-    reader.sessionVersions.put(sessionId, 2L);
-    reader.membershipVersions.put(accountId + ":" + householdId, 3L);
-    reader.profilePolicyVersions.put(profileId, 4L);
+  @DisplayName("Should bind identity and stream session when issuing")
+  void shouldBindIdentityAndStreamSessionWhenIssuing() {
     var streamSession = sessionOwnedBy(profileId);
     var streamSessionId = streamSession.getSessionId();
 
@@ -73,14 +70,11 @@ class PlaybackTokenIssuerTest {
     assertThat(decoded.getClaimAsString(JwtClaimNames.ISS)).isEqualTo(TokenContract.ISSUER);
     assertThat(decoded.getSubject()).isEqualTo(accountId.toString());
     assertThat(decoded.getClaimAsString(TokenClaims.SESSION_ID)).isEqualTo(sessionId.toString());
-    assertThat(decoded.<Long>getClaim(TokenClaims.SESSION_VERSION)).isEqualTo(2L);
     assertThat(decoded.getClaimAsString(TokenClaims.SCOPE)).isEqualTo("playback");
     assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ID))
         .isEqualTo(householdId.toString());
     assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ROLE)).isEqualTo("MEMBER");
-    assertThat(decoded.<Long>getClaim(TokenClaims.MEMBERSHIP_VERSION)).isEqualTo(3L);
     assertThat(decoded.getClaimAsString(TokenClaims.PROFILE_ID)).isEqualTo(profileId.toString());
-    assertThat(decoded.<Long>getClaim(TokenClaims.POLICY_VERSION)).isEqualTo(4L);
     assertThat(decoded.getClaimAsString(TokenClaims.STREAM_SESSION))
         .isEqualTo(streamSessionId.toString());
     assertThat(Duration.between(decoded.getIssuedAt(), decoded.getExpiresAt()))
@@ -118,9 +112,6 @@ class PlaybackTokenIssuerTest {
   @Test
   @DisplayName("Should refuse issuance when session not owned by identity")
   void shouldRefuseIssuanceWhenSessionNotOwnedByIdentity() {
-    reader.sessionVersions.put(sessionId, 2L);
-    reader.membershipVersions.put(accountId + ":" + householdId, 3L);
-    reader.profilePolicyVersions.put(profileId, 4L);
     var identity = profileIdentity();
     var foreignSession = sessionOwnedBy(UUID.randomUUID());
     var ttl = Duration.ofHours(1);
@@ -132,45 +123,15 @@ class PlaybackTokenIssuerTest {
   }
 
   @Test
-  @DisplayName("Should require current auth session version when issuing")
-  void shouldRequireCurrentAuthSessionVersionWhenIssuing() {
-    reader.sessionVersions.put(sessionId, 3L);
-    reader.membershipVersions.put(accountId + ":" + householdId, 3L);
-    reader.profilePolicyVersions.put(profileId, 4L);
+  @DisplayName("Should refuse issuance when playback authority is no longer live")
+  void shouldRefuseIssuanceWhenPlaybackAuthorityIsNoLongerLive() {
     var identity = profileIdentity();
     var streamSession = sessionOwnedBy(profileId);
     var ttl = Duration.ofHours(1);
+    authorityGate.deny();
 
     assertThatThrownBy(() -> issuer.issue(identity, streamSession, ttl))
         .isInstanceOf(AuthenticationRequiredException.class);
-  }
-
-  @Test
-  @DisplayName("Should require current membership version when issuing")
-  void shouldRequireCurrentMembershipVersionWhenIssuing() {
-    reader.sessionVersions.put(sessionId, 2L);
-    reader.membershipVersions.put(accountId + ":" + householdId, 4L);
-    reader.profilePolicyVersions.put(profileId, 4L);
-    var identity = profileIdentity();
-    var streamSession = sessionOwnedBy(profileId);
-    var ttl = Duration.ofHours(1);
-
-    assertThatThrownBy(() -> issuer.issue(identity, streamSession, ttl))
-        .isInstanceOf(ProfileRequiredException.class);
-  }
-
-  @Test
-  @DisplayName("Should require current profile policy version when issuing")
-  void shouldRequireCurrentProfilePolicyVersionWhenIssuing() {
-    reader.sessionVersions.put(sessionId, 2L);
-    reader.membershipVersions.put(accountId + ":" + householdId, 3L);
-    reader.profilePolicyVersions.put(profileId, 5L);
-    var identity = profileIdentity();
-    var streamSession = sessionOwnedBy(profileId);
-    var ttl = Duration.ofHours(1);
-
-    assertThatThrownBy(() -> issuer.issue(identity, streamSession, ttl))
-        .isInstanceOf(ProfileRequiredException.class);
   }
 
   private AuthenticatedIdentity profileIdentity() {
@@ -178,13 +139,10 @@ class PlaybackTokenIssuerTest {
         .accountId(accountId)
         .role(AccountRole.USER)
         .sessionId(sessionId)
-        .sessionVersion(2L)
         .scope(TokenScope.PROFILE)
         .householdId(householdId)
         .householdRole(HouseholdRole.MEMBER)
-        .membershipVersion(3L)
         .profileId(profileId)
-        .policyVersion(4L)
         .build();
   }
 
