@@ -9,6 +9,7 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.transcode.tls.PemTlsIdentity;
 import com.streamarr.transcode.v1.JobAttemptCompleted;
+import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.RenditionJob;
 import com.streamarr.transcode.v1.RenditionSpec;
 import com.streamarr.transcode.v1.SegmentContentType;
@@ -17,6 +18,7 @@ import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
 import com.streamarr.transcode.v1.UploadSegmentRequest;
 import com.streamarr.transcode.v1.UploadSegmentResponse;
 import com.streamarr.transcode.v1.Uuid;
+import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerHeartbeat;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
@@ -47,6 +49,8 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
 
   private static final UUID AUTHENTICATED_WORKER_ID =
       UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+  private static final UUID SOURCE_NAMESPACE_ID =
+      UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
 
   @Test
   @DisplayName("Should register a worker whose reported identity matches its mTLS identity")
@@ -232,6 +236,27 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
       server.start();
 
       assertThat(server.dispatch(renditionJob())).isFalse();
+    }
+  }
+
+  @Test
+  @DisplayName("Should decline dispatch when the worker cannot access the source namespace")
+  void shouldDeclineDispatchWhenWorkerCannotAccessSourceNamespace() throws Exception {
+    try (var server = server()) {
+      server.start();
+      var channel = workerChannel(server.port());
+
+      try (var worker =
+          connect(
+              channel,
+              workerIdentity(AUTHENTICATED_WORKER_ID, UUID.randomUUID()),
+              UUID.randomUUID())) {
+        assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
+
+        assertThat(server.dispatch(renditionJob())).isFalse();
+      } finally {
+        shutdown(channel);
+      }
     }
   }
 
@@ -520,12 +545,17 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
   }
 
   private TestWorkerConnection connect(ManagedChannel channel, WorkerIdentity worker) {
+    return connect(channel, worker, SOURCE_NAMESPACE_ID);
+  }
+
+  private TestWorkerConnection connect(
+      ManagedChannel channel, WorkerIdentity worker, UUID sourceNamespaceId) {
     var responses = new LinkedBlockingQueue<WorkerSessionResponse>();
     var closed = new CompletableFuture<Void>();
     var requestObserver =
         TranscodeWorkerServiceGrpc.newStub(channel)
             .workerSession(new QueuedResponseObserver(responses, closed));
-    requestObserver.onNext(registration(worker));
+    requestObserver.onNext(registration(worker, sourceNamespaceId));
     return new TestWorkerConnection(requestObserver, responses, closed);
   }
 
@@ -534,6 +564,10 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
         .setStreamSessionId(uuid(UUID.randomUUID()))
         .setJobId(uuid(UUID.randomUUID()))
         .setJobAttemptId(uuid(UUID.randomUUID()))
+        .setSource(
+            MediaSourceRef.newBuilder()
+                .setSourceNamespaceId(uuid(SOURCE_NAMESPACE_ID))
+                .setRelativeKey("movie.mkv"))
         .setRendition(RenditionSpec.newBuilder().setRenditionName("720p"))
         .build();
   }
@@ -543,8 +577,17 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
   }
 
   private WorkerSessionRequest registration(WorkerIdentity worker) {
+    return registration(worker, SOURCE_NAMESPACE_ID);
+  }
+
+  private WorkerSessionRequest registration(WorkerIdentity worker, UUID sourceNamespaceId) {
     return WorkerSessionRequest.newBuilder()
-        .setRegistration(WorkerRegistration.newBuilder().setWorker(worker).setAvailableSlots(1))
+        .setRegistration(
+            WorkerRegistration.newBuilder()
+                .setWorker(worker)
+                .setCapabilities(
+                    WorkerCapabilities.newBuilder().addSourceNamespaceIds(uuid(sourceNamespaceId)))
+                .setAvailableSlots(1))
         .build();
   }
 

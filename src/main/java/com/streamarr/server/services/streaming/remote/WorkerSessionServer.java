@@ -78,6 +78,31 @@ public final class WorkerSessionServer implements AutoCloseable {
     return workerConnections.stopRendition(jobAttemptId);
   }
 
+  public synchronized void stopStreamSession(UUID streamSessionId) {
+    requireStarted();
+    workerConnections.stopStreamSession(streamSessionId);
+  }
+
+  public synchronized boolean isRunning(UUID streamSessionId) {
+    requireStarted();
+    return workerConnections.isRunning(streamSessionId);
+  }
+
+  public synchronized boolean isRunning(UUID streamSessionId, String renditionName) {
+    requireStarted();
+    return workerConnections.isRunning(streamSessionId, renditionName);
+  }
+
+  public synchronized boolean hasConnectedWorker() {
+    return server != null && workerConnections.hasConnectedWorker();
+  }
+
+  private void requireStarted() {
+    if (server == null) {
+      throw new IllegalStateException("Worker session server is not started");
+    }
+  }
+
   @Override
   public synchronized void close() {
     if (server == null) {

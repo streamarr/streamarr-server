@@ -15,6 +15,7 @@ import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -28,12 +29,7 @@ final class LiveWorkerConnectionRegistry {
       UUID workerId,
       WorkerRegistration registration,
       StreamObserver<WorkerSessionResponse> responseObserver) {
-    var connection =
-        new WorkerConnection(
-            UUID.randomUUID(),
-            registration.getWorker(),
-            registration.getAvailableSlots(),
-            responseObserver);
+    var connection = new WorkerConnection(UUID.randomUUID(), registration, responseObserver);
     var replaced = connections.put(workerId, connection);
     if (replaced != null) {
       replaced.closeAsReplaced();
@@ -67,6 +63,24 @@ final class LiveWorkerConnectionRegistry {
     return false;
   }
 
+  void stopStreamSession(UUID streamSessionId) {
+    connections.values().forEach(connection -> connection.stopStreamSession(streamSessionId));
+  }
+
+  boolean isRunning(UUID streamSessionId) {
+    return connections.values().stream()
+        .anyMatch(connection -> connection.isRunning(streamSessionId));
+  }
+
+  boolean isRunning(UUID streamSessionId, String renditionName) {
+    return connections.values().stream()
+        .anyMatch(connection -> connection.isRunning(streamSessionId, renditionName));
+  }
+
+  boolean hasConnectedWorker() {
+    return !connections.isEmpty();
+  }
+
   void finishJobAttempt(UUID workerId, UUID workerSessionId, UUID jobAttemptId) {
     var connection = connections.get(workerId);
     if (connection != null && connection.workerSessionId().equals(workerSessionId)) {
@@ -83,18 +97,19 @@ final class LiveWorkerConnectionRegistry {
 
     private final UUID workerSessionId;
     private final WorkerIdentity worker;
+    private final Set<com.streamarr.transcode.v1.Uuid> sourceNamespaceIds;
     private final int maximumActiveRenditions;
     private final StreamObserver<WorkerSessionResponse> responseObserver;
     private final Map<UUID, RenditionJob> activeRenditions = new HashMap<>();
 
     private WorkerConnection(
         UUID workerSessionId,
-        WorkerIdentity worker,
-        int maximumActiveRenditions,
+        WorkerRegistration registration,
         StreamObserver<WorkerSessionResponse> responseObserver) {
       this.workerSessionId = workerSessionId;
-      this.worker = worker;
-      this.maximumActiveRenditions = maximumActiveRenditions;
+      worker = registration.getWorker();
+      sourceNamespaceIds = Set.copyOf(registration.getCapabilities().getSourceNamespaceIdsList());
+      maximumActiveRenditions = registration.getAvailableSlots();
       this.responseObserver = responseObserver;
     }
 
@@ -112,7 +127,9 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private synchronized boolean tryDispatch(RenditionJob job) {
-      if (maximumActiveRenditions < 1 || activeRenditions.size() >= maximumActiveRenditions) {
+      if (!canAccessSource(job)
+          || maximumActiveRenditions < 1
+          || activeRenditions.size() >= maximumActiveRenditions) {
         return false;
       }
 
@@ -121,6 +138,10 @@ final class LiveWorkerConnectionRegistry {
       responseObserver.onNext(
           WorkerSessionResponse.newBuilder().setStartRendition(command).build());
       return true;
+    }
+
+    private boolean canAccessSource(RenditionJob job) {
+      return job.hasSource() && sourceNamespaceIds.contains(job.getSource().getSourceNamespaceId());
     }
 
     private synchronized boolean tryStop(UUID jobAttemptId) {
@@ -139,6 +160,27 @@ final class LiveWorkerConnectionRegistry {
 
     private synchronized void finishJobAttempt(UUID jobAttemptId) {
       activeRenditions.remove(jobAttemptId);
+    }
+
+    private synchronized void stopStreamSession(UUID streamSessionId) {
+      activeRenditions.entrySet().stream()
+          .filter(entry -> fromProto(entry.getValue().getStreamSessionId()).equals(streamSessionId))
+          .map(Map.Entry::getKey)
+          .toList()
+          .forEach(this::tryStop);
+    }
+
+    private synchronized boolean isRunning(UUID streamSessionId) {
+      return activeRenditions.values().stream()
+          .anyMatch(job -> fromProto(job.getStreamSessionId()).equals(streamSessionId));
+    }
+
+    private synchronized boolean isRunning(UUID streamSessionId, String renditionName) {
+      return activeRenditions.values().stream()
+          .anyMatch(
+              job ->
+                  fromProto(job.getStreamSessionId()).equals(streamSessionId)
+                      && job.getRendition().getRenditionName().equals(renditionName));
     }
 
     private synchronized boolean authorizesUpload(SegmentUploadMetadata metadata) {
