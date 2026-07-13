@@ -12,6 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.jooq.generated.enums.TranscodeCaSigningOperation;
 import com.streamarr.server.services.streaming.trust.BuiltInCertificateAuthority;
+import com.streamarr.server.services.streaming.trust.CertificateAuthorityMaterial;
 import com.streamarr.server.services.streaming.trust.CertificateAuthorityOperation;
 import com.streamarr.server.services.streaming.trust.InitialTrustPublication;
 import com.streamarr.server.services.streaming.trust.InstallationTrust;
@@ -52,14 +53,18 @@ final class TrustRepositoryTestFixture {
   }
 
   InstallationTrust bootstrap() {
-    return bootstrap(false);
+    return bootstrap(false).trust();
   }
 
   InstallationTrust bootstrapAndRelease() {
+    return bootstrap(true).trust();
+  }
+
+  BootstrapResult bootstrapResultAndRelease() {
     return bootstrap(true);
   }
 
-  private InstallationTrust bootstrap(boolean releaseLease) {
+  private BootstrapResult bootstrap(boolean releaseLease) {
     var installationId = trustRepository.installationId();
     var material =
         new BuiltInCertificateAuthority().create(installationId, trustRepository.databaseTime());
@@ -73,6 +78,8 @@ final class TrustRepositoryTestFixture {
     if (releaseLease) {
       assertThat(signingLeaseRepository.release(lease)).isTrue();
     }
-    return trustRepository.findInitialized().orElseThrow();
+    return new BootstrapResult(trustRepository.findInitialized().orElseThrow(), material);
   }
+
+  record BootstrapResult(InstallationTrust trust, CertificateAuthorityMaterial material) {}
 }
