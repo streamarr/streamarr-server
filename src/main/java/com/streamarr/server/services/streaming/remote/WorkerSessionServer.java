@@ -58,23 +58,17 @@ public final class WorkerSessionServer implements AutoCloseable {
   }
 
   public synchronized int port() {
-    if (server == null) {
-      throw new IllegalStateException("Worker session server is not started");
-    }
+    requireStarted();
     return server.getPort();
   }
 
   public synchronized boolean dispatch(RenditionJob job) {
-    if (server == null) {
-      throw new IllegalStateException("Worker session server is not started");
-    }
+    requireStarted();
     return workerConnections.dispatch(job);
   }
 
   public synchronized boolean stopRendition(UUID jobAttemptId) {
-    if (server == null) {
-      throw new IllegalStateException("Worker session server is not started");
-    }
+    requireStarted();
     return workerConnections.stopRendition(jobAttemptId);
   }
 
