@@ -660,6 +660,33 @@ class HlsStreamingServiceTest {
   }
 
   @Test
+  @DisplayName("Should truncate variants to executor slots available now")
+  void shouldTruncateVariantsToExecutorSlotsAvailableNow() {
+    transcodeExecutor.setAvailableSlots(2);
+    ffprobeService.setDefaultProbe(
+        MediaProbe.builder()
+            .duration(Duration.ofMinutes(120))
+            .framerate(23.976)
+            .width(1920)
+            .height(1080)
+            .videoCodec("hevc")
+            .audioCodec("aac")
+            .bitrate(8_000_000L)
+            .build());
+    var file = seedMediaFile();
+    var options =
+        StreamingOptions.builder()
+            .quality(VideoQuality.AUTO)
+            .supportedCodecs(List.of("h264"))
+            .build();
+
+    var session = createSession(file.getId(), UUID.randomUUID(), options);
+
+    assertThat(session.getVariants()).hasSize(2);
+    assertThat(transcodeExecutor.getStartedVariants()).containsExactlyInAnyOrder("1080p", "720p");
+  }
+
+  @Test
   @DisplayName("Should truncate to one variant when only one slot is available")
   void shouldTruncateToOneVariantWhenOnlyOneSlotAvailable() {
     ffprobeService.setDefaultProbe(

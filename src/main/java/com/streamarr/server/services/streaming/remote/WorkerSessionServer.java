@@ -91,6 +91,11 @@ public final class WorkerSessionServer implements AutoCloseable {
     return server != null && workerConnections.hasConnectedWorker();
   }
 
+  public synchronized int availableSlots() {
+    requireStarted();
+    return workerConnections.availableSlots();
+  }
+
   private void requireStarted() {
     if (server == null) {
       throw new IllegalStateException("Worker session server is not started");

@@ -321,7 +321,8 @@ public class HlsStreamingService implements StreamingService {
             .filter(s -> requiresTranscode(s.getTranscodeDecision().transcodeMode()))
             .mapToInt(s -> Math.max(1, s.getVariants().size()))
             .sum();
-    return properties.maxConcurrentTranscodes() - activeTranscodes;
+    var configuredSlots = properties.maxConcurrentTranscodes() - activeTranscodes;
+    return Math.min(configuredSlots, transcodeExecutor.availableSlots());
   }
 
   private boolean requiresTranscode(TranscodeMode mode) {
