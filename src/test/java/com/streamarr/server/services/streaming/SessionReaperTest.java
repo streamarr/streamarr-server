@@ -7,7 +7,7 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
-import com.streamarr.server.fakes.FakeStreamSessionRepository;
+import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import java.nio.file.Path;
@@ -42,7 +42,7 @@ class SessionReaperTest {
             .build();
     reaper =
         new SessionReaper(
-            streamingService, executor, properties, new FakeStreamSessionRepository());
+            streamingService, executor, properties, new FakeRuntimeStreamSessionRegistry());
   }
 
   @Test

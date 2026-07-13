@@ -5,8 +5,8 @@ import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.server.services.streaming.HlsStreamingService;
 import com.streamarr.server.services.streaming.QualityLadderService;
+import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
 import com.streamarr.server.services.streaming.SegmentStore;
-import com.streamarr.server.services.streaming.StreamSessionRepository;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.streaming.TranscodeDecisionService;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
@@ -15,7 +15,7 @@ import com.streamarr.server.services.streaming.ffmpeg.FfmpegProcessManager;
 import com.streamarr.server.services.streaming.ffmpeg.LocalFfprobeService;
 import com.streamarr.server.services.streaming.ffmpeg.LocalTranscodeExecutor;
 import com.streamarr.server.services.streaming.ffmpeg.TranscodeCapabilityService;
-import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRepository;
+import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRegistry;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -86,8 +86,8 @@ public class StreamingConfig {
   }
 
   @Bean
-  public StreamSessionRepository streamSessionRepository() {
-    return new InMemoryStreamSessionRepository();
+  public RuntimeStreamSessionRegistry runtimeStreamSessionRegistry() {
+    return new InMemoryStreamSessionRegistry();
   }
 
   @Bean
@@ -99,7 +99,7 @@ public class StreamingConfig {
       TranscodeDecisionService transcodeDecisionService,
       QualityLadderService qualityLadderService,
       StreamingProperties properties,
-      StreamSessionRepository streamSessionRepository,
+      RuntimeStreamSessionRegistry runtimeRegistry,
       MutexFactoryProvider mutexFactoryProvider) {
     return new HlsStreamingService(
         mediaFileRepository,
@@ -109,7 +109,7 @@ public class StreamingConfig {
         transcodeDecisionService,
         qualityLadderService,
         properties,
-        streamSessionRepository,
+        runtimeRegistry,
         mutexFactoryProvider.getMutexFactory());
   }
 }

@@ -1,14 +1,14 @@
 package com.streamarr.server.services.streaming.local;
 
 import com.streamarr.server.domain.streaming.StreamSession;
-import com.streamarr.server.services.streaming.StreamSessionRepository;
+import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-public class InMemoryStreamSessionRepository implements StreamSessionRepository {
+public class InMemoryStreamSessionRegistry implements RuntimeStreamSessionRegistry {
 
   private final ConcurrentHashMap<UUID, StreamSession> sessions = new ConcurrentHashMap<>();
 

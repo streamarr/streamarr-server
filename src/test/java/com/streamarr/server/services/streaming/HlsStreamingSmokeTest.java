@@ -19,7 +19,7 @@ import com.streamarr.server.services.streaming.ffmpeg.LocalFfmpegProcessManager;
 import com.streamarr.server.services.streaming.ffmpeg.LocalFfprobeService;
 import com.streamarr.server.services.streaming.ffmpeg.LocalTranscodeExecutor;
 import com.streamarr.server.services.streaming.ffmpeg.TranscodeCapabilityService;
-import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRepository;
+import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRegistry;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -119,7 +119,7 @@ class HlsStreamingSmokeTest {
             decisionService,
             qualityLadderService,
             properties,
-            new InMemoryStreamSessionRepository(),
+            new InMemoryStreamSessionRegistry(),
             new MutexFactory<>());
 
     playlistService = new HlsPlaylistService(properties);

@@ -42,7 +42,7 @@ public class HlsStreamingService implements StreamingService {
   private final TranscodeDecisionService transcodeDecisionService;
   private final QualityLadderService qualityLadderService;
   private final StreamingProperties properties;
-  private final StreamSessionRepository sessionRepository;
+  private final RuntimeStreamSessionRegistry runtimeRegistry;
   private final MutexFactory<UUID> resumeMutex;
 
   @Override
@@ -73,9 +73,9 @@ public class HlsStreamingService implements StreamingService {
             .createdAt(now)
             .build();
 
-    sessionRepository.save(session);
+    runtimeRegistry.save(session);
     startTranscodes(session, 0, 0);
-    sessionRepository.save(session);
+    runtimeRegistry.save(session);
     log.info(
         "Created streaming session {} for media file {} (mode: {}, variants: {})",
         sessionId,
@@ -88,18 +88,18 @@ public class HlsStreamingService implements StreamingService {
 
   @Override
   public Optional<StreamSession> accessSession(UUID sessionId) {
-    var session = sessionRepository.findById(sessionId);
+    var session = runtimeRegistry.findById(sessionId);
     session.ifPresent(
         s -> {
           s.setLastAccessedAt(Instant.now());
-          sessionRepository.save(s);
+          runtimeRegistry.save(s);
         });
     return session;
   }
 
   @Override
   public void destroySession(UUID sessionId) {
-    sessionRepository
+    runtimeRegistry
         .removeById(sessionId)
         .ifPresent(
             session -> {
@@ -111,7 +111,7 @@ public class HlsStreamingService implements StreamingService {
 
   @Override
   public void destroySession(UUID sessionId, UUID profileId) {
-    var session = sessionRepository.findById(sessionId);
+    var session = runtimeRegistry.findById(sessionId);
     if (session.isEmpty()) {
       return;
     }
@@ -126,17 +126,17 @@ public class HlsStreamingService implements StreamingService {
 
   @Override
   public Collection<StreamSession> getAllSessions() {
-    return sessionRepository.findAll();
+    return runtimeRegistry.findAll();
   }
 
   @Override
   public int getActiveSessionCount() {
-    return sessionRepository.count();
+    return runtimeRegistry.count();
   }
 
   @Override
   public void resumeSessionIfNeeded(UUID sessionId, String segmentName) {
-    var session = sessionRepository.findById(sessionId).orElse(null);
+    var session = runtimeRegistry.findById(sessionId).orElse(null);
     if (session == null) {
       return;
     }
@@ -201,7 +201,7 @@ public class HlsStreamingService implements StreamingService {
   }
 
   private void doRelocate(UUID sessionId, String segmentName) {
-    var session = sessionRepository.findById(sessionId).orElse(null);
+    var session = runtimeRegistry.findById(sessionId).orElse(null);
     if (session == null || !requiresRelocation(session, segmentName)) {
       return;
     }
@@ -214,7 +214,7 @@ public class HlsStreamingService implements StreamingService {
     transcodeExecutor.stop(sessionId);
     startTranscodes(session, segmentIndex * segmentDurationSeconds(), segmentIndex);
     session.setLastAccessedAt(Instant.now());
-    sessionRepository.save(session);
+    runtimeRegistry.save(session);
 
     log.info("Relocated transcode for session {} to segment {}", sessionId, segmentIndex);
   }
@@ -240,7 +240,7 @@ public class HlsStreamingService implements StreamingService {
   }
 
   private void doResume(UUID sessionId, String segmentName) {
-    var session = sessionRepository.findById(sessionId).orElse(null);
+    var session = runtimeRegistry.findById(sessionId).orElse(null);
     if (session == null || !session.isSuspended()) {
       return;
     }
@@ -250,7 +250,7 @@ public class HlsStreamingService implements StreamingService {
 
     startTranscodes(session, resumeSeek, segmentIndex);
     session.setLastAccessedAt(Instant.now());
-    sessionRepository.save(session);
+    runtimeRegistry.save(session);
 
     log.info(
         "Resumed suspended session {} at segment {} (seek {}s)",
@@ -304,7 +304,7 @@ public class HlsStreamingService implements StreamingService {
 
   private int availableTranscodeSlots() {
     var activeTranscodes =
-        sessionRepository.findAll().stream()
+        runtimeRegistry.findAll().stream()
             .filter(s -> !s.isSuspended())
             .filter(s -> requiresTranscode(s.getTranscodeDecision().transcodeMode()))
             .mapToInt(s -> Math.max(1, s.getVariants().size()))
