@@ -1,6 +1,7 @@
 package com.streamarr.server.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.services.streaming.SegmentStore;
@@ -49,6 +50,24 @@ class RemoteTranscodeConfigurationTest {
     contextRunner
         .withPropertyValues("streaming.remote.enabled=true")
         .run(context -> assertThat(context).hasFailed());
+  }
+
+  @Test
+  @DisplayName("Should reject a blank remote media source root")
+  void shouldRejectBlankRemoteMediaSourceRoot() {
+    assertThatThrownBy(
+            () ->
+                new RemoteTranscodeProperties(
+                    true,
+                    0,
+                    "streamarr.test",
+                    SOURCE_NAMESPACE_ID,
+                    " ",
+                    "server.crt",
+                    "server.key",
+                    "ca.crt"))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Remote source root is required");
   }
 
   @Test

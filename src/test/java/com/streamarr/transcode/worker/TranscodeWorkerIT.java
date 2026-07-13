@@ -1,6 +1,7 @@
 package com.streamarr.transcode.worker;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.AbstractIntegrationTest;
@@ -72,6 +73,22 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
       await()
           .atMost(5, TimeUnit.SECONDS)
           .until(() -> processManager.getStarted().contains(streamSessionId));
+    }
+  }
+
+  @Test
+  @DisplayName("Should reject duplicate worker startup")
+  void shouldRejectDuplicateWorkerStartup() throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+
+    try (var server = server();
+        var worker = worker(new FakeFfmpegProcessManager(), mediaRoot)) {
+      server.start();
+      worker.start("localhost", server.port());
+
+      assertThatThrownBy(() -> worker.start("localhost", server.port()))
+          .isInstanceOf(IllegalStateException.class)
+          .hasMessage("Transcode worker is already started");
     }
   }
 
@@ -249,6 +266,31 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
               () ->
                   Files.notExists(
                       tempDir.resolve("segments").resolve(uuid(job.getJobAttemptId()).toString())));
+    }
+  }
+
+  @Test
+  @DisplayName("Should stop a rendition when the control plane rejects segment storage")
+  void shouldStopRenditionWhenControlPlaneRejectsSegmentStorage() throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+    Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var streamSessionId = UUID.randomUUID();
+    var processManager =
+        new FakeSegmentProducingFfmpegProcessManager("segment0.ts", "segment".getBytes());
+    var job = renditionJob(streamSessionId, "720p", ContainerFormat.CONTAINER_FORMAT_MPEG_TS);
+
+    try (var server = server(new FailingSegmentStore(tempDir.resolve("server-segments")));
+        var worker = worker(processManager, mediaRoot)) {
+      server.start();
+      worker.start("localhost", server.port());
+
+      assertThat(server.dispatch(job)).isTrue();
+
+      await()
+          .atMost(5, TimeUnit.SECONDS)
+          .until(() -> processManager.getStopped().contains(streamSessionId));
+      await().atMost(5, TimeUnit.SECONDS).until(() -> !server.isRunning(streamSessionId));
+      assertThat(server.availableSlots()).isEqualTo(2);
     }
   }
 
@@ -491,6 +533,18 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
     public Process startProcess(
         UUID sessionId, String renditionName, List<String> command, Path workingDirectory) {
       throw new IllegalStateException("FFmpeg failed to start");
+    }
+  }
+
+  private static final class FailingSegmentStore extends LocalSegmentStore {
+
+    private FailingSegmentStore(Path baseDir) {
+      super(baseDir);
+    }
+
+    @Override
+    public void storeSegment(UUID sessionId, String segmentName, byte[] data) {
+      throw new IllegalStateException("Storage unavailable");
     }
   }
 
