@@ -8,6 +8,7 @@ import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder;
 import io.grpc.netty.shaded.io.netty.handler.ssl.ClientAuth;
 import java.io.IOException;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -63,6 +64,13 @@ public final class WorkerSessionServer implements AutoCloseable {
       throw new IllegalStateException("Worker session server is not started");
     }
     return workerConnections.dispatch(job);
+  }
+
+  public synchronized boolean stopRendition(UUID jobAttemptId) {
+    if (server == null) {
+      throw new IllegalStateException("Worker session server is not started");
+    }
+    return workerConnections.stopRendition(jobAttemptId);
   }
 
   @Override
