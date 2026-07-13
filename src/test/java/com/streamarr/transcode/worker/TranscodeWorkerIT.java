@@ -6,6 +6,7 @@ import static org.awaitility.Awaitility.await;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.StreamarrServerApplication;
 import com.streamarr.server.fakes.FakeFfmpegProcessManager;
+import com.streamarr.server.fakes.FakeSegmentProducingFfmpegProcessManager;
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegCommandBuilder;
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegTranscodeEngine;
 import com.streamarr.server.services.streaming.ffmpeg.TranscodeCapabilityService;
@@ -25,8 +26,6 @@ import com.streamarr.transcode.v1.TranscodeDecision;
 import com.streamarr.transcode.v1.TranscodeExecution;
 import com.streamarr.transcode.v1.TranscodeMode;
 import com.streamarr.transcode.v1.Uuid;
-import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -158,7 +157,7 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
     var segmentData = "remote segment".getBytes();
-    var processManager = new SegmentProducingProcessManager("segment0.ts", segmentData);
+    var processManager = new FakeSegmentProducingFfmpegProcessManager("segment0.ts", segmentData);
     var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
     var streamSessionId = UUID.randomUUID();
 
@@ -304,29 +303,6 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
   private Path resource(String name) throws URISyntaxException {
     var url = Objects.requireNonNull(getClass().getResource("/tls/" + name));
     return Path.of(url.toURI());
-  }
-
-  private static final class SegmentProducingProcessManager extends FakeFfmpegProcessManager {
-
-    private final String segmentName;
-    private final byte[] segmentData;
-
-    private SegmentProducingProcessManager(String segmentName, byte[] segmentData) {
-      this.segmentName = segmentName;
-      this.segmentData = segmentData.clone();
-    }
-
-    @Override
-    public Process startProcess(
-        UUID sessionId, String renditionName, List<String> command, Path workingDirectory) {
-      var process = super.startProcess(sessionId, renditionName, command, workingDirectory);
-      try {
-        Files.write(workingDirectory.resolve(segmentName), segmentData);
-      } catch (IOException e) {
-        throw new UncheckedIOException(e);
-      }
-      return process;
-    }
   }
 
   private static final class StartupFailingProcessManager extends FakeFfmpegProcessManager {
