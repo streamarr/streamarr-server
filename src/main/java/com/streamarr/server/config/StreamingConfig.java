@@ -13,6 +13,7 @@ import com.streamarr.server.services.streaming.TranscodeDecisionService;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegCommandBuilder;
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegProcessManager;
+import com.streamarr.server.services.streaming.ffmpeg.FfmpegTranscodeEngine;
 import com.streamarr.server.services.streaming.ffmpeg.LocalFfprobeService;
 import com.streamarr.server.services.streaming.ffmpeg.LocalTranscodeExecutor;
 import com.streamarr.server.services.streaming.ffmpeg.TranscodeCapabilityService;
@@ -77,13 +78,17 @@ public class StreamingConfig {
   }
 
   @Bean
-  public TranscodeExecutor transcodeExecutor(
+  public FfmpegTranscodeEngine ffmpegTranscodeEngine(
       FfmpegCommandBuilder commandBuilder,
       FfmpegProcessManager processManager,
-      LocalSegmentStore segmentStore,
       TranscodeCapabilityService capabilityService) {
-    return new LocalTranscodeExecutor(
-        commandBuilder, processManager, segmentStore, capabilityService);
+    return new FfmpegTranscodeEngine(commandBuilder, processManager, capabilityService);
+  }
+
+  @Bean
+  public TranscodeExecutor transcodeExecutor(
+      FfmpegTranscodeEngine engine, LocalSegmentStore segmentStore) {
+    return new LocalTranscodeExecutor(engine, segmentStore);
   }
 
   @Bean
