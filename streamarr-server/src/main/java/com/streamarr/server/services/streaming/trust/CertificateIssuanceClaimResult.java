@@ -36,5 +36,12 @@ public sealed interface CertificateIssuanceClaimResult {
     }
   }
 
+  record Completed(IssuedWorkerCertificate certificate) implements CertificateIssuanceClaimResult {
+
+    public Completed {
+      Objects.requireNonNull(certificate);
+    }
+  }
+
   record RetryWithNewParameters() implements CertificateIssuanceClaimResult {}
 }
