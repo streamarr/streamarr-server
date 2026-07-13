@@ -26,9 +26,9 @@ class CertificateIssuanceValueTest {
     returned[1] = 9;
 
     assertThat(subjectPublicKeyInfo.der()).containsExactly(1, 2, 3);
-    assertThat(subjectPublicKeyInfo).isEqualTo(equal).hasSameHashCodeAs(equal);
-    assertThat(subjectPublicKeyInfo).isEqualTo(subjectPublicKeyInfo);
     assertThat(subjectPublicKeyInfo)
+        .isEqualTo(equal)
+        .hasSameHashCodeAs(equal)
         .isNotEqualTo(SubjectPublicKeyInfo.fromDer(new byte[] {1, 2, 4}))
         .isNotEqualTo(new Object());
     assertThat(subjectPublicKeyInfo.toString())
