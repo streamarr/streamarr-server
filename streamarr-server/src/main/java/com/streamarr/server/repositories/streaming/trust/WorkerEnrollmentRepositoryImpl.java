@@ -99,16 +99,16 @@ public class WorkerEnrollmentRepositoryImpl implements WorkerEnrollmentRepositor
     return new GrantCreationResult.Retained(grant, findBundle(grant.trustBundle()));
   }
 
-  private EnrollmentGrant toGrant(org.jooq.Record record) {
+  private EnrollmentGrant toGrant(org.jooq.Record grantRecord) {
     return EnrollmentGrant.builder()
-        .grantId(record.get(TRANSCODE_ENROLLMENT_GRANT.GRANT_ID))
-        .workerId(record.get(TRANSCODE_ENROLLMENT_GRANT.WORKER_ID))
+        .grantId(grantRecord.get(TRANSCODE_ENROLLMENT_GRANT.GRANT_ID))
+        .workerId(grantRecord.get(TRANSCODE_ENROLLMENT_GRANT.WORKER_ID))
         .trustBundle(
             new PublicTrustBundleRef(
-                record.get(TRANSCODE_ENROLLMENT_GRANT.INSTALLATION_ID),
-                record.get(TRANSCODE_ENROLLMENT_GRANT.TRUST_BUNDLE_VERSION)))
-        .createdAt(record.get(TRANSCODE_ENROLLMENT_GRANT.CREATED_AT).toInstant())
-        .expiresAt(record.get(TRANSCODE_ENROLLMENT_GRANT.EXPIRES_AT).toInstant())
+                grantRecord.get(TRANSCODE_ENROLLMENT_GRANT.INSTALLATION_ID),
+                grantRecord.get(TRANSCODE_ENROLLMENT_GRANT.TRUST_BUNDLE_VERSION)))
+        .createdAt(grantRecord.get(TRANSCODE_ENROLLMENT_GRANT.CREATED_AT).toInstant())
+        .expiresAt(grantRecord.get(TRANSCODE_ENROLLMENT_GRANT.EXPIRES_AT).toInstant())
         .build();
   }
 

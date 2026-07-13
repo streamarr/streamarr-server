@@ -367,6 +367,21 @@ class InstallationTrustRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should return empty when exact public trust bundle does not exist")
+  void shouldReturnEmptyWhenExactPublicTrustBundleDoesNotExist() {
+    assertThat(repository.findBundle(repository.installationId(), 1L)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should reject exact public trust bundle version when not positive")
+  void shouldRejectExactPublicTrustBundleVersionWhenNotPositive() {
+    var installationId = repository.installationId();
+
+    assertThatThrownBy(() -> repository.findBundle(installationId, 0L))
+        .hasMessage("Public trust bundle version must be positive");
+  }
+
+  @Test
   @DisplayName("Should load overlapping certificate roles from later public trust bundle")
   void shouldLoadOverlappingCertificateRolesFromLaterPublicTrustBundle() {
     var lease =
@@ -397,6 +412,26 @@ class InstallationTrustRepositoryIT extends AbstractIntegrationTest {
     assertThat(bundle.trustAnchors()).hasSize(2);
     assertThat(bundle.issuers()).hasSize(2);
     assertThat(bundle.revocationSigners()).hasSize(2);
+  }
+
+  @Test
+  @DisplayName("Should reject later public trust bundle when a required role is missing")
+  void shouldRejectLaterPublicTrustBundleWhenRequiredRoleIsMissing() {
+    var lease =
+        signingLeaseRepository
+            .tryAcquire(CertificateAuthorityOperation.BOOTSTRAP, UUID.randomUUID(), LEASE_DURATION)
+            .orElseThrow();
+    var publication = publication();
+    assertThat(repository.publishInitial(lease, publication)).isTrue();
+    dsl.transaction(configuration -> activateSecondBundle(DSL.using(configuration), publication));
+    dsl.deleteFrom(TRANSCODE_TRUST_CERTIFICATE)
+        .where(TRANSCODE_TRUST_CERTIFICATE.BUNDLE_VERSION.eq(2L))
+        .and(TRANSCODE_TRUST_CERTIFICATE.KIND.eq(TranscodeTrustCertificateKind.REVOCATION_SIGNER))
+        .execute();
+
+    assertThatThrownBy(() -> repository.findBundle(publication.installationId(), 2L))
+        .isInstanceOf(InstallationTrustException.class)
+        .hasMessageContaining("every required certificate role");
   }
 
   private InitialTrustPublication publication() {

@@ -20,6 +20,7 @@ import java.security.cert.X509Certificate;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -161,53 +162,65 @@ public class InstallationTrustRepositoryImpl implements InstallationTrustReposit
   private PublicTrustBundle hydrateBundle(
       PersistedPublicTrustBundle persistedBundle,
       Iterable<? extends org.jooq.Record> certificates) {
-    var trustAnchors = new ArrayList<X509Certificate>();
-    var issuers = new ArrayList<X509Certificate>();
-    var revocationSigners = new ArrayList<X509Certificate>();
+    var certificatesByRole = CertificateRoles.empty();
     for (var certificate : certificates) {
-      var kind = certificate.get(TRANSCODE_TRUST_CERTIFICATE.KIND);
-      if (kind == null) {
-        continue;
-      }
-      var ordinal = certificate.get(TRANSCODE_TRUST_CERTIFICATE.ORDINAL);
-      if (ordinal < 0) {
-        throw new InstallationTrustException(
-            "Public trust certificate has a negative role ordinal");
-      }
-      if (persistedBundle.version() == INITIAL_BUNDLE_VERSION && ordinal != 0) {
-        throw new InstallationTrustException(
-            "Initial public trust certificate has an invalid role and ordinal");
-      }
-      var certificateDer = certificate.get(TRANSCODE_TRUST_CERTIFICATE.CERTIFICATE_DER);
-      if (!MessageDigest.isEqual(
-          sha256(certificateDer),
-          certificate.get(TRANSCODE_TRUST_CERTIFICATE.CERTIFICATE_SHA256))) {
-        throw new InstallationTrustException(
-            "Stored public trust certificate digest does not match exact DER");
-      }
-      var parsed = parse(certificateDer);
-      switch (kind) {
-        case TRUST_ANCHOR -> trustAnchors.add(parsed);
-        case ISSUER -> issuers.add(parsed);
-        case REVOCATION_SIGNER -> revocationSigners.add(parsed);
-      }
+      addCertificate(persistedBundle, certificatesByRole, certificate);
     }
+    validateCertificateRoles(persistedBundle, certificatesByRole);
+    return toPublicTrustBundle(persistedBundle, certificatesByRole);
+  }
+
+  private void addCertificate(
+      PersistedPublicTrustBundle persistedBundle,
+      CertificateRoles certificatesByRole,
+      org.jooq.Record certificate) {
+    var kind = certificate.get(TRANSCODE_TRUST_CERTIFICATE.KIND);
+    if (kind == null) {
+      return;
+    }
+    validateOrdinal(
+        persistedBundle.version(), certificate.get(TRANSCODE_TRUST_CERTIFICATE.ORDINAL));
+    var certificateDer = certificate.get(TRANSCODE_TRUST_CERTIFICATE.CERTIFICATE_DER);
+    if (!MessageDigest.isEqual(
+        sha256(certificateDer), certificate.get(TRANSCODE_TRUST_CERTIFICATE.CERTIFICATE_SHA256))) {
+      throw new InstallationTrustException(
+          "Stored public trust certificate digest does not match exact DER");
+    }
+    certificatesByRole.add(kind, parse(certificateDer));
+  }
+
+  private void validateOrdinal(long bundleVersion, short ordinal) {
+    if (ordinal < 0) {
+      throw new InstallationTrustException("Public trust certificate has a negative role ordinal");
+    }
+    if (bundleVersion == INITIAL_BUNDLE_VERSION && ordinal != 0) {
+      throw new InstallationTrustException(
+          "Initial public trust certificate has an invalid role and ordinal");
+    }
+  }
+
+  private void validateCertificateRoles(
+      PersistedPublicTrustBundle persistedBundle, CertificateRoles certificatesByRole) {
     if (persistedBundle.version() == INITIAL_BUNDLE_VERSION
-        && (trustAnchors.size() != 1 || issuers.size() != 1 || revocationSigners.size() != 1)) {
+        && !certificatesByRole.hasExactInitialRoles()) {
       throw new InstallationTrustException(
           "Initial public trust bundle must contain the exact certificate roles");
     }
-    if (trustAnchors.isEmpty() || issuers.isEmpty() || revocationSigners.isEmpty()) {
+    if (certificatesByRole.isMissingRequiredRole()) {
       throw new InstallationTrustException(
           "Public trust bundle must contain every required certificate role");
     }
+  }
+
+  private PublicTrustBundle toPublicTrustBundle(
+      PersistedPublicTrustBundle persistedBundle, CertificateRoles certificatesByRole) {
     return PublicTrustBundle.builder()
         .installationId(persistedBundle.installationId())
         .version(persistedBundle.version())
         .createdAt(persistedBundle.createdAt().toInstant())
-        .trustAnchors(trustAnchors)
-        .issuers(issuers)
-        .revocationSigners(revocationSigners)
+        .trustAnchors(certificatesByRole.trustAnchors())
+        .issuers(certificatesByRole.issuers())
+        .revocationSigners(certificatesByRole.revocationSigners())
         .build();
   }
 
@@ -413,4 +426,30 @@ public class InstallationTrustRepositoryImpl implements InstallationTrustReposit
 
   private record PersistedPublicTrustBundle(
       UUID installationId, long version, OffsetDateTime createdAt) {}
+
+  private record CertificateRoles(
+      List<X509Certificate> trustAnchors,
+      List<X509Certificate> issuers,
+      List<X509Certificate> revocationSigners) {
+
+    private static CertificateRoles empty() {
+      return new CertificateRoles(new ArrayList<>(), new ArrayList<>(), new ArrayList<>());
+    }
+
+    private void add(TranscodeTrustCertificateKind kind, X509Certificate certificate) {
+      switch (kind) {
+        case TRUST_ANCHOR -> trustAnchors.add(certificate);
+        case ISSUER -> issuers.add(certificate);
+        case REVOCATION_SIGNER -> revocationSigners.add(certificate);
+      }
+    }
+
+    private boolean hasExactInitialRoles() {
+      return trustAnchors.size() == 1 && issuers.size() == 1 && revocationSigners.size() == 1;
+    }
+
+    private boolean isMissingRequiredRole() {
+      return trustAnchors.isEmpty() || issuers.isEmpty() || revocationSigners.isEmpty();
+    }
+  }
 }

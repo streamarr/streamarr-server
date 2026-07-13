@@ -91,9 +91,21 @@ class EnrollmentGrantValueTest {
             .issuers(List.of())
             .revocationSigners(List.of())
             .build();
+    var mismatchedInstallationBundle =
+        PublicTrustBundle.builder()
+            .installationId(UUID.randomUUID())
+            .version(1L)
+            .createdAt(createdAt)
+            .trustAnchors(List.of())
+            .issuers(List.of())
+            .revocationSigners(List.of())
+            .build();
 
     assertThatIllegalArgumentException()
         .isThrownBy(() -> new GrantCreationResult.Created(grant, mismatchedBundle))
+        .withMessage("Enrollment grant must carry its exact public bundle");
+    assertThatIllegalArgumentException()
+        .isThrownBy(() -> new GrantCreationResult.Retained(grant, mismatchedInstallationBundle))
         .withMessage("Enrollment grant must carry its exact public bundle");
   }
 

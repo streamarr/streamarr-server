@@ -218,7 +218,7 @@ class WorkerEnrollmentRepositoryIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName("Should retain original public trust bundle when retry follows bundle activation")
-  void shouldRetainOriginalPublicTrustBundleWhenRetryFollowsBundleActivation() throws Exception {
+  void shouldRetainOriginalPublicTrustBundleWhenRetryFollowsBundleActivation() {
     var trust = bootstrapTrust();
     var request =
         EnrollmentGrantRequest.builder()
@@ -250,7 +250,7 @@ class WorkerEnrollmentRepositoryIT extends AbstractIntegrationTest {
   }
 
   private void activateSecondBundle(
-      com.streamarr.server.services.streaming.trust.PublicTrustBundle bundle) throws Exception {
+      com.streamarr.server.services.streaming.trust.PublicTrustBundle bundle) {
     dsl.transaction(
         configuration -> {
           var transaction = DSL.using(configuration);
