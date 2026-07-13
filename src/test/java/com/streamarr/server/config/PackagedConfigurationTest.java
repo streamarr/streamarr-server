@@ -79,4 +79,31 @@ class PackagedConfigurationTest {
                 + "org.springframework.boot.loader.launch.PropertiesLauncher");
     assertThat(buildAction).contains("--buildpack paketo-buildpacks/procfile");
   }
+
+  @Test
+  @DisplayName("Should ship an opt-in Docker Compose worker path")
+  void shouldShipOptInDockerComposeWorkerPath() throws IOException {
+    var deployment =
+        Files.readString(Path.of("deploy/compose/distributed-transcoding.yml"));
+
+    assertThat(deployment)
+        .contains(
+            "entrypoint: worker",
+            "STREAMING_REMOTE_ENABLED: \"true\"",
+            "TRANSCODE_WORKER_CONTROL_PLANE_HOST: streamarr-server");
+  }
+
+  @Test
+  @DisplayName("Should ship a single-server Kubernetes path with per-pod worker identity")
+  void shouldShipSingleServerKubernetesPathWithPerPodWorkerIdentity() throws IOException {
+    var deployment =
+        Files.readString(Path.of("deploy/kubernetes/distributed-transcoding.yaml"));
+
+    assertThat(deployment)
+        .contains(
+            "replicas: 1",
+            "replicas: 2",
+            "fieldPath: metadata.uid",
+            "spiffe://streamarr.example/streamarr/worker/${POD_UID}");
+  }
 }
