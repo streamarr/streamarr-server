@@ -12,13 +12,10 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.PlainJWT;
 import com.nimbusds.jwt.SignedJWT;
 import com.streamarr.server.domain.auth.AccountRole;
-import com.streamarr.server.fakes.FakeVersionCounterReader;
 import com.streamarr.server.services.auth.TokenClaims;
 import com.streamarr.server.services.auth.TokenContract;
 import com.streamarr.server.services.auth.TokenIdentityValidator;
 import com.streamarr.server.services.auth.TokenScope;
-import com.streamarr.server.services.auth.TokenVersionCache;
-import com.streamarr.server.services.auth.TokenVersionValidator;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
@@ -55,7 +52,6 @@ class TokenCryptoConfigTest {
 
   private final TokenCryptoConfig config = new TokenCryptoConfig();
 
-  private final FakeVersionCounterReader reader = new FakeVersionCounterReader();
   private final UUID sessionId = UUID.randomUUID();
   private final UUID accountId = UUID.randomUUID();
 
@@ -365,11 +361,7 @@ class TokenCryptoConfigTest {
   }
 
   private JwtDecoder decoder(TokenSigningKeys keys) {
-    reader.sessionVersions.put(sessionId, 0L);
-    return config.jwtDecoder(
-        keys,
-        new TokenIdentityValidator(),
-        new TokenVersionValidator(new TokenVersionCache(reader)));
+    return config.jwtDecoder(keys, new TokenIdentityValidator());
   }
 
   private static String tamperSignature(String token) {
