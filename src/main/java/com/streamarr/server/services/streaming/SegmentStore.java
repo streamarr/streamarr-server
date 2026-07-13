@@ -11,5 +11,7 @@ public interface SegmentStore {
 
   boolean segmentExists(UUID sessionId, String segmentName);
 
+  void storeSegment(UUID sessionId, String segmentName, byte[] data);
+
   void deleteSession(UUID sessionId);
 }

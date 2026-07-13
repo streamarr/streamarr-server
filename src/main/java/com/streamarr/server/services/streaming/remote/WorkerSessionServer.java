@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming.remote;
 
+import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.transcode.v1.RenditionJob;
 import io.grpc.Server;
 import io.grpc.ServerInterceptors;
@@ -16,13 +17,16 @@ import java.util.concurrent.TimeUnit;
 public final class WorkerSessionServer implements AutoCloseable {
 
   private final WorkerSessionServerConfiguration configuration;
+  private final SegmentStore segmentStore;
   private final LiveWorkerConnectionRegistry workerConnections = new LiveWorkerConnectionRegistry();
 
   private Server server;
   private ExecutorService executor;
 
-  public WorkerSessionServer(WorkerSessionServerConfiguration configuration) {
+  public WorkerSessionServer(
+      WorkerSessionServerConfiguration configuration, SegmentStore segmentStore) {
     this.configuration = Objects.requireNonNull(configuration);
+    this.segmentStore = Objects.requireNonNull(segmentStore);
   }
 
   public synchronized void start() throws IOException {
@@ -47,7 +51,8 @@ public final class WorkerSessionServer implements AutoCloseable {
             .executor(executor)
             .addService(
                 ServerInterceptors.intercept(
-                    new WorkerSessionGrpcService(workerConnections), identityInterceptor))
+                    new WorkerSessionGrpcService(workerConnections, segmentStore),
+                    identityInterceptor))
             .build()
             .start();
   }

@@ -149,6 +149,26 @@ class LocalSegmentStoreTest {
   }
 
   @Test
+  @DisplayName("Should store a complete segment in its rendition directory")
+  void shouldStoreCompleteSegmentInRenditionDirectory() {
+    var sessionId = UUID.randomUUID();
+    var segmentData = "remote segment".getBytes();
+
+    store.storeSegment(sessionId, "720p/segment0.ts", segmentData);
+
+    assertThat(store.readSegment(sessionId, "720p/segment0.ts")).isEqualTo(segmentData);
+  }
+
+  @Test
+  @DisplayName("Should reject a stored segment that escapes its session directory")
+  void shouldRejectStoredSegmentThatEscapesSessionDirectory() {
+    var sessionId = UUID.randomUUID();
+
+    assertThatThrownBy(() -> store.storeSegment(sessionId, "../../escaped.ts", "data".getBytes()))
+        .isInstanceOf(InvalidSegmentPathException.class);
+  }
+
+  @Test
   @DisplayName("Should return true when segment is created by background thread")
   void shouldReturnTrueWhenSegmentIsCreatedByBackgroundThread() {
     var sessionId = UUID.randomUUID();

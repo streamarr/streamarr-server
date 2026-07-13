@@ -36,6 +36,11 @@ public class FakeSegmentStore implements SegmentStore {
   }
 
   @Override
+  public void storeSegment(UUID sessionId, String segmentName, byte[] data) {
+    addSegment(sessionId, segmentName, data);
+  }
+
+  @Override
   public void deleteSession(UUID sessionId) {
     sessions.remove(sessionId);
   }

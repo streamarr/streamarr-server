@@ -9,6 +9,7 @@ import com.streamarr.server.fakes.FakeFfmpegProcessManager;
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegCommandBuilder;
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegTranscodeEngine;
 import com.streamarr.server.services.streaming.ffmpeg.TranscodeCapabilityService;
+import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServerConfiguration;
 import com.streamarr.transcode.tls.PemTlsIdentity;
@@ -24,9 +25,12 @@ import com.streamarr.transcode.v1.TranscodeDecision;
 import com.streamarr.transcode.v1.TranscodeExecution;
 import com.streamarr.transcode.v1.TranscodeMode;
 import com.streamarr.transcode.v1.Uuid;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -148,7 +152,59 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
     }
   }
 
+  @Test
+  @DisplayName("Should upload a produced segment through the worker connection")
+  void shouldUploadProducedSegmentThroughWorkerConnection() throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+    Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var segmentData = "remote segment".getBytes();
+    var processManager = new SegmentProducingProcessManager("segment0.ts", segmentData);
+    var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
+    var streamSessionId = UUID.randomUUID();
+
+    try (var server = server(segmentStore);
+        var worker = worker(processManager, mediaRoot)) {
+      server.start();
+      worker.start("localhost", server.port());
+
+      assertThat(
+              server.dispatch(
+                  renditionJob(streamSessionId, "720p", ContainerFormat.CONTAINER_FORMAT_MPEG_TS)))
+          .isTrue();
+
+      await()
+          .atMost(5, TimeUnit.SECONDS)
+          .until(() -> segmentStore.segmentExists(streamSessionId, "720p/segment0.ts"));
+      assertThat(segmentStore.readSegment(streamSessionId, "720p/segment0.ts"))
+          .isEqualTo(segmentData);
+    }
+  }
+
+  @Test
+  @DisplayName("Should release worker capacity when a rendition fails to start")
+  void shouldReleaseWorkerCapacityWhenRenditionFailsToStart() throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+    Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var processManager = new StartupFailingProcessManager();
+
+    try (var server = server();
+        var worker = worker(processManager, mediaRoot)) {
+      server.start();
+      worker.start("localhost", server.port());
+      assertThat(server.dispatch(renditionJob(UUID.randomUUID()))).isTrue();
+      assertThat(server.dispatch(renditionJob(UUID.randomUUID()))).isTrue();
+
+      await()
+          .atMost(5, TimeUnit.SECONDS)
+          .until(() -> server.dispatch(renditionJob(UUID.randomUUID())));
+    }
+  }
+
   private WorkerSessionServer server() throws URISyntaxException {
+    return server(new LocalSegmentStore(tempDir.resolve("server-segments")));
+  }
+
+  private WorkerSessionServer server(LocalSegmentStore segmentStore) throws URISyntaxException {
     var configuration =
         WorkerSessionServerConfiguration.builder()
             .port(0)
@@ -160,7 +216,7 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
                     .trustBundle(resource("ca-cert.pem"))
                     .build())
             .build();
-    return new WorkerSessionServer(configuration);
+    return new WorkerSessionServer(configuration, segmentStore);
   }
 
   private TranscodeWorker worker(FakeFfmpegProcessManager processManager, Path mediaRoot)
@@ -169,6 +225,7 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
         TranscodeWorkerConfiguration.builder()
             .workerId(WORKER_ID)
             .bootId(UUID.randomUUID())
+            .availableSlots(2)
             .tlsIdentity(
                 PemTlsIdentity.builder()
                     .certificate(resource("worker-cert.pem"))
@@ -191,10 +248,15 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
   }
 
   private RenditionJob renditionJob(UUID streamSessionId) {
-    return renditionJob(streamSessionId, "default");
+    return renditionJob(streamSessionId, "default", ContainerFormat.CONTAINER_FORMAT_FMP4);
   }
 
   private RenditionJob renditionJob(UUID streamSessionId, String renditionName) {
+    return renditionJob(streamSessionId, renditionName, ContainerFormat.CONTAINER_FORMAT_FMP4);
+  }
+
+  private RenditionJob renditionJob(
+      UUID streamSessionId, String renditionName, ContainerFormat containerFormat) {
     return RenditionJob.newBuilder()
         .setStreamSessionId(uuid(streamSessionId))
         .setJobId(uuid(UUID.randomUUID()))
@@ -215,7 +277,7 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
                         .setBitrateBitsPerSecond(128_000))
                 .setSubtitle(
                     SubtitleDecision.newBuilder().setMode(SubtitleMode.SUBTITLE_MODE_EXCLUDE))
-                .setContainer(ContainerFormat.CONTAINER_FORMAT_FMP4)
+                .setContainer(containerFormat)
                 .setAlignKeyframesToSegments(true))
         .setRendition(
             RenditionSpec.newBuilder()
@@ -242,5 +304,37 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
   private Path resource(String name) throws URISyntaxException {
     var url = Objects.requireNonNull(getClass().getResource("/tls/" + name));
     return Path.of(url.toURI());
+  }
+
+  private static final class SegmentProducingProcessManager extends FakeFfmpegProcessManager {
+
+    private final String segmentName;
+    private final byte[] segmentData;
+
+    private SegmentProducingProcessManager(String segmentName, byte[] segmentData) {
+      this.segmentName = segmentName;
+      this.segmentData = segmentData.clone();
+    }
+
+    @Override
+    public Process startProcess(
+        UUID sessionId, String renditionName, List<String> command, Path workingDirectory) {
+      var process = super.startProcess(sessionId, renditionName, command, workingDirectory);
+      try {
+        Files.write(workingDirectory.resolve(segmentName), segmentData);
+      } catch (IOException e) {
+        throw new UncheckedIOException(e);
+      }
+      return process;
+    }
+  }
+
+  private static final class StartupFailingProcessManager extends FakeFfmpegProcessManager {
+
+    @Override
+    public Process startProcess(
+        UUID sessionId, String renditionName, List<String> command, Path workingDirectory) {
+      throw new IllegalStateException("FFmpeg failed to start");
+    }
   }
 }
