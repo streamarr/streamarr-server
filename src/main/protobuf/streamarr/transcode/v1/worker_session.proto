@@ -36,10 +36,6 @@ message WorkerRegistration {
   uint32 available_slots = 3;
 }
 
-message WorkerHeartbeat {
-  uint32 available_slots = 1;
-}
-
 enum TranscodeMode {
   TRANSCODE_MODE_UNSPECIFIED = 0;
   TRANSCODE_MODE_REMUX = 1;
@@ -148,18 +144,16 @@ message JobAttemptStopped {
 message WorkerSessionRequest {
   oneof event {
     WorkerRegistration registration = 1;
-    WorkerHeartbeat heartbeat = 2;
-    JobAttemptStarted job_attempt_started = 3;
-    JobAttemptFailed job_attempt_failed = 4;
-    JobAttemptCompleted job_attempt_completed = 5;
-    JobAttemptStopped job_attempt_stopped = 6;
+    JobAttemptStarted job_attempt_started = 2;
+    JobAttemptFailed job_attempt_failed = 3;
+    JobAttemptCompleted job_attempt_completed = 4;
+    JobAttemptStopped job_attempt_stopped = 5;
   }
 }
 
 message WorkerSessionAccepted {
   // A fresh server-issued identifier for this live connection, used to fence segment uploads.
   Uuid worker_session_id = 1;
-  uint32 heartbeat_interval_seconds = 2;
 }
 
 message StartRenditionCommand {

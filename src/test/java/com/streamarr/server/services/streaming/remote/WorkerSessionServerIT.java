@@ -19,7 +19,6 @@ import com.streamarr.transcode.v1.UploadSegmentRequest;
 import com.streamarr.transcode.v1.UploadSegmentResponse;
 import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.WorkerCapabilities;
-import com.streamarr.transcode.v1.WorkerHeartbeat;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
 import com.streamarr.transcode.v1.WorkerSessionRequest;
@@ -123,7 +122,8 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
             send(
                 channel,
                 WorkerSessionRequest.newBuilder()
-                    .setHeartbeat(WorkerHeartbeat.newBuilder().setAvailableSlots(1))
+                    .setJobAttemptCompleted(
+                        JobAttemptCompleted.newBuilder().setJobAttemptId(uuid(UUID.randomUUID())))
                     .build());
 
         assertThatThrownBy(() -> response.get(5, TimeUnit.SECONDS))
