@@ -109,20 +109,30 @@ public class InstallationTrustRepositoryImpl implements InstallationTrustReposit
     }
     persistedState.requireComplete(rootDigest);
 
+    var bundle = hydrateBundle(persistedState, rootDigest, states);
+    return Optional.of(new InstallationTrust(persistedState.installationId(), rootDigest, bundle));
+  }
+
+  private PublicTrustBundle hydrateBundle(
+      PersistedTrustState persistedState,
+      byte[] expectedRootDigest,
+      Iterable<? extends org.jooq.Record> certificates) {
     var trustAnchors = new ArrayList<X509Certificate>();
     var issuers = new ArrayList<X509Certificate>();
     var revocationSigners = new ArrayList<X509Certificate>();
-    for (var certificate : states) {
-      var kind = certificate.value7();
+    for (var certificate : certificates) {
+      var kind = certificate.get(TRANSCODE_TRUST_CERTIFICATE.KIND);
       if (kind == null) {
         continue;
       }
-      if (certificate.value8() != 0) {
+      if (certificate.get(TRANSCODE_TRUST_CERTIFICATE.ORDINAL) != 0) {
         throw new InstallationTrustException(
             "Initial public trust certificate has an invalid role and ordinal");
       }
-      var certificateDer = certificate.value9();
-      if (!MessageDigest.isEqual(sha256(certificateDer), certificate.value10())) {
+      var certificateDer = certificate.get(TRANSCODE_TRUST_CERTIFICATE.CERTIFICATE_DER);
+      if (!MessageDigest.isEqual(
+          sha256(certificateDer),
+          certificate.get(TRANSCODE_TRUST_CERTIFICATE.CERTIFICATE_SHA256))) {
         throw new InstallationTrustException(
             "Stored public trust certificate digest does not match exact DER");
       }
@@ -137,21 +147,19 @@ public class InstallationTrustRepositoryImpl implements InstallationTrustReposit
       throw new InstallationTrustException(
           "Initial public trust bundle must contain the exact certificate roles");
     }
-    if (!MessageDigest.isEqual(rootDigest, sha256(trustAnchors.getFirst()))) {
+    if (!MessageDigest.isEqual(expectedRootDigest, sha256(trustAnchors.getFirst()))) {
       throw new InstallationTrustException(
           "Installation root fingerprint does not match the active trust anchor");
     }
 
-    var bundle =
-        PublicTrustBundle.builder()
-            .installationId(persistedState.installationId())
-            .version(persistedState.bundleVersion())
-            .createdAt(persistedState.createdAt().toInstant())
-            .trustAnchors(trustAnchors)
-            .issuers(issuers)
-            .revocationSigners(revocationSigners)
-            .build();
-    return Optional.of(new InstallationTrust(persistedState.installationId(), rootDigest, bundle));
+    return PublicTrustBundle.builder()
+        .installationId(persistedState.installationId())
+        .version(persistedState.bundleVersion())
+        .createdAt(persistedState.createdAt().toInstant())
+        .trustAnchors(trustAnchors)
+        .issuers(issuers)
+        .revocationSigners(revocationSigners)
+        .build();
   }
 
   @Override
