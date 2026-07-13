@@ -1,31 +1,23 @@
 package com.streamarr.server.repositories.streaming.trust;
 
 import static com.streamarr.server.jooq.generated.tables.TranscodeActiveTrustBundle.TRANSCODE_ACTIVE_TRUST_BUNDLE;
-import static com.streamarr.server.jooq.generated.tables.TranscodeCaSigningLease.TRANSCODE_CA_SIGNING_LEASE;
 import static com.streamarr.server.jooq.generated.tables.TranscodeEnrollmentGrant.TRANSCODE_ENROLLMENT_GRANT;
-import static com.streamarr.server.jooq.generated.tables.TranscodeInstallation.TRANSCODE_INSTALLATION;
 import static com.streamarr.server.jooq.generated.tables.TranscodePublicTrustBundle.TRANSCODE_PUBLIC_TRUST_BUNDLE;
 import static com.streamarr.server.jooq.generated.tables.TranscodeTrustCertificate.TRANSCODE_TRUST_CERTIFICATE;
-import static com.streamarr.server.jooq.generated.tables.TranscodeWorkerCertificateIssuance.TRANSCODE_WORKER_CERTIFICATE_ISSUANCE;
 import static com.streamarr.server.jooq.generated.tables.TranscodeWorkerIdentity.TRANSCODE_WORKER_IDENTITY;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
-import com.streamarr.server.jooq.generated.enums.TranscodeCaSigningOperation;
 import com.streamarr.server.jooq.generated.enums.TranscodeTrustCertificateKind;
-import com.streamarr.server.services.streaming.trust.BuiltInCertificateAuthority;
-import com.streamarr.server.services.streaming.trust.CertificateAuthorityOperation;
 import com.streamarr.server.services.streaming.trust.EnrollmentGrantRequest;
 import com.streamarr.server.services.streaming.trust.GrantCreationConflict;
 import com.streamarr.server.services.streaming.trust.GrantCreationResult;
-import com.streamarr.server.services.streaming.trust.InitialTrustPublication;
 import com.streamarr.server.services.streaming.trust.PublicTrustBundleRef;
 import com.streamarr.server.services.streaming.trust.Sha256Digest;
 import java.security.MessageDigest;
 import java.security.cert.CertificateEncodingException;
 import java.security.cert.X509Certificate;
 import java.time.Duration;
-import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -49,28 +41,18 @@ class WorkerEnrollmentRepositoryIT extends AbstractIntegrationTest {
   @Autowired private CertificateAuthoritySigningLeaseRepository signingLeaseRepository;
   @Autowired private WorkerEnrollmentRepository repository;
   @Autowired private DSLContext dsl;
+  private TrustRepositoryTestFixture trustFixture;
 
   @BeforeEach
   void resetTrustState() {
-    dsl.deleteFrom(TRANSCODE_WORKER_CERTIFICATE_ISSUANCE).execute();
-    dsl.deleteFrom(TRANSCODE_ENROLLMENT_GRANT).execute();
-    dsl.deleteFrom(TRANSCODE_WORKER_IDENTITY).execute();
-    dsl.update(TRANSCODE_ACTIVE_TRUST_BUNDLE)
-        .set(TRANSCODE_ACTIVE_TRUST_BUNDLE.BUNDLE_VERSION, (Long) null)
-        .set(TRANSCODE_ACTIVE_TRUST_BUNDLE.ACTIVATED_AT, (OffsetDateTime) null)
-        .execute();
-    dsl.deleteFrom(TRANSCODE_TRUST_CERTIFICATE).execute();
-    dsl.deleteFrom(TRANSCODE_PUBLIC_TRUST_BUNDLE).execute();
-    dsl.update(TRANSCODE_INSTALLATION)
-        .set(TRANSCODE_INSTALLATION.BOOTSTRAP_ROOT_SHA256, (byte[]) null)
-        .set(TRANSCODE_INSTALLATION.INITIALIZED_AT, (OffsetDateTime) null)
-        .execute();
-    dsl.update(TRANSCODE_CA_SIGNING_LEASE)
-        .set(TRANSCODE_CA_SIGNING_LEASE.OPERATION, (TranscodeCaSigningOperation) null)
-        .set(TRANSCODE_CA_SIGNING_LEASE.OWNER_ID, (UUID) null)
-        .set(TRANSCODE_CA_SIGNING_LEASE.LEASE_UNTIL, (OffsetDateTime) null)
-        .set(TRANSCODE_CA_SIGNING_LEASE.FENCING_EPOCH, 0L)
-        .execute();
+    trustFixture =
+        TrustRepositoryTestFixture.builder()
+            .dsl(dsl)
+            .trustRepository(trustRepository)
+            .signingLeaseRepository(signingLeaseRepository)
+            .signingLeaseDuration(SIGNING_LEASE)
+            .build();
+    trustFixture.reset();
   }
 
   @Test
@@ -267,16 +249,7 @@ class WorkerEnrollmentRepositoryIT extends AbstractIntegrationTest {
   }
 
   private com.streamarr.server.services.streaming.trust.InstallationTrust bootstrapTrust() {
-    var installationId = trustRepository.installationId();
-    var material =
-        new BuiltInCertificateAuthority().create(installationId, trustRepository.databaseTime());
-    var lease =
-        signingLeaseRepository
-            .tryAcquire(CertificateAuthorityOperation.BOOTSTRAP, UUID.randomUUID(), SIGNING_LEASE)
-            .orElseThrow();
-    assertThat(trustRepository.publishInitial(lease, InitialTrustPublication.from(material)))
-        .isTrue();
-    return trustRepository.findInitialized().orElseThrow();
+    return trustFixture.bootstrap();
   }
 
   private void activateSecondBundle(
