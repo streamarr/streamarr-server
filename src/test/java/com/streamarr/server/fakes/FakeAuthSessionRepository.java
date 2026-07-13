@@ -30,27 +30,16 @@ public class FakeAuthSessionRepository extends FakeJpaRepository<AuthSession>
   }
 
   @Override
-  public Optional<Long> revoke(UUID sessionId, SessionRevocationReason reason, Instant now) {
+  public boolean revoke(UUID sessionId, SessionRevocationReason reason, Instant now) {
     return findById(sessionId)
         .filter(session -> session.getRevokedAt() == null)
         .map(
             session -> {
               session.setRevokedAt(now);
               session.setRevokedReason(reason);
-              session.setSessionVersion(session.getSessionVersion() + 1);
-              return session.getSessionVersion();
-            });
-  }
-
-  @Override
-  public Optional<Long> bumpVersion(UUID sessionId, Instant now) {
-    return findById(sessionId)
-        .filter(session -> session.getRevokedAt() == null)
-        .map(
-            session -> {
-              session.setSessionVersion(session.getSessionVersion() + 1);
-              return session.getSessionVersion();
-            });
+              return true;
+            })
+        .orElse(false);
   }
 
   @Override

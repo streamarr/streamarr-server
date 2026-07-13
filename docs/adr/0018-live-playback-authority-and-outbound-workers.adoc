@@ -9,7 +9,7 @@ It also replaces the unmerged `ADR 0018: Direct Fenced Worker Control` reviewed 
 
 === Implementation status
 
-* The version counters and their PostgreSQL notification feed remain the current implementation until the live playback-authority gate is proven and the counter columns can be removed safely.
+* The live playback-authority gate is implemented and V049 removes the version counters and their PostgreSQL notification feed.
 * Distributed transcoding is not implemented.
 * The first distributed milestone is a walking skeleton: the server dispatches one rendition over an outbound worker session, the worker runs FFmpeg, uploads one segment on a separate gRPC stream, and the segment is playable through Streamarr.
 
@@ -56,7 +56,7 @@ Password change verifies and hashes outside the transaction, then atomically rev
 Concurrent password changes may produce exactly one committed replacement; the loser must reauthenticate.
 Refresh redemption holds the live session lock through token issuance, so a logout committed first refuses refresh and a refresh paused before a committed logout cannot publish credentials afterward.
 
-The live playback gate lands and passes adversarial integration tests before version claims, counter validation, the cache/listener/publisher feed, counter columns, sequences, and pooler-specific configuration are removed.
+The live playback gate passed its adversarial integration tests before V049 removed version claims, counter validation, the cache/listener/publisher feed, counter columns, sequences, and pooler-specific configuration.
 
 === One rendition engine, two execution adapters
 
@@ -143,7 +143,7 @@ Explicitly deferred until demonstrated pressure:
 
 == Consequences
 
-* Counter retirement removes token-version claims, cache/listener/publisher code, a dedicated PostgreSQL notification connection, and the PgBouncer session-mode exception.
+* Counter retirement removed token-version claims, cache/listener/publisher code, a dedicated PostgreSQL notification connection, and the PgBouncer session-mode exception.
 * Playback revocation remains immediate at the next request through one authoritative query, while ordinary API revocation intentionally remains bounded by access-token expiry.
 * Runtime stream sessions and connection-owned jobs disappear on restart; v1 favors disposability and reconnection over persisted recovery.
 * Home users pay no broker, mesh, database-sharing, or application-CA tax.

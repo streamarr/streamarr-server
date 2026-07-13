@@ -51,7 +51,7 @@ class AccessTokenIssuerTest {
       new FakeHouseholdMembershipRepository();
   private final FakeProfileRepository profileRepository = new FakeProfileRepository();
   private final FakeAccountProfileRepository accountProfileRepository =
-      new FakeAccountProfileRepository(membershipRepository);
+      new FakeAccountProfileRepository();
 
   private final TokenCryptoConfig cryptoConfig = new TokenCryptoConfig();
 
@@ -68,26 +68,17 @@ class AccessTokenIssuerTest {
   @DisplayName("Should nest scopes when issuing profile token")
   void shouldNestScopesWhenIssuingProfileToken() {
     var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
-    var session =
-        AuthSession.builder()
-            .id(UUID.randomUUID())
-            .accountId(account.getId())
-            .sessionVersion(7)
-            .build();
+    var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
     var householdId = UUID.randomUUID();
-    var membership =
-        membershipRepository.grantMembership(
-            HouseholdMembership.builder()
-                .accountId(account.getId())
-                .householdId(householdId)
-                .householdRole(HouseholdRole.OWNER)
-                .build());
+    membershipRepository.grantMembership(
+        HouseholdMembership.builder()
+            .accountId(account.getId())
+            .householdId(householdId)
+            .householdRole(HouseholdRole.OWNER)
+            .build());
     var profile =
         profileRepository.save(
-            ProfileFixture.defaultProfileBuilder()
-                .householdId(householdId)
-                .policyVersion(5)
-                .build());
+            ProfileFixture.defaultProfileBuilder().householdId(householdId).build());
     accountProfileRepository.save(
         AccountProfile.builder()
             .accountId(account.getId())
@@ -111,16 +102,12 @@ class AccessTokenIssuerTest {
     assertThat(decoded.getSubject()).isEqualTo(account.getId().toString());
     assertThat(decoded.getClaimAsString(TokenClaims.SESSION_ID))
         .isEqualTo(session.getId().toString());
-    assertThat(decoded.<Long>getClaim(TokenClaims.SESSION_VERSION)).isEqualTo(7L);
     assertThat(decoded.getClaimAsString(TokenClaims.SCOPE)).isEqualTo("profile");
     assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ID))
         .isEqualTo(householdId.toString());
     assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ROLE)).isEqualTo("OWNER");
-    assertThat(decoded.<Long>getClaim(TokenClaims.MEMBERSHIP_VERSION))
-        .isEqualTo(membership.version());
     assertThat(decoded.getClaimAsString(TokenClaims.PROFILE_ID))
         .isEqualTo(profile.getId().toString());
-    assertThat(decoded.<Long>getClaim(TokenClaims.POLICY_VERSION)).isEqualTo(5L);
     assertThat(decoded.getClaimAsString(TokenClaims.ROLE)).isEqualTo("USER");
     assertThat(Duration.between(decoded.getIssuedAt(), decoded.getExpiresAt()))
         .isEqualTo(properties.accessTokenTtl());
@@ -166,12 +153,7 @@ class AccessTokenIssuerTest {
   @DisplayName("Should issue account scoped token when no context selected")
   void shouldIssueAccountScopedTokenWhenNoContextSelected() {
     var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
-    var session =
-        AuthSession.builder()
-            .id(UUID.randomUUID())
-            .accountId(account.getId())
-            .sessionVersion(2)
-            .build();
+    var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
 
     var token = issuer.issue(TokenContext.builder().account(account).session(session).build());
 
@@ -221,12 +203,7 @@ class AccessTokenIssuerTest {
 
   private TokenContext accountContext() {
     var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
-    var session =
-        AuthSession.builder()
-            .id(UUID.randomUUID())
-            .accountId(account.getId())
-            .sessionVersion(1)
-            .build();
+    var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
     return TokenContext.builder().account(account).session(session).build();
   }
 
@@ -236,13 +213,12 @@ class AccessTokenIssuerTest {
     var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
     var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
     var householdId = UUID.randomUUID();
-    var membership =
-        membershipRepository.grantMembership(
-            HouseholdMembership.builder()
-                .accountId(account.getId())
-                .householdId(householdId)
-                .householdRole(HouseholdRole.PARENT)
-                .build());
+    membershipRepository.grantMembership(
+        HouseholdMembership.builder()
+            .accountId(account.getId())
+            .householdId(householdId)
+            .householdRole(HouseholdRole.PARENT)
+            .build());
 
     var token =
         issuer.issue(
@@ -259,8 +235,6 @@ class AccessTokenIssuerTest {
     assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ID))
         .isEqualTo(householdId.toString());
     assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ROLE)).isEqualTo("PARENT");
-    assertThat(decoded.<Long>getClaim(TokenClaims.MEMBERSHIP_VERSION))
-        .isEqualTo(membership.version());
     assertThat(decoded.getClaimAsString(TokenClaims.PROFILE_ID)).isNull();
   }
 

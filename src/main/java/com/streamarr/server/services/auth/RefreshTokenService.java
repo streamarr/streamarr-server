@@ -69,7 +69,7 @@ public class RefreshTokenService {
     return new IssuedRefreshToken(rawToken, session);
   }
 
-  /** Revokes the session and its whole token family; the version bump kills live access tokens. */
+  /** Revokes the session and its whole refresh-token family. */
   @Transactional
   public void logout(java.util.UUID sessionId) {
     var now = clock.instant();
@@ -93,9 +93,9 @@ public class RefreshTokenService {
   }
 
   // Reuse detection must survive its own exception and any enclosing rollback: the family
-  // revocation and version bump are deferred to an after-completion REQUIRES_NEW transaction
-  // (TokenReuseRevoker), so they persist even though this exception rolls back the joined
-  // refresh transaction. The throw is only the caller's signal.
+  // revocation is deferred to an after-completion REQUIRES_NEW transaction (TokenReuseRevoker),
+  // so it persists even though this exception rolls back the joined refresh transaction. The
+  // throw is only the caller's signal.
   @Transactional(noRollbackFor = TokenReuseDetectedException.class)
   public RefreshResult redeem(String rawToken) {
     var digest = digestOf(rawToken);

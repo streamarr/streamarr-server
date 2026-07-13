@@ -30,7 +30,4 @@ public class HouseholdMembership extends BaseAuditableEntity<HouseholdMembership
   @Enumerated(EnumType.STRING)
   @JdbcTypeCode(SqlTypes.NAMED_ENUM)
   private HouseholdRole householdRole;
-
-  // Membership version counter ("mv" claim) — bumped on profile-link changes.
-  private long membershipVersion;
 }

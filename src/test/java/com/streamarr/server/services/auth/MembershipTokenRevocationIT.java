@@ -30,7 +30,7 @@ class MembershipTokenRevocationIT extends AbstractIntegrationTest {
       var rawToken = authTestSupport.householdBearer(identity);
       var decoded = jwtDecoder.decode(rawToken);
 
-      membershipRepository.revokeMembership(accountId, householdId).orElseThrow();
+      assertThat(membershipRepository.revokeMembership(accountId, householdId)).isTrue();
 
       assertThat(jwtDecoder.decode(rawToken).getSubject()).isEqualTo(decoded.getSubject());
     } finally {

@@ -170,7 +170,6 @@ class RefreshTokenServiceTest {
     var session = sessionRepository.findById(issued.session().getId()).orElseThrow();
     assertThat(session.getRevokedAt()).isNotNull();
     assertThat(session.getRevokedReason()).isEqualTo(SessionRevocationReason.TOKEN_REUSE);
-    assertThat(session.getSessionVersion()).isEqualTo(1L);
 
     assertThat(tokenRepository.findAll())
         .allSatisfy(token -> assertThat(token.getStatus()).isEqualTo(RefreshTokenStatus.REVOKED));
@@ -278,7 +277,6 @@ class RefreshTokenServiceTest {
     var session = sessionRepository.findById(issued.session().getId()).orElseThrow();
     assertThat(session.getRevokedAt()).isNotNull();
     assertThat(session.getRevokedReason()).isEqualTo(SessionRevocationReason.TOKEN_REUSE);
-    assertThat(session.getSessionVersion()).isEqualTo(1L);
     assertThat(tokenRepository.findAll())
         .allSatisfy(token -> assertThat(token.getStatus()).isEqualTo(RefreshTokenStatus.REVOKED));
   }

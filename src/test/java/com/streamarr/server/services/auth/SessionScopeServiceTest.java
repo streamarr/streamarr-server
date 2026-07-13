@@ -35,7 +35,7 @@ class SessionScopeServiceTest {
   private final FakeHouseholdMembershipRepository membershipRepository =
       new FakeHouseholdMembershipRepository();
   private final FakeAccountProfileRepository accountProfileRepository =
-      new FakeAccountProfileRepository(membershipRepository);
+      new FakeAccountProfileRepository();
   private final FakeAuthSessionRepository sessionRepository = new FakeAuthSessionRepository();
   private final FakeUserAccountRepository userAccountRepository = new FakeUserAccountRepository();
 
