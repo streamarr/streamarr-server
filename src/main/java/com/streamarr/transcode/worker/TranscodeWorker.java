@@ -43,7 +43,10 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.io.FileUtils;
 
+@Slf4j
 public final class TranscodeWorker implements AutoCloseable {
 
   private static final int CONNECTION_TIMEOUT_SECONDS = 5;
@@ -121,7 +124,8 @@ public final class TranscodeWorker implements AutoCloseable {
 
   private void startRendition(StartRenditionCommand command) {
     var job = command.getJob();
-    Path outputDirectory;
+    var outputDirectory =
+        configuration.segmentBasePath().resolve(fromProto(job.getJobAttemptId()).toString());
     try {
       synchronized (this) {
         if (!command.getTarget().equals(identity())) {
@@ -129,8 +133,6 @@ public final class TranscodeWorker implements AutoCloseable {
           return;
         }
 
-        outputDirectory =
-            configuration.segmentBasePath().resolve(fromProto(job.getJobAttemptId()).toString());
         Files.createDirectories(outputDirectory);
         var request = jobMapper.map(job);
         engine.start(request, outputDirectory);
@@ -144,6 +146,7 @@ public final class TranscodeWorker implements AutoCloseable {
                 .build());
       }
     } catch (IOException | RuntimeException _) {
+      deleteOutputDirectory(outputDirectory);
       sendFailure(job, JobAttemptFailure.JOB_ATTEMPT_FAILURE_STARTUP_FAILED);
       return;
     }
@@ -152,6 +155,16 @@ public final class TranscodeWorker implements AutoCloseable {
       uploadProducedSegments(job, outputDirectory);
     } catch (Exception _) {
       failRendition(job, JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED);
+    } finally {
+      deleteOutputDirectory(outputDirectory);
+    }
+  }
+
+  private static void deleteOutputDirectory(Path outputDirectory) {
+    try {
+      FileUtils.deleteDirectory(outputDirectory.toFile());
+    } catch (IOException e) {
+      log.warn("Failed to delete transcode attempt output {}", outputDirectory, e);
     }
   }
 
