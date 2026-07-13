@@ -1,0 +1,176 @@
+= ADR 0018: Live Playback Authority and Outbound Transcode Workers
+
+== Status
+
+Accepted
+
+This ADR supersedes link:0017-playback-enforcement-lifecycle.adoc[ADR 0017] in full and supersedes the playback-counter-retirement and distributed-transcode direction in link:0016-authentication-mechanisms-and-session-security.adoc[ADR 0016].
+It also replaces the unmerged `ADR 0018: Direct Fenced Worker Control` reviewed in pull request #223, including that draft's embedded certificate authority and inbound worker-endpoint decisions.
+
+=== Implementation status
+
+* The version counters and their PostgreSQL notification feed remain the current implementation until the live playback-authority gate is proven and the counter columns can be removed safely.
+* Distributed transcoding is not implemented.
+* The first distributed milestone is a walking skeleton: the server dispatches one rendition over an outbound worker session, the worker runs FFmpeg, uploads one segment on a separate gRPC stream, and the segment is playable through Streamarr.
+
+== Context
+
+Streamarr must retire token version counters and support horizontal transcoding without making a small installation operate distributed coordination infrastructure.
+ADR 0017 attempted to replace the counters with a durable playback state machine, cleanup ledger, and parent-deletion choreography.
+The unmerged ADR 0018 draft then extended that machinery with inbound worker endpoints, generations, leases, durable command state, and an application-operated certificate authority.
+Those designs solved general multi-replica and crash-recovery problems before one remote rendition could play, duplicated state already owned by FFmpeg or a live connection, and changed local playback from independent rendition failure to whole-ladder failure.
+
+The v1 topology is one Streamarr control-plane process and zero or more worker processes.
+Within that boundary, live database authority and a worker-owned connection are stronger and smaller primitives than persisted lifecycle and fencing machines.
+
+== Decision
+
+=== Playback authority is live, not persisted
+
+A stream session is a runtime aggregate stored in a `RuntimeStreamSessionRegistry`; `repository` remains reserved for database access.
+`playback` names the token and request surface, while `stream session` names the runtime aggregate.
+No stream-session row, persisted playback state machine, termination intent, generation, lease, or cleanup ledger is introduced.
+
+Stream creation and every playlist, initialization-segment, and media-segment request pass one indexed live-authority query.
+The query requires all of the following at one database snapshot:
+
+* the authorization session exists, matches the token's authorization-session id, account, active household, and active profile, and has no `revoked_at` value;
+* the account is enabled;
+* the account still belongs to the selected household; and
+* the account still has the selected profile grant in that household.
+
+The request gate first requires `requested streamSessionId == token streamSessionId == runtime streamSessionId` and a matching runtime entry; a registry miss returns `404` without a database query.
+The strong live-authority predicate is kept behind one service/repository boundary and is not reconstructed from scattered role checks.
+When content-policy rules are implemented, the authorization facade must evaluate their authoritative state at this gate rather than reintroducing policy-version claims.
+A request admitted before a revocation transaction commits may complete; every gate evaluated after commit denies.
+Deleting media during playback is not another authority machine: subsequent segment lookup fails gracefully with `404`.
+
+Ordinary API access tokens retain their issued claims until strict expiry.
+Every JWT requires `exp` and has zero clock leeway: a token is valid only while `now < exp`; missing `exp` is invalid.
+Logout revokes the authorization session and refresh-token family, so refresh fails immediately while an already-issued ordinary API token retains at most one access-token lifetime.
+Account disablement also refuses refresh.
+Membership or profile-grant loss does not revoke the authorization session: the next refresh revalidates live context and returns the highest scope still authorized, while the prior API token remains bounded by its existing expiry.
+Playback is stricter because its live-authority query observes logout, password change, account disablement, membership loss, and profile-grant loss on the next request.
+
+Password change verifies and hashes outside the transaction, then atomically revokes every existing authorization session and refresh-token family for the account and creates one replacement session for the caller.
+Concurrent password changes may produce exactly one committed replacement; the loser must reauthenticate.
+Refresh redemption holds the live session lock through token issuance, so a logout committed first refuses refresh and a refresh paused before a committed logout cannot publish credentials afterward.
+
+The live playback gate lands and passes adversarial integration tests before version claims, counter validation, the cache/listener/publisher feed, counter columns, sequences, and pooler-specific configuration are removed.
+
+=== One rendition engine, two execution adapters
+
+Local playback keeps its observable behavior, including independent rendition failure: one failed rendition does not withdraw healthy renditions.
+There is one framework-free FFmpeg engine extracted from that existing per-rendition behavior, not a second executor and not a whole-ladder atomic engine.
+Local and remote execution adapt the same engine contract.
+No dormant port, single-implementation interface, coordinator, or lifecycle abstraction lands before its first production caller.
+
+The shared vocabulary is `rendition`, never a mix of rendition, variant, quality, and profile for the same concept.
+A `stream_session_id` identifies the runtime playback aggregate.
+A `job_id` identifies one logical rendition transcode for that stream session, and a fresh `job_attempt_id` identifies each dispatch attempt.
+Attempt ids are unique rather than monotonically ordered; stale results and segments are rejected unless the attempt is owned by the current worker connection.
+
+Media is addressed by `MediaSourceRef(source_namespace_id, relative_key)`.
+`source_namespace_id` selects an operator-configured mount mapping and `relative_key` is an opaque key: it is not a host path and must not be percent-decoded or normalized.
+Workers never connect to the Streamarr database.
+
+=== Workers dial out over one mTLS gRPC channel
+
+Each worker opens one long-lived bidirectional `WorkerSession` to the server.
+The opening exchange registers the worker's stable identity, fresh process `boot_id`, and capabilities; heartbeats report current capacity.
+Server commands and worker results use Protobuf envelopes on that stream.
+The worker needs no advertised endpoint, inbound port, NAT traversal, endpoint discovery, or endpoint-binding lease.
+
+The live connection is the fence.
+Closing it removes the worker from the in-memory registry and stops jobs owned by it; messages, results, and segment uploads from an old connection, boot, or job attempt fail closed.
+Server restart drops runtime stream sessions and worker sessions, stops their playback jobs as connections close, and requires clients and workers to reconnect.
+This disposability is an accepted single-server-v1 consequence, not a promise of durable job recovery.
+
+Segment bytes do not share the control-message stream.
+Each segment upload uses its own bounded HTTP/2 gRPC stream over the worker's mTLS channel so bulk bytes cannot block heartbeats and commands at the application stream level.
+Before this data plane lands, a worker-push benchmark must reconfirm the throughput result recorded by the earlier server-pull spike.
+
+The contract uses Protobuf with explicit unspecified enum zero values, unambiguous field names such as `stream_session_id`, and no JSON, `Any`, filesystem paths, command lines, process ids, tokens, passwords, or secrets.
+Buf formatting, lint, and breaking-change checks protect the shipped wire contract.
+
+=== Streamarr consumes workload identity
+
+Streamarr does not operate a certificate authority, enrollment protocol, grant store, issuance ledger, rotation controller, or lost-response recovery protocol.
+The server and workers read externally issued PEM certificate, private-key, and trust-bundle files.
+The TLS stack performs certificate-chain, signature, validity, hostname, and extended-key-usage verification; application code does not reimplement RFC 5280 path validation.
+
+On the server, the application additionally requires one allowed `spiffe://<configured-trust-domain>/streamarr/worker/<worker_id>` URI SAN and maps it to the registered `worker_id`.
+The self-reported identity must match the authenticated identity; a message describing the sender uses `worker`, while `target` is reserved for an addressed peer.
+Malformed, missing, duplicate, or mismatched identities fail closed and receive adversarial tests.
+
+For a small installation, administrators may provide static certificates or run an optional one-shot offline helper that invokes Smallstep `step` to create a local CA, server certificate, and worker certificate.
+The helper owns no persistent state and no Java X.509 implementation.
+For Kubernetes, cert-manager, SPIRE, a service mesh, Vault, or a cloud CA may mount the same files.
+Initial certificate rotation is restart-based.
+
+=== Deployment and delivery boundaries
+
+Distributed transcoding is optional and adds no resource or dependency to the default local path.
+Docker Compose may enable one server and optional workers with shared media mounts and externally supplied certificates.
+The initial Kubernetes topology is exactly one server replica and an `N`-replica worker Deployment with mounted mTLS Secrets or projected identities.
+
+Implementation advances vertically.
+The walking skeleton is complete only when one remotely produced segment plays through the server; registration richness, capacity policy, trust adapters, and operational hardening follow a working path.
+Every new abstraction must hide real complexity for a live caller, and deleting it must make that caller more complicated rather than merely make unused machinery disappear.
+Before the walking skeleton, crossing approximately 3,000 new production lines or 8,000 total handwritten lines triggers a stop-and-scope review.
+
+Behavior is tested at the highest public boundary that proves it.
+Security and concurrency behavior use real PostgreSQL integration tests where transactions matter; engine and orchestration behavior use fakes through public contracts.
+New code targets near-complete behavior coverage, zero SonarCloud new issues, and no test assertions coupled to private wiring.
+
+The replacement is not complete until behavior-level regression tests prove at least:
+
+* a token is rejected one second after `exp`, and a JWT without `exp` is rejected;
+* a refresh paused before committed logout cannot issue credentials afterward, and a disabled account cannot refresh;
+* playback admission concurrent with profile-grant deletion does not recreate the PostgreSQL 18 `FOR SHARE` deadlock;
+* two concurrent password changes commit exactly one replacement session;
+* one failed local rendition leaves healthy renditions playable;
+* media deletion during playback degrades to `404`; and
+* a disconnected or replaced worker cannot publish stale results or segments.
+
+Explicitly deferred until demonstrated pressure:
+
+* multiple Streamarr control-plane replicas, worker-session affinity, failover, and durable job recovery;
+* NATS or another broker between control-plane replicas;
+* hot certificate reload and direct SPIFFE Workload API integration;
+* worker-to-client or object-store segment delivery; and
+* generalized scheduling beyond current capacity and capability needs.
+
+== Consequences
+
+* Counter retirement removes token-version claims, cache/listener/publisher code, a dedicated PostgreSQL notification connection, and the PgBouncer session-mode exception.
+* Playback revocation remains immediate at the next request through one authoritative query, while ordinary API revocation intentionally remains bounded by access-token expiry.
+* Runtime stream sessions and connection-owned jobs disappear on restart; v1 favors disposability and reconnection over persisted recovery.
+* Home users pay no broker, mesh, database-sharing, or application-CA tax.
+* Kubernetes operators can use canonical identity issuers without changing the Streamarr application protocol.
+* Per-rendition jobs preserve the existing partial-ladder experience and allow failed work to be retried independently.
+* A later multi-server design must add worker-session affinity or a broker deliberately; the v1 connection fence must not be stretched into an implicit distributed registry.
+
+== Rejected Alternatives
+
+* Persisted stream-session lifecycle and cleanup intent — it duplicates runtime/process state and makes parent deletion and restart recovery a domain machine before v1 needs either.
+* Whole-ladder atomic publication — it regresses existing playback by withdrawing healthy renditions when one rendition fails.
+* Embedded online CA — identity issuance, enrollment, rotation, and recovery belong to cert-manager, SPIRE, Smallstep, Vault, service meshes, or cloud CAs.
+* Inbound worker RPC endpoints — they impose reachability, NAT, discovery, and endpoint-binding problems that an outbound session deletes.
+* PostgreSQL as the worker message bus — workers stay database-independent and communicate through the Protobuf/gRPC contract.
+* NATS, Redpanda, Kafka, or a service mesh as a v1 requirement — each adds deployment cost before multiple control-plane replicas demonstrate the need.
+* Monotonic generations, durable command ledgers, fenced leases, and capacity reservations — fresh attempt ids plus connection ownership are sufficient inside the accepted single-server topology.
+* Hand-written certificate path validation or X.509 issuance — the TLS stack and external tooling already implement those security-sensitive standards.
+
+== References
+
+* link:0015-authorization-profiles-and-content-controls.adoc[ADR 0015: Authorization, Profiles, and Content Controls]
+* link:0016-authentication-mechanisms-and-session-security.adoc[ADR 0016: Authentication Mechanisms and Session Security]
+* link:0017-playback-enforcement-lifecycle.adoc[ADR 0017: Persisted Playback-Enforcement Lifecycle]
+* https://github.com/streamarr/streamarr-server/issues/76[Issue #76: Distributed transcoding control plane]
+* https://github.com/streamarr/streamarr-server/issues/211[Issue #211: Persist stream sessions in PostgreSQL]
+* https://github.com/streamarr/streamarr-server/issues/213[Issue #213: Retire token version counters]
+* https://github.com/streamarr/streamarr-server/pull/223[Pull request #223: superseded distributed-transcode ADR]
+* https://spiffe.io/docs/latest/spiffe-about/spiffe-concepts/[SPIFFE concepts]
+* https://cert-manager.io/docs/[cert-manager documentation]
+* https://smallstep.com/docs/step-cli/[Smallstep `step` CLI]

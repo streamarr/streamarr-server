@@ -56,7 +56,8 @@ Model roles as first-class values, not booleans, and route every role and permis
 
 Authenticated requests carry account, session, and — once selected — household and profile identity, scoped and validated as link:0016-authentication-mechanisms-and-session-security.adoc[ADR 0016] specifies.
 Each access token authorizes only the context it names and is validated per request as ADR 0016 specifies.
-Profile restriction, household membership, and profile membership changes take effect through ADR 0016's revocation model: once link:0017-playback-enforcement-lifecycle.adoc[ADR 0017] lands, playback terminates through its persisted enforcement authority, while API-surface claims retain at most one bounded access-token lifetime of staleness — during the counter transition the version-counter invalidation provides instant effect on both surfaces.
+Household-membership and profile-grant changes take effect through ADR 0016's revocation model as superseded by link:0018-live-playback-authority-and-outbound-workers.adoc[ADR 0018]: playback checks live authority on every request, while ordinary API claims retain at most one bounded access-token lifetime of staleness.
+Content-policy enforcement against authoritative profile restrictions remains deferred; when implemented, it joins the same playback gate rather than reintroducing policy-version claims.
 
 .Access-token scopes
 [cols="1,2,3,2",options="header"]
@@ -92,7 +93,8 @@ Profile switching is distinct from authentication.
 Authenticating a TV device proves the account/device session (ADR 0016) but authorizes no profile on it.
 Switching into a PIN-protected profile requires a server-verified PIN; any profile may be PIN-protected, and once restricted profiles exist, every profile with a less restrictive policy — unrestricted ones above all — must be PIN-protected.
 A verified profile PIN issues a fresh profile token but does not authenticate an account, register a device, or satisfy MFA.
-Changing a profile's restrictions takes effect through ADR 0016's revocation model: instant through policy versioning while the counter transition lasts, then through the stream-session enforcement authority for active playback with API-surface staleness bounded by the access-token lifetime. Content-policy enforcement against authoritative state remains a deferred obligation of the content-control work.
+Content-policy enforcement against authoritative profile restrictions remains a deferred obligation of the content-control work.
+When implemented, active playback re-evaluates it through ADR 0018's authorization facade and live gate, while ordinary API staleness stays bounded by the access-token lifetime.
 
 Store membership separately from accounts.
 `household_memberships` links accounts to households; `profiles` carry a household foreign key; and `account_profiles` links an account to a profile only when the account already belongs to that profile's household.
@@ -128,7 +130,7 @@ Every future search adapter must translate that same typed policy into its nativ
 An adapter that cannot express the full policy must fail closed for restricted profiles.
 
 Stream, manifest, and playback-URL issuance is profile-bound and re-evaluates the same visibility policy.
-Active stream and transcode sessions join session invalidation — through version counters during the transition, through the ADR 0017 enforcement lifecycle once it lands — so a policy or membership change can deny or terminate playback server-side.
+Active stream and transcode sessions join session invalidation through ADR 0018's live playback-authority gate, so a membership or profile-grant change denies the next playback request server-side without a persisted stream-session lifecycle.
 
 Store every raw certification a title carries, preserving its rating system, value, country, and media type.
 A profile sets a single `maximumAllowedRatingAge` — parents pick an age ceiling, not per-system knobs.

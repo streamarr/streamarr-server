@@ -2,7 +2,10 @@
 
 == Status
 
-Accepted
+Superseded by link:0018-live-playback-authority-and-outbound-workers.adoc[ADR 0018]
+
+NOTE: This record is retained as decision history and must not be implemented.
+ADR 0018 replaces it with runtime stream sessions and a live playback-authority query.
 
 === Implementation status
 
