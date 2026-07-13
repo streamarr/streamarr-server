@@ -1,6 +1,5 @@
 package com.streamarr.server.repositories.streaming.trust;
 
-import static com.streamarr.server.jooq.generated.tables.TranscodeCaSigningLease.TRANSCODE_CA_SIGNING_LEASE;
 import static com.streamarr.server.jooq.generated.tables.TranscodeEnrollmentGrant.TRANSCODE_ENROLLMENT_GRANT;
 import static com.streamarr.server.jooq.generated.tables.TranscodeWorkerCertificateIssuance.TRANSCODE_WORKER_CERTIFICATE_ISSUANCE;
 
@@ -52,7 +51,7 @@ public class WorkerCertificateIssuanceRepositoryImpl
       DSLContext transaction,
       CertificateIssuanceClaimRequest claimRequest,
       CertificateSigningLease lease) {
-    if (!lockCurrentLease(transaction, lease)) {
+    if (!CertificateSigningLeaseGuard.lockCurrent(transaction, lease)) {
       return rejected(CertificateIssuanceClaimRejection.SIGNING_LEASE_UNAVAILABLE);
     }
     var request = claimRequest.request();
@@ -149,13 +148,7 @@ public class WorkerCertificateIssuanceRepositoryImpl
             .forUpdate()
             .fetchOptional();
     if (existing.isEmpty()) {
-      if (context.missingClaimRejection() == CertificateIssuanceClaimRejection.REQUEST_CONFLICT) {
-        if (requestIdExists(transaction, context.request().requestId())) {
-          return rejected(CertificateIssuanceClaimRejection.REQUEST_CONFLICT);
-        }
-        return new CertificateIssuanceClaimResult.RetryWithNewParameters();
-      }
-      return rejected(context.missingClaimRejection());
+      return missingClaim(transaction, context);
     }
     if (!isExactRequest(existing.orElseThrow(), context.request(), context.grantId())) {
       return rejected(CertificateIssuanceClaimRejection.REQUEST_CONFLICT);
@@ -165,6 +158,17 @@ public class WorkerCertificateIssuanceRepositoryImpl
       throw new SigningLeaseLostException();
     }
     return toReadyToSign(retained);
+  }
+
+  private CertificateIssuanceClaimResult missingClaim(
+      DSLContext transaction, RetainedClaimContext context) {
+    if (context.missingClaimRejection() != CertificateIssuanceClaimRejection.REQUEST_CONFLICT) {
+      return rejected(context.missingClaimRejection());
+    }
+    if (requestIdExists(transaction, context.request().requestId())) {
+      return rejected(CertificateIssuanceClaimRejection.REQUEST_CONFLICT);
+    }
+    return new CertificateIssuanceClaimResult.RetryWithNewParameters();
   }
 
   private boolean requestIdExists(DSLContext transaction, UUID requestId) {
@@ -203,18 +207,6 @@ public class WorkerCertificateIssuanceRepositoryImpl
         .and(TRANSCODE_WORKER_CERTIFICATE_ISSUANCE.CERTIFICATE_DER.isNull())
         .returning()
         .fetchSingle();
-  }
-
-  private boolean lockCurrentLease(DSLContext transaction, CertificateSigningLease lease) {
-    var leaseUntil =
-        transaction
-            .select(TRANSCODE_CA_SIGNING_LEASE.LEASE_UNTIL)
-            .from(TRANSCODE_CA_SIGNING_LEASE)
-            .where(CertificateSigningLeaseGuard.identity(lease))
-            .forUpdate()
-            .fetchOptional(TRANSCODE_CA_SIGNING_LEASE.LEASE_UNTIL);
-    return leaseUntil.isPresent()
-        && leaseUntil.orElseThrow().isAfter(CertificateSigningLeaseGuard.databaseTime(transaction));
   }
 
   private CertificateIssuanceClaimResult.ReadyToSign toReadyToSign(

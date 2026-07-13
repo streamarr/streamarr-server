@@ -33,6 +33,17 @@ final class CertificateSigningLeaseGuard {
             .and(TRANSCODE_CA_SIGNING_LEASE.LEASE_UNTIL.gt(statementTimestamp())));
   }
 
+  static boolean lockCurrent(DSLContext transaction, CertificateSigningLease lease) {
+    var leaseUntil =
+        transaction
+            .select(TRANSCODE_CA_SIGNING_LEASE.LEASE_UNTIL)
+            .from(TRANSCODE_CA_SIGNING_LEASE)
+            .where(identity(lease))
+            .forUpdate()
+            .fetchOptional(TRANSCODE_CA_SIGNING_LEASE.LEASE_UNTIL);
+    return leaseUntil.isPresent() && leaseUntil.orElseThrow().isAfter(databaseTime(transaction));
+  }
+
   static OffsetDateTime databaseTime(DSLContext transaction) {
     return transaction.select(statementTimestamp()).fetchSingle().value1();
   }
