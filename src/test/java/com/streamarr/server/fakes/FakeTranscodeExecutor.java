@@ -19,6 +19,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   private final Set<ProcessKey> started = new HashSet<>();
   private final Set<UUID> stopped = new HashSet<>();
   private final List<TranscodeRequest> startedRequests = new ArrayList<>();
+  private int availableSlots = Integer.MAX_VALUE;
 
   @Override
   public TranscodeHandle start(TranscodeRequest request) {
@@ -48,6 +49,15 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   @Override
   public boolean isHealthy() {
     return true;
+  }
+
+  @Override
+  public int availableSlots() {
+    return availableSlots;
+  }
+
+  public void setAvailableSlots(int availableSlots) {
+    this.availableSlots = availableSlots;
   }
 
   public Set<UUID> getStarted() {

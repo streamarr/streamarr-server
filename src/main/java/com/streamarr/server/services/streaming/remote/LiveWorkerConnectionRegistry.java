@@ -79,6 +79,10 @@ final class LiveWorkerConnectionRegistry {
     return !connections.isEmpty();
   }
 
+  int availableSlots() {
+    return connections.values().stream().mapToInt(WorkerConnection::availableSlots).sum();
+  }
+
   void finishJobAttempt(UUID workerId, UUID workerSessionId, UUID jobAttemptId) {
     var connection = connections.get(workerId);
     if (connection != null && connection.workerSessionId().equals(workerSessionId)) {
@@ -156,6 +160,10 @@ final class LiveWorkerConnectionRegistry {
 
     private synchronized void finishJobAttempt(UUID jobAttemptId) {
       activeRenditions.remove(jobAttemptId);
+    }
+
+    private synchronized int availableSlots() {
+      return Math.max(0, maximumActiveRenditions - activeRenditions.size());
     }
 
     private synchronized void stopStreamSession(UUID streamSessionId) {

@@ -46,4 +46,9 @@ public final class RemoteTranscodeExecutor implements TranscodeExecutor {
   public boolean isHealthy() {
     return workerServer.hasConnectedWorker();
   }
+
+  @Override
+  public int availableSlots() {
+    return workerServer.availableSlots();
+  }
 }

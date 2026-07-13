@@ -43,6 +43,11 @@ public class LocalTranscodeExecutor implements TranscodeExecutor {
     return engine.isHealthy();
   }
 
+  @Override
+  public int availableSlots() {
+    return Integer.MAX_VALUE;
+  }
+
   private Path resolveOutputDir(TranscodeRequest request) {
     if (StreamSession.defaultVariant().equals(request.variantLabel())) {
       return segmentStore.getOutputDirectory(request.sessionId());

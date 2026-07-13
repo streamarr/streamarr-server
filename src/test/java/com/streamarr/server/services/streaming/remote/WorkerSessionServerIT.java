@@ -269,10 +269,12 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
 
       try (var worker = connect(channel, AUTHENTICATED_WORKER_ID)) {
         assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
+        assertThat(server.availableSlots()).isEqualTo(1);
         var first = renditionJob();
         var second = renditionJob();
         assertThat(server.dispatch(first)).isTrue();
         assertThat(worker.nextResponse().getStartRendition().getJob()).isEqualTo(first);
+        assertThat(server.availableSlots()).isZero();
 
         assertThat(server.dispatch(second)).isFalse();
 
@@ -281,7 +283,8 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
                 .setJobAttemptCompleted(
                     JobAttemptCompleted.newBuilder().setJobAttemptId(first.getJobAttemptId()))
                 .build());
-        await().atMost(5, TimeUnit.SECONDS).until(() -> server.dispatch(second));
+        await().atMost(5, TimeUnit.SECONDS).until(() -> server.availableSlots() == 1);
+        assertThat(server.dispatch(second)).isTrue();
         assertThat(worker.nextResponse().getStartRendition().getJob()).isEqualTo(second);
       } finally {
         shutdown(channel);
