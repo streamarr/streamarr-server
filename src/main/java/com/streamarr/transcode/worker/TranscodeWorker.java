@@ -1,6 +1,10 @@
 package com.streamarr.transcode.worker;
 
+import static com.streamarr.transcode.protocol.ProtoUuid.fromProto;
+import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
+
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegTranscodeEngine;
+import com.streamarr.transcode.protocol.ProtoUuid;
 import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.JobAttemptFailure;
 import com.streamarr.transcode.v1.JobAttemptStarted;
@@ -9,7 +13,6 @@ import com.streamarr.transcode.v1.RenditionJob;
 import com.streamarr.transcode.v1.StartRenditionCommand;
 import com.streamarr.transcode.v1.StopRenditionCommand;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
-import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
@@ -74,7 +77,7 @@ public final class TranscodeWorker implements AutoCloseable {
   private WorkerSessionRequest registration() {
     var capabilities = WorkerCapabilities.newBuilder();
     configuration.sourceNamespaces().keySet().stream()
-        .map(TranscodeWorker::uuid)
+        .map(ProtoUuid::toProto)
         .forEach(capabilities::addSourceNamespaceIds);
     var registration =
         WorkerRegistration.newBuilder()
@@ -86,8 +89,8 @@ public final class TranscodeWorker implements AutoCloseable {
 
   private WorkerIdentity identity() {
     return WorkerIdentity.newBuilder()
-        .setWorkerId(uuid(configuration.workerId()))
-        .setBootId(uuid(configuration.bootId()))
+        .setWorkerId(toProto(configuration.workerId()))
+        .setBootId(toProto(configuration.bootId()))
         .build();
   }
 
@@ -100,12 +103,12 @@ public final class TranscodeWorker implements AutoCloseable {
 
     try {
       var outputDirectory =
-          configuration.segmentBasePath().resolve(uuid(job.getJobAttemptId()).toString());
+          configuration.segmentBasePath().resolve(fromProto(job.getJobAttemptId()).toString());
       Files.createDirectories(outputDirectory);
       var request = jobMapper.map(job);
       engine.start(request, outputDirectory);
       activeRenditions.put(
-          uuid(job.getJobAttemptId()),
+          fromProto(job.getJobAttemptId()),
           new ActiveRendition(request.sessionId(), request.variantLabel()));
       send(
           WorkerSessionRequest.newBuilder()
@@ -122,7 +125,7 @@ public final class TranscodeWorker implements AutoCloseable {
       return;
     }
 
-    var jobAttemptId = uuid(command.getJobAttemptId());
+    var jobAttemptId = fromProto(command.getJobAttemptId());
     var rendition = activeRenditions.remove(jobAttemptId);
     if (rendition == null) {
       return;
@@ -155,17 +158,6 @@ public final class TranscodeWorker implements AutoCloseable {
         .values()
         .forEach(rendition -> engine.stop(rendition.streamSessionId(), rendition.renditionName()));
     activeRenditions.clear();
-  }
-
-  private static Uuid uuid(UUID value) {
-    return Uuid.newBuilder()
-        .setMostSignificantBits(value.getMostSignificantBits())
-        .setLeastSignificantBits(value.getLeastSignificantBits())
-        .build();
-  }
-
-  private static UUID uuid(Uuid value) {
-    return new UUID(value.getMostSignificantBits(), value.getLeastSignificantBits());
   }
 
   @Override

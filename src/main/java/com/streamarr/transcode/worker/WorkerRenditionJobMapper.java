@@ -1,5 +1,7 @@
 package com.streamarr.transcode.worker;
 
+import static com.streamarr.transcode.protocol.ProtoUuid.fromProto;
+
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.AudioMode;
 import com.streamarr.server.domain.streaming.ContainerFormat;
@@ -9,10 +11,8 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.transcode.v1.RenditionJob;
-import com.streamarr.transcode.v1.Uuid;
 import java.util.Optional;
 import java.util.OptionalInt;
-import java.util.UUID;
 
 final class WorkerRenditionJobMapper {
 
@@ -26,7 +26,7 @@ final class WorkerRenditionJobMapper {
     var rendition = job.getRendition();
     var execution = job.getExecution();
     return TranscodeRequest.builder()
-        .sessionId(uuid(job.getStreamSessionId()))
+        .sessionId(fromProto(job.getStreamSessionId()))
         .sourcePath(sourceResolver.resolve(job.getSource()))
         .seekPosition(execution.getSeekPositionSeconds())
         .segmentDuration(execution.getSegmentDurationSeconds())
@@ -108,9 +108,5 @@ final class WorkerRenditionJobMapper {
       case CONTAINER_FORMAT_UNSPECIFIED, UNRECOGNIZED ->
           throw new WorkerJobException("Container format is required");
     };
-  }
-
-  private static UUID uuid(Uuid value) {
-    return new UUID(value.getMostSignificantBits(), value.getLeastSignificantBits());
   }
 }
