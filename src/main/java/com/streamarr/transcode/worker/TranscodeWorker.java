@@ -161,7 +161,10 @@ public final class TranscodeWorker implements AutoCloseable {
   private void uploadRendition(RenditionJob job, Path outputDirectory) {
     try {
       uploadProducedSegments(job, outputDirectory);
-    } catch (Exception _) {
+    } catch (InterruptedException _) {
+      Thread.currentThread().interrupt();
+      failRendition(job, JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED);
+    } catch (IOException | ExecutionException | TimeoutException | RuntimeException _) {
       failRendition(job, JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED);
     } finally {
       deleteOutputDirectory(outputDirectory);
