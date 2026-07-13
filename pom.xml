@@ -361,7 +361,6 @@
                 <artifactId>protobuf-maven-plugin</artifactId>
                 <version>${protobuf-maven-plugin.version}</version>
                 <configuration>
-                    <skip>true</skip>
                     <protoc kind="binary-maven">
                         <version>${protobuf-java.version}</version>
                     </protoc>
