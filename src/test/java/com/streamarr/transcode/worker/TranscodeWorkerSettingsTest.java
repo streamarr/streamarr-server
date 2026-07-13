@@ -43,7 +43,8 @@ class TranscodeWorkerSettingsTest {
     var first = TranscodeWorkerSettings.fromEnvironment(requiredEnvironment());
     var second = TranscodeWorkerSettings.fromEnvironment(requiredEnvironment());
 
-    assertThat(first.workerConfiguration().workerId()).isEqualTo(second.workerConfiguration().workerId());
+    assertThat(first.workerConfiguration().workerId())
+        .isEqualTo(second.workerConfiguration().workerId());
     assertThat(first.workerConfiguration().bootId())
         .isNotEqualTo(second.workerConfiguration().bootId());
   }

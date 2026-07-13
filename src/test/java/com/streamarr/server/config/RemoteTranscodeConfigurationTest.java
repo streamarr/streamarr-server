@@ -30,7 +30,8 @@ class RemoteTranscodeConfigurationTest {
   private final ApplicationContextRunner contextRunner =
       new ApplicationContextRunner()
           .withConfiguration(AutoConfigurations.of(ValidationAutoConfiguration.class))
-          .withUserConfiguration(RemoteTranscodeConfiguration.class, SegmentStoreConfiguration.class);
+          .withUserConfiguration(
+              RemoteTranscodeConfiguration.class, SegmentStoreConfiguration.class);
 
   @Test
   @DisplayName("Should leave remote transcoding inactive by default")
