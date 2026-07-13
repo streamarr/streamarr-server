@@ -122,18 +122,19 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
     return metadata.getRenditionName() + "/" + metadata.getSegmentName();
   }
 
-  private boolean validLength(long contentLength) {
+  private static boolean validLength(long contentLength) {
     return contentLength > 0 && contentLength <= MAXIMUM_SEGMENT_BYTES;
   }
 
-  private boolean validName(String value) {
+  private static boolean validName(String value) {
     return !value.isBlank()
         && !value.contains("..")
         && !value.contains("/")
         && !value.contains("\\");
   }
 
-  private boolean contentTypeMatchesName(SegmentContentType contentType, String segmentName) {
+  private static boolean contentTypeMatchesName(
+      SegmentContentType contentType, String segmentName) {
     return switch (contentType) {
       case SEGMENT_CONTENT_TYPE_VIDEO_MP2T -> segmentName.endsWith(".ts");
       case SEGMENT_CONTENT_TYPE_VIDEO_MP4 ->

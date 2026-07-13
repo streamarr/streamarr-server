@@ -146,7 +146,7 @@ public class LocalSegmentStore implements SegmentStore {
     }
   }
 
-  private void moveIntoPlace(Path source, Path target) throws IOException {
+  private static void moveIntoPlace(Path source, Path target) throws IOException {
     try {
       Files.move(
           source, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
