@@ -440,6 +440,90 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should reject unsafe segment metadata without publishing bytes")
+  void shouldRejectUnsafeSegmentMetadataWithoutPublishingBytes() throws Exception {
+    var segmentStore = new FakeSegmentStore();
+    try (var server = server(segmentStore)) {
+      server.start();
+      var channel = workerChannel(server.port());
+
+      var identity = workerIdentity(UUID.randomUUID());
+      try (var worker = connect(channel, identity)) {
+        var workerSession = worker.nextResponse().getSessionAccepted();
+        var job = renditionJob();
+        assertThat(server.dispatch(job)).isTrue();
+        assertThat(worker.nextResponse().getStartRendition().getJob()).isEqualTo(job);
+        var metadata =
+            segmentMetadata(workerSession, identity, job).setContentLengthBytes(1).build();
+        var invalidMetadata =
+            List.of(
+                metadata.toBuilder().setContentLengthBytes(0).build(),
+                metadata.toBuilder().setContentLengthBytes(-1).build(),
+                metadata.toBuilder().setContentLengthBytes(16L * 1024 * 1024 + 1).build(),
+                metadata.toBuilder().setSegmentName(" ").build(),
+                metadata.toBuilder().setSegmentName("../segment0.ts").build(),
+                metadata.toBuilder().setSegmentName("nested/segment0.ts").build(),
+                metadata.toBuilder().setSegmentName("nested\\segment0.ts").build(),
+                metadata.toBuilder()
+                    .setContentType(SegmentContentType.SEGMENT_CONTENT_TYPE_UNSPECIFIED)
+                    .build(),
+                metadata.toBuilder().setContentTypeValue(999).build());
+
+        invalidMetadata.forEach(
+            unsafe ->
+                assertUploadRejectedAsInvalidMetadata(upload(channel, unsafe, new byte[] {1})));
+        assertThat(server.stopRendition(uuid(job.getJobAttemptId()))).isTrue();
+        assertThat(worker.nextResponse().hasStopRendition()).isTrue();
+
+        for (var unsafeName : List.of(" ", "..", "720/p", "720\\p")) {
+          var unsafeJob =
+              renditionJob().toBuilder()
+                  .setRendition(RenditionSpec.newBuilder().setRenditionName(unsafeName))
+                  .build();
+          assertThat(server.dispatch(unsafeJob)).isTrue();
+          assertThat(worker.nextResponse().getStartRendition().getJob()).isEqualTo(unsafeJob);
+          var unsafe =
+              segmentMetadata(workerSession, identity, unsafeJob).setContentLengthBytes(1).build();
+
+          assertUploadRejectedAsInvalidMetadata(upload(channel, unsafe, new byte[] {1}));
+          assertThat(server.stopRendition(uuid(unsafeJob.getJobAttemptId()))).isTrue();
+          assertThat(worker.nextResponse().hasStopRendition()).isTrue();
+        }
+        assertThat(segmentStore.segmentExists(uuid(job.getStreamSessionId()), "720p/segment0.ts"))
+            .isFalse();
+      } finally {
+        shutdown(channel);
+      }
+    }
+  }
+
+  @Test
+  @DisplayName("Should report storage failure without accepting a segment")
+  void shouldReportStorageFailureWithoutAcceptingSegment() throws Exception {
+    try (var server = server(new FailingSegmentStore())) {
+      server.start();
+      var channel = workerChannel(server.port());
+
+      var identity = workerIdentity(UUID.randomUUID());
+      try (var worker = connect(channel, identity)) {
+        var workerSession = worker.nextResponse().getSessionAccepted();
+        var job = renditionJob();
+        assertThat(server.dispatch(job)).isTrue();
+        assertThat(worker.nextResponse().getStartRendition().getJob()).isEqualTo(job);
+        var data = "segment".getBytes();
+        var metadata =
+            segmentMetadata(workerSession, identity, job)
+                .setContentLengthBytes(data.length)
+                .build();
+
+        assertUploadRejected(upload(channel, metadata, data), Status.Code.INTERNAL);
+      } finally {
+        shutdown(channel);
+      }
+    }
+  }
+
+  @Test
   @DisplayName("Should reject an upload that loses connection ownership before publication")
   void shouldRejectUploadThatLosesConnectionOwnershipBeforePublication() throws Exception {
     var segmentStore = new FakeSegmentStore();
@@ -649,6 +733,18 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
         .matches(throwable -> Status.fromThrowable(throwable).getCode() == expectedStatus);
   }
 
+  private void assertUploadRejectedAsInvalidMetadata(
+      CompletableFuture<UploadSegmentResponse> response) {
+    assertThatThrownBy(() -> response.get(5, TimeUnit.SECONDS))
+        .rootCause()
+        .matches(
+            throwable -> {
+              var status = Status.fromThrowable(throwable);
+              return status.getCode() == Status.Code.INVALID_ARGUMENT
+                  && status.getDescription().equals("Segment metadata is invalid");
+            });
+  }
+
   private Uuid uuid(UUID value) {
     return Uuid.newBuilder()
         .setMostSignificantBits(value.getMostSignificantBits())
@@ -734,6 +830,14 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
   private record SegmentUploadAttempt(
       StreamObserver<UploadSegmentRequest> requests,
       CompletableFuture<UploadSegmentResponse> response) {}
+
+  private static final class FailingSegmentStore extends FakeSegmentStore {
+
+    @Override
+    public void storeSegment(UUID sessionId, String segmentName, byte[] data) {
+      throw new IllegalStateException("Storage unavailable");
+    }
+  }
 
   private record TestWorkerConnection(
       StreamObserver<WorkerSessionRequest> requests,
