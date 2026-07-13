@@ -7,6 +7,7 @@ import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.StreamarrServerApplication;
 import com.streamarr.server.fakes.FakeFfmpegProcessManager;
 import com.streamarr.server.fakes.FakeSegmentProducingFfmpegProcessManager;
+import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegCommandBuilder;
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegTranscodeEngine;
 import com.streamarr.server.services.streaming.ffmpeg.TranscodeCapabilityService;
@@ -325,7 +326,7 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
     return server(new LocalSegmentStore(tempDir.resolve("server-segments")));
   }
 
-  private WorkerSessionServer server(LocalSegmentStore segmentStore) throws URISyntaxException {
+  private WorkerSessionServer server(SegmentStore segmentStore) throws URISyntaxException {
     var configuration =
         WorkerSessionServerConfiguration.builder()
             .port(0)
