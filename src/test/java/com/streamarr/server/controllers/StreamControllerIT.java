@@ -11,6 +11,8 @@ import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.PlaybackTokenIssuer;
+import com.streamarr.server.services.library.StreamingSessionCleanupListener;
+import com.streamarr.server.services.library.events.LibraryRemovedEvent;
 import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
 import com.streamarr.server.services.streaming.PlaybackRequest;
 import com.streamarr.server.services.streaming.SegmentStore;
@@ -22,6 +24,7 @@ import java.time.Duration;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.DisplayName;
@@ -46,6 +49,7 @@ class StreamControllerIT extends AbstractIntegrationTest {
   @Autowired private AuthTestSupport authTestSupport;
 
   @Autowired private JwtDecoder jwtDecoder;
+  @Autowired private StreamingSessionCleanupListener streamingSessionCleanupListener;
 
   private AuthTestSupport.TestIdentity identity;
 
@@ -148,6 +152,27 @@ class StreamControllerIT extends AbstractIntegrationTest {
         .perform(
             get("/api/stream/{id}/segment99.ts", session.getSessionId())
                 .param("t", playbackToken(session.getSessionId())))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  @DisplayName("Should return 404 for a produced segment after its media is deleted")
+  void shouldReturn404ForProducedSegmentAfterItsMediaIsDeleted() throws Exception {
+    var session = StreamSessionFixture.buildMpegtsSession();
+    var segmentData = new byte[] {0x47, 0x00, 0x11, 0x10};
+    STUB_SERVICE.addSession(session);
+    FAKE_SEGMENT_STORE.addSegment(session.getSessionId(), "segment0.ts", segmentData);
+    var token = playbackToken(session.getSessionId());
+
+    mockMvc
+        .perform(get("/api/stream/{id}/segment0.ts", session.getSessionId()).param("t", token))
+        .andExpect(status().isOk());
+
+    streamingSessionCleanupListener.onLibraryRemoved(
+        new LibraryRemovedEvent("/media", Set.of(session.getMediaFileId())));
+
+    mockMvc
+        .perform(get("/api/stream/{id}/segment0.ts", session.getSessionId()).param("t", token))
         .andExpect(status().isNotFound());
   }
 
