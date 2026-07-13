@@ -39,6 +39,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -58,6 +59,7 @@ public final class TranscodeWorker implements AutoCloseable {
   private ExecutorService executor;
   private StreamObserver<WorkerSessionRequest> requests;
   private WorkerSessionAccepted workerSession;
+  private CompletableFuture<Void> disconnected;
 
   public TranscodeWorker(TranscodeWorkerConfiguration configuration, FfmpegTranscodeEngine engine) {
     this.configuration = configuration;
@@ -81,11 +83,20 @@ public final class TranscodeWorker implements AutoCloseable {
     executor = Executors.newVirtualThreadPerTaskExecutor();
     channel = NettyChannelBuilder.forAddress(host, port).sslContext(sslContext).build();
     var accepted = new CompletableFuture<WorkerSessionAccepted>();
+    disconnected = new CompletableFuture<>();
     requests =
         TranscodeWorkerServiceGrpc.newStub(channel)
             .workerSession(new WorkerResponseObserver(accepted));
     send(registration());
-    workerSession = accepted.get(CONNECTION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    accepted.get(CONNECTION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+  }
+
+  public void awaitDisconnection() throws InterruptedException {
+    try {
+      disconnected.get();
+    } catch (ExecutionException e) {
+      throw new WorkerJobException("Worker session failed", e);
+    }
   }
 
   private WorkerSessionRequest registration() {
@@ -343,6 +354,7 @@ public final class TranscodeWorker implements AutoCloseable {
       Thread.currentThread().interrupt();
     }
     executor.shutdownNow();
+    disconnected.complete(null);
     requests = null;
     workerSession = null;
     channel = null;
@@ -360,7 +372,8 @@ public final class TranscodeWorker implements AutoCloseable {
     @Override
     public void onNext(WorkerSessionResponse response) {
       if (response.hasSessionAccepted()) {
-        accepted.complete(response.getSessionAccepted());
+        workerSession = response.getSessionAccepted();
+        accepted.complete(workerSession);
         return;
       }
       if (response.hasStartRendition()) {
@@ -375,12 +388,14 @@ public final class TranscodeWorker implements AutoCloseable {
     @Override
     public void onError(Throwable throwable) {
       stopActiveRenditions();
+      disconnected.complete(null);
       accepted.completeExceptionally(throwable);
     }
 
     @Override
     public void onCompleted() {
       stopActiveRenditions();
+      disconnected.complete(null);
       if (!accepted.isDone()) {
         accepted.completeExceptionally(new IllegalStateException("Worker session closed"));
       }
