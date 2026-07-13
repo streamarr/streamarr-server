@@ -168,6 +168,26 @@ class WorkerEnrollmentRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should preserve preexisting worker identity when token digest collides")
+  void shouldPreservePreexistingWorkerIdentityWhenTokenDigestCollides() {
+    bootstrapTrust();
+    var originalWorkerId = UUID.randomUUID();
+    var preexistingWorkerId = UUID.randomUUID();
+    var claimedDigest = new Sha256Digest(new byte[32]);
+    var otherDigestBytes = new byte[32];
+    otherDigestBytes[0] = 1;
+    repository.createGrant(grantRequest(originalWorkerId, claimedDigest));
+    repository.createGrant(grantRequest(preexistingWorkerId, new Sha256Digest(otherDigestBytes)));
+
+    var result = repository.createGrant(grantRequest(preexistingWorkerId, claimedDigest));
+
+    assertThat(result)
+        .isEqualTo(new GrantCreationResult.Conflict(GrantCreationConflict.TOKEN_DIGEST_IN_USE));
+    assertThat(dsl.fetchCount(TRANSCODE_ENROLLMENT_GRANT)).isEqualTo(2);
+    assertThat(dsl.fetchCount(TRANSCODE_WORKER_IDENTITY)).isEqualTo(2);
+  }
+
+  @Test
   @DisplayName("Should create exactly one grant when token digest collides concurrently")
   void shouldCreateExactlyOneGrantWhenTokenDigestCollidesConcurrently() throws Exception {
     bootstrapTrust();
@@ -234,6 +254,14 @@ class WorkerEnrollmentRepositoryIT extends AbstractIntegrationTest {
     assertThat(retried.grant()).isEqualTo(created.grant());
     assertThat(retried.publicTrustBundle()).isEqualTo(created.publicTrustBundle());
     assertThat(retried.publicTrustBundle().version()).isEqualTo(1L);
+  }
+
+  private EnrollmentGrantRequest grantRequest(UUID workerId, Sha256Digest tokenDigest) {
+    return EnrollmentGrantRequest.builder()
+        .workerId(workerId)
+        .tokenSha256(tokenDigest)
+        .lifetime(Duration.ofMinutes(10))
+        .build();
   }
 
   private com.streamarr.server.services.streaming.trust.InstallationTrust bootstrapTrust() {

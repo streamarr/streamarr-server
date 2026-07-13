@@ -44,7 +44,6 @@ class Sha256DigestTest {
     var differentValue = value.clone();
     differentValue[0] = 8;
 
-    assertThat(first).isEqualTo(first);
     assertThat(first)
         .isEqualTo(second)
         .hasSameHashCodeAs(second)
