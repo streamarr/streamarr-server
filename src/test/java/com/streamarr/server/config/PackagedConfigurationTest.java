@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -63,5 +64,17 @@ class PackagedConfigurationTest {
           assertThat(properties.iterations()).isGreaterThanOrEqualTo(MIN_ITERATIONS);
           assertThat(properties.parallelism()).isGreaterThanOrEqualTo(MIN_PARALLELISM);
         });
+  }
+
+  @Test
+  @DisplayName("Should ship separate server and transcode worker process types")
+  void shouldShipSeparateServerAndTranscodeWorkerProcessTypes() throws IOException {
+    var processes = Set.copyOf(Files.readAllLines(Path.of("Procfile")));
+
+    assertThat(processes)
+        .contains(
+            "web: java org.springframework.boot.loader.launch.JarLauncher",
+            "worker: java -Dloader.main=com.streamarr.transcode.worker.TranscodeWorkerApplication "
+                + "org.springframework.boot.loader.launch.PropertiesLauncher");
   }
 }
