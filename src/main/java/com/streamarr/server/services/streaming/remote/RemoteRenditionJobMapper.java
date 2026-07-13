@@ -41,7 +41,7 @@ final class RemoteRenditionJobMapper {
         .build();
   }
 
-  private UUID logicalJobId(TranscodeRequest request) {
+  private static UUID logicalJobId(TranscodeRequest request) {
     var name = request.sessionId() + "\0" + request.variantLabel();
     return UUID.nameUUIDFromBytes(name.getBytes(UTF_8));
   }
@@ -52,10 +52,7 @@ final class RemoteRenditionJobMapper {
       throw new TranscodeException("Media source is outside the configured source namespace");
     }
 
-    var relativeKey = sourceRoot.relativize(normalized).toString();
-    if (File.separatorChar != '/') {
-      relativeKey = relativeKey.replace(File.separatorChar, '/');
-    }
+    var relativeKey = sourceRoot.relativize(normalized).toString().replace(File.separatorChar, '/');
     return MediaSourceRef.newBuilder()
         .setSourceNamespaceId(toProto(sourceNamespaceId))
         .setRelativeKey(relativeKey)
