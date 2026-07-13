@@ -111,8 +111,9 @@ class WorkerMediaSourceResolverTest {
   void shouldReportUnavailableMediaSource() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var resolver = new WorkerMediaSourceResolver(Map.of(SOURCE_NAMESPACE_ID, mediaRoot));
+    var unavailableSource = source("x");
 
-    assertThatThrownBy(() -> resolver.resolve(source("x")))
+    assertThatThrownBy(() -> resolver.resolve(unavailableSource))
         .isInstanceOf(WorkerJobException.class)
         .hasMessage("Media source is unavailable")
         .hasCauseInstanceOf(IOException.class);
@@ -124,8 +125,9 @@ class WorkerMediaSourceResolverTest {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     Files.createDirectory(mediaRoot.resolve("folder"));
     var resolver = new WorkerMediaSourceResolver(Map.of(SOURCE_NAMESPACE_ID, mediaRoot));
+    var directorySource = source("folder");
 
-    assertThatThrownBy(() -> resolver.resolve(source("folder")))
+    assertThatThrownBy(() -> resolver.resolve(directorySource))
         .isInstanceOf(WorkerJobException.class)
         .hasMessage("Media source is not a readable file in its namespace");
   }

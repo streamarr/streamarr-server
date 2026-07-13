@@ -84,9 +84,10 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
     try (var server = server();
         var worker = worker(new FakeFfmpegProcessManager(), mediaRoot)) {
       server.start();
-      worker.start("localhost", server.port());
+      var serverPort = server.port();
+      worker.start("localhost", serverPort);
 
-      assertThatThrownBy(() -> worker.start("localhost", server.port()))
+      assertThatThrownBy(() -> worker.start("localhost", serverPort))
           .isInstanceOf(IllegalStateException.class)
           .hasMessage("Transcode worker is already started");
     }
