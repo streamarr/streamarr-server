@@ -25,8 +25,6 @@ enum ContainerFormat {
 
 message WorkerCapabilities {
   repeated Uuid source_namespace_ids = 1;
-  repeated string video_codec_families = 2;
-  repeated ContainerFormat container_formats = 3;
 }
 
 message WorkerRegistration {
