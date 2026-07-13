@@ -33,6 +33,7 @@ import com.streamarr.server.repositories.media.MovieRepository;
 import com.streamarr.server.repositories.media.SeasonRepository;
 import com.streamarr.server.repositories.media.SeriesRepository;
 import com.streamarr.server.services.streaming.FfprobeService;
+import com.streamarr.server.services.streaming.PlaybackAuthorityGate;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
@@ -84,6 +85,7 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
   @TestBean TranscodeExecutor transcodeExecutor;
   @TestBean FfprobeService ffprobeService;
   @TestBean SegmentStore segmentStore;
+  @TestBean PlaybackAuthorityGate authorityGate;
 
   private static final FakeTranscodeExecutor FAKE_EXECUTOR = new FakeTranscodeExecutor();
   private static final FakeFfprobeService FAKE_FFPROBE = new FakeFfprobeService();
@@ -99,6 +101,10 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
 
   static SegmentStore segmentStore() {
     return FAKE_SEGMENT_STORE;
+  }
+
+  static PlaybackAuthorityGate authorityGate() {
+    return _ -> true;
   }
 
   @BeforeEach

@@ -122,6 +122,7 @@ class HlsStreamingSmokeTest {
             decisionService,
             qualityLadderService,
             properties,
+            _ -> true,
             new InMemoryStreamSessionRegistry(),
             new MutexFactory<>());
 

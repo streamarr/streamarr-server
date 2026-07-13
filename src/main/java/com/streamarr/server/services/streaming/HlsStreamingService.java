@@ -10,6 +10,7 @@ import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.MaxConcurrentTranscodesException;
 import com.streamarr.server.exceptions.MediaFileNotFoundException;
 import com.streamarr.server.repositories.media.MediaFileRepository;
@@ -42,11 +43,16 @@ public class HlsStreamingService implements StreamingService {
   private final TranscodeDecisionService transcodeDecisionService;
   private final QualityLadderService qualityLadderService;
   private final StreamingProperties properties;
+  private final PlaybackAuthorityGate authorityGate;
   private final RuntimeStreamSessionRegistry runtimeRegistry;
   private final MutexFactory<UUID> resumeMutex;
 
   @Override
   public StreamSession createSession(CreateStreamSessionCommand command) {
+    if (!authorityGate.allows(command.authority())) {
+      throw new AuthenticationRequiredException();
+    }
+
     var mediaFileId = command.mediaFileId();
     var options = command.options();
     var mediaFile =
@@ -91,11 +97,15 @@ public class HlsStreamingService implements StreamingService {
   @Override
   public Optional<StreamSession> accessSession(PlaybackRequest request) {
     var session = runtimeRegistry.findById(request.streamSessionId());
-    session.ifPresent(
-        s -> {
-          s.setLastAccessedAt(Instant.now());
-          runtimeRegistry.save(s);
-        });
+    if (session.isEmpty() || !request.authority().equals(session.get().getAuthority())) {
+      return Optional.empty();
+    }
+    if (!authorityGate.allows(request.authority())) {
+      return Optional.empty();
+    }
+
+    session.get().setLastAccessedAt(Instant.now());
+    runtimeRegistry.save(session.get());
     return session;
   }
 
