@@ -47,6 +47,7 @@ import com.streamarr.server.jooq.generated.tables.TranscodeEnrollmentGrant;
 import com.streamarr.server.jooq.generated.tables.TranscodeInstallation;
 import com.streamarr.server.jooq.generated.tables.TranscodePublicTrustBundle;
 import com.streamarr.server.jooq.generated.tables.TranscodeTrustCertificate;
+import com.streamarr.server.jooq.generated.tables.TranscodeWorkerCertificateIssuance;
 import com.streamarr.server.jooq.generated.tables.TranscodeWorkerIdentity;
 import com.streamarr.server.jooq.generated.tables.UserAccount;
 import com.streamarr.server.jooq.generated.tables.WatchHistory;
@@ -289,6 +290,11 @@ public class Public extends SchemaImpl {
     public final TranscodeTrustCertificate TRANSCODE_TRUST_CERTIFICATE = TranscodeTrustCertificate.TRANSCODE_TRUST_CERTIFICATE;
 
     /**
+     * The table <code>public.transcode_worker_certificate_issuance</code>.
+     */
+    public final TranscodeWorkerCertificateIssuance TRANSCODE_WORKER_CERTIFICATE_ISSUANCE = TranscodeWorkerCertificateIssuance.TRANSCODE_WORKER_CERTIFICATE_ISSUANCE;
+
+    /**
      * The table <code>public.transcode_worker_identity</code>.
      */
     public final TranscodeWorkerIdentity TRANSCODE_WORKER_IDENTITY = TranscodeWorkerIdentity.TRANSCODE_WORKER_IDENTITY;
@@ -362,6 +368,7 @@ public class Public extends SchemaImpl {
             TranscodeInstallation.TRANSCODE_INSTALLATION,
             TranscodePublicTrustBundle.TRANSCODE_PUBLIC_TRUST_BUNDLE,
             TranscodeTrustCertificate.TRANSCODE_TRUST_CERTIFICATE,
+            TranscodeWorkerCertificateIssuance.TRANSCODE_WORKER_CERTIFICATE_ISSUANCE,
             TranscodeWorkerIdentity.TRANSCODE_WORKER_IDENTITY,
             UserAccount.USER_ACCOUNT,
             WatchHistory.WATCH_HISTORY

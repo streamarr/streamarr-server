@@ -47,6 +47,7 @@ import com.streamarr.server.jooq.generated.tables.TranscodeEnrollmentGrant;
 import com.streamarr.server.jooq.generated.tables.TranscodeInstallation;
 import com.streamarr.server.jooq.generated.tables.TranscodePublicTrustBundle;
 import com.streamarr.server.jooq.generated.tables.TranscodeTrustCertificate;
+import com.streamarr.server.jooq.generated.tables.TranscodeWorkerCertificateIssuance;
 import com.streamarr.server.jooq.generated.tables.TranscodeWorkerIdentity;
 import com.streamarr.server.jooq.generated.tables.UserAccount;
 import com.streamarr.server.jooq.generated.tables.WatchHistory;
@@ -272,6 +273,11 @@ public class Tables {
      * The table <code>public.transcode_trust_certificate</code>.
      */
     public static final TranscodeTrustCertificate TRANSCODE_TRUST_CERTIFICATE = TranscodeTrustCertificate.TRANSCODE_TRUST_CERTIFICATE;
+
+    /**
+     * The table <code>public.transcode_worker_certificate_issuance</code>.
+     */
+    public static final TranscodeWorkerCertificateIssuance TRANSCODE_WORKER_CERTIFICATE_ISSUANCE = TranscodeWorkerCertificateIssuance.TRANSCODE_WORKER_CERTIFICATE_ISSUANCE;
 
     /**
      * The table <code>public.transcode_worker_identity</code>.

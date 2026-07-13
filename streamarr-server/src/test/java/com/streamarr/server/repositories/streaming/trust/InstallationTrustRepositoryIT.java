@@ -6,6 +6,7 @@ import static com.streamarr.server.jooq.generated.tables.TranscodeEnrollmentGran
 import static com.streamarr.server.jooq.generated.tables.TranscodeInstallation.TRANSCODE_INSTALLATION;
 import static com.streamarr.server.jooq.generated.tables.TranscodePublicTrustBundle.TRANSCODE_PUBLIC_TRUST_BUNDLE;
 import static com.streamarr.server.jooq.generated.tables.TranscodeTrustCertificate.TRANSCODE_TRUST_CERTIFICATE;
+import static com.streamarr.server.jooq.generated.tables.TranscodeWorkerCertificateIssuance.TRANSCODE_WORKER_CERTIFICATE_ISSUANCE;
 import static com.streamarr.server.jooq.generated.tables.TranscodeWorkerIdentity.TRANSCODE_WORKER_IDENTITY;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -48,6 +49,7 @@ class InstallationTrustRepositoryIT extends AbstractIntegrationTest {
 
   @BeforeEach
   void resetTrustState() {
+    dsl.deleteFrom(TRANSCODE_WORKER_CERTIFICATE_ISSUANCE).execute();
     dsl.deleteFrom(TRANSCODE_ENROLLMENT_GRANT).execute();
     dsl.deleteFrom(TRANSCODE_WORKER_IDENTITY).execute();
     dsl.update(TRANSCODE_ACTIVE_TRUST_BUNDLE)

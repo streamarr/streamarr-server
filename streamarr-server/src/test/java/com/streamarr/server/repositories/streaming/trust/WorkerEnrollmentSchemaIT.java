@@ -10,13 +10,18 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.jooq.generated.enums.TranscodeCaSigningOperation;
+import com.streamarr.server.jooq.generated.enums.TranscodeTrustCertificateKind;
 import com.streamarr.server.services.streaming.trust.BuiltInCertificateAuthority;
 import com.streamarr.server.services.streaming.trust.CertificateAuthorityOperation;
+import com.streamarr.server.services.streaming.trust.CertificateSigningLease;
 import com.streamarr.server.services.streaming.trust.InitialTrustPublication;
+import com.streamarr.server.services.streaming.trust.Sha256Digest;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.UUID;
+import lombok.Builder;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,6 +43,7 @@ class WorkerEnrollmentSchemaIT extends AbstractIntegrationTest {
 
   @BeforeEach
   void resetTrustState() {
+    dsl.deleteFrom(DSL.table(DSL.name("transcode_worker_certificate_issuance"))).execute();
     dsl.deleteFrom(DSL.table(DSL.name("transcode_enrollment_grant"))).execute();
     dsl.deleteFrom(DSL.table(DSL.name("transcode_worker_identity"))).execute();
     dsl.update(TRANSCODE_ACTIVE_TRUST_BUNDLE)
@@ -229,4 +235,355 @@ class WorkerEnrollmentSchemaIT extends AbstractIntegrationTest {
                 .fetchSingle(bundleVersionField))
         .isEqualTo(1L);
   }
+
+  @Test
+  @DisplayName("Should persist fixed certificate issuance claim against exact enrollment grant")
+  void shouldPersistFixedCertificateIssuanceClaimAgainstExactEnrollmentGrant() {
+    var fixture = issuanceFixture();
+    var requestId = UUID.randomUUID();
+    insertIssuanceClaim(fixture, requestId);
+
+    var issuanceTable = DSL.table(DSL.name("transcode_worker_certificate_issuance"));
+    var workerIdField = DSL.field(DSL.name("worker_id"), UUID.class);
+    var grantIdField = DSL.field(DSL.name("grant_id"), UUID.class);
+    var requestIdField = DSL.field(DSL.name("request_id"), UUID.class);
+    var bundleVersionField = DSL.field(DSL.name("trust_bundle_version"), Long.class);
+    var subjectPublicKeyDigestField =
+        DSL.field(DSL.name("subject_public_key_sha256"), byte[].class);
+    var issuerDigestField = DSL.field(DSL.name("issuer_certificate_sha256"), byte[].class);
+    var serialNumberField = DSL.field(DSL.name("serial_number"), byte[].class);
+    var fencingEpochField = DSL.field(DSL.name("signing_fencing_epoch"), Long.class);
+
+    var stored =
+        dsl.select(
+                grantIdField,
+                workerIdField,
+                bundleVersionField,
+                subjectPublicKeyDigestField,
+                issuerDigestField,
+                serialNumberField,
+                fencingEpochField)
+            .from(issuanceTable)
+            .where(requestIdField.eq(requestId))
+            .fetchSingle();
+    assertThat(stored.value1()).isEqualTo(fixture.grantId());
+    assertThat(stored.value2()).isEqualTo(fixture.workerId());
+    assertThat(stored.value3()).isEqualTo(1L);
+    assertThat(stored.value4()).containsExactly(new byte[32]);
+    assertThat(stored.value5()).containsExactly(fixture.issuerDigest().bytes());
+    assertThat(stored.value6()).containsExactly(1);
+    assertThat(stored.value7()).isEqualTo(fixture.issuanceLease().fencingEpoch());
+  }
+
+  @Test
+  @DisplayName("Should allow only one certificate issuance claim per enrollment grant")
+  void shouldAllowOnlyOneCertificateIssuanceClaimPerEnrollmentGrant() {
+    var fixture = issuanceFixture();
+    insertIssuanceClaim(fixture, UUID.randomUUID());
+    var secondRequestId = UUID.randomUUID();
+
+    assertThatThrownBy(() -> insertIssuanceClaim(fixture, secondRequestId))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("uq_transcode_worker_certificate_issuance_grant");
+  }
+
+  @Test
+  @DisplayName("Should reject certificate issuance claim when worker differs from exact grant")
+  void shouldRejectCertificateIssuanceClaimWhenWorkerDiffersFromExactGrant() {
+    var fixture = issuanceFixture();
+    var requestId = UUID.randomUUID();
+    var differentWorkerId = UUID.randomUUID();
+
+    assertThatThrownBy(() -> insertIssuanceClaim(fixture, requestId, differentWorkerId))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("fk_transcode_worker_certificate_issuance_grant");
+  }
+
+  @Test
+  @DisplayName("Should reject certificate issuance claim when issuer is outside pinned bundle")
+  void shouldRejectCertificateIssuanceClaimWhenIssuerIsOutsidePinnedBundle() {
+    var fixture = issuanceFixture();
+    var requestId = UUID.randomUUID();
+    insertIssuanceClaim(fixture, requestId);
+    var issuanceTable = DSL.table(DSL.name("transcode_worker_certificate_issuance"));
+    var requestIdField = DSL.field(DSL.name("request_id"), UUID.class);
+    var issuerDigestField = DSL.field(DSL.name("issuer_certificate_sha256"), byte[].class);
+    var replaceIssuer =
+        dsl.update(issuanceTable)
+            .set(issuerDigestField, new byte[32])
+            .where(requestIdField.eq(requestId));
+
+    assertThatThrownBy(replaceIssuer::execute)
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("fk_transcode_worker_certificate_issuance_issuer");
+  }
+
+  @Test
+  @DisplayName("Should reject certificate issuance claim when certificate role is not issuer")
+  void shouldRejectCertificateIssuanceClaimWhenCertificateRoleIsNotIssuer() {
+    var fixture = issuanceFixture();
+    var requestId = UUID.randomUUID();
+    insertIssuanceClaim(fixture, requestId);
+    var issuanceTable = DSL.table(DSL.name("transcode_worker_certificate_issuance"));
+    var requestIdField = DSL.field(DSL.name("request_id"), UUID.class);
+    var issuerDigestField = DSL.field(DSL.name("issuer_certificate_sha256"), byte[].class);
+    var replaceIssuerWithTrustAnchor =
+        dsl.update(issuanceTable)
+            .set(issuerDigestField, fixture.trustAnchorDigest().bytes())
+            .where(requestIdField.eq(requestId));
+
+    assertThatThrownBy(replaceIssuerWithTrustAnchor::execute)
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("fk_transcode_worker_certificate_issuance_issuer");
+  }
+
+  @Test
+  @DisplayName("Should reject malformed fixed certificate issuance parameters")
+  void shouldRejectMalformedFixedCertificateIssuanceParameters() {
+    var fixture = issuanceFixture();
+    var requestId = UUID.randomUUID();
+    insertIssuanceClaim(fixture, requestId);
+    var issuanceTable = DSL.table(DSL.name("transcode_worker_certificate_issuance"));
+    var requestIdField = DSL.field(DSL.name("request_id"), UUID.class);
+    var subjectPublicKeyField = DSL.field(DSL.name("subject_public_key_info_der"), byte[].class);
+    var subjectPublicKeyDigestField =
+        DSL.field(DSL.name("subject_public_key_sha256"), byte[].class);
+    var serialNumberField = DSL.field(DSL.name("serial_number"), byte[].class);
+    var profileVersionField = DSL.field(DSL.name("certificate_profile_version"), Short.class);
+    var notAfterField = DSL.field(DSL.name("not_after"), OffsetDateTime.class);
+    var fencingEpochField = DSL.field(DSL.name("signing_fencing_epoch"), Long.class);
+
+    assertConstraintViolation(
+        dsl.update(issuanceTable)
+            .set(subjectPublicKeyField, new byte[0])
+            .where(requestIdField.eq(requestId)),
+        "chk_transcode_worker_certificate_issuance_public_key_der");
+    assertConstraintViolation(
+        dsl.update(issuanceTable)
+            .set(subjectPublicKeyDigestField, new byte[31])
+            .where(requestIdField.eq(requestId)),
+        "chk_transcode_worker_certificate_issuance_public_key_digest");
+    assertConstraintViolation(
+        dsl.update(issuanceTable)
+            .set(serialNumberField, new byte[] {0})
+            .where(requestIdField.eq(requestId)),
+        "chk_transcode_worker_certificate_issuance_serial");
+    assertConstraintViolation(
+        dsl.update(issuanceTable)
+            .set(profileVersionField, (short) 2)
+            .where(requestIdField.eq(requestId)),
+        "chk_transcode_worker_certificate_issuance_profile");
+    assertConstraintViolation(
+        dsl.update(issuanceTable)
+            .set(notAfterField, fixture.databaseTime().atOffset(ZoneOffset.UTC))
+            .where(requestIdField.eq(requestId)),
+        "chk_transcode_worker_certificate_issuance_validity");
+    assertConstraintViolation(
+        dsl.update(issuanceTable).set(fencingEpochField, 0L).where(requestIdField.eq(requestId)),
+        "chk_transcode_worker_certificate_issuance_claim");
+  }
+
+  @Test
+  @DisplayName("Should store certificate issuance completion only as one complete result")
+  void shouldStoreCertificateIssuanceCompletionOnlyAsOneCompleteResult() {
+    var fixture = issuanceFixture();
+    var requestId = UUID.randomUUID();
+    insertIssuanceClaim(fixture, requestId);
+    var issuanceTable = DSL.table(DSL.name("transcode_worker_certificate_issuance"));
+    var requestIdField = DSL.field(DSL.name("request_id"), UUID.class);
+    var certificateDerField = DSL.field(DSL.name("certificate_der"), byte[].class);
+    var certificateDigestField = DSL.field(DSL.name("certificate_sha256"), byte[].class);
+    var completedAtField = DSL.field(DSL.name("completed_at"), OffsetDateTime.class);
+    var partialCompletion =
+        dsl.update(issuanceTable)
+            .set(certificateDerField, new byte[] {48, 0})
+            .where(requestIdField.eq(requestId));
+    var completionWithoutTimestamp =
+        dsl.update(issuanceTable)
+            .set(certificateDerField, new byte[] {48, 0})
+            .set(certificateDigestField, new byte[32])
+            .where(requestIdField.eq(requestId));
+
+    assertConstraintViolation(
+        partialCompletion, "chk_transcode_worker_certificate_issuance_completion");
+    assertConstraintViolation(
+        completionWithoutTimestamp, "chk_transcode_worker_certificate_issuance_completion");
+
+    var completedAfterGrantExpiry =
+        fixture.databaseTime().plus(Duration.ofMinutes(11)).atOffset(ZoneOffset.UTC);
+    var completed =
+        dsl.update(issuanceTable)
+            .set(certificateDerField, new byte[] {48, 0})
+            .set(certificateDigestField, new byte[32])
+            .set(completedAtField, completedAfterGrantExpiry)
+            .where(requestIdField.eq(requestId))
+            .execute();
+
+    assertThat(completed).isOne();
+  }
+
+  @Test
+  @DisplayName("Should reject certificate issuance when issuer serial is already retained")
+  void shouldRejectCertificateIssuanceWhenIssuerSerialIsAlreadyRetained() {
+    var firstFixture = issuanceFixture();
+    var secondFixture = additionalGrantFixture(firstFixture);
+    insertIssuanceClaim(firstFixture, UUID.randomUUID());
+    var secondRequestId = UUID.randomUUID();
+
+    assertThatThrownBy(() -> insertIssuanceClaim(secondFixture, secondRequestId))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("uq_transcode_worker_certificate_issuance_serial");
+  }
+
+  private IssuanceFixture issuanceFixture() {
+    var installationId = trustRepository.installationId();
+    var databaseTime = trustRepository.databaseTime();
+    var material = new BuiltInCertificateAuthority().create(installationId, databaseTime);
+    var bootstrapLease =
+        signingLeaseRepository
+            .tryAcquire(CertificateAuthorityOperation.BOOTSTRAP, UUID.randomUUID(), SIGNING_LEASE)
+            .orElseThrow();
+    assertThat(
+            trustRepository.publishInitial(bootstrapLease, InitialTrustPublication.from(material)))
+        .isTrue();
+    assertThat(signingLeaseRepository.release(bootstrapLease)).isTrue();
+    var issuanceLease =
+        signingLeaseRepository
+            .tryAcquire(CertificateAuthorityOperation.ISSUANCE, UUID.randomUUID(), SIGNING_LEASE)
+            .orElseThrow();
+    var issuerDigest =
+        dsl.select(TRANSCODE_TRUST_CERTIFICATE.CERTIFICATE_SHA256)
+            .from(TRANSCODE_TRUST_CERTIFICATE)
+            .where(TRANSCODE_TRUST_CERTIFICATE.KIND.eq(TranscodeTrustCertificateKind.ISSUER))
+            .fetchSingle(TRANSCODE_TRUST_CERTIFICATE.CERTIFICATE_SHA256);
+    var trustAnchorDigest =
+        dsl.select(TRANSCODE_TRUST_CERTIFICATE.CERTIFICATE_SHA256)
+            .from(TRANSCODE_TRUST_CERTIFICATE)
+            .where(TRANSCODE_TRUST_CERTIFICATE.KIND.eq(TranscodeTrustCertificateKind.TRUST_ANCHOR))
+            .fetchSingle(TRANSCODE_TRUST_CERTIFICATE.CERTIFICATE_SHA256);
+    var workerId = UUID.randomUUID();
+    var grantId = UUID.randomUUID();
+    var installationIdField = DSL.field(DSL.name("installation_id"), UUID.class);
+    var workerIdField = DSL.field(DSL.name("worker_id"), UUID.class);
+    dsl.insertInto(DSL.table(DSL.name("transcode_worker_identity")))
+        .columns(installationIdField, workerIdField)
+        .values(installationId, workerId)
+        .execute();
+    dsl.insertInto(DSL.table(DSL.name("transcode_enrollment_grant")))
+        .columns(
+            DSL.field(DSL.name("grant_id"), UUID.class),
+            installationIdField,
+            workerIdField,
+            DSL.field(DSL.name("trust_bundle_version"), Long.class),
+            DSL.field(DSL.name("token_sha256"), byte[].class),
+            DSL.field(DSL.name("expires_at"), OffsetDateTime.class))
+        .values(
+            grantId,
+            installationId,
+            workerId,
+            1L,
+            new byte[32],
+            databaseTime.plus(Duration.ofMinutes(10)).atOffset(ZoneOffset.UTC))
+        .execute();
+    return IssuanceFixture.builder()
+        .installationId(installationId)
+        .workerId(workerId)
+        .grantId(grantId)
+        .issuanceLease(issuanceLease)
+        .issuerDigest(new Sha256Digest(issuerDigest))
+        .trustAnchorDigest(new Sha256Digest(trustAnchorDigest))
+        .databaseTime(databaseTime)
+        .build();
+  }
+
+  private void insertIssuanceClaim(IssuanceFixture fixture, UUID requestId) {
+    insertIssuanceClaim(fixture, requestId, fixture.workerId());
+  }
+
+  private void insertIssuanceClaim(IssuanceFixture fixture, UUID requestId, UUID workerId) {
+    dsl.insertInto(DSL.table(DSL.name("transcode_worker_certificate_issuance")))
+        .columns(
+            DSL.field(DSL.name("request_id"), UUID.class),
+            DSL.field(DSL.name("grant_id"), UUID.class),
+            DSL.field(DSL.name("installation_id"), UUID.class),
+            DSL.field(DSL.name("worker_id"), UUID.class),
+            DSL.field(DSL.name("trust_bundle_version"), Long.class),
+            DSL.field(DSL.name("subject_public_key_info_der"), byte[].class),
+            DSL.field(DSL.name("subject_public_key_sha256"), byte[].class),
+            DSL.field(DSL.name("issuer_certificate_sha256"), byte[].class),
+            DSL.field(DSL.name("serial_number"), byte[].class),
+            DSL.field(DSL.name("certificate_profile_version"), Short.class),
+            DSL.field(DSL.name("not_before"), OffsetDateTime.class),
+            DSL.field(DSL.name("not_after"), OffsetDateTime.class),
+            DSL.field(DSL.name("signing_fencing_epoch"), Long.class))
+        .values(
+            requestId,
+            fixture.grantId(),
+            fixture.installationId(),
+            workerId,
+            1L,
+            new byte[] {48, 0},
+            new byte[32],
+            fixture.issuerDigest().bytes(),
+            new byte[] {1},
+            (short) 1,
+            fixture.databaseTime().atOffset(ZoneOffset.UTC),
+            fixture.databaseTime().plus(Duration.ofDays(7)).atOffset(ZoneOffset.UTC),
+            fixture.issuanceLease().fencingEpoch())
+        .execute();
+  }
+
+  private IssuanceFixture additionalGrantFixture(IssuanceFixture fixture) {
+    var workerId = UUID.randomUUID();
+    var grantId = UUID.randomUUID();
+    var tokenDigest = new byte[32];
+    tokenDigest[0] = 1;
+    var installationIdField = DSL.field(DSL.name("installation_id"), UUID.class);
+    var workerIdField = DSL.field(DSL.name("worker_id"), UUID.class);
+    dsl.insertInto(DSL.table(DSL.name("transcode_worker_identity")))
+        .columns(installationIdField, workerIdField)
+        .values(fixture.installationId(), workerId)
+        .execute();
+    dsl.insertInto(DSL.table(DSL.name("transcode_enrollment_grant")))
+        .columns(
+            DSL.field(DSL.name("grant_id"), UUID.class),
+            installationIdField,
+            workerIdField,
+            DSL.field(DSL.name("trust_bundle_version"), Long.class),
+            DSL.field(DSL.name("token_sha256"), byte[].class),
+            DSL.field(DSL.name("expires_at"), OffsetDateTime.class))
+        .values(
+            grantId,
+            fixture.installationId(),
+            workerId,
+            1L,
+            tokenDigest,
+            fixture.databaseTime().plus(Duration.ofMinutes(10)).atOffset(ZoneOffset.UTC))
+        .execute();
+    return IssuanceFixture.builder()
+        .installationId(fixture.installationId())
+        .workerId(workerId)
+        .grantId(grantId)
+        .issuanceLease(fixture.issuanceLease())
+        .issuerDigest(fixture.issuerDigest())
+        .trustAnchorDigest(fixture.trustAnchorDigest())
+        .databaseTime(fixture.databaseTime())
+        .build();
+  }
+
+  private void assertConstraintViolation(org.jooq.Query query, String constraint) {
+    assertThatThrownBy(query::execute)
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining(constraint);
+  }
+
+  @Builder
+  private record IssuanceFixture(
+      UUID installationId,
+      UUID workerId,
+      UUID grantId,
+      CertificateSigningLease issuanceLease,
+      Sha256Digest issuerDigest,
+      Sha256Digest trustAnchorDigest,
+      Instant databaseTime) {}
 }

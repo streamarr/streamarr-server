@@ -8,6 +8,7 @@ import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.enums.TranscodeTrustCertificateKind;
 import com.streamarr.server.jooq.generated.tables.TranscodePublicTrustBundle.TranscodePublicTrustBundlePath;
+import com.streamarr.server.jooq.generated.tables.TranscodeWorkerCertificateIssuance.TranscodeWorkerCertificateIssuancePath;
 import com.streamarr.server.jooq.generated.tables.records.TranscodeTrustCertificateRecord;
 
 import java.util.Arrays;
@@ -170,7 +171,7 @@ public class TranscodeTrustCertificate extends TableImpl<TranscodeTrustCertifica
 
     @Override
     public List<UniqueKey<TranscodeTrustCertificateRecord>> getUniqueKeys() {
-        return Arrays.asList(Keys.UQ_TRANSCODE_TRUST_CERTIFICATE_DIGEST);
+        return Arrays.asList(Keys.UQ_TRANSCODE_TRUST_CERTIFICATE_DIGEST, Keys.UQ_TRANSCODE_TRUST_CERTIFICATE_KIND_DIGEST);
     }
 
     @Override
@@ -189,6 +190,19 @@ public class TranscodeTrustCertificate extends TableImpl<TranscodeTrustCertifica
             _transcodePublicTrustBundle = new TranscodePublicTrustBundlePath(this, Keys.TRANSCODE_TRUST_CERTIFICATE__FK_TRANSCODE_TRUST_CERTIFICATE_BUNDLE, null);
 
         return _transcodePublicTrustBundle;
+    }
+
+    private transient TranscodeWorkerCertificateIssuancePath _transcodeWorkerCertificateIssuance;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.transcode_worker_certificate_issuance</code> table
+     */
+    public TranscodeWorkerCertificateIssuancePath transcodeWorkerCertificateIssuance() {
+        if (_transcodeWorkerCertificateIssuance == null)
+            _transcodeWorkerCertificateIssuance = new TranscodeWorkerCertificateIssuancePath(this, null, Keys.TRANSCODE_WORKER_CERTIFICATE_ISSUANCE__FK_TRANSCODE_WORKER_CERTIFICATE_ISSUANCE_ISSUER.getInverseKey());
+
+        return _transcodeWorkerCertificateIssuance;
     }
 
     @Override

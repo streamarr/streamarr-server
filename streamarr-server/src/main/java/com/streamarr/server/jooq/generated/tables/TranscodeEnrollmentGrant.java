@@ -7,6 +7,7 @@ package com.streamarr.server.jooq.generated.tables;
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.tables.TranscodePublicTrustBundle.TranscodePublicTrustBundlePath;
+import com.streamarr.server.jooq.generated.tables.TranscodeWorkerCertificateIssuance.TranscodeWorkerCertificateIssuancePath;
 import com.streamarr.server.jooq.generated.tables.TranscodeWorkerIdentity.TranscodeWorkerIdentityPath;
 import com.streamarr.server.jooq.generated.tables.records.TranscodeEnrollmentGrantRecord;
 
@@ -179,7 +180,7 @@ public class TranscodeEnrollmentGrant extends TableImpl<TranscodeEnrollmentGrant
 
     @Override
     public List<UniqueKey<TranscodeEnrollmentGrantRecord>> getUniqueKeys() {
-        return Arrays.asList(Keys.UQ_TRANSCODE_ENROLLMENT_GRANT_TOKEN);
+        return Arrays.asList(Keys.UQ_TRANSCODE_ENROLLMENT_GRANT_BINDING, Keys.UQ_TRANSCODE_ENROLLMENT_GRANT_TOKEN);
     }
 
     @Override
@@ -211,6 +212,19 @@ public class TranscodeEnrollmentGrant extends TableImpl<TranscodeEnrollmentGrant
             _transcodeWorkerIdentity = new TranscodeWorkerIdentityPath(this, Keys.TRANSCODE_ENROLLMENT_GRANT__FK_TRANSCODE_ENROLLMENT_GRANT_WORKER, null);
 
         return _transcodeWorkerIdentity;
+    }
+
+    private transient TranscodeWorkerCertificateIssuancePath _transcodeWorkerCertificateIssuance;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.transcode_worker_certificate_issuance</code> table
+     */
+    public TranscodeWorkerCertificateIssuancePath transcodeWorkerCertificateIssuance() {
+        if (_transcodeWorkerCertificateIssuance == null)
+            _transcodeWorkerCertificateIssuance = new TranscodeWorkerCertificateIssuancePath(this, null, Keys.TRANSCODE_WORKER_CERTIFICATE_ISSUANCE__FK_TRANSCODE_WORKER_CERTIFICATE_ISSUANCE_GRANT.getInverseKey());
+
+        return _transcodeWorkerCertificateIssuance;
     }
 
     @Override
