@@ -22,6 +22,7 @@ import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import tools.jackson.databind.ObjectMapper;
@@ -86,6 +87,11 @@ public class StreamingConfig {
   }
 
   @Bean
+  @ConditionalOnProperty(
+      prefix = "streaming.remote",
+      name = "enabled",
+      havingValue = "false",
+      matchIfMissing = true)
   public TranscodeExecutor transcodeExecutor(
       FfmpegTranscodeEngine engine, LocalSegmentStore segmentStore) {
     return new LocalTranscodeExecutor(engine, segmentStore);
