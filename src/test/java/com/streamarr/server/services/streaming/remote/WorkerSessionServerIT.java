@@ -525,6 +525,45 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should reject an oversized segment upload frame at the transport boundary")
+  void shouldRejectOversizedSegmentUploadFrameAtTransportBoundary() throws Exception {
+    var segmentStore = new FakeSegmentStore();
+    try (var server = server(segmentStore)) {
+      server.start();
+      var channel = workerChannel(server.port());
+
+      var identity = workerIdentity(UUID.randomUUID());
+      try (var worker = connect(channel, identity)) {
+        var workerSession = worker.nextResponse().getSessionAccepted();
+        var job = renditionJob();
+        assertThat(server.dispatch(job)).isTrue();
+        assertThat(worker.nextResponse().getStartRendition().getJob()).isEqualTo(job);
+        var segmentData = new byte[128 * 1024];
+        var metadata =
+            segmentMetadata(workerSession, identity, job)
+                .setContentLengthBytes(segmentData.length)
+                .build();
+
+        assertUploadRejected(
+            upload(channel, metadata, segmentData), Status.Code.RESOURCE_EXHAUSTED);
+        assertThat(segmentStore.segmentExists(uuid(job.getStreamSessionId()), "720p/segment0.ts"))
+            .isFalse();
+
+        var validSegment = "complete segment".getBytes();
+        var accepted =
+            upload(
+                    channel,
+                    metadata.toBuilder().setContentLengthBytes(validSegment.length).build(),
+                    validSegment)
+                .get(5, TimeUnit.SECONDS);
+        assertThat(accepted.getAcceptedLengthBytes()).isEqualTo(validSegment.length);
+      } finally {
+        shutdown(channel);
+      }
+    }
+  }
+
+  @Test
   @DisplayName("Should reject unsafe segment metadata without publishing bytes")
   void shouldRejectUnsafeSegmentMetadataWithoutPublishingBytes() throws Exception {
     var segmentStore = new FakeSegmentStore();

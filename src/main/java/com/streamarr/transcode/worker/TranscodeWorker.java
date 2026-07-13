@@ -417,7 +417,7 @@ public final class TranscodeWorker implements AutoCloseable {
     @Override
     public void onError(Throwable throwable) {
       stopActiveRenditions();
-      disconnected.complete(null);
+      disconnected.completeExceptionally(throwable);
       accepted.completeExceptionally(throwable);
     }
 

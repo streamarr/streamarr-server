@@ -12,6 +12,7 @@ import io.grpc.stub.StreamObserver;
 import java.io.ByteArrayOutputStream;
 import java.util.UUID;
 import lombok.Builder;
+import lombok.NonNull;
 
 @Builder
 final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest> {
@@ -23,9 +24,11 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
   private final LiveWorkerConnectionRegistry workerConnections;
   private final SegmentStore segmentStore;
   private final StreamObserver<UploadSegmentResponse> responseObserver;
+  @NonNull private final SegmentUploadAdmission uploadAdmission;
 
   private SegmentUploadMetadata metadata;
   private ByteArrayOutputStream data;
+  private long reservedBytes;
   private boolean closed;
 
   @Override
@@ -60,9 +63,14 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
       reject(Status.INVALID_ARGUMENT.withDescription("Segment metadata is invalid"));
       return;
     }
+    if (!uploadAdmission.tryReserve(incoming.getContentLengthBytes())) {
+      reject(Status.RESOURCE_EXHAUSTED.withDescription("Segment upload byte budget reached"));
+      return;
+    }
 
     metadata = incoming;
-    data = new ByteArrayOutputStream((int) incoming.getContentLengthBytes());
+    reservedBytes = incoming.getContentLengthBytes();
+    data = new ByteArrayOutputStream();
   }
 
   private void receiveData(UploadSegmentRequest request) {
@@ -79,8 +87,7 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
 
   @Override
   public void onError(Throwable ignored) {
-    closed = true;
-    data = null;
+    close();
   }
 
   @Override
@@ -105,12 +112,13 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
       return;
     }
 
-    closed = true;
+    var acceptedLength = data.size();
+    close();
     responseObserver.onNext(
         UploadSegmentResponse.newBuilder()
             .setJobAttemptId(metadata.getJobAttemptId())
             .setSegmentName(metadata.getSegmentName())
-            .setAcceptedLengthBytes(data.size())
+            .setAcceptedLengthBytes(acceptedLength)
             .build());
     responseObserver.onCompleted();
   }
@@ -144,8 +152,17 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
   }
 
   private void reject(Status status) {
+    close();
+    responseObserver.onError(status.asRuntimeException());
+  }
+
+  private void close() {
+    if (closed) {
+      return;
+    }
     closed = true;
     data = null;
-    responseObserver.onError(status.asRuntimeException());
+    uploadAdmission.release(reservedBytes);
+    reservedBytes = 0;
   }
 }
