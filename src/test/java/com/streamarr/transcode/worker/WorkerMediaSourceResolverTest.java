@@ -29,9 +29,9 @@ class WorkerMediaSourceResolverTest {
     var nested = Files.createDirectory(mediaRoot.resolve("nested"));
     Files.writeString(nested.resolve("movie.mkv"), "test media");
     var resolver = new WorkerMediaSourceResolver(Map.of(SOURCE_NAMESPACE_ID, mediaRoot));
+    var source = source("nested//movie.mkv");
 
-    assertThatThrownBy(() -> resolver.resolve(source("nested//movie.mkv")))
-        .isInstanceOf(WorkerJobException.class);
+    assertThatThrownBy(() -> resolver.resolve(source)).isInstanceOf(WorkerJobException.class);
   }
 
   @Test
@@ -41,9 +41,9 @@ class WorkerMediaSourceResolverTest {
     var nested = Files.createDirectory(mediaRoot.resolve("nested"));
     Files.writeString(nested.resolve("movie.mkv"), "test media");
     var resolver = new WorkerMediaSourceResolver(Map.of(SOURCE_NAMESPACE_ID, mediaRoot));
+    var source = source("nested/./movie.mkv");
 
-    assertThatThrownBy(() -> resolver.resolve(source("nested/./movie.mkv")))
-        .isInstanceOf(WorkerJobException.class);
+    assertThatThrownBy(() -> resolver.resolve(source)).isInstanceOf(WorkerJobException.class);
   }
 
   @Test
@@ -52,9 +52,9 @@ class WorkerMediaSourceResolverTest {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     Files.writeString(mediaRoot.resolve("nested\\movie.mkv"), "test media");
     var resolver = new WorkerMediaSourceResolver(Map.of(SOURCE_NAMESPACE_ID, mediaRoot));
+    var source = source("nested\\movie.mkv");
 
-    assertThatThrownBy(() -> resolver.resolve(source("nested\\movie.mkv")))
-        .isInstanceOf(WorkerJobException.class);
+    assertThatThrownBy(() -> resolver.resolve(source)).isInstanceOf(WorkerJobException.class);
   }
 
   @Test
@@ -64,9 +64,9 @@ class WorkerMediaSourceResolverTest {
     var windows = Files.createDirectories(mediaRoot.resolve("C:/Windows"));
     Files.writeString(windows.resolve("system.ini"), "test data");
     var resolver = new WorkerMediaSourceResolver(Map.of(SOURCE_NAMESPACE_ID, mediaRoot));
+    var source = source("C:/Windows/system.ini");
 
-    assertThatThrownBy(() -> resolver.resolve(source("C:/Windows/system.ini")))
-        .isInstanceOf(WorkerJobException.class);
+    assertThatThrownBy(() -> resolver.resolve(source)).isInstanceOf(WorkerJobException.class);
   }
 
   @Test
@@ -85,9 +85,9 @@ class WorkerMediaSourceResolverTest {
   void shouldRejectRelativeKeyContainingNul() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var resolver = new WorkerMediaSourceResolver(Map.of(SOURCE_NAMESPACE_ID, mediaRoot));
+    var source = source("movie\0.mkv");
 
-    assertThatThrownBy(() -> resolver.resolve(source("movie\0.mkv")))
-        .isInstanceOf(WorkerJobException.class);
+    assertThatThrownBy(() -> resolver.resolve(source)).isInstanceOf(WorkerJobException.class);
   }
 
   @Test
@@ -111,9 +111,9 @@ class WorkerMediaSourceResolverTest {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     Files.writeString(tempDir.resolve("secret.mkv"), "secret");
     var resolver = new WorkerMediaSourceResolver(Map.of(SOURCE_NAMESPACE_ID, mediaRoot));
+    var source = source("../secret.mkv");
 
-    assertThatThrownBy(() -> resolver.resolve(source("../secret.mkv")))
-        .isInstanceOf(WorkerJobException.class);
+    assertThatThrownBy(() -> resolver.resolve(source)).isInstanceOf(WorkerJobException.class);
   }
 
   @Test
@@ -123,9 +123,9 @@ class WorkerMediaSourceResolverTest {
     var secret = Files.writeString(tempDir.resolve("secret.mkv"), "secret");
     Files.createSymbolicLink(mediaRoot.resolve("movie.mkv"), secret);
     var resolver = new WorkerMediaSourceResolver(Map.of(SOURCE_NAMESPACE_ID, mediaRoot));
+    var source = source("movie.mkv");
 
-    assertThatThrownBy(() -> resolver.resolve(source("movie.mkv")))
-        .isInstanceOf(WorkerJobException.class);
+    assertThatThrownBy(() -> resolver.resolve(source)).isInstanceOf(WorkerJobException.class);
   }
 
   private MediaSourceRef source(String relativeKey) {

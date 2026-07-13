@@ -240,9 +240,10 @@ class HlsStreamingServiceTest {
   @DisplayName("Should refuse session creation when live playback authority is denied")
   void shouldRefuseSessionCreationWhenLivePlaybackAuthorityIsDenied() {
     var file = seedMediaFile();
+    var command = createStreamSessionCommand(file.getId(), UUID.randomUUID(), defaultOptions());
     authorityGate.deny();
 
-    assertThatThrownBy(() -> createSession(file.getId(), UUID.randomUUID(), defaultOptions()))
+    assertThatThrownBy(() -> service.createSession(command))
         .isInstanceOf(AuthenticationRequiredException.class);
     assertThat(service.getActiveSessionCount()).isZero();
     assertThat(transcodeExecutor.getStarted()).isEmpty();

@@ -33,6 +33,7 @@ import io.grpc.stub.StreamObserver;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
@@ -43,6 +44,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 
@@ -72,7 +74,8 @@ public final class TranscodeWorker implements AutoCloseable {
             new WorkerMediaSourceResolver(configuration.sourceNamespaces()));
   }
 
-  public synchronized void start(String host, int port) throws Exception {
+  public synchronized void start(String host, int port)
+      throws IOException, InterruptedException, ExecutionException, TimeoutException {
     if (channel != null) {
       throw new IllegalStateException("Transcode worker is already started");
     }
@@ -122,6 +125,7 @@ public final class TranscodeWorker implements AutoCloseable {
         .build();
   }
 
+  @SuppressWarnings("java:S3398") // Job lifecycle belongs to the worker, not its gRPC observer.
   private void startRendition(StartRenditionCommand command) {
     var job = command.getJob();
     var outputDirectory =
@@ -167,12 +171,15 @@ public final class TranscodeWorker implements AutoCloseable {
   private static void deleteOutputDirectory(Path outputDirectory) {
     try {
       FileUtils.deleteDirectory(outputDirectory.toFile());
+    } catch (NoSuchFileException _) {
+      return;
     } catch (IOException e) {
       log.warn("Failed to delete transcode attempt output {}", outputDirectory, e);
     }
   }
 
-  private void uploadProducedSegments(RenditionJob job, Path outputDirectory) throws Exception {
+  private void uploadProducedSegments(RenditionJob job, Path outputDirectory)
+      throws IOException, InterruptedException, ExecutionException, TimeoutException {
     if (job.getDecision().getContainer() == ContainerFormat.CONTAINER_FORMAT_FMP4
         && !uploadWhenProduced(job, outputDirectory, "init.mp4")) {
       finishEndedRendition(job, false);
@@ -193,7 +200,7 @@ public final class TranscodeWorker implements AutoCloseable {
   }
 
   private boolean uploadWhenProduced(RenditionJob job, Path outputDirectory, String segmentName)
-      throws Exception {
+      throws IOException, InterruptedException, ExecutionException, TimeoutException {
     var segmentPath = awaitSegment(job, outputDirectory.resolve(segmentName));
     if (segmentPath.isEmpty()) {
       return false;
@@ -204,7 +211,7 @@ public final class TranscodeWorker implements AutoCloseable {
   }
 
   private void uploadSegment(RenditionJob job, String segmentName, Path segmentPath)
-      throws Exception {
+      throws IOException, InterruptedException, ExecutionException, TimeoutException {
     var segmentLength = Files.size(segmentPath);
     var response = new CompletableFuture<UploadSegmentResponse>();
     var upload =
@@ -317,6 +324,7 @@ public final class TranscodeWorker implements AutoCloseable {
             .build());
   }
 
+  @SuppressWarnings("java:S3398") // Job lifecycle belongs to the worker, not its gRPC observer.
   private synchronized void stopRendition(StopRenditionCommand command) {
     if (!command.getTarget().equals(identity())) {
       return;

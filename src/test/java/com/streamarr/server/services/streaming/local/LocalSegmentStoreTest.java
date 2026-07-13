@@ -163,8 +163,9 @@ class LocalSegmentStoreTest {
   @DisplayName("Should reject a stored segment that escapes its session directory")
   void shouldRejectStoredSegmentThatEscapesSessionDirectory() {
     var sessionId = UUID.randomUUID();
+    var segmentData = "data".getBytes();
 
-    assertThatThrownBy(() -> store.storeSegment(sessionId, "../../escaped.ts", "data".getBytes()))
+    assertThatThrownBy(() -> store.storeSegment(sessionId, "../../escaped.ts", segmentData))
         .isInstanceOf(InvalidSegmentPathException.class);
   }
 

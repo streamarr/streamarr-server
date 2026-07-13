@@ -85,10 +85,10 @@ class RemotePlaybackIT extends AbstractIntegrationTest {
       var second = streamController.getSegment(streamSessionId, "segment1.ts");
 
       assertThat(first.getStatusCode().is2xxSuccessful()).isTrue();
-      assertThat(first.getHeaders().getContentType().toString()).isEqualTo("video/mp2t");
+      assertThat(first.getHeaders().getContentType()).hasToString("video/mp2t");
       assertThat(first.getBody()).isEqualTo(segments.get("segment0.ts"));
       assertThat(second.getStatusCode().is2xxSuccessful()).isTrue();
-      assertThat(second.getHeaders().getContentType().toString()).isEqualTo("video/mp2t");
+      assertThat(second.getHeaders().getContentType()).hasToString("video/mp2t");
       assertThat(second.getBody()).isEqualTo(segments.get("segment1.ts"));
       executor.stop(streamSessionId);
       assertThat(executor.isRunning(streamSessionId)).isFalse();
@@ -121,9 +121,9 @@ class RemotePlaybackIT extends AbstractIntegrationTest {
       var initialization = streamController.getInitSegment(streamSessionId);
       var media = streamController.getSegment(streamSessionId, "segment0.m4s");
 
-      assertThat(initialization.getHeaders().getContentType().toString()).isEqualTo("video/mp4");
+      assertThat(initialization.getHeaders().getContentType()).hasToString("video/mp4");
       assertThat(initialization.getBody()).isEqualTo(segments.get("init.mp4"));
-      assertThat(media.getHeaders().getContentType().toString()).isEqualTo("video/mp4");
+      assertThat(media.getHeaders().getContentType()).hasToString("video/mp4");
       assertThat(media.getBody()).isEqualTo(segments.get("segment0.m4s"));
     }
   }
@@ -138,9 +138,10 @@ class RemotePlaybackIT extends AbstractIntegrationTest {
     try (var server = server(segmentStore)) {
       server.start();
       var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot);
+      var request = transcodeRequest(UUID.randomUUID(), mediaFile);
 
       assertThat(executor.isHealthy()).isFalse();
-      assertThatThrownBy(() -> executor.start(transcodeRequest(UUID.randomUUID(), mediaFile)))
+      assertThatThrownBy(() -> executor.start(request))
           .isInstanceOf(TranscodeException.class)
           .hasMessage("No connected transcode worker can run this rendition");
     }
@@ -156,8 +157,9 @@ class RemotePlaybackIT extends AbstractIntegrationTest {
     try (var server = server(segmentStore)) {
       server.start();
       var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot);
+      var request = transcodeRequest(UUID.randomUUID(), outsideFile);
 
-      assertThatThrownBy(() -> executor.start(transcodeRequest(UUID.randomUUID(), outsideFile)))
+      assertThatThrownBy(() -> executor.start(request))
           .isInstanceOf(TranscodeException.class)
           .hasMessage("Media source is outside the configured source namespace");
     }
