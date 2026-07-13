@@ -182,6 +182,7 @@ public final class TranscodeWorker implements AutoCloseable {
       return false;
     }
     uploadSegment(job, segmentName, segmentPath.get());
+    Files.delete(segmentPath.get());
     return true;
   }
 

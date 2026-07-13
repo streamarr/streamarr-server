@@ -162,22 +162,30 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
     var processManager = new FakeSegmentProducingFfmpegProcessManager("segment0.ts", segmentData);
     var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
     var streamSessionId = UUID.randomUUID();
+    var job =
+        renditionJob(streamSessionId, "720p", ContainerFormat.CONTAINER_FORMAT_MPEG_TS);
 
     try (var server = server(segmentStore);
         var worker = worker(processManager, mediaRoot)) {
       server.start();
       worker.start("localhost", server.port());
 
-      assertThat(
-              server.dispatch(
-                  renditionJob(streamSessionId, "720p", ContainerFormat.CONTAINER_FORMAT_MPEG_TS)))
-          .isTrue();
+      assertThat(server.dispatch(job)).isTrue();
 
       await()
           .atMost(5, TimeUnit.SECONDS)
           .until(() -> segmentStore.segmentExists(streamSessionId, "720p/segment0.ts"));
       assertThat(segmentStore.readSegment(streamSessionId, "720p/segment0.ts"))
           .isEqualTo(segmentData);
+      await()
+          .atMost(5, TimeUnit.SECONDS)
+          .until(
+              () ->
+                  Files.notExists(
+                      tempDir
+                          .resolve("segments")
+                          .resolve(uuid(job.getJobAttemptId()).toString())
+                          .resolve("segment0.ts")));
     }
   }
 
