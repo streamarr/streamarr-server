@@ -9,6 +9,7 @@ public final class TranscodeWorkerApplication {
 
   private TranscodeWorkerApplication() {}
 
+  @SuppressWarnings("java:S1172") // The JVM entry-point signature requires the argument.
   public static void main(String[] args) throws Exception {
     var settings = TranscodeWorkerSettings.fromEnvironment(System.getenv());
     var capabilities =

@@ -23,10 +23,8 @@ final class WorkerIdentityServerInterceptor implements ServerInterceptor {
   }
 
   @Override
-  public <RequestT, ResponseT> ServerCall.Listener<RequestT> interceptCall(
-      ServerCall<RequestT, ResponseT> call,
-      Metadata headers,
-      ServerCallHandler<RequestT, ResponseT> next) {
+  public <R, S> ServerCall.Listener<R> interceptCall(
+      ServerCall<R, S> call, Metadata headers, ServerCallHandler<R, S> next) {
     try {
       var sslSession = call.getAttributes().get(Grpc.TRANSPORT_ATTR_SSL_SESSION);
       if (sslSession == null) {
@@ -44,8 +42,7 @@ final class WorkerIdentityServerInterceptor implements ServerInterceptor {
     }
   }
 
-  private <RequestT, ResponseT> ServerCall.Listener<RequestT> reject(
-      ServerCall<RequestT, ResponseT> call) {
+  private <R, S> ServerCall.Listener<R> reject(ServerCall<R, S> call) {
     call.close(Status.UNAUTHENTICATED, new Metadata());
     return new ServerCall.Listener<>() {};
   }

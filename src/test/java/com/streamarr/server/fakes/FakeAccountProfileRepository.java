@@ -45,15 +45,12 @@ public class FakeAccountProfileRepository extends FakeJpaRepository<AccountProfi
 
   @Override
   public boolean revokeProfileLink(AccountProfile link) {
-    var removed =
-        database
-            .entrySet()
-            .removeIf(
-                entry ->
-                    link.getAccountId().equals(entry.getValue().getAccountId())
-                        && link.getHouseholdId().equals(entry.getValue().getHouseholdId())
-                        && link.getProfileId().equals(entry.getValue().getProfileId()));
-
-    return removed;
+    return database
+        .entrySet()
+        .removeIf(
+            entry ->
+                link.getAccountId().equals(entry.getValue().getAccountId())
+                    && link.getHouseholdId().equals(entry.getValue().getHouseholdId())
+                    && link.getProfileId().equals(entry.getValue().getProfileId()));
   }
 }
