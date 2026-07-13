@@ -473,6 +473,7 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
         var metadata =
             segmentMetadata(workerSession, identity, job).setContentLengthBytes(1).build();
 
+        assertUploadRejected(uploadRequests(channel, List.of()), Status.Code.INVALID_ARGUMENT);
         assertUploadRejected(
             uploadRequests(
                 channel,

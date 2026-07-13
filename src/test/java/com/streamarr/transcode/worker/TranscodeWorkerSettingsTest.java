@@ -83,6 +83,20 @@ class TranscodeWorkerSettingsTest {
   }
 
   @Test
+  @DisplayName("Should reject a worker configuration without capacity")
+  void shouldRejectWorkerConfigurationWithoutCapacity() {
+    var configuration =
+        TranscodeWorkerConfiguration.builder()
+            .workerId(UUID.randomUUID())
+            .bootId(UUID.randomUUID())
+            .availableSlots(0);
+
+    assertThatThrownBy(configuration::build)
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Available slots must be positive");
+  }
+
+  @Test
   @DisplayName("Should map explicit worker process settings")
   void shouldMapExplicitWorkerProcessSettings() {
     var environment = new HashMap<>(requiredEnvironment());

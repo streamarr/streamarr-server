@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.Uuid;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
@@ -103,6 +104,30 @@ class WorkerMediaSourceResolverTest {
 
     assertThatThrownBy(() -> resolver.resolve(unknownSource))
         .isInstanceOf(WorkerJobException.class);
+  }
+
+  @Test
+  @DisplayName("Should report an unavailable media source")
+  void shouldReportUnavailableMediaSource() throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+    var resolver = new WorkerMediaSourceResolver(Map.of(SOURCE_NAMESPACE_ID, mediaRoot));
+
+    assertThatThrownBy(() -> resolver.resolve(source("x")))
+        .isInstanceOf(WorkerJobException.class)
+        .hasMessage("Media source is unavailable")
+        .hasCauseInstanceOf(IOException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject a directory as a media source")
+  void shouldRejectDirectoryAsMediaSource() throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+    Files.createDirectory(mediaRoot.resolve("folder"));
+    var resolver = new WorkerMediaSourceResolver(Map.of(SOURCE_NAMESPACE_ID, mediaRoot));
+
+    assertThatThrownBy(() -> resolver.resolve(source("folder")))
+        .isInstanceOf(WorkerJobException.class)
+        .hasMessage("Media source is not a readable file in its namespace");
   }
 
   @Test
