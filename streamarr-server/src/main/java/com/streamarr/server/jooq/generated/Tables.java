@@ -43,9 +43,11 @@ import com.streamarr.server.jooq.generated.tables.StreamSession;
 import com.streamarr.server.jooq.generated.tables.StreamSessionTerminationIntent;
 import com.streamarr.server.jooq.generated.tables.TranscodeActiveTrustBundle;
 import com.streamarr.server.jooq.generated.tables.TranscodeCaSigningLease;
+import com.streamarr.server.jooq.generated.tables.TranscodeEnrollmentGrant;
 import com.streamarr.server.jooq.generated.tables.TranscodeInstallation;
 import com.streamarr.server.jooq.generated.tables.TranscodePublicTrustBundle;
 import com.streamarr.server.jooq.generated.tables.TranscodeTrustCertificate;
+import com.streamarr.server.jooq.generated.tables.TranscodeWorkerIdentity;
 import com.streamarr.server.jooq.generated.tables.UserAccount;
 import com.streamarr.server.jooq.generated.tables.WatchHistory;
 
@@ -252,6 +254,11 @@ public class Tables {
     public static final TranscodeCaSigningLease TRANSCODE_CA_SIGNING_LEASE = TranscodeCaSigningLease.TRANSCODE_CA_SIGNING_LEASE;
 
     /**
+     * The table <code>public.transcode_enrollment_grant</code>.
+     */
+    public static final TranscodeEnrollmentGrant TRANSCODE_ENROLLMENT_GRANT = TranscodeEnrollmentGrant.TRANSCODE_ENROLLMENT_GRANT;
+
+    /**
      * The table <code>public.transcode_installation</code>.
      */
     public static final TranscodeInstallation TRANSCODE_INSTALLATION = TranscodeInstallation.TRANSCODE_INSTALLATION;
@@ -265,6 +272,11 @@ public class Tables {
      * The table <code>public.transcode_trust_certificate</code>.
      */
     public static final TranscodeTrustCertificate TRANSCODE_TRUST_CERTIFICATE = TranscodeTrustCertificate.TRANSCODE_TRUST_CERTIFICATE;
+
+    /**
+     * The table <code>public.transcode_worker_identity</code>.
+     */
+    public static final TranscodeWorkerIdentity TRANSCODE_WORKER_IDENTITY = TranscodeWorkerIdentity.TRANSCODE_WORKER_IDENTITY;
 
     /**
      * The table <code>public.user_account</code>.

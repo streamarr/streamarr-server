@@ -7,6 +7,7 @@ package com.streamarr.server.jooq.generated.tables;
 import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.tables.TranscodeActiveTrustBundle.TranscodeActiveTrustBundlePath;
+import com.streamarr.server.jooq.generated.tables.TranscodeEnrollmentGrant.TranscodeEnrollmentGrantPath;
 import com.streamarr.server.jooq.generated.tables.TranscodeInstallation.TranscodeInstallationPath;
 import com.streamarr.server.jooq.generated.tables.TranscodeTrustCertificate.TranscodeTrustCertificatePath;
 import com.streamarr.server.jooq.generated.tables.records.TranscodePublicTrustBundleRecord;
@@ -183,6 +184,19 @@ public class TranscodePublicTrustBundle extends TableImpl<TranscodePublicTrustBu
             _transcodeActiveTrustBundle = new TranscodeActiveTrustBundlePath(this, null, Keys.TRANSCODE_ACTIVE_TRUST_BUNDLE__FK_TRANSCODE_ACTIVE_TRUST_BUNDLE_VERSION.getInverseKey());
 
         return _transcodeActiveTrustBundle;
+    }
+
+    private transient TranscodeEnrollmentGrantPath _transcodeEnrollmentGrant;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.transcode_enrollment_grant</code> table
+     */
+    public TranscodeEnrollmentGrantPath transcodeEnrollmentGrant() {
+        if (_transcodeEnrollmentGrant == null)
+            _transcodeEnrollmentGrant = new TranscodeEnrollmentGrantPath(this, null, Keys.TRANSCODE_ENROLLMENT_GRANT__FK_TRANSCODE_ENROLLMENT_GRANT_BUNDLE.getInverseKey());
+
+        return _transcodeEnrollmentGrant;
     }
 
     private transient TranscodeTrustCertificatePath _transcodeTrustCertificate;

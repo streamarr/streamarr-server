@@ -8,6 +8,7 @@ import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.tables.TranscodeActiveTrustBundle.TranscodeActiveTrustBundlePath;
 import com.streamarr.server.jooq.generated.tables.TranscodePublicTrustBundle.TranscodePublicTrustBundlePath;
+import com.streamarr.server.jooq.generated.tables.TranscodeWorkerIdentity.TranscodeWorkerIdentityPath;
 import com.streamarr.server.jooq.generated.tables.records.TranscodeInstallationRecord;
 
 import java.time.OffsetDateTime;
@@ -185,6 +186,19 @@ public class TranscodeInstallation extends TableImpl<TranscodeInstallationRecord
             _transcodePublicTrustBundle = new TranscodePublicTrustBundlePath(this, null, Keys.TRANSCODE_PUBLIC_TRUST_BUNDLE__FK_TRANSCODE_PUBLIC_TRUST_BUNDLE_INSTALLATION.getInverseKey());
 
         return _transcodePublicTrustBundle;
+    }
+
+    private transient TranscodeWorkerIdentityPath _transcodeWorkerIdentity;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.transcode_worker_identity</code> table
+     */
+    public TranscodeWorkerIdentityPath transcodeWorkerIdentity() {
+        if (_transcodeWorkerIdentity == null)
+            _transcodeWorkerIdentity = new TranscodeWorkerIdentityPath(this, null, Keys.TRANSCODE_WORKER_IDENTITY__FK_TRANSCODE_WORKER_IDENTITY_INSTALLATION.getInverseKey());
+
+        return _transcodeWorkerIdentity;
     }
 
     @Override

@@ -43,9 +43,11 @@ import com.streamarr.server.jooq.generated.tables.StreamSession;
 import com.streamarr.server.jooq.generated.tables.StreamSessionTerminationIntent;
 import com.streamarr.server.jooq.generated.tables.TranscodeActiveTrustBundle;
 import com.streamarr.server.jooq.generated.tables.TranscodeCaSigningLease;
+import com.streamarr.server.jooq.generated.tables.TranscodeEnrollmentGrant;
 import com.streamarr.server.jooq.generated.tables.TranscodeInstallation;
 import com.streamarr.server.jooq.generated.tables.TranscodePublicTrustBundle;
 import com.streamarr.server.jooq.generated.tables.TranscodeTrustCertificate;
+import com.streamarr.server.jooq.generated.tables.TranscodeWorkerIdentity;
 import com.streamarr.server.jooq.generated.tables.UserAccount;
 import com.streamarr.server.jooq.generated.tables.WatchHistory;
 
@@ -267,6 +269,11 @@ public class Public extends SchemaImpl {
     public final TranscodeCaSigningLease TRANSCODE_CA_SIGNING_LEASE = TranscodeCaSigningLease.TRANSCODE_CA_SIGNING_LEASE;
 
     /**
+     * The table <code>public.transcode_enrollment_grant</code>.
+     */
+    public final TranscodeEnrollmentGrant TRANSCODE_ENROLLMENT_GRANT = TranscodeEnrollmentGrant.TRANSCODE_ENROLLMENT_GRANT;
+
+    /**
      * The table <code>public.transcode_installation</code>.
      */
     public final TranscodeInstallation TRANSCODE_INSTALLATION = TranscodeInstallation.TRANSCODE_INSTALLATION;
@@ -280,6 +287,11 @@ public class Public extends SchemaImpl {
      * The table <code>public.transcode_trust_certificate</code>.
      */
     public final TranscodeTrustCertificate TRANSCODE_TRUST_CERTIFICATE = TranscodeTrustCertificate.TRANSCODE_TRUST_CERTIFICATE;
+
+    /**
+     * The table <code>public.transcode_worker_identity</code>.
+     */
+    public final TranscodeWorkerIdentity TRANSCODE_WORKER_IDENTITY = TranscodeWorkerIdentity.TRANSCODE_WORKER_IDENTITY;
 
     /**
      * The table <code>public.user_account</code>.
@@ -346,9 +358,11 @@ public class Public extends SchemaImpl {
             StreamSessionTerminationIntent.STREAM_SESSION_TERMINATION_INTENT,
             TranscodeActiveTrustBundle.TRANSCODE_ACTIVE_TRUST_BUNDLE,
             TranscodeCaSigningLease.TRANSCODE_CA_SIGNING_LEASE,
+            TranscodeEnrollmentGrant.TRANSCODE_ENROLLMENT_GRANT,
             TranscodeInstallation.TRANSCODE_INSTALLATION,
             TranscodePublicTrustBundle.TRANSCODE_PUBLIC_TRUST_BUNDLE,
             TranscodeTrustCertificate.TRANSCODE_TRUST_CERTIFICATE,
+            TranscodeWorkerIdentity.TRANSCODE_WORKER_IDENTITY,
             UserAccount.USER_ACCOUNT,
             WatchHistory.WATCH_HISTORY
         );
