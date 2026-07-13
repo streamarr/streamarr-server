@@ -1,0 +1,92 @@
+= Distributed Transcoding
+
+Distributed transcoding is optional.
+With no remote settings, Streamarr runs the existing local FFmpeg path and requires no worker, broker, mesh, or additional database.
+
+The supported first topology is one Streamarr server and zero or more outbound workers.
+Workers read the same media through an operator-defined source namespace, run the same rendition engine as local playback, and upload segments to the server over mTLS gRPC.
+Workers do not accept inbound connections and never connect to PostgreSQL.
+
+== Identity and media contract
+
+Streamarr consumes PEM files issued by the operator's existing tooling.
+It does not issue or enroll certificates.
+
+* The server certificate must be valid for the DNS name workers use and permit TLS server authentication.
+* Each worker certificate must permit TLS client authentication and contain exactly one URI SAN shaped as `spiffe://<trust-domain>/streamarr/worker/<worker-uuid>`.
+* `TRANSCODE_WORKER_ID` must equal the `<worker-uuid>` in that URI.
+* Server and worker trust bundles must trust the issuing CA.
+* Every process maps the same source namespace UUID to the same media content. Container paths may differ, but the relative path beneath each configured source root must identify the same file.
+
+Certificates are loaded at process start.
+Restart the affected server or worker after replacing a certificate or trust bundle.
+
+== Docker Compose
+
+The Compose override adds one worker and enables the server's worker listener without changing the default local-only deployment.
+Provide these values in the shell or `.env`:
+
+[source,bash]
+----
+STREAMARR_TRUST_DOMAIN=streamarr.home
+STREAMARR_SOURCE_NAMESPACE_ID=cccccccc-cccc-cccc-cccc-cccccccccccc
+STREAMARR_MEDIA_PATH=/absolute/path/to/media
+STREAMARR_SERVER_TLS_PATH=/absolute/path/to/server-pems
+STREAMARR_WORKER_ID=aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+STREAMARR_WORKER_TLS_PATH=/absolute/path/to/worker-pems
+----
+
+Each PEM directory contains `tls.crt`, `tls.key`, and `ca.crt`.
+The server certificate needs a DNS SAN for `streamarr-server`; the worker certificate's URI SAN uses `STREAMARR_TRUST_DOMAIN` and `STREAMARR_WORKER_ID`.
+
+Start the server and worker with:
+
+[source,bash]
+----
+docker compose \
+  -f docker-compose.yml \
+  -f deploy/compose/distributed-transcoding.yml \
+  up -d
+----
+
+The release image exposes `web` as its default process and `worker` as a second Cloud Native Buildpacks process type.
+To add Compose workers, give every worker a distinct UUID and matching certificate; duplicating the example service unchanged intentionally replaces the prior connection for that identity.
+
+== Kubernetes
+
+link:../deploy/kubernetes/distributed-transcoding.yaml[`deploy/kubernetes/distributed-transcoding.yaml`] is an opt-in starting manifest with one server replica and two worker replicas.
+It assumes:
+
+* the cert-manager CSI driver is installed;
+* a `ClusterIssuer` named `streamarr-ca` exists;
+* a `PersistentVolumeClaim` named `streamarr-media` exposes the same media to the server and workers; and
+* a Secret named `streamarr-runtime` contains `datasource-url`, `datasource-username`, and `datasource-password`.
+
+Before applying it, replace the example image tag, trust domain, source namespace UUID, issuer, storage, and runtime Secret names for the deployment.
+The CSI driver requests a unique worker certificate whose URI SAN ends in `${POD_UID}`; the downward API supplies that same pod UID as `TRANSCODE_WORKER_ID`.
+This lets the worker Deployment scale without shared identities or per-replica Streamarr configuration.
+
+The server replica count must remain one in this version.
+Multiple server replicas require worker-session affinity or a broker and are deliberately deferred.
+The worker replica count may scale horizontally as long as every worker can read the configured source namespace.
+
+Apply the adapted manifest with:
+
+[source,bash]
+----
+kubectl apply -f deploy/kubernetes/distributed-transcoding.yaml
+----
+
+The manifest uses cert-manager only as an example external issuer adapter.
+Static Secrets, Vault, a cloud CA, or another platform mechanism are equally valid when they mount the same three PEM files and preserve the worker URI identity contract.
+
+== Operational tradeoffs
+
+The live worker connection is the job fence and the server keeps runtime stream sessions in memory.
+A server restart therefore drops active playback and worker sessions; clients reconnect and workers dial out again.
+This keeps the single-server path disposable and avoids a durable job ledger, leases, a shared worker database, or NATS before multi-server demand exists.
+
+Segment bytes travel on separate bounded HTTP/2 streams over the worker's mTLS channel, so bulk uploads do not share the control-message stream.
+Clients continue to fetch playlists and segments from the Streamarr HTTP endpoint; workers are never exposed to players.
+
+See link:adr/0018-live-playback-authority-and-outbound-workers.adoc[ADR 0018] for the decision and deferred multi-server boundary.
