@@ -11,9 +11,7 @@ import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
-import org.jooq.Field;
 import org.jooq.impl.DSL;
-import org.jooq.impl.SQLDataType;
 import org.springframework.stereotype.Repository;
 
 @Repository
@@ -44,7 +42,7 @@ public class CertificateAuthoritySigningLeaseRepositoryImpl
             .where(TRANSCODE_CA_SIGNING_LEASE.SINGLETON.isTrue())
             .forUpdate()
             .fetchSingle();
-    var databaseTime = databaseTime(transaction);
+    var databaseTime = CertificateSigningLeaseGuard.databaseTime(transaction);
     if (current.getLeaseUntil() != null && current.getLeaseUntil().isAfter(databaseTime)) {
       return Optional.empty();
     }
@@ -80,14 +78,14 @@ public class CertificateAuthoritySigningLeaseRepositoryImpl
     var current =
         transaction
             .selectFrom(TRANSCODE_CA_SIGNING_LEASE)
-            .where(matches(currentLease))
+            .where(CertificateSigningLeaseGuard.identity(currentLease))
             .forUpdate()
             .fetchOptional();
     if (current.isEmpty()) {
       return Optional.empty();
     }
 
-    var databaseTime = databaseTime(transaction);
+    var databaseTime = CertificateSigningLeaseGuard.databaseTime(transaction);
     if (!current.orElseThrow().getLeaseUntil().isAfter(databaseTime)) {
       return Optional.empty();
     }
@@ -96,7 +94,7 @@ public class CertificateAuthoritySigningLeaseRepositoryImpl
     return transaction
         .update(TRANSCODE_CA_SIGNING_LEASE)
         .set(TRANSCODE_CA_SIGNING_LEASE.LEASE_UNTIL, leaseUntil)
-        .where(matches(currentLease))
+        .where(CertificateSigningLeaseGuard.identity(currentLease))
         .returning(
             TRANSCODE_CA_SIGNING_LEASE.OPERATION,
             TRANSCODE_CA_SIGNING_LEASE.OWNER_ID,
@@ -107,11 +105,7 @@ public class CertificateAuthoritySigningLeaseRepositoryImpl
 
   @Override
   public boolean isCurrent(CertificateSigningLease lease) {
-    return dsl.fetchExists(
-        dsl.selectOne()
-            .from(TRANSCODE_CA_SIGNING_LEASE)
-            .where(matches(lease))
-            .and(TRANSCODE_CA_SIGNING_LEASE.LEASE_UNTIL.gt(statementTimestamp())));
+    return CertificateSigningLeaseGuard.isCurrent(dsl, lease);
   }
 
   @Override
@@ -122,18 +116,9 @@ public class CertificateAuthoritySigningLeaseRepositoryImpl
                 (com.streamarr.server.jooq.generated.enums.TranscodeCaSigningOperation) null)
             .set(TRANSCODE_CA_SIGNING_LEASE.OWNER_ID, (UUID) null)
             .set(TRANSCODE_CA_SIGNING_LEASE.LEASE_UNTIL, (OffsetDateTime) null)
-            .where(matches(lease))
+            .where(CertificateSigningLeaseGuard.identity(lease))
             .execute()
         == 1;
-  }
-
-  private org.jooq.Condition matches(CertificateSigningLease lease) {
-    return TRANSCODE_CA_SIGNING_LEASE
-        .SINGLETON
-        .isTrue()
-        .and(TRANSCODE_CA_SIGNING_LEASE.OPERATION.eq(generated(lease.operation())))
-        .and(TRANSCODE_CA_SIGNING_LEASE.OWNER_ID.eq(lease.ownerId()))
-        .and(TRANSCODE_CA_SIGNING_LEASE.FENCING_EPOCH.eq(lease.fencingEpoch()));
   }
 
   private CertificateSigningLease toLease(
@@ -148,18 +133,10 @@ public class CertificateAuthoritySigningLeaseRepositoryImpl
         .build();
   }
 
-  private OffsetDateTime databaseTime(DSLContext transaction) {
-    return transaction.select(statementTimestamp()).fetchSingle().value1();
-  }
-
   private com.streamarr.server.jooq.generated.enums.TranscodeCaSigningOperation generated(
       CertificateAuthorityOperation operation) {
     return com.streamarr.server.jooq.generated.enums.TranscodeCaSigningOperation.valueOf(
         operation.name());
-  }
-
-  private Field<OffsetDateTime> statementTimestamp() {
-    return DSL.function(DSL.name("statement_timestamp"), SQLDataType.TIMESTAMPWITHTIMEZONE);
   }
 
   private void requirePositive(Duration duration) {

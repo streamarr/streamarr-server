@@ -26,11 +26,8 @@ import java.util.Optional;
 import java.util.UUID;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
-import org.jooq.Condition;
 import org.jooq.DSLContext;
-import org.jooq.Field;
 import org.jooq.impl.DSL;
-import org.jooq.impl.SQLDataType;
 import org.springframework.stereotype.Repository;
 
 @Repository
@@ -51,7 +48,7 @@ public class InstallationTrustRepositoryImpl implements InstallationTrustReposit
 
   @Override
   public Instant databaseTime() {
-    return dsl.select(statementTimestamp()).fetchSingle().value1().toInstant();
+    return CertificateSigningLeaseGuard.databaseTime(dsl).toInstant();
   }
 
   @Override
@@ -240,7 +237,7 @@ public class InstallationTrustRepositoryImpl implements InstallationTrustReposit
         transaction
             .select(TRANSCODE_CA_SIGNING_LEASE.SINGLETON)
             .from(TRANSCODE_CA_SIGNING_LEASE)
-            .where(leaseIdentity(lease))
+            .where(CertificateSigningLeaseGuard.identity(lease))
             .forUpdate()
             .fetchOptional();
     if (currentLease.isEmpty()) {
@@ -271,7 +268,7 @@ public class InstallationTrustRepositoryImpl implements InstallationTrustReposit
     if (activeBundle != null) {
       return false;
     }
-    if (!isCurrent(transaction, lease)) {
+    if (!CertificateSigningLeaseGuard.isCurrent(transaction, lease)) {
       return false;
     }
 
@@ -288,7 +285,9 @@ public class InstallationTrustRepositoryImpl implements InstallationTrustReposit
         transaction
             .update(TRANSCODE_INSTALLATION)
             .set(TRANSCODE_INSTALLATION.BOOTSTRAP_ROOT_SHA256, publication.bootstrapRootSha256())
-            .set(TRANSCODE_INSTALLATION.INITIALIZED_AT, statementTimestamp())
+            .set(
+                TRANSCODE_INSTALLATION.INITIALIZED_AT,
+                CertificateSigningLeaseGuard.statementTimestamp())
             .where(TRANSCODE_INSTALLATION.SINGLETON.isTrue())
             .and(TRANSCODE_INSTALLATION.BOOTSTRAP_ROOT_SHA256.isNull())
             .execute();
@@ -296,7 +295,9 @@ public class InstallationTrustRepositoryImpl implements InstallationTrustReposit
         transaction
             .update(TRANSCODE_ACTIVE_TRUST_BUNDLE)
             .set(TRANSCODE_ACTIVE_TRUST_BUNDLE.BUNDLE_VERSION, INITIAL_BUNDLE_VERSION)
-            .set(TRANSCODE_ACTIVE_TRUST_BUNDLE.ACTIVATED_AT, statementTimestamp())
+            .set(
+                TRANSCODE_ACTIVE_TRUST_BUNDLE.ACTIVATED_AT,
+                CertificateSigningLeaseGuard.statementTimestamp())
             .where(TRANSCODE_ACTIVE_TRUST_BUNDLE.SINGLETON.isTrue())
             .and(TRANSCODE_ACTIVE_TRUST_BUNDLE.BUNDLE_VERSION.isNull())
             .execute();
@@ -304,7 +305,7 @@ public class InstallationTrustRepositoryImpl implements InstallationTrustReposit
       throw new InstallationTrustException(
           "Installation trust publication did not commit its final state");
     }
-    if (!isCurrent(transaction, lease)) {
+    if (!CertificateSigningLeaseGuard.isCurrent(transaction, lease)) {
       throw new InstallationTrustException(
           "Installation trust publication lease expired before final commit");
     }
@@ -362,34 +363,6 @@ public class InstallationTrustRepositoryImpl implements InstallationTrustReposit
     } catch (java.security.cert.CertificateEncodingException e) {
       throw new InstallationTrustException("Stored public trust certificate cannot be encoded", e);
     }
-  }
-
-  private com.streamarr.server.jooq.generated.enums.TranscodeCaSigningOperation generated(
-      CertificateAuthorityOperation operation) {
-    return com.streamarr.server.jooq.generated.enums.TranscodeCaSigningOperation.valueOf(
-        operation.name());
-  }
-
-  private Condition leaseIdentity(CertificateSigningLease lease) {
-    return TRANSCODE_CA_SIGNING_LEASE
-        .SINGLETON
-        .isTrue()
-        .and(TRANSCODE_CA_SIGNING_LEASE.OPERATION.eq(generated(lease.operation())))
-        .and(TRANSCODE_CA_SIGNING_LEASE.OWNER_ID.eq(lease.ownerId()))
-        .and(TRANSCODE_CA_SIGNING_LEASE.FENCING_EPOCH.eq(lease.fencingEpoch()));
-  }
-
-  private boolean isCurrent(DSLContext transaction, CertificateSigningLease lease) {
-    return transaction.fetchExists(
-        transaction
-            .selectOne()
-            .from(TRANSCODE_CA_SIGNING_LEASE)
-            .where(leaseIdentity(lease))
-            .and(TRANSCODE_CA_SIGNING_LEASE.LEASE_UNTIL.gt(statementTimestamp())));
-  }
-
-  private Field<OffsetDateTime> statementTimestamp() {
-    return DSL.function(DSL.name("statement_timestamp"), SQLDataType.TIMESTAMPWITHTIMEZONE);
   }
 
   @Builder
