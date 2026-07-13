@@ -162,8 +162,7 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
     var processManager = new FakeSegmentProducingFfmpegProcessManager("segment0.ts", segmentData);
     var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
     var streamSessionId = UUID.randomUUID();
-    var job =
-        renditionJob(streamSessionId, "720p", ContainerFormat.CONTAINER_FORMAT_MPEG_TS);
+    var job = renditionJob(streamSessionId, "720p", ContainerFormat.CONTAINER_FORMAT_MPEG_TS);
 
     try (var server = server(segmentStore);
         var worker = worker(processManager, mediaRoot)) {
@@ -198,21 +197,25 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
     var streamSessionId = UUID.randomUUID();
     var processManager =
         new EndingFfmpegProcessManager(Map.of("segment0.ts", "complete segment".getBytes()));
+    var job = renditionJob(streamSessionId, "720p", ContainerFormat.CONTAINER_FORMAT_MPEG_TS);
 
     try (var server = server(segmentStore);
         var worker = worker(processManager, mediaRoot)) {
       server.start();
       worker.start("localhost", server.port());
 
-      assertThat(
-              server.dispatch(
-                  renditionJob(streamSessionId, "720p", ContainerFormat.CONTAINER_FORMAT_MPEG_TS)))
-          .isTrue();
+      assertThat(server.dispatch(job)).isTrue();
       assertThat(server.isRunning(streamSessionId)).isTrue();
 
       await().atMost(5, TimeUnit.SECONDS).until(() -> !server.isRunning(streamSessionId));
       assertThat(segmentStore.readSegment(streamSessionId, "720p/segment0.ts"))
           .isEqualTo("complete segment".getBytes());
+      await()
+          .atMost(5, TimeUnit.SECONDS)
+          .until(
+              () ->
+                  Files.notExists(
+                      tempDir.resolve("segments").resolve(uuid(job.getJobAttemptId()).toString())));
     }
   }
 
