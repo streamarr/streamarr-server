@@ -70,6 +70,52 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should enforce the worker session server lifecycle")
+  void shouldEnforceWorkerSessionServerLifecycle() throws Exception {
+    try (var server = server()) {
+      assertThat(server.hasConnectedWorker()).isFalse();
+      assertThatThrownBy(server::port)
+          .isInstanceOf(IllegalStateException.class)
+          .hasMessage("Worker session server is not started");
+      server.close();
+
+      server.start();
+
+      assertThatThrownBy(server::start)
+          .isInstanceOf(IllegalStateException.class)
+          .hasMessage("Worker session server is already started");
+    }
+  }
+
+  @Test
+  @DisplayName("Should reject invalid worker session server configuration")
+  void shouldRejectInvalidWorkerSessionServerConfiguration() {
+    assertThatThrownBy(
+            () ->
+                WorkerSessionServerConfiguration.builder()
+                    .port(-1)
+                    .trustDomain("streamarr.test")
+                    .build())
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Worker session port must be between 0 and 65535");
+    assertThatThrownBy(
+            () ->
+                WorkerSessionServerConfiguration.builder()
+                    .port(65_536)
+                    .trustDomain("streamarr.test")
+                    .build())
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Worker session port must be between 0 and 65535");
+    assertThatThrownBy(() -> WorkerSessionServerConfiguration.builder().port(0).build())
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Worker trust domain is required");
+    assertThatThrownBy(
+            () -> WorkerSessionServerConfiguration.builder().port(0).trustDomain(" ").build())
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Worker trust domain is required");
+  }
+
+  @Test
   @DisplayName("Should reject a reported worker identity that differs from its mTLS identity")
   void shouldRejectReportedWorkerIdentityThatDiffersFromItsMtlsIdentity() throws Exception {
     try (var server = server()) {
@@ -286,6 +332,48 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
         await().atMost(5, TimeUnit.SECONDS).until(() -> server.availableSlots() == 1);
         assertThat(server.dispatch(second)).isTrue();
         assertThat(worker.nextResponse().getStartRendition().getJob()).isEqualTo(second);
+      } finally {
+        shutdown(channel);
+      }
+    }
+  }
+
+  @Test
+  @DisplayName("Should reject worker operations outside connection-owned rendition state")
+  void shouldRejectWorkerOperationsOutsideConnectionOwnedRenditionState() throws Exception {
+    var segmentStore = new FakeSegmentStore();
+    try (var server = server(segmentStore)) {
+      server.start();
+      var channel = workerChannel(server.port());
+
+      var identity = workerIdentity(UUID.randomUUID());
+      try (var worker = connect(channel, identity)) {
+        var workerSession = worker.nextResponse().getSessionAccepted();
+        assertThat(server.stopRendition(UUID.randomUUID())).isFalse();
+        assertThat(server.dispatch(renditionJob().toBuilder().clearSource().build())).isFalse();
+        assertThat(server.isRunning(UUID.randomUUID())).isFalse();
+
+        var job = renditionJob();
+        assertThat(server.dispatch(job)).isTrue();
+        assertThat(worker.nextResponse().getStartRendition().getJob()).isEqualTo(job);
+        assertThat(server.isRunning(uuid(job.getStreamSessionId()), "missing")).isFalse();
+        var metadata =
+            segmentMetadata(workerSession, identity, job).setContentLengthBytes(1).build();
+        var unownedMetadata =
+            List.of(
+                metadata.toBuilder().setWorkerSessionId(uuid(UUID.randomUUID())).build(),
+                metadata.toBuilder().setWorker(workerIdentity(UUID.randomUUID())).build(),
+                metadata.toBuilder().setJobAttemptId(uuid(UUID.randomUUID())).build(),
+                metadata.toBuilder().setStreamSessionId(uuid(UUID.randomUUID())).build(),
+                metadata.toBuilder().setJobId(uuid(UUID.randomUUID())).build(),
+                metadata.toBuilder().setRenditionName("other").build());
+
+        unownedMetadata.forEach(
+            unowned ->
+                assertUploadRejected(
+                    upload(channel, unowned, new byte[] {1}), Status.Code.PERMISSION_DENIED));
+        assertThat(segmentStore.segmentExists(uuid(job.getStreamSessionId()), "720p/segment0.ts"))
+            .isFalse();
       } finally {
         shutdown(channel);
       }

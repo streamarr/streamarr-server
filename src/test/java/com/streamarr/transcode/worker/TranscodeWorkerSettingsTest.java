@@ -82,6 +82,44 @@ class TranscodeWorkerSettingsTest {
         .hasMessage("TRANSCODE_WORKER_SLOTS must be positive");
   }
 
+  @Test
+  @DisplayName("Should map explicit worker process settings")
+  void shouldMapExplicitWorkerProcessSettings() {
+    var environment = new HashMap<>(requiredEnvironment());
+    environment.put("TRANSCODE_WORKER_CONTROL_PLANE_PORT", "65535");
+    environment.put("TRANSCODE_WORKER_SLOTS", "2");
+    environment.put("TRANSCODE_WORKER_FFMPEG_PATH", "/usr/local/bin/ffmpeg");
+    environment.put("TRANSCODE_WORKER_SEGMENT_BASE_PATH", "/transcode");
+
+    var settings = TranscodeWorkerSettings.fromEnvironment(environment);
+
+    assertThat(settings.controlPlanePort()).isEqualTo(65_535);
+    assertThat(settings.ffmpegPath()).isEqualTo("/usr/local/bin/ffmpeg");
+    assertThat(settings.workerConfiguration().availableSlots()).isEqualTo(2);
+    assertThat(settings.workerConfiguration().segmentBasePath()).isEqualTo(Path.of("/transcode"));
+  }
+
+  @Test
+  @DisplayName("Should explain invalid worker process settings")
+  void shouldExplainInvalidWorkerProcessSettings() {
+    assertInvalidSetting("TRANSCODE_WORKER_ID", "not-a-uuid", "TRANSCODE_WORKER_ID must be a UUID");
+    assertInvalidSetting(
+        "TRANSCODE_WORKER_CONTROL_PLANE_PORT",
+        "65536",
+        "TRANSCODE_WORKER_CONTROL_PLANE_PORT must not exceed 65535");
+    assertInvalidSetting(
+        "TRANSCODE_WORKER_SLOTS", "two", "TRANSCODE_WORKER_SLOTS must be an integer");
+  }
+
+  private void assertInvalidSetting(String key, String value, String expectedMessage) {
+    var environment = new HashMap<>(requiredEnvironment());
+    environment.put(key, value);
+
+    assertThatThrownBy(() -> TranscodeWorkerSettings.fromEnvironment(environment))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage(expectedMessage);
+  }
+
   private Map<String, String> requiredEnvironment() {
     return Map.of(
         "TRANSCODE_WORKER_CONTROL_PLANE_HOST", "streamarr-server",
