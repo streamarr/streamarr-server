@@ -1,6 +1,7 @@
 package com.streamarr.server.repositories.streaming.trust;
 
 import static com.streamarr.server.jooq.generated.tables.TranscodeEnrollmentGrant.TRANSCODE_ENROLLMENT_GRANT;
+import static com.streamarr.server.jooq.generated.tables.TranscodeWorkerCertificateIssuance.TRANSCODE_WORKER_CERTIFICATE_ISSUANCE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.AbstractIntegrationTest;
@@ -219,6 +220,58 @@ class WorkerCertificateIssuanceRepositoryIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName(
+      "Should roll back first certificate claim when signing lease expires during lock wait")
+  void shouldRollBackFirstCertificateClaimWhenSigningLeaseExpiresDuringLockWait() throws Exception {
+    var fixture = issuanceFixture();
+    var expiringLease =
+        signingLeaseRepository.renew(fixture.issuanceLease(), Duration.ofSeconds(2)).orElseThrow();
+    var grantLocked = new CountDownLatch(1);
+    var releaseGrant = new CountDownLatch(1);
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var blocker =
+          executor.submit(
+              () ->
+                  dsl.transaction(
+                      configuration -> {
+                        DSL.using(configuration)
+                            .select(TRANSCODE_ENROLLMENT_GRANT.GRANT_ID)
+                            .from(TRANSCODE_ENROLLMENT_GRANT)
+                            .where(TRANSCODE_ENROLLMENT_GRANT.GRANT_ID.eq(fixture.grantId()))
+                            .forUpdate()
+                            .fetchSingle();
+                        grantLocked.countDown();
+                        assertThat(releaseGrant.await(10, TimeUnit.SECONDS)).isTrue();
+                      }));
+      assertThat(grantLocked.await(5, TimeUnit.SECONDS)).isTrue();
+      var claim = executor.submit(() -> repository.claim(fixture.claimRequest(), expiringLease));
+      try {
+        awaitGrantLockWait();
+        awaitDatabaseTime(expiringLease.leaseUntil());
+      } finally {
+        releaseGrant.countDown();
+      }
+
+      assertThat(claim.get(5, TimeUnit.SECONDS))
+          .isEqualTo(
+              new CertificateIssuanceClaimResult.Rejected(
+                  CertificateIssuanceClaimRejection.SIGNING_LEASE_UNAVAILABLE));
+      blocker.get(5, TimeUnit.SECONDS);
+    }
+    assertThat(
+            dsl.fetchExists(
+                TRANSCODE_WORKER_CERTIFICATE_ISSUANCE,
+                TRANSCODE_WORKER_CERTIFICATE_ISSUANCE.REQUEST_ID.eq(fixture.requestId())))
+        .isFalse();
+    assertThat(
+            dsl.select(TRANSCODE_ENROLLMENT_GRANT.CONSUMED_AT)
+                .from(TRANSCODE_ENROLLMENT_GRANT)
+                .where(TRANSCODE_ENROLLMENT_GRANT.GRANT_ID.eq(fixture.grantId()))
+                .fetchSingle(TRANSCODE_ENROLLMENT_GRANT.CONSUMED_AT))
+        .isNull();
+  }
+
+  @Test
   @DisplayName("Should reject first certificate claim when grant expires during lock wait")
   void shouldRejectFirstCertificateClaimWhenGrantExpiresDuringLockWait() throws Exception {
     var fixture = issuanceFixture();
@@ -307,6 +360,17 @@ class WorkerCertificateIssuanceRepositoryIT extends AbstractIntegrationTest {
       LockSupport.parkNanos(Duration.ofMillis(1).toNanos());
     }
     throw new AssertionError("Enrollment grant claim did not wait for the row lock");
+  }
+
+  private void awaitDatabaseTime(Instant deadline) {
+    var timeout = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+    while (System.nanoTime() < timeout) {
+      if (!trustRepository.databaseTime().isBefore(deadline)) {
+        return;
+      }
+      LockSupport.parkNanos(Duration.ofMillis(1).toNanos());
+    }
+    throw new AssertionError("Database time did not reach signing lease expiry");
   }
 
   private IssuanceFixture issuanceFixture() throws Exception {
