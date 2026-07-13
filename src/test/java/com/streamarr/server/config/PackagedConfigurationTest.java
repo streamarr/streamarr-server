@@ -70,11 +70,13 @@ class PackagedConfigurationTest {
   @DisplayName("Should ship separate server and transcode worker process types")
   void shouldShipSeparateServerAndTranscodeWorkerProcessTypes() throws IOException {
     var processes = Set.copyOf(Files.readAllLines(Path.of("Procfile")));
+    var buildAction = Files.readString(Path.of(".github/actions/pack-build/action.yml"));
 
     assertThat(processes)
         .contains(
             "web: java org.springframework.boot.loader.launch.JarLauncher",
             "worker: java -Dloader.main=com.streamarr.transcode.worker.TranscodeWorkerApplication "
                 + "org.springframework.boot.loader.launch.PropertiesLauncher");
+    assertThat(buildAction).contains("--buildpack paketo-buildpacks/procfile");
   }
 }
