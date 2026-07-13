@@ -160,7 +160,9 @@ class WorkerSessionGrpcServiceTest {
     private Throwable error;
 
     @Override
-    public void onNext(UploadSegmentResponse value) {}
+    public void onNext(UploadSegmentResponse value) {
+      throw new AssertionError("Rejected or cancelled upload should not receive a response");
+    }
 
     @Override
     public void onError(Throwable throwable) {
@@ -168,7 +170,9 @@ class WorkerSessionGrpcServiceTest {
     }
 
     @Override
-    public void onCompleted() {}
+    public void onCompleted() {
+      throw new AssertionError("Rejected or cancelled upload should not complete successfully");
+    }
 
     private Throwable error() {
       return error;
@@ -179,12 +183,21 @@ class WorkerSessionGrpcServiceTest {
       implements StreamObserver<WorkerSessionResponse> {
 
     @Override
-    public void onNext(WorkerSessionResponse value) {}
+    public void onNext(WorkerSessionResponse value) {
+      assertThat(value.getCommandCase())
+          .isIn(
+              WorkerSessionResponse.CommandCase.SESSION_ACCEPTED,
+              WorkerSessionResponse.CommandCase.START_RENDITION);
+    }
 
     @Override
-    public void onError(Throwable throwable) {}
+    public void onError(Throwable throwable) {
+      throw new AssertionError("Registered worker should remain connected", throwable);
+    }
 
     @Override
-    public void onCompleted() {}
+    public void onCompleted() {
+      throw new AssertionError("Registered worker should remain connected");
+    }
   }
 }

@@ -93,10 +93,14 @@ class LiveWorkerConnectionRegistryTest {
       }
 
       @Override
-      public void onError(Throwable throwable) {}
+      public void onError(Throwable throwable) {
+        throw new AssertionError("Replacement worker should remain connected", throwable);
+      }
 
       @Override
-      public void onCompleted() {}
+      public void onCompleted() {
+        throw new AssertionError("Replacement worker should remain connected");
+      }
     };
   }
 
@@ -104,7 +108,9 @@ class LiveWorkerConnectionRegistryTest {
       implements StreamObserver<WorkerSessionResponse> {
 
     @Override
-    public void onNext(WorkerSessionResponse value) {}
+    public void onNext(WorkerSessionResponse value) {
+      assertThat(value.hasSessionAccepted()).isTrue();
+    }
 
     @Override
     public void onError(Throwable throwable) {
@@ -117,6 +123,8 @@ class LiveWorkerConnectionRegistryTest {
     }
 
     @Override
-    public void onCompleted() {}
+    public void onCompleted() {
+      throw new AssertionError("Replaced worker should fail instead of completing");
+    }
   }
 }
