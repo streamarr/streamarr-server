@@ -11,7 +11,8 @@ It also replaces the unmerged `ADR 0018: Direct Fenced Worker Control` reviewed 
 
 * The live playback-authority gate is implemented and V049 removes the version counters and their PostgreSQL notification feed.
 * The distributed walking skeleton is implemented: the server dispatches one rendition over an outbound worker session, the worker runs FFmpeg, uploads one segment on a separate gRPC stream, and Streamarr serves the segment through its existing HTTP endpoint.
-* Opt-in production configuration, continuous segment delivery, and deployment packaging remain before distributed transcoding is ready for operators.
+* Workers continuously upload numbered MPEG-TS segments or the fMP4 initialization segment and media fragments on separate gRPC streams.
+* Opt-in production configuration and deployment packaging remain before distributed transcoding is ready for operators.
 
 == Context
 

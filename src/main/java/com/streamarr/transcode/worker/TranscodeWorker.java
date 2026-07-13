@@ -6,6 +6,8 @@ import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
 import com.google.protobuf.ByteString;
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegTranscodeEngine;
 import com.streamarr.transcode.protocol.ProtoUuid;
+import com.streamarr.transcode.v1.ContainerFormat;
+import com.streamarr.transcode.v1.JobAttemptCompleted;
 import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.JobAttemptFailure;
 import com.streamarr.transcode.v1.JobAttemptStarted;
@@ -34,6 +36,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -135,15 +138,44 @@ public final class TranscodeWorker implements AutoCloseable {
     }
 
     try {
-      uploadFirstSegment(job, outputDirectory);
+      uploadProducedSegments(job, outputDirectory);
     } catch (Exception _) {
       failRendition(job, JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED);
     }
   }
 
-  private void uploadFirstSegment(RenditionJob job, Path outputDirectory) throws Exception {
-    var segmentName = firstSegmentName(job);
-    var segmentPath = awaitSegment(outputDirectory.resolve(segmentName));
+  private void uploadProducedSegments(RenditionJob job, Path outputDirectory) throws Exception {
+    if (job.getDecision().getContainer() == ContainerFormat.CONTAINER_FORMAT_FMP4
+        && !uploadWhenProduced(job, outputDirectory, "init.mp4")) {
+      finishEndedRendition(job, false);
+      return;
+    }
+
+    var segmentNumber = job.getExecution().getStartNumber();
+    var uploadedMediaSegment = false;
+    while (isAttemptActive(job)) {
+      var segmentName = segmentName(job, segmentNumber);
+      if (!uploadWhenProduced(job, outputDirectory, segmentName)) {
+        finishEndedRendition(job, uploadedMediaSegment);
+        return;
+      }
+      uploadedMediaSegment = true;
+      segmentNumber++;
+    }
+  }
+
+  private boolean uploadWhenProduced(RenditionJob job, Path outputDirectory, String segmentName)
+      throws Exception {
+    var segmentPath = awaitSegment(job, outputDirectory.resolve(segmentName));
+    if (segmentPath.isEmpty()) {
+      return false;
+    }
+    uploadSegment(job, segmentName, segmentPath.get());
+    return true;
+  }
+
+  private void uploadSegment(RenditionJob job, String segmentName, Path segmentPath)
+      throws Exception {
     var segmentLength = Files.size(segmentPath);
     var response = new CompletableFuture<UploadSegmentResponse>();
     var upload =
@@ -167,11 +199,14 @@ public final class TranscodeWorker implements AutoCloseable {
     }
   }
 
-  private static Path awaitSegment(Path segmentPath) {
+  private Optional<Path> awaitSegment(RenditionJob job, Path segmentPath) {
     var deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(SEGMENT_WAIT_SECONDS);
     while (System.nanoTime() < deadline) {
       if (Files.isRegularFile(segmentPath)) {
-        return segmentPath;
+        return Optional.of(segmentPath);
+      }
+      if (!isAttemptProducing(job)) {
+        return Optional.empty();
       }
       try {
         Thread.sleep(50);
@@ -181,6 +216,16 @@ public final class TranscodeWorker implements AutoCloseable {
       }
     }
     throw new WorkerJobException("Timed out waiting for a segment");
+  }
+
+  private synchronized boolean isAttemptActive(RenditionJob job) {
+    return activeRenditions.containsKey(fromProto(job.getJobAttemptId()));
+  }
+
+  private synchronized boolean isAttemptProducing(RenditionJob job) {
+    var rendition = activeRenditions.get(fromProto(job.getJobAttemptId()));
+    return rendition != null
+        && engine.isRunning(rendition.streamSessionId(), rendition.renditionName());
   }
 
   private SegmentUploadMetadata segmentMetadata(
@@ -198,7 +243,7 @@ public final class TranscodeWorker implements AutoCloseable {
         .build();
   }
 
-  private static String firstSegmentName(RenditionJob job) {
+  private static String segmentName(RenditionJob job, int segmentNumber) {
     var extension =
         switch (job.getDecision().getContainer()) {
           case CONTAINER_FORMAT_MPEG_TS -> ".ts";
@@ -206,7 +251,7 @@ public final class TranscodeWorker implements AutoCloseable {
           case CONTAINER_FORMAT_UNSPECIFIED, UNRECOGNIZED ->
               throw new WorkerJobException("Container format is required");
         };
-    return "segment" + job.getExecution().getStartNumber() + extension;
+    return "segment" + segmentNumber + extension;
   }
 
   private static SegmentContentType contentType(RenditionJob job) {
@@ -224,6 +269,23 @@ public final class TranscodeWorker implements AutoCloseable {
       engine.stop(rendition.streamSessionId(), rendition.renditionName());
     }
     sendFailure(job, failure);
+  }
+
+  private synchronized void finishEndedRendition(RenditionJob job, boolean uploadedMediaSegment) {
+    if (!isAttemptActive(job)) {
+      return;
+    }
+    if (!uploadedMediaSegment) {
+      failRendition(job, JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED);
+      return;
+    }
+
+    activeRenditions.remove(fromProto(job.getJobAttemptId()));
+    send(
+        WorkerSessionRequest.newBuilder()
+            .setJobAttemptCompleted(
+                JobAttemptCompleted.newBuilder().setJobAttemptId(job.getJobAttemptId()))
+            .build());
   }
 
   private synchronized void stopRendition(StopRenditionCommand command) {

@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming.remote;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -38,6 +39,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -54,16 +56,19 @@ class RemotePlaybackIT extends AbstractIntegrationTest {
   @TempDir Path tempDir;
 
   @Test
-  @DisplayName("Should serve a segment produced by an outbound transcode worker")
-  void shouldServeSegmentProducedByOutboundTranscodeWorker() throws Exception {
+  @DisplayName("Should serve sequential segments produced by an outbound transcode worker")
+  void shouldServeSequentialSegmentsProducedByOutboundTranscodeWorker() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     var mediaFile = Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
-    var segmentData = "remote playable segment".getBytes();
+    var segments =
+        Map.of(
+            "segment0.ts", "first remote segment".getBytes(),
+            "segment1.ts", "second remote segment".getBytes());
     var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
     var streamSessionId = UUID.randomUUID();
 
     try (var server = server(segmentStore);
-        var worker = worker(mediaRoot, segmentData)) {
+        var worker = worker(mediaRoot, segments)) {
       server.start();
       worker.start("localhost", server.port());
       var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot);
@@ -72,14 +77,54 @@ class RemotePlaybackIT extends AbstractIntegrationTest {
       assertThat(executor.isHealthy()).isTrue();
       assertThat(executor.isRunning(streamSessionId)).isTrue();
       assertThat(executor.isRunning(streamSessionId, StreamSession.defaultVariant())).isTrue();
-      var response =
-          controller(streamSessionId, segmentStore).getSegment(streamSessionId, "segment0.ts");
+      await()
+          .atMost(2, TimeUnit.SECONDS)
+          .until(() -> segmentStore.segmentExists(streamSessionId, "segment1.ts"));
+      var streamController = controller(streamSessionId, segmentStore);
+      var first = streamController.getSegment(streamSessionId, "segment0.ts");
+      var second = streamController.getSegment(streamSessionId, "segment1.ts");
 
-      assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
-      assertThat(response.getHeaders().getContentType().toString()).isEqualTo("video/mp2t");
-      assertThat(response.getBody()).isEqualTo(segmentData);
+      assertThat(first.getStatusCode().is2xxSuccessful()).isTrue();
+      assertThat(first.getHeaders().getContentType().toString()).isEqualTo("video/mp2t");
+      assertThat(first.getBody()).isEqualTo(segments.get("segment0.ts"));
+      assertThat(second.getStatusCode().is2xxSuccessful()).isTrue();
+      assertThat(second.getHeaders().getContentType().toString()).isEqualTo("video/mp2t");
+      assertThat(second.getBody()).isEqualTo(segments.get("segment1.ts"));
       executor.stop(streamSessionId);
       assertThat(executor.isRunning(streamSessionId)).isFalse();
+    }
+  }
+
+  @Test
+  @DisplayName("Should serve the initialization segment and media produced by an outbound worker")
+  void shouldServeInitializationSegmentAndMediaProducedByOutboundWorker() throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+    var mediaFile = Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var segments =
+        Map.of(
+            "init.mp4", "remote initialization".getBytes(),
+            "segment0.m4s", "remote media fragment".getBytes());
+    var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
+    var streamSessionId = UUID.randomUUID();
+
+    try (var server = server(segmentStore);
+        var worker = worker(mediaRoot, segments)) {
+      server.start();
+      worker.start("localhost", server.port());
+      var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot);
+
+      executor.start(transcodeRequest(streamSessionId, mediaFile, ContainerFormat.FMP4));
+      await()
+          .atMost(2, TimeUnit.SECONDS)
+          .until(() -> segmentStore.segmentExists(streamSessionId, "segment0.m4s"));
+      var streamController = controller(streamSessionId, segmentStore, ContainerFormat.FMP4);
+      var initialization = streamController.getInitSegment(streamSessionId);
+      var media = streamController.getSegment(streamSessionId, "segment0.m4s");
+
+      assertThat(initialization.getHeaders().getContentType().toString()).isEqualTo("video/mp4");
+      assertThat(initialization.getBody()).isEqualTo(segments.get("init.mp4"));
+      assertThat(media.getHeaders().getContentType().toString()).isEqualTo("video/mp4");
+      assertThat(media.getBody()).isEqualTo(segments.get("segment0.m4s"));
     }
   }
 
@@ -133,7 +178,8 @@ class RemotePlaybackIT extends AbstractIntegrationTest {
     return new WorkerSessionServer(configuration, segmentStore);
   }
 
-  private TranscodeWorker worker(Path mediaRoot, byte[] segmentData) throws URISyntaxException {
+  private TranscodeWorker worker(Path mediaRoot, Map<String, byte[]> segments)
+      throws URISyntaxException {
     var configuration =
         TranscodeWorkerConfiguration.builder()
             .workerId(WORKER_ID)
@@ -151,7 +197,7 @@ class RemotePlaybackIT extends AbstractIntegrationTest {
     var engine =
         new FfmpegTranscodeEngine(
             new FfmpegCommandBuilder("ffmpeg"),
-            new FakeSegmentProducingFfmpegProcessManager("segment0.ts", segmentData),
+            new FakeSegmentProducingFfmpegProcessManager(segments),
             new TranscodeCapabilityService(
                 "ffmpeg",
                 _ -> {
@@ -161,11 +207,16 @@ class RemotePlaybackIT extends AbstractIntegrationTest {
   }
 
   private StreamController controller(UUID streamSessionId, LocalSegmentStore segmentStore) {
+    return controller(streamSessionId, segmentStore, ContainerFormat.MPEGTS);
+  }
+
+  private StreamController controller(
+      UUID streamSessionId, LocalSegmentStore segmentStore, ContainerFormat containerFormat) {
     var streamingService = mock(StreamingService.class);
     var session =
         StreamSession.builder()
             .sessionId(streamSessionId)
-            .transcodeDecision(transcodeDecision())
+            .transcodeDecision(transcodeDecision(containerFormat))
             .build();
     when(streamingService.accessSession(any())).thenReturn(Optional.of(session));
     var authorizationService = mock(AuthorizationService.class);
@@ -175,12 +226,17 @@ class RemotePlaybackIT extends AbstractIntegrationTest {
   }
 
   private TranscodeRequest transcodeRequest(UUID streamSessionId, Path mediaFile) {
+    return transcodeRequest(streamSessionId, mediaFile, ContainerFormat.MPEGTS);
+  }
+
+  private TranscodeRequest transcodeRequest(
+      UUID streamSessionId, Path mediaFile, ContainerFormat containerFormat) {
     return TranscodeRequest.builder()
         .sessionId(streamSessionId)
         .sourcePath(mediaFile)
         .segmentDuration(6)
         .framerate(23.976)
-        .transcodeDecision(transcodeDecision())
+        .transcodeDecision(transcodeDecision(containerFormat))
         .width(1920)
         .height(1080)
         .bitrate(5_000_000)
@@ -188,13 +244,13 @@ class RemotePlaybackIT extends AbstractIntegrationTest {
         .build();
   }
 
-  private TranscodeDecision transcodeDecision() {
+  private TranscodeDecision transcodeDecision(ContainerFormat containerFormat) {
     return TranscodeDecision.builder()
         .transcodeMode(TranscodeMode.FULL_TRANSCODE)
         .videoCodecFamily("h264")
         .audioDecision(AudioDecision.stereoAac())
         .subtitleDecision(SubtitleDecision.exclude())
-        .containerFormat(ContainerFormat.MPEGTS)
+        .containerFormat(containerFormat)
         .needsKeyframeAlignment(true)
         .build();
   }
