@@ -1,9 +1,13 @@
 package com.streamarr.server.repositories.auth;
 
+import static com.streamarr.server.jooq.generated.tables.AccountProfile.ACCOUNT_PROFILE;
 import static com.streamarr.server.jooq.generated.tables.AuthSession.AUTH_SESSION;
+import static com.streamarr.server.jooq.generated.tables.HouseholdMembership.HOUSEHOLD_MEMBERSHIP;
+import static com.streamarr.server.jooq.generated.tables.UserAccount.USER_ACCOUNT;
 
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
+import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import com.streamarr.server.repositories.JooqQueryHelper;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
@@ -24,6 +28,28 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
   private final CounterChangePublisher counterChangePublisher;
 
   @PersistenceContext private final EntityManager entityManager;
+
+  @Override
+  public boolean hasLivePlaybackAuthority(PlaybackAuthority authority) {
+    return dsl.fetchExists(
+        dsl.selectOne()
+            .from(AUTH_SESSION)
+            .join(USER_ACCOUNT)
+            .on(USER_ACCOUNT.ID.eq(AUTH_SESSION.ACCOUNT_ID))
+            .join(HOUSEHOLD_MEMBERSHIP)
+            .on(HOUSEHOLD_MEMBERSHIP.ACCOUNT_ID.eq(AUTH_SESSION.ACCOUNT_ID))
+            .and(HOUSEHOLD_MEMBERSHIP.HOUSEHOLD_ID.eq(authority.householdId()))
+            .join(ACCOUNT_PROFILE)
+            .on(ACCOUNT_PROFILE.ACCOUNT_ID.eq(AUTH_SESSION.ACCOUNT_ID))
+            .and(ACCOUNT_PROFILE.HOUSEHOLD_ID.eq(authority.householdId()))
+            .and(ACCOUNT_PROFILE.PROFILE_ID.eq(authority.profileId()))
+            .where(AUTH_SESSION.ID.eq(authority.authSessionId()))
+            .and(AUTH_SESSION.ACCOUNT_ID.eq(authority.accountId()))
+            .and(AUTH_SESSION.ACTIVE_HOUSEHOLD_ID.eq(authority.householdId()))
+            .and(AUTH_SESSION.ACTIVE_PROFILE_ID.eq(authority.profileId()))
+            .and(AUTH_SESSION.REVOKED_AT.isNull())
+            .and(USER_ACCOUNT.ENABLED.isTrue()));
+  }
 
   @Override
   @Transactional

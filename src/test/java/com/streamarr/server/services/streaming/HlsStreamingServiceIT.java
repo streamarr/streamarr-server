@@ -40,6 +40,7 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   @TestBean TranscodeExecutor transcodeExecutor;
   @TestBean FfprobeService ffprobeService;
   @TestBean SegmentStore segmentStore;
+  @TestBean PlaybackAuthorityGate authorityGate;
 
   private static final FakeTranscodeExecutor FAKE_EXECUTOR = new FakeTranscodeExecutor();
   private static final FakeFfprobeService FAKE_FFPROBE = new FakeFfprobeService();
@@ -55,6 +56,10 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
 
   static SegmentStore segmentStore() {
     return FAKE_SEGMENT_STORE;
+  }
+
+  static PlaybackAuthorityGate authorityGate() {
+    return _ -> true;
   }
 
   private MediaFile savedMediaFile;

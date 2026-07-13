@@ -2,11 +2,14 @@ package com.streamarr.server.repositories.auth;
 
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
+import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
 public interface AuthSessionRepositoryCustom {
+
+  boolean hasLivePlaybackAuthority(PlaybackAuthority authority);
 
   /**
    * Revokes an unrevoked session and bumps its version counter in one statement. Returns the new

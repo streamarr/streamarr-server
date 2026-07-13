@@ -4,6 +4,7 @@ import com.streamarr.server.repositories.media.MediaFileRepository;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.server.services.streaming.HlsStreamingService;
+import com.streamarr.server.services.streaming.PlaybackAuthorityGate;
 import com.streamarr.server.services.streaming.QualityLadderService;
 import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
 import com.streamarr.server.services.streaming.SegmentStore;
@@ -99,6 +100,7 @@ public class StreamingConfig {
       TranscodeDecisionService transcodeDecisionService,
       QualityLadderService qualityLadderService,
       StreamingProperties properties,
+      PlaybackAuthorityGate authorityGate,
       RuntimeStreamSessionRegistry runtimeRegistry,
       MutexFactoryProvider mutexFactoryProvider) {
     return new HlsStreamingService(
@@ -109,6 +111,7 @@ public class StreamingConfig {
         transcodeDecisionService,
         qualityLadderService,
         properties,
+        authorityGate,
         runtimeRegistry,
         mutexFactoryProvider.getMutexFactory());
   }

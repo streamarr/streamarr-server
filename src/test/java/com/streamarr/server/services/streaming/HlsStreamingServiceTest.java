@@ -22,10 +22,12 @@ import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.domain.streaming.VideoQuality;
+import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.MaxConcurrentTranscodesException;
 import com.streamarr.server.exceptions.MediaFileNotFoundException;
 import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
+import com.streamarr.server.fakes.FakePlaybackAuthorityGate;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
@@ -51,6 +53,7 @@ class HlsStreamingServiceTest {
   private FakeTranscodeExecutor transcodeExecutor;
   private FakeSegmentStore segmentStore;
   private FakeFfprobeService ffprobeService;
+  private FakePlaybackAuthorityGate authorityGate;
   private HlsStreamingService service;
 
   @BeforeEach
@@ -59,6 +62,7 @@ class HlsStreamingServiceTest {
     transcodeExecutor = new FakeTranscodeExecutor();
     segmentStore = new FakeSegmentStore();
     ffprobeService = new FakeFfprobeService();
+    authorityGate = new FakePlaybackAuthorityGate();
     var properties =
         StreamingProperties.builder()
             .maxConcurrentTranscodes(3)
@@ -78,6 +82,7 @@ class HlsStreamingServiceTest {
             decisionService,
             qualityLadderService,
             properties,
+            authorityGate,
             new FakeRuntimeStreamSessionRegistry(),
             new MutexFactory<>());
   }
@@ -206,6 +211,61 @@ class HlsStreamingServiceTest {
     var result = accessMissingSession(UUID.randomUUID());
 
     assertThat(result).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should return empty when playback authority does not own runtime session")
+  void shouldReturnEmptyWhenPlaybackAuthorityDoesNotOwnRuntimeSession() {
+    var file = seedMediaFile();
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var lastAccessedAt = session.getLastAccessedAt();
+    var request =
+        PlaybackRequest.builder()
+            .streamSessionId(session.getSessionId())
+            .authority(defaultPlaybackAuthorityBuilder().build())
+            .build();
+    authorityGate.resetCheckCount();
+
+    var result = service.accessSession(request);
+
+    assertThat(result).isEmpty();
+    assertThat(session.getLastAccessedAt()).isEqualTo(lastAccessedAt);
+    assertThat(authorityGate.checkCount()).isZero();
+  }
+
+  @Test
+  @DisplayName("Should return empty without authority check when runtime session is missing")
+  void shouldReturnEmptyWithoutAuthorityCheckWhenRuntimeSessionIsMissing() {
+    var result = accessMissingSession(UUID.randomUUID());
+
+    assertThat(result).isEmpty();
+    assertThat(authorityGate.checkCount()).isZero();
+  }
+
+  @Test
+  @DisplayName("Should return empty when live playback authority is denied")
+  void shouldReturnEmptyWhenLivePlaybackAuthorityIsDenied() {
+    var file = seedMediaFile();
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var lastAccessedAt = session.getLastAccessedAt();
+    authorityGate.deny();
+
+    var result = accessSession(session);
+
+    assertThat(result).isEmpty();
+    assertThat(session.getLastAccessedAt()).isEqualTo(lastAccessedAt);
+  }
+
+  @Test
+  @DisplayName("Should refuse session creation when live playback authority is denied")
+  void shouldRefuseSessionCreationWhenLivePlaybackAuthorityIsDenied() {
+    var file = seedMediaFile();
+    authorityGate.deny();
+
+    assertThatThrownBy(() -> createSession(file.getId(), UUID.randomUUID(), defaultOptions()))
+        .isInstanceOf(AuthenticationRequiredException.class);
+    assertThat(service.getActiveSessionCount()).isZero();
+    assertThat(transcodeExecutor.getStarted()).isEmpty();
   }
 
   @Test
@@ -590,6 +650,7 @@ class HlsStreamingServiceTest {
             new TranscodeDecisionService(),
             new QualityLadderService(),
             properties,
+            authorityGate,
             new FakeRuntimeStreamSessionRegistry(),
             new MutexFactory<>());
 
