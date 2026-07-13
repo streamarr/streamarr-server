@@ -350,6 +350,55 @@ class InstallationTrustRepositoryIT extends AbstractIntegrationTest {
     }
   }
 
+  @Test
+  @DisplayName("Should load exact historical public trust bundle after active bundle advances")
+  void shouldLoadExactHistoricalPublicTrustBundleAfterActiveBundleAdvances() {
+    var lease =
+        signingLeaseRepository
+            .tryAcquire(CertificateAuthorityOperation.BOOTSTRAP, UUID.randomUUID(), LEASE_DURATION)
+            .orElseThrow();
+    var publication = publication();
+    assertThat(repository.publishInitial(lease, publication)).isTrue();
+    var historicalBundle = repository.findInitialized().orElseThrow().activeBundle();
+    dsl.transaction(configuration -> activateSecondBundle(DSL.using(configuration), publication));
+
+    assertThat(repository.findInitialized().orElseThrow().activeBundle().version()).isEqualTo(2L);
+    assertThat(repository.findBundle(publication.installationId(), 1L)).contains(historicalBundle);
+  }
+
+  @Test
+  @DisplayName("Should load overlapping certificate roles from later public trust bundle")
+  void shouldLoadOverlappingCertificateRolesFromLaterPublicTrustBundle() {
+    var lease =
+        signingLeaseRepository
+            .tryAcquire(CertificateAuthorityOperation.BOOTSTRAP, UUID.randomUUID(), LEASE_DURATION)
+            .orElseThrow();
+    var publication = publication();
+    assertThat(repository.publishInitial(lease, publication)).isTrue();
+    var overlap =
+        InitialTrustPublication.from(
+            new BuiltInCertificateAuthority()
+                .create(
+                    publication.installationId(),
+                    repository.databaseTime().plus(Duration.ofMinutes(1))));
+    dsl.transaction(
+        configuration -> {
+          var transaction = DSL.using(configuration);
+          activateSecondBundle(transaction, publication);
+          insertCertificate(
+              transaction, overlap, TranscodeTrustCertificateKind.TRUST_ANCHOR, (short) 1);
+          insertCertificate(transaction, overlap, TranscodeTrustCertificateKind.ISSUER, (short) 1);
+          insertCertificate(
+              transaction, overlap, TranscodeTrustCertificateKind.REVOCATION_SIGNER, (short) 1);
+        });
+
+    var bundle = repository.findBundle(publication.installationId(), 2L).orElseThrow();
+
+    assertThat(bundle.trustAnchors()).hasSize(2);
+    assertThat(bundle.issuers()).hasSize(2);
+    assertThat(bundle.revocationSigners()).hasSize(2);
+  }
+
   private InitialTrustPublication publication() {
     var material =
         new BuiltInCertificateAuthority()
@@ -385,6 +434,18 @@ class InstallationTrustRepositoryIT extends AbstractIntegrationTest {
   }
 
   private void replaceActiveBundle(DSLContext transaction, InitialTrustPublication publication) {
+    activateSecondBundle(transaction, publication);
+    transaction
+        .deleteFrom(TRANSCODE_TRUST_CERTIFICATE)
+        .where(TRANSCODE_TRUST_CERTIFICATE.BUNDLE_VERSION.eq(1L))
+        .execute();
+    transaction
+        .deleteFrom(TRANSCODE_PUBLIC_TRUST_BUNDLE)
+        .where(TRANSCODE_PUBLIC_TRUST_BUNDLE.VERSION.eq(1L))
+        .execute();
+  }
+
+  private void activateSecondBundle(DSLContext transaction, InitialTrustPublication publication) {
     transaction
         .insertInto(TRANSCODE_PUBLIC_TRUST_BUNDLE)
         .set(TRANSCODE_PUBLIC_TRUST_BUNDLE.INSTALLATION_ID, publication.installationId())
@@ -398,20 +459,20 @@ class InstallationTrustRepositoryIT extends AbstractIntegrationTest {
         .set(TRANSCODE_ACTIVE_TRUST_BUNDLE.BUNDLE_VERSION, 2L)
         .set(TRANSCODE_ACTIVE_TRUST_BUNDLE.ACTIVATED_AT, DSL.currentOffsetDateTime())
         .execute();
-    transaction
-        .deleteFrom(TRANSCODE_TRUST_CERTIFICATE)
-        .where(TRANSCODE_TRUST_CERTIFICATE.BUNDLE_VERSION.eq(1L))
-        .execute();
-    transaction
-        .deleteFrom(TRANSCODE_PUBLIC_TRUST_BUNDLE)
-        .where(TRANSCODE_PUBLIC_TRUST_BUNDLE.VERSION.eq(1L))
-        .execute();
   }
 
   private void insertCertificate(
       DSLContext transaction,
       InitialTrustPublication publication,
       TranscodeTrustCertificateKind kind) {
+    insertCertificate(transaction, publication, kind, (short) 0);
+  }
+
+  private void insertCertificate(
+      DSLContext transaction,
+      InitialTrustPublication publication,
+      TranscodeTrustCertificateKind kind,
+      short ordinal) {
     var certificateDer =
         switch (kind) {
           case TRUST_ANCHOR -> publication.rootCertificateDer();
@@ -423,7 +484,7 @@ class InstallationTrustRepositoryIT extends AbstractIntegrationTest {
         .set(TRANSCODE_TRUST_CERTIFICATE.INSTALLATION_ID, publication.installationId())
         .set(TRANSCODE_TRUST_CERTIFICATE.BUNDLE_VERSION, 2L)
         .set(TRANSCODE_TRUST_CERTIFICATE.KIND, kind)
-        .set(TRANSCODE_TRUST_CERTIFICATE.ORDINAL, (short) 0)
+        .set(TRANSCODE_TRUST_CERTIFICATE.ORDINAL, ordinal)
         .set(TRANSCODE_TRUST_CERTIFICATE.CERTIFICATE_DER, certificateDer)
         .set(TRANSCODE_TRUST_CERTIFICATE.CERTIFICATE_SHA256, sha256(certificateDer))
         .execute();

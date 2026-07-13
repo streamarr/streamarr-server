@@ -20,6 +20,7 @@ import java.security.cert.X509Certificate;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.Builder;
@@ -109,13 +110,56 @@ public class InstallationTrustRepositoryImpl implements InstallationTrustReposit
     }
     persistedState.requireComplete(rootDigest);
 
-    var bundle = hydrateBundle(persistedState, rootDigest, states);
+    var bundle = hydrateBundle(persistedState.bundle(), states);
+    var containsBootstrapRoot =
+        bundle.trustAnchors().stream()
+            .anyMatch(certificate -> MessageDigest.isEqual(rootDigest, sha256(certificate)));
+    if (!containsBootstrapRoot) {
+      throw new InstallationTrustException(
+          "Installation root fingerprint does not match the active trust anchor");
+    }
     return Optional.of(new InstallationTrust(persistedState.installationId(), rootDigest, bundle));
   }
 
+  @Override
+  public Optional<PublicTrustBundle> findBundle(UUID installationId, long version) {
+    Objects.requireNonNull(installationId);
+    if (version <= 0) {
+      throw new IllegalArgumentException("Public trust bundle version must be positive");
+    }
+    var states =
+        dsl.select(
+                TRANSCODE_PUBLIC_TRUST_BUNDLE.INSTALLATION_ID,
+                TRANSCODE_PUBLIC_TRUST_BUNDLE.VERSION,
+                TRANSCODE_PUBLIC_TRUST_BUNDLE.CREATED_AT,
+                TRANSCODE_TRUST_CERTIFICATE.KIND,
+                TRANSCODE_TRUST_CERTIFICATE.ORDINAL,
+                TRANSCODE_TRUST_CERTIFICATE.CERTIFICATE_DER,
+                TRANSCODE_TRUST_CERTIFICATE.CERTIFICATE_SHA256)
+            .from(TRANSCODE_PUBLIC_TRUST_BUNDLE)
+            .leftJoin(TRANSCODE_TRUST_CERTIFICATE)
+            .on(
+                TRANSCODE_TRUST_CERTIFICATE
+                    .INSTALLATION_ID
+                    .eq(TRANSCODE_PUBLIC_TRUST_BUNDLE.INSTALLATION_ID)
+                    .and(
+                        TRANSCODE_TRUST_CERTIFICATE.BUNDLE_VERSION.eq(
+                            TRANSCODE_PUBLIC_TRUST_BUNDLE.VERSION)))
+            .where(TRANSCODE_PUBLIC_TRUST_BUNDLE.INSTALLATION_ID.eq(installationId))
+            .and(TRANSCODE_PUBLIC_TRUST_BUNDLE.VERSION.eq(version))
+            .orderBy(TRANSCODE_TRUST_CERTIFICATE.KIND, TRANSCODE_TRUST_CERTIFICATE.ORDINAL)
+            .fetch();
+    if (states.isEmpty()) {
+      return Optional.empty();
+    }
+    var state = states.getFirst();
+    var persistedBundle =
+        new PersistedPublicTrustBundle(state.value1(), state.value2(), state.value3());
+    return Optional.of(hydrateBundle(persistedBundle, states));
+  }
+
   private PublicTrustBundle hydrateBundle(
-      PersistedTrustState persistedState,
-      byte[] expectedRootDigest,
+      PersistedPublicTrustBundle persistedBundle,
       Iterable<? extends org.jooq.Record> certificates) {
     var trustAnchors = new ArrayList<X509Certificate>();
     var issuers = new ArrayList<X509Certificate>();
@@ -125,7 +169,12 @@ public class InstallationTrustRepositoryImpl implements InstallationTrustReposit
       if (kind == null) {
         continue;
       }
-      if (certificate.get(TRANSCODE_TRUST_CERTIFICATE.ORDINAL) != 0) {
+      var ordinal = certificate.get(TRANSCODE_TRUST_CERTIFICATE.ORDINAL);
+      if (ordinal < 0) {
+        throw new InstallationTrustException(
+            "Public trust certificate has a negative role ordinal");
+      }
+      if (persistedBundle.version() == INITIAL_BUNDLE_VERSION && ordinal != 0) {
         throw new InstallationTrustException(
             "Initial public trust certificate has an invalid role and ordinal");
       }
@@ -143,19 +192,19 @@ public class InstallationTrustRepositoryImpl implements InstallationTrustReposit
         case REVOCATION_SIGNER -> revocationSigners.add(parsed);
       }
     }
-    if (trustAnchors.size() != 1 || issuers.size() != 1 || revocationSigners.size() != 1) {
+    if (persistedBundle.version() == INITIAL_BUNDLE_VERSION
+        && (trustAnchors.size() != 1 || issuers.size() != 1 || revocationSigners.size() != 1)) {
       throw new InstallationTrustException(
           "Initial public trust bundle must contain the exact certificate roles");
     }
-    if (!MessageDigest.isEqual(expectedRootDigest, sha256(trustAnchors.getFirst()))) {
+    if (trustAnchors.isEmpty() || issuers.isEmpty() || revocationSigners.isEmpty()) {
       throw new InstallationTrustException(
-          "Installation root fingerprint does not match the active trust anchor");
+          "Public trust bundle must contain every required certificate role");
     }
-
     return PublicTrustBundle.builder()
-        .installationId(persistedState.installationId())
-        .version(persistedState.bundleVersion())
-        .createdAt(persistedState.createdAt().toInstant())
+        .installationId(persistedBundle.installationId())
+        .version(persistedBundle.version())
+        .createdAt(persistedBundle.createdAt().toInstant())
         .trustAnchors(trustAnchors)
         .issuers(issuers)
         .revocationSigners(revocationSigners)
@@ -356,5 +405,12 @@ public class InstallationTrustRepositoryImpl implements InstallationTrustReposit
             "Installation trust state is only partially initialized");
       }
     }
+
+    private PersistedPublicTrustBundle bundle() {
+      return new PersistedPublicTrustBundle(installationId, bundleVersion, createdAt);
+    }
   }
+
+  private record PersistedPublicTrustBundle(
+      UUID installationId, long version, OffsetDateTime createdAt) {}
 }

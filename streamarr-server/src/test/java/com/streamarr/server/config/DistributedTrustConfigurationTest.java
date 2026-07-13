@@ -15,6 +15,7 @@ import com.streamarr.server.services.streaming.trust.InitialTrustPublication;
 import com.streamarr.server.services.streaming.trust.InstallationTrust;
 import com.streamarr.server.services.streaming.trust.InstallationTrustBootstrapService;
 import com.streamarr.server.services.streaming.trust.InstallationTrustException;
+import com.streamarr.server.services.streaming.trust.PublicTrustBundle;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -224,6 +225,11 @@ class DistributedTrustConfigurationTest {
 
     @Override
     public Optional<InstallationTrust> findInitialized() {
+      return Optional.empty();
+    }
+
+    @Override
+    public Optional<PublicTrustBundle> findBundle(UUID installationId, long version) {
       return Optional.empty();
     }
 

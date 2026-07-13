@@ -273,6 +273,11 @@ class InstallationTrustBootstrapServiceTest {
     }
 
     @Override
+    public Optional<PublicTrustBundle> findBundle(UUID installationId, long version) {
+      return Optional.empty();
+    }
+
+    @Override
     public boolean publishInitial(
         CertificateSigningLease lease, InitialTrustPublication publication) {
       throw new AssertionError("No lease holder may publish installation trust");
@@ -380,6 +385,11 @@ class InstallationTrustBootstrapServiceTest {
 
     @Override
     public Optional<InstallationTrust> findInitialized() {
+      return Optional.empty();
+    }
+
+    @Override
+    public Optional<PublicTrustBundle> findBundle(UUID installationId, long version) {
       return Optional.empty();
     }
 
