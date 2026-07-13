@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming.remote;
 
+import com.streamarr.transcode.v1.RenditionJob;
 import io.grpc.Server;
 import io.grpc.ServerInterceptors;
 import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts;
@@ -14,6 +15,7 @@ import java.util.concurrent.TimeUnit;
 public final class WorkerSessionServer implements AutoCloseable {
 
   private final WorkerSessionServerConfiguration configuration;
+  private final LiveWorkerConnectionRegistry workerConnections = new LiveWorkerConnectionRegistry();
 
   private Server server;
   private ExecutorService executor;
@@ -43,7 +45,8 @@ public final class WorkerSessionServer implements AutoCloseable {
             .sslContext(sslContext)
             .executor(executor)
             .addService(
-                ServerInterceptors.intercept(new WorkerSessionGrpcService(), identityInterceptor))
+                ServerInterceptors.intercept(
+                    new WorkerSessionGrpcService(workerConnections), identityInterceptor))
             .build()
             .start();
   }
@@ -53,6 +56,13 @@ public final class WorkerSessionServer implements AutoCloseable {
       throw new IllegalStateException("Worker session server is not started");
     }
     return server.getPort();
+  }
+
+  public synchronized boolean dispatch(RenditionJob job) {
+    if (server == null) {
+      throw new IllegalStateException("Worker session server is not started");
+    }
+    return workerConnections.dispatch(job);
   }
 
   @Override

@@ -2,30 +2,24 @@ package com.streamarr.server.services.streaming.remote;
 
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
 import com.streamarr.transcode.v1.Uuid;
-import com.streamarr.transcode.v1.WorkerSessionAccepted;
 import com.streamarr.transcode.v1.WorkerSessionRequest;
 import com.streamarr.transcode.v1.WorkerSessionResponse;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 
+@RequiredArgsConstructor
 final class WorkerSessionGrpcService
     extends TranscodeWorkerServiceGrpc.TranscodeWorkerServiceImplBase {
 
-  private static final int HEARTBEAT_INTERVAL_SECONDS = 10;
+  private final LiveWorkerConnectionRegistry workerConnections;
 
   @Override
   public StreamObserver<WorkerSessionRequest> workerSession(
       StreamObserver<WorkerSessionResponse> responseObserver) {
     var authenticatedWorkerId = WorkerIdentityServerInterceptor.AUTHENTICATED_WORKER_ID.get();
-    return new RegistrationObserver(authenticatedWorkerId, responseObserver);
-  }
-
-  private static Uuid uuid(UUID value) {
-    return Uuid.newBuilder()
-        .setMostSignificantBits(value.getMostSignificantBits())
-        .setLeastSignificantBits(value.getLeastSignificantBits())
-        .build();
+    return new RegistrationObserver(authenticatedWorkerId, responseObserver, workerConnections);
   }
 
   private static UUID uuid(Uuid value) {
@@ -36,12 +30,17 @@ final class WorkerSessionGrpcService
 
     private final UUID authenticatedWorkerId;
     private final StreamObserver<WorkerSessionResponse> responseObserver;
+    private final LiveWorkerConnectionRegistry workerConnections;
     private boolean registered;
+    private UUID workerSessionId;
 
     private RegistrationObserver(
-        UUID authenticatedWorkerId, StreamObserver<WorkerSessionResponse> responseObserver) {
+        UUID authenticatedWorkerId,
+        StreamObserver<WorkerSessionResponse> responseObserver,
+        LiveWorkerConnectionRegistry workerConnections) {
       this.authenticatedWorkerId = authenticatedWorkerId;
       this.responseObserver = responseObserver;
+      this.workerConnections = workerConnections;
     }
 
     @Override
@@ -64,20 +63,26 @@ final class WorkerSessionGrpcService
       }
 
       registered = true;
-      var accepted =
-          WorkerSessionAccepted.newBuilder()
-              .setWorkerSessionId(uuid(UUID.randomUUID()))
-              .setHeartbeatIntervalSeconds(HEARTBEAT_INTERVAL_SECONDS);
-      responseObserver.onNext(
-          WorkerSessionResponse.newBuilder().setSessionAccepted(accepted).build());
+      workerSessionId =
+          workerConnections.register(
+              authenticatedWorkerId, request.getRegistration().getWorker(), responseObserver);
     }
 
     @Override
-    public void onError(Throwable ignored) {}
+    public void onError(Throwable ignored) {
+      disconnect();
+    }
 
     @Override
     public void onCompleted() {
+      disconnect();
       responseObserver.onCompleted();
+    }
+
+    private void disconnect() {
+      if (registered) {
+        workerConnections.disconnect(authenticatedWorkerId, workerSessionId);
+      }
     }
 
     private void reject(Status status) {
