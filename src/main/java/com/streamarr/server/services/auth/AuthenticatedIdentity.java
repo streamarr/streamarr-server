@@ -2,6 +2,7 @@ package com.streamarr.server.services.auth;
 
 import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
@@ -58,6 +59,15 @@ public record AuthenticatedIdentity(
         .profileId(uuidClaim(jwt, TokenClaims.PROFILE_ID))
         .policyVersion(jwt.getClaim(TokenClaims.POLICY_VERSION))
         .streamSessionId(uuidClaim(jwt, TokenClaims.STREAM_SESSION))
+        .build();
+  }
+
+  public PlaybackAuthority playbackAuthority() {
+    return PlaybackAuthority.builder()
+        .authSessionId(sessionId)
+        .accountId(accountId)
+        .householdId(householdId)
+        .profileId(profileId)
         .build();
   }
 

@@ -1,11 +1,14 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommand;
+import static com.streamarr.server.fixtures.StreamSessionFixture.playbackRequest;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
@@ -71,11 +74,15 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
     savedMediaFile = mediaFileRepository.saveAndFlush(file);
   }
 
+  private StreamSession createSession(UUID mediaFileId, UUID profileId, StreamingOptions options) {
+    return streamingService.createSession(
+        createStreamSessionCommand(mediaFileId, profileId, options));
+  }
+
   @Test
   @DisplayName("Should assign session identity when media file is valid")
   void shouldAssignSessionIdentityWhenMediaFileIsValid() {
-    var session =
-        streamingService.createSession(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
 
     assertThat(session).isNotNull();
     assertThat(session.getSessionId()).isNotNull();
@@ -85,8 +92,7 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should initialize transcode pipeline when media file is valid")
   void shouldInitializeTranscodePipelineWhenMediaFileIsValid() {
-    var session =
-        streamingService.createSession(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
 
     assertThat(session.getMediaProbe()).isNotNull();
     assertThat(session.getTranscodeDecision()).isNotNull();
@@ -96,10 +102,9 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should retrieve session when session exists")
   void shouldRetrieveSessionWhenSessionExists() {
-    var session =
-        streamingService.createSession(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
 
-    var retrieved = streamingService.accessSession(session.getSessionId());
+    var retrieved = streamingService.accessSession(playbackRequest(session));
 
     assertThat(retrieved).isPresent();
     assertThat(retrieved.get().getSessionId()).isEqualTo(session.getSessionId());
@@ -108,12 +113,11 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should remove session when session is destroyed")
   void shouldRemoveSessionWhenSessionIsDestroyed() {
-    var session =
-        streamingService.createSession(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
 
     streamingService.destroySession(session.getSessionId());
 
-    assertThat(streamingService.accessSession(session.getSessionId())).isEmpty();
+    assertThat(streamingService.accessSession(playbackRequest(session))).isEmpty();
   }
 
   @Test
@@ -123,15 +127,14 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
     var profileId = UUID.randomUUID();
     var options = defaultOptions();
 
-    assertThatThrownBy(() -> streamingService.createSession(nonExistentId, profileId, options))
+    assertThatThrownBy(() -> createSession(nonExistentId, profileId, options))
         .isInstanceOf(MediaFileNotFoundException.class);
   }
 
   @Test
   @DisplayName("Should resume transcode when segment requested from suspended session")
   void shouldResumeTranscodeWhenSegmentRequestedFromSuspendedSession() {
-    var session =
-        streamingService.createSession(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
     assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
 
     session.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));

@@ -8,13 +8,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.CounterKind;
 import com.streamarr.server.domain.streaming.StreamSession;
-import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.services.auth.TokenVersionCache;
+import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
+import com.streamarr.server.services.streaming.PlaybackRequest;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
@@ -70,7 +71,7 @@ class StreamControllerIT extends AbstractIntegrationTest {
     var ownedSession =
         StreamSessionFixture.defaultSessionBuilder()
             .sessionId(streamSessionId)
-            .profileId(identity.profile().getId())
+            .authority(authenticatedIdentity.playbackAuthority())
             .build();
     return playbackTokenIssuer
         .issue(authenticatedIdentity, ownedSession, Duration.ofHours(1))
@@ -267,13 +268,13 @@ class StreamControllerIT extends AbstractIntegrationTest {
     }
 
     @Override
-    public StreamSession createSession(UUID mediaFileId, UUID profileId, StreamingOptions options) {
+    public StreamSession createSession(CreateStreamSessionCommand command) {
       throw new UnsupportedOperationException();
     }
 
     @Override
-    public Optional<StreamSession> accessSession(UUID sessionId) {
-      return Optional.ofNullable(sessions.get(sessionId));
+    public Optional<StreamSession> accessSession(PlaybackRequest request) {
+      return Optional.ofNullable(sessions.get(request.streamSessionId()));
     }
 
     @Override

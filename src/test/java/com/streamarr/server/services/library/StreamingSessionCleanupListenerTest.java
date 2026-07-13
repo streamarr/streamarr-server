@@ -3,8 +3,9 @@ package com.streamarr.server.services.library;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.streaming.StreamSession;
-import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.services.library.events.LibraryRemovedEvent;
+import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
+import com.streamarr.server.services.streaming.PlaybackRequest;
 import com.streamarr.server.services.streaming.StreamingService;
 import java.util.Collection;
 import java.util.Optional;
@@ -79,12 +80,12 @@ class StreamingSessionCleanupListenerTest {
     }
 
     @Override
-    public StreamSession createSession(UUID mediaFileId, UUID profileId, StreamingOptions options) {
+    public StreamSession createSession(CreateStreamSessionCommand command) {
       throw new UnsupportedOperationException();
     }
 
     @Override
-    public Optional<StreamSession> accessSession(UUID sessionId) {
+    public Optional<StreamSession> accessSession(PlaybackRequest request) {
       throw new UnsupportedOperationException();
     }
 

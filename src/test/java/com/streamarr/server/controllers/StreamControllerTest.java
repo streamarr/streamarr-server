@@ -20,7 +20,9 @@ import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.TokenScope;
 import com.streamarr.server.services.authorization.AuthorizationService;
+import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
+import com.streamarr.server.services.streaming.PlaybackRequest;
 import com.streamarr.server.services.streaming.StreamingService;
 import java.time.Duration;
 import java.time.Instant;
@@ -494,13 +496,13 @@ class StreamControllerTest {
     }
 
     @Override
-    public StreamSession createSession(UUID mediaFileId, UUID profileId, StreamingOptions options) {
+    public StreamSession createSession(CreateStreamSessionCommand command) {
       return session;
     }
 
     @Override
-    public Optional<StreamSession> accessSession(UUID sessionId) {
-      if (session != null && session.getSessionId().equals(sessionId)) {
+    public Optional<StreamSession> accessSession(PlaybackRequest request) {
+      if (session != null && session.getSessionId().equals(request.streamSessionId())) {
         return Optional.of(session);
       }
       return Optional.empty();

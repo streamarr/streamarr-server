@@ -203,7 +203,10 @@ class SessionProgressServiceTest {
     @Test
     @DisplayName("Should return early when duration is zero")
     void shouldReturnEarlyWhenDurationIsZero() {
-      var session = StreamSessionFixture.zeroDurationSessionBuilder().profileId(PROFILE_ID).build();
+      var session =
+          StreamSessionFixture.zeroDurationSessionBuilder()
+              .authority(StreamSessionFixture.playbackAuthorityFor(PROFILE_ID))
+              .build();
       runtimeRegistry.save(session);
 
       service.reportStreamSessionTimeline(
@@ -407,7 +410,7 @@ class SessionProgressServiceTest {
         String description, int durationSeconds, int positionSeconds) {
       var session =
           StreamSessionFixture.sessionWithDurationBuilder(durationSeconds)
-              .profileId(PROFILE_ID)
+              .authority(StreamSessionFixture.playbackAuthorityFor(PROFILE_ID))
               .build();
       runtimeRegistry.save(session);
       saveMediaFileForSession(session);
@@ -448,7 +451,7 @@ class SessionProgressServiceTest {
         shouldNotMarkShortContentAsWatchedViaRemainingSecondsThresholdWhenDurationIsBelowMaxRemaining() {
       var shortSession =
           StreamSessionFixture.sessionWithDurationBuilder(120) // 2 min trailer
-              .profileId(PROFILE_ID)
+              .authority(StreamSessionFixture.playbackAuthorityFor(PROFILE_ID))
               .build();
       runtimeRegistry.save(shortSession);
       saveMediaFileForSession(shortSession);
@@ -751,7 +754,7 @@ class SessionProgressServiceTest {
     var session =
         StreamSessionFixture.defaultSessionBuilder()
             .mediaFileId(mediaFileId)
-            .profileId(PROFILE_ID)
+            .authority(StreamSessionFixture.playbackAuthorityFor(PROFILE_ID))
             .build();
     runtimeRegistry.save(session);
     return session;

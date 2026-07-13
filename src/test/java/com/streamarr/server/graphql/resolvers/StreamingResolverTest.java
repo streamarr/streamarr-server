@@ -1,5 +1,6 @@
 package com.streamarr.server.graphql.resolvers;
 
+import static com.streamarr.server.fixtures.StreamSessionFixture.playbackAuthorityFor;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.netflix.graphql.dgs.DgsQueryExecutor;
@@ -31,6 +32,8 @@ import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.services.auth.PlaybackTokenIssuer;
 import com.streamarr.server.services.auth.TokenVersionCache;
 import com.streamarr.server.services.authorization.SecurityContextAuthorizationService;
+import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
+import com.streamarr.server.services.streaming.PlaybackRequest;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.watchprogress.SessionProgressService;
 import com.streamarr.server.services.watchprogress.WatchStatusService;
@@ -144,7 +147,7 @@ class StreamingResolverTest {
   private StreamSession buildSessionOwnedBy(UUID sessionId, UUID profileId) {
     return StreamSession.builder()
         .sessionId(sessionId)
-        .profileId(profileId)
+        .authority(playbackAuthorityFor(profileId))
         .mediaFileId(UUID.randomUUID())
         .sourcePath(Path.of("/media/movie.mkv"))
         .mediaProbe(
@@ -469,14 +472,14 @@ class StreamingResolverTest {
     }
 
     @Override
-    public StreamSession createSession(UUID mediaFileId, UUID profileId, StreamingOptions options) {
-      this.lastReceivedOptions = options;
-      this.lastCreateProfileId = profileId;
+    public StreamSession createSession(CreateStreamSessionCommand command) {
+      this.lastReceivedOptions = command.options();
+      this.lastCreateProfileId = command.authority().profileId();
       return nextResult;
     }
 
     @Override
-    public Optional<StreamSession> accessSession(UUID sessionId) {
+    public Optional<StreamSession> accessSession(PlaybackRequest request) {
       return Optional.ofNullable(nextResult);
     }
 

@@ -215,7 +215,7 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
     var ownedSession =
         StreamSessionFixture.defaultSessionBuilder()
             .sessionId(streamSessionId)
-            .profileId(identity.profile().getId())
+            .authority(authenticatedIdentity.playbackAuthority())
             .build();
     return playbackTokenIssuer
         .issue(authenticatedIdentity, ownedSession, Duration.ofHours(1))

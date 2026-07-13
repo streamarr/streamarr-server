@@ -19,8 +19,7 @@ public class StreamSession {
 
   private final UUID sessionId;
   private final UUID mediaFileId;
-  // The owning profile, stamped at creation — playback tokens bind to it.
-  private final UUID profileId;
+  private final PlaybackAuthority authority;
   private final Path sourcePath;
   private final MediaProbe mediaProbe;
   private final TranscodeDecision transcodeDecision;
@@ -38,7 +37,7 @@ public class StreamSession {
       new AtomicReference<>(new PlaybackSnapshot(0, PlaybackState.STOPPED, Instant.now()));
 
   public boolean isOwnedBy(UUID candidateProfileId) {
-    return profileId != null && profileId.equals(candidateProfileId);
+    return authority != null && authority.profileId().equals(candidateProfileId);
   }
 
   public void updatePlaybackState(int positionSeconds, PlaybackState state) {

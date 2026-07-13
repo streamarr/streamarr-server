@@ -3,6 +3,7 @@ package com.streamarr.server.fixtures;
 import com.streamarr.server.domain.streaming.AudioDecision;
 import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.MediaProbe;
+import com.streamarr.server.domain.streaming.PlaybackAuthority;
 import com.streamarr.server.domain.streaming.QualityVariant;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
@@ -11,6 +12,8 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
+import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
+import com.streamarr.server.services.streaming.PlaybackRequest;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -25,7 +28,7 @@ public final class StreamSessionFixture {
     return StreamSession.builder()
         .sessionId(UUID.randomUUID())
         .mediaFileId(UUID.randomUUID())
-        .profileId(UUID.randomUUID())
+        .authority(defaultPlaybackAuthorityBuilder().build())
         .sourcePath(Path.of("/media/movie.mkv"))
         .mediaProbe(defaultProbeBuilder().build())
         .transcodeDecision(remuxMpegtsDecision())
@@ -42,6 +45,34 @@ public final class StreamSessionFixture {
         .videoCodec("h264")
         .audioCodec("aac")
         .bitrate(5_000_000);
+  }
+
+  public static PlaybackAuthority.PlaybackAuthorityBuilder defaultPlaybackAuthorityBuilder() {
+    return PlaybackAuthority.builder()
+        .authSessionId(UUID.randomUUID())
+        .accountId(UUID.randomUUID())
+        .householdId(UUID.randomUUID())
+        .profileId(UUID.randomUUID());
+  }
+
+  public static PlaybackAuthority playbackAuthorityFor(UUID profileId) {
+    return defaultPlaybackAuthorityBuilder().profileId(profileId).build();
+  }
+
+  public static CreateStreamSessionCommand createStreamSessionCommand(
+      UUID mediaFileId, UUID profileId, StreamingOptions options) {
+    return CreateStreamSessionCommand.builder()
+        .mediaFileId(mediaFileId)
+        .authority(playbackAuthorityFor(profileId))
+        .options(options)
+        .build();
+  }
+
+  public static PlaybackRequest playbackRequest(StreamSession session) {
+    return PlaybackRequest.builder()
+        .streamSessionId(session.getSessionId())
+        .authority(session.getAuthority())
+        .build();
   }
 
   public static TranscodeDecision remuxMpegtsDecision() {
@@ -83,7 +114,8 @@ public final class StreamSessionFixture {
   }
 
   public static StreamSession buildMpegtsSessionOwnedBy(UUID profileId) {
-    var session = defaultSessionBuilder().profileId(profileId).build();
+    var authority = profileId == null ? null : playbackAuthorityFor(profileId);
+    var session = defaultSessionBuilder().authority(authority).build();
     session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
     return session;
   }
