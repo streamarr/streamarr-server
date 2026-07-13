@@ -117,6 +117,21 @@ class LocalFfmpegProcessManagerTest {
   }
 
   @Test
+  @DisplayName("Should stop only the requested rendition")
+  void shouldStopOnlyRequestedRendition() {
+    var sessionId = UUID.randomUUID();
+
+    manager.startProcess(sessionId, "1080p", List.of("sleep", "30"), tempDir);
+    manager.startProcess(sessionId, "720p", List.of("sleep", "30"), tempDir);
+
+    manager.stopProcess(sessionId, "720p");
+
+    assertThat(manager.isRunning(sessionId, "720p")).isFalse();
+    assertThat(manager.isRunning(sessionId, "1080p")).isTrue();
+    manager.stopProcess(sessionId);
+  }
+
+  @Test
   @DisplayName("Should report running for specific variant")
   void shouldReportRunningForSpecificVariant() {
     var sessionId = UUID.randomUUID();

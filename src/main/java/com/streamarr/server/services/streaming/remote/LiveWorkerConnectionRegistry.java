@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming.remote;
 
 import com.streamarr.transcode.v1.RenditionJob;
 import com.streamarr.transcode.v1.StartRenditionCommand;
+import com.streamarr.transcode.v1.StopRenditionCommand;
 import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerSessionAccepted;
@@ -47,6 +48,16 @@ final class LiveWorkerConnectionRegistry {
     return true;
   }
 
+  boolean stopRendition(UUID jobAttemptId) {
+    var connection = connections.values().stream().findFirst().orElse(null);
+    if (connection == null) {
+      return false;
+    }
+
+    connection.sendStopRendition(jobAttemptId);
+    return true;
+  }
+
   private static Uuid uuid(UUID value) {
     return Uuid.newBuilder()
         .setMostSignificantBits(value.getMostSignificantBits())
@@ -72,6 +83,15 @@ final class LiveWorkerConnectionRegistry {
       var command = StartRenditionCommand.newBuilder().setTarget(worker).setJob(job).build();
       responseObserver.onNext(
           WorkerSessionResponse.newBuilder().setStartRendition(command).build());
+    }
+
+    private synchronized void sendStopRendition(UUID jobAttemptId) {
+      var command =
+          StopRenditionCommand.newBuilder()
+              .setTarget(worker)
+              .setJobAttemptId(uuid(jobAttemptId))
+              .build();
+      responseObserver.onNext(WorkerSessionResponse.newBuilder().setStopRendition(command).build());
     }
 
     private synchronized void closeAsReplaced() {
