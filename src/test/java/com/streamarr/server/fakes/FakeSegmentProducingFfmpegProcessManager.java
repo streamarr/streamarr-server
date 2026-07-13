@@ -5,16 +5,22 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 public final class FakeSegmentProducingFfmpegProcessManager extends FakeFfmpegProcessManager {
 
-  private final String segmentName;
-  private final byte[] segmentData;
+  private final Map<String, byte[]> segments;
 
   public FakeSegmentProducingFfmpegProcessManager(String segmentName, byte[] segmentData) {
-    this.segmentName = segmentName;
-    this.segmentData = segmentData.clone();
+    this(Map.of(segmentName, segmentData));
+  }
+
+  public FakeSegmentProducingFfmpegProcessManager(Map<String, byte[]> segments) {
+    this.segments =
+        segments.entrySet().stream()
+            .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, entry -> entry.getValue().clone()));
   }
 
   @Override
@@ -22,7 +28,9 @@ public final class FakeSegmentProducingFfmpegProcessManager extends FakeFfmpegPr
       UUID sessionId, String renditionName, List<String> command, Path workingDirectory) {
     var process = super.startProcess(sessionId, renditionName, command, workingDirectory);
     try {
-      Files.write(workingDirectory.resolve(segmentName), segmentData);
+      for (var segment : segments.entrySet()) {
+        Files.write(workingDirectory.resolve(segment.getKey()), segment.getValue());
+      }
     } catch (IOException e) {
       throw new UncheckedIOException(e);
     }
