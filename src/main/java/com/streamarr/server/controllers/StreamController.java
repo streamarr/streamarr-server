@@ -5,6 +5,7 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.exceptions.InvalidSegmentPathException;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
+import com.streamarr.server.services.streaming.PlaybackRequest;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.StreamingService;
 import java.time.Duration;
@@ -191,7 +192,11 @@ public class StreamController {
 
   private Optional<StreamSession> findSession(UUID sessionId) {
     requireTokenBoundTo(sessionId);
-    return streamingService.accessSession(sessionId);
+    return streamingService.accessSession(
+        PlaybackRequest.builder()
+            .streamSessionId(sessionId)
+            .authority(authorizationService.currentIdentity().playbackAuthority())
+            .build());
   }
 
   private void validatePathSegment(String segment) {

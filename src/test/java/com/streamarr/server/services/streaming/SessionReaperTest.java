@@ -1,10 +1,10 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.StreamSessionFixture.playbackRequest;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.StreamSession;
-import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
@@ -64,7 +64,7 @@ class SessionReaperTest {
 
     reaper.reapSessions();
 
-    assertThat(streamingService.accessSession(session.getSessionId())).isPresent();
+    assertThat(streamingService.accessSession(playbackRequest(session))).isPresent();
   }
 
   @Test
@@ -75,7 +75,7 @@ class SessionReaperTest {
 
     reaper.reapSessions();
 
-    assertThat(streamingService.accessSession(session.getSessionId())).isEmpty();
+    assertThat(streamingService.accessSession(playbackRequest(session))).isEmpty();
   }
 
   @Test
@@ -88,7 +88,7 @@ class SessionReaperTest {
     reaper.reapSessions();
 
     assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.SUSPENDED);
-    assertThat(streamingService.accessSession(session.getSessionId())).isPresent();
+    assertThat(streamingService.accessSession(playbackRequest(session))).isPresent();
   }
 
   @Test
@@ -101,7 +101,7 @@ class SessionReaperTest {
     reaper.reapSessions();
 
     assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.FAILED);
-    assertThat(streamingService.accessSession(session.getSessionId())).isPresent();
+    assertThat(streamingService.accessSession(playbackRequest(session))).isPresent();
   }
 
   @Test
@@ -123,7 +123,7 @@ class SessionReaperTest {
 
     reaper.reapSessions();
 
-    assertThat(streamingService.accessSession(session.getSessionId())).isPresent();
+    assertThat(streamingService.accessSession(playbackRequest(session))).isPresent();
   }
 
   @Test
@@ -271,13 +271,13 @@ class SessionReaperTest {
     }
 
     @Override
-    public StreamSession createSession(UUID mediaFileId, UUID profileId, StreamingOptions options) {
+    public StreamSession createSession(CreateStreamSessionCommand command) {
       throw new UnsupportedOperationException();
     }
 
     @Override
-    public Optional<StreamSession> accessSession(UUID sessionId) {
-      return Optional.ofNullable(sessions.get(sessionId));
+    public Optional<StreamSession> accessSession(PlaybackRequest request) {
+      return Optional.ofNullable(sessions.get(request.streamSessionId()));
     }
 
     @Override

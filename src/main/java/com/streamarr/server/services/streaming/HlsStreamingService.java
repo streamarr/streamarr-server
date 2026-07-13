@@ -46,7 +46,9 @@ public class HlsStreamingService implements StreamingService {
   private final MutexFactory<UUID> resumeMutex;
 
   @Override
-  public StreamSession createSession(UUID mediaFileId, UUID profileId, StreamingOptions options) {
+  public StreamSession createSession(CreateStreamSessionCommand command) {
+    var mediaFileId = command.mediaFileId();
+    var options = command.options();
     var mediaFile =
         mediaFileRepository
             .findById(mediaFileId)
@@ -64,7 +66,7 @@ public class HlsStreamingService implements StreamingService {
         StreamSession.builder()
             .sessionId(sessionId)
             .mediaFileId(mediaFileId)
-            .profileId(profileId)
+            .authority(command.authority())
             .sourcePath(FilepathCodec.decode(mediaFile.getFilepathUri()))
             .mediaProbe(probe)
             .transcodeDecision(decision)
@@ -87,8 +89,8 @@ public class HlsStreamingService implements StreamingService {
   }
 
   @Override
-  public Optional<StreamSession> accessSession(UUID sessionId) {
-    var session = runtimeRegistry.findById(sessionId);
+  public Optional<StreamSession> accessSession(PlaybackRequest request) {
+    var session = runtimeRegistry.findById(request.streamSessionId());
     session.ifPresent(
         s -> {
           s.setLastAccessedAt(Instant.now());

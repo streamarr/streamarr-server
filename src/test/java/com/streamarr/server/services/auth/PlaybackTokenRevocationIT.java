@@ -38,12 +38,12 @@ class PlaybackTokenRevocationIT extends AbstractIntegrationTest {
               .newPassword("a brand new passphrase!")
               .build());
 
+      var staleIdentity = AuthenticatedIdentity.fromJwt(authenticatedSource);
       var streamSession =
           StreamSession.builder()
               .sessionId(UUID.randomUUID())
-              .profileId(identity.profile().getId())
+              .authority(staleIdentity.playbackAuthority())
               .build();
-      var staleIdentity = AuthenticatedIdentity.fromJwt(authenticatedSource);
       var playbackTtl = Duration.ofHours(1);
 
       assertThatThrownBy(() -> playbackTokenIssuer.issue(staleIdentity, streamSession, playbackTtl))

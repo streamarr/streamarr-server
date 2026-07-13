@@ -1,16 +1,15 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.domain.streaming.StreamSession;
-import com.streamarr.server.domain.streaming.StreamingOptions;
 import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;
 
 public interface StreamingService {
 
-  StreamSession createSession(UUID mediaFileId, UUID profileId, StreamingOptions options);
+  StreamSession createSession(CreateStreamSessionCommand command);
 
-  Optional<StreamSession> accessSession(UUID sessionId);
+  Optional<StreamSession> accessSession(PlaybackRequest request);
 
   /** System destroy — no caller identity; reserved for the reaper, cleanup, and shutdown. */
   void destroySession(UUID sessionId);

@@ -1,6 +1,7 @@
 package com.streamarr.server.services.auth;
 
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultSessionBuilder;
+import static com.streamarr.server.fixtures.StreamSessionFixture.playbackAuthorityFor;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -13,6 +14,7 @@ import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
 import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.ProfileRequiredException;
 import com.streamarr.server.exceptions.SessionNotFoundException;
@@ -61,7 +63,7 @@ class PlaybackTokenIssuerTest {
     reader.sessionVersions.put(sessionId, 2L);
     reader.membershipVersions.put(accountId + ":" + householdId, 3L);
     reader.profilePolicyVersions.put(profileId, 4L);
-    var streamSession = defaultSessionBuilder().profileId(profileId).build();
+    var streamSession = sessionOwnedBy(profileId);
     var streamSessionId = streamSession.getSessionId();
 
     var token = issuer.issue(profileIdentity(), streamSession, Duration.ofHours(24));
@@ -106,7 +108,7 @@ class PlaybackTokenIssuerTest {
   @DisplayName("Should refuse issuance when session has no owner")
   void shouldRefuseIssuanceWhenSessionHasNoOwner() {
     var identity = profileIdentity();
-    var unownedSession = defaultSessionBuilder().profileId(null).build();
+    var unownedSession = StreamSession.builder().sessionId(UUID.randomUUID()).build();
     var ttl = Duration.ofHours(1);
 
     assertThatThrownBy(() -> issuer.issue(identity, unownedSession, ttl))
@@ -120,7 +122,7 @@ class PlaybackTokenIssuerTest {
     reader.membershipVersions.put(accountId + ":" + householdId, 3L);
     reader.profilePolicyVersions.put(profileId, 4L);
     var identity = profileIdentity();
-    var foreignSession = defaultSessionBuilder().profileId(UUID.randomUUID()).build();
+    var foreignSession = sessionOwnedBy(UUID.randomUUID());
     var ttl = Duration.ofHours(1);
 
     // The issuer is the only authority that mints playback capability: whatever future caller
@@ -136,7 +138,7 @@ class PlaybackTokenIssuerTest {
     reader.membershipVersions.put(accountId + ":" + householdId, 3L);
     reader.profilePolicyVersions.put(profileId, 4L);
     var identity = profileIdentity();
-    var streamSession = defaultSessionBuilder().profileId(profileId).build();
+    var streamSession = sessionOwnedBy(profileId);
     var ttl = Duration.ofHours(1);
 
     assertThatThrownBy(() -> issuer.issue(identity, streamSession, ttl))
@@ -150,7 +152,7 @@ class PlaybackTokenIssuerTest {
     reader.membershipVersions.put(accountId + ":" + householdId, 4L);
     reader.profilePolicyVersions.put(profileId, 4L);
     var identity = profileIdentity();
-    var streamSession = defaultSessionBuilder().profileId(profileId).build();
+    var streamSession = sessionOwnedBy(profileId);
     var ttl = Duration.ofHours(1);
 
     assertThatThrownBy(() -> issuer.issue(identity, streamSession, ttl))
@@ -164,7 +166,7 @@ class PlaybackTokenIssuerTest {
     reader.membershipVersions.put(accountId + ":" + householdId, 3L);
     reader.profilePolicyVersions.put(profileId, 5L);
     var identity = profileIdentity();
-    var streamSession = defaultSessionBuilder().profileId(profileId).build();
+    var streamSession = sessionOwnedBy(profileId);
     var ttl = Duration.ofHours(1);
 
     assertThatThrownBy(() -> issuer.issue(identity, streamSession, ttl))
@@ -184,6 +186,10 @@ class PlaybackTokenIssuerTest {
         .profileId(profileId)
         .policyVersion(4L)
         .build();
+  }
+
+  private StreamSession sessionOwnedBy(UUID ownerProfileId) {
+    return defaultSessionBuilder().authority(playbackAuthorityFor(ownerProfileId)).build();
   }
 
   private org.springframework.security.oauth2.jwt.Jwt decode(String token) {

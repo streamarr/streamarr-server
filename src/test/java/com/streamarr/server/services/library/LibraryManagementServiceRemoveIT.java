@@ -1,5 +1,6 @@
 package com.streamarr.server.services.library;
 
+import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommand;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
@@ -246,7 +247,9 @@ class LibraryManagementServiceRemoveIT extends AbstractIntegrationTest {
             .quality(VideoQuality.AUTO)
             .supportedCodecs(List.of("h264"))
             .build();
-    var session = streamingService.createSession(mediaFile.getId(), UUID.randomUUID(), options);
+    var session =
+        streamingService.createSession(
+            createStreamSessionCommand(mediaFile.getId(), UUID.randomUUID(), options));
 
     assertThat(streamingService.getActiveSessionCount()).isEqualTo(1);
 
