@@ -60,6 +60,32 @@ class TranscodeWorkerApplicationIT extends AbstractIntegrationTest {
     }
   }
 
+  @Test
+  @DisplayName("Should exit the worker process when the control plane disconnects")
+  void shouldExitWorkerProcessWhenControlPlaneDisconnects() throws Exception {
+    var server = server();
+    server.start();
+    var process = workerProcess(server.port()).start();
+    try {
+      await()
+          .atMost(10, TimeUnit.SECONDS)
+          .untilAsserted(
+              () ->
+                  assertThat(server.hasConnectedWorker())
+                      .withFailMessage(() -> failureOutput(process))
+                      .isTrue());
+
+      server.close();
+
+      assertThat(process.waitFor(10, TimeUnit.SECONDS))
+          .withFailMessage("Worker process remained alive after its control plane disconnected")
+          .isTrue();
+    } finally {
+      server.close();
+      process.destroyForcibly();
+    }
+  }
+
   private ProcessBuilder workerProcess(int port) throws Exception {
     var ffmpeg = fakeFfmpeg();
     var process = new ProcessBuilder(workerCommand()).redirectErrorStream(true);

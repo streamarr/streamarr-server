@@ -4,7 +4,6 @@ import com.streamarr.server.services.streaming.ffmpeg.FfmpegCommandBuilder;
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegTranscodeEngine;
 import com.streamarr.server.services.streaming.ffmpeg.LocalFfmpegProcessManager;
 import com.streamarr.server.services.streaming.ffmpeg.TranscodeCapabilityService;
-import java.util.concurrent.CountDownLatch;
 
 public final class TranscodeWorkerApplication {
 
@@ -25,11 +24,12 @@ public final class TranscodeWorkerApplication {
             new FfmpegCommandBuilder(settings.ffmpegPath()),
             new LocalFfmpegProcessManager(),
             capabilities);
-    var worker = new TranscodeWorker(settings.workerConfiguration(), engine);
-    var shutdownHook =
-        Thread.ofPlatform().name("transcode-worker-shutdown").unstarted(worker::close);
-    Runtime.getRuntime().addShutdownHook(shutdownHook);
-    worker.start(settings.controlPlaneHost(), settings.controlPlanePort());
-    new CountDownLatch(1).await();
+    try (var worker = new TranscodeWorker(settings.workerConfiguration(), engine)) {
+      var shutdownHook =
+          Thread.ofPlatform().name("transcode-worker-shutdown").unstarted(worker::close);
+      Runtime.getRuntime().addShutdownHook(shutdownHook);
+      worker.start(settings.controlPlaneHost(), settings.controlPlanePort());
+      worker.awaitDisconnection();
+    }
   }
 }
