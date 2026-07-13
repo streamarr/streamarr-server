@@ -167,7 +167,7 @@ public final class TranscodeWorker implements AutoCloseable {
     }
   }
 
-  private Path awaitSegment(Path segmentPath) {
+  private static Path awaitSegment(Path segmentPath) {
     var deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(SEGMENT_WAIT_SECONDS);
     while (System.nanoTime() < deadline) {
       if (Files.isRegularFile(segmentPath)) {
@@ -198,7 +198,7 @@ public final class TranscodeWorker implements AutoCloseable {
         .build();
   }
 
-  private String firstSegmentName(RenditionJob job) {
+  private static String firstSegmentName(RenditionJob job) {
     var extension =
         switch (job.getDecision().getContainer()) {
           case CONTAINER_FORMAT_MPEG_TS -> ".ts";
@@ -209,7 +209,7 @@ public final class TranscodeWorker implements AutoCloseable {
     return "segment" + job.getExecution().getStartNumber() + extension;
   }
 
-  private SegmentContentType contentType(RenditionJob job) {
+  private static SegmentContentType contentType(RenditionJob job) {
     return switch (job.getDecision().getContainer()) {
       case CONTAINER_FORMAT_MPEG_TS -> SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP2T;
       case CONTAINER_FORMAT_FMP4 -> SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP4;
