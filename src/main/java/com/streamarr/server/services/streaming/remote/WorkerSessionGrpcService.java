@@ -60,13 +60,19 @@ final class WorkerSessionGrpcService
   private static final class IgnoredUploadObserver implements StreamObserver<UploadSegmentRequest> {
 
     @Override
-    public void onNext(UploadSegmentRequest value) {}
+    public void onNext(UploadSegmentRequest value) {
+      // The call was rejected before an upload observer was created.
+    }
 
     @Override
-    public void onError(Throwable throwable) {}
+    public void onError(Throwable throwable) {
+      // The call was rejected before an upload observer was created.
+    }
 
     @Override
-    public void onCompleted() {}
+    public void onCompleted() {
+      // The call was rejected before an upload observer was created.
+    }
   }
 
   private static final class RegistrationObserver implements StreamObserver<WorkerSessionRequest> {
