@@ -26,6 +26,8 @@ import com.streamarr.transcode.v1.TranscodeDecision;
 import com.streamarr.transcode.v1.TranscodeExecution;
 import com.streamarr.transcode.v1.TranscodeMode;
 import com.streamarr.transcode.v1.Uuid;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -180,6 +182,56 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should complete a rendition after uploading all produced segments")
+  void shouldCompleteRenditionAfterUploadingAllProducedSegments() throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+    Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
+    var streamSessionId = UUID.randomUUID();
+    var processManager =
+        new EndingFfmpegProcessManager(Map.of("segment0.ts", "complete segment".getBytes()));
+
+    try (var server = server(segmentStore);
+        var worker = worker(processManager, mediaRoot)) {
+      server.start();
+      worker.start("localhost", server.port());
+
+      assertThat(
+              server.dispatch(
+                  renditionJob(streamSessionId, "720p", ContainerFormat.CONTAINER_FORMAT_MPEG_TS)))
+          .isTrue();
+      assertThat(server.isRunning(streamSessionId)).isTrue();
+
+      await().atMost(5, TimeUnit.SECONDS).until(() -> !server.isRunning(streamSessionId));
+      assertThat(segmentStore.readSegment(streamSessionId, "720p/segment0.ts"))
+          .isEqualTo("complete segment".getBytes());
+    }
+  }
+
+  @Test
+  @DisplayName("Should fail a rendition when FFmpeg exits without producing media")
+  void shouldFailRenditionWhenFfmpegExitsWithoutProducingMedia() throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+    Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var streamSessionId = UUID.randomUUID();
+    var processManager = new EndingFfmpegProcessManager(Map.of());
+
+    try (var server = server();
+        var worker = worker(processManager, mediaRoot)) {
+      server.start();
+      worker.start("localhost", server.port());
+
+      assertThat(
+              server.dispatch(
+                  renditionJob(streamSessionId, "720p", ContainerFormat.CONTAINER_FORMAT_MPEG_TS)))
+          .isTrue();
+      assertThat(server.isRunning(streamSessionId)).isTrue();
+
+      await().atMost(5, TimeUnit.SECONDS).until(() -> !server.isRunning(streamSessionId));
+    }
+  }
+
+  @Test
   @DisplayName("Should release worker capacity when a rendition fails to start")
   void shouldReleaseWorkerCapacityWhenRenditionFailsToStart() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
@@ -311,6 +363,30 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
     public Process startProcess(
         UUID sessionId, String renditionName, List<String> command, Path workingDirectory) {
       throw new IllegalStateException("FFmpeg failed to start");
+    }
+  }
+
+  private static final class EndingFfmpegProcessManager extends FakeFfmpegProcessManager {
+
+    private final Map<String, byte[]> segments;
+
+    private EndingFfmpegProcessManager(Map<String, byte[]> segments) {
+      this.segments = segments;
+    }
+
+    @Override
+    public Process startProcess(
+        UUID sessionId, String renditionName, List<String> command, Path workingDirectory) {
+      var process = super.startProcess(sessionId, renditionName, command, workingDirectory);
+      try {
+        for (var segment : segments.entrySet()) {
+          Files.write(workingDirectory.resolve(segment.getKey()), segment.getValue());
+        }
+      } catch (IOException e) {
+        throw new UncheckedIOException(e);
+      }
+      stopProcess(sessionId, renditionName);
+      return process;
     }
   }
 }
