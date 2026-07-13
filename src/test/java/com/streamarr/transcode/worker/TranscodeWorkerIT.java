@@ -142,6 +142,25 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should report the control-plane disconnect cause to its process owner")
+  void shouldReportControlPlaneDisconnectCauseToItsProcessOwner() throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+
+    try (var server = server();
+        var worker = worker(new FakeFfmpegProcessManager(), mediaRoot)) {
+      server.start();
+      worker.start("localhost", server.port());
+
+      server.close();
+
+      assertThatThrownBy(worker::awaitDisconnection)
+          .isInstanceOf(WorkerJobException.class)
+          .hasMessage("Worker session failed")
+          .hasRootCauseInstanceOf(io.grpc.StatusRuntimeException.class);
+    }
+  }
+
+  @Test
   @DisplayName("Should stop the dispatched rendition requested by the control plane")
   void shouldStopDispatchedRenditionRequestedByControlPlane() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));

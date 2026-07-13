@@ -41,6 +41,14 @@ jobs:
           buf format --diff --exit-code
           buf lint
 
+      - name: Detect breaking Protobuf changes
+        if: github.event_name == 'pull_request'
+        run: |
+          if git ls-tree -r --name-only "${{ github.event.pull_request.base.sha }}" -- src/main/proto | grep -q '\.proto$'; then
+            git branch --force buf-base "${{ github.event.pull_request.base.sha }}"
+            buf breaking --against '.git#branch=buf-base'
+          fi
+
       - name: Build and test
         run: ./mvnw --batch-mode verify
 

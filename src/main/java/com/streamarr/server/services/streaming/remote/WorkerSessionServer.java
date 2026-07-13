@@ -16,6 +16,9 @@ import java.util.concurrent.TimeUnit;
 
 public final class WorkerSessionServer implements AutoCloseable {
 
+  private static final int MAXIMUM_CONCURRENT_CALLS_PER_CONNECTION = 33;
+  private static final int MAXIMUM_INBOUND_MESSAGE_BYTES = 128 * 1024;
+
   private final WorkerSessionServerConfiguration configuration;
   private final SegmentStore segmentStore;
   private final LiveWorkerConnectionRegistry workerConnections = new LiveWorkerConnectionRegistry();
@@ -49,6 +52,8 @@ public final class WorkerSessionServer implements AutoCloseable {
         NettyServerBuilder.forPort(configuration.port())
             .sslContext(sslContext)
             .executor(executor)
+            .maxConcurrentCallsPerConnection(MAXIMUM_CONCURRENT_CALLS_PER_CONNECTION)
+            .maxInboundMessageSize(MAXIMUM_INBOUND_MESSAGE_BYTES)
             .addService(
                 ServerInterceptors.intercept(
                     new WorkerSessionGrpcService(workerConnections, segmentStore),

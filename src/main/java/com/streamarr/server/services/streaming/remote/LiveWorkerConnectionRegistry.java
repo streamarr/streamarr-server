@@ -28,11 +28,11 @@ final class LiveWorkerConnectionRegistry {
       WorkerRegistration registration,
       StreamObserver<WorkerSessionResponse> responseObserver) {
     var connection = new WorkerConnection(UUID.randomUUID(), registration, responseObserver);
+    connection.accept();
     var replaced = connections.put(workerId, connection);
     if (replaced != null) {
       replaced.closeAsReplaced();
     }
-    connection.accept();
     return connection.workerSessionId();
   }
 

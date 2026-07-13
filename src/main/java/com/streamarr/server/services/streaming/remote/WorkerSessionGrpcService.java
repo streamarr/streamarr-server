@@ -11,14 +11,25 @@ import com.streamarr.transcode.v1.WorkerSessionResponse;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import java.util.UUID;
-import lombok.RequiredArgsConstructor;
 
-@RequiredArgsConstructor
 final class WorkerSessionGrpcService
     extends TranscodeWorkerServiceGrpc.TranscodeWorkerServiceImplBase {
 
+  private static final int MAXIMUM_CONCURRENT_SEGMENT_UPLOADS = 32;
+  private static final long MAXIMUM_BUFFERED_SEGMENT_BYTES = 64L * 1024 * 1024;
+
   private final LiveWorkerConnectionRegistry workerConnections;
   private final SegmentStore segmentStore;
+  private final SegmentUploadAdmission segmentUploadAdmission;
+
+  WorkerSessionGrpcService(
+      LiveWorkerConnectionRegistry workerConnections, SegmentStore segmentStore) {
+    this.workerConnections = workerConnections;
+    this.segmentStore = segmentStore;
+    segmentUploadAdmission =
+        new SegmentUploadAdmission(
+            MAXIMUM_CONCURRENT_SEGMENT_UPLOADS, MAXIMUM_BUFFERED_SEGMENT_BYTES);
+  }
 
   @Override
   public StreamObserver<WorkerSessionRequest> workerSession(
@@ -30,12 +41,32 @@ final class WorkerSessionGrpcService
   @Override
   public StreamObserver<UploadSegmentRequest> uploadSegment(
       StreamObserver<UploadSegmentResponse> responseObserver) {
+    if (!segmentUploadAdmission.tryOpen()) {
+      responseObserver.onError(
+          Status.RESOURCE_EXHAUSTED
+              .withDescription("Concurrent segment upload limit reached")
+              .asRuntimeException());
+      return new IgnoredUploadObserver();
+    }
     return SegmentUploadObserver.builder()
         .authenticatedWorkerId(WorkerIdentityServerInterceptor.AUTHENTICATED_WORKER_ID.get())
         .workerConnections(workerConnections)
         .segmentStore(segmentStore)
         .responseObserver(responseObserver)
+        .uploadAdmission(segmentUploadAdmission)
         .build();
+  }
+
+  private static final class IgnoredUploadObserver implements StreamObserver<UploadSegmentRequest> {
+
+    @Override
+    public void onNext(UploadSegmentRequest value) {}
+
+    @Override
+    public void onError(Throwable throwable) {}
+
+    @Override
+    public void onCompleted() {}
   }
 
   private static final class RegistrationObserver implements StreamObserver<WorkerSessionRequest> {

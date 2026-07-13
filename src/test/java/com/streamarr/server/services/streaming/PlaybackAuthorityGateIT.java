@@ -21,6 +21,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 
 @Tag("IntegrationTest")
@@ -57,11 +59,12 @@ class PlaybackAuthorityGateIT extends AbstractIntegrationTest {
     assertThat(authorityGate.allows(authority)).isTrue();
   }
 
-  @Test
-  @DisplayName("Should deny playback authority when authorization session is revoked")
-  void shouldDenyPlaybackAuthorityWhenAuthorizationSessionIsRevoked() {
-    authSessionRepository.revoke(
-        identity.session().getId(), SessionRevocationReason.LOGOUT, Instant.now());
+  @ParameterizedTest
+  @EnumSource(SessionRevocationReason.class)
+  @DisplayName("Should deny playback authority for every authorization session revocation reason")
+  void shouldDenyPlaybackAuthorityForEveryAuthorizationSessionRevocationReason(
+      SessionRevocationReason reason) {
+    authSessionRepository.revoke(identity.session().getId(), reason, Instant.now());
 
     assertThat(authorityGate.allows(authority)).isFalse();
   }
