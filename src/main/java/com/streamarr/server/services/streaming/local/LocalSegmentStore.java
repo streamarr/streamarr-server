@@ -5,10 +5,12 @@ import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.streaming.SegmentStore;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -64,6 +66,24 @@ public class LocalSegmentStore implements SegmentStore {
       return Files.exists(resolveSegmentPath(sessionId, segmentName));
     } catch (TranscodeException e) {
       return false;
+    }
+  }
+
+  @Override
+  public void storeSegment(UUID sessionId, String segmentName, byte[] data) {
+    getOutputDirectory(sessionId);
+    var segmentPath = resolveSegmentPath(sessionId, segmentName);
+    try {
+      Files.createDirectories(segmentPath.getParent());
+      var temporary = Files.createTempFile(segmentPath.getParent(), ".upload-", ".tmp");
+      try {
+        Files.write(temporary, data);
+        moveIntoPlace(temporary, segmentPath);
+      } finally {
+        Files.deleteIfExists(temporary);
+      }
+    } catch (IOException e) {
+      throw new UncheckedIOException("Failed to store segment: " + segmentName, e);
     }
   }
 
@@ -123,6 +143,15 @@ public class LocalSegmentStore implements SegmentStore {
       return dir;
     } catch (IOException e) {
       throw new UncheckedIOException("Failed to create session directory", e);
+    }
+  }
+
+  private void moveIntoPlace(Path source, Path target) throws IOException {
+    try {
+      Files.move(
+          source, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+    } catch (AtomicMoveNotSupportedException _) {
+      Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
     }
   }
 

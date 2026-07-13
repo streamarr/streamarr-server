@@ -88,7 +88,7 @@ This disposability is an accepted single-server-v1 consequence, not a promise of
 
 Segment bytes do not share the control-message stream.
 Each segment upload uses its own bounded HTTP/2 gRPC stream over the worker's mTLS channel so bulk bytes cannot block heartbeats and commands at the application stream level.
-Before this data plane lands, a worker-push benchmark must reconfirm the throughput result recorded by the earlier server-pull spike.
+The implemented worker-push path was rechecked with 64 KiB frames and 512 KiB, 4 MiB, and 16 MiB segments before landing; link:../spikes/0018-worker-push-segment-data-plane.adoc[the recorded result] accepts lower fixed-cost performance than the earlier server-pull microbenchmark while confirming adequate bulk headroom.
 
 The contract uses Protobuf with explicit unspecified enum zero values, unambiguous field names such as `stream_session_id`, and no JSON, `Any`, filesystem paths, command lines, process ids, tokens, passwords, or secrets.
 Buf formatting, lint, and breaking-change checks protect the shipped wire contract.

@@ -11,6 +11,7 @@ import lombok.Builder;
 public record TranscodeWorkerConfiguration(
     UUID workerId,
     UUID bootId,
+    int availableSlots,
     PemTlsIdentity tlsIdentity,
     Map<UUID, Path> sourceNamespaces,
     Path segmentBasePath) {
@@ -18,6 +19,9 @@ public record TranscodeWorkerConfiguration(
   public TranscodeWorkerConfiguration {
     Objects.requireNonNull(workerId);
     Objects.requireNonNull(bootId);
+    if (availableSlots < 1) {
+      throw new IllegalArgumentException("Available slots must be positive");
+    }
     Objects.requireNonNull(tlsIdentity);
     sourceNamespaces = Map.copyOf(sourceNamespaces);
     Objects.requireNonNull(segmentBasePath);
