@@ -1,7 +1,8 @@
 package com.streamarr.transcode.worker;
 
+import static com.streamarr.transcode.protocol.ProtoUuid.fromProto;
+
 import com.streamarr.transcode.v1.MediaSourceRef;
-import com.streamarr.transcode.v1.Uuid;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -18,7 +19,7 @@ final class WorkerMediaSourceResolver {
 
   Path resolve(MediaSourceRef source) {
     validateSegments(source.getRelativeKey());
-    var root = sourceNamespaces.get(uuid(source.getSourceNamespaceId()));
+    var root = sourceNamespaces.get(fromProto(source.getSourceNamespaceId()));
     if (root == null) {
       throw new WorkerJobException("Unknown media source namespace");
     }
@@ -54,9 +55,5 @@ final class WorkerMediaSourceResolver {
         throw new WorkerJobException("Media source key contains an unsafe path segment");
       }
     }
-  }
-
-  private static UUID uuid(Uuid value) {
-    return new UUID(value.getMostSignificantBits(), value.getLeastSignificantBits());
   }
 }

@@ -1,7 +1,8 @@
 package com.streamarr.server.services.streaming.remote;
 
+import static com.streamarr.transcode.protocol.ProtoUuid.fromProto;
+
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
-import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.WorkerSessionRequest;
 import com.streamarr.transcode.v1.WorkerSessionResponse;
 import io.grpc.Status;
@@ -20,10 +21,6 @@ final class WorkerSessionGrpcService
       StreamObserver<WorkerSessionResponse> responseObserver) {
     var authenticatedWorkerId = WorkerIdentityServerInterceptor.AUTHENTICATED_WORKER_ID.get();
     return new RegistrationObserver(authenticatedWorkerId, responseObserver, workerConnections);
-  }
-
-  private static UUID uuid(Uuid value) {
-    return new UUID(value.getMostSignificantBits(), value.getLeastSignificantBits());
   }
 
   private static final class RegistrationObserver implements StreamObserver<WorkerSessionRequest> {
@@ -54,7 +51,7 @@ final class WorkerSessionGrpcService
         return;
       }
 
-      var reportedWorkerId = uuid(request.getRegistration().getWorker().getWorkerId());
+      var reportedWorkerId = fromProto(request.getRegistration().getWorker().getWorkerId());
       if (!authenticatedWorkerId.equals(reportedWorkerId)) {
         reject(
             Status.PERMISSION_DENIED.withDescription(

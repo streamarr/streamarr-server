@@ -1,9 +1,10 @@
 package com.streamarr.server.services.streaming.remote;
 
+import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
+
 import com.streamarr.transcode.v1.RenditionJob;
 import com.streamarr.transcode.v1.StartRenditionCommand;
 import com.streamarr.transcode.v1.StopRenditionCommand;
-import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerSessionAccepted;
 import com.streamarr.transcode.v1.WorkerSessionResponse;
@@ -58,13 +59,6 @@ final class LiveWorkerConnectionRegistry {
     return true;
   }
 
-  private static Uuid uuid(UUID value) {
-    return Uuid.newBuilder()
-        .setMostSignificantBits(value.getMostSignificantBits())
-        .setLeastSignificantBits(value.getLeastSignificantBits())
-        .build();
-  }
-
   private record WorkerConnection(
       UUID workerSessionId,
       WorkerIdentity worker,
@@ -73,7 +67,7 @@ final class LiveWorkerConnectionRegistry {
     private synchronized void accept() {
       var accepted =
           WorkerSessionAccepted.newBuilder()
-              .setWorkerSessionId(uuid(workerSessionId))
+              .setWorkerSessionId(toProto(workerSessionId))
               .setHeartbeatIntervalSeconds(HEARTBEAT_INTERVAL_SECONDS);
       responseObserver.onNext(
           WorkerSessionResponse.newBuilder().setSessionAccepted(accepted).build());
@@ -89,7 +83,7 @@ final class LiveWorkerConnectionRegistry {
       var command =
           StopRenditionCommand.newBuilder()
               .setTarget(worker)
-              .setJobAttemptId(uuid(jobAttemptId))
+              .setJobAttemptId(toProto(jobAttemptId))
               .build();
       responseObserver.onNext(WorkerSessionResponse.newBuilder().setStopRendition(command).build());
     }
