@@ -151,6 +151,10 @@ public final class TranscodeWorker implements AutoCloseable {
       return;
     }
 
+    executor.submit(() -> uploadRendition(job, outputDirectory));
+  }
+
+  private void uploadRendition(RenditionJob job, Path outputDirectory) {
     try {
       uploadProducedSegments(job, outputDirectory);
     } catch (Exception _) {
@@ -391,11 +395,11 @@ public final class TranscodeWorker implements AutoCloseable {
         return;
       }
       if (response.hasStartRendition()) {
-        executor.submit(() -> startRendition(response.getStartRendition()));
+        startRendition(response.getStartRendition());
         return;
       }
       if (response.hasStopRendition()) {
-        executor.submit(() -> stopRendition(response.getStopRendition()));
+        stopRendition(response.getStopRendition());
       }
     }
 

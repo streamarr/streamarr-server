@@ -31,6 +31,7 @@ import java.io.UncheckedIOException;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -150,6 +151,37 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
           .atMost(5, TimeUnit.SECONDS)
           .until(() -> !processManager.isRunning(streamSessionId, "720p"));
       assertThat(processManager.isRunning(streamSessionId, "1080p")).isTrue();
+    }
+  }
+
+  @Test
+  @DisplayName("Should preserve control-plane order when replacing a rendition")
+  void shouldPreserveControlPlaneOrderWhenReplacingRendition() throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+    Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var processManager = new FakeFfmpegProcessManager();
+    var streamSessionId = UUID.randomUUID();
+    var currentJob = renditionJob(streamSessionId, "720p");
+
+    try (var server = server();
+        var worker = worker(processManager, mediaRoot)) {
+      server.start();
+      worker.start("localhost", server.port());
+      assertThat(server.dispatch(currentJob)).isTrue();
+      await()
+          .atMost(5, TimeUnit.SECONDS)
+          .until(() -> processManager.isRunning(streamSessionId, "720p"));
+
+      for (var replacement = 0; replacement < 100; replacement++) {
+        assertThat(server.stopRendition(uuid(currentJob.getJobAttemptId()))).isTrue();
+        currentJob = renditionJob(streamSessionId, "720p");
+        assertThat(server.dispatch(currentJob)).isTrue();
+      }
+
+      await()
+          .atMost(10, TimeUnit.SECONDS)
+          .during(Duration.ofSeconds(1))
+          .until(() -> processManager.isRunning(streamSessionId, "720p"));
     }
   }
 
