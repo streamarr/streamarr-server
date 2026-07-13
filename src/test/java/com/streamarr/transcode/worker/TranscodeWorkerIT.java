@@ -294,6 +294,33 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
     }
   }
 
+  @Test
+  @DisplayName("Should reject malformed rendition decisions without poisoning worker capacity")
+  void shouldRejectMalformedRenditionDecisionsWithoutPoisoningWorkerCapacity() throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+    Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var processManager = new FakeFfmpegProcessManager();
+
+    try (var server = server();
+        var worker = worker(processManager, mediaRoot)) {
+      server.start();
+      worker.start("localhost", server.port());
+
+      for (var malformedJob : malformedRenditionJobs()) {
+        assertThat(server.dispatch(malformedJob)).isTrue();
+        await().atMost(5, TimeUnit.SECONDS).until(() -> server.availableSlots() == 2);
+        assertThat(processManager.getStarted())
+            .doesNotContain(uuid(malformedJob.getStreamSessionId()));
+      }
+
+      var validJob = renditionJob(UUID.randomUUID());
+      assertThat(server.dispatch(validJob)).isTrue();
+      await()
+          .atMost(5, TimeUnit.SECONDS)
+          .until(() -> processManager.getStarted().contains(uuid(validJob.getStreamSessionId())));
+    }
+  }
+
   private WorkerSessionServer server() throws URISyntaxException {
     return server(new LocalSegmentStore(tempDir.resolve("server-segments")));
   }
@@ -382,6 +409,63 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
         .setExecution(
             TranscodeExecution.newBuilder().setSegmentDurationSeconds(6).setFramerate(23.976))
         .build();
+  }
+
+  private List<RenditionJob> malformedRenditionJobs() {
+    var unspecifiedMode = renditionJob(UUID.randomUUID());
+    var unknownMode = renditionJob(UUID.randomUUID());
+    var unspecifiedAudio = renditionJob(UUID.randomUUID());
+    var unknownAudio = renditionJob(UUID.randomUUID());
+    var unspecifiedSubtitle = renditionJob(UUID.randomUUID());
+    var unknownSubtitle = renditionJob(UUID.randomUUID());
+    var unspecifiedContainer = renditionJob(UUID.randomUUID());
+    var unknownContainer = renditionJob(UUID.randomUUID());
+    return List.of(
+        unspecifiedMode.toBuilder()
+            .setDecision(
+                unspecifiedMode.getDecision().toBuilder()
+                    .setMode(TranscodeMode.TRANSCODE_MODE_UNSPECIFIED))
+            .build(),
+        unknownMode.toBuilder()
+            .setDecision(unknownMode.getDecision().toBuilder().setModeValue(Integer.MAX_VALUE))
+            .build(),
+        unspecifiedAudio.toBuilder()
+            .setDecision(
+                unspecifiedAudio.getDecision().toBuilder()
+                    .setAudio(
+                        unspecifiedAudio.getDecision().getAudio().toBuilder()
+                            .setMode(AudioMode.AUDIO_MODE_UNSPECIFIED)))
+            .build(),
+        unknownAudio.toBuilder()
+            .setDecision(
+                unknownAudio.getDecision().toBuilder()
+                    .setAudio(
+                        unknownAudio.getDecision().getAudio().toBuilder()
+                            .setModeValue(Integer.MAX_VALUE)))
+            .build(),
+        unspecifiedSubtitle.toBuilder()
+            .setDecision(
+                unspecifiedSubtitle.getDecision().toBuilder()
+                    .setSubtitle(
+                        unspecifiedSubtitle.getDecision().getSubtitle().toBuilder()
+                            .setMode(SubtitleMode.SUBTITLE_MODE_UNSPECIFIED)))
+            .build(),
+        unknownSubtitle.toBuilder()
+            .setDecision(
+                unknownSubtitle.getDecision().toBuilder()
+                    .setSubtitle(
+                        unknownSubtitle.getDecision().getSubtitle().toBuilder()
+                            .setModeValue(Integer.MAX_VALUE)))
+            .build(),
+        unspecifiedContainer.toBuilder()
+            .setDecision(
+                unspecifiedContainer.getDecision().toBuilder()
+                    .setContainer(ContainerFormat.CONTAINER_FORMAT_UNSPECIFIED))
+            .build(),
+        unknownContainer.toBuilder()
+            .setDecision(
+                unknownContainer.getDecision().toBuilder().setContainerValue(Integer.MAX_VALUE))
+            .build());
   }
 
   private Uuid uuid(UUID value) {
