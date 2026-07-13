@@ -172,7 +172,7 @@ public final class TranscodeWorker implements AutoCloseable {
     try {
       FileUtils.deleteDirectory(outputDirectory.toFile());
     } catch (NoSuchFileException _) {
-      return;
+      // Concurrent shutdown already completed the idempotent cleanup.
     } catch (IOException e) {
       log.warn("Failed to delete transcode attempt output {}", outputDirectory, e);
     }
