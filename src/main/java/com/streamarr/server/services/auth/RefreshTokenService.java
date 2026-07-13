@@ -45,9 +45,23 @@ public class RefreshTokenService {
 
   @Transactional
   public IssuedRefreshToken createSession(UserAccount account, String deviceName) {
+    return createSession(
+        CreateAuthSessionCommand.builder()
+            .accountId(account.getId())
+            .deviceName(deviceName)
+            .build());
+  }
+
+  @Transactional
+  public IssuedRefreshToken createSession(CreateAuthSessionCommand command) {
     var session =
         sessionRepository.save(
-            AuthSession.builder().accountId(account.getId()).deviceName(deviceName).build());
+            AuthSession.builder()
+                .accountId(command.accountId())
+                .deviceName(command.deviceName())
+                .activeHouseholdId(command.activeHouseholdId())
+                .activeProfileId(command.activeProfileId())
+                .build());
 
     var rawToken = generateRawToken();
     tokenRepository.save(buildActiveToken(session, rawToken, clock.instant()));
