@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.transcode.tls.PemTlsIdentity;
+import com.streamarr.transcode.v1.RenditionJob;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
 import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.WorkerHeartbeat;
@@ -21,7 +22,9 @@ import java.net.URISyntaxException;
 import java.nio.file.Path;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import javax.net.ssl.SSLException;
 import org.junit.jupiter.api.DisplayName;
@@ -142,6 +145,86 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
     }
   }
 
+  @Test
+  @DisplayName("Should dispatch a rendition job to a registered worker")
+  void shouldDispatchRenditionJobToRegisteredWorker() throws Exception {
+    try (var server = server()) {
+      server.start();
+      var channel = workerChannel(server.port());
+
+      try (var worker = connect(channel, AUTHENTICATED_WORKER_ID)) {
+        assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
+        var job = renditionJob();
+
+        assertThat(server.dispatch(job)).isTrue();
+
+        var command = worker.nextResponse().getStartRendition();
+        assertThat(command.getTarget().getWorkerId()).isEqualTo(uuid(AUTHENTICATED_WORKER_ID));
+        assertThat(command.getJob()).isEqualTo(job);
+      } finally {
+        shutdown(channel);
+      }
+    }
+  }
+
+  @Test
+  @DisplayName("Should stop dispatching when the worker connection closes")
+  void shouldStopDispatchingWhenWorkerConnectionCloses() throws Exception {
+    try (var server = server()) {
+      server.start();
+      var channel = workerChannel(server.port());
+
+      try {
+        var worker = connect(channel, AUTHENTICATED_WORKER_ID);
+        assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
+
+        worker.close();
+        worker.awaitClosed();
+
+        assertThat(server.dispatch(renditionJob())).isFalse();
+      } finally {
+        shutdown(channel);
+      }
+    }
+  }
+
+  @Test
+  @DisplayName("Should fence a replaced worker connection without removing its replacement")
+  void shouldFenceReplacedWorkerConnectionWithoutRemovingItsReplacement() throws Exception {
+    try (var server = server()) {
+      server.start();
+      var channel = workerChannel(server.port());
+
+      try {
+        var first = connect(channel, AUTHENTICATED_WORKER_ID);
+        assertThat(first.nextResponse().hasSessionAccepted()).isTrue();
+        var replacement = connect(channel, AUTHENTICATED_WORKER_ID);
+        assertThat(replacement.nextResponse().hasSessionAccepted()).isTrue();
+
+        assertThatThrownBy(first::awaitClosed)
+            .rootCause()
+            .matches(throwable -> Status.fromThrowable(throwable).getCode() == Status.Code.ABORTED);
+        var job = renditionJob();
+
+        assertThat(server.dispatch(job)).isTrue();
+        assertThat(replacement.nextResponse().getStartRendition().getJob()).isEqualTo(job);
+        replacement.close();
+      } finally {
+        shutdown(channel);
+      }
+    }
+  }
+
+  @Test
+  @DisplayName("Should decline dispatch when no worker is connected")
+  void shouldDeclineDispatchWhenNoWorkerIsConnected() throws Exception {
+    try (var server = server()) {
+      server.start();
+
+      assertThat(server.dispatch(renditionJob())).isFalse();
+    }
+  }
+
   private WorkerSessionServer server() throws URISyntaxException {
     var configuration =
         WorkerSessionServerConfiguration.builder()
@@ -198,6 +281,24 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
     return response;
   }
 
+  private TestWorkerConnection connect(ManagedChannel channel, UUID workerId) {
+    var responses = new LinkedBlockingQueue<WorkerSessionResponse>();
+    var closed = new CompletableFuture<Void>();
+    var requestObserver =
+        TranscodeWorkerServiceGrpc.newStub(channel)
+            .workerSession(new QueuedResponseObserver(responses, closed));
+    requestObserver.onNext(registration(workerId));
+    return new TestWorkerConnection(requestObserver, responses, closed);
+  }
+
+  private RenditionJob renditionJob() {
+    return RenditionJob.newBuilder()
+        .setStreamSessionId(uuid(UUID.randomUUID()))
+        .setJobId(uuid(UUID.randomUUID()))
+        .setJobAttemptId(uuid(UUID.randomUUID()))
+        .build();
+  }
+
   private WorkerSessionRequest registration(UUID workerId) {
     return WorkerSessionRequest.newBuilder()
         .setRegistration(
@@ -244,6 +345,46 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
       if (!response.isDone()) {
         response.completeExceptionally(new IllegalStateException("Worker session closed"));
       }
+    }
+  }
+
+  private record QueuedResponseObserver(
+      BlockingQueue<WorkerSessionResponse> responses, CompletableFuture<Void> closed)
+      implements StreamObserver<WorkerSessionResponse> {
+
+    @Override
+    public void onNext(WorkerSessionResponse value) {
+      responses.add(value);
+    }
+
+    @Override
+    public void onError(Throwable throwable) {
+      closed.completeExceptionally(throwable);
+    }
+
+    @Override
+    public void onCompleted() {
+      closed.complete(null);
+    }
+  }
+
+  private record TestWorkerConnection(
+      StreamObserver<WorkerSessionRequest> requests,
+      BlockingQueue<WorkerSessionResponse> responses,
+      CompletableFuture<Void> closed)
+      implements AutoCloseable {
+
+    private WorkerSessionResponse nextResponse() throws InterruptedException {
+      return Objects.requireNonNull(responses.poll(5, TimeUnit.SECONDS));
+    }
+
+    private void awaitClosed() throws Exception {
+      closed.get(5, TimeUnit.SECONDS);
+    }
+
+    @Override
+    public void close() {
+      requests.onCompleted();
     }
   }
 }
