@@ -78,7 +78,8 @@ Workers never connect to the Streamarr database.
 === Workers dial out over one mTLS gRPC channel
 
 Each worker opens one long-lived bidirectional `WorkerSession` to the server.
-The opening exchange registers the worker's stable identity, fresh process `boot_id`, and capabilities; heartbeats report current capacity.
+The opening exchange registers the worker's stable identity, fresh process `boot_id`, capabilities, and configured slot capacity.
+The registry derives remaining capacity from connection-owned active attempts; HTTP/2 transport liveness replaces an application heartbeat protocol.
 Server commands and worker results use Protobuf envelopes on that stream.
 The worker needs no advertised endpoint, inbound port, NAT traversal, endpoint discovery, or endpoint-binding lease.
 
@@ -88,7 +89,7 @@ Server restart drops runtime stream sessions and worker sessions, stops their pl
 This disposability is an accepted single-server-v1 consequence, not a promise of durable job recovery.
 
 Segment bytes do not share the control-message stream.
-Each segment upload uses its own bounded HTTP/2 gRPC stream over the worker's mTLS channel so bulk bytes cannot block heartbeats and commands at the application stream level.
+Each segment upload uses its own bounded HTTP/2 gRPC stream over the worker's mTLS channel so bulk bytes cannot block control commands at the application stream level.
 The implemented worker-push path was rechecked with 64 KiB frames and 512 KiB, 4 MiB, and 16 MiB segments before landing; link:../spikes/0018-worker-push-segment-data-plane.adoc[the recorded result] accepts lower fixed-cost performance than the earlier server-pull microbenchmark while confirming adequate bulk headroom.
 
 The contract uses Protobuf with explicit unspecified enum zero values, unambiguous field names such as `stream_session_id`, and no JSON, `Any`, filesystem paths, command lines, process ids, tokens, passwords, or secrets.

@@ -114,7 +114,7 @@ link:adr/0013-stream-decision-architecture.adoc[ADR 0013].
 === Distributed Transcoding Direction
 
 link:adr/0018-live-playback-authority-and-outbound-workers.adoc[ADR 0018] keeps local playback as the default and preserves independent rendition failure through one shared FFmpeg engine.
-An optional worker opens an outbound, long-lived mTLS gRPC `WorkerSession`; the live connection owns registration, capacity heartbeats, commands, and job-attempt fencing.
+An optional worker opens an outbound, long-lived mTLS gRPC `WorkerSession`; the live connection owns registration, capacity accounting, commands, and job-attempt fencing.
 Segment uploads use separate bounded HTTP/2 streams over the same channel, and media is addressed by opaque `MediaSourceRef(source_namespace_id, relative_key)` values rather than host paths.
 The initial topology is one Streamarr server and zero or more workers; workers have no database access or inbound listener, and multi-server coordination is deferred.
 

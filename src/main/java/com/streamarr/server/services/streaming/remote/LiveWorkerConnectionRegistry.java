@@ -21,8 +21,6 @@ import java.util.concurrent.ConcurrentHashMap;
 
 final class LiveWorkerConnectionRegistry {
 
-  private static final int HEARTBEAT_INTERVAL_SECONDS = 10;
-
   private final ConcurrentHashMap<UUID, WorkerConnection> connections = new ConcurrentHashMap<>();
 
   synchronized UUID register(
@@ -120,8 +118,7 @@ final class LiveWorkerConnectionRegistry {
     private synchronized void accept() {
       var accepted =
           WorkerSessionAccepted.newBuilder()
-              .setWorkerSessionId(toProto(workerSessionId))
-              .setHeartbeatIntervalSeconds(HEARTBEAT_INTERVAL_SECONDS);
+              .setWorkerSessionId(toProto(workerSessionId));
       responseObserver.onNext(
           WorkerSessionResponse.newBuilder().setSessionAccepted(accepted).build());
     }
