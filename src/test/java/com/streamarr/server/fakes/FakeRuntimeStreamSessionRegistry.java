@@ -1,7 +1,7 @@
 package com.streamarr.server.fakes;
 
 import com.streamarr.server.domain.streaming.StreamSession;
-import com.streamarr.server.services.streaming.StreamSessionRepository;
+import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
@@ -9,7 +9,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-public class FakeStreamSessionRepository implements StreamSessionRepository {
+public class FakeRuntimeStreamSessionRegistry implements RuntimeStreamSessionRegistry {
 
   private final Map<UUID, StreamSession> sessions = new ConcurrentHashMap<>();
 

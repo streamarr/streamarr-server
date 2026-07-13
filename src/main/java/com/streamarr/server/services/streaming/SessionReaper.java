@@ -18,7 +18,7 @@ public class SessionReaper {
   private final StreamingService streamingService;
   private final TranscodeExecutor transcodeExecutor;
   private final StreamingProperties properties;
-  private final StreamSessionRepository sessionRepository;
+  private final RuntimeStreamSessionRegistry runtimeRegistry;
 
   @Scheduled(fixedDelayString = "${streaming.reaper-interval-ms:15000}")
   public void reapSessions() {
@@ -66,7 +66,7 @@ public class SessionReaper {
           entry.getKey(),
           new TranscodeHandle(handle.processId(), TranscodeStatus.SUSPENDED, handle.startNumber()));
     }
-    sessionRepository.save(session);
+    runtimeRegistry.save(session);
   }
 
   private void handleDeadProcesses(StreamSession session) {
@@ -86,7 +86,7 @@ public class SessionReaper {
       session.setVariantHandle(
           label,
           new TranscodeHandle(handle.processId(), TranscodeStatus.FAILED, handle.startNumber()));
-      sessionRepository.save(session);
+      runtimeRegistry.save(session);
     }
   }
 }

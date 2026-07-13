@@ -23,8 +23,8 @@ import com.streamarr.server.exceptions.MaxConcurrentTranscodesException;
 import com.streamarr.server.exceptions.MediaFileNotFoundException;
 import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
+import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
-import com.streamarr.server.fakes.FakeStreamSessionRepository;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import java.time.Duration;
@@ -72,7 +72,7 @@ class HlsStreamingServiceTest {
             decisionService,
             qualityLadderService,
             properties,
-            new FakeStreamSessionRepository(),
+            new FakeRuntimeStreamSessionRegistry(),
             new MutexFactory<>());
   }
 
@@ -550,7 +550,7 @@ class HlsStreamingServiceTest {
             new TranscodeDecisionService(),
             new QualityLadderService(),
             properties,
-            new FakeStreamSessionRepository(),
+            new FakeRuntimeStreamSessionRegistry(),
             new MutexFactory<>());
 
     ffprobeService.setDefaultProbe(
