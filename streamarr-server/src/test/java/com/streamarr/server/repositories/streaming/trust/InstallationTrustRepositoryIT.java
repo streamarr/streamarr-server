@@ -428,8 +428,9 @@ class InstallationTrustRepositoryIT extends AbstractIntegrationTest {
         .where(TRANSCODE_TRUST_CERTIFICATE.BUNDLE_VERSION.eq(2L))
         .and(TRANSCODE_TRUST_CERTIFICATE.KIND.eq(TranscodeTrustCertificateKind.REVOCATION_SIGNER))
         .execute();
+    var installationId = publication.installationId();
 
-    assertThatThrownBy(() -> repository.findBundle(publication.installationId(), 2L))
+    assertThatThrownBy(() -> repository.findBundle(installationId, 2L))
         .isInstanceOf(InstallationTrustException.class)
         .hasMessageContaining("every required certificate role");
   }
