@@ -3,6 +3,7 @@ package com.streamarr.server.fakes;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
+import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -18,8 +19,10 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   private final Set<ProcessKey> running = new HashSet<>();
   private final Set<ProcessKey> started = new HashSet<>();
   private final Set<UUID> stopped = new HashSet<>();
+  private final Set<UUID> failingOnStop = new HashSet<>();
   private final List<TranscodeRequest> startedRequests = new ArrayList<>();
   private int availableSlots = Integer.MAX_VALUE;
+  private boolean healthy = true;
 
   @Override
   public TranscodeHandle start(TranscodeRequest request) {
@@ -32,8 +35,15 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
 
   @Override
   public void stop(UUID sessionId) {
+    if (failingOnStop.contains(sessionId)) {
+      throw new TranscodeException("Simulated stop failure for session: " + sessionId);
+    }
     running.removeIf(key -> key.sessionId().equals(sessionId));
     stopped.add(sessionId);
+  }
+
+  public void failOnStop(UUID sessionId) {
+    failingOnStop.add(sessionId);
   }
 
   @Override
@@ -48,7 +58,11 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
 
   @Override
   public boolean isHealthy() {
-    return true;
+    return healthy;
+  }
+
+  public void setHealthy(boolean healthy) {
+    this.healthy = healthy;
   }
 
   @Override

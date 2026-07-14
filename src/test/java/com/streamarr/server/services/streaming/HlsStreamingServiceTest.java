@@ -25,6 +25,7 @@ import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.MaxConcurrentTranscodesException;
 import com.streamarr.server.exceptions.MediaFileNotFoundException;
+import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.fakes.FakeFfprobeService;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.fakes.FakePlaybackAuthorityGate;
@@ -272,6 +273,21 @@ class HlsStreamingServiceTest {
     assertThat(accessSession(session)).isEmpty();
     assertThat(transcodeExecutor.getStopped()).contains(session.getSessionId());
     assertThat(transcodeExecutor.isRunning(session.getSessionId())).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should delete stored segments when destroy fails to stop the transcode")
+  void shouldDeleteStoredSegmentsWhenDestroyFailsToStopTranscode() {
+    var file = seedMediaFile();
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    segmentStore.addSegment(session.getSessionId(), "segment0.ts", "data".getBytes());
+    transcodeExecutor.failOnStop(session.getSessionId());
+
+    assertThatThrownBy(() -> service.destroySession(session.getSessionId()))
+        .isInstanceOf(TranscodeException.class);
+
+    assertThat(accessSession(session)).isEmpty();
+    assertThat(segmentStore.segmentExists(session.getSessionId(), "segment0.ts")).isFalse();
   }
 
   @Test
