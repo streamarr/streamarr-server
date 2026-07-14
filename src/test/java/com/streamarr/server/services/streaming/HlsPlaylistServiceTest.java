@@ -487,9 +487,9 @@ class HlsPlaylistServiceTest {
       var playlist = service.generateMultivariantPlaylist(session, "test-token");
 
       assertThat(playlist)
-          .contains("BANDWIDTH=5128000")
-          .contains("BANDWIDTH=3128000")
-          .contains("BANDWIDTH=1628000");
+          .contains("BANDWIDTH=6153600,AVERAGE-BANDWIDTH=5128000")
+          .contains("BANDWIDTH=3753600,AVERAGE-BANDWIDTH=3128000")
+          .contains("BANDWIDTH=1953600,AVERAGE-BANDWIDTH=1628000");
     }
 
     @Test
@@ -648,7 +648,7 @@ class HlsPlaylistServiceTest {
 
       var playlist = service.generateMultivariantPlaylist(session, "test-token");
 
-      assertThat(playlist).contains("BANDWIDTH=5384000");
+      assertThat(playlist).contains("BANDWIDTH=6460800,AVERAGE-BANDWIDTH=5384000");
     }
   }
 
