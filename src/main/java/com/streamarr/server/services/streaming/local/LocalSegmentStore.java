@@ -41,13 +41,17 @@ public class LocalSegmentStore implements SegmentStore {
     }
   }
 
+  /**
+   * A session without an output directory reads as "segment not yet present" rather than an error:
+   * in remote mode nothing creates the directory until a worker's first upload, so the wait must
+   * bridge that window exactly as it bridges encoder startup.
+   */
   @Override
   public boolean waitForSegment(UUID sessionId, String segmentName, Duration timeout) {
-    var segmentPath = resolveSegmentPath(sessionId, segmentName);
     var deadline = System.nanoTime() + timeout.toNanos();
 
     while (System.nanoTime() < deadline) {
-      if (Files.exists(segmentPath)) {
+      if (segmentExists(sessionId, segmentName)) {
         return true;
       }
       try {
@@ -57,14 +61,14 @@ public class LocalSegmentStore implements SegmentStore {
         return false;
       }
     }
-    return Files.exists(segmentPath);
+    return segmentExists(sessionId, segmentName);
   }
 
   @Override
   public boolean segmentExists(UUID sessionId, String segmentName) {
     try {
       return Files.exists(resolveSegmentPath(sessionId, segmentName));
-    } catch (TranscodeException e) {
+    } catch (TranscodeException _) {
       return false;
     }
   }
