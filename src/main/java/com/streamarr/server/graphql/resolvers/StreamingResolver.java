@@ -134,7 +134,7 @@ public class StreamingResolver {
         .streamUrl(
             "/api/stream/"
                 + session.getSessionId()
-                + "/master.m3u8?t="
+                + "/multivariant.m3u8?t="
                 + playbackTokenIssuer
                     .issue(
                         authorizationService.currentIdentity(),

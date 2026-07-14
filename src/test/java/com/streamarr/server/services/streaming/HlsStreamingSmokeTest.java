@@ -246,7 +246,7 @@ class HlsStreamingSmokeTest {
   void shouldStartMasterPlaylistWithExtm3uAndNoBomWhenSessionIsActive() {
     var file = seedMediaFile();
     var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
-    var playlist = playlistService.generateMasterPlaylist(session, "smoke-token");
+    var playlist = playlistService.generateMultivariantPlaylist(session, "smoke-token");
 
     assertThat(playlist).startsWith("#EXTM3U\n").doesNotContain("\uFEFF");
   }
@@ -256,7 +256,7 @@ class HlsStreamingSmokeTest {
   void shouldIncludeStreamVariantInfoInMasterPlaylistWhenSessionIsActive() {
     var file = seedMediaFile();
     var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
-    var playlist = playlistService.generateMasterPlaylist(session, "smoke-token");
+    var playlist = playlistService.generateMultivariantPlaylist(session, "smoke-token");
 
     assertThat(playlist)
         .contains("#EXT-X-STREAM-INF:")

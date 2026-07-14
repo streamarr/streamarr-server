@@ -22,7 +22,7 @@ public class HlsPlaylistService {
 
   private final StreamingProperties properties;
 
-  public String generateMasterPlaylist(StreamSession session, String token) {
+  public String generateMultivariantPlaylist(StreamSession session, String token) {
     var decision = session.getTranscodeDecision();
     var audio = decision.audioDecision();
     var videoCodecString = CODEC_STRINGS.getOrDefault(decision.videoCodecFamily(), "avc1.640028");
