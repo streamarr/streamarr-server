@@ -65,7 +65,7 @@ class HlsStreamingServiceTest {
     var properties =
         StreamingProperties.builder()
             .maxConcurrentTranscodes(3)
-            .segmentDuration(Duration.ofSeconds(6))
+            .targetSegmentDuration(Duration.ofSeconds(6))
             .sessionTimeout(Duration.ofSeconds(60))
             .build();
     var decisionService = new TranscodeDecisionService();
@@ -635,7 +635,7 @@ class HlsStreamingServiceTest {
     var properties =
         StreamingProperties.builder()
             .maxConcurrentTranscodes(2)
-            .segmentDuration(Duration.ofSeconds(6))
+            .targetSegmentDuration(Duration.ofSeconds(6))
             .sessionTimeout(Duration.ofSeconds(60))
             .build();
     var limitedService =

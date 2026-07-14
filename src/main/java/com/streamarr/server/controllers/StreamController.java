@@ -51,7 +51,7 @@ public class StreamController {
   }
 
   @GetMapping("/{sessionId}/stream.m3u8")
-  public ResponseEntity<String> getStreamPlaylist(@PathVariable UUID sessionId) {
+  public ResponseEntity<String> getMediaPlaylist(@PathVariable UUID sessionId) {
     var session = findSession(sessionId);
     if (session.isEmpty()) {
       return ResponseEntity.notFound().build();
@@ -85,7 +85,7 @@ public class StreamController {
   }
 
   @GetMapping("/{sessionId}/{variantLabel}/stream.m3u8")
-  public ResponseEntity<String> getVariantStreamPlaylist(
+  public ResponseEntity<String> getVariantMediaPlaylist(
       @PathVariable UUID sessionId, @PathVariable String variantLabel) {
     validatePathSegment(variantLabel);
     var session = findSession(sessionId);

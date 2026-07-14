@@ -86,7 +86,7 @@ class StreamingResolverTest {
     StreamingProperties streamingProperties() {
       return StreamingProperties.builder()
           .maxConcurrentTranscodes(8)
-          .segmentDuration(Duration.ofSeconds(6))
+          .targetSegmentDuration(Duration.ofSeconds(6))
           .sessionTimeout(Duration.ofSeconds(60))
           .sessionRetention(Duration.ofHours(1))
           .build();

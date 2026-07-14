@@ -9,7 +9,7 @@ public record TranscodeRequest(
     UUID sessionId,
     Path sourcePath,
     int seekPosition,
-    int segmentDuration,
+    int targetSegmentDuration,
     double framerate,
     TranscodeDecision transcodeDecision,
     int width,

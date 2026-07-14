@@ -96,12 +96,12 @@ final class LiveWorkerConnectionRegistry {
     return connections.values().stream().mapToInt(WorkerConnection::availableSlots).sum();
   }
 
-  Optional<VariantJob> finishJobAttempt(UUID workerId, UUID workerSessionId, UUID jobAttemptId) {
+  Optional<VariantJob> releaseJobAttempt(UUID workerId, UUID workerSessionId, UUID jobAttemptId) {
     var connection = connections.get(workerId);
     if (connection == null || !connection.workerSessionId().equals(workerSessionId)) {
       return Optional.empty();
     }
-    return connection.finishJobAttempt(jobAttemptId);
+    return connection.releaseJobAttempt(jobAttemptId);
   }
 
   boolean authorizesUpload(UUID authenticatedWorkerId, SegmentUploadMetadata metadata) {
@@ -184,7 +184,7 @@ final class LiveWorkerConnectionRegistry {
       }
     }
 
-    private synchronized Optional<VariantJob> finishJobAttempt(UUID jobAttemptId) {
+    private synchronized Optional<VariantJob> releaseJobAttempt(UUID jobAttemptId) {
       return Optional.ofNullable(activeVariants.remove(jobAttemptId));
     }
 

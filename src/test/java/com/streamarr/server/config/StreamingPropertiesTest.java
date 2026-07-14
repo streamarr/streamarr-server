@@ -32,7 +32,7 @@ class StreamingPropertiesTest {
   void shouldDefaultSegmentDurationToSixSecondsWhenNull() {
     var properties = StreamingProperties.builder().build();
 
-    assertThat(properties.segmentDuration()).isEqualTo(Duration.ofSeconds(6));
+    assertThat(properties.targetSegmentDuration()).isEqualTo(Duration.ofSeconds(6));
   }
 
   @Test

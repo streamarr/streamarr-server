@@ -29,7 +29,7 @@ final class WorkerVariantJobMapper {
         .sessionId(fromProto(job.getStreamSessionId()))
         .sourcePath(sourceResolver.resolve(job.getSource()))
         .seekPosition(execution.getSeekPositionSeconds())
-        .segmentDuration(execution.getSegmentDurationSeconds())
+        .targetSegmentDuration(execution.getTargetSegmentDurationSeconds())
         .framerate(execution.getFramerate())
         .transcodeDecision(decision(job.getDecision()))
         .width(variant.getWidth())

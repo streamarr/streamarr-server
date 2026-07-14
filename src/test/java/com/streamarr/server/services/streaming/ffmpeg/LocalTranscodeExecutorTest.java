@@ -62,7 +62,7 @@ class LocalTranscodeExecutorTest {
         .sessionId(UUID.randomUUID())
         .sourcePath(Path.of("/media/movie.mkv"))
         .seekPosition(0)
-        .segmentDuration(6)
+        .targetSegmentDuration(6)
         .framerate(23.976)
         .transcodeDecision(
             TranscodeDecision.builder()

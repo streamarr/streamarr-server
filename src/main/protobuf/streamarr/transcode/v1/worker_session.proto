@@ -97,7 +97,7 @@ message VariantSpec {
 
 message TranscodeExecution {
   uint32 seek_position_seconds = 1;
-  uint32 segment_duration_seconds = 2;
+  uint32 target_segment_duration_seconds = 2;
   double framerate = 3;
   uint32 start_sequence_number = 4;
 }

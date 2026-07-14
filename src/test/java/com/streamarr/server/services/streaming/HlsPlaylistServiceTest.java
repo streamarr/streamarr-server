@@ -41,7 +41,7 @@ class HlsPlaylistServiceTest {
   void setUp() {
     properties =
         StreamingProperties.builder()
-            .segmentDuration(Duration.ofSeconds(6))
+            .targetSegmentDuration(Duration.ofSeconds(6))
             .sessionTimeout(Duration.ofSeconds(60))
             .build();
     service = new HlsPlaylistService(properties);
