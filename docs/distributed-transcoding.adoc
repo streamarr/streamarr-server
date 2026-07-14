@@ -21,6 +21,26 @@ It does not issue or enroll certificates.
 Certificates are loaded at process start.
 Restart the affected server or worker after replacing a certificate or trust bundle.
 
+[IMPORTANT]
+====
+Because certificates are read only at startup, a certificate's lifetime must exceed the process's expected uptime.
+Issuers that rotate short-lived certificates in place (SPIRE and cert-manager's csi-driver-spiffe default to about one hour) will break new connections once the in-memory certificate expires, even though a fresh file sits on disk.
+Configure an explicit certificate duration well beyond your restart cadence — the Kubernetes example requests 90 days — and restart each process before its certificate expires.
+====
+
+=== Service meshes
+
+Streamarr terminates its own mTLS on the worker port; Istio and similar meshes keep their certificates inside the sidecar proxy (delivered over SDS) and cannot provide these files to the application.
+When deploying inside a mesh, source certificates from cert-manager, SPIRE (via csi-driver-spiffe or spiffe-helper), Vault, or static Secrets, and keep the worker gRPC port out of sidecar interception: exclude it with `traffic.sidecar.istio.io/excludeInboundPorts` on the server pod (plus `excludeOutboundPorts` on worker pods), or set a `PeerAuthentication` with `portLevelMtls: DISABLE` for that port.
+If the port stays meshed, both endpoints must be meshed too, and the Service port must be declared `tcp` or `tls` — never `grpc`, or the sidecar will try to parse the TLS handshake as HTTP/2.
+
+=== Health probes
+
+The server exposes Spring Boot's Kubernetes probe groups at `/actuator/health/liveness` and `/actuator/health/readiness`; the example manifest wires startup, liveness, and readiness probes to them.
+Leave the `transcodeExecutor` health indicator out of both probe groups: it reports DOWN whenever zero workers are connected, which is an alerting signal, not a restart or unrouting signal.
+Restarting the server cannot conjure workers, and marking it unready would remove the worker gRPC port from the shared Service — leaving workers permanently unable to connect and make it ready again.
+Alert on the aggregate `/actuator/health` instead.
+
 == Docker Compose
 
 The Compose override adds one worker and enables the server's worker listener without changing the default local-only deployment.

@@ -107,8 +107,9 @@ Malformed, missing, duplicate, or mismatched identities fail closed and receive 
 
 For a small installation, administrators provide static certificates; a future optional one-shot offline helper (not yet shipped) may invoke Smallstep `step` to create a local CA, server certificate, and worker certificate.
 Such a helper would own no persistent state and no Java X.509 implementation.
-For Kubernetes, cert-manager, SPIRE, a service mesh, Vault, or a cloud CA may mount the same files.
-Initial certificate rotation is restart-based.
+For Kubernetes, cert-manager, SPIRE (via csi-driver-spiffe or spiffe-helper), Vault, or a cloud CA may mount the same files.
+Service meshes such as Istio keep their certificates inside the sidecar proxy (delivered over SDS) and do not expose them to applications; mesh users exclude the worker gRPC port from sidecar interception and source files from one of the issuers above.
+Initial certificate rotation is restart-based, so certificate lifetimes must exceed expected process uptime; default one-hour SVID TTLs are incompatible with this version.
 
 === Deployment and delivery boundaries
 
@@ -163,6 +164,7 @@ Explicitly deferred until demonstrated pressure:
 * NATS, Redpanda, Kafka, or a service mesh as a v1 requirement — each adds deployment cost before multiple control-plane replicas demonstrate the need.
 * Monotonic generations, durable command ledgers, fenced leases, and capacity reservations — fresh attempt ids plus connection ownership are sufficient inside the accepted single-server topology.
 * Hand-written certificate path validation or X.509 issuance — the TLS stack and external tooling already implement those security-sensitive standards.
+* Mesh-issued worker identity (plaintext gRPC in-mesh with XFCC headers) — it forks the identity-extraction path per deployment, trusts a spoofable header wherever a sidecar is absent, and mesh identities are per-ServiceAccount, which cannot express per-worker SPIFFE IDs under one worker Deployment.
 
 == References
 
