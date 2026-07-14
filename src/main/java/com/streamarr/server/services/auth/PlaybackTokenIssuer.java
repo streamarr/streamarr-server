@@ -62,7 +62,7 @@ public class PlaybackTokenIssuer {
             .issuedAt(now)
             .expiresAt(expiresAt)
             .claim(TokenClaims.ROLES, List.of(identity.role().name()))
-            .claim(TokenClaims.SESSION_ID, identity.sessionId().toString())
+            .claim(TokenClaims.SESSION_ID, identity.authSessionId().toString())
             .claim(TokenClaims.SCOPE, TokenScope.PLAYBACK.claimValue())
             .claim(TokenClaims.HOUSEHOLD_ID, identity.householdId().toString())
             .claim(TokenClaims.HOUSEHOLD_ROLE, identity.householdRole().name())

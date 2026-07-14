@@ -47,7 +47,7 @@ class SecretRecordToStringTest {
             LoginResult.builder().rawRefreshToken(secret).build().toString(),
             new IssuedRefreshToken(secret, null).toString(),
             new RefreshResult.Rotated(secret, null).toString(),
-            new RefreshResult.Replayed(secret, null).toString(),
+            new RefreshResult.GraceRetry(secret, null).toString(),
             AccessToken.builder()
                 .value(secret)
                 .expiresAt(Instant.EPOCH)

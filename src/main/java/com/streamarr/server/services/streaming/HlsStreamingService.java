@@ -191,13 +191,13 @@ public class HlsStreamingService implements StreamingService {
    */
   private boolean requiresRelocation(StreamSession session, String segmentName) {
     var requestedIndex = parseSegmentIndex(segmentName);
-    var startNumber = activeStartNumber(session);
-    if (requestedIndex < startNumber) {
+    var startSequenceNumber = activeStartSequenceNumber(session);
+    if (requestedIndex < startSequenceNumber) {
       return true;
     }
 
     var probeIndex = requestedIndex - forwardGapSegments();
-    if (probeIndex < startNumber) {
+    if (probeIndex < startSequenceNumber) {
       return false;
     }
 
@@ -235,9 +235,9 @@ public class HlsStreamingService implements StreamingService {
     log.info("Relocated transcode for session {} to segment {}", sessionId, segmentIndex);
   }
 
-  private int activeStartNumber(StreamSession session) {
+  private int activeStartSequenceNumber(StreamSession session) {
     return session.getVariantHandles().values().stream()
-        .mapToInt(TranscodeHandle::startNumber)
+        .mapToInt(TranscodeHandle::startSequenceNumber)
         .max()
         .orElse(0);
   }
@@ -339,16 +339,17 @@ public class HlsStreamingService implements StreamingService {
     }
   }
 
-  private void startTranscodes(StreamSession session, int seekPosition, int startNumber) {
+  private void startTranscodes(StreamSession session, int seekPosition, int startSequenceNumber) {
     if (session.getVariants().isEmpty()) {
-      startSingleTranscode(session, seekPosition, startNumber);
+      startSingleTranscode(session, seekPosition, startSequenceNumber);
       return;
     }
 
-    startVariantTranscodes(session, session.getVariants(), seekPosition, startNumber);
+    startVariantTranscodes(session, session.getVariants(), seekPosition, startSequenceNumber);
   }
 
-  private void startSingleTranscode(StreamSession session, int seekPosition, int startNumber) {
+  private void startSingleTranscode(
+      StreamSession session, int seekPosition, int startSequenceNumber) {
     var probe = session.getMediaProbe();
     var request =
         TranscodeRequest.builder()
@@ -362,7 +363,7 @@ public class HlsStreamingService implements StreamingService {
             .height(probe.height())
             .bitrate(probe.bitrate())
             .variantLabel(StreamSession.defaultVariant())
-            .startNumber(startNumber)
+            .startSequenceNumber(startSequenceNumber)
             .build();
     var handle = transcodeExecutor.start(request);
 
@@ -370,7 +371,10 @@ public class HlsStreamingService implements StreamingService {
   }
 
   private void startVariantTranscodes(
-      StreamSession session, List<QualityVariant> variants, int seekPosition, int startNumber) {
+      StreamSession session,
+      List<QualityVariant> variants,
+      int seekPosition,
+      int startSequenceNumber) {
     for (var variant : variants) {
       var request =
           TranscodeRequest.builder()
@@ -384,7 +388,7 @@ public class HlsStreamingService implements StreamingService {
               .height(variant.height())
               .bitrate(variant.videoBitrate())
               .variantLabel(variant.label())
-              .startNumber(startNumber)
+              .startSequenceNumber(startSequenceNumber)
               .build();
       var handle = transcodeExecutor.start(request);
 

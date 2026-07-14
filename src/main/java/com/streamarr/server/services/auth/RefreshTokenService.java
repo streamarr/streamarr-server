@@ -151,9 +151,9 @@ public class RefreshTokenService {
     if (isWithinGrace(token, now)) {
       var rawSuccessor = deriveSuccessor(rawToken, token.getId());
       if (tokenRepository.isActiveToken(session.getId(), digestOf(rawSuccessor), now)) {
-        return new RefreshResult.Replayed(rawSuccessor, session);
+        return new RefreshResult.GraceRetry(rawSuccessor, session);
       }
-      return new RefreshResult.SupersededReplay(session);
+      return new RefreshResult.SupersededRetry(session);
     }
 
     if (token.getStatus() != RefreshTokenStatus.ROTATED) {

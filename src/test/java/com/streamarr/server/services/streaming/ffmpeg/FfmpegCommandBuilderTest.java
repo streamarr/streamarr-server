@@ -102,7 +102,7 @@ class FfmpegCommandBuilderTest {
       ContainerFormat container,
       String videoEncoder,
       boolean needsKeyframeAlignment,
-      int startNumber) {
+      int startSequenceNumber) {
     var audio = audioDecisionFor(mode, audioCodec);
     return TranscodeJob.builder()
         .request(
@@ -124,7 +124,7 @@ class FfmpegCommandBuilderTest {
                 .width(1920)
                 .height(1080)
                 .bitrate(5_000_000L)
-                .startNumber(startNumber)
+                .startSequenceNumber(startSequenceNumber)
                 .build())
         .videoEncoder(videoEncoder)
         .outputDir(Path.of("/tmp/session-123"))
@@ -532,7 +532,7 @@ class FfmpegCommandBuilderTest {
 
     var cmd = builder.buildCommand(j);
 
-    assertThat(cmd).contains("-start_sequence_number", "5");
+    assertThat(cmd).contains("-start_number", "5");
   }
 
   @Test
@@ -542,7 +542,7 @@ class FfmpegCommandBuilderTest {
 
     var cmd = builder.buildCommand(j);
 
-    assertThat(cmd).isNotEmpty().doesNotContain("-start_sequence_number");
+    assertThat(cmd).isNotEmpty().doesNotContain("-start_number");
   }
 
   @Test

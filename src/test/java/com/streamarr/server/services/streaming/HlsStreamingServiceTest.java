@@ -872,7 +872,7 @@ class HlsStreamingServiceTest {
 
     assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
     var lastRequest = transcodeExecutor.getStartedRequests().getLast();
-    assertThat(lastRequest.startNumber()).isEqualTo(5);
+    assertThat(lastRequest.startSequenceNumber()).isEqualTo(5);
     assertThat(lastRequest.seekPosition()).isEqualTo(30);
   }
 
@@ -888,7 +888,7 @@ class HlsStreamingServiceTest {
 
     assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
     var lastRequest = transcodeExecutor.getStartedRequests().getLast();
-    assertThat(lastRequest.startNumber()).isEqualTo(12);
+    assertThat(lastRequest.startSequenceNumber()).isEqualTo(12);
     assertThat(lastRequest.seekPosition()).isEqualTo(72);
   }
 
@@ -904,7 +904,7 @@ class HlsStreamingServiceTest {
 
     assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
     var lastRequest = transcodeExecutor.getStartedRequests().getLast();
-    assertThat(lastRequest.startNumber()).isEqualTo(3);
+    assertThat(lastRequest.startSequenceNumber()).isEqualTo(3);
     assertThat(lastRequest.seekPosition()).isEqualTo(18);
   }
 
@@ -920,7 +920,7 @@ class HlsStreamingServiceTest {
 
     assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
     var lastRequest = transcodeExecutor.getStartedRequests().getLast();
-    assertThat(lastRequest.startNumber()).isZero();
+    assertThat(lastRequest.startSequenceNumber()).isZero();
     assertThat(lastRequest.seekPosition()).isZero();
   }
 
@@ -936,7 +936,7 @@ class HlsStreamingServiceTest {
 
     assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
     var lastRequest = transcodeExecutor.getStartedRequests().getLast();
-    assertThat(lastRequest.startNumber()).isZero();
+    assertThat(lastRequest.startSequenceNumber()).isZero();
     assertThat(lastRequest.seekPosition()).isZero();
   }
 
@@ -977,7 +977,7 @@ class HlsStreamingServiceTest {
             .subList(requestsBefore, transcodeExecutor.getStartedRequests().size());
 
     assertThat(resumeRequests).hasSize(variantLabels.size());
-    assertThat(resumeRequests).extracting(TranscodeRequest::startNumber).containsOnly(5);
+    assertThat(resumeRequests).extracting(TranscodeRequest::startSequenceNumber).containsOnly(5);
     assertThat(resumeRequests).extracting(TranscodeRequest::seekPosition).containsOnly(30);
     assertThat(resumeRequests)
         .extracting(TranscodeRequest::variantLabel)
@@ -1001,7 +1001,7 @@ class HlsStreamingServiceTest {
     // The encoder started at segment50 and will never produce segment10.
     var lastRequest = transcodeExecutor.getStartedRequests().getLast();
     assertThat(lastRequest.seekPosition()).isEqualTo(60);
-    assertThat(lastRequest.startNumber()).isEqualTo(10);
+    assertThat(lastRequest.startSequenceNumber()).isEqualTo(10);
   }
 
   @Test
@@ -1016,7 +1016,7 @@ class HlsStreamingServiceTest {
     // Nothing near segment100 has been produced; waiting would stall the player.
     var lastRequest = transcodeExecutor.getStartedRequests().getLast();
     assertThat(lastRequest.seekPosition()).isEqualTo(600);
-    assertThat(lastRequest.startNumber()).isEqualTo(100);
+    assertThat(lastRequest.startSequenceNumber()).isEqualTo(100);
   }
 
   @Test
@@ -1073,6 +1073,6 @@ class HlsStreamingServiceTest {
     // The timeline is absolute: segment5 always covers [30s, 36s).
     var lastRequest = transcodeExecutor.getStartedRequests().getLast();
     assertThat(lastRequest.seekPosition()).isEqualTo(30);
-    assertThat(lastRequest.startNumber()).isEqualTo(5);
+    assertThat(lastRequest.startSequenceNumber()).isEqualTo(5);
   }
 }

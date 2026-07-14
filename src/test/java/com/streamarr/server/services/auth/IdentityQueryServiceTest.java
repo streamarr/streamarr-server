@@ -133,7 +133,7 @@ class IdentityQueryServiceTest {
     return AuthenticatedIdentity.builder()
         .accountId(accountId)
         .role(AccountRole.USER)
-        .sessionId(UUID.randomUUID())
+        .authSessionId(UUID.randomUUID())
         .scope(TokenScope.ACCOUNT)
         .build();
   }
@@ -143,7 +143,7 @@ class IdentityQueryServiceTest {
     return AuthenticatedIdentity.builder()
         .accountId(accountId)
         .role(AccountRole.USER)
-        .sessionId(UUID.randomUUID())
+        .authSessionId(UUID.randomUUID())
         .scope(TokenScope.HOUSEHOLD)
         .householdId(householdId)
         .householdRole(householdRole)
@@ -154,7 +154,7 @@ class IdentityQueryServiceTest {
     return AuthenticatedIdentity.builder()
         .accountId(accountId)
         .role(AccountRole.USER)
-        .sessionId(UUID.randomUUID())
+        .authSessionId(UUID.randomUUID())
         .scope(TokenScope.PROFILE)
         .householdId(profile.getHouseholdId())
         .householdRole(HouseholdRole.OWNER)

@@ -81,7 +81,7 @@ class RefreshRotationConcurrencyIT extends AbstractIntegrationTest {
     assertThat(exceptions).isEmpty();
     assertThat(results).hasSize(threadCount);
     assertThat(results).filteredOn(RefreshResult.Rotated.class::isInstance).hasSize(1);
-    assertThat(results).filteredOn(RefreshResult.Replayed.class::isInstance).hasSize(1);
+    assertThat(results).filteredOn(RefreshResult.GraceRetry.class::isInstance).hasSize(1);
 
     var rotation =
         (RefreshResult.Rotated)
@@ -90,9 +90,9 @@ class RefreshRotationConcurrencyIT extends AbstractIntegrationTest {
                 .findFirst()
                 .orElseThrow();
     var replay =
-        (RefreshResult.Replayed)
+        (RefreshResult.GraceRetry)
             results.stream()
-                .filter(RefreshResult.Replayed.class::isInstance)
+                .filter(RefreshResult.GraceRetry.class::isInstance)
                 .findFirst()
                 .orElseThrow();
     assertThat(replay.rawRefreshToken()).isEqualTo(rotation.rawRefreshToken());
@@ -121,7 +121,7 @@ class RefreshRotationConcurrencyIT extends AbstractIntegrationTest {
 
     var replay = refreshTokenService.redeem(issued.rawToken());
 
-    assertThat(replay).isInstanceOf(RefreshResult.SupersededReplay.class);
+    assertThat(replay).isInstanceOf(RefreshResult.SupersededRetry.class);
     assertThat(replay.session().getId()).isEqualTo(issued.session().getId());
   }
 }
