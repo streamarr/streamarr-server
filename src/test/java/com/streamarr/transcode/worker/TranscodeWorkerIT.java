@@ -28,6 +28,7 @@ import com.streamarr.transcode.v1.TranscodeMode;
 import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.VariantSpec;
+import io.grpc.StatusRuntimeException;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URISyntaxException;
@@ -156,7 +157,7 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
       assertThatThrownBy(worker::awaitDisconnection)
           .isInstanceOf(WorkerJobException.class)
           .hasMessage("Worker session failed")
-          .hasRootCauseInstanceOf(io.grpc.StatusRuntimeException.class);
+          .hasRootCauseInstanceOf(StatusRuntimeException.class);
     }
   }
 

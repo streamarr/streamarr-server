@@ -19,6 +19,7 @@ import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -329,7 +330,7 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
   }
 
   private void collect(
-      java.util.concurrent.Future<PasswordChangeResult> attempt,
+      Future<PasswordChangeResult> attempt,
       List<PasswordChangeResult> successes,
       List<Throwable> failures)
       throws Exception {

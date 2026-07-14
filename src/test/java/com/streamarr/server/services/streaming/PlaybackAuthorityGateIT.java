@@ -13,6 +13,7 @@ import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.support.AuthTestSupport;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -132,8 +133,7 @@ class PlaybackAuthorityGateIT extends AbstractIntegrationTest {
     assertThat(authorityGate.allows(authority)).isFalse();
   }
 
-  private <T> T awaitThen(CyclicBarrier barrier, java.util.concurrent.Callable<T> action)
-      throws Exception {
+  private <T> T awaitThen(CyclicBarrier barrier, Callable<T> action) throws Exception {
     barrier.await();
     return action.call();
   }

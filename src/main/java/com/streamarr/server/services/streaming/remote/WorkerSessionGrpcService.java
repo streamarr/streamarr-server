@@ -9,6 +9,7 @@ import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
 import com.streamarr.transcode.v1.UploadSegmentRequest;
 import com.streamarr.transcode.v1.UploadSegmentResponse;
+import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.VariantJob;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
@@ -180,7 +181,7 @@ final class WorkerSessionGrpcService
                       failed.getFailure()));
     }
 
-    private Optional<VariantJob> finish(com.streamarr.transcode.v1.Uuid jobAttemptId) {
+    private Optional<VariantJob> finish(Uuid jobAttemptId) {
       return workerConnections.releaseJobAttempt(
           authenticatedWorkerId, workerSessionId, fromProto(jobAttemptId));
     }

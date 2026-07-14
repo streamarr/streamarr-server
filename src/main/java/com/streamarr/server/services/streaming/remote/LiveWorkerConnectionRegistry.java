@@ -7,6 +7,7 @@ import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import com.streamarr.transcode.v1.StartVariantCommand;
 import com.streamarr.transcode.v1.StopVariantCommand;
+import com.streamarr.transcode.v1.Uuid;
 import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
@@ -113,7 +114,7 @@ final class LiveWorkerConnectionRegistry {
 
     private final UUID workerSessionId;
     private final WorkerIdentity worker;
-    private final Set<com.streamarr.transcode.v1.Uuid> sourceNamespaceIds;
+    private final Set<Uuid> sourceNamespaceIds;
     private final int maximumActiveVariants;
     private final StreamObserver<EstablishWorkerSessionResponse> responseObserver;
     private final Map<UUID, VariantJob> activeVariants = new HashMap<>();
