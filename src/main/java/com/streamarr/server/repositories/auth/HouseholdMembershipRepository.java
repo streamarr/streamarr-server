@@ -7,7 +7,8 @@ import java.util.UUID;
 import org.springframework.data.repository.Repository;
 
 /**
- * Deliberately narrowed so membership grants and revocations cannot bypass version invalidation.
+ * Deliberately narrowed: membership grants and revocations use explicit operations whose outcomes
+ * are visible to callers instead of generic inherited mutations.
  */
 public interface HouseholdMembershipRepository
     extends Repository<HouseholdMembership, UUID>, HouseholdMembershipRepositoryCustom {

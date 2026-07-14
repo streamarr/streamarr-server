@@ -173,7 +173,7 @@ public class SessionScopeService {
    * selection's write: the revoke has either already committed (revokedAt set — rejected here) or
    * it blocks until this transaction commits and then applies on top. A plain read would let the
    * selection's blind JPA flush (AuthSession carries no @Version) overwrite a revocation that
-   * committed in between, silently un-revoking the session and reviving its mintable version.
+   * committed in between, silently un-revoking the session.
    */
   private AuthSession loadLiveSession(UUID accountId, UUID sessionId) {
     return sessionRepository

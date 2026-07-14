@@ -66,7 +66,7 @@ There is one framework-free FFmpeg engine extracted from that existing per-rendi
 Local and remote execution adapt the same engine contract.
 No dormant port, single-implementation interface, coordinator, or lifecycle abstraction lands before its first production caller.
 
-The shared vocabulary is `rendition`, never a mix of rendition, variant, quality, and profile for the same concept.
+The worker contract's shared vocabulary is `rendition`, never a mix of rendition, variant, quality, and profile for the same concept; the pre-existing `variant` naming on the domain and HTTP surfaces is a deferred rename, translated at the wire boundary by `RemoteRenditionJobMapper`.
 A `stream_session_id` identifies the runtime playback aggregate.
 A `job_id` identifies one logical rendition transcode for that stream session, and a fresh `job_attempt_id` identifies each dispatch attempt.
 Attempt ids are unique rather than monotonically ordered; stale results and segments are rejected unless the attempt is owned by the current worker connection.
@@ -105,8 +105,8 @@ On the server, the application additionally requires one allowed `spiffe://<conf
 The self-reported identity must match the authenticated identity; a message describing the sender uses `worker`, while `target` is reserved for an addressed peer.
 Malformed, missing, duplicate, or mismatched identities fail closed and receive adversarial tests.
 
-For a small installation, administrators may provide static certificates or run an optional one-shot offline helper that invokes Smallstep `step` to create a local CA, server certificate, and worker certificate.
-The helper owns no persistent state and no Java X.509 implementation.
+For a small installation, administrators provide static certificates; a future optional one-shot offline helper (not yet shipped) may invoke Smallstep `step` to create a local CA, server certificate, and worker certificate.
+Such a helper would own no persistent state and no Java X.509 implementation.
 For Kubernetes, cert-manager, SPIRE, a service mesh, Vault, or a cloud CA may mount the same files.
 Initial certificate rotation is restart-based.
 
