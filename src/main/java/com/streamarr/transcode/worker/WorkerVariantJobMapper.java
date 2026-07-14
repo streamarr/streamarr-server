@@ -10,20 +10,20 @@ import com.streamarr.server.domain.streaming.SubtitleMode;
 import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
-import com.streamarr.transcode.v1.RenditionJob;
+import com.streamarr.transcode.v1.VariantJob;
 import java.util.Optional;
 import java.util.OptionalInt;
 
-final class WorkerRenditionJobMapper {
+final class WorkerVariantJobMapper {
 
   private final WorkerMediaSourceResolver sourceResolver;
 
-  WorkerRenditionJobMapper(WorkerMediaSourceResolver sourceResolver) {
+  WorkerVariantJobMapper(WorkerMediaSourceResolver sourceResolver) {
     this.sourceResolver = sourceResolver;
   }
 
-  TranscodeRequest map(RenditionJob job) {
-    var rendition = job.getRendition();
+  TranscodeRequest map(VariantJob job) {
+    var variant = job.getVariant();
     var execution = job.getExecution();
     return TranscodeRequest.builder()
         .sessionId(fromProto(job.getStreamSessionId()))
@@ -32,11 +32,11 @@ final class WorkerRenditionJobMapper {
         .segmentDuration(execution.getSegmentDurationSeconds())
         .framerate(execution.getFramerate())
         .transcodeDecision(decision(job.getDecision()))
-        .width(rendition.getWidth())
-        .height(rendition.getHeight())
-        .bitrate(rendition.getBitrateBitsPerSecond())
-        .variantLabel(rendition.getRenditionName())
-        .startNumber(execution.getStartNumber())
+        .width(variant.getWidth())
+        .height(variant.getHeight())
+        .bitrate(variant.getBitrateBitsPerSecond())
+        .variantLabel(variant.getVariantLabel())
+        .startNumber(execution.getStartSequenceNumber())
         .build();
   }
 

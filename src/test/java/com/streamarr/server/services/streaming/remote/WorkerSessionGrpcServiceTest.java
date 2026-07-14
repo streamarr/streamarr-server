@@ -8,20 +8,20 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
+import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.JobAttemptFailure;
 import com.streamarr.transcode.v1.MediaSourceRef;
-import com.streamarr.transcode.v1.RenditionJob;
-import com.streamarr.transcode.v1.RenditionSpec;
 import com.streamarr.transcode.v1.SegmentContentType;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import com.streamarr.transcode.v1.UploadSegmentRequest;
 import com.streamarr.transcode.v1.UploadSegmentResponse;
+import com.streamarr.transcode.v1.VariantJob;
+import com.streamarr.transcode.v1.VariantSpec;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
-import com.streamarr.transcode.v1.WorkerSessionRequest;
-import com.streamarr.transcode.v1.WorkerSessionResponse;
 import io.grpc.Context;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
@@ -45,17 +45,17 @@ class WorkerSessionGrpcServiceTest {
     var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
     var session = workerSession(service, workerId, new IgnoringResponseObserver());
     session.onNext(
-        WorkerSessionRequest.newBuilder()
+        EstablishWorkerSessionRequest.newBuilder()
             .setRegistration(registration(worker(workerId), sourceNamespaceId))
             .build());
-    var job = renditionJob(sourceNamespaceId);
+    var job = variantJob(sourceNamespaceId);
     assertThat(registry.dispatch(job)).isTrue();
     var streamSessionId = fromProto(job.getStreamSessionId());
 
     var warnings = captureWarnings(WorkerSessionGrpcService.class);
     try {
       session.onNext(
-          WorkerSessionRequest.newBuilder()
+          EstablishWorkerSessionRequest.newBuilder()
               .setJobAttemptFailed(
                   JobAttemptFailed.newBuilder()
                       .setJobAttemptId(job.getJobAttemptId())
@@ -84,7 +84,7 @@ class WorkerSessionGrpcServiceTest {
     var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
     var session = workerSession(service, workerId, new IgnoringResponseObserver());
     var registration =
-        WorkerSessionRequest.newBuilder()
+        EstablishWorkerSessionRequest.newBuilder()
             .setRegistration(registration(worker(workerId), sourceNamespaceId))
             .build();
     session.onNext(registration);
@@ -101,14 +101,14 @@ class WorkerSessionGrpcServiceTest {
         .anyMatch(message -> message.contains("REGISTRATION"));
   }
 
-  private static StreamObserver<WorkerSessionRequest> workerSession(
+  private static StreamObserver<EstablishWorkerSessionRequest> workerSession(
       WorkerSessionGrpcService service,
       UUID workerId,
-      StreamObserver<WorkerSessionResponse> responseObserver)
+      StreamObserver<EstablishWorkerSessionResponse> responseObserver)
       throws Exception {
     return Context.current()
         .withValue(WorkerIdentityServerInterceptor.AUTHENTICATED_WORKER_ID, workerId)
-        .call(() -> service.workerSession(responseObserver));
+        .call(() -> service.establishWorkerSession(responseObserver));
   }
 
   private static ListAppender<ILoggingEvent> captureWarnings(Class<?> loggerClass) {
@@ -167,7 +167,7 @@ class WorkerSessionGrpcServiceTest {
     var workerSessionId =
         registry.register(
             workerId, registration(worker, sourceNamespaceId), new IgnoringResponseObserver());
-    var job = renditionJob(sourceNamespaceId);
+    var job = variantJob(sourceNamespaceId);
     assertThat(registry.dispatch(job)).isTrue();
     var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
     var metadata = metadata(workerSessionId, worker, job, 16L * 1024 * 1024);
@@ -224,8 +224,8 @@ class WorkerSessionGrpcServiceTest {
         .build();
   }
 
-  private static RenditionJob renditionJob(UUID sourceNamespaceId) {
-    return RenditionJob.newBuilder()
+  private static VariantJob variantJob(UUID sourceNamespaceId) {
+    return VariantJob.newBuilder()
         .setStreamSessionId(toProto(UUID.randomUUID()))
         .setJobId(toProto(UUID.randomUUID()))
         .setJobAttemptId(toProto(UUID.randomUUID()))
@@ -233,19 +233,19 @@ class WorkerSessionGrpcServiceTest {
             MediaSourceRef.newBuilder()
                 .setSourceNamespaceId(toProto(sourceNamespaceId))
                 .setRelativeKey("movie.mkv"))
-        .setRendition(RenditionSpec.newBuilder().setRenditionName("720p"))
+        .setVariant(VariantSpec.newBuilder().setVariantLabel("720p"))
         .build();
   }
 
   private static SegmentUploadMetadata metadata(
-      UUID workerSessionId, WorkerIdentity worker, RenditionJob job, long contentLength) {
+      UUID workerSessionId, WorkerIdentity worker, VariantJob job, long contentLength) {
     return SegmentUploadMetadata.newBuilder()
         .setWorkerSessionId(toProto(workerSessionId))
         .setWorker(worker)
         .setStreamSessionId(job.getStreamSessionId())
         .setJobId(job.getJobId())
         .setJobAttemptId(job.getJobAttemptId())
-        .setRenditionName(job.getRendition().getRenditionName())
+        .setVariantLabel(job.getVariant().getVariantLabel())
         .setSegmentName("segment0.ts")
         .setContentType(SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP2T)
         .setContentLengthBytes(contentLength)
@@ -278,14 +278,14 @@ class WorkerSessionGrpcServiceTest {
   }
 
   private static final class IgnoringResponseObserver
-      implements StreamObserver<WorkerSessionResponse> {
+      implements StreamObserver<EstablishWorkerSessionResponse> {
 
     @Override
-    public void onNext(WorkerSessionResponse value) {
+    public void onNext(EstablishWorkerSessionResponse value) {
       assertThat(value.getCommandCase())
           .isIn(
-              WorkerSessionResponse.CommandCase.SESSION_ACCEPTED,
-              WorkerSessionResponse.CommandCase.START_RENDITION);
+              EstablishWorkerSessionResponse.CommandCase.SESSION_ACCEPTED,
+              EstablishWorkerSessionResponse.CommandCase.START_VARIANT);
     }
 
     @Override

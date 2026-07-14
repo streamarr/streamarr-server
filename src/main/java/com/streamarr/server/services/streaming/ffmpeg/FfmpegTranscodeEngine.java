@@ -47,8 +47,8 @@ public class FfmpegTranscodeEngine {
     processManager.stopProcess(sessionId);
   }
 
-  public void stop(UUID sessionId, String renditionName) {
-    processManager.stopProcess(sessionId, renditionName);
+  public void stop(UUID sessionId, String variantLabel) {
+    processManager.stopProcess(sessionId, variantLabel);
   }
 
   public boolean isRunning(UUID sessionId) {

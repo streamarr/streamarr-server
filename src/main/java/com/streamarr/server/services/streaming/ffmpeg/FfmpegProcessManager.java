@@ -10,7 +10,7 @@ public interface FfmpegProcessManager {
 
   void stopProcess(UUID sessionId);
 
-  void stopProcess(UUID sessionId, String renditionName);
+  void stopProcess(UUID sessionId, String variantLabel);
 
   boolean isRunning(UUID sessionId);
 

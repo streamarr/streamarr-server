@@ -7,25 +7,25 @@ import com.google.protobuf.ByteString;
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegTranscodeEngine;
 import com.streamarr.transcode.protocol.ProtoUuid;
 import com.streamarr.transcode.v1.ContainerFormat;
+import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
+import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptCompleted;
 import com.streamarr.transcode.v1.JobAttemptFailed;
 import com.streamarr.transcode.v1.JobAttemptFailure;
 import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.JobAttemptStopped;
-import com.streamarr.transcode.v1.RenditionJob;
 import com.streamarr.transcode.v1.SegmentContentType;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
-import com.streamarr.transcode.v1.StartRenditionCommand;
-import com.streamarr.transcode.v1.StopRenditionCommand;
+import com.streamarr.transcode.v1.StartVariantCommand;
+import com.streamarr.transcode.v1.StopVariantCommand;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
 import com.streamarr.transcode.v1.UploadSegmentRequest;
 import com.streamarr.transcode.v1.UploadSegmentResponse;
+import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
 import com.streamarr.transcode.v1.WorkerSessionAccepted;
-import com.streamarr.transcode.v1.WorkerSessionRequest;
-import com.streamarr.transcode.v1.WorkerSessionResponse;
 import io.grpc.ManagedChannel;
 import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts;
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
@@ -57,12 +57,12 @@ public final class TranscodeWorker implements AutoCloseable {
 
   private final TranscodeWorkerConfiguration configuration;
   private final FfmpegTranscodeEngine engine;
-  private final WorkerRenditionJobMapper jobMapper;
-  private final Map<UUID, ActiveRendition> activeRenditions = new HashMap<>();
+  private final WorkerVariantJobMapper jobMapper;
+  private final Map<UUID, ActiveVariant> activeVariants = new HashMap<>();
 
   private ManagedChannel channel;
   private ExecutorService executor;
-  private StreamObserver<WorkerSessionRequest> requests;
+  private StreamObserver<EstablishWorkerSessionRequest> requests;
   private WorkerSessionAccepted workerSession;
   private CompletableFuture<Void> disconnected;
 
@@ -70,8 +70,7 @@ public final class TranscodeWorker implements AutoCloseable {
     this.configuration = configuration;
     this.engine = engine;
     jobMapper =
-        new WorkerRenditionJobMapper(
-            new WorkerMediaSourceResolver(configuration.sourceNamespaces()));
+        new WorkerVariantJobMapper(new WorkerMediaSourceResolver(configuration.sourceNamespaces()));
   }
 
   public synchronized void start(String host, int port)
@@ -99,7 +98,7 @@ public final class TranscodeWorker implements AutoCloseable {
     disconnected = new CompletableFuture<>();
     requests =
         TranscodeWorkerServiceGrpc.newStub(channel)
-            .workerSession(new WorkerResponseObserver(accepted));
+            .establishWorkerSession(new WorkerResponseObserver(accepted));
     send(registration());
     accepted.get(CONNECTION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
   }
@@ -112,7 +111,7 @@ public final class TranscodeWorker implements AutoCloseable {
     }
   }
 
-  private WorkerSessionRequest registration() {
+  private EstablishWorkerSessionRequest registration() {
     var capabilities = WorkerCapabilities.newBuilder();
     configuration.sourceNamespaces().keySet().stream()
         .map(ProtoUuid::toProto)
@@ -122,7 +121,7 @@ public final class TranscodeWorker implements AutoCloseable {
             .setWorker(identity())
             .setCapabilities(capabilities)
             .setAvailableSlots(configuration.availableSlots());
-    return WorkerSessionRequest.newBuilder().setRegistration(registration).build();
+    return EstablishWorkerSessionRequest.newBuilder().setRegistration(registration).build();
   }
 
   private WorkerIdentity identity() {
@@ -133,7 +132,7 @@ public final class TranscodeWorker implements AutoCloseable {
   }
 
   @SuppressWarnings("java:S3398") // Job lifecycle belongs to the worker, not its gRPC observer.
-  private void startRendition(StartRenditionCommand command) {
+  private void startVariant(StartVariantCommand command) {
     var job = command.getJob();
     var outputDirectory =
         configuration.segmentBasePath().resolve(fromProto(job.getJobAttemptId()).toString());
@@ -147,19 +146,19 @@ public final class TranscodeWorker implements AutoCloseable {
         Files.createDirectories(outputDirectory);
         var request = jobMapper.map(job);
         engine.start(request, outputDirectory);
-        activeRenditions.put(
+        activeVariants.put(
             fromProto(job.getJobAttemptId()),
-            new ActiveRendition(request.sessionId(), request.variantLabel()));
+            new ActiveVariant(request.sessionId(), request.variantLabel()));
         send(
-            WorkerSessionRequest.newBuilder()
+            EstablishWorkerSessionRequest.newBuilder()
                 .setJobAttemptStarted(
                     JobAttemptStarted.newBuilder().setJobAttemptId(job.getJobAttemptId()))
                 .build());
       }
     } catch (IOException | RuntimeException e) {
       log.error(
-          "Failed to start rendition {} of stream session {}",
-          job.getRendition().getRenditionName(),
+          "Failed to start variant {} of stream session {}",
+          job.getVariant().getVariantLabel(),
           fromProto(job.getStreamSessionId()),
           e);
       deleteOutputDirectory(outputDirectory);
@@ -167,22 +166,22 @@ public final class TranscodeWorker implements AutoCloseable {
       return;
     }
 
-    executor.submit(() -> uploadRendition(job, outputDirectory));
+    executor.submit(() -> uploadVariant(job, outputDirectory));
   }
 
-  private void uploadRendition(RenditionJob job, Path outputDirectory) {
+  private void uploadVariant(VariantJob job, Path outputDirectory) {
     try {
       uploadProducedSegments(job, outputDirectory);
     } catch (InterruptedException _) {
       Thread.currentThread().interrupt();
-      failRendition(job, JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED);
+      failVariant(job, JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED);
     } catch (IOException | ExecutionException | TimeoutException | RuntimeException e) {
       log.error(
-          "Rendition {} of stream session {} failed",
-          job.getRendition().getRenditionName(),
+          "Variant {} of stream session {} failed",
+          job.getVariant().getVariantLabel(),
           fromProto(job.getStreamSessionId()),
           e);
-      failRendition(job, JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED);
+      failVariant(job, JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED);
     } finally {
       deleteOutputDirectory(outputDirectory);
     }
@@ -198,20 +197,20 @@ public final class TranscodeWorker implements AutoCloseable {
     }
   }
 
-  private void uploadProducedSegments(RenditionJob job, Path outputDirectory)
+  private void uploadProducedSegments(VariantJob job, Path outputDirectory)
       throws IOException, InterruptedException, ExecutionException, TimeoutException {
     if (job.getDecision().getContainer() == ContainerFormat.CONTAINER_FORMAT_FMP4
         && !uploadWhenProduced(job, outputDirectory, "init.mp4")) {
-      finishEndedRendition(job, false);
+      finishEndedVariant(job, false);
       return;
     }
 
-    var segmentNumber = job.getExecution().getStartNumber();
+    var segmentNumber = job.getExecution().getStartSequenceNumber();
     var uploadedMediaSegment = false;
     while (isAttemptActive(job)) {
       var segmentName = segmentName(job, segmentNumber);
       if (!uploadWhenProduced(job, outputDirectory, segmentName)) {
-        finishEndedRendition(job, uploadedMediaSegment);
+        finishEndedVariant(job, uploadedMediaSegment);
         return;
       }
       uploadedMediaSegment = true;
@@ -219,7 +218,7 @@ public final class TranscodeWorker implements AutoCloseable {
     }
   }
 
-  private boolean uploadWhenProduced(RenditionJob job, Path outputDirectory, String segmentName)
+  private boolean uploadWhenProduced(VariantJob job, Path outputDirectory, String segmentName)
       throws IOException, InterruptedException, ExecutionException, TimeoutException {
     var segmentPath = awaitSegment(job, outputDirectory.resolve(segmentName));
     if (segmentPath.isEmpty()) {
@@ -230,7 +229,7 @@ public final class TranscodeWorker implements AutoCloseable {
     return true;
   }
 
-  private void uploadSegment(RenditionJob job, String segmentName, Path segmentPath)
+  private void uploadSegment(VariantJob job, String segmentName, Path segmentPath)
       throws IOException, InterruptedException, ExecutionException, TimeoutException {
     var segmentLength = Files.size(segmentPath);
     var response = new CompletableFuture<UploadSegmentResponse>();
@@ -255,7 +254,7 @@ public final class TranscodeWorker implements AutoCloseable {
     }
   }
 
-  private Optional<Path> awaitSegment(RenditionJob job, Path segmentPath) {
+  private Optional<Path> awaitSegment(VariantJob job, Path segmentPath) {
     var deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(SEGMENT_WAIT_SECONDS);
     while (System.nanoTime() < deadline) {
       if (Files.isRegularFile(segmentPath)) {
@@ -274,32 +273,31 @@ public final class TranscodeWorker implements AutoCloseable {
     throw new WorkerJobException("Timed out waiting for a segment");
   }
 
-  private synchronized boolean isAttemptActive(RenditionJob job) {
-    return activeRenditions.containsKey(fromProto(job.getJobAttemptId()));
+  private synchronized boolean isAttemptActive(VariantJob job) {
+    return activeVariants.containsKey(fromProto(job.getJobAttemptId()));
   }
 
-  private synchronized boolean isAttemptProducing(RenditionJob job) {
-    var rendition = activeRenditions.get(fromProto(job.getJobAttemptId()));
-    return rendition != null
-        && engine.isRunning(rendition.streamSessionId(), rendition.renditionName());
+  private synchronized boolean isAttemptProducing(VariantJob job) {
+    var variant = activeVariants.get(fromProto(job.getJobAttemptId()));
+    return variant != null && engine.isRunning(variant.streamSessionId(), variant.variantLabel());
   }
 
   private SegmentUploadMetadata segmentMetadata(
-      RenditionJob job, String segmentName, long segmentLength) {
+      VariantJob job, String segmentName, long segmentLength) {
     return SegmentUploadMetadata.newBuilder()
         .setWorkerSessionId(workerSession.getWorkerSessionId())
         .setWorker(identity())
         .setStreamSessionId(job.getStreamSessionId())
         .setJobId(job.getJobId())
         .setJobAttemptId(job.getJobAttemptId())
-        .setRenditionName(job.getRendition().getRenditionName())
+        .setVariantLabel(job.getVariant().getVariantLabel())
         .setSegmentName(segmentName)
         .setContentType(contentType(job))
         .setContentLengthBytes(segmentLength)
         .build();
   }
 
-  private static String segmentName(RenditionJob job, int segmentNumber) {
+  private static String segmentName(VariantJob job, int segmentNumber) {
     var extension =
         switch (job.getDecision().getContainer()) {
           case CONTAINER_FORMAT_MPEG_TS -> ".ts";
@@ -310,7 +308,7 @@ public final class TranscodeWorker implements AutoCloseable {
     return "segment" + segmentNumber + extension;
   }
 
-  private static SegmentContentType contentType(RenditionJob job) {
+  private static SegmentContentType contentType(VariantJob job) {
     return switch (job.getDecision().getContainer()) {
       case CONTAINER_FORMAT_MPEG_TS -> SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP2T;
       case CONTAINER_FORMAT_FMP4 -> SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP4;
@@ -319,54 +317,54 @@ public final class TranscodeWorker implements AutoCloseable {
     };
   }
 
-  private synchronized void failRendition(RenditionJob job, JobAttemptFailure failure) {
-    var rendition = activeRenditions.remove(fromProto(job.getJobAttemptId()));
-    if (rendition != null) {
-      engine.stop(rendition.streamSessionId(), rendition.renditionName());
+  private synchronized void failVariant(VariantJob job, JobAttemptFailure failure) {
+    var variant = activeVariants.remove(fromProto(job.getJobAttemptId()));
+    if (variant != null) {
+      engine.stop(variant.streamSessionId(), variant.variantLabel());
     }
     sendFailure(job, failure);
   }
 
-  private synchronized void finishEndedRendition(RenditionJob job, boolean uploadedMediaSegment) {
+  private synchronized void finishEndedVariant(VariantJob job, boolean uploadedMediaSegment) {
     if (!isAttemptActive(job)) {
       return;
     }
     if (!uploadedMediaSegment) {
-      failRendition(job, JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED);
+      failVariant(job, JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED);
       return;
     }
 
-    activeRenditions.remove(fromProto(job.getJobAttemptId()));
+    activeVariants.remove(fromProto(job.getJobAttemptId()));
     send(
-        WorkerSessionRequest.newBuilder()
+        EstablishWorkerSessionRequest.newBuilder()
             .setJobAttemptCompleted(
                 JobAttemptCompleted.newBuilder().setJobAttemptId(job.getJobAttemptId()))
             .build());
   }
 
   @SuppressWarnings("java:S3398") // Job lifecycle belongs to the worker, not its gRPC observer.
-  private synchronized void stopRendition(StopRenditionCommand command) {
+  private synchronized void stopVariant(StopVariantCommand command) {
     if (!command.getTarget().equals(identity())) {
       return;
     }
 
     var jobAttemptId = fromProto(command.getJobAttemptId());
-    var rendition = activeRenditions.remove(jobAttemptId);
-    if (rendition == null) {
+    var variant = activeVariants.remove(jobAttemptId);
+    if (variant == null) {
       return;
     }
 
-    engine.stop(rendition.streamSessionId(), rendition.renditionName());
+    engine.stop(variant.streamSessionId(), variant.variantLabel());
     send(
-        WorkerSessionRequest.newBuilder()
+        EstablishWorkerSessionRequest.newBuilder()
             .setJobAttemptStopped(
                 JobAttemptStopped.newBuilder().setJobAttemptId(command.getJobAttemptId()))
             .build());
   }
 
-  private void sendFailure(RenditionJob job, JobAttemptFailure failure) {
+  private void sendFailure(VariantJob job, JobAttemptFailure failure) {
     send(
-        WorkerSessionRequest.newBuilder()
+        EstablishWorkerSessionRequest.newBuilder()
             .setJobAttemptFailed(
                 JobAttemptFailed.newBuilder()
                     .setJobAttemptId(job.getJobAttemptId())
@@ -374,15 +372,15 @@ public final class TranscodeWorker implements AutoCloseable {
             .build());
   }
 
-  private synchronized void send(WorkerSessionRequest request) {
+  private synchronized void send(EstablishWorkerSessionRequest request) {
     requests.onNext(request);
   }
 
-  private synchronized void stopActiveRenditions() {
-    activeRenditions
+  private synchronized void stopActiveVariants() {
+    activeVariants
         .values()
-        .forEach(rendition -> engine.stop(rendition.streamSessionId(), rendition.renditionName()));
-    activeRenditions.clear();
+        .forEach(variant -> engine.stop(variant.streamSessionId(), variant.variantLabel()));
+    activeVariants.clear();
   }
 
   @Override
@@ -391,7 +389,7 @@ public final class TranscodeWorker implements AutoCloseable {
       return;
     }
 
-    stopActiveRenditions();
+    stopActiveVariants();
     try {
       requests.onCompleted();
     } catch (RuntimeException _) {
@@ -411,7 +409,8 @@ public final class TranscodeWorker implements AutoCloseable {
     executor = null;
   }
 
-  private final class WorkerResponseObserver implements StreamObserver<WorkerSessionResponse> {
+  private final class WorkerResponseObserver
+      implements StreamObserver<EstablishWorkerSessionResponse> {
 
     private final CompletableFuture<WorkerSessionAccepted> accepted;
 
@@ -420,31 +419,31 @@ public final class TranscodeWorker implements AutoCloseable {
     }
 
     @Override
-    public void onNext(WorkerSessionResponse response) {
+    public void onNext(EstablishWorkerSessionResponse response) {
       if (response.hasSessionAccepted()) {
         workerSession = response.getSessionAccepted();
         accepted.complete(workerSession);
         return;
       }
-      if (response.hasStartRendition()) {
-        startRendition(response.getStartRendition());
+      if (response.hasStartVariant()) {
+        startVariant(response.getStartVariant());
         return;
       }
-      if (response.hasStopRendition()) {
-        stopRendition(response.getStopRendition());
+      if (response.hasStopVariant()) {
+        stopVariant(response.getStopVariant());
       }
     }
 
     @Override
     public void onError(Throwable throwable) {
-      stopActiveRenditions();
+      stopActiveVariants();
       disconnected.completeExceptionally(throwable);
       accepted.completeExceptionally(throwable);
     }
 
     @Override
     public void onCompleted() {
-      stopActiveRenditions();
+      stopActiveVariants();
       disconnected.complete(null);
       if (!accepted.isDone()) {
         accepted.completeExceptionally(new IllegalStateException("Worker session closed"));
@@ -473,5 +472,5 @@ public final class TranscodeWorker implements AutoCloseable {
     }
   }
 
-  private record ActiveRendition(UUID streamSessionId, String renditionName) {}
+  private record ActiveVariant(UUID streamSessionId, String variantLabel) {}
 }

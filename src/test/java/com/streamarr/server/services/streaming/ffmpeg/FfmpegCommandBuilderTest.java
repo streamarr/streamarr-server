@@ -532,7 +532,7 @@ class FfmpegCommandBuilderTest {
 
     var cmd = builder.buildCommand(j);
 
-    assertThat(cmd).contains("-start_number", "5");
+    assertThat(cmd).contains("-start_sequence_number", "5");
   }
 
   @Test
@@ -542,7 +542,7 @@ class FfmpegCommandBuilderTest {
 
     var cmd = builder.buildCommand(j);
 
-    assertThat(cmd).isNotEmpty().doesNotContain("-start_number");
+    assertThat(cmd).isNotEmpty().doesNotContain("-start_sequence_number");
   }
 
   @Test

@@ -11,18 +11,18 @@ import java.util.UUID;
 public final class RemoteTranscodeExecutor implements TranscodeExecutor {
 
   private final WorkerSessionServer workerServer;
-  private final RemoteRenditionJobMapper jobMapper;
+  private final RemoteVariantJobMapper jobMapper;
 
   public RemoteTranscodeExecutor(
       WorkerSessionServer workerServer, UUID sourceNamespaceId, Path sourceRoot) {
     this.workerServer = workerServer;
-    jobMapper = new RemoteRenditionJobMapper(sourceNamespaceId, sourceRoot);
+    jobMapper = new RemoteVariantJobMapper(sourceNamespaceId, sourceRoot);
   }
 
   @Override
   public TranscodeHandle start(TranscodeRequest request) {
     if (!workerServer.dispatch(jobMapper.map(request))) {
-      throw new TranscodeException("No connected transcode worker can run this rendition");
+      throw new TranscodeException("No connected transcode worker can run this variant");
     }
     return new TranscodeHandle(0, TranscodeStatus.ACTIVE, request.startNumber());
   }

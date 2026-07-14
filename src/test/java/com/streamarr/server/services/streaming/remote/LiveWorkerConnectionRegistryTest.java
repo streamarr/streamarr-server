@@ -4,13 +4,13 @@ import static com.streamarr.transcode.protocol.ProtoUuid.fromProto;
 import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.MediaSourceRef;
-import com.streamarr.transcode.v1.RenditionJob;
-import com.streamarr.transcode.v1.RenditionSpec;
+import com.streamarr.transcode.v1.VariantJob;
+import com.streamarr.transcode.v1.VariantSpec;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
-import com.streamarr.transcode.v1.WorkerSessionResponse;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import java.util.List;
@@ -39,7 +39,7 @@ class LiveWorkerConnectionRegistryTest {
     var continueReplacement = new CountDownLatch(1);
     var original = new BlockingCloseObserver(replacementClosing, continueReplacement);
     registry.register(WORKER_ID, registration(), original);
-    var replacementResponses = new CopyOnWriteArrayList<WorkerSessionResponse>();
+    var replacementResponses = new CopyOnWriteArrayList<EstablishWorkerSessionResponse>();
 
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       var replacement =
@@ -47,7 +47,7 @@ class LiveWorkerConnectionRegistryTest {
               () -> registry.register(WORKER_ID, registration(), collecting(replacementResponses)));
       assertThat(replacementClosing.await(5, TimeUnit.SECONDS)).isTrue();
 
-      assertThat(registry.dispatch(renditionJob())).isTrue();
+      assertThat(registry.dispatch(variantJob())).isTrue();
       continueReplacement.countDown();
       replacement.get(5, TimeUnit.SECONDS);
     } finally {
@@ -55,10 +55,10 @@ class LiveWorkerConnectionRegistryTest {
     }
 
     assertThat(replacementResponses)
-        .extracting(WorkerSessionResponse::getCommandCase)
+        .extracting(EstablishWorkerSessionResponse::getCommandCase)
         .containsExactly(
-            WorkerSessionResponse.CommandCase.SESSION_ACCEPTED,
-            WorkerSessionResponse.CommandCase.START_RENDITION);
+            EstablishWorkerSessionResponse.CommandCase.SESSION_ACCEPTED,
+            EstablishWorkerSessionResponse.CommandCase.START_VARIANT);
   }
 
   @Test
@@ -69,7 +69,7 @@ class LiveWorkerConnectionRegistryTest {
     var observer = new CancellableObserver();
     registry.register(WORKER_ID, registration(), observer);
     observer.cancel();
-    var job = renditionJob();
+    var job = variantJob();
 
     var dispatched = registry.dispatch(job);
 
@@ -85,7 +85,7 @@ class LiveWorkerConnectionRegistryTest {
     var registry = new LiveWorkerConnectionRegistry();
     var observer = new CancellableObserver();
     registry.register(WORKER_ID, registration(), observer);
-    var job = renditionJob();
+    var job = variantJob();
     assertThat(registry.dispatch(job)).isTrue();
     observer.cancel();
     var streamSessionId = fromProto(job.getStreamSessionId());
@@ -107,8 +107,8 @@ class LiveWorkerConnectionRegistryTest {
         .build();
   }
 
-  private static RenditionJob renditionJob() {
-    return RenditionJob.newBuilder()
+  private static VariantJob variantJob() {
+    return VariantJob.newBuilder()
         .setStreamSessionId(toProto(UUID.randomUUID()))
         .setJobId(toProto(UUID.randomUUID()))
         .setJobAttemptId(toProto(UUID.randomUUID()))
@@ -116,15 +116,15 @@ class LiveWorkerConnectionRegistryTest {
             MediaSourceRef.newBuilder()
                 .setSourceNamespaceId(toProto(SOURCE_NAMESPACE_ID))
                 .setRelativeKey("movie.mkv"))
-        .setRendition(RenditionSpec.newBuilder().setRenditionName("720p"))
+        .setVariant(VariantSpec.newBuilder().setVariantLabel("720p"))
         .build();
   }
 
-  private static StreamObserver<WorkerSessionResponse> collecting(
-      List<WorkerSessionResponse> responses) {
+  private static StreamObserver<EstablishWorkerSessionResponse> collecting(
+      List<EstablishWorkerSessionResponse> responses) {
     return new StreamObserver<>() {
       @Override
-      public void onNext(WorkerSessionResponse value) {
+      public void onNext(EstablishWorkerSessionResponse value) {
         responses.add(value);
       }
 
@@ -140,7 +140,8 @@ class LiveWorkerConnectionRegistryTest {
     };
   }
 
-  private static final class CancellableObserver implements StreamObserver<WorkerSessionResponse> {
+  private static final class CancellableObserver
+      implements StreamObserver<EstablishWorkerSessionResponse> {
 
     private boolean cancelled;
 
@@ -149,7 +150,7 @@ class LiveWorkerConnectionRegistryTest {
     }
 
     @Override
-    public void onNext(WorkerSessionResponse value) {
+    public void onNext(EstablishWorkerSessionResponse value) {
       if (cancelled) {
         throw Status.CANCELLED.withDescription("call already cancelled").asRuntimeException();
       }
@@ -167,10 +168,10 @@ class LiveWorkerConnectionRegistryTest {
   }
 
   private record BlockingCloseObserver(CountDownLatch closing, CountDownLatch continueClosing)
-      implements StreamObserver<WorkerSessionResponse> {
+      implements StreamObserver<EstablishWorkerSessionResponse> {
 
     @Override
-    public void onNext(WorkerSessionResponse value) {
+    public void onNext(EstablishWorkerSessionResponse value) {
       assertThat(value.hasSessionAccepted()).isTrue();
     }
 

@@ -60,11 +60,11 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
   }
 
   @Override
-  public void stopProcess(UUID sessionId, String renditionName) {
-    var managed = processes.remove(new ProcessKey(sessionId, renditionName));
+  public void stopProcess(UUID sessionId, String variantLabel) {
+    var managed = processes.remove(new ProcessKey(sessionId, variantLabel));
     shutdownManagedProcess(managed, sessionId);
     if (managed != null) {
-      log.info("Stopped FFmpeg process for session {} rendition {}", sessionId, renditionName);
+      log.info("Stopped FFmpeg process for session {} variant {}", sessionId, variantLabel);
     }
   }
 

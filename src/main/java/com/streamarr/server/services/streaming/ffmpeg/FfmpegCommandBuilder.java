@@ -179,7 +179,7 @@ public class FfmpegCommandBuilder {
     cmd.addAll(List.of("-hls_flags", "temp_file"));
 
     if (request.startNumber() > 0) {
-      cmd.addAll(List.of("-start_number", String.valueOf(request.startNumber())));
+      cmd.addAll(List.of("-start_sequence_number", String.valueOf(request.startNumber())));
     }
 
     switch (container) {
