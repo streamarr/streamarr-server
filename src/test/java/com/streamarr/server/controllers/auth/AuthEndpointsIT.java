@@ -32,7 +32,6 @@ import com.streamarr.server.services.auth.AccessTokenIssuer;
 import com.streamarr.server.services.auth.RefreshTokenService;
 import com.streamarr.server.services.auth.TokenClaims;
 import com.streamarr.server.services.auth.TokenContext;
-import com.streamarr.server.services.auth.TokenContract;
 import jakarta.servlet.http.Cookie;
 import java.time.Clock;
 import java.time.Duration;
@@ -1139,12 +1138,12 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     var now = Instant.now();
     var claims =
         JwtClaimsSet.builder()
-            .issuer(TokenContract.ISSUER)
+            .issuer("streamarr")
             .subject(account.getId().toString())
             .issuedAt(now)
             .expiresAt(now.plus(Duration.ofMinutes(10)))
             .id(UUID.randomUUID().toString())
-            .claim(TokenClaims.ROLE, account.getAccountRole().name())
+            .claim(TokenClaims.ROLES, java.util.List.of(account.getAccountRole().name()))
             .claim(TokenClaims.SESSION_ID, session.getId().toString())
             .claim(TokenClaims.SCOPE, "account");
     customizeClaims.accept(claims);

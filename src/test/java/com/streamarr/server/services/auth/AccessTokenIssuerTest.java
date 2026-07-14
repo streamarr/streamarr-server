@@ -65,6 +65,34 @@ class AccessTokenIssuerTest {
           accountProfileRepository);
 
   @Test
+  @DisplayName("Should mint the configured issuer when one is provided")
+  void shouldMintConfiguredIssuerWhenOneIsProvided() {
+    var urlIssuerProperties =
+        AuthTokenProperties.builder()
+            .signingKey(TEST_KEY_BASE64)
+            .issuer("https://auth.example.test")
+            .accessTokenTtl(Duration.ofMinutes(10))
+            .refreshTokenTtl(Duration.ofDays(30))
+            .rotationGrace(Duration.ofSeconds(30))
+            .build();
+    var urlIssuer =
+        new AccessTokenIssuer(
+            cryptoConfig.jwtEncoder(cryptoConfig.tokenSigningKeys(urlIssuerProperties)),
+            urlIssuerProperties,
+            Clock.systemUTC(),
+            membershipRepository,
+            profileRepository,
+            accountProfileRepository);
+    var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
+    var session = AuthSession.builder().id(UUID.randomUUID()).accountId(account.getId()).build();
+
+    var token = urlIssuer.issue(TokenContext.builder().account(account).session(session).build());
+
+    var decoded = buildDecoder().decode(token.value());
+    assertThat(decoded.getClaimAsString(JwtClaimNames.ISS)).isEqualTo("https://auth.example.test");
+  }
+
+  @Test
   @DisplayName("Should nest scopes when issuing profile token")
   void shouldNestScopesWhenIssuingProfileToken() {
     var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
@@ -98,7 +126,7 @@ class AccessTokenIssuerTest {
     assertThat(token.scope()).isEqualTo(TokenScope.PROFILE);
 
     var decoded = buildDecoder().decode(token.value());
-    assertThat(decoded.getClaimAsString(JwtClaimNames.ISS)).isEqualTo(TokenContract.ISSUER);
+    assertThat(decoded.getClaimAsString(JwtClaimNames.ISS)).isEqualTo("streamarr");
     assertThat(decoded.getSubject()).isEqualTo(account.getId().toString());
     assertThat(decoded.getClaimAsString(TokenClaims.SESSION_ID))
         .isEqualTo(session.getId().toString());
@@ -108,7 +136,7 @@ class AccessTokenIssuerTest {
     assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ROLE)).isEqualTo("OWNER");
     assertThat(decoded.getClaimAsString(TokenClaims.PROFILE_ID))
         .isEqualTo(profile.getId().toString());
-    assertThat(decoded.getClaimAsString(TokenClaims.ROLE)).isEqualTo("USER");
+    assertThat(decoded.getClaimAsStringList("roles")).containsExactly("USER");
     assertThat(Duration.between(decoded.getIssuedAt(), decoded.getExpiresAt()))
         .isEqualTo(properties.accessTokenTtl());
     assertThat(token.expiresAt()).isEqualTo(decoded.getExpiresAt());

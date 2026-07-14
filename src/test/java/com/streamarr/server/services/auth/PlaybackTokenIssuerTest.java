@@ -49,6 +49,7 @@ class PlaybackTokenIssuerTest {
   private final PlaybackTokenIssuer issuer =
       new PlaybackTokenIssuer(
           cryptoConfig.jwtEncoder(cryptoConfig.tokenSigningKeys(properties)),
+          properties,
           Clock.systemUTC(),
           authorityGate);
 
@@ -67,7 +68,7 @@ class PlaybackTokenIssuerTest {
 
     assertThat(token.scope()).isEqualTo(TokenScope.PLAYBACK);
     var decoded = decode(token.value());
-    assertThat(decoded.getClaimAsString(JwtClaimNames.ISS)).isEqualTo(TokenContract.ISSUER);
+    assertThat(decoded.getClaimAsString(JwtClaimNames.ISS)).isEqualTo("streamarr");
     assertThat(decoded.getSubject()).isEqualTo(accountId.toString());
     assertThat(decoded.getClaimAsString(TokenClaims.SESSION_ID)).isEqualTo(sessionId.toString());
     assertThat(decoded.getClaimAsString(TokenClaims.SCOPE)).isEqualTo("playback");
@@ -75,8 +76,7 @@ class PlaybackTokenIssuerTest {
         .isEqualTo(householdId.toString());
     assertThat(decoded.getClaimAsString(TokenClaims.HOUSEHOLD_ROLE)).isEqualTo("MEMBER");
     assertThat(decoded.getClaimAsString(TokenClaims.PROFILE_ID)).isEqualTo(profileId.toString());
-    assertThat(decoded.getClaimAsString(TokenClaims.STREAM_SESSION))
-        .isEqualTo(streamSessionId.toString());
+    assertThat(decoded.getClaimAsString("stream_session_id")).isEqualTo(streamSessionId.toString());
     assertThat(Duration.between(decoded.getIssuedAt(), decoded.getExpiresAt()))
         .isEqualTo(Duration.ofHours(24));
   }
