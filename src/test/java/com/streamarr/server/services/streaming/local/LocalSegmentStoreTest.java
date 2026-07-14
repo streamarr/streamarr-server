@@ -176,8 +176,8 @@ class LocalSegmentStoreTest {
   }
 
   @Test
-  @DisplayName("Should store a complete segment in its rendition directory")
-  void shouldStoreCompleteSegmentInRenditionDirectory() {
+  @DisplayName("Should store a complete segment in its variant directory")
+  void shouldStoreCompleteSegmentInVariantDirectory() {
     var sessionId = UUID.randomUUID();
     var segmentData = "remote segment".getBytes();
 

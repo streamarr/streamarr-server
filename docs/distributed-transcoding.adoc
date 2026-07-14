@@ -4,7 +4,7 @@ Distributed transcoding is optional.
 With no remote settings, Streamarr runs the existing local FFmpeg path and requires no worker, broker, mesh, or additional database.
 
 The supported first topology is one Streamarr server and zero or more outbound workers.
-Workers read the same media through an operator-defined source namespace, run the same rendition engine as local playback, and upload segments to the server over mTLS gRPC.
+Workers read the same media through an operator-defined source namespace, run the same variant engine as local playback, and upload segments to the server over mTLS gRPC.
 Workers do not accept inbound connections and never connect to PostgreSQL.
 
 == Identity and media contract

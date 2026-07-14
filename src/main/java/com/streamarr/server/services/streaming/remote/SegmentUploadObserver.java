@@ -20,7 +20,7 @@ import lombok.extern.slf4j.Slf4j;
 final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest> {
 
   private static final int MAXIMUM_SEGMENT_BYTES = 16 * 1024 * 1024;
-  private static final String DEFAULT_RENDITION_NAME = "default";
+  private static final String DEFAULT_VARIANT_LABEL = "default";
 
   private final UUID authenticatedWorkerId;
   private final LiveWorkerConnectionRegistry workerConnections;
@@ -59,7 +59,7 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
       return;
     }
     if (!validLength(incoming.getContentLengthBytes())
-        || !validName(incoming.getRenditionName())
+        || !validName(incoming.getVariantLabel())
         || !validName(incoming.getSegmentName())
         || !contentTypeMatchesName(incoming.getContentType(), incoming.getSegmentName())) {
       reject(Status.INVALID_ARGUMENT.withDescription("Segment metadata is invalid"));
@@ -131,10 +131,10 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
   }
 
   private String qualifiedSegmentName() {
-    if (DEFAULT_RENDITION_NAME.equals(metadata.getRenditionName())) {
+    if (DEFAULT_VARIANT_LABEL.equals(metadata.getVariantLabel())) {
       return metadata.getSegmentName();
     }
-    return metadata.getRenditionName() + "/" + metadata.getSegmentName();
+    return metadata.getVariantLabel() + "/" + metadata.getSegmentName();
   }
 
   private static boolean validLength(long contentLength) {

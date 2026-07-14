@@ -20,14 +20,14 @@ import com.streamarr.transcode.v1.AudioDecision;
 import com.streamarr.transcode.v1.AudioMode;
 import com.streamarr.transcode.v1.ContainerFormat;
 import com.streamarr.transcode.v1.MediaSourceRef;
-import com.streamarr.transcode.v1.RenditionJob;
-import com.streamarr.transcode.v1.RenditionSpec;
 import com.streamarr.transcode.v1.SubtitleDecision;
 import com.streamarr.transcode.v1.SubtitleMode;
 import com.streamarr.transcode.v1.TranscodeDecision;
 import com.streamarr.transcode.v1.TranscodeExecution;
 import com.streamarr.transcode.v1.TranscodeMode;
 import com.streamarr.transcode.v1.Uuid;
+import com.streamarr.transcode.v1.VariantJob;
+import com.streamarr.transcode.v1.VariantSpec;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URISyntaxException;
@@ -57,8 +57,8 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
   @TempDir Path tempDir;
 
   @Test
-  @DisplayName("Should run a dispatched rendition through the shared FFmpeg engine")
-  void shouldRunDispatchedRenditionThroughSharedFfmpegEngine() throws Exception {
+  @DisplayName("Should run a dispatched variant through the shared FFmpeg engine")
+  void shouldRunDispatchedVariantThroughSharedFfmpegEngine() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
     var processManager = new FakeFfmpegProcessManager();
@@ -69,7 +69,7 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
       server.start();
       worker.start("localhost", server.port());
 
-      assertThat(server.dispatch(renditionJob(streamSessionId))).isTrue();
+      assertThat(server.dispatch(variantJob(streamSessionId))).isTrue();
       await()
           .atMost(5, TimeUnit.SECONDS)
           .until(() -> processManager.getStarted().contains(streamSessionId));
@@ -94,8 +94,8 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should stop its running rendition when the worker closes")
-  void shouldStopRunningRenditionWhenWorkerCloses() throws Exception {
+  @DisplayName("Should stop its running variant when the worker closes")
+  void shouldStopRunningVariantWhenWorkerCloses() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
     var processManager = new FakeFfmpegProcessManager();
@@ -105,7 +105,7 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
         var worker = worker(processManager, mediaRoot)) {
       server.start();
       worker.start("localhost", server.port());
-      assertThat(server.dispatch(renditionJob(streamSessionId))).isTrue();
+      assertThat(server.dispatch(variantJob(streamSessionId))).isTrue();
       await()
           .atMost(5, TimeUnit.SECONDS)
           .until(() -> processManager.getStarted().contains(streamSessionId));
@@ -117,8 +117,8 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should stop its running rendition when the control plane disconnects")
-  void shouldStopRunningRenditionWhenControlPlaneDisconnects() throws Exception {
+  @DisplayName("Should stop its running variant when the control plane disconnects")
+  void shouldStopRunningVariantWhenControlPlaneDisconnects() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
     var processManager = new FakeFfmpegProcessManager();
@@ -128,7 +128,7 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
         var worker = worker(processManager, mediaRoot)) {
       server.start();
       worker.start("localhost", server.port());
-      assertThat(server.dispatch(renditionJob(streamSessionId))).isTrue();
+      assertThat(server.dispatch(variantJob(streamSessionId))).isTrue();
       await()
           .atMost(5, TimeUnit.SECONDS)
           .until(() -> processManager.getStarted().contains(streamSessionId));
@@ -161,14 +161,14 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should stop the dispatched rendition requested by the control plane")
-  void shouldStopDispatchedRenditionRequestedByControlPlane() throws Exception {
+  @DisplayName("Should stop the dispatched variant requested by the control plane")
+  void shouldStopDispatchedVariantRequestedByControlPlane() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
     var processManager = new FakeFfmpegProcessManager();
     var streamSessionId = UUID.randomUUID();
-    var stoppedJob = renditionJob(streamSessionId, "720p");
-    var survivingJob = renditionJob(streamSessionId, "1080p");
+    var stoppedJob = variantJob(streamSessionId, "720p");
+    var survivingJob = variantJob(streamSessionId, "1080p");
 
     try (var server = server();
         var worker = worker(processManager, mediaRoot)) {
@@ -183,7 +183,7 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
                   processManager.isRunning(streamSessionId, "720p")
                       && processManager.isRunning(streamSessionId, "1080p"));
 
-      assertThat(server.stopRendition(uuid(stoppedJob.getJobAttemptId()))).isTrue();
+      assertThat(server.stopVariant(uuid(stoppedJob.getJobAttemptId()))).isTrue();
 
       await()
           .atMost(5, TimeUnit.SECONDS)
@@ -193,13 +193,13 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should preserve control-plane order when replacing a rendition")
-  void shouldPreserveControlPlaneOrderWhenReplacingRendition() throws Exception {
+  @DisplayName("Should preserve control-plane order when replacing a variant")
+  void shouldPreserveControlPlaneOrderWhenReplacingVariant() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
     var processManager = new FakeFfmpegProcessManager();
     var streamSessionId = UUID.randomUUID();
-    var currentJob = renditionJob(streamSessionId, "720p");
+    var currentJob = variantJob(streamSessionId, "720p");
 
     try (var server = server();
         var worker = worker(processManager, mediaRoot)) {
@@ -211,8 +211,8 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
           .until(() -> processManager.isRunning(streamSessionId, "720p"));
 
       for (var replacement = 0; replacement < 100; replacement++) {
-        assertThat(server.stopRendition(uuid(currentJob.getJobAttemptId()))).isTrue();
-        currentJob = renditionJob(streamSessionId, "720p");
+        assertThat(server.stopVariant(uuid(currentJob.getJobAttemptId()))).isTrue();
+        currentJob = variantJob(streamSessionId, "720p");
         assertThat(server.dispatch(currentJob)).isTrue();
       }
 
@@ -232,7 +232,7 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
     var processManager = new FakeSegmentProducingFfmpegProcessManager("segment0.ts", segmentData);
     var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
     var streamSessionId = UUID.randomUUID();
-    var job = renditionJob(streamSessionId, "720p", ContainerFormat.CONTAINER_FORMAT_MPEG_TS);
+    var job = variantJob(streamSessionId, "720p", ContainerFormat.CONTAINER_FORMAT_MPEG_TS);
 
     try (var server = server(segmentStore);
         var worker = worker(processManager, mediaRoot)) {
@@ -259,15 +259,15 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should complete a rendition after uploading all produced segments")
-  void shouldCompleteRenditionAfterUploadingAllProducedSegments() throws Exception {
+  @DisplayName("Should complete a variant after uploading all produced segments")
+  void shouldCompleteVariantAfterUploadingAllProducedSegments() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
     var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
     var streamSessionId = UUID.randomUUID();
     var processManager =
         new EndingFfmpegProcessManager(Map.of("segment0.ts", "complete segment".getBytes()));
-    var job = renditionJob(streamSessionId, "720p", ContainerFormat.CONTAINER_FORMAT_MPEG_TS);
+    var job = variantJob(streamSessionId, "720p", ContainerFormat.CONTAINER_FORMAT_MPEG_TS);
 
     try (var server = server(segmentStore);
         var worker = worker(processManager, mediaRoot)) {
@@ -290,14 +290,14 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should stop a rendition when the control plane rejects segment storage")
-  void shouldStopRenditionWhenControlPlaneRejectsSegmentStorage() throws Exception {
+  @DisplayName("Should stop a variant when the control plane rejects segment storage")
+  void shouldStopVariantWhenControlPlaneRejectsSegmentStorage() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
     var streamSessionId = UUID.randomUUID();
     var processManager =
         new FakeSegmentProducingFfmpegProcessManager("segment0.ts", "segment".getBytes());
-    var job = renditionJob(streamSessionId, "720p", ContainerFormat.CONTAINER_FORMAT_MPEG_TS);
+    var job = variantJob(streamSessionId, "720p", ContainerFormat.CONTAINER_FORMAT_MPEG_TS);
 
     try (var server = server(new FailingSegmentStore(tempDir.resolve("server-segments")));
         var worker = worker(processManager, mediaRoot)) {
@@ -315,8 +315,8 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should fail a rendition when FFmpeg exits without producing media")
-  void shouldFailRenditionWhenFfmpegExitsWithoutProducingMedia() throws Exception {
+  @DisplayName("Should fail a variant when FFmpeg exits without producing media")
+  void shouldFailVariantWhenFfmpegExitsWithoutProducingMedia() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
     var streamSessionId = UUID.randomUUID();
@@ -329,7 +329,7 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
 
       assertThat(
               server.dispatch(
-                  renditionJob(streamSessionId, "720p", ContainerFormat.CONTAINER_FORMAT_MPEG_TS)))
+                  variantJob(streamSessionId, "720p", ContainerFormat.CONTAINER_FORMAT_MPEG_TS)))
           .isTrue();
       assertThat(server.isRunning(streamSessionId)).isTrue();
 
@@ -338,8 +338,8 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should release worker capacity when a rendition fails to start")
-  void shouldReleaseWorkerCapacityWhenRenditionFailsToStart() throws Exception {
+  @DisplayName("Should release worker capacity when a variant fails to start")
+  void shouldReleaseWorkerCapacityWhenVariantFailsToStart() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
     var processManager = new StartupFailingProcessManager();
@@ -348,18 +348,18 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
         var worker = worker(processManager, mediaRoot)) {
       server.start();
       worker.start("localhost", server.port());
-      assertThat(server.dispatch(renditionJob(UUID.randomUUID()))).isTrue();
-      assertThat(server.dispatch(renditionJob(UUID.randomUUID()))).isTrue();
+      assertThat(server.dispatch(variantJob(UUID.randomUUID()))).isTrue();
+      assertThat(server.dispatch(variantJob(UUID.randomUUID()))).isTrue();
 
       await()
           .atMost(5, TimeUnit.SECONDS)
-          .until(() -> server.dispatch(renditionJob(UUID.randomUUID())));
+          .until(() -> server.dispatch(variantJob(UUID.randomUUID())));
     }
   }
 
   @Test
-  @DisplayName("Should reject malformed rendition decisions without poisoning worker capacity")
-  void shouldRejectMalformedRenditionDecisionsWithoutPoisoningWorkerCapacity() throws Exception {
+  @DisplayName("Should reject malformed variant decisions without poisoning worker capacity")
+  void shouldRejectMalformedVariantDecisionsWithoutPoisoningWorkerCapacity() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
     var processManager = new FakeFfmpegProcessManager();
@@ -369,14 +369,14 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
       server.start();
       worker.start("localhost", server.port());
 
-      for (var malformedJob : malformedRenditionJobs()) {
+      for (var malformedJob : malformedVariantJobs()) {
         assertThat(server.dispatch(malformedJob)).isTrue();
         await().atMost(5, TimeUnit.SECONDS).until(() -> server.availableSlots() == 2);
         assertThat(processManager.getStarted())
             .doesNotContain(uuid(malformedJob.getStreamSessionId()));
       }
 
-      var validJob = renditionJob(UUID.randomUUID());
+      var validJob = variantJob(UUID.randomUUID());
       assertThat(server.dispatch(validJob)).isTrue();
       await()
           .atMost(5, TimeUnit.SECONDS)
@@ -431,17 +431,17 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
     return new TranscodeWorker(configuration, engine);
   }
 
-  private RenditionJob renditionJob(UUID streamSessionId) {
-    return renditionJob(streamSessionId, "default", ContainerFormat.CONTAINER_FORMAT_FMP4);
+  private VariantJob variantJob(UUID streamSessionId) {
+    return variantJob(streamSessionId, "default", ContainerFormat.CONTAINER_FORMAT_FMP4);
   }
 
-  private RenditionJob renditionJob(UUID streamSessionId, String renditionName) {
-    return renditionJob(streamSessionId, renditionName, ContainerFormat.CONTAINER_FORMAT_FMP4);
+  private VariantJob variantJob(UUID streamSessionId, String variantLabel) {
+    return variantJob(streamSessionId, variantLabel, ContainerFormat.CONTAINER_FORMAT_FMP4);
   }
 
-  private RenditionJob renditionJob(
-      UUID streamSessionId, String renditionName, ContainerFormat containerFormat) {
-    return RenditionJob.newBuilder()
+  private VariantJob variantJob(
+      UUID streamSessionId, String variantLabel, ContainerFormat containerFormat) {
+    return VariantJob.newBuilder()
         .setStreamSessionId(uuid(streamSessionId))
         .setJobId(uuid(UUID.randomUUID()))
         .setJobAttemptId(uuid(UUID.randomUUID()))
@@ -463,9 +463,9 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
                     SubtitleDecision.newBuilder().setMode(SubtitleMode.SUBTITLE_MODE_EXCLUDE))
                 .setContainer(containerFormat)
                 .setAlignKeyframesToSegments(true))
-        .setRendition(
-            RenditionSpec.newBuilder()
-                .setRenditionName(renditionName)
+        .setVariant(
+            VariantSpec.newBuilder()
+                .setVariantLabel(variantLabel)
                 .setWidth(1920)
                 .setHeight(1080)
                 .setBitrateBitsPerSecond(5_000_000))
@@ -474,15 +474,15 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
         .build();
   }
 
-  private List<RenditionJob> malformedRenditionJobs() {
-    var unspecifiedMode = renditionJob(UUID.randomUUID());
-    var unknownMode = renditionJob(UUID.randomUUID());
-    var unspecifiedAudio = renditionJob(UUID.randomUUID());
-    var unknownAudio = renditionJob(UUID.randomUUID());
-    var unspecifiedSubtitle = renditionJob(UUID.randomUUID());
-    var unknownSubtitle = renditionJob(UUID.randomUUID());
-    var unspecifiedContainer = renditionJob(UUID.randomUUID());
-    var unknownContainer = renditionJob(UUID.randomUUID());
+  private List<VariantJob> malformedVariantJobs() {
+    var unspecifiedMode = variantJob(UUID.randomUUID());
+    var unknownMode = variantJob(UUID.randomUUID());
+    var unspecifiedAudio = variantJob(UUID.randomUUID());
+    var unknownAudio = variantJob(UUID.randomUUID());
+    var unspecifiedSubtitle = variantJob(UUID.randomUUID());
+    var unknownSubtitle = variantJob(UUID.randomUUID());
+    var unspecifiedContainer = variantJob(UUID.randomUUID());
+    var unknownContainer = variantJob(UUID.randomUUID());
     return List.of(
         unspecifiedMode.toBuilder()
             .setDecision(
@@ -551,7 +551,7 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
 
     @Override
     public Process startProcess(
-        UUID sessionId, String renditionName, List<String> command, Path workingDirectory) {
+        UUID sessionId, String variantLabel, List<String> command, Path workingDirectory) {
       throw new IllegalStateException("FFmpeg failed to start");
     }
   }
@@ -578,8 +578,8 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
 
     @Override
     public Process startProcess(
-        UUID sessionId, String renditionName, List<String> command, Path workingDirectory) {
-      var process = super.startProcess(sessionId, renditionName, command, workingDirectory);
+        UUID sessionId, String variantLabel, List<String> command, Path workingDirectory) {
+      var process = super.startProcess(sessionId, variantLabel, command, workingDirectory);
       try {
         for (var segment : segments.entrySet()) {
           Files.write(workingDirectory.resolve(segment.getKey()), segment.getValue());
@@ -587,7 +587,7 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
       } catch (IOException e) {
         throw new UncheckedIOException(e);
       }
-      stopProcess(sessionId, renditionName);
+      stopProcess(sessionId, variantLabel);
       return process;
     }
   }

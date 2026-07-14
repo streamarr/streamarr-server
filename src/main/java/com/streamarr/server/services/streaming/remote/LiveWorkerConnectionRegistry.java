@@ -3,14 +3,14 @@ package com.streamarr.server.services.streaming.remote;
 import static com.streamarr.transcode.protocol.ProtoUuid.fromProto;
 import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
 
-import com.streamarr.transcode.v1.RenditionJob;
+import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
-import com.streamarr.transcode.v1.StartRenditionCommand;
-import com.streamarr.transcode.v1.StopRenditionCommand;
+import com.streamarr.transcode.v1.StartVariantCommand;
+import com.streamarr.transcode.v1.StopVariantCommand;
+import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
 import com.streamarr.transcode.v1.WorkerSessionAccepted;
-import com.streamarr.transcode.v1.WorkerSessionResponse;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import java.util.HashMap;
@@ -29,7 +29,7 @@ final class LiveWorkerConnectionRegistry {
   synchronized UUID register(
       UUID workerId,
       WorkerRegistration registration,
-      StreamObserver<WorkerSessionResponse> responseObserver) {
+      StreamObserver<EstablishWorkerSessionResponse> responseObserver) {
     var connection = new WorkerConnection(UUID.randomUUID(), registration, responseObserver);
     connection.accept();
     var replaced = connections.put(workerId, connection);
@@ -38,12 +38,12 @@ final class LiveWorkerConnectionRegistry {
       return connection.workerSessionId();
     }
 
-    var abandonedRenditions = replaced.closeAsReplaced();
+    var abandonedVariants = replaced.closeAsReplaced();
     log.warn(
-        "Worker {} reconnected; abandoning {} active rendition job(s) from its previous"
+        "Worker {} reconnected; abandoning {} active variant job(s) from its previous"
             + " connection",
         workerId,
-        abandonedRenditions);
+        abandonedVariants);
     return connection.workerSessionId();
   }
 
@@ -56,7 +56,7 @@ final class LiveWorkerConnectionRegistry {
     }
   }
 
-  boolean dispatch(RenditionJob job) {
+  boolean dispatch(VariantJob job) {
     for (var connection : connections.values()) {
       if (connection.tryDispatch(job)) {
         return true;
@@ -65,7 +65,7 @@ final class LiveWorkerConnectionRegistry {
     return false;
   }
 
-  boolean stopRendition(UUID jobAttemptId) {
+  boolean stopVariant(UUID jobAttemptId) {
     for (var connection : connections.values()) {
       if (connection.tryStop(jobAttemptId)) {
         return true;
@@ -83,9 +83,9 @@ final class LiveWorkerConnectionRegistry {
         .anyMatch(connection -> connection.isRunning(streamSessionId));
   }
 
-  boolean isRunning(UUID streamSessionId, String renditionName) {
+  boolean isRunning(UUID streamSessionId, String variantLabel) {
     return connections.values().stream()
-        .anyMatch(connection -> connection.isRunning(streamSessionId, renditionName));
+        .anyMatch(connection -> connection.isRunning(streamSessionId, variantLabel));
   }
 
   boolean hasConnectedWorker() {
@@ -96,7 +96,7 @@ final class LiveWorkerConnectionRegistry {
     return connections.values().stream().mapToInt(WorkerConnection::availableSlots).sum();
   }
 
-  Optional<RenditionJob> finishJobAttempt(UUID workerId, UUID workerSessionId, UUID jobAttemptId) {
+  Optional<VariantJob> finishJobAttempt(UUID workerId, UUID workerSessionId, UUID jobAttemptId) {
     var connection = connections.get(workerId);
     if (connection == null || !connection.workerSessionId().equals(workerSessionId)) {
       return Optional.empty();
@@ -114,18 +114,18 @@ final class LiveWorkerConnectionRegistry {
     private final UUID workerSessionId;
     private final WorkerIdentity worker;
     private final Set<com.streamarr.transcode.v1.Uuid> sourceNamespaceIds;
-    private final int maximumActiveRenditions;
-    private final StreamObserver<WorkerSessionResponse> responseObserver;
-    private final Map<UUID, RenditionJob> activeRenditions = new HashMap<>();
+    private final int maximumActiveVariants;
+    private final StreamObserver<EstablishWorkerSessionResponse> responseObserver;
+    private final Map<UUID, VariantJob> activeVariants = new HashMap<>();
 
     private WorkerConnection(
         UUID workerSessionId,
         WorkerRegistration registration,
-        StreamObserver<WorkerSessionResponse> responseObserver) {
+        StreamObserver<EstablishWorkerSessionResponse> responseObserver) {
       this.workerSessionId = workerSessionId;
       worker = registration.getWorker();
       sourceNamespaceIds = Set.copyOf(registration.getCapabilities().getSourceNamespaceIdsList());
-      maximumActiveRenditions = registration.getAvailableSlots();
+      maximumActiveVariants = registration.getAvailableSlots();
       this.responseObserver = responseObserver;
     }
 
@@ -137,44 +137,44 @@ final class LiveWorkerConnectionRegistry {
       var accepted =
           WorkerSessionAccepted.newBuilder().setWorkerSessionId(toProto(workerSessionId));
       responseObserver.onNext(
-          WorkerSessionResponse.newBuilder().setSessionAccepted(accepted).build());
+          EstablishWorkerSessionResponse.newBuilder().setSessionAccepted(accepted).build());
     }
 
-    private synchronized boolean tryDispatch(RenditionJob job) {
+    private synchronized boolean tryDispatch(VariantJob job) {
       if (!canAccessSource(job)
-          || maximumActiveRenditions < 1
-          || activeRenditions.size() >= maximumActiveRenditions) {
+          || maximumActiveVariants < 1
+          || activeVariants.size() >= maximumActiveVariants) {
         return false;
       }
 
-      var command = StartRenditionCommand.newBuilder().setTarget(worker).setJob(job).build();
-      if (!trySend(WorkerSessionResponse.newBuilder().setStartRendition(command).build())) {
+      var command = StartVariantCommand.newBuilder().setTarget(worker).setJob(job).build();
+      if (!trySend(EstablishWorkerSessionResponse.newBuilder().setStartVariant(command).build())) {
         return false;
       }
-      activeRenditions.put(fromProto(job.getJobAttemptId()), job);
+      activeVariants.put(fromProto(job.getJobAttemptId()), job);
       return true;
     }
 
-    private boolean canAccessSource(RenditionJob job) {
+    private boolean canAccessSource(VariantJob job) {
       return job.hasSource() && sourceNamespaceIds.contains(job.getSource().getSourceNamespaceId());
     }
 
     private synchronized boolean tryStop(UUID jobAttemptId) {
-      if (activeRenditions.remove(jobAttemptId) == null) {
+      if (activeVariants.remove(jobAttemptId) == null) {
         return false;
       }
 
       var command =
-          StopRenditionCommand.newBuilder()
+          StopVariantCommand.newBuilder()
               .setTarget(worker)
               .setJobAttemptId(toProto(jobAttemptId))
               .build();
-      trySend(WorkerSessionResponse.newBuilder().setStopRendition(command).build());
+      trySend(EstablishWorkerSessionResponse.newBuilder().setStopVariant(command).build());
       return true;
     }
 
     /** A send can fail when the worker call died but its disconnect has not been reaped yet. */
-    private boolean trySend(WorkerSessionResponse response) {
+    private boolean trySend(EstablishWorkerSessionResponse response) {
       try {
         responseObserver.onNext(response);
         return true;
@@ -184,16 +184,16 @@ final class LiveWorkerConnectionRegistry {
       }
     }
 
-    private synchronized Optional<RenditionJob> finishJobAttempt(UUID jobAttemptId) {
-      return Optional.ofNullable(activeRenditions.remove(jobAttemptId));
+    private synchronized Optional<VariantJob> finishJobAttempt(UUID jobAttemptId) {
+      return Optional.ofNullable(activeVariants.remove(jobAttemptId));
     }
 
     private synchronized int availableSlots() {
-      return Math.max(0, maximumActiveRenditions - activeRenditions.size());
+      return Math.max(0, maximumActiveVariants - activeVariants.size());
     }
 
     private synchronized void stopStreamSession(UUID streamSessionId) {
-      activeRenditions.entrySet().stream()
+      activeVariants.entrySet().stream()
           .filter(entry -> fromProto(entry.getValue().getStreamSessionId()).equals(streamSessionId))
           .map(Map.Entry::getKey)
           .toList()
@@ -201,16 +201,16 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private synchronized boolean isRunning(UUID streamSessionId) {
-      return activeRenditions.values().stream()
+      return activeVariants.values().stream()
           .anyMatch(job -> fromProto(job.getStreamSessionId()).equals(streamSessionId));
     }
 
-    private synchronized boolean isRunning(UUID streamSessionId, String renditionName) {
-      return activeRenditions.values().stream()
+    private synchronized boolean isRunning(UUID streamSessionId, String variantLabel) {
+      return activeVariants.values().stream()
           .anyMatch(
               job ->
                   fromProto(job.getStreamSessionId()).equals(streamSessionId)
-                      && job.getRendition().getRenditionName().equals(renditionName));
+                      && job.getVariant().getVariantLabel().equals(variantLabel));
     }
 
     private synchronized boolean authorizesUpload(SegmentUploadMetadata metadata) {
@@ -219,23 +219,23 @@ final class LiveWorkerConnectionRegistry {
         return false;
       }
 
-      var job = activeRenditions.get(fromProto(metadata.getJobAttemptId()));
+      var job = activeVariants.get(fromProto(metadata.getJobAttemptId()));
       return job != null
           && job.getStreamSessionId().equals(metadata.getStreamSessionId())
           && job.getJobId().equals(metadata.getJobId())
-          && job.getRendition().getRenditionName().equals(metadata.getRenditionName());
+          && job.getVariant().getVariantLabel().equals(metadata.getVariantLabel());
     }
 
     private synchronized int closeAsReplaced() {
-      var abandonedRenditions = activeRenditions.size();
-      activeRenditions.clear();
+      var abandonedVariants = activeVariants.size();
+      activeVariants.clear();
       try {
         responseObserver.onError(
             Status.ABORTED.withDescription("Worker connection replaced").asRuntimeException());
       } catch (RuntimeException _) {
         // The previous call is already dead; the replacement proceeds regardless.
       }
-      return abandonedRenditions;
+      return abandonedVariants;
     }
   }
 }

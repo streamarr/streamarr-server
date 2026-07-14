@@ -88,8 +88,8 @@ message MediaSourceRef {
   string relative_key = 2;
 }
 
-message RenditionSpec {
-  string rendition_name = 1;
+message VariantSpec {
+  string variant_label = 1;
   uint32 width = 2;
   uint32 height = 3;
   uint64 bitrate_bits_per_second = 4;
@@ -99,18 +99,18 @@ message TranscodeExecution {
   uint32 seek_position_seconds = 1;
   uint32 segment_duration_seconds = 2;
   double framerate = 3;
-  uint32 start_number = 4;
+  uint32 start_sequence_number = 4;
 }
 
-message RenditionJob {
+message VariantJob {
   Uuid stream_session_id = 1;
-  // job_id identifies one logical rendition transcode for the stream session. job_attempt_id is
+  // job_id identifies one logical variant transcode for the stream session. job_attempt_id is
   // freshly generated for every dispatch attempt and is never a monotonic generation counter.
   Uuid job_id = 2;
   Uuid job_attempt_id = 3;
   MediaSourceRef source = 4;
   TranscodeDecision decision = 5;
-  RenditionSpec rendition = 6;
+  VariantSpec variant = 6;
   TranscodeExecution execution = 7;
 }
 
@@ -139,7 +139,7 @@ message JobAttemptStopped {
   Uuid job_attempt_id = 1;
 }
 
-message WorkerSessionRequest {
+message EstablishWorkerSessionRequest {
   oneof event {
     WorkerRegistration registration = 1;
     JobAttemptStarted job_attempt_started = 2;
@@ -154,21 +154,21 @@ message WorkerSessionAccepted {
   Uuid worker_session_id = 1;
 }
 
-message StartRenditionCommand {
+message StartVariantCommand {
   WorkerIdentity target = 1;
-  RenditionJob job = 2;
+  VariantJob job = 2;
 }
 
-message StopRenditionCommand {
+message StopVariantCommand {
   WorkerIdentity target = 1;
   Uuid job_attempt_id = 2;
 }
 
-message WorkerSessionResponse {
+message EstablishWorkerSessionResponse {
   oneof command {
     WorkerSessionAccepted session_accepted = 1;
-    StartRenditionCommand start_rendition = 2;
-    StopRenditionCommand stop_rendition = 3;
+    StartVariantCommand start_variant = 2;
+    StopVariantCommand stop_variant = 3;
   }
 }
 
@@ -185,7 +185,7 @@ message SegmentUploadMetadata {
   Uuid stream_session_id = 3;
   Uuid job_id = 4;
   Uuid job_attempt_id = 5;
-  string rendition_name = 6;
+  string variant_label = 6;
   string segment_name = 7;
   SegmentContentType content_type = 8;
   uint64 content_length_bytes = 9;
@@ -206,6 +206,6 @@ message UploadSegmentResponse {
 }
 
 service TranscodeWorkerService {
-  rpc WorkerSession(stream WorkerSessionRequest) returns (stream WorkerSessionResponse) {}
+  rpc EstablishWorkerSession(stream EstablishWorkerSessionRequest) returns (stream EstablishWorkerSessionResponse) {}
   rpc UploadSegment(stream UploadSegmentRequest) returns (UploadSegmentResponse) {}
 }

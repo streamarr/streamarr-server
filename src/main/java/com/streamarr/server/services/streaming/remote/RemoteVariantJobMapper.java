@@ -12,31 +12,31 @@ import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.transcode.v1.MediaSourceRef;
-import com.streamarr.transcode.v1.RenditionJob;
-import com.streamarr.transcode.v1.RenditionSpec;
 import com.streamarr.transcode.v1.TranscodeExecution;
+import com.streamarr.transcode.v1.VariantJob;
+import com.streamarr.transcode.v1.VariantSpec;
 import java.io.File;
 import java.nio.file.Path;
 import java.util.UUID;
 
-final class RemoteRenditionJobMapper {
+final class RemoteVariantJobMapper {
 
   private final UUID sourceNamespaceId;
   private final Path sourceRoot;
 
-  RemoteRenditionJobMapper(UUID sourceNamespaceId, Path sourceRoot) {
+  RemoteVariantJobMapper(UUID sourceNamespaceId, Path sourceRoot) {
     this.sourceNamespaceId = sourceNamespaceId;
     this.sourceRoot = sourceRoot.toAbsolutePath().normalize();
   }
 
-  RenditionJob map(TranscodeRequest request) {
-    return RenditionJob.newBuilder()
+  VariantJob map(TranscodeRequest request) {
+    return VariantJob.newBuilder()
         .setStreamSessionId(toProto(request.sessionId()))
         .setJobId(toProto(logicalJobId(request)))
         .setJobAttemptId(toProto(UUID.randomUUID()))
         .setSource(source(request.sourcePath()))
         .setDecision(decision(request))
-        .setRendition(rendition(request))
+        .setVariant(variant(request))
         .setExecution(execution(request))
         .build();
   }
@@ -93,9 +93,9 @@ final class RemoteRenditionJobMapper {
     return subtitle.build();
   }
 
-  private static RenditionSpec rendition(TranscodeRequest request) {
-    return RenditionSpec.newBuilder()
-        .setRenditionName(request.variantLabel())
+  private static VariantSpec variant(TranscodeRequest request) {
+    return VariantSpec.newBuilder()
+        .setVariantLabel(request.variantLabel())
         .setWidth(request.width())
         .setHeight(request.height())
         .setBitrateBitsPerSecond(request.bitrate())
@@ -107,7 +107,7 @@ final class RemoteRenditionJobMapper {
         .setSeekPositionSeconds(request.seekPosition())
         .setSegmentDurationSeconds(request.segmentDuration())
         .setFramerate(request.framerate())
-        .setStartNumber(request.startNumber())
+        .setStartSequenceNumber(request.startNumber())
         .build();
   }
 

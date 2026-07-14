@@ -3,13 +3,13 @@ package com.streamarr.server.services.streaming.remote;
 import static com.streamarr.transcode.protocol.ProtoUuid.fromProto;
 
 import com.streamarr.server.services.streaming.SegmentStore;
+import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
+import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptFailed;
-import com.streamarr.transcode.v1.RenditionJob;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
 import com.streamarr.transcode.v1.UploadSegmentRequest;
 import com.streamarr.transcode.v1.UploadSegmentResponse;
-import com.streamarr.transcode.v1.WorkerSessionRequest;
-import com.streamarr.transcode.v1.WorkerSessionResponse;
+import com.streamarr.transcode.v1.VariantJob;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import java.util.Optional;
@@ -37,8 +37,8 @@ final class WorkerSessionGrpcService
   }
 
   @Override
-  public StreamObserver<WorkerSessionRequest> workerSession(
-      StreamObserver<WorkerSessionResponse> responseObserver) {
+  public StreamObserver<EstablishWorkerSessionRequest> establishWorkerSession(
+      StreamObserver<EstablishWorkerSessionResponse> responseObserver) {
     var authenticatedWorkerId = WorkerIdentityServerInterceptor.AUTHENTICATED_WORKER_ID.get();
     return new RegistrationObserver(authenticatedWorkerId, responseObserver, workerConnections);
   }
@@ -83,17 +83,18 @@ final class WorkerSessionGrpcService
     }
   }
 
-  private static final class RegistrationObserver implements StreamObserver<WorkerSessionRequest> {
+  private static final class RegistrationObserver
+      implements StreamObserver<EstablishWorkerSessionRequest> {
 
     private final UUID authenticatedWorkerId;
-    private final StreamObserver<WorkerSessionResponse> responseObserver;
+    private final StreamObserver<EstablishWorkerSessionResponse> responseObserver;
     private final LiveWorkerConnectionRegistry workerConnections;
     private boolean registered;
     private UUID workerSessionId;
 
     private RegistrationObserver(
         UUID authenticatedWorkerId,
-        StreamObserver<WorkerSessionResponse> responseObserver,
+        StreamObserver<EstablishWorkerSessionResponse> responseObserver,
         LiveWorkerConnectionRegistry workerConnections) {
       this.authenticatedWorkerId = authenticatedWorkerId;
       this.responseObserver = responseObserver;
@@ -101,7 +102,7 @@ final class WorkerSessionGrpcService
     }
 
     @Override
-    public void onNext(WorkerSessionRequest request) {
+    public void onNext(EstablishWorkerSessionRequest request) {
       if (registered) {
         finishJobAttempt(request);
         return;
@@ -143,7 +144,7 @@ final class WorkerSessionGrpcService
       }
     }
 
-    private void finishJobAttempt(WorkerSessionRequest request) {
+    private void finishJobAttempt(EstablishWorkerSessionRequest request) {
       switch (request.getEventCase()) {
         case JOB_ATTEMPT_STARTED ->
             log.debug(
@@ -166,9 +167,9 @@ final class WorkerSessionGrpcService
           .ifPresentOrElse(
               job ->
                   log.warn(
-                      "Worker {} failed rendition {} of stream session {}: {}",
+                      "Worker {} failed variant {} of stream session {}: {}",
                       authenticatedWorkerId,
-                      job.getRendition().getRenditionName(),
+                      job.getVariant().getVariantLabel(),
                       fromProto(job.getStreamSessionId()),
                       failed.getFailure()),
               () ->
@@ -179,7 +180,7 @@ final class WorkerSessionGrpcService
                       failed.getFailure()));
     }
 
-    private Optional<RenditionJob> finish(com.streamarr.transcode.v1.Uuid jobAttemptId) {
+    private Optional<VariantJob> finish(com.streamarr.transcode.v1.Uuid jobAttemptId) {
       return workerConnections.finishJobAttempt(
           authenticatedWorkerId, workerSessionId, fromProto(jobAttemptId));
     }

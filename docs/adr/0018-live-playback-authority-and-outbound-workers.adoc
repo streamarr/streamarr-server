@@ -10,7 +10,7 @@ It also replaces the unmerged `ADR 0018: Direct Fenced Worker Control` reviewed 
 === Implementation status
 
 * The live playback-authority gate is implemented and V049 removes the version counters and their PostgreSQL notification feed.
-* The distributed walking skeleton is implemented: the server dispatches one rendition over an outbound worker session, the worker runs FFmpeg, uploads one segment on a separate gRPC stream, and Streamarr serves the segment through its existing HTTP endpoint.
+* The distributed walking skeleton is implemented: the server dispatches one variant over an outbound worker session, the worker runs FFmpeg, uploads one segment on a separate gRPC stream, and Streamarr serves the segment through its existing HTTP endpoint.
 * Workers continuously upload numbered MPEG-TS segments or the fMP4 initialization segment and media fragments on separate gRPC streams.
 * Release images expose separate server and worker process types, and opt-in Docker Compose and Kubernetes examples consume externally issued PEM identities.
 
@@ -19,7 +19,7 @@ It also replaces the unmerged `ADR 0018: Direct Fenced Worker Control` reviewed 
 Streamarr must retire token version counters and support horizontal transcoding without making a small installation operate distributed coordination infrastructure.
 ADR 0017 attempted to replace the counters with a durable playback state machine, cleanup ledger, and parent-deletion choreography.
 The unmerged ADR 0018 draft then extended that machinery with inbound worker endpoints, generations, leases, durable command state, and an application-operated certificate authority.
-Those designs solved general multi-replica and crash-recovery problems before one remote rendition could play, duplicated state already owned by FFmpeg or a live connection, and changed local playback from independent rendition failure to whole-ladder failure.
+Those designs solved general multi-replica and crash-recovery problems before one remote variant could play, duplicated state already owned by FFmpeg or a live connection, and changed local playback from independent variant failure to whole-ladder failure.
 
 The v1 topology is one Streamarr control-plane process and zero or more worker processes.
 Within that boundary, live database authority and a worker-owned connection are stronger and smaller primitives than persisted lifecycle and fencing machines.
@@ -59,16 +59,16 @@ Refresh redemption holds the live session lock through token issuance, so a logo
 
 The live playback gate passed its adversarial integration tests before V049 removed version claims, counter validation, the cache/listener/publisher feed, counter columns, sequences, and pooler-specific configuration.
 
-=== One rendition engine, two execution adapters
+=== One variant engine, two execution adapters
 
-Local playback keeps its observable behavior, including independent rendition failure: one failed rendition does not withdraw healthy renditions.
-There is one framework-free FFmpeg engine extracted from that existing per-rendition behavior, not a second executor and not a whole-ladder atomic engine.
+Local playback keeps its observable behavior, including independent variant failure: one failed variant does not withdraw healthy variants.
+There is one framework-free FFmpeg engine extracted from that existing per-variant behavior, not a second executor and not a whole-ladder atomic engine.
 Local and remote execution adapt the same engine contract.
 No dormant port, single-implementation interface, coordinator, or lifecycle abstraction lands before its first production caller.
 
-The worker contract's shared vocabulary is `rendition`, never a mix of rendition, variant, quality, and profile for the same concept; the pre-existing `variant` naming on the domain and HTTP surfaces is a deferred rename, translated at the wire boundary by `RemoteRenditionJobMapper`.
+The shared vocabulary is `variant`, matching RFC 8216's Variant Stream (a bitrate/resolution encoding) and the existing domain naming; `rendition` is reserved for its HLS meaning — EXT-X-MEDIA alternates such as audio languages — and never names a quality-ladder job.
 A `stream_session_id` identifies the runtime playback aggregate.
-A `job_id` identifies one logical rendition transcode for that stream session, and a fresh `job_attempt_id` identifies each dispatch attempt.
+A `job_id` identifies one logical variant transcode for that stream session, and a fresh `job_attempt_id` identifies each dispatch attempt.
 Attempt ids are unique rather than monotonically ordered; stale results and segments are rejected unless the attempt is owned by the current worker connection.
 
 Media is addressed by `MediaSourceRef(source_namespace_id, relative_key)`.
@@ -77,7 +77,7 @@ Workers never connect to the Streamarr database.
 
 === Workers dial out over one mTLS gRPC channel
 
-Each worker opens one long-lived bidirectional `WorkerSession` to the server.
+Each worker opens one long-lived bidirectional `EstablishWorkerSession` stream to the server.
 The opening exchange registers the worker's stable identity, fresh process `boot_id`, capabilities, and configured slot capacity.
 The registry derives remaining capacity from connection-owned active attempts; HTTP/2 transport liveness replaces an application heartbeat protocol.
 Server commands and worker results use Protobuf envelopes on that stream.
@@ -132,7 +132,7 @@ The replacement is not complete until behavior-level regression tests prove at l
 * a refresh paused before committed logout cannot issue credentials afterward, and a disabled account cannot refresh;
 * playback admission concurrent with profile-grant deletion does not recreate the PostgreSQL 18 `FOR SHARE` deadlock;
 * two concurrent password changes commit exactly one replacement session;
-* one failed local rendition leaves healthy renditions playable;
+* one failed local variant leaves healthy variants playable;
 * media deletion during playback degrades to `404`; and
 * a disconnected or replaced worker cannot publish stale results or segments.
 
@@ -151,13 +151,13 @@ Explicitly deferred until demonstrated pressure:
 * Runtime stream sessions and connection-owned jobs disappear on restart; v1 favors disposability and reconnection over persisted recovery.
 * Home users pay no broker, mesh, database-sharing, or application-CA tax.
 * Kubernetes operators can use canonical identity issuers without changing the Streamarr application protocol.
-* Per-rendition jobs preserve the existing partial-ladder experience and allow failed work to be retried independently.
+* Per-variant jobs preserve the existing partial-ladder experience and allow failed work to be retried independently.
 * A later multi-server design must add worker-session affinity or a broker deliberately; the v1 connection fence must not be stretched into an implicit distributed registry.
 
 == Rejected Alternatives
 
 * Persisted stream-session lifecycle and cleanup intent — it duplicates runtime/process state and makes parent deletion and restart recovery a domain machine before v1 needs either.
-* Whole-ladder atomic publication — it regresses existing playback by withdrawing healthy renditions when one rendition fails.
+* Whole-ladder atomic publication — it regresses existing playback by withdrawing healthy variants when one variant fails.
 * Embedded online CA — identity issuance, enrollment, rotation, and recovery belong to cert-manager, SPIRE, Smallstep, Vault, service meshes, or cloud CAs.
 * Inbound worker RPC endpoints — they impose reachability, NAT, discovery, and endpoint-binding problems that an outbound session deletes.
 * PostgreSQL as the worker message bus — workers stay database-independent and communicate through the Protobuf/gRPC contract.

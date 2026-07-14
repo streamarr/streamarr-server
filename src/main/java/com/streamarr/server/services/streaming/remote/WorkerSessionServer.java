@@ -1,7 +1,7 @@
 package com.streamarr.server.services.streaming.remote;
 
 import com.streamarr.server.services.streaming.SegmentStore;
-import com.streamarr.transcode.v1.RenditionJob;
+import com.streamarr.transcode.v1.VariantJob;
 import io.grpc.Server;
 import io.grpc.ServerInterceptors;
 import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts;
@@ -76,14 +76,14 @@ public final class WorkerSessionServer implements AutoCloseable {
     return server.getPort();
   }
 
-  public synchronized boolean dispatch(RenditionJob job) {
+  public synchronized boolean dispatch(VariantJob job) {
     requireStarted();
     return workerConnections.dispatch(job);
   }
 
-  public synchronized boolean stopRendition(UUID jobAttemptId) {
+  public synchronized boolean stopVariant(UUID jobAttemptId) {
     requireStarted();
-    return workerConnections.stopRendition(jobAttemptId);
+    return workerConnections.stopVariant(jobAttemptId);
   }
 
   public synchronized void stopStreamSession(UUID streamSessionId) {
@@ -96,9 +96,9 @@ public final class WorkerSessionServer implements AutoCloseable {
     return workerConnections.isRunning(streamSessionId);
   }
 
-  public synchronized boolean isRunning(UUID streamSessionId, String renditionName) {
+  public synchronized boolean isRunning(UUID streamSessionId, String variantLabel) {
     requireStarted();
-    return workerConnections.isRunning(streamSessionId, renditionName);
+    return workerConnections.isRunning(streamSessionId, variantLabel);
   }
 
   public synchronized boolean hasConnectedWorker() {

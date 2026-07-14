@@ -34,8 +34,8 @@ public class FakeFfmpegProcessManager implements FfmpegProcessManager {
   }
 
   @Override
-  public void stopProcess(UUID sessionId, String renditionName) {
-    running.remove(new ProcessKey(sessionId, renditionName));
+  public void stopProcess(UUID sessionId, String variantLabel) {
+    running.remove(new ProcessKey(sessionId, variantLabel));
     stopped.add(sessionId);
   }
 

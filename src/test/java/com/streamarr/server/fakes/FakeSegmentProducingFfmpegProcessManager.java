@@ -26,8 +26,8 @@ public final class FakeSegmentProducingFfmpegProcessManager extends FakeFfmpegPr
 
   @Override
   public Process startProcess(
-      UUID sessionId, String renditionName, List<String> command, Path workingDirectory) {
-    var process = super.startProcess(sessionId, renditionName, command, workingDirectory);
+      UUID sessionId, String variantLabel, List<String> command, Path workingDirectory) {
+    var process = super.startProcess(sessionId, variantLabel, command, workingDirectory);
     try {
       for (var segment : segments.entrySet()) {
         Files.write(workingDirectory.resolve(segment.getKey()), segment.getValue());

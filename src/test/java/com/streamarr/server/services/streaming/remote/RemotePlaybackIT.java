@@ -212,7 +212,7 @@ class RemotePlaybackIT extends AbstractIntegrationTest {
       assertThat(executor.isHealthy()).isFalse();
       assertThatThrownBy(() -> executor.start(request))
           .isInstanceOf(TranscodeException.class)
-          .hasMessage("No connected transcode worker can run this rendition");
+          .hasMessage("No connected transcode worker can run this variant");
     }
   }
 
@@ -427,9 +427,9 @@ class RemotePlaybackIT extends AbstractIntegrationTest {
 
     @Override
     public Process startProcess(
-        UUID sessionId, String renditionName, List<String> command, Path workingDirectory) {
+        UUID sessionId, String variantLabel, List<String> command, Path workingDirectory) {
       commands.put(sessionId, List.copyOf(command));
-      return super.startProcess(sessionId, renditionName, command, workingDirectory);
+      return super.startProcess(sessionId, variantLabel, command, workingDirectory);
     }
 
     private Optional<List<String>> commandFor(UUID streamSessionId) {

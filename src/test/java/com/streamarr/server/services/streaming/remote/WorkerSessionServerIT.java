@@ -8,21 +8,21 @@ import com.google.protobuf.ByteString;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.transcode.tls.PemTlsIdentity;
+import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
+import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptCompleted;
 import com.streamarr.transcode.v1.MediaSourceRef;
-import com.streamarr.transcode.v1.RenditionJob;
-import com.streamarr.transcode.v1.RenditionSpec;
 import com.streamarr.transcode.v1.SegmentContentType;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
 import com.streamarr.transcode.v1.UploadSegmentRequest;
 import com.streamarr.transcode.v1.UploadSegmentResponse;
 import com.streamarr.transcode.v1.Uuid;
+import com.streamarr.transcode.v1.VariantJob;
+import com.streamarr.transcode.v1.VariantSpec;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
-import com.streamarr.transcode.v1.WorkerSessionRequest;
-import com.streamarr.transcode.v1.WorkerSessionResponse;
 import io.grpc.ManagedChannel;
 import io.grpc.Status;
 import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts;
@@ -163,7 +163,7 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
         var response =
             send(
                 channel,
-                WorkerSessionRequest.newBuilder()
+                EstablishWorkerSessionRequest.newBuilder()
                     .setJobAttemptCompleted(
                         JobAttemptCompleted.newBuilder().setJobAttemptId(uuid(UUID.randomUUID())))
                     .build());
@@ -202,19 +202,19 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should dispatch a rendition job to a registered worker")
-  void shouldDispatchRenditionJobToRegisteredWorker() throws Exception {
+  @DisplayName("Should dispatch a variant job to a registered worker")
+  void shouldDispatchVariantJobToRegisteredWorker() throws Exception {
     try (var server = server()) {
       server.start();
       var channel = workerChannel(server.port());
 
       try (var worker = connect(channel, AUTHENTICATED_WORKER_ID)) {
         assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
-        var job = renditionJob();
+        var job = variantJob();
 
         assertThat(server.dispatch(job)).isTrue();
 
-        var command = worker.nextResponse().getStartRendition();
+        var command = worker.nextResponse().getStartVariant();
         assertThat(command.getTarget().getWorkerId()).isEqualTo(uuid(AUTHENTICATED_WORKER_ID));
         assertThat(command.getJob()).isEqualTo(job);
       } finally {
@@ -237,7 +237,7 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
         worker.close();
         worker.awaitClosed();
 
-        assertThat(server.dispatch(renditionJob())).isFalse();
+        assertThat(server.dispatch(variantJob())).isFalse();
       } finally {
         shutdown(channel);
       }
@@ -260,10 +260,10 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
         assertThatThrownBy(first::awaitClosed)
             .rootCause()
             .matches(throwable -> Status.fromThrowable(throwable).getCode() == Status.Code.ABORTED);
-        var job = renditionJob();
+        var job = variantJob();
 
         assertThat(server.dispatch(job)).isTrue();
-        assertThat(replacement.nextResponse().getStartRendition().getJob()).isEqualTo(job);
+        assertThat(replacement.nextResponse().getStartVariant().getJob()).isEqualTo(job);
         replacement.close();
       } finally {
         shutdown(channel);
@@ -277,7 +277,7 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
     try (var server = server()) {
       server.start();
 
-      assertThat(server.dispatch(renditionJob())).isFalse();
+      assertThat(server.dispatch(variantJob())).isFalse();
     }
   }
 
@@ -295,7 +295,7 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
               UUID.randomUUID())) {
         assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
 
-        assertThat(server.dispatch(renditionJob())).isFalse();
+        assertThat(server.dispatch(variantJob())).isFalse();
       } finally {
         shutdown(channel);
       }
@@ -303,8 +303,8 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should bound active rendition ownership by advertised worker capacity")
-  void shouldBoundActiveRenditionOwnershipByAdvertisedWorkerCapacity() throws Exception {
+  @DisplayName("Should bound active variant ownership by advertised worker capacity")
+  void shouldBoundActiveVariantOwnershipByAdvertisedWorkerCapacity() throws Exception {
     try (var server = server()) {
       server.start();
       var channel = workerChannel(server.port());
@@ -312,22 +312,22 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
       try (var worker = connect(channel, AUTHENTICATED_WORKER_ID)) {
         assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
         assertThat(server.availableSlots()).isEqualTo(1);
-        var first = renditionJob();
-        var second = renditionJob();
+        var first = variantJob();
+        var second = variantJob();
         assertThat(server.dispatch(first)).isTrue();
-        assertThat(worker.nextResponse().getStartRendition().getJob()).isEqualTo(first);
+        assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(first);
         assertThat(server.availableSlots()).isZero();
 
         assertThat(server.dispatch(second)).isFalse();
 
         worker.send(
-            WorkerSessionRequest.newBuilder()
+            EstablishWorkerSessionRequest.newBuilder()
                 .setJobAttemptCompleted(
                     JobAttemptCompleted.newBuilder().setJobAttemptId(first.getJobAttemptId()))
                 .build());
         await().atMost(5, TimeUnit.SECONDS).until(() -> server.availableSlots() == 1);
         assertThat(server.dispatch(second)).isTrue();
-        assertThat(worker.nextResponse().getStartRendition().getJob()).isEqualTo(second);
+        assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(second);
       } finally {
         shutdown(channel);
       }
@@ -335,8 +335,8 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should reject worker operations outside connection-owned rendition state")
-  void shouldRejectWorkerOperationsOutsideConnectionOwnedRenditionState() throws Exception {
+  @DisplayName("Should reject worker operations outside connection-owned variant state")
+  void shouldRejectWorkerOperationsOutsideConnectionOwnedVariantState() throws Exception {
     var segmentStore = new FakeSegmentStore();
     try (var server = server(segmentStore)) {
       server.start();
@@ -345,13 +345,13 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
       var identity = workerIdentity(UUID.randomUUID());
       try (var worker = connect(channel, identity)) {
         var workerSession = worker.nextResponse().getSessionAccepted();
-        assertThat(server.stopRendition(UUID.randomUUID())).isFalse();
-        assertThat(server.dispatch(renditionJob().toBuilder().clearSource().build())).isFalse();
+        assertThat(server.stopVariant(UUID.randomUUID())).isFalse();
+        assertThat(server.dispatch(variantJob().toBuilder().clearSource().build())).isFalse();
         assertThat(server.isRunning(UUID.randomUUID())).isFalse();
 
-        var job = renditionJob();
+        var job = variantJob();
         assertThat(server.dispatch(job)).isTrue();
-        assertThat(worker.nextResponse().getStartRendition().getJob()).isEqualTo(job);
+        assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
         assertThat(server.isRunning(uuid(job.getStreamSessionId()), "missing")).isFalse();
         var metadata =
             segmentMetadata(workerSession, identity, job).setContentLengthBytes(1).build();
@@ -362,7 +362,7 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
                 metadata.toBuilder().setJobAttemptId(uuid(UUID.randomUUID())).build(),
                 metadata.toBuilder().setStreamSessionId(uuid(UUID.randomUUID())).build(),
                 metadata.toBuilder().setJobId(uuid(UUID.randomUUID())).build(),
-                metadata.toBuilder().setRenditionName("other").build());
+                metadata.toBuilder().setVariantLabel("other").build());
 
         unownedMetadata.forEach(
             unowned ->
@@ -388,9 +388,9 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
         var firstIdentity = workerIdentity(UUID.randomUUID());
         var first = connect(channel, firstIdentity);
         var firstSession = first.nextResponse().getSessionAccepted();
-        var job = renditionJob();
+        var job = variantJob();
         assertThat(server.dispatch(job)).isTrue();
-        assertThat(first.nextResponse().getStartRendition().getJob()).isEqualTo(job);
+        assertThat(first.nextResponse().getStartVariant().getJob()).isEqualTo(job);
 
         var replacement = connect(channel, workerIdentity(UUID.randomUUID()));
         assertThat(replacement.nextResponse().hasSessionAccepted()).isTrue();
@@ -429,9 +429,9 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
         var identity = workerIdentity(UUID.randomUUID());
         var worker = connect(channel, identity);
         var workerSession = worker.nextResponse().getSessionAccepted();
-        var job = renditionJob();
+        var job = variantJob();
         assertThat(server.dispatch(job)).isTrue();
-        assertThat(worker.nextResponse().getStartRendition().getJob()).isEqualTo(job);
+        assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
         var segmentData = "partial segment".getBytes();
         var metadata =
             segmentMetadata(workerSession, identity, job)
@@ -463,9 +463,9 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
       var identity = workerIdentity(UUID.randomUUID());
       try (var worker = connect(channel, identity)) {
         var workerSession = worker.nextResponse().getSessionAccepted();
-        var job = renditionJob();
+        var job = variantJob();
         assertThat(server.dispatch(job)).isTrue();
-        assertThat(worker.nextResponse().getStartRendition().getJob()).isEqualTo(job);
+        assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
         var metadata =
             segmentMetadata(workerSession, identity, job).setContentLengthBytes(1).build();
 
@@ -535,9 +535,9 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
       var identity = workerIdentity(UUID.randomUUID());
       try (var worker = connect(channel, identity)) {
         var workerSession = worker.nextResponse().getSessionAccepted();
-        var job = renditionJob();
+        var job = variantJob();
         assertThat(server.dispatch(job)).isTrue();
-        assertThat(worker.nextResponse().getStartRendition().getJob()).isEqualTo(job);
+        assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
         var segmentData = new byte[128 * 1024];
         var metadata =
             segmentMetadata(workerSession, identity, job)
@@ -574,9 +574,9 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
       var identity = workerIdentity(UUID.randomUUID());
       try (var worker = connect(channel, identity)) {
         var workerSession = worker.nextResponse().getSessionAccepted();
-        var job = renditionJob();
+        var job = variantJob();
         assertThat(server.dispatch(job)).isTrue();
-        assertThat(worker.nextResponse().getStartRendition().getJob()).isEqualTo(job);
+        assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
         var metadata =
             segmentMetadata(workerSession, identity, job).setContentLengthBytes(1).build();
         var invalidMetadata =
@@ -596,22 +596,22 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
         invalidMetadata.forEach(
             unsafe ->
                 assertUploadRejectedAsInvalidMetadata(upload(channel, unsafe, new byte[] {1})));
-        assertThat(server.stopRendition(uuid(job.getJobAttemptId()))).isTrue();
-        assertThat(worker.nextResponse().hasStopRendition()).isTrue();
+        assertThat(server.stopVariant(uuid(job.getJobAttemptId()))).isTrue();
+        assertThat(worker.nextResponse().hasStopVariant()).isTrue();
 
         for (var unsafeName : List.of(" ", "..", "720/p", "720\\p")) {
           var unsafeJob =
-              renditionJob().toBuilder()
-                  .setRendition(RenditionSpec.newBuilder().setRenditionName(unsafeName))
+              variantJob().toBuilder()
+                  .setVariant(VariantSpec.newBuilder().setVariantLabel(unsafeName))
                   .build();
           assertThat(server.dispatch(unsafeJob)).isTrue();
-          assertThat(worker.nextResponse().getStartRendition().getJob()).isEqualTo(unsafeJob);
+          assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(unsafeJob);
           var unsafe =
               segmentMetadata(workerSession, identity, unsafeJob).setContentLengthBytes(1).build();
 
           assertUploadRejectedAsInvalidMetadata(upload(channel, unsafe, new byte[] {1}));
-          assertThat(server.stopRendition(uuid(unsafeJob.getJobAttemptId()))).isTrue();
-          assertThat(worker.nextResponse().hasStopRendition()).isTrue();
+          assertThat(server.stopVariant(uuid(unsafeJob.getJobAttemptId()))).isTrue();
+          assertThat(worker.nextResponse().hasStopVariant()).isTrue();
         }
         assertThat(segmentStore.segmentExists(uuid(job.getStreamSessionId()), "720p/segment0.ts"))
             .isFalse();
@@ -631,9 +631,9 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
       var identity = workerIdentity(UUID.randomUUID());
       try (var worker = connect(channel, identity)) {
         var workerSession = worker.nextResponse().getSessionAccepted();
-        var job = renditionJob();
+        var job = variantJob();
         assertThat(server.dispatch(job)).isTrue();
-        assertThat(worker.nextResponse().getStartRendition().getJob()).isEqualTo(job);
+        assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
         var data = "segment".getBytes();
         var metadata =
             segmentMetadata(workerSession, identity, job)
@@ -659,9 +659,9 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
         var identity = workerIdentity(UUID.randomUUID());
         var worker = connect(channel, identity);
         var workerSession = worker.nextResponse().getSessionAccepted();
-        var job = renditionJob();
+        var job = variantJob();
         assertThat(server.dispatch(job)).isTrue();
-        assertThat(worker.nextResponse().getStartRendition().getJob()).isEqualTo(job);
+        assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
         var segmentData = ByteString.copyFromUtf8("in flight");
         var upload = beginSegmentUpload(channel);
         upload
@@ -736,17 +736,17 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
     return NettyChannelBuilder.forAddress("localhost", port).sslContext(sslContext).build();
   }
 
-  private CompletableFuture<WorkerSessionResponse> register(
+  private CompletableFuture<EstablishWorkerSessionResponse> register(
       ManagedChannel channel, UUID reportedWorkerId) {
     return send(channel, registration(reportedWorkerId));
   }
 
-  private CompletableFuture<WorkerSessionResponse> send(
-      ManagedChannel channel, WorkerSessionRequest request) {
-    var response = new CompletableFuture<WorkerSessionResponse>();
+  private CompletableFuture<EstablishWorkerSessionResponse> send(
+      ManagedChannel channel, EstablishWorkerSessionRequest request) {
+    var response = new CompletableFuture<EstablishWorkerSessionResponse>();
     var requestObserver =
         TranscodeWorkerServiceGrpc.newStub(channel)
-            .workerSession(new FirstResponseObserver(response));
+            .establishWorkerSession(new FirstResponseObserver(response));
     requestObserver.onNext(request);
     return response;
   }
@@ -761,17 +761,17 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
 
   private TestWorkerConnection connect(
       ManagedChannel channel, WorkerIdentity worker, UUID sourceNamespaceId) {
-    var responses = new LinkedBlockingQueue<WorkerSessionResponse>();
+    var responses = new LinkedBlockingQueue<EstablishWorkerSessionResponse>();
     var closed = new CompletableFuture<Void>();
     var requestObserver =
         TranscodeWorkerServiceGrpc.newStub(channel)
-            .workerSession(new QueuedResponseObserver(responses, closed));
+            .establishWorkerSession(new QueuedResponseObserver(responses, closed));
     requestObserver.onNext(registration(worker, sourceNamespaceId));
     return new TestWorkerConnection(requestObserver, responses, closed);
   }
 
-  private RenditionJob renditionJob() {
-    return RenditionJob.newBuilder()
+  private VariantJob variantJob() {
+    return VariantJob.newBuilder()
         .setStreamSessionId(uuid(UUID.randomUUID()))
         .setJobId(uuid(UUID.randomUUID()))
         .setJobAttemptId(uuid(UUID.randomUUID()))
@@ -779,20 +779,21 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
             MediaSourceRef.newBuilder()
                 .setSourceNamespaceId(uuid(SOURCE_NAMESPACE_ID))
                 .setRelativeKey("movie.mkv"))
-        .setRendition(RenditionSpec.newBuilder().setRenditionName("720p"))
+        .setVariant(VariantSpec.newBuilder().setVariantLabel("720p"))
         .build();
   }
 
-  private WorkerSessionRequest registration(UUID workerId) {
+  private EstablishWorkerSessionRequest registration(UUID workerId) {
     return registration(workerIdentity(workerId, UUID.randomUUID()));
   }
 
-  private WorkerSessionRequest registration(WorkerIdentity worker) {
+  private EstablishWorkerSessionRequest registration(WorkerIdentity worker) {
     return registration(worker, SOURCE_NAMESPACE_ID);
   }
 
-  private WorkerSessionRequest registration(WorkerIdentity worker, UUID sourceNamespaceId) {
-    return WorkerSessionRequest.newBuilder()
+  private EstablishWorkerSessionRequest registration(
+      WorkerIdentity worker, UUID sourceNamespaceId) {
+    return EstablishWorkerSessionRequest.newBuilder()
         .setRegistration(
             WorkerRegistration.newBuilder()
                 .setWorker(worker)
@@ -813,14 +814,14 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
   private SegmentUploadMetadata.Builder segmentMetadata(
       com.streamarr.transcode.v1.WorkerSessionAccepted workerSession,
       WorkerIdentity worker,
-      RenditionJob job) {
+      VariantJob job) {
     return SegmentUploadMetadata.newBuilder()
         .setWorkerSessionId(workerSession.getWorkerSessionId())
         .setWorker(worker)
         .setStreamSessionId(job.getStreamSessionId())
         .setJobId(job.getJobId())
         .setJobAttemptId(job.getJobAttemptId())
-        .setRenditionName(job.getRendition().getRenditionName())
+        .setVariantLabel(job.getVariant().getVariantLabel())
         .setSegmentName("segment0.ts")
         .setContentType(SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP2T);
   }
@@ -889,11 +890,11 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
     channel.shutdownNow().awaitTermination(5, TimeUnit.SECONDS);
   }
 
-  private record FirstResponseObserver(CompletableFuture<WorkerSessionResponse> response)
-      implements StreamObserver<WorkerSessionResponse> {
+  private record FirstResponseObserver(CompletableFuture<EstablishWorkerSessionResponse> response)
+      implements StreamObserver<EstablishWorkerSessionResponse> {
 
     @Override
-    public void onNext(WorkerSessionResponse value) {
+    public void onNext(EstablishWorkerSessionResponse value) {
       response.complete(value);
     }
 
@@ -911,11 +912,11 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
   }
 
   private record QueuedResponseObserver(
-      BlockingQueue<WorkerSessionResponse> responses, CompletableFuture<Void> closed)
-      implements StreamObserver<WorkerSessionResponse> {
+      BlockingQueue<EstablishWorkerSessionResponse> responses, CompletableFuture<Void> closed)
+      implements StreamObserver<EstablishWorkerSessionResponse> {
 
     @Override
-    public void onNext(WorkerSessionResponse value) {
+    public void onNext(EstablishWorkerSessionResponse value) {
       responses.add(value);
     }
 
@@ -964,12 +965,12 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
   }
 
   private record TestWorkerConnection(
-      StreamObserver<WorkerSessionRequest> requests,
-      BlockingQueue<WorkerSessionResponse> responses,
+      StreamObserver<EstablishWorkerSessionRequest> requests,
+      BlockingQueue<EstablishWorkerSessionResponse> responses,
       CompletableFuture<Void> closed)
       implements AutoCloseable {
 
-    private WorkerSessionResponse nextResponse() throws InterruptedException {
+    private EstablishWorkerSessionResponse nextResponse() throws InterruptedException {
       return Objects.requireNonNull(responses.poll(5, TimeUnit.SECONDS));
     }
 
@@ -977,7 +978,7 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
       closed.get(5, TimeUnit.SECONDS);
     }
 
-    private void send(WorkerSessionRequest request) {
+    private void send(EstablishWorkerSessionRequest request) {
       requests.onNext(request);
     }
 

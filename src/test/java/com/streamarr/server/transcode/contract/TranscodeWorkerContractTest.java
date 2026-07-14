@@ -3,19 +3,19 @@ package com.streamarr.server.transcode.contract;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.google.protobuf.Descriptors.Descriptor;
+import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.JobAttemptStarted;
 import com.streamarr.transcode.v1.MediaSourceRef;
-import com.streamarr.transcode.v1.RenditionJob;
 import com.streamarr.transcode.v1.SegmentContentType;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
-import com.streamarr.transcode.v1.StartRenditionCommand;
+import com.streamarr.transcode.v1.StartVariantCommand;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
 import com.streamarr.transcode.v1.UploadSegmentRequest;
 import com.streamarr.transcode.v1.Uuid;
+import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
-import com.streamarr.transcode.v1.WorkerSessionRequest;
 import io.grpc.MethodDescriptor.MethodType;
 import java.util.HashSet;
 import java.util.Set;
@@ -34,7 +34,7 @@ class TranscodeWorkerContractTest {
     var service = TranscodeWorkerServiceGrpc.getServiceDescriptor();
 
     assertThat(service.getMethods()).hasSize(2);
-    assertThat(TranscodeWorkerServiceGrpc.getWorkerSessionMethod().getType())
+    assertThat(TranscodeWorkerServiceGrpc.getEstablishWorkerSessionMethod().getType())
         .isEqualTo(MethodType.BIDI_STREAMING);
     assertThat(TranscodeWorkerServiceGrpc.getUploadSegmentMethod().getType())
         .isEqualTo(MethodType.CLIENT_STREAMING);
@@ -45,7 +45,7 @@ class TranscodeWorkerContractTest {
   void shouldCarrySelfReportedWorkerIdentityAndDistinctJobAttemptIdentity() throws Exception {
     var sourceNamespaceId = UUID.randomUUID();
     var registration =
-        WorkerSessionRequest.newBuilder()
+        EstablishWorkerSessionRequest.newBuilder()
             .setRegistration(
                 WorkerRegistration.newBuilder()
                     .setWorker(workerIdentity())
@@ -55,7 +55,7 @@ class TranscodeWorkerContractTest {
                     .setAvailableSlots(1))
             .build();
 
-    var parsedRegistration = WorkerSessionRequest.parseFrom(registration.toByteArray());
+    var parsedRegistration = EstablishWorkerSessionRequest.parseFrom(registration.toByteArray());
 
     assertThat(parsedRegistration.getRegistration().getWorker()).isEqualTo(workerIdentity());
     assertThat(parsedRegistration.getRegistration().getCapabilities().getSourceNamespaceIdsList())
@@ -65,10 +65,10 @@ class TranscodeWorkerContractTest {
     var jobId = UUID.randomUUID();
     var jobAttemptId = UUID.randomUUID();
     var start =
-        StartRenditionCommand.newBuilder()
+        StartVariantCommand.newBuilder()
             .setTarget(workerIdentity())
             .setJob(
-                RenditionJob.newBuilder()
+                VariantJob.newBuilder()
                     .setStreamSessionId(uuid(streamSessionId))
                     .setJobId(uuid(jobId))
                     .setJobAttemptId(uuid(jobAttemptId))
@@ -78,7 +78,7 @@ class TranscodeWorkerContractTest {
                             .setRelativeKey("movies/example.mkv")))
             .build();
 
-    var parsedStart = StartRenditionCommand.parseFrom(start.toByteArray());
+    var parsedStart = StartVariantCommand.parseFrom(start.toByteArray());
 
     assertThat(parsedStart.getJob().getStreamSessionId()).isEqualTo(uuid(streamSessionId));
     assertThat(parsedStart.getJob().getJobId()).isEqualTo(uuid(jobId));
@@ -109,7 +109,7 @@ class TranscodeWorkerContractTest {
             .setStreamSessionId(uuid(UUID.randomUUID()))
             .setJobId(uuid(UUID.randomUUID()))
             .setJobAttemptId(attemptId)
-            .setRenditionName("720p")
+            .setVariantLabel("720p")
             .setSegmentName("segment0.ts")
             .setContentType(SegmentContentType.SEGMENT_CONTENT_TYPE_VIDEO_MP2T)
             .setContentLengthBytes(4)
@@ -126,10 +126,10 @@ class TranscodeWorkerContractTest {
   @DisplayName("Should keep the wire vocabulary narrow and secret free")
   void shouldKeepTheWireVocabularyNarrowAndSecretFree() {
     var fields = new HashSet<String>();
-    collectFields(WorkerSessionRequest.getDescriptor(), fields);
+    collectFields(EstablishWorkerSessionRequest.getDescriptor(), fields);
     collectFields(WorkerRegistration.getDescriptor(), fields);
-    collectFields(StartRenditionCommand.getDescriptor(), fields);
-    collectFields(RenditionJob.getDescriptor(), fields);
+    collectFields(StartVariantCommand.getDescriptor(), fields);
+    collectFields(VariantJob.getDescriptor(), fields);
     collectFields(JobAttemptStarted.getDescriptor(), fields);
     collectFields(UploadSegmentRequest.getDescriptor(), fields);
 
