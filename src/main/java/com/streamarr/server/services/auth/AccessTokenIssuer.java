@@ -55,6 +55,7 @@ public class AccessTokenIssuer {
     var claims =
         JwtClaimsSet.builder()
             .issuer(properties.issuer())
+            .audience(List.of(properties.audience()))
             .id(UUID.randomUUID().toString())
             .subject(context.account().getId().toString())
             .issuedAt(now)

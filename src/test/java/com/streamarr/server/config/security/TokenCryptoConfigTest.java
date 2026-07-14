@@ -212,6 +212,7 @@ class TokenCryptoConfigTest {
             new JWSHeader.Builder(JWSAlgorithm.ES256).keyID(keys.signingKey().getKeyID()).build(),
             new JWTClaimsSet.Builder()
                 .issuer("streamarr")
+                .audience("streamarr")
                 .subject(accountId.toString())
                 .issueTime(Date.from(Instant.now()))
                 .claim(TokenClaims.ROLES, java.util.List.of(AccountRole.USER.name()))
@@ -243,6 +244,26 @@ class TokenCryptoConfigTest {
   void shouldRejectTokenFromForeignIssuer() {
     var keys = config.tokenSigningKeys(properties(KEY_A, List.of()));
     var token = mint(config.jwtEncoder(keys), "foreign-issuer");
+    var jwtDecoder = decoder(keys);
+
+    assertThatThrownBy(() -> jwtDecoder.decode(token)).isInstanceOf(JwtValidationException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject token without the expected audience")
+  void shouldRejectTokenWithoutExpectedAudience() {
+    var keys = config.tokenSigningKeys(properties(KEY_A, List.of()));
+    var token = mint(config.jwtEncoder(keys), claims -> claims.audience(List.of()));
+    var jwtDecoder = decoder(keys);
+
+    assertThatThrownBy(() -> jwtDecoder.decode(token)).isInstanceOf(JwtValidationException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject token addressed to a different audience")
+  void shouldRejectTokenAddressedToDifferentAudience() {
+    var keys = config.tokenSigningKeys(properties(KEY_A, List.of()));
+    var token = mint(config.jwtEncoder(keys), claims -> claims.audience(List.of("other-service")));
     var jwtDecoder = decoder(keys);
 
     assertThatThrownBy(() -> jwtDecoder.decode(token)).isInstanceOf(JwtValidationException.class);
@@ -341,6 +362,7 @@ class TokenCryptoConfigTest {
     var claims =
         JwtClaimsSet.builder()
             .issuer(issuer)
+            .audience(List.of("streamarr"))
             .subject(accountId.toString())
             .issuedAt(now)
             .expiresAt(now.plusSeconds(600))

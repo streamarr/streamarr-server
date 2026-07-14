@@ -1139,6 +1139,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     var claims =
         JwtClaimsSet.builder()
             .issuer("streamarr")
+            .audience(java.util.List.of("streamarr"))
             .subject(account.getId().toString())
             .issuedAt(now)
             .expiresAt(now.plus(Duration.ofMinutes(10)))

@@ -69,6 +69,7 @@ class PlaybackTokenIssuerTest {
     assertThat(token.scope()).isEqualTo(TokenScope.PLAYBACK);
     var decoded = decode(token.value());
     assertThat(decoded.getClaimAsString(JwtClaimNames.ISS)).isEqualTo("streamarr");
+    assertThat(decoded.getAudience()).containsExactly("streamarr");
     assertThat(decoded.getSubject()).isEqualTo(accountId.toString());
     assertThat(decoded.getClaimAsString(TokenClaims.SESSION_ID)).isEqualTo(sessionId.toString());
     assertThat(decoded.getClaimAsString(TokenClaims.SCOPE)).isEqualTo("playback");
