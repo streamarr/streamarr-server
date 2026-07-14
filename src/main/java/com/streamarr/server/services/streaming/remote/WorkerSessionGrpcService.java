@@ -3,6 +3,8 @@ package com.streamarr.server.services.streaming.remote;
 import static com.streamarr.transcode.protocol.ProtoUuid.fromProto;
 
 import com.streamarr.server.services.streaming.SegmentStore;
+import com.streamarr.transcode.v1.JobAttemptFailed;
+import com.streamarr.transcode.v1.RenditionJob;
 import com.streamarr.transcode.v1.TranscodeWorkerServiceGrpc;
 import com.streamarr.transcode.v1.UploadSegmentRequest;
 import com.streamarr.transcode.v1.UploadSegmentResponse;
@@ -10,8 +12,11 @@ import com.streamarr.transcode.v1.WorkerSessionRequest;
 import com.streamarr.transcode.v1.WorkerSessionResponse;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
+import java.util.Optional;
 import java.util.UUID;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 final class WorkerSessionGrpcService
     extends TranscodeWorkerServiceGrpc.TranscodeWorkerServiceImplBase {
 
@@ -42,6 +47,9 @@ final class WorkerSessionGrpcService
   public StreamObserver<UploadSegmentRequest> uploadSegment(
       StreamObserver<UploadSegmentResponse> responseObserver) {
     if (!segmentUploadAdmission.tryOpen()) {
+      log.warn(
+          "Rejecting segment upload from worker {}: concurrent upload limit reached",
+          WorkerIdentityServerInterceptor.AUTHENTICATED_WORKER_ID.get());
       responseObserver.onError(
           Status.RESOURCE_EXHAUSTED
               .withDescription("Concurrent segment upload limit reached")
@@ -136,20 +144,51 @@ final class WorkerSessionGrpcService
     }
 
     private void finishJobAttempt(WorkerSessionRequest request) {
-      var jobAttemptId =
-          switch (request.getEventCase()) {
-            case JOB_ATTEMPT_FAILED -> request.getJobAttemptFailed().getJobAttemptId();
-            case JOB_ATTEMPT_COMPLETED -> request.getJobAttemptCompleted().getJobAttemptId();
-            case JOB_ATTEMPT_STOPPED -> request.getJobAttemptStopped().getJobAttemptId();
-            default -> null;
-          };
-      if (jobAttemptId != null) {
-        workerConnections.finishJobAttempt(
-            authenticatedWorkerId, workerSessionId, fromProto(jobAttemptId));
+      switch (request.getEventCase()) {
+        case JOB_ATTEMPT_STARTED ->
+            log.debug(
+                "Worker {} started job attempt {}",
+                authenticatedWorkerId,
+                fromProto(request.getJobAttemptStarted().getJobAttemptId()));
+        case JOB_ATTEMPT_FAILED -> reportFailedJobAttempt(request.getJobAttemptFailed());
+        case JOB_ATTEMPT_COMPLETED -> finish(request.getJobAttemptCompleted().getJobAttemptId());
+        case JOB_ATTEMPT_STOPPED -> finish(request.getJobAttemptStopped().getJobAttemptId());
+        default ->
+            log.warn(
+                "Ignoring unexpected {} event on established session of worker {}",
+                request.getEventCase(),
+                authenticatedWorkerId);
       }
     }
 
+    private void reportFailedJobAttempt(JobAttemptFailed failed) {
+      finish(failed.getJobAttemptId())
+          .ifPresentOrElse(
+              job ->
+                  log.warn(
+                      "Worker {} failed rendition {} of stream session {}: {}",
+                      authenticatedWorkerId,
+                      job.getRendition().getRenditionName(),
+                      fromProto(job.getStreamSessionId()),
+                      failed.getFailure()),
+              () ->
+                  log.warn(
+                      "Worker {} failed unknown job attempt {}: {}",
+                      authenticatedWorkerId,
+                      fromProto(failed.getJobAttemptId()),
+                      failed.getFailure()));
+    }
+
+    private Optional<RenditionJob> finish(com.streamarr.transcode.v1.Uuid jobAttemptId) {
+      return workerConnections.finishJobAttempt(
+          authenticatedWorkerId, workerSessionId, fromProto(jobAttemptId));
+    }
+
     private void reject(Status status) {
+      log.warn(
+          "Rejecting worker session of worker {}: {}",
+          authenticatedWorkerId,
+          status.getDescription());
       responseObserver.onError(status.asRuntimeException());
     }
   }

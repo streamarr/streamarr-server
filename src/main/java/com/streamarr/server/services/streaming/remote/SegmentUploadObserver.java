@@ -13,7 +13,9 @@ import java.io.ByteArrayOutputStream;
 import java.util.UUID;
 import lombok.Builder;
 import lombok.NonNull;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Builder
 final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest> {
 
@@ -107,7 +109,12 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
     try {
       segmentStore.storeSegment(
           fromProto(metadata.getStreamSessionId()), qualifiedSegmentName(), data.toByteArray());
-    } catch (RuntimeException _) {
+    } catch (RuntimeException e) {
+      log.error(
+          "Failed to store segment {} for stream session {}",
+          qualifiedSegmentName(),
+          fromProto(metadata.getStreamSessionId()),
+          e);
       reject(Status.INTERNAL.withDescription("Segment could not be stored"));
       return;
     }

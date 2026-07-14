@@ -1,5 +1,6 @@
 package com.streamarr.server.services.streaming.remote;
 
+import static com.streamarr.transcode.protocol.ProtoUuid.fromProto;
 import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -10,6 +11,7 @@ import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
 import com.streamarr.transcode.v1.WorkerSessionResponse;
+import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import java.util.List;
 import java.util.UUID;
@@ -59,6 +61,40 @@ class LiveWorkerConnectionRegistryTest {
             WorkerSessionResponse.CommandCase.START_RENDITION);
   }
 
+  @Test
+  @DisplayName(
+      "Should report dispatch failure when the worker call is cancelled but not yet reaped")
+  void shouldReportDispatchFailureWhenWorkerCallIsCancelledButNotYetReaped() {
+    var registry = new LiveWorkerConnectionRegistry();
+    var observer = new CancellableObserver();
+    registry.register(WORKER_ID, registration(), observer);
+    observer.cancel();
+    var job = renditionJob();
+
+    var dispatched = registry.dispatch(job);
+
+    assertThat(dispatched).isFalse();
+    assertThat(registry.isRunning(fromProto(job.getStreamSessionId()))).isFalse();
+    assertThat(registry.availableSlots()).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName(
+      "Should survive stopping a session whose worker call is cancelled but not yet reaped")
+  void shouldSurviveStoppingSessionWhoseWorkerCallIsCancelledButNotYetReaped() {
+    var registry = new LiveWorkerConnectionRegistry();
+    var observer = new CancellableObserver();
+    registry.register(WORKER_ID, registration(), observer);
+    var job = renditionJob();
+    assertThat(registry.dispatch(job)).isTrue();
+    observer.cancel();
+    var streamSessionId = fromProto(job.getStreamSessionId());
+
+    registry.stopStreamSession(streamSessionId);
+
+    assertThat(registry.isRunning(streamSessionId)).isFalse();
+  }
+
   private static WorkerRegistration registration() {
     return WorkerRegistration.newBuilder()
         .setWorker(
@@ -102,6 +138,32 @@ class LiveWorkerConnectionRegistryTest {
         throw new AssertionError("Replacement worker should remain connected");
       }
     };
+  }
+
+  private static final class CancellableObserver implements StreamObserver<WorkerSessionResponse> {
+
+    private boolean cancelled;
+
+    private void cancel() {
+      cancelled = true;
+    }
+
+    @Override
+    public void onNext(WorkerSessionResponse value) {
+      if (cancelled) {
+        throw Status.CANCELLED.withDescription("call already cancelled").asRuntimeException();
+      }
+    }
+
+    @Override
+    public void onError(Throwable throwable) {
+      cancelled = true;
+    }
+
+    @Override
+    public void onCompleted() {
+      cancelled = true;
+    }
   }
 
   private record BlockingCloseObserver(CountDownLatch closing, CountDownLatch continueClosing)

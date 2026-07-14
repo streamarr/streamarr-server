@@ -1,9 +1,15 @@
 package com.streamarr.server.services.streaming.remote;
 
+import static com.streamarr.transcode.protocol.ProtoUuid.fromProto;
 import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.transcode.v1.JobAttemptFailed;
+import com.streamarr.transcode.v1.JobAttemptFailure;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.RenditionJob;
 import com.streamarr.transcode.v1.RenditionSpec;
@@ -14,6 +20,7 @@ import com.streamarr.transcode.v1.UploadSegmentResponse;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
+import com.streamarr.transcode.v1.WorkerSessionRequest;
 import com.streamarr.transcode.v1.WorkerSessionResponse;
 import io.grpc.Context;
 import io.grpc.Status;
@@ -23,10 +30,101 @@ import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 @Tag("UnitTest")
 @DisplayName("Worker Session gRPC Service Tests")
 class WorkerSessionGrpcServiceTest {
+
+  @Test
+  @DisplayName("Should log the reported failure reason when a worker fails a job attempt")
+  void shouldLogReportedFailureReasonWhenWorkerFailsJobAttempt() throws Exception {
+    var workerId = UUID.randomUUID();
+    var sourceNamespaceId = UUID.randomUUID();
+    var registry = new LiveWorkerConnectionRegistry();
+    var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
+    var session = workerSession(service, workerId, new IgnoringResponseObserver());
+    session.onNext(
+        WorkerSessionRequest.newBuilder()
+            .setRegistration(registration(worker(workerId), sourceNamespaceId))
+            .build());
+    var job = renditionJob(sourceNamespaceId);
+    assertThat(registry.dispatch(job)).isTrue();
+    var streamSessionId = fromProto(job.getStreamSessionId());
+
+    var warnings = captureWarnings(WorkerSessionGrpcService.class);
+    try {
+      session.onNext(
+          WorkerSessionRequest.newBuilder()
+              .setJobAttemptFailed(
+                  JobAttemptFailed.newBuilder()
+                      .setJobAttemptId(job.getJobAttemptId())
+                      .setFailure(JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED))
+              .build());
+    } finally {
+      detach(warnings);
+    }
+
+    assertThat(registry.isRunning(streamSessionId)).isFalse();
+    assertThat(warnings.list)
+        .extracting(ILoggingEvent::getFormattedMessage)
+        .anyMatch(
+            message ->
+                message.contains(streamSessionId.toString())
+                    && message.contains("720p")
+                    && message.contains("TRANSCODE_FAILED"));
+  }
+
+  @Test
+  @DisplayName("Should warn instead of silently dropping an unexpected worker session event")
+  void shouldWarnInsteadOfSilentlyDroppingUnexpectedWorkerSessionEvent() throws Exception {
+    var workerId = UUID.randomUUID();
+    var sourceNamespaceId = UUID.randomUUID();
+    var registry = new LiveWorkerConnectionRegistry();
+    var service = new WorkerSessionGrpcService(registry, new FakeSegmentStore());
+    var session = workerSession(service, workerId, new IgnoringResponseObserver());
+    var registration =
+        WorkerSessionRequest.newBuilder()
+            .setRegistration(registration(worker(workerId), sourceNamespaceId))
+            .build();
+    session.onNext(registration);
+
+    var warnings = captureWarnings(WorkerSessionGrpcService.class);
+    try {
+      session.onNext(registration);
+    } finally {
+      detach(warnings);
+    }
+
+    assertThat(warnings.list)
+        .extracting(ILoggingEvent::getFormattedMessage)
+        .anyMatch(message -> message.contains("REGISTRATION"));
+  }
+
+  private static StreamObserver<WorkerSessionRequest> workerSession(
+      WorkerSessionGrpcService service,
+      UUID workerId,
+      StreamObserver<WorkerSessionResponse> responseObserver)
+      throws Exception {
+    return Context.current()
+        .withValue(WorkerIdentityServerInterceptor.AUTHENTICATED_WORKER_ID, workerId)
+        .call(() -> service.workerSession(responseObserver));
+  }
+
+  private static ListAppender<ILoggingEvent> captureWarnings(Class<?> loggerClass) {
+    var appender = new ListAppender<ILoggingEvent>();
+    appender.start();
+    logbackLogger(loggerClass).addAppender(appender);
+    return appender;
+  }
+
+  private static void detach(ListAppender<ILoggingEvent> appender) {
+    logbackLogger(WorkerSessionGrpcService.class).detachAppender(appender);
+  }
+
+  private static Logger logbackLogger(Class<?> loggerClass) {
+    return (Logger) LoggerFactory.getLogger(loggerClass);
+  }
 
   @Test
   @DisplayName("Should reject an upload when the global concurrent upload limit is exhausted")
