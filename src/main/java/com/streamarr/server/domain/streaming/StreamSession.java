@@ -26,6 +26,7 @@ public class StreamSession {
   private final StreamingOptions options;
   private final Instant createdAt;
 
+  @Getter(lombok.AccessLevel.NONE)
   @Builder.Default
   private final Map<String, TranscodeHandle> variantHandles = new ConcurrentHashMap<>();
 
@@ -56,6 +57,11 @@ public class StreamSession {
   public void setLastAccessedAt(Instant accessedAt) {
     playbackSnapshot.updateAndGet(
         current -> new PlaybackSnapshot(current.positionSeconds(), current.state(), accessedAt));
+  }
+
+  /** Live read-only view; all mutation goes through {@link #setVariantHandle}. */
+  public Map<String, TranscodeHandle> getVariantHandles() {
+    return Collections.unmodifiableMap(variantHandles);
   }
 
   public TranscodeHandle getHandle() {
