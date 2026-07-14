@@ -14,6 +14,8 @@ import org.springframework.validation.annotation.Validated;
 @ConfigurationProperties(prefix = "auth.token")
 public record AuthTokenProperties(
     String signingKey,
+    // RFC 7519 iss claim; an HTTPS URL enables standard issuer-based JWKS resolution.
+    String issuer,
     List<String> verificationKeys,
     // Bounded API staleness rides this ceiling (ADR 0016): revocation prevents renewal, and
     // access-token expiry bounds the residual authorization window.
@@ -21,6 +23,14 @@ public record AuthTokenProperties(
         Duration accessTokenTtl,
     @NotNull @DurationMin(seconds = 0, inclusive = false) Duration refreshTokenTtl,
     @NotNull @DurationMin Duration rotationGrace) {
+
+  private static final String DEFAULT_ISSUER = "streamarr";
+
+  public AuthTokenProperties {
+    if (issuer == null || issuer.isBlank()) {
+      issuer = DEFAULT_ISSUER;
+    }
+  }
 
   public static class AuthTokenPropertiesBuilder {
 

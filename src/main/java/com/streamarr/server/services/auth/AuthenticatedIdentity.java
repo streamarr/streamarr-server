@@ -53,13 +53,13 @@ public record AuthenticatedIdentity(
   public static AuthenticatedIdentity fromJwt(Jwt jwt) {
     return AuthenticatedIdentity.builder()
         .accountId(UUID.fromString(jwt.getSubject()))
-        .role(AccountRole.valueOf(jwt.getClaimAsString(TokenClaims.ROLE)))
+        .role(AccountRole.valueOf(jwt.getClaimAsStringList(TokenClaims.ROLES).getFirst()))
         .sessionId(UUID.fromString(jwt.getClaimAsString(TokenClaims.SESSION_ID)))
         .scope(TokenScope.valueOf(jwt.getClaimAsString(TokenClaims.SCOPE).toUpperCase(Locale.ROOT)))
         .householdId(uuidClaim(jwt, TokenClaims.HOUSEHOLD_ID))
         .householdRole(householdRoleClaim(jwt))
         .profileId(uuidClaim(jwt, TokenClaims.PROFILE_ID))
-        .streamSessionId(uuidClaim(jwt, TokenClaims.STREAM_SESSION))
+        .streamSessionId(uuidClaim(jwt, TokenClaims.STREAM_SESSION_ID))
         .build();
   }
 

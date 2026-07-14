@@ -9,6 +9,7 @@ import com.streamarr.server.repositories.auth.ProfileRepository;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
@@ -53,12 +54,12 @@ public class AccessTokenIssuer {
 
     var claims =
         JwtClaimsSet.builder()
-            .issuer(TokenContract.ISSUER)
+            .issuer(properties.issuer())
             .id(UUID.randomUUID().toString())
             .subject(context.account().getId().toString())
             .issuedAt(now)
             .expiresAt(expiresAt)
-            .claim(TokenClaims.ROLE, context.account().getAccountRole().name())
+            .claim(TokenClaims.ROLES, List.of(context.account().getAccountRole().name()))
             .claim(TokenClaims.SESSION_ID, context.session().getId().toString())
             .claim(TokenClaims.SCOPE, scope.claimValue());
 

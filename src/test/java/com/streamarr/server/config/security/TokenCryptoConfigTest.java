@@ -13,7 +13,6 @@ import com.nimbusds.jwt.PlainJWT;
 import com.nimbusds.jwt.SignedJWT;
 import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.services.auth.TokenClaims;
-import com.streamarr.server.services.auth.TokenContract;
 import com.streamarr.server.services.auth.TokenIdentityValidator;
 import com.streamarr.server.services.auth.TokenScope;
 import java.time.Duration;
@@ -212,10 +211,10 @@ class TokenCryptoConfigTest {
         new SignedJWT(
             new JWSHeader.Builder(JWSAlgorithm.ES256).keyID(keys.signingKey().getKeyID()).build(),
             new JWTClaimsSet.Builder()
-                .issuer(TokenContract.ISSUER)
+                .issuer("streamarr")
                 .subject(accountId.toString())
                 .issueTime(Date.from(Instant.now()))
-                .claim(TokenClaims.ROLE, AccountRole.USER.name())
+                .claim(TokenClaims.ROLES, java.util.List.of(AccountRole.USER.name()))
                 .claim(TokenClaims.SESSION_ID, sessionId.toString())
                 .claim(TokenClaims.SCOPE, TokenScope.ACCOUNT.claimValue())
                 .build());
@@ -325,7 +324,7 @@ class TokenCryptoConfigTest {
   }
 
   private String mint(JwtEncoder encoder) {
-    return mint(encoder, TokenContract.ISSUER);
+    return mint(encoder, "streamarr");
   }
 
   private String mint(JwtEncoder encoder, String issuer) {
@@ -333,7 +332,7 @@ class TokenCryptoConfigTest {
   }
 
   private String mint(JwtEncoder encoder, Consumer<JwtClaimsSet.Builder> customizer) {
-    return mint(encoder, TokenContract.ISSUER, customizer);
+    return mint(encoder, "streamarr", customizer);
   }
 
   private String mint(
@@ -345,7 +344,7 @@ class TokenCryptoConfigTest {
             .subject(accountId.toString())
             .issuedAt(now)
             .expiresAt(now.plusSeconds(600))
-            .claim(TokenClaims.ROLE, AccountRole.USER.name())
+            .claim(TokenClaims.ROLES, java.util.List.of(AccountRole.USER.name()))
             .claim(TokenClaims.SESSION_ID, sessionId.toString())
             .claim(TokenClaims.SCOPE, TokenScope.ACCOUNT.claimValue());
     customizer.accept(claims);
@@ -357,7 +356,7 @@ class TokenCryptoConfigTest {
   }
 
   private JwtDecoder decoder(TokenSigningKeys keys) {
-    return config.jwtDecoder(keys, new TokenIdentityValidator());
+    return config.jwtDecoder(keys, new TokenIdentityValidator(), properties("", List.of()));
   }
 
   private static String tamperSignature(String token) {

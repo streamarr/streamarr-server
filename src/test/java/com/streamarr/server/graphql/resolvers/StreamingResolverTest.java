@@ -98,6 +98,7 @@ class StreamingResolverTest {
       var crypto = new TokenCryptoConfig();
       return new PlaybackTokenIssuer(
           crypto.jwtEncoder(crypto.tokenSigningKeys(tokenProperties())),
+          tokenProperties(),
           java.time.Clock.systemUTC(),
           authority -> true);
     }

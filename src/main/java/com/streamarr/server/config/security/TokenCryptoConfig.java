@@ -13,7 +13,6 @@ import com.nimbusds.jose.proc.JWSVerificationKeySelector;
 import com.nimbusds.jose.proc.SecurityContext;
 import com.nimbusds.jwt.proc.DefaultJWTProcessor;
 import com.streamarr.server.services.auth.StrictJwtExpiryValidator;
-import com.streamarr.server.services.auth.TokenContract;
 import com.streamarr.server.services.auth.TokenIdentityValidator;
 import java.security.KeyFactory;
 import java.security.NoSuchAlgorithmException;
@@ -78,7 +77,10 @@ public class TokenCryptoConfig {
    * validation.
    */
   @Bean
-  public JwtDecoder jwtDecoder(TokenSigningKeys keys, TokenIdentityValidator identityValidator) {
+  public JwtDecoder jwtDecoder(
+      TokenSigningKeys keys,
+      TokenIdentityValidator identityValidator,
+      AuthTokenProperties properties) {
     var processor = new DefaultJWTProcessor<SecurityContext>();
     processor.setJWSKeySelector(
         new JWSVerificationKeySelector<>(
@@ -92,7 +94,7 @@ public class TokenCryptoConfig {
     // mandatory with zero leeway, overriding the default 60s-skew expiry tolerance.
     decoder.setJwtValidator(
         new DelegatingOAuth2TokenValidator<>(
-            JwtValidators.createDefaultWithIssuer(TokenContract.ISSUER),
+            JwtValidators.createDefaultWithIssuer(properties.issuer()),
             new StrictJwtExpiryValidator(Clock.systemUTC()),
             identityValidator));
     return decoder;
