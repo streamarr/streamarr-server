@@ -94,21 +94,34 @@ class StreamControllerIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should return master playlist with correct content type when session exists")
-  void shouldReturnMasterPlaylistWithCorrectContentTypeWhenSessionExists() throws Exception {
+  @DisplayName("Should return multivariant playlist with correct content type when session exists")
+  void shouldReturnMultivariantPlaylistWithCorrectContentTypeWhenSessionExists() throws Exception {
     var session = StreamSessionFixture.buildMpegtsSession();
     STUB_SERVICE.addSession(session);
 
     var result =
         mockMvc
             .perform(
-                get("/api/stream/{id}/master.m3u8", session.getSessionId())
+                get("/api/stream/{id}/multivariant.m3u8", session.getSessionId())
                     .param("t", playbackToken(session.getSessionId())))
             .andExpect(status().isOk())
             .andReturn();
 
     assertThat(result.getResponse().getContentType()).isEqualTo("application/vnd.apple.mpegurl");
     assertThat(result.getResponse().getContentAsString()).contains("#EXTM3U");
+  }
+
+  @Test
+  @DisplayName("Should keep serving the master playlist alias for existing clients")
+  void shouldKeepServingMasterPlaylistAliasForExistingClients() throws Exception {
+    var session = StreamSessionFixture.buildMpegtsSession();
+    STUB_SERVICE.addSession(session);
+
+    mockMvc
+        .perform(
+            get("/api/stream/{id}/master.m3u8", session.getSessionId())
+                .param("t", playbackToken(session.getSessionId())))
+        .andExpect(status().isOk());
   }
 
   @Test

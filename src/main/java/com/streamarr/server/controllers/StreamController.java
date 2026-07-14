@@ -36,14 +36,16 @@ public class StreamController {
   private final SegmentStore segmentStore;
   private final AuthorizationService authorizationService;
 
-  @GetMapping("/{sessionId}/master.m3u8")
-  public ResponseEntity<String> getMasterPlaylist(@PathVariable UUID sessionId) {
+  // RFC 8216bis renamed Master Playlist to Multivariant Playlist; the master.m3u8 route stays
+  // as an alias for players holding previously minted URLs.
+  @GetMapping({"/{sessionId}/multivariant.m3u8", "/{sessionId}/master.m3u8"})
+  public ResponseEntity<String> getMultivariantPlaylist(@PathVariable UUID sessionId) {
     var session = findSession(sessionId);
     if (session.isEmpty()) {
       return ResponseEntity.notFound().build();
     }
 
-    var playlist = playlistService.generateMasterPlaylist(session.get(), playbackToken());
+    var playlist = playlistService.generateMultivariantPlaylist(session.get(), playbackToken());
 
     return ResponseEntity.ok().contentType(HLS_MEDIA_TYPE).body(playlist);
   }

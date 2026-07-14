@@ -192,7 +192,7 @@ class StreamingResolverTest {
     String transcodeMode = context.read("data.createStreamSession.transcodeMode");
 
     assertThat(id).isEqualTo(sessionId.toString());
-    assertThat(streamUrl).contains("/api/stream/" + sessionId + "/master.m3u8");
+    assertThat(streamUrl).contains("/api/stream/" + sessionId + "/multivariant.m3u8");
     assertThat(transcodeMode).isEqualTo("REMUX");
     assertThat(STUB_SERVICE.getLastCreateProfileId()).isEqualTo(TestIdentityConstants.PROFILE_ID);
   }
@@ -217,7 +217,7 @@ class StreamingResolverTest {
     String streamUrl =
         dgsQueryExecutor.executeAndExtractJsonPath(mutation, "data.createStreamSession.streamUrl");
 
-    assertThat(streamUrl).startsWith("/api/stream/" + sessionId + "/master.m3u8?t=");
+    assertThat(streamUrl).startsWith("/api/stream/" + sessionId + "/multivariant.m3u8?t=");
     assertThat(streamUrl.substring(streamUrl.indexOf("?t=") + 3)).matches("[A-Za-z0-9._-]+");
   }
 
