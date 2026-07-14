@@ -149,7 +149,12 @@ public final class TranscodeWorker implements AutoCloseable {
                     JobAttemptStarted.newBuilder().setJobAttemptId(job.getJobAttemptId()))
                 .build());
       }
-    } catch (IOException | RuntimeException _) {
+    } catch (IOException | RuntimeException e) {
+      log.error(
+          "Failed to start rendition {} of stream session {}",
+          job.getRendition().getRenditionName(),
+          fromProto(job.getStreamSessionId()),
+          e);
       deleteOutputDirectory(outputDirectory);
       sendFailure(job, JobAttemptFailure.JOB_ATTEMPT_FAILURE_STARTUP_FAILED);
       return;
@@ -164,7 +169,12 @@ public final class TranscodeWorker implements AutoCloseable {
     } catch (InterruptedException _) {
       Thread.currentThread().interrupt();
       failRendition(job, JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED);
-    } catch (IOException | ExecutionException | TimeoutException | RuntimeException _) {
+    } catch (IOException | ExecutionException | TimeoutException | RuntimeException e) {
+      log.error(
+          "Rendition {} of stream session {} failed",
+          job.getRendition().getRenditionName(),
+          fromProto(job.getStreamSessionId()),
+          e);
       failRendition(job, JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED);
     } finally {
       deleteOutputDirectory(outputDirectory);
