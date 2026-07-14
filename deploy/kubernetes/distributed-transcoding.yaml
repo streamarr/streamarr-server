@@ -17,8 +17,15 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: streamarr-server
+  labels:
+    app.kubernetes.io/name: streamarr-server
+    app.kubernetes.io/component: control-plane
 spec:
   replicas: 1
+  # The in-memory session and worker registries require exactly one server; a rolling update
+  # would briefly run two servers behind the same Service and split-brain both registries.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: streamarr-server
@@ -26,19 +33,53 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: streamarr-server
+        app.kubernetes.io/component: control-plane
     spec:
       containers:
         - name: server
-          image: streamarr/streamarr-server:latest
+          # Replace with the release you are deploying; :latest breaks rollback.
+          image: streamarr/streamarr-server:vX.Y.Z
           securityContext:
             runAsNonRoot: true
             runAsUser: 1000
             runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              memory: 2Gi
           ports:
             - name: http
               containerPort: 8080
             - name: worker-grpc
               containerPort: 9090
+          # Spring Boot exposes these probe groups automatically on Kubernetes. Do not add the
+          # transcodeExecutor health indicator to either group: readiness failure would unroute
+          # the worker-grpc port on this shared Service, so a zero-worker server could never
+          # become ready again.
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 2
+            failureThreshold: 60
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 10
           env:
             - name: SPRING_DATASOURCE_URL
               valueFrom:
@@ -89,6 +130,11 @@ spec:
               csi.cert-manager.io/issuer-kind: ClusterIssuer
               csi.cert-manager.io/dns-names: streamarr-server,streamarr-server.${POD_NAMESPACE}.svc,streamarr-server.${POD_NAMESPACE}.svc.cluster.local
               csi.cert-manager.io/key-usages: digital signature,key encipherment,server auth
+              # Certificates are read once at process start (no hot reload yet), so the lifetime
+              # must exceed the pod's expected uptime. Restart the pod before the 90-day expiry;
+              # the renewed file is on disk from day 60.
+              csi.cert-manager.io/duration: 2160h
+              csi.cert-manager.io/renew-before: 720h
               csi.cert-manager.io/certificate-file: tls.crt
               csi.cert-manager.io/privatekey-file: tls.key
               csi.cert-manager.io/ca-file: ca.crt
@@ -98,6 +144,9 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: streamarr-transcode-worker
+  labels:
+    app.kubernetes.io/name: streamarr-transcode-worker
+    app.kubernetes.io/component: worker
 spec:
   replicas: 2
   selector:
@@ -107,16 +156,30 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: streamarr-transcode-worker
+        app.kubernetes.io/component: worker
     spec:
       containers:
         - name: worker
-          image: streamarr/streamarr-server:latest
+          # Replace with the release you are deploying; :latest breaks rollback.
+          image: streamarr/streamarr-server:vX.Y.Z
           command:
             - worker
           securityContext:
             runAsNonRoot: true
             runAsUser: 1000
             runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: "1"
+              memory: 512Mi
+            limits:
+              memory: 1Gi
           env:
             - name: TRANSCODE_WORKER_CONTROL_PLANE_HOST
               value: streamarr-server
@@ -156,6 +219,10 @@ spec:
               csi.cert-manager.io/issuer-kind: ClusterIssuer
               csi.cert-manager.io/uri-sans: spiffe://streamarr.example/streamarr/worker/${POD_UID}
               csi.cert-manager.io/key-usages: digital signature,key encipherment,client auth
+              # Certificates are read once at process start (no hot reload yet); see the server
+              # volume note. Worker pods are cattle — replacing a pod also refreshes its identity.
+              csi.cert-manager.io/duration: 2160h
+              csi.cert-manager.io/renew-before: 720h
               csi.cert-manager.io/certificate-file: tls.crt
               csi.cert-manager.io/privatekey-file: tls.key
               csi.cert-manager.io/ca-file: ca.crt
