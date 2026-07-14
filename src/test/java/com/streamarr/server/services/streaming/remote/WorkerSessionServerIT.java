@@ -23,6 +23,7 @@ import com.streamarr.transcode.v1.VariantSpec;
 import com.streamarr.transcode.v1.WorkerCapabilities;
 import com.streamarr.transcode.v1.WorkerIdentity;
 import com.streamarr.transcode.v1.WorkerRegistration;
+import com.streamarr.transcode.v1.WorkerSessionAccepted;
 import io.grpc.ManagedChannel;
 import io.grpc.Status;
 import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts;
@@ -812,9 +813,7 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
   }
 
   private SegmentUploadMetadata.Builder segmentMetadata(
-      com.streamarr.transcode.v1.WorkerSessionAccepted workerSession,
-      WorkerIdentity worker,
-      VariantJob job) {
+      WorkerSessionAccepted workerSession, WorkerIdentity worker, VariantJob job) {
     return SegmentUploadMetadata.newBuilder()
         .setWorkerSessionId(workerSession.getWorkerSessionId())
         .setWorker(worker)

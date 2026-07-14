@@ -21,6 +21,7 @@ import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import java.time.Instant;
+import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -125,13 +126,13 @@ class SessionScopeRevocationSafetyIT extends AbstractIntegrationTest {
     assertRevocationSurvived(session.getId());
   }
 
-  private void assertRevocationSurvived(java.util.UUID sessionId) {
+  private void assertRevocationSurvived(UUID sessionId) {
     var reloaded = authSessionRepository.findById(sessionId).orElseThrow();
     assertThat(reloaded.getRevokedAt()).isNotNull();
     assertThat(reloaded.getRevokedReason()).isEqualTo(SessionRevocationReason.LOGOUT);
   }
 
-  private void revoke(java.util.UUID sessionId) {
+  private void revoke(UUID sessionId) {
     new TransactionTemplate(transactionManager)
         .executeWithoutResult(
             _ ->
@@ -141,7 +142,7 @@ class SessionScopeRevocationSafetyIT extends AbstractIntegrationTest {
                     .isTrue());
   }
 
-  private void revokeLink(UserAccount owner, java.util.UUID householdId, java.util.UUID profileId) {
+  private void revokeLink(UserAccount owner, UUID householdId, UUID profileId) {
     new TransactionTemplate(transactionManager)
         .executeWithoutResult(
             _ ->

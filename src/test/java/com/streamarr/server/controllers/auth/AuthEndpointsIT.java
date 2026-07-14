@@ -37,6 +37,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
@@ -1139,12 +1140,12 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     var claims =
         JwtClaimsSet.builder()
             .issuer("streamarr")
-            .audience(java.util.List.of("streamarr"))
+            .audience(List.of("streamarr"))
             .subject(account.getId().toString())
             .issuedAt(now)
             .expiresAt(now.plus(Duration.ofMinutes(10)))
             .id(UUID.randomUUID().toString())
-            .claim(TokenClaims.ROLES, java.util.List.of(account.getAccountRole().name()))
+            .claim(TokenClaims.ROLES, List.of(account.getAccountRole().name()))
             .claim(TokenClaims.SESSION_ID, session.getId().toString())
             .claim(TokenClaims.SCOPE, "account");
     customizeClaims.accept(claims);

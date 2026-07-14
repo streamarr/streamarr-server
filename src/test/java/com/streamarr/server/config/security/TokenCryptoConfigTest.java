@@ -215,7 +215,7 @@ class TokenCryptoConfigTest {
                 .audience("streamarr")
                 .subject(accountId.toString())
                 .issueTime(Date.from(Instant.now()))
-                .claim(TokenClaims.ROLES, java.util.List.of(AccountRole.USER.name()))
+                .claim(TokenClaims.ROLES, List.of(AccountRole.USER.name()))
                 .claim(TokenClaims.SESSION_ID, sessionId.toString())
                 .claim(TokenClaims.SCOPE, TokenScope.ACCOUNT.claimValue())
                 .build());
@@ -366,7 +366,7 @@ class TokenCryptoConfigTest {
             .subject(accountId.toString())
             .issuedAt(now)
             .expiresAt(now.plusSeconds(600))
-            .claim(TokenClaims.ROLES, java.util.List.of(AccountRole.USER.name()))
+            .claim(TokenClaims.ROLES, List.of(AccountRole.USER.name()))
             .claim(TokenClaims.SESSION_ID, sessionId.toString())
             .claim(TokenClaims.SCOPE, TokenScope.ACCOUNT.claimValue());
     customizer.accept(claims);
