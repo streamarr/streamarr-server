@@ -15,10 +15,13 @@ import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 final class LiveWorkerConnectionRegistry {
 
   private final ConcurrentHashMap<UUID, WorkerConnection> connections = new ConcurrentHashMap<>();
@@ -30,17 +33,27 @@ final class LiveWorkerConnectionRegistry {
     var connection = new WorkerConnection(UUID.randomUUID(), registration, responseObserver);
     connection.accept();
     var replaced = connections.put(workerId, connection);
-    if (replaced != null) {
-      replaced.closeAsReplaced();
+    if (replaced == null) {
+      log.info("Worker {} connected", workerId);
+      return connection.workerSessionId();
     }
+
+    var abandonedRenditions = replaced.closeAsReplaced();
+    log.warn(
+        "Worker {} reconnected; abandoning {} active rendition job(s) from its previous"
+            + " connection",
+        workerId,
+        abandonedRenditions);
     return connection.workerSessionId();
   }
 
   void disconnect(UUID workerId, UUID workerSessionId) {
-    connections.computeIfPresent(
-        workerId,
-        (_, connection) ->
-            connection.workerSessionId().equals(workerSessionId) ? null : connection);
+    var connection = connections.get(workerId);
+    if (connection != null
+        && connection.workerSessionId().equals(workerSessionId)
+        && connections.remove(workerId, connection)) {
+      log.info("Worker {} disconnected", workerId);
+    }
   }
 
   boolean dispatch(RenditionJob job) {
@@ -83,11 +96,12 @@ final class LiveWorkerConnectionRegistry {
     return connections.values().stream().mapToInt(WorkerConnection::availableSlots).sum();
   }
 
-  void finishJobAttempt(UUID workerId, UUID workerSessionId, UUID jobAttemptId) {
+  Optional<RenditionJob> finishJobAttempt(UUID workerId, UUID workerSessionId, UUID jobAttemptId) {
     var connection = connections.get(workerId);
-    if (connection != null && connection.workerSessionId().equals(workerSessionId)) {
-      connection.finishJobAttempt(jobAttemptId);
+    if (connection == null || !connection.workerSessionId().equals(workerSessionId)) {
+      return Optional.empty();
     }
+    return connection.finishJobAttempt(jobAttemptId);
   }
 
   boolean authorizesUpload(UUID authenticatedWorkerId, SegmentUploadMetadata metadata) {
@@ -133,10 +147,11 @@ final class LiveWorkerConnectionRegistry {
         return false;
       }
 
-      activeRenditions.put(fromProto(job.getJobAttemptId()), job);
       var command = StartRenditionCommand.newBuilder().setTarget(worker).setJob(job).build();
-      responseObserver.onNext(
-          WorkerSessionResponse.newBuilder().setStartRendition(command).build());
+      if (!trySend(WorkerSessionResponse.newBuilder().setStartRendition(command).build())) {
+        return false;
+      }
+      activeRenditions.put(fromProto(job.getJobAttemptId()), job);
       return true;
     }
 
@@ -154,12 +169,23 @@ final class LiveWorkerConnectionRegistry {
               .setTarget(worker)
               .setJobAttemptId(toProto(jobAttemptId))
               .build();
-      responseObserver.onNext(WorkerSessionResponse.newBuilder().setStopRendition(command).build());
+      trySend(WorkerSessionResponse.newBuilder().setStopRendition(command).build());
       return true;
     }
 
-    private synchronized void finishJobAttempt(UUID jobAttemptId) {
-      activeRenditions.remove(jobAttemptId);
+    /** A send can fail when the worker call died but its disconnect has not been reaped yet. */
+    private boolean trySend(WorkerSessionResponse response) {
+      try {
+        responseObserver.onNext(response);
+        return true;
+      } catch (RuntimeException e) {
+        log.warn("Failed to send command over worker session {}", workerSessionId, e);
+        return false;
+      }
+    }
+
+    private synchronized Optional<RenditionJob> finishJobAttempt(UUID jobAttemptId) {
+      return Optional.ofNullable(activeRenditions.remove(jobAttemptId));
     }
 
     private synchronized int availableSlots() {
@@ -200,10 +226,16 @@ final class LiveWorkerConnectionRegistry {
           && job.getRendition().getRenditionName().equals(metadata.getRenditionName());
     }
 
-    private synchronized void closeAsReplaced() {
+    private synchronized int closeAsReplaced() {
+      var abandonedRenditions = activeRenditions.size();
       activeRenditions.clear();
-      responseObserver.onError(
-          Status.ABORTED.withDescription("Worker connection replaced").asRuntimeException());
+      try {
+        responseObserver.onError(
+            Status.ABORTED.withDescription("Worker connection replaced").asRuntimeException());
+      } catch (RuntimeException _) {
+        // The previous call is already dead; the replacement proceeds regardless.
+      }
+      return abandonedRenditions;
     }
   }
 }

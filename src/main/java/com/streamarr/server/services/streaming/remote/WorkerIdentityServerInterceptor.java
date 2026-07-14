@@ -11,7 +11,9 @@ import io.grpc.Status;
 import java.security.cert.X509Certificate;
 import java.util.UUID;
 import javax.net.ssl.SSLPeerUnverifiedException;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 final class WorkerIdentityServerInterceptor implements ServerInterceptor {
 
   static final Context.Key<UUID> AUTHENTICATED_WORKER_ID = Context.key("authenticated-worker-id");
@@ -28,21 +30,22 @@ final class WorkerIdentityServerInterceptor implements ServerInterceptor {
     try {
       var sslSession = call.getAttributes().get(Grpc.TRANSPORT_ATTR_SSL_SESSION);
       if (sslSession == null) {
-        return reject(call);
+        return reject(call, "no TLS session on transport");
       }
       var certificates = sslSession.getPeerCertificates();
       if (certificates.length == 0 || !(certificates[0] instanceof X509Certificate leaf)) {
-        return reject(call);
+        return reject(call, "no X.509 peer certificate");
       }
       var workerId = identityMapper.workerId(leaf);
       return Contexts.interceptCall(
           Context.current().withValue(AUTHENTICATED_WORKER_ID, workerId), call, headers, next);
-    } catch (SSLPeerUnverifiedException | WorkerIdentityException _) {
-      return reject(call);
+    } catch (SSLPeerUnverifiedException | WorkerIdentityException e) {
+      return reject(call, e.getMessage());
     }
   }
 
-  private <R, S> ServerCall.Listener<R> reject(ServerCall<R, S> call) {
+  private <R, S> ServerCall.Listener<R> reject(ServerCall<R, S> call, String reason) {
+    log.warn("Rejecting unauthenticated worker call: {}", reason);
     call.close(Status.UNAUTHENTICATED, new Metadata());
     return new ServerCall.Listener<>() {};
   }
