@@ -115,8 +115,12 @@ public class HlsStreamingService implements StreamingService {
         .removeById(sessionId)
         .ifPresent(
             session -> {
-              transcodeExecutor.stop(sessionId);
-              segmentStore.deleteSession(sessionId);
+              try {
+                transcodeExecutor.stop(sessionId);
+              } finally {
+                // The session is already unreachable; a failed stop must not orphan its segments.
+                segmentStore.deleteSession(sessionId);
+              }
               log.info("Destroyed streaming session {}", sessionId);
             });
   }

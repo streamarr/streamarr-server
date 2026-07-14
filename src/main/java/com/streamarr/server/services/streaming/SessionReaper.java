@@ -24,7 +24,11 @@ public class SessionReaper {
   public void reapSessions() {
     var now = Instant.now();
     for (var session : streamingService.getAllSessions()) {
-      processSession(session, now);
+      try {
+        processSession(session, now);
+      } catch (RuntimeException e) {
+        log.error("Failed to reap session {}", session.getSessionId(), e);
+      }
     }
   }
 

@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming;
 
 import static com.streamarr.server.fixtures.StreamSessionFixture.playbackRequest;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNoException;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.StreamSession;
@@ -219,6 +220,20 @@ class SessionReaperTest {
 
     assertThat(session.getVariantHandle("1080p").status()).isEqualTo(TranscodeStatus.SUSPENDED);
     assertThat(session.getVariantHandle("720p").status()).isEqualTo(TranscodeStatus.FAILED);
+  }
+
+  @Test
+  @DisplayName("Should keep reaping remaining sessions when one session fails to suspend")
+  void shouldKeepReapingRemainingSessionsWhenOneSessionFailsToSuspend() {
+    var failing = buildSession(Instant.now().minusSeconds(120));
+    var expired = buildSession(Instant.now().minusSeconds(90_000));
+    streamingService.addSession(failing);
+    streamingService.addSession(expired);
+    executor.failOnStop(failing.getSessionId());
+
+    assertThatNoException().isThrownBy(reaper::reapSessions);
+
+    assertThat(streamingService.accessSession(playbackRequest(expired))).isEmpty();
   }
 
   private StreamSession buildSession(Instant lastAccessedAt) {
