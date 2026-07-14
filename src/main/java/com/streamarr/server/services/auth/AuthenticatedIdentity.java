@@ -14,7 +14,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 public record AuthenticatedIdentity(
     UUID accountId,
     AccountRole role,
-    UUID sessionId,
+    UUID authSessionId,
     TokenScope scope,
     UUID householdId,
     HouseholdRole householdRole,
@@ -24,7 +24,7 @@ public record AuthenticatedIdentity(
   public AuthenticatedIdentity {
     Objects.requireNonNull(accountId, "accountId is required");
     Objects.requireNonNull(role, "role is required");
-    Objects.requireNonNull(sessionId, "sessionId is required");
+    Objects.requireNonNull(authSessionId, "authSessionId is required");
     Objects.requireNonNull(scope, "scope is required");
 
     if (scope == TokenScope.ACCOUNT
@@ -54,7 +54,7 @@ public record AuthenticatedIdentity(
     return AuthenticatedIdentity.builder()
         .accountId(UUID.fromString(jwt.getSubject()))
         .role(AccountRole.valueOf(jwt.getClaimAsStringList(TokenClaims.ROLES).getFirst()))
-        .sessionId(UUID.fromString(jwt.getClaimAsString(TokenClaims.SESSION_ID)))
+        .authSessionId(UUID.fromString(jwt.getClaimAsString(TokenClaims.SESSION_ID)))
         .scope(TokenScope.valueOf(jwt.getClaimAsString(TokenClaims.SCOPE).toUpperCase(Locale.ROOT)))
         .householdId(uuidClaim(jwt, TokenClaims.HOUSEHOLD_ID))
         .householdRole(householdRoleClaim(jwt))
@@ -65,7 +65,7 @@ public record AuthenticatedIdentity(
 
   public PlaybackAuthority playbackAuthority() {
     return PlaybackAuthority.builder()
-        .authSessionId(sessionId)
+        .authSessionId(authSessionId)
         .accountId(accountId)
         .householdId(householdId)
         .profileId(profileId)

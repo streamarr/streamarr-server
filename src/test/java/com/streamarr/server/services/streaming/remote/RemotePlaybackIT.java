@@ -407,7 +407,7 @@ class RemotePlaybackIT extends AbstractIntegrationTest {
     return AuthenticatedIdentity.builder()
         .accountId(UUID.randomUUID())
         .role(AccountRole.USER)
-        .sessionId(UUID.randomUUID())
+        .authSessionId(UUID.randomUUID())
         .scope(TokenScope.PLAYBACK)
         .householdId(UUID.randomUUID())
         .householdRole(HouseholdRole.MEMBER)

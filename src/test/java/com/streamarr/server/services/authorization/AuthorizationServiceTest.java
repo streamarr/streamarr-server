@@ -314,7 +314,7 @@ class AuthorizationServiceTest {
     return AuthenticatedIdentity.builder()
         .accountId(accountId)
         .role(role)
-        .sessionId(UUID.randomUUID())
+        .authSessionId(UUID.randomUUID())
         .scope(TokenScope.PROFILE)
         .householdId(householdId)
         .householdRole(householdRole)
@@ -326,7 +326,7 @@ class AuthorizationServiceTest {
     return AuthenticatedIdentity.builder()
         .accountId(accountId)
         .role(AccountRole.USER)
-        .sessionId(UUID.randomUUID())
+        .authSessionId(UUID.randomUUID())
         .scope(TokenScope.ACCOUNT)
         .build();
   }

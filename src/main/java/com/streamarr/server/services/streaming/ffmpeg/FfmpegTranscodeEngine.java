@@ -40,7 +40,8 @@ public class FfmpegTranscodeEngine {
         job.videoEncoder(),
         process.pid());
 
-    return new TranscodeHandle(process.pid(), TranscodeStatus.ACTIVE, request.startNumber());
+    return new TranscodeHandle(
+        process.pid(), TranscodeStatus.ACTIVE, request.startSequenceNumber());
   }
 
   public void stop(UUID sessionId) {

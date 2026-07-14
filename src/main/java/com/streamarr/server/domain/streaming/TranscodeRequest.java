@@ -16,7 +16,7 @@ public record TranscodeRequest(
     int height,
     long bitrate,
     String variantLabel,
-    int startNumber) {
+    int startSequenceNumber) {
 
   public TranscodeRequest {
     variantLabel = variantLabel != null ? variantLabel : StreamSession.defaultVariant();

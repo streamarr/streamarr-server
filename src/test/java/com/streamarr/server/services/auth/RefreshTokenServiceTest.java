@@ -93,7 +93,7 @@ class RefreshTokenServiceTest {
     var rotation = (RefreshResult.Rotated) service.redeem(issued.rawToken());
 
     advanceClock(Duration.ofSeconds(10));
-    var replay = (RefreshResult.Replayed) service.redeem(issued.rawToken());
+    var replay = (RefreshResult.GraceRetry) service.redeem(issued.rawToken());
 
     assertThat(replay.rawRefreshToken()).isEqualTo(rotation.rawRefreshToken());
     assertThat(replay.session().getId()).isEqualTo(issued.session().getId());
@@ -112,7 +112,7 @@ class RefreshTokenServiceTest {
     advanceClock(properties.rotationGrace());
     var replay = service.redeem(issued.rawToken());
 
-    assertThat(replay).isInstanceOf(RefreshResult.Replayed.class);
+    assertThat(replay).isInstanceOf(RefreshResult.GraceRetry.class);
     assertThat(replay.session().getRevokedAt()).isNull();
   }
 
@@ -125,7 +125,7 @@ class RefreshTokenServiceTest {
 
     var replay = service.redeem(issued.rawToken());
 
-    assertThat(replay).isInstanceOf(RefreshResult.SupersededReplay.class);
+    assertThat(replay).isInstanceOf(RefreshResult.SupersededRetry.class);
     assertThat(replay.session().getId()).isEqualTo(issued.session().getId());
     assertThat(replay.session().getRevokedAt()).isNull();
   }
@@ -149,7 +149,7 @@ class RefreshTokenServiceTest {
     var replay = shortLivedService.redeem(issued.rawToken());
     var successorToken = rotation.rawRefreshToken();
 
-    assertThat(replay).isInstanceOf(RefreshResult.SupersededReplay.class);
+    assertThat(replay).isInstanceOf(RefreshResult.SupersededRetry.class);
     assertThat(replay.session().getRevokedAt()).isNull();
     assertThatThrownBy(() -> shortLivedService.redeem(successorToken))
         .isInstanceOf(InvalidRefreshTokenException.class);

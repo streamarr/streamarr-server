@@ -49,7 +49,7 @@ public class AuthController {
   @PostMapping("/logout")
   public ResponseEntity<Void> logout() {
     var identity = authorizationService.currentIdentity();
-    refreshTokenService.logout(identity.sessionId());
+    refreshTokenService.logout(identity.authSessionId());
 
     return ResponseEntity.noContent()
         .header(HttpHeaders.SET_COOKIE, cookieWriter.expiredAccessCookie().toString())
@@ -65,7 +65,7 @@ public class AuthController {
         passwordChangeService.changePassword(
             ChangePasswordCommand.builder()
                 .accountId(identity.accountId())
-                .sessionId(identity.sessionId())
+                .sessionId(identity.authSessionId())
                 .currentPassword(request.currentPassword())
                 .newPassword(request.newPassword())
                 .build());
@@ -86,7 +86,7 @@ public class AuthController {
     var identity = authorizationService.currentIdentity();
     var context =
         sessionScopeService.selectHousehold(
-            identity.accountId(), identity.sessionId(), request.householdId());
+            identity.accountId(), identity.authSessionId(), request.householdId());
     return respondAccessOnly(
         accessTokenIssuer.issueDerived(context, authorizationService.currentTokenExpiry()),
         StreamarrBearerTokenResolver.usedAccessCookie(httpRequest));
@@ -98,7 +98,7 @@ public class AuthController {
     var identity = authorizationService.currentIdentity();
     var context =
         sessionScopeService.selectProfile(
-            identity.accountId(), identity.sessionId(), request.profileId());
+            identity.accountId(), identity.authSessionId(), request.profileId());
     return respondAccessOnly(
         accessTokenIssuer.issueDerived(context, authorizationService.currentTokenExpiry()),
         StreamarrBearerTokenResolver.usedAccessCookie(httpRequest));

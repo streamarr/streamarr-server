@@ -19,7 +19,7 @@ final class StreamarrSecurityContextFactory {
         AuthenticatedIdentity.builder()
             .accountId(TestIdentityConstants.ACCOUNT_ID)
             .role(role)
-            .sessionId(TestIdentityConstants.SESSION_ID)
+            .authSessionId(TestIdentityConstants.SESSION_ID)
             .scope(scope)
             .householdId(scope == TokenScope.ACCOUNT ? null : TestIdentityConstants.HOUSEHOLD_ID)
             .householdRole(scope == TokenScope.ACCOUNT ? null : HouseholdRole.OWNER)

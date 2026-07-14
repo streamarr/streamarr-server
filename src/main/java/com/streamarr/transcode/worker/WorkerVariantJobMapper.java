@@ -36,7 +36,7 @@ final class WorkerVariantJobMapper {
         .height(variant.getHeight())
         .bitrate(variant.getBitrateBitsPerSecond())
         .variantLabel(variant.getVariantLabel())
-        .startNumber(execution.getStartSequenceNumber())
+        .startSequenceNumber(execution.getStartSequenceNumber())
         .build();
   }
 

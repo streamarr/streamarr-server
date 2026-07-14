@@ -88,7 +88,7 @@ class PlaybackTokenIssuerTest {
         AuthenticatedIdentity.builder()
             .accountId(accountId)
             .role(AccountRole.USER)
-            .sessionId(sessionId)
+            .authSessionId(sessionId)
             .scope(TokenScope.ACCOUNT)
             .build();
     var streamSession = defaultSessionBuilder().build();
@@ -138,7 +138,7 @@ class PlaybackTokenIssuerTest {
     return AuthenticatedIdentity.builder()
         .accountId(accountId)
         .role(AccountRole.USER)
-        .sessionId(sessionId)
+        .authSessionId(sessionId)
         .scope(TokenScope.PROFILE)
         .householdId(householdId)
         .householdRole(HouseholdRole.MEMBER)
