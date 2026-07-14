@@ -87,7 +87,14 @@ public final class TranscodeWorker implements AutoCloseable {
             .trustManager(tlsIdentity.trustBundle().toFile())
             .build();
     executor = Executors.newVirtualThreadPerTaskExecutor();
-    channel = NettyChannelBuilder.forAddress(host, port).sslContext(sslContext).build();
+    // Client keepalive detects a half-open control-plane connection (server power loss, dropped
+    // NAT mapping); without it an idle worker would wait on a dead session until TCP gives up.
+    channel =
+        NettyChannelBuilder.forAddress(host, port)
+            .sslContext(sslContext)
+            .keepAliveTime(configuration.keepAliveTime().toMillis(), TimeUnit.MILLISECONDS)
+            .keepAliveTimeout(configuration.keepAliveTimeout().toMillis(), TimeUnit.MILLISECONDS)
+            .build();
     var accepted = new CompletableFuture<WorkerSessionAccepted>();
     disconnected = new CompletableFuture<>();
     requests =
@@ -385,7 +392,11 @@ public final class TranscodeWorker implements AutoCloseable {
     }
 
     stopActiveRenditions();
-    requests.onCompleted();
+    try {
+      requests.onCompleted();
+    } catch (RuntimeException _) {
+      // The session stream already failed; shutdown proceeds regardless.
+    }
     channel.shutdownNow();
     try {
       channel.awaitTermination(CONNECTION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
