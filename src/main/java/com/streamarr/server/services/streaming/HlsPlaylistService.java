@@ -46,8 +46,8 @@ public class HlsPlaylistService {
     }
 
     for (var variant : session.getVariants()) {
-      var bandwidth = variant.videoBitrate() + audio.bitrate();
-      appendStreamInf(sb, bandwidth, variant.width(), variant.height(), codecs, hasAudio);
+      var averageBandwidth = variant.videoBitrate() + audio.bitrate();
+      appendStreamInf(sb, averageBandwidth, variant.width(), variant.height(), codecs, hasAudio);
       sb.append(variant.label()).append("/stream.m3u8?t=").append(token).append("\n");
     }
 
@@ -65,10 +65,24 @@ public class HlsPlaylistService {
     sb.append("\n");
   }
 
+  // RFC 8216 §4.3.4.2: BANDWIDTH "represents the peak segment bit rate" and AVERAGE-BANDWIDTH
+  // "the average segment bit rate". The rates known here are averages — encoder targets for the
+  // ladder, the probed source rate for direct play — so BANDWIDTH adds headroom for container
+  // overhead and rate variation. Encoded variants are VBV-capped at their target (-maxrate),
+  // which keeps the padded peak honest; probe-derived values remain estimates.
+  private static final int PEAK_HEADROOM_PERCENT = 20;
+
   private void appendStreamInf(
-      StringBuilder sb, long bandwidth, int width, int height, String codecs, boolean hasAudio) {
+      StringBuilder sb,
+      long averageBandwidth,
+      int width,
+      int height,
+      String codecs,
+      boolean hasAudio) {
+    var peakBandwidth = averageBandwidth + averageBandwidth * PEAK_HEADROOM_PERCENT / 100;
     sb.append("#EXT-X-STREAM-INF:");
-    sb.append("BANDWIDTH=").append(bandwidth);
+    sb.append("BANDWIDTH=").append(peakBandwidth);
+    sb.append(",AVERAGE-BANDWIDTH=").append(averageBandwidth);
     sb.append(",RESOLUTION=").append(width).append("x").append(height);
     sb.append(",CODECS=\"").append(codecs).append("\"");
     if (hasAudio) {
