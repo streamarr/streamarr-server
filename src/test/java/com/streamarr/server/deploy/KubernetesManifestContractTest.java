@@ -51,8 +51,8 @@ class KubernetesManifestContractTest {
   void shouldRecreateSingleServerInsteadOfRollingOutSecondReplica() {
     var spec = asMap(serverDeployment.get("spec"));
 
-    assertThat(spec.get("replicas")).isEqualTo(1);
-    assertThat(asMap(spec.get("strategy")).get("type")).isEqualTo("Recreate");
+    assertThat(spec).containsEntry("replicas", 1);
+    assertThat(asMap(spec.get("strategy"))).containsEntry("type", "Recreate");
   }
 
   @Test
@@ -81,11 +81,11 @@ class KubernetesManifestContractTest {
     for (var deployment : List.of(serverDeployment, workerDeployment)) {
       var securityContext = asMap(container(deployment).get("securityContext"));
 
-      assertThat(securityContext.get("runAsNonRoot")).isEqualTo(true);
-      assertThat(securityContext.get("allowPrivilegeEscalation")).isEqualTo(false);
-      assertThat(asMap(securityContext.get("capabilities")).get("drop")).isEqualTo(List.of("ALL"));
-      assertThat(asMap(securityContext.get("seccompProfile")).get("type"))
-          .isEqualTo("RuntimeDefault");
+      assertThat(securityContext).containsEntry("runAsNonRoot", true);
+      assertThat(securityContext).containsEntry("allowPrivilegeEscalation", false);
+      assertThat(asMap(securityContext.get("capabilities"))).containsEntry("drop", List.of("ALL"));
+      assertThat(asMap(securityContext.get("seccompProfile")))
+          .containsEntry("type", "RuntimeDefault");
     }
   }
 
