@@ -125,6 +125,33 @@ class LocalSegmentStoreTest {
   }
 
   @Test
+  @DisplayName("Should time out instead of throwing when session has no output directory")
+  void shouldTimeOutInsteadOfThrowingWhenSessionHasNoOutputDirectory() {
+    var sessionId = UUID.randomUUID();
+
+    var result = store.waitForSegment(sessionId, "segment0.ts", Duration.ofMillis(300));
+
+    assertThat(result).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should return true when first upload creates the session directory during wait")
+  void shouldReturnTrueWhenFirstUploadCreatesSessionDirectoryDuringWait() {
+    var sessionId = UUID.randomUUID();
+
+    var executor = Executors.newSingleThreadScheduledExecutor();
+    executor.schedule(
+        () -> store.storeSegment(sessionId, "720p/segment0.ts", "uploaded".getBytes()),
+        200,
+        TimeUnit.MILLISECONDS);
+
+    var result = store.waitForSegment(sessionId, "720p/segment0.ts", Duration.ofSeconds(5));
+
+    assertThat(result).isTrue();
+    executor.shutdown();
+  }
+
+  @Test
   @DisplayName("Should reject segment name when path traversal is attempted")
   void shouldRejectSegmentNameWhenPathTraversalIsAttempted() {
     var sessionId = UUID.randomUUID();

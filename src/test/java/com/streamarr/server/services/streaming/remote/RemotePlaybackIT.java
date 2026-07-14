@@ -134,6 +134,30 @@ class RemotePlaybackIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should serve a segment requested before the worker's first upload arrives")
+  void shouldServeSegmentRequestedBeforeWorkersFirstUploadArrives() throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+    var mediaFile = Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var segments = Map.of("segment0.ts", "first remote segment".getBytes());
+    var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
+    var streamSessionId = UUID.randomUUID();
+
+    try (var server = server(segmentStore);
+        var worker = worker(mediaRoot, segments)) {
+      server.start();
+      worker.start("localhost", server.port());
+      var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot);
+      var streamController = controller(streamSessionId, segmentStore);
+
+      executor.start(transcodeRequest(streamSessionId, mediaFile));
+      var response = streamController.getSegment(streamSessionId, "segment0.ts");
+
+      assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+      assertThat(response.getBody()).isEqualTo(segments.get("segment0.ts"));
+    }
+  }
+
+  @Test
   @DisplayName("Should preserve every supported transcode decision across the worker protocol")
   void shouldPreserveEverySupportedTranscodeDecisionAcrossWorkerProtocol() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
