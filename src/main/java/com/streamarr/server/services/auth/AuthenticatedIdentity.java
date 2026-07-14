@@ -41,6 +41,13 @@ public record AuthenticatedIdentity(
     if (scope == TokenScope.PROFILE && profileId == null) {
       throw new IllegalArgumentException("Profile scope requires profile identity");
     }
+    if (scope == TokenScope.PLAYBACK && (profileId == null || streamSessionId == null)) {
+      throw new IllegalArgumentException(
+          "Playback scope requires profile identity and a stream session");
+    }
+    if (scope != TokenScope.PLAYBACK && streamSessionId != null) {
+      throw new IllegalArgumentException("Only playback scope can carry a stream session");
+    }
   }
 
   public static AuthenticatedIdentity fromJwt(Jwt jwt) {
