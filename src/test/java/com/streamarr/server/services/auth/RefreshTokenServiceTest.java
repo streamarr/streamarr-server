@@ -395,6 +395,26 @@ class RefreshTokenServiceTest {
         .isNull();
   }
 
+  @Test
+  @DisplayName("Should persist active selection when creating a session from a command")
+  void shouldPersistActiveSelectionWhenCreatingSessionFromCommand() {
+    var householdId = UUID.randomUUID();
+    var profileId = UUID.randomUUID();
+
+    var issued =
+        service.createSession(
+            CreateAuthSessionCommand.builder()
+                .accountId(UUID.randomUUID())
+                .deviceName("replacement-device")
+                .activeHouseholdId(householdId)
+                .activeProfileId(profileId)
+                .build());
+
+    var persisted = sessionRepository.findById(issued.session().getId()).orElseThrow();
+    assertThat(persisted.getActiveHouseholdId()).isEqualTo(householdId);
+    assertThat(persisted.getActiveProfileId()).isEqualTo(profileId);
+  }
+
   private IssuedRefreshToken issueSession() {
     var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
     return service.createSession(account, "test-device");
