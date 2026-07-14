@@ -127,6 +127,7 @@ class AccessTokenIssuerTest {
 
     var decoded = buildDecoder().decode(token.value());
     assertThat(decoded.getClaimAsString(JwtClaimNames.ISS)).isEqualTo("streamarr");
+    assertThat(decoded.getAudience()).containsExactly("streamarr");
     assertThat(decoded.getSubject()).isEqualTo(account.getId().toString());
     assertThat(decoded.getClaimAsString(TokenClaims.SESSION_ID))
         .isEqualTo(session.getId().toString());

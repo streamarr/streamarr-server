@@ -33,6 +33,8 @@ import org.bouncycastle.jce.ECNamedCurveTable;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.jwt.JwtClaimNames;
+import org.springframework.security.oauth2.jwt.JwtClaimValidator;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtValidators;
@@ -95,6 +97,11 @@ public class TokenCryptoConfig {
     decoder.setJwtValidator(
         new DelegatingOAuth2TokenValidator<>(
             JwtValidators.createDefaultWithIssuer(properties.issuer()),
+            // RFC 9068 §4: the resource server MUST validate that aud contains an identifier
+            // it expects for itself.
+            new JwtClaimValidator<List<String>>(
+                JwtClaimNames.AUD,
+                audience -> audience != null && audience.contains(properties.audience())),
             new StrictJwtExpiryValidator(Clock.systemUTC()),
             identityValidator));
     return decoder;
