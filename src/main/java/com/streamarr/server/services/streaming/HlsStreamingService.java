@@ -243,12 +243,13 @@ public class HlsStreamingService implements StreamingService {
   }
 
   private int forwardGapSegments() {
-    var gapSegments = FORWARD_RELOCATION_GAP.toSeconds() / properties.segmentDuration().toSeconds();
+    var gapSegments =
+        FORWARD_RELOCATION_GAP.toSeconds() / properties.targetSegmentDuration().toSeconds();
     return Math.max(1, (int) gapSegments);
   }
 
   private int segmentDurationSeconds() {
-    return (int) properties.segmentDuration().toSeconds();
+    return (int) properties.targetSegmentDuration().toSeconds();
   }
 
   private static String siblingSegmentName(String segmentName, int index) {
@@ -262,7 +263,7 @@ public class HlsStreamingService implements StreamingService {
     }
 
     var segmentIndex = parseSegmentIndex(segmentName);
-    var resumeSeek = segmentIndex * (int) properties.segmentDuration().toSeconds();
+    var resumeSeek = segmentIndex * (int) properties.targetSegmentDuration().toSeconds();
 
     startTranscodes(session, resumeSeek, segmentIndex);
     session.setLastAccessedAt(Instant.now());
@@ -356,7 +357,7 @@ public class HlsStreamingService implements StreamingService {
             .sessionId(session.getSessionId())
             .sourcePath(session.getSourcePath())
             .seekPosition(seekPosition)
-            .segmentDuration((int) properties.segmentDuration().toSeconds())
+            .targetSegmentDuration((int) properties.targetSegmentDuration().toSeconds())
             .framerate(probe.framerate())
             .transcodeDecision(session.getTranscodeDecision())
             .width(probe.width())
@@ -381,7 +382,7 @@ public class HlsStreamingService implements StreamingService {
               .sessionId(session.getSessionId())
               .sourcePath(session.getSourcePath())
               .seekPosition(seekPosition)
-              .segmentDuration((int) properties.segmentDuration().toSeconds())
+              .targetSegmentDuration((int) properties.targetSegmentDuration().toSeconds())
               .framerate(session.getMediaProbe().framerate())
               .transcodeDecision(session.getTranscodeDecision())
               .width(variant.width())

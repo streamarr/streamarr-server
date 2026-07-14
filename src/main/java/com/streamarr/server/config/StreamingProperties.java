@@ -13,7 +13,7 @@ import org.springframework.validation.annotation.Validated;
 @ConfigurationProperties(prefix = "streaming")
 public record StreamingProperties(
     int maxConcurrentTranscodes,
-    Duration segmentDuration,
+    Duration targetSegmentDuration,
     Duration sessionTimeout,
     // Session retention contributes the playback token's pause/slow-playback slack; reject a
     // non-positive value at startup rather than minting unusable tokens.
@@ -27,8 +27,8 @@ public record StreamingProperties(
       maxConcurrentTranscodes = 8;
     }
 
-    if (segmentDuration == null) {
-      segmentDuration = Duration.ofSeconds(6);
+    if (targetSegmentDuration == null) {
+      targetSegmentDuration = Duration.ofSeconds(6);
     }
 
     if (sessionTimeout == null) {

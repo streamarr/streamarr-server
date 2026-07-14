@@ -13,7 +13,7 @@ final class SegmentUploadAdmission {
     this.maximumBufferedBytes = maximumBufferedBytes;
   }
 
-  boolean tryOpen() {
+  boolean tryAcquireSlot() {
     return uploadSlots.tryAcquire();
   }
 

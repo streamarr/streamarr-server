@@ -46,7 +46,7 @@ final class WorkerSessionGrpcService
   @Override
   public StreamObserver<UploadSegmentRequest> uploadSegment(
       StreamObserver<UploadSegmentResponse> responseObserver) {
-    if (!segmentUploadAdmission.tryOpen()) {
+    if (!segmentUploadAdmission.tryAcquireSlot()) {
       log.warn(
           "Rejecting segment upload from worker {}: concurrent upload limit reached",
           WorkerIdentityServerInterceptor.AUTHENTICATED_WORKER_ID.get());
@@ -104,7 +104,7 @@ final class WorkerSessionGrpcService
     @Override
     public void onNext(EstablishWorkerSessionRequest request) {
       if (registered) {
-        finishJobAttempt(request);
+        handleSessionEvent(request);
         return;
       }
       if (!request.hasRegistration() || !request.getRegistration().hasWorker()) {
@@ -144,7 +144,7 @@ final class WorkerSessionGrpcService
       }
     }
 
-    private void finishJobAttempt(EstablishWorkerSessionRequest request) {
+    private void handleSessionEvent(EstablishWorkerSessionRequest request) {
       switch (request.getEventCase()) {
         case JOB_ATTEMPT_STARTED ->
             log.debug(
@@ -181,7 +181,7 @@ final class WorkerSessionGrpcService
     }
 
     private Optional<VariantJob> finish(com.streamarr.transcode.v1.Uuid jobAttemptId) {
-      return workerConnections.finishJobAttempt(
+      return workerConnections.releaseJobAttempt(
           authenticatedWorkerId, workerSessionId, fromProto(jobAttemptId));
     }
 

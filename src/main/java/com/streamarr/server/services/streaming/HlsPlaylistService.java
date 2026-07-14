@@ -35,7 +35,7 @@ public class HlsPlaylistService {
     sb.append("#EXTM3U\n");
 
     if (hasAudio) {
-      appendAudioMedia(sb, audio.channels());
+      appendAudioRendition(sb, audio.channels());
     }
 
     if (session.getVariants().isEmpty()) {
@@ -54,7 +54,7 @@ public class HlsPlaylistService {
     return sb.toString();
   }
 
-  private void appendAudioMedia(StringBuilder sb, int audioChannels) {
+  private void appendAudioRendition(StringBuilder sb, int audioChannels) {
     sb.append("#EXT-X-MEDIA:");
     sb.append("TYPE=AUDIO");
     sb.append(",GROUP-ID=\"").append(AUDIO_GROUP_ID).append("\"");
@@ -79,23 +79,23 @@ public class HlsPlaylistService {
 
   /**
    * The playlist always covers the full media duration on an absolute timeline: segment {@code i}
-   * is media time {@code [i * segmentDuration, (i + 1) * segmentDuration)}, so player position and
-   * duration match real media time.
+   * is media time {@code [i * targetSegmentDuration, (i + 1) * targetSegmentDuration)}, so player
+   * position and duration match real media time.
    */
   public String generateMediaPlaylist(StreamSession session, String token) {
     var decision = session.getTranscodeDecision();
     var container = decision.containerFormat();
     var probe = session.getMediaProbe();
-    var segmentDuration = (int) properties.segmentDuration().toSeconds();
+    var targetSegmentDuration = (int) properties.targetSegmentDuration().toSeconds();
     var totalDurationMs = probe.duration().toMillis();
-    var segmentDurationMs = segmentDuration * 1000L;
+    var segmentDurationMs = targetSegmentDuration * 1000L;
     var segmentCount = (int) Math.ceil((double) totalDurationMs / segmentDurationMs);
     var extension = container.segmentExtension();
 
     var sb = new StringBuilder();
     sb.append("#EXTM3U\n");
     sb.append("#EXT-X-VERSION:").append(container.hlsVersion()).append("\n");
-    sb.append("#EXT-X-TARGETDURATION:").append(segmentDuration).append("\n");
+    sb.append("#EXT-X-TARGETDURATION:").append(targetSegmentDuration).append("\n");
     sb.append("#EXT-X-MEDIA-SEQUENCE:0\n");
     sb.append("#EXT-X-PLAYLIST-TYPE:VOD\n");
 

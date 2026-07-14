@@ -65,7 +65,7 @@ class StreamControllerTest {
         new HlsPlaylistService(
             StreamingProperties.builder()
                 .maxConcurrentTranscodes(8)
-                .segmentDuration(Duration.ofSeconds(6))
+                .targetSegmentDuration(Duration.ofSeconds(6))
                 .sessionTimeout(Duration.ofSeconds(60))
                 .build());
     boundStreamSession.set(SESSION_ID);
