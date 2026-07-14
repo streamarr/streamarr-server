@@ -282,8 +282,9 @@ class HlsStreamingServiceTest {
     var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
     segmentStore.addSegment(session.getSessionId(), "segment0.ts", "data".getBytes());
     transcodeExecutor.failOnStop(session.getSessionId());
+    var sessionId = session.getSessionId();
 
-    assertThatThrownBy(() -> service.destroySession(session.getSessionId()))
+    assertThatThrownBy(() -> service.destroySession(sessionId))
         .isInstanceOf(TranscodeException.class);
 
     assertThat(accessSession(session)).isEmpty();

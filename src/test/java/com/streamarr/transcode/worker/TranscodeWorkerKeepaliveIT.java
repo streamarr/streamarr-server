@@ -62,7 +62,7 @@ class TranscodeWorkerKeepaliveIT {
                 () -> {
                   try {
                     worker.awaitDisconnection();
-                  } catch (InterruptedException e) {
+                  } catch (InterruptedException _) {
                     Thread.currentThread().interrupt();
                   } catch (RuntimeException _) {
                     // A failed session surfaces as an exception; detection is what matters.
