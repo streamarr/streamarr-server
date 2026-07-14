@@ -7,10 +7,15 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 public final class WorkerSpiffeIdentityMapper {
 
   private static final Integer URI_SUBJECT_ALTERNATIVE_NAME = 6;
+  // SPIFFE-ID §2.1: lowercase letters, numbers, dots, dashes, and underscores only.
+  private static final Pattern TRUST_DOMAIN_PATTERN = Pattern.compile("[a-z0-9._-]+");
+  private static final int KEY_USAGE_KEY_CERT_SIGN = 5;
+  private static final int KEY_USAGE_CRL_SIGN = 6;
 
   private final String workerIdentityPrefix;
 
@@ -20,6 +25,7 @@ public final class WorkerSpiffeIdentityMapper {
 
   public UUID workerId(X509Certificate certificate) {
     Objects.requireNonNull(certificate);
+    requireLeafConstraints(certificate);
     var uriNames = uriSubjectAlternativeNames(certificate);
     if (uriNames.size() != 1) {
       throw new WorkerIdentityException();
@@ -36,6 +42,17 @@ public final class WorkerSpiffeIdentityMapper {
     }
 
     return workerId;
+  }
+
+  /** X509-SVID §5.2: a signing certificate must never authenticate as a workload. */
+  private static void requireLeafConstraints(X509Certificate certificate) {
+    if (certificate.getBasicConstraints() != -1) {
+      throw new WorkerIdentityException();
+    }
+    var keyUsage = certificate.getKeyUsage();
+    if (keyUsage != null && (keyUsage[KEY_USAGE_KEY_CERT_SIGN] || keyUsage[KEY_USAGE_CRL_SIGN])) {
+      throw new WorkerIdentityException();
+    }
   }
 
   private List<String> uriSubjectAlternativeNames(X509Certificate certificate) {
@@ -75,6 +92,9 @@ public final class WorkerSpiffeIdentityMapper {
   private static String workerIdentityPrefix(String trustDomain) {
     if (trustDomain == null || trustDomain.isBlank()) {
       throw new IllegalArgumentException("Worker trust domain is required");
+    }
+    if (!TRUST_DOMAIN_PATTERN.matcher(trustDomain).matches()) {
+      throw new IllegalArgumentException("Worker trust domain is invalid");
     }
 
     URI trustDomainUri;

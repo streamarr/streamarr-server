@@ -90,8 +90,36 @@ class WorkerSpiffeIdentityMapperTest {
   @DisplayName("Should reject an unreadable subject alternative name extension")
   void shouldRejectUnreadableSubjectAlternativeNameExtension() throws Exception {
     var certificate = mock(X509Certificate.class);
+    when(certificate.getBasicConstraints()).thenReturn(-1);
     when(certificate.getSubjectAlternativeNames())
         .thenThrow(new CertificateParsingException("malformed"));
+
+    assertRejected(certificate);
+  }
+
+  @Test
+  @DisplayName("Should reject a CA certificate presented as a worker identity")
+  void shouldRejectCaCertificatePresentedAsWorkerIdentity() throws Exception {
+    var certificate = certificate(List.of(List.of(6, workerIdentity())));
+    when(certificate.getBasicConstraints()).thenReturn(0);
+
+    assertRejected(certificate);
+  }
+
+  @Test
+  @DisplayName("Should reject a certificate whose key usage permits certificate signing")
+  void shouldRejectCertificateWhoseKeyUsagePermitsCertificateSigning() throws Exception {
+    var certificate = certificate(List.of(List.of(6, workerIdentity())));
+    when(certificate.getKeyUsage()).thenReturn(keyUsage(5));
+
+    assertRejected(certificate);
+  }
+
+  @Test
+  @DisplayName("Should reject a certificate whose key usage permits CRL signing")
+  void shouldRejectCertificateWhoseKeyUsagePermitsCrlSigning() throws Exception {
+    var certificate = certificate(List.of(List.of(6, workerIdentity())));
+    when(certificate.getKeyUsage()).thenReturn(keyUsage(6));
 
     assertRejected(certificate);
   }
@@ -115,7 +143,15 @@ class WorkerSpiffeIdentityMapperTest {
 
   @ParameterizedTest
   @NullAndEmptySource
-  @ValueSource(strings = {" ", "bad domain", "streamarr.test/path", "streamarr.test:443"})
+  @ValueSource(
+      strings = {
+        " ",
+        "bad domain",
+        "streamarr.test/path",
+        "streamarr.test:443",
+        "Streamarr.Test",
+        "user@streamarr.test"
+      })
   @DisplayName("Should reject an invalid worker trust domain")
   void shouldRejectInvalidWorkerTrustDomain(String trustDomain) {
     assertThatThrownBy(() -> new WorkerSpiffeIdentityMapper(trustDomain))
@@ -123,8 +159,20 @@ class WorkerSpiffeIdentityMapperTest {
         .hasMessageContaining("Worker trust domain");
   }
 
+  private static String workerIdentity() {
+    return "spiffe://streamarr.test/streamarr/worker/" + WORKER_ID;
+  }
+
+  private static boolean[] keyUsage(int assertedBit) {
+    var usage = new boolean[9];
+    usage[0] = true;
+    usage[assertedBit] = true;
+    return usage;
+  }
+
   private X509Certificate certificate(List<List<?>> subjectAlternativeNames) throws Exception {
     var certificate = mock(X509Certificate.class);
+    when(certificate.getBasicConstraints()).thenReturn(-1);
     when(certificate.getSubjectAlternativeNames()).thenReturn(subjectAlternativeNames);
     return certificate;
   }
