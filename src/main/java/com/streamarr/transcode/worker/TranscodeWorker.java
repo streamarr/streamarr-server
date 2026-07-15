@@ -162,7 +162,10 @@ public final class TranscodeWorker implements AutoCloseable {
           fromProto(job.getStreamSessionId()),
           e);
       deleteOutputDirectory(outputDirectory);
-      sendFailure(job, JobAttemptFailure.JOB_ATTEMPT_FAILURE_STARTUP_FAILED);
+      // A failure after engine.start() + activeVariants.put() (e.g. send() throwing) must stop the
+      // engine and drop the entry, otherwise the FFmpeg process leaks. failVariant is a no-op stop
+      // when nothing was registered yet.
+      failVariant(job, JobAttemptFailure.JOB_ATTEMPT_FAILURE_STARTUP_FAILED);
       return;
     }
 
