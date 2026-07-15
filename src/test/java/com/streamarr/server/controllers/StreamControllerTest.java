@@ -532,5 +532,10 @@ class StreamControllerTest {
     public void resumeSessionIfNeeded(UUID sessionId, String segmentName) {
       // no-op for test fake
     }
+
+    @Override
+    public boolean isTranscodeActive(UUID sessionId, String variantLabel) {
+      return session != null && session.getSessionId().equals(sessionId);
+    }
   }
 }
