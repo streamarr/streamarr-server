@@ -45,6 +45,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
+import org.springframework.dao.DataAccessResourceFailureException;
 
 @Tag("UnitTest")
 @DisplayName("HLS Streaming Service Tests")
@@ -133,6 +135,29 @@ class HlsStreamingServiceTest {
 
     assertThat(session.getSessionId()).isNotNull();
     assertThat(session.getMediaFileId()).isEqualTo(file.getId());
+  }
+
+  @Test
+  @DisplayName("Should propagate authority failure when accessing a session")
+  void shouldPropagateAuthorityFailureWhenAccessingSession() {
+    var file = seedMediaFile();
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    authorityGate.failWith(
+        new DataAccessResourceFailureException("authority database unavailable"));
+
+    assertThatThrownBy(() -> accessSession(session)).isInstanceOf(DataAccessException.class);
+  }
+
+  @Test
+  @DisplayName("Should propagate authority failure and start no transcode when creating a session")
+  void shouldPropagateAuthorityFailureWhenCreatingSession() {
+    var file = seedMediaFile();
+    authorityGate.failWith(
+        new DataAccessResourceFailureException("authority database unavailable"));
+
+    assertThatThrownBy(() -> createSession(file.getId(), UUID.randomUUID(), defaultOptions()))
+        .isInstanceOf(DataAccessException.class);
+    assertThat(transcodeExecutor.getStarted()).isEmpty();
   }
 
   @Test
