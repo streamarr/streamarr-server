@@ -129,7 +129,12 @@ final class WorkerSessionGrpcService
     }
 
     @Override
-    public void onError(Throwable ignored) {
+    public void onError(Throwable throwable) {
+      log.warn(
+          "Worker {} session {} control stream failed",
+          authenticatedWorkerId,
+          workerSessionId,
+          throwable);
       disconnect();
     }
 

@@ -88,7 +88,8 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
   }
 
   @Override
-  public void onError(Throwable ignored) {
+  public void onError(Throwable throwable) {
+    log.warn("Segment upload from worker {} failed", authenticatedWorkerId, throwable);
     close();
   }
 
