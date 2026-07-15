@@ -49,7 +49,7 @@ class AuthSecurityEventLoggingTest {
             clock,
             new TokenReuseRevoker(
                 new TokenReuseRevocationWriter(sessionRepository, tokenRepository)));
-    var account = AccountFixture.defaultAccountBuilder().build();
+    var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
     var issued = service.createSession(account, "security-log-test");
     service.redeem(issued.rawToken());
     currentTime.updateAndGet(instant -> instant.plusSeconds(31));
