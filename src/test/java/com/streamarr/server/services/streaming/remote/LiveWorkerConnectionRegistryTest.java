@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.MediaSourceRef;
+import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import com.streamarr.transcode.v1.VariantJob;
 import com.streamarr.transcode.v1.VariantSpec;
 import com.streamarr.transcode.v1.WorkerCapabilities;
@@ -106,6 +107,70 @@ class LiveWorkerConnectionRegistryTest {
     registry.stopStreamSession(streamSessionId);
 
     assertThat(registry.isRunning(streamSessionId)).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should not block worker disconnect while a segment publish is in progress")
+  void shouldNotBlockDisconnectWhileSegmentPublishInProgress() throws Exception {
+    var registry = new LiveWorkerConnectionRegistry();
+    var worker =
+        WorkerIdentity.newBuilder()
+            .setWorkerId(toProto(WORKER_ID))
+            .setBootId(toProto(UUID.randomUUID()))
+            .build();
+    var registration =
+        WorkerRegistration.newBuilder()
+            .setWorker(worker)
+            .setCapabilities(
+                WorkerCapabilities.newBuilder().addSourceNamespaceIds(toProto(SOURCE_NAMESPACE_ID)))
+            .setAvailableSlots(1)
+            .build();
+    var workerSessionId =
+        registry.register(WORKER_ID, registration, collecting(new CopyOnWriteArrayList<>()));
+    var job = variantJob();
+    assertThat(registry.dispatch(job)).isTrue();
+
+    var metadata =
+        SegmentUploadMetadata.newBuilder()
+            .setWorkerSessionId(toProto(workerSessionId))
+            .setWorker(worker)
+            .setJobAttemptId(job.getJobAttemptId())
+            .setStreamSessionId(job.getStreamSessionId())
+            .setJobId(job.getJobId())
+            .setVariantLabel(job.getVariant().getVariantLabel())
+            .build();
+
+    var inPublish = new CountDownLatch(1);
+    var releasePublish = new CountDownLatch(1);
+    Runnable blockingPublish =
+        () -> {
+          inPublish.countDown();
+          try {
+            releasePublish.await();
+          } catch (InterruptedException _) {
+            Thread.currentThread().interrupt();
+          }
+        };
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var publishing =
+          executor.submit(() -> registry.publishIfAuthorized(WORKER_ID, metadata, blockingPublish));
+      assertThat(inPublish.await(5, TimeUnit.SECONDS)).isTrue();
+
+      var disconnected = new CountDownLatch(1);
+      executor.submit(
+          () -> {
+            registry.disconnect(WORKER_ID, workerSessionId);
+            disconnected.countDown();
+          });
+      var disconnectedPromptly = disconnected.await(2, TimeUnit.SECONDS);
+      releasePublish.countDown();
+      publishing.get(5, TimeUnit.SECONDS);
+
+      assertThat(disconnectedPromptly)
+          .as("disconnect must not be blocked by an in-progress segment publish")
+          .isTrue();
+    }
   }
 
   private static WorkerRegistration registration() {

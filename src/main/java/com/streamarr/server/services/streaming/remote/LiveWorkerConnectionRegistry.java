@@ -116,8 +116,12 @@ final class LiveWorkerConnectionRegistry {
     return connection != null && connection.authorizesUpload(metadata);
   }
 
-  synchronized boolean publishIfAuthorized(
+  boolean publishIfAuthorized(
       UUID authenticatedWorkerId, SegmentUploadMetadata metadata, Runnable publication) {
+    // Not synchronized on the registry: the per-connection monitor plus the workerSessionId fence
+    // in WorkerConnection.publishIfAuthorized already make the check-then-publish atomic. Holding
+    // the registry monitor here would serialize every segment publish (a filesystem move) against
+    // worker register/disconnect. Contention stays scoped to the single owning connection.
     var connection = connections.get(authenticatedWorkerId);
     return connection != null && connection.publishIfAuthorized(metadata, publication);
   }
