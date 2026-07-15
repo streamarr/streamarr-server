@@ -187,6 +187,44 @@ class LocalSegmentStoreTest {
   }
 
   @Test
+  @DisplayName("Should not expose a prepared segment until it is published")
+  void shouldNotExposePreparedSegmentUntilItIsPublished() {
+    var sessionId = UUID.randomUUID();
+    var segmentData = "remote segment".getBytes();
+
+    try (var prepared = store.prepareSegment(sessionId, "720p/segment0.ts", segmentData)) {
+      assertThat(tempDir.resolve(sessionId.toString())).doesNotExist();
+      assertThat(store.segmentExists(sessionId, "720p/segment0.ts")).isFalse();
+
+      prepared.publish();
+    }
+
+    assertThat(store.readSegment(sessionId, "720p/segment0.ts")).isEqualTo(segmentData);
+  }
+
+  @Test
+  @DisplayName("Should discard a prepared segment when it is closed without publication")
+  void shouldDiscardPreparedSegmentWhenClosedWithoutPublication() {
+    var sessionId = UUID.randomUUID();
+
+    try (var _ = store.prepareSegment(sessionId, "720p/segment0.ts", "remote segment".getBytes())) {
+      assertThat(tempDir.resolve(sessionId.toString())).doesNotExist();
+    }
+
+    assertThat(tempDir).isEmptyDirectory();
+  }
+
+  @Test
+  @DisplayName("Should clean the temporary file when segment preparation fails")
+  void shouldCleanTemporaryFileWhenSegmentPreparationFails() {
+    var sessionId = UUID.randomUUID();
+
+    assertThatThrownBy(() -> store.prepareSegment(sessionId, "segment0.ts", null))
+        .isInstanceOf(NullPointerException.class);
+    assertThat(tempDir).isEmptyDirectory();
+  }
+
+  @Test
   @DisplayName("Should reject a stored segment that escapes its session directory")
   void shouldRejectStoredSegmentThatEscapesSessionDirectory() {
     var sessionId = UUID.randomUUID();

@@ -48,7 +48,7 @@ final class LiveWorkerConnectionRegistry {
     return connection.workerSessionId();
   }
 
-  void disconnect(UUID workerId, UUID workerSessionId) {
+  synchronized void disconnect(UUID workerId, UUID workerSessionId) {
     var connection = connections.get(workerId);
     if (connection != null
         && connection.workerSessionId().equals(workerSessionId)
@@ -89,12 +89,18 @@ final class LiveWorkerConnectionRegistry {
         .anyMatch(connection -> connection.isRunning(streamSessionId, variantLabel));
   }
 
-  boolean hasConnectedWorker() {
-    return !connections.isEmpty();
+  boolean hasConnectedWorker(UUID sourceNamespaceId) {
+    var sourceNamespace = toProto(sourceNamespaceId);
+    return connections.values().stream()
+        .anyMatch(connection -> connection.canAccessSourceNamespace(sourceNamespace));
   }
 
-  int availableSlots() {
-    return connections.values().stream().mapToInt(WorkerConnection::availableSlots).sum();
+  int availableSlots(UUID sourceNamespaceId) {
+    var sourceNamespace = toProto(sourceNamespaceId);
+    return connections.values().stream()
+        .filter(connection -> connection.canAccessSourceNamespace(sourceNamespace))
+        .mapToInt(WorkerConnection::availableSlots)
+        .sum();
   }
 
   Optional<VariantJob> releaseJobAttempt(UUID workerId, UUID workerSessionId, UUID jobAttemptId) {
@@ -108,6 +114,12 @@ final class LiveWorkerConnectionRegistry {
   boolean authorizesUpload(UUID authenticatedWorkerId, SegmentUploadMetadata metadata) {
     var connection = connections.get(authenticatedWorkerId);
     return connection != null && connection.authorizesUpload(metadata);
+  }
+
+  synchronized boolean publishIfAuthorized(
+      UUID authenticatedWorkerId, SegmentUploadMetadata metadata, Runnable publication) {
+    var connection = connections.get(authenticatedWorkerId);
+    return connection != null && connection.publishIfAuthorized(metadata, publication);
   }
 
   private static final class WorkerConnection {
@@ -157,7 +169,11 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private boolean canAccessSource(VariantJob job) {
-      return job.hasSource() && sourceNamespaceIds.contains(job.getSource().getSourceNamespaceId());
+      return job.hasSource() && canAccessSourceNamespace(job.getSource().getSourceNamespaceId());
+    }
+
+    private boolean canAccessSourceNamespace(Uuid sourceNamespaceId) {
+      return sourceNamespaceIds.contains(sourceNamespaceId);
     }
 
     private synchronized boolean tryStop(UUID jobAttemptId) {
@@ -225,6 +241,15 @@ final class LiveWorkerConnectionRegistry {
           && job.getStreamSessionId().equals(metadata.getStreamSessionId())
           && job.getJobId().equals(metadata.getJobId())
           && job.getVariant().getVariantLabel().equals(metadata.getVariantLabel());
+    }
+
+    private synchronized boolean publishIfAuthorized(
+        SegmentUploadMetadata metadata, Runnable publication) {
+      if (!authorizesUpload(metadata)) {
+        return false;
+      }
+      publication.run();
+      return true;
     }
 
     private synchronized int closeAsReplaced() {

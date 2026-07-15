@@ -81,9 +81,14 @@ public class HlsStreamingService implements StreamingService {
             .createdAt(now)
             .build();
 
-    runtimeRegistry.save(session);
-    startTranscodes(session, 0, 0);
-    runtimeRegistry.save(session);
+    try {
+      runtimeRegistry.save(session);
+      startTranscodes(session, 0, 0);
+      runtimeRegistry.save(session);
+    } catch (RuntimeException startupFailure) {
+      rollbackFailedStartup(sessionId, startupFailure);
+      throw startupFailure;
+    }
     log.info(
         "Created streaming session {} for media file {} (mode: {}, variants: {})",
         sessionId,
@@ -92,6 +97,20 @@ public class HlsStreamingService implements StreamingService {
         variants.size());
 
     return session;
+  }
+
+  private void rollbackFailedStartup(UUID sessionId, RuntimeException startupFailure) {
+    suppressCleanupFailure(startupFailure, () -> transcodeExecutor.stop(sessionId));
+    suppressCleanupFailure(startupFailure, () -> segmentStore.deleteSession(sessionId));
+    suppressCleanupFailure(startupFailure, () -> runtimeRegistry.removeById(sessionId));
+  }
+
+  private static void suppressCleanupFailure(RuntimeException startupFailure, Runnable cleanup) {
+    try {
+      cleanup.run();
+    } catch (RuntimeException cleanupFailure) {
+      startupFailure.addSuppressed(cleanupFailure);
+    }
   }
 
   @Override

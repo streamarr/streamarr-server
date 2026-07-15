@@ -74,20 +74,61 @@ public class LocalSegmentStore implements SegmentStore {
   }
 
   @Override
-  public void storeSegment(UUID sessionId, String segmentName, byte[] data) {
-    getOutputDirectory(sessionId);
-    var segmentPath = resolveSegmentPath(sessionId, segmentName);
+  public PreparedSegment prepareSegment(UUID sessionId, String segmentName, byte[] data) {
     try {
-      Files.createDirectories(segmentPath.getParent());
-      var temporary = Files.createTempFile(segmentPath.getParent(), ".upload-", ".tmp");
+      Files.createDirectories(baseDir);
+      var temporary = Files.createTempFile(baseDir, ".upload-", ".tmp");
       try {
         Files.write(temporary, data);
-        moveIntoPlace(temporary, segmentPath);
-      } finally {
-        Files.deleteIfExists(temporary);
+      } catch (IOException | RuntimeException e) {
+        deleteAfterFailedPreparation(temporary, e);
+        throw e;
       }
+      return new LocalPreparedSegment(sessionId, segmentName, temporary);
     } catch (IOException e) {
-      throw new UncheckedIOException("Failed to store segment: " + segmentName, e);
+      throw new UncheckedIOException("Failed to prepare segment: " + segmentName, e);
+    }
+  }
+
+  private static void deleteAfterFailedPreparation(Path temporary, Exception preparationFailure) {
+    try {
+      Files.deleteIfExists(temporary);
+    } catch (IOException cleanupFailure) {
+      preparationFailure.addSuppressed(cleanupFailure);
+    }
+  }
+
+  private final class LocalPreparedSegment implements PreparedSegment {
+
+    private final UUID sessionId;
+    private final String segmentName;
+    private final Path temporary;
+
+    private LocalPreparedSegment(UUID sessionId, String segmentName, Path temporary) {
+      this.sessionId = sessionId;
+      this.segmentName = segmentName;
+      this.temporary = temporary;
+    }
+
+    @Override
+    public void publish() {
+      getOutputDirectory(sessionId);
+      var segmentPath = resolveSegmentPath(sessionId, segmentName);
+      try {
+        Files.createDirectories(segmentPath.getParent());
+        moveIntoPlace(temporary, segmentPath);
+      } catch (IOException e) {
+        throw new UncheckedIOException("Failed to store segment: " + segmentName, e);
+      }
+    }
+
+    @Override
+    public void close() {
+      try {
+        Files.deleteIfExists(temporary);
+      } catch (IOException e) {
+        throw new UncheckedIOException("Failed to clean up segment upload: " + segmentName, e);
+      }
     }
   }
 

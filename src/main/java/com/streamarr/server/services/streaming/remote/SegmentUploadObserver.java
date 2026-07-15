@@ -106,16 +106,24 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
       return;
     }
 
-    try {
-      segmentStore.storeSegment(
-          fromProto(metadata.getStreamSessionId()), qualifiedSegmentName(), data.toByteArray());
+    var segmentName = qualifiedSegmentName();
+    boolean published;
+    try (var prepared =
+        segmentStore.prepareSegment(
+            fromProto(metadata.getStreamSessionId()), segmentName, data.toByteArray())) {
+      published =
+          workerConnections.publishIfAuthorized(authenticatedWorkerId, metadata, prepared::publish);
     } catch (RuntimeException e) {
       log.error(
           "Failed to store segment {} for stream session {}",
-          qualifiedSegmentName(),
+          segmentName,
           fromProto(metadata.getStreamSessionId()),
           e);
       reject(Status.INTERNAL.withDescription("Segment could not be stored"));
+      return;
+    }
+    if (!published) {
+      reject(Status.PERMISSION_DENIED.withDescription("Segment upload lost connection ownership"));
       return;
     }
 

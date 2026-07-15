@@ -6,6 +6,7 @@ import static org.awaitility.Awaitility.await;
 
 import com.google.protobuf.ByteString;
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.fakes.BlockingSegmentStore;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.transcode.tls.PemTlsIdentity;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
@@ -31,6 +32,7 @@ import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
 import io.grpc.stub.StreamObserver;
 import java.net.URISyntaxException;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -74,7 +76,7 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
   @DisplayName("Should enforce the worker session server lifecycle")
   void shouldEnforceWorkerSessionServerLifecycle() throws Exception {
     try (var server = server()) {
-      assertThat(server.hasConnectedWorker()).isFalse();
+      assertThat(server.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isFalse();
       assertThatThrownBy(server::port)
           .isInstanceOf(IllegalStateException.class)
           .hasMessage("Worker session server is not started");
@@ -295,6 +297,9 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
               workerIdentity(AUTHENTICATED_WORKER_ID, UUID.randomUUID()),
               UUID.randomUUID())) {
         assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
+        var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, Path.of("/media"));
+        assertThat(executor.isHealthy()).isFalse();
+        assertThat(executor.availableSlots()).isZero();
 
         assertThat(server.dispatch(variantJob())).isFalse();
       } finally {
@@ -312,12 +317,12 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
 
       try (var worker = connect(channel, AUTHENTICATED_WORKER_ID)) {
         assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
-        assertThat(server.availableSlots()).isEqualTo(1);
+        assertThat(server.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(1);
         var first = variantJob();
         var second = variantJob();
         assertThat(server.dispatch(first)).isTrue();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(first);
-        assertThat(server.availableSlots()).isZero();
+        assertThat(server.availableSlots(SOURCE_NAMESPACE_ID)).isZero();
 
         assertThat(server.dispatch(second)).isFalse();
 
@@ -326,7 +331,9 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
                 .setJobAttemptCompleted(
                     JobAttemptCompleted.newBuilder().setJobAttemptId(first.getJobAttemptId()))
                 .build());
-        await().atMost(5, TimeUnit.SECONDS).until(() -> server.availableSlots() == 1);
+        await()
+            .atMost(5, TimeUnit.SECONDS)
+            .until(() -> server.availableSlots(SOURCE_NAMESPACE_ID) == 1);
         assertThat(server.dispatch(second)).isTrue();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(second);
       } finally {
@@ -692,6 +699,42 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
     }
   }
 
+  @Test
+  @DisplayName("Should reject an upload that loses ownership during publication")
+  void shouldRejectUploadThatLosesOwnershipDuringPublication() throws Exception {
+    var segmentStore = new BlockingSegmentStore();
+    try (var server = server(segmentStore)) {
+      server.start();
+      var channel = workerChannel(server.port());
+      var identity = workerIdentity(UUID.randomUUID());
+
+      try (var worker = connect(channel, identity)) {
+        var workerSession = worker.nextResponse().getSessionAccepted();
+        var job = variantJob();
+        assertThat(server.dispatch(job)).isTrue();
+        assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
+        var data = "segment".getBytes();
+        var metadata =
+            segmentMetadata(workerSession, identity, job)
+                .setContentLengthBytes(data.length)
+                .build();
+        var upload = upload(channel, metadata, data);
+        assertThat(segmentStore.awaitPreparation(Duration.ofSeconds(5))).isTrue();
+
+        assertThat(server.stopVariant(uuid(job.getJobAttemptId()))).isTrue();
+        assertThat(worker.nextResponse().hasStopVariant()).isTrue();
+        segmentStore.continuePreparation();
+
+        assertUploadRejected(upload, Status.Code.PERMISSION_DENIED);
+        assertThat(segmentStore.segmentExists(uuid(job.getStreamSessionId()), "720p/segment0.ts"))
+            .isFalse();
+      } finally {
+        segmentStore.continuePreparation();
+        shutdown(channel);
+      }
+    }
+  }
+
   private WorkerSessionServer server() throws URISyntaxException {
     return server(new FakeSegmentStore());
   }
@@ -958,7 +1001,7 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
   private static final class FailingSegmentStore extends FakeSegmentStore {
 
     @Override
-    public void storeSegment(UUID sessionId, String segmentName, byte[] data) {
+    public PreparedSegment prepareSegment(UUID sessionId, String segmentName, byte[] data) {
       throw new IllegalStateException("Storage unavailable");
     }
   }

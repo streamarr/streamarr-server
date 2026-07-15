@@ -7,6 +7,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import com.google.protobuf.ByteString;
+import com.streamarr.server.fakes.BlockingSegmentStore;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
@@ -25,8 +27,11 @@ import com.streamarr.transcode.v1.WorkerRegistration;
 import io.grpc.Context;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -198,6 +203,74 @@ class WorkerSessionGrpcServiceTest {
     uploads.forEach(upload -> upload.onError(Status.CANCELLED.asRuntimeException()));
   }
 
+  @Test
+  @DisplayName("Should reject an upload when ownership is lost during publication")
+  void shouldRejectUploadWhenOwnershipIsLostDuringPublication() throws Exception {
+    var segmentStore = new BlockingSegmentStore();
+
+    var result = uploadThatLosesOwnership(segmentStore);
+
+    assertThat(result.response().error()).isNotNull();
+    assertThat(Status.fromThrowable(result.response().error()).getCode())
+        .isEqualTo(Status.Code.PERMISSION_DENIED);
+    assertThat(segmentStore.segmentExists(result.streamSessionId(), result.segmentName()))
+        .isFalse();
+  }
+
+  @Test
+  @DisplayName("Should report one storage failure when rejected upload cleanup fails")
+  void shouldReportOneStorageFailureWhenRejectedUploadCleanupFails() throws Exception {
+    var segmentStore = new CloseFailingBlockingSegmentStore();
+
+    var result = uploadThatLosesOwnership(segmentStore);
+
+    assertThat(result.response().errorCount()).isEqualTo(1);
+    assertThat(Status.fromThrowable(result.response().error()).getCode())
+        .isEqualTo(Status.Code.INTERNAL);
+  }
+
+  private static OwnershipLossResult uploadThatLosesOwnership(BlockingSegmentStore segmentStore)
+      throws Exception {
+    var workerId = UUID.randomUUID();
+    var sourceNamespaceId = UUID.randomUUID();
+    var worker = worker(workerId);
+    var registry = new LiveWorkerConnectionRegistry();
+    var workerSessionId =
+        registry.register(
+            workerId, registration(worker, sourceNamespaceId), new IgnoringResponseObserver());
+    var job = variantJob(sourceNamespaceId);
+    assertThat(registry.dispatch(job)).isTrue();
+    var service = new WorkerSessionGrpcService(registry, segmentStore);
+    var response = new RecordingUploadResponseObserver();
+    var segmentData = ByteString.copyFromUtf8("segment");
+    var upload = upload(service, workerId, response);
+    upload.onNext(
+        UploadSegmentRequest.newBuilder()
+            .setMetadata(metadata(workerSessionId, worker, job, segmentData.size()))
+            .build());
+    upload.onNext(UploadSegmentRequest.newBuilder().setData(segmentData).build());
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var publication = executor.submit(upload::onCompleted);
+      try {
+        assertThat(segmentStore.awaitPreparation(Duration.ofSeconds(5))).isTrue();
+        registry.disconnect(workerId, workerSessionId);
+        segmentStore.continuePreparation();
+        publication.get(5, TimeUnit.SECONDS);
+      } finally {
+        segmentStore.continuePreparation();
+      }
+    }
+
+    return new OwnershipLossResult(
+        response,
+        fromProto(job.getStreamSessionId()),
+        job.getVariant().getVariantLabel() + "/segment0.ts");
+  }
+
+  private record OwnershipLossResult(
+      RecordingUploadResponseObserver response, UUID streamSessionId, String segmentName) {}
+
   private static StreamObserver<UploadSegmentRequest> upload(
       WorkerSessionGrpcService service,
       UUID workerId,
@@ -252,10 +325,31 @@ class WorkerSessionGrpcServiceTest {
         .build();
   }
 
+  private static final class CloseFailingBlockingSegmentStore extends BlockingSegmentStore {
+
+    @Override
+    public PreparedSegment prepareSegment(UUID sessionId, String segmentName, byte[] data) {
+      var prepared = super.prepareSegment(sessionId, segmentName, data);
+      return new PreparedSegment() {
+        @Override
+        public void publish() {
+          prepared.publish();
+        }
+
+        @Override
+        public void close() {
+          prepared.close();
+          throw new IllegalStateException("Simulated prepared segment cleanup failure");
+        }
+      };
+    }
+  }
+
   private static final class RecordingUploadResponseObserver
       implements StreamObserver<UploadSegmentResponse> {
 
     private Throwable error;
+    private int errorCount;
 
     @Override
     public void onNext(UploadSegmentResponse value) {
@@ -265,6 +359,7 @@ class WorkerSessionGrpcServiceTest {
     @Override
     public void onError(Throwable throwable) {
       error = throwable;
+      errorCount++;
     }
 
     @Override
@@ -274,6 +369,10 @@ class WorkerSessionGrpcServiceTest {
 
     private Throwable error() {
       return error;
+    }
+
+    private int errorCount() {
+      return errorCount;
     }
   }
 

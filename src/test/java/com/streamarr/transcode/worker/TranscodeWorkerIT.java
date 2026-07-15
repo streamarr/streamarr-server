@@ -311,7 +311,7 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
           .atMost(5, TimeUnit.SECONDS)
           .until(() -> processManager.getStopped().contains(streamSessionId));
       await().atMost(5, TimeUnit.SECONDS).until(() -> !server.isRunning(streamSessionId));
-      assertThat(server.availableSlots()).isEqualTo(2);
+      assertThat(server.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(2);
     }
   }
 
@@ -372,7 +372,9 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
 
       for (var malformedJob : malformedVariantJobs()) {
         assertThat(server.dispatch(malformedJob)).isTrue();
-        await().atMost(5, TimeUnit.SECONDS).until(() -> server.availableSlots() == 2);
+        await()
+            .atMost(5, TimeUnit.SECONDS)
+            .until(() -> server.availableSlots(SOURCE_NAMESPACE_ID) == 2);
         assertThat(processManager.getStarted())
             .doesNotContain(uuid(malformedJob.getStreamSessionId()));
       }
@@ -564,7 +566,7 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
     }
 
     @Override
-    public void storeSegment(UUID sessionId, String segmentName, byte[] data) {
+    public PreparedSegment prepareSegment(UUID sessionId, String segmentName, byte[] data) {
       throw new IllegalStateException("Storage unavailable");
     }
   }

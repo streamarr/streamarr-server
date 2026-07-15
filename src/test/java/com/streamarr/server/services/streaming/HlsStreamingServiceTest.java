@@ -6,6 +6,7 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.playbackRequest
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
@@ -35,6 +36,7 @@ import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -53,6 +55,7 @@ class HlsStreamingServiceTest {
   private FakeSegmentStore segmentStore;
   private FakeFfprobeService ffprobeService;
   private FakePlaybackAuthorityGate authorityGate;
+  private FakeRuntimeStreamSessionRegistry runtimeRegistry;
   private HlsStreamingService service;
 
   @BeforeEach
@@ -62,28 +65,29 @@ class HlsStreamingServiceTest {
     segmentStore = new FakeSegmentStore();
     ffprobeService = new FakeFfprobeService();
     authorityGate = new FakePlaybackAuthorityGate();
+    runtimeRegistry = new FakeRuntimeStreamSessionRegistry();
+    service = serviceWith(transcodeExecutor, runtimeRegistry);
+  }
+
+  private HlsStreamingService serviceWith(
+      TranscodeExecutor executor, RuntimeStreamSessionRegistry registry) {
     var properties =
         StreamingProperties.builder()
             .maxConcurrentTranscodes(3)
             .targetSegmentDuration(Duration.ofSeconds(6))
             .sessionTimeout(Duration.ofSeconds(60))
             .build();
-    var decisionService = new TranscodeDecisionService();
-
-    var qualityLadderService = new QualityLadderService();
-
-    service =
-        new HlsStreamingService(
-            mediaFileRepository,
-            transcodeExecutor,
-            segmentStore,
-            ffprobeService,
-            decisionService,
-            qualityLadderService,
-            properties,
-            authorityGate,
-            new FakeRuntimeStreamSessionRegistry(),
-            new MutexFactory<>());
+    return new HlsStreamingService(
+        mediaFileRepository,
+        executor,
+        segmentStore,
+        ffprobeService,
+        new TranscodeDecisionService(),
+        new QualityLadderService(),
+        properties,
+        authorityGate,
+        registry,
+        new MutexFactory<>());
   }
 
   private StreamingOptions defaultOptions() {
@@ -465,6 +469,76 @@ class HlsStreamingServiceTest {
 
     assertThat(session.getVariants()).hasSizeGreaterThan(1);
     assertThat(session.getVariantHandles()).hasSizeGreaterThan(1);
+  }
+
+  @Test
+  @DisplayName("Should roll back the session when the first transcode startup fails")
+  void shouldRollbackSessionWhenFirstTranscodeStartupFails() {
+    var failingExecutor = new FailingStartupTranscodeExecutor(0, segmentStore);
+    service = serviceWith(failingExecutor, runtimeRegistry);
+    var file = seedMediaFile();
+
+    assertThatThrownBy(() -> createSession(file.getId(), UUID.randomUUID(), defaultOptions()))
+        .isInstanceOf(TranscodeException.class)
+        .hasMessage("Simulated transcode startup failure");
+
+    assertStartupRolledBack(failingExecutor);
+  }
+
+  @Test
+  @DisplayName("Should roll back running transcodes when a later variant startup fails")
+  void shouldRollbackRunningTranscodesWhenLaterVariantStartupFails() {
+    ffprobeService.setDefaultProbe(
+        MediaProbe.builder()
+            .duration(Duration.ofMinutes(120))
+            .framerate(23.976)
+            .width(1920)
+            .height(1080)
+            .videoCodec("hevc")
+            .audioCodec("aac")
+            .bitrate(8_000_000L)
+            .build());
+    var failingExecutor = new FailingStartupTranscodeExecutor(1, segmentStore);
+    service = serviceWith(failingExecutor, runtimeRegistry);
+    var file = seedMediaFile();
+
+    assertThatThrownBy(() -> createSession(file.getId(), UUID.randomUUID(), defaultOptions()))
+        .isInstanceOf(TranscodeException.class)
+        .hasMessage("Simulated transcode startup failure");
+
+    assertThat(failingExecutor.getAttemptedRequests()).hasSize(2);
+    assertStartupRolledBack(failingExecutor);
+  }
+
+  @Test
+  @DisplayName("Should preserve the startup failure when rollback cleanup fails")
+  void shouldPreserveStartupFailureWhenRollbackCleanupFails() {
+    var failingExecutor = new FailingStartupTranscodeExecutor(0, segmentStore);
+    failingExecutor.failOnStop();
+    service = serviceWith(failingExecutor, runtimeRegistry);
+    var file = seedMediaFile();
+
+    var startupFailure =
+        catchThrowable(() -> createSession(file.getId(), UUID.randomUUID(), defaultOptions()));
+
+    assertThat(startupFailure)
+        .isInstanceOf(TranscodeException.class)
+        .hasMessage("Simulated transcode startup failure");
+    assertThat(startupFailure.getSuppressed())
+        .singleElement()
+        .satisfies(
+            cleanupFailure ->
+                assertThat(cleanupFailure)
+                    .isInstanceOf(TranscodeException.class)
+                    .hasMessage("Simulated rollback cleanup failure"));
+    assertStartupRolledBack(failingExecutor);
+  }
+
+  private void assertStartupRolledBack(FailingStartupTranscodeExecutor executor) {
+    var sessionId = executor.getAttemptedRequests().getFirst().sessionId();
+    assertThat(runtimeRegistry.findById(sessionId)).isEmpty();
+    assertThat(executor.getRunningCount()).isZero();
+    assertThat(segmentStore.segmentExists(sessionId, "startup.ts")).isFalse();
   }
 
   @Test
@@ -1055,5 +1129,44 @@ class HlsStreamingServiceTest {
     var lastRequest = transcodeExecutor.getStartedRequests().getLast();
     assertThat(lastRequest.seekPosition()).isEqualTo(30);
     assertThat(lastRequest.startSequenceNumber()).isEqualTo(5);
+  }
+
+  private static final class FailingStartupTranscodeExecutor extends FakeTranscodeExecutor {
+
+    private final int successfulStarts;
+    private final FakeSegmentStore segmentStore;
+    private boolean failOnStop;
+    private final List<TranscodeRequest> attemptedRequests = new ArrayList<>();
+
+    private FailingStartupTranscodeExecutor(int successfulStarts, FakeSegmentStore segmentStore) {
+      this.successfulStarts = successfulStarts;
+      this.segmentStore = segmentStore;
+    }
+
+    @Override
+    public TranscodeHandle start(TranscodeRequest request) {
+      attemptedRequests.add(request);
+      segmentStore.addSegment(request.sessionId(), "startup.ts", new byte[] {1});
+      if (attemptedRequests.size() > successfulStarts) {
+        throw new TranscodeException("Simulated transcode startup failure");
+      }
+      return super.start(request);
+    }
+
+    @Override
+    public void stop(UUID sessionId) {
+      super.stop(sessionId);
+      if (failOnStop) {
+        throw new TranscodeException("Simulated rollback cleanup failure");
+      }
+    }
+
+    private void failOnStop() {
+      failOnStop = true;
+    }
+
+    private List<TranscodeRequest> getAttemptedRequests() {
+      return List.copyOf(attemptedRequests);
+    }
   }
 }
