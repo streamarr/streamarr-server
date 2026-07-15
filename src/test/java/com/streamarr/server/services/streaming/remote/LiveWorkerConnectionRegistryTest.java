@@ -75,7 +75,20 @@ class LiveWorkerConnectionRegistryTest {
 
     assertThat(dispatched).isFalse();
     assertThat(registry.isRunning(fromProto(job.getStreamSessionId()))).isFalse();
-    assertThat(registry.availableSlots()).isEqualTo(1);
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("Should report health and capacity only for the requested source namespace")
+  void shouldReportHealthAndCapacityOnlyForRequestedSourceNamespace() {
+    var registry = new LiveWorkerConnectionRegistry();
+    registry.register(WORKER_ID, registration(), new CancellableObserver());
+    var unavailableNamespace = UUID.randomUUID();
+
+    assertThat(registry.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isTrue();
+    assertThat(registry.availableSlots(SOURCE_NAMESPACE_ID)).isEqualTo(1);
+    assertThat(registry.hasConnectedWorker(unavailableNamespace)).isFalse();
+    assertThat(registry.availableSlots(unavailableNamespace)).isZero();
   }
 
   @Test

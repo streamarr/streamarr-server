@@ -48,7 +48,7 @@ class TranscodeWorkerApplicationIT extends AbstractIntegrationTest {
             .atMost(10, TimeUnit.SECONDS)
             .untilAsserted(
                 () ->
-                    assertThat(server.hasConnectedWorker())
+                    assertThat(server.hasConnectedWorker(SOURCE_NAMESPACE_ID))
                         .withFailMessage(() -> failureOutput(process))
                         .isTrue());
       } finally {
@@ -71,7 +71,7 @@ class TranscodeWorkerApplicationIT extends AbstractIntegrationTest {
           .atMost(10, TimeUnit.SECONDS)
           .untilAsserted(
               () ->
-                  assertThat(server.hasConnectedWorker())
+                  assertThat(server.hasConnectedWorker(SOURCE_NAMESPACE_ID))
                       .withFailMessage(() -> failureOutput(process))
                       .isTrue());
 

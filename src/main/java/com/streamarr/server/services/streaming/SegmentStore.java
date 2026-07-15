@@ -11,7 +11,21 @@ public interface SegmentStore {
 
   boolean segmentExists(UUID sessionId, String segmentName);
 
-  void storeSegment(UUID sessionId, String segmentName, byte[] data);
+  PreparedSegment prepareSegment(UUID sessionId, String segmentName, byte[] data);
+
+  default void storeSegment(UUID sessionId, String segmentName, byte[] data) {
+    try (var prepared = prepareSegment(sessionId, segmentName, data)) {
+      prepared.publish();
+    }
+  }
 
   void deleteSession(UUID sessionId);
+
+  interface PreparedSegment extends AutoCloseable {
+
+    void publish();
+
+    @Override
+    void close();
+  }
 }

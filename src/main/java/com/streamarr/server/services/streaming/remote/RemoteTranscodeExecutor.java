@@ -11,11 +11,13 @@ import java.util.UUID;
 public final class RemoteTranscodeExecutor implements TranscodeExecutor {
 
   private final WorkerSessionServer workerServer;
+  private final UUID sourceNamespaceId;
   private final RemoteVariantJobMapper jobMapper;
 
   public RemoteTranscodeExecutor(
       WorkerSessionServer workerServer, UUID sourceNamespaceId, Path sourceRoot) {
     this.workerServer = workerServer;
+    this.sourceNamespaceId = sourceNamespaceId;
     jobMapper = new RemoteVariantJobMapper(sourceNamespaceId, sourceRoot);
   }
 
@@ -44,11 +46,11 @@ public final class RemoteTranscodeExecutor implements TranscodeExecutor {
 
   @Override
   public boolean isHealthy() {
-    return workerServer.hasConnectedWorker();
+    return workerServer.hasConnectedWorker(sourceNamespaceId);
   }
 
   @Override
   public int availableSlots() {
-    return workerServer.availableSlots();
+    return workerServer.availableSlots(sourceNamespaceId);
   }
 }

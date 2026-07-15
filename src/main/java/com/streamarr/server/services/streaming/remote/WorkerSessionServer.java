@@ -101,13 +101,13 @@ public final class WorkerSessionServer implements AutoCloseable {
     return workerConnections.isRunning(streamSessionId, variantLabel);
   }
 
-  public synchronized boolean hasConnectedWorker() {
-    return server != null && workerConnections.hasConnectedWorker();
+  public synchronized boolean hasConnectedWorker(UUID sourceNamespaceId) {
+    return server != null && workerConnections.hasConnectedWorker(sourceNamespaceId);
   }
 
-  public synchronized int availableSlots() {
+  public synchronized int availableSlots(UUID sourceNamespaceId) {
     requireStarted();
-    return workerConnections.availableSlots();
+    return workerConnections.availableSlots(sourceNamespaceId);
   }
 
   private void requireStarted() {
