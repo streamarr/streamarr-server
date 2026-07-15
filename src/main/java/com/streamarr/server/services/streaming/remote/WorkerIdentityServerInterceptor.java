@@ -41,6 +41,8 @@ final class WorkerIdentityServerInterceptor implements ServerInterceptor {
           Context.current().withValue(AUTHENTICATED_WORKER_ID, workerId), call, headers, next);
     } catch (SSLPeerUnverifiedException | WorkerIdentityException e) {
       return reject(call, e.getMessage());
+    } catch (RuntimeException e) {
+      return reject(call, e.getMessage());
     }
   }
 
