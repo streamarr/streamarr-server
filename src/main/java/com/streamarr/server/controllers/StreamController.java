@@ -3,12 +3,12 @@ package com.streamarr.server.controllers;
 import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.exceptions.InvalidSegmentPathException;
+import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
 import com.streamarr.server.services.streaming.PlaybackRequest;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.server.services.streaming.StreamingService;
-import java.time.Duration;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -29,7 +29,6 @@ public class StreamController {
       MediaType.parseMediaType("application/vnd.apple.mpegurl");
   private static final MediaType MPEGTS_MEDIA_TYPE = MediaType.parseMediaType("video/mp2t");
   private static final MediaType MP4_MEDIA_TYPE = MediaType.parseMediaType("video/mp4");
-  private static final Duration SEGMENT_WAIT_TIMEOUT = Duration.ofSeconds(10);
 
   private final StreamingService streamingService;
   private final HlsPlaylistService playlistService;
@@ -69,7 +68,7 @@ public class StreamController {
       return ResponseEntity.notFound().build();
     }
 
-    return serveInitSegment(session.get(), sessionId, "init.mp4");
+    return serveInitSegment(session.get(), sessionId, StreamSession.defaultVariant(), "init.mp4");
   }
 
   @GetMapping("/{sessionId}/{segmentName:.+\\.(?:ts|m4s)}")
@@ -81,7 +80,7 @@ public class StreamController {
       return ResponseEntity.notFound().build();
     }
 
-    return serveSegment(session.get(), sessionId, segmentName);
+    return serveSegment(session.get(), sessionId, StreamSession.defaultVariant(), segmentName);
   }
 
   @GetMapping("/{sessionId}/{variantLabel}/stream.m3u8")
@@ -117,7 +116,7 @@ public class StreamController {
       return ResponseEntity.notFound().build();
     }
 
-    return serveInitSegment(s, sessionId, variantLabel + "/init.mp4");
+    return serveInitSegment(s, sessionId, variantLabel, variantLabel + "/init.mp4");
   }
 
   @GetMapping("/{sessionId}/{variantLabel}/{segmentName:.+\\.(?:ts|m4s)}")
@@ -139,17 +138,20 @@ public class StreamController {
 
     var qualifiedName = variantLabel + "/" + segmentName;
 
-    return serveSegment(s, sessionId, qualifiedName);
+    return serveSegment(s, sessionId, variantLabel, qualifiedName);
   }
 
   private ResponseEntity<byte[]> serveInitSegment(
-      StreamSession session, UUID sessionId, String segmentName) {
+      StreamSession session, UUID sessionId, String variantLabel, String segmentName) {
     if (session.getTranscodeDecision().containerFormat() != ContainerFormat.FMP4) {
       return ResponseEntity.notFound().build();
     }
 
     streamingService.resumeSessionIfNeeded(sessionId, segmentName);
-    if (!segmentStore.waitForSegment(sessionId, segmentName, SEGMENT_WAIT_TIMEOUT)) {
+    if (!segmentStore.waitForSegment(
+        sessionId,
+        segmentName,
+        () -> streamingService.isTranscodeActive(sessionId, variantLabel))) {
       return ResponseEntity.notFound().build();
     }
 
@@ -159,9 +161,12 @@ public class StreamController {
   }
 
   private ResponseEntity<byte[]> serveSegment(
-      StreamSession session, UUID sessionId, String segmentName) {
+      StreamSession session, UUID sessionId, String variantLabel, String segmentName) {
     streamingService.resumeSessionIfNeeded(sessionId, segmentName);
-    if (!segmentStore.waitForSegment(sessionId, segmentName, SEGMENT_WAIT_TIMEOUT)) {
+    if (!segmentStore.waitForSegment(
+        sessionId,
+        segmentName,
+        () -> streamingService.isTranscodeActive(sessionId, variantLabel))) {
       return ResponseEntity.notFound().build();
     }
 
@@ -210,5 +215,12 @@ public class StreamController {
   @ExceptionHandler(InvalidSegmentPathException.class)
   public ResponseEntity<Void> handleInvalidSegmentPath() {
     return ResponseEntity.badRequest().build();
+  }
+
+  // A segment can vanish between the wait succeeding and the read — a concurrent session destroy
+  // wins the race. That is a miss, not a server error, so map it to 404 rather than propagate 500.
+  @ExceptionHandler(TranscodeException.class)
+  public ResponseEntity<Void> handleMissingSegment() {
+    return ResponseEntity.notFound().build();
   }
 }
