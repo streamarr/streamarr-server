@@ -1,5 +1,6 @@
 package com.streamarr.server.domain.streaming;
 
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -9,6 +10,11 @@ import java.util.UUID;
  */
 public record TranscodeHandle(
     long processId, UUID attemptId, TranscodeStatus status, int startSequenceNumber) {
+
+  public TranscodeHandle {
+    Objects.requireNonNull(attemptId, "attemptId is required");
+    Objects.requireNonNull(status, "status is required");
+  }
 
   public TranscodeHandle(long processId, TranscodeStatus status) {
     this(processId, status, 0);

@@ -23,14 +23,15 @@ public record TranscodeWorkerConfiguration(
   private static final Duration DEFAULT_KEEPALIVE_TIMEOUT = Duration.ofSeconds(10);
 
   public TranscodeWorkerConfiguration {
-    Objects.requireNonNull(workerId);
-    Objects.requireNonNull(bootId);
+    Objects.requireNonNull(workerId, "workerId is required");
+    Objects.requireNonNull(bootId, "bootId is required");
     if (availableSlots < 1) {
       throw new IllegalArgumentException("Available slots must be positive");
     }
-    Objects.requireNonNull(tlsIdentity);
+    Objects.requireNonNull(tlsIdentity, "tlsIdentity is required");
+    Objects.requireNonNull(sourceNamespaces, "sourceNamespaces is required");
     sourceNamespaces = Map.copyOf(sourceNamespaces);
-    Objects.requireNonNull(segmentBasePath);
+    Objects.requireNonNull(segmentBasePath, "segmentBasePath is required");
     if (keepAliveTime == null) {
       keepAliveTime = DEFAULT_KEEPALIVE_TIME;
     }
