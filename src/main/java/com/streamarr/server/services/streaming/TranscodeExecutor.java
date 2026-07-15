@@ -6,6 +6,9 @@ import java.util.UUID;
 
 public interface TranscodeExecutor {
 
+  /** Sentinel returned by {@link #availableSlots()} when the executor imposes no slot limit. */
+  int UNBOUNDED_SLOTS = Integer.MAX_VALUE;
+
   TranscodeHandle start(TranscodeRequest request);
 
   void stop(UUID sessionId);
