@@ -113,5 +113,10 @@ class StreamingSessionCleanupListenerTest {
     public void resumeSessionIfNeeded(UUID sessionId, String segmentName) {
       throw new UnsupportedOperationException();
     }
+
+    @Override
+    public boolean isTranscodeActive(UUID sessionId, String variantLabel) {
+      throw new UnsupportedOperationException();
+    }
   }
 }

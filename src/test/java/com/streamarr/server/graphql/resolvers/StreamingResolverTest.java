@@ -501,6 +501,11 @@ class StreamingResolverTest {
     public void resumeSessionIfNeeded(UUID sessionId, String segmentName) {
       // no-op for test fake
     }
+
+    @Override
+    public boolean isTranscodeActive(UUID sessionId, String variantLabel) {
+      return false;
+    }
   }
 
   private static class NoopSessionProgressService extends SessionProgressService {

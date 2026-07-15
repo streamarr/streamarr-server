@@ -160,6 +160,11 @@ public class HlsStreamingService implements StreamingService {
   }
 
   @Override
+  public boolean isTranscodeActive(UUID sessionId, String variantLabel) {
+    return transcodeExecutor.isRunning(sessionId, variantLabel);
+  }
+
+  @Override
   public Collection<StreamSession> getAllSessions() {
     return runtimeRegistry.findAll();
   }
