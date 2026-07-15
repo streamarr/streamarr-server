@@ -23,12 +23,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
-import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.crypto.Mac;
 import org.junit.jupiter.api.DisplayName;
@@ -297,41 +292,6 @@ class RefreshTokenServiceTest {
   }
 
   @Test
-  @DisplayName("Should keep reissued session live when an earlier refresh finishes afterward")
-  void shouldKeepReissuedSessionLiveWhenEarlierRefreshFinishesAfterward() throws Exception {
-    var pausingSessions = new PausingAuthSessionRepository();
-    var tokens = new FakeRefreshTokenRepository();
-    var revoker = new TokenReuseRevoker(new TokenReuseRevocationWriter(pausingSessions, tokens));
-    var racingService =
-        new RefreshTokenService(pausingSessions, tokens, properties, clock, revoker);
-    var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
-    var issued = racingService.createSession(account, "test-device");
-
-    pausingSessions.pauseNextLock();
-    IssuedRefreshToken reissued;
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var refresh = executor.submit(() -> racingService.redeem(issued.rawToken()));
-      assertThat(pausingSessions.lockEntered.await(10, TimeUnit.SECONDS)).isTrue();
-
-      reissued = racingService.reissueFor(issued.session());
-      pausingSessions.releaseLock.countDown();
-
-      assertThatThrownBy(() -> refresh.get(10, TimeUnit.SECONDS))
-          .isInstanceOf(ExecutionException.class)
-          .hasCauseInstanceOf(InvalidRefreshTokenException.class);
-    } finally {
-      pausingSessions.releaseLock.countDown();
-    }
-
-    assertThat(pausingSessions.findById(issued.session().getId()).orElseThrow().getRevokedAt())
-        .isNull();
-    assertThat(tokens.findAll())
-        .filteredOn(token -> token.getStatus() == RefreshTokenStatus.ACTIVE)
-        .hasSize(1);
-    assertThat(racingService.redeem(reissued.rawToken())).isInstanceOf(RefreshResult.Rotated.class);
-  }
-
-  @Test
   @DisplayName("Should fail fast when SHA-256 unavailable")
   void shouldFailFastWhenSha256Unavailable() {
     try (var digests = mockStatic(MessageDigest.class)) {
@@ -427,33 +387,5 @@ class RefreshTokenServiceTest {
   private RefreshTokenService serviceWith(AuthTokenProperties tokenProperties) {
     return new RefreshTokenService(
         sessionRepository, tokenRepository, tokenProperties, clock, tokenReuseRevoker);
-  }
-
-  private static final class PausingAuthSessionRepository extends FakeAuthSessionRepository {
-
-    private final CountDownLatch lockEntered = new CountDownLatch(1);
-    private final CountDownLatch releaseLock = new CountDownLatch(1);
-    private volatile boolean pause;
-
-    private void pauseNextLock() {
-      pause = true;
-    }
-
-    @Override
-    public Optional<com.streamarr.server.domain.auth.AuthSession> lockById(UUID sessionId) {
-      if (pause) {
-        pause = false;
-        lockEntered.countDown();
-        try {
-          if (!releaseLock.await(10, TimeUnit.SECONDS)) {
-            throw new AssertionError("refresh lock was not released");
-          }
-        } catch (InterruptedException _) {
-          Thread.currentThread().interrupt();
-          throw new AssertionError("refresh lock interrupted");
-        }
-      }
-      return super.lockById(sessionId);
-    }
   }
 }

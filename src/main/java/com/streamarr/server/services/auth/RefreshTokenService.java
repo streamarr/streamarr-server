@@ -81,21 +81,6 @@ public class RefreshTokenService {
     tokenRepository.revokeAllForSession(sessionId, now);
   }
 
-  /**
-   * Replaces the session's refresh token family with one fresh ACTIVE token — the one-ACTIVE
-   * invariant holds because everything else is revoked first.
-   */
-  @Transactional
-  public IssuedRefreshToken reissueFor(AuthSession session) {
-    var now = clock.instant();
-    tokenRepository.revokeAllForSession(session.getId(), now);
-
-    var rawToken = generateRawToken();
-    tokenRepository.save(buildActiveToken(session, rawToken, now));
-
-    return new IssuedRefreshToken(rawToken, session);
-  }
-
   // Reuse detection must survive its own exception and any enclosing rollback: the family
   // revocation is deferred to an after-completion REQUIRES_NEW transaction (TokenReuseRevoker),
   // so it persists even though this exception rolls back the joined refresh transaction. The
