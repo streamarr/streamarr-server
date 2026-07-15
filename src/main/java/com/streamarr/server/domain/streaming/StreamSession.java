@@ -10,6 +10,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 import lombok.Builder;
 import lombok.Getter;
+import lombok.NonNull;
 
 @Getter
 @Builder
@@ -19,7 +20,7 @@ public class StreamSession {
 
   private final UUID sessionId;
   private final UUID mediaFileId;
-  private final PlaybackAuthority authority;
+  @NonNull private final PlaybackAuthority authority;
   private final Path sourcePath;
   private final MediaProbe mediaProbe;
   private final TranscodeDecision transcodeDecision;
@@ -38,7 +39,7 @@ public class StreamSession {
       new AtomicReference<>(new PlaybackSnapshot(0, PlaybackState.STOPPED, Instant.now()));
 
   public boolean isOwnedBy(UUID candidateProfileId) {
-    return authority != null && authority.profileId().equals(candidateProfileId);
+    return authority.profileId().equals(candidateProfileId);
   }
 
   public void updatePlaybackState(int positionSeconds, PlaybackState state) {

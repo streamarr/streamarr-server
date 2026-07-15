@@ -311,9 +311,9 @@ class SessionProgressServiceTest {
     }
 
     @Test
-    @DisplayName("Should treat session without owner profile as not found")
-    void shouldTreatSessionWithoutOwnerProfileAsNotFound() {
-      var session = StreamSessionFixture.buildMpegtsSessionOwnedBy(null);
+    @DisplayName("Should treat session owned by another profile as not found")
+    void shouldTreatSessionOwnedByAnotherProfileAsNotFound() {
+      var session = StreamSessionFixture.buildMpegtsSessionOwnedBy(UUID.randomUUID());
       runtimeRegistry.save(session);
       saveMediaFileForSession(session);
 
