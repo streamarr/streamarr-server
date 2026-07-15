@@ -14,12 +14,15 @@ import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BooleanSupplier;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 public class LocalSegmentStore implements SegmentStore {
 
   private static final Duration POLL_INTERVAL = Duration.ofMillis(100);
+  private static final Duration DEATH_GRACE = Duration.ofSeconds(1);
+  private static final Duration SAFETY_CEILING = Duration.ofMinutes(2);
 
   private final Path baseDir;
   private final ConcurrentHashMap<UUID, Path> sessionDirs = new ConcurrentHashMap<>();
@@ -46,13 +49,29 @@ public class LocalSegmentStore implements SegmentStore {
    * in remote mode nothing creates the directory until a worker's first upload, so the wait must
    * bridge that window exactly as it bridges encoder startup.
    */
+  // The wait tracks producer liveness, not a stopwatch: a slow but live producer is waited on
+  // indefinitely (up to a safety ceiling), while a dead producer is given a brief grace — enough to
+  // cover a seek stop→start blip and a late final segment — then abandoned.
   @Override
-  public boolean waitForSegment(UUID sessionId, String segmentName, Duration timeout) {
-    var deadline = System.nanoTime() + timeout.toNanos();
+  public boolean waitForSegment(UUID sessionId, String segmentName, BooleanSupplier producerAlive) {
+    var ceiling = System.nanoTime() + SAFETY_CEILING.toNanos();
+    var graceStarted = false;
+    var graceDeadline = 0L;
 
-    while (System.nanoTime() < deadline) {
+    while (true) {
       if (segmentExists(sessionId, segmentName)) {
         return true;
+      }
+      if (producerAlive.getAsBoolean()) {
+        graceStarted = false;
+      } else if (!graceStarted) {
+        graceStarted = true;
+        graceDeadline = System.nanoTime() + DEATH_GRACE.toNanos();
+      } else if (System.nanoTime() - graceDeadline >= 0) {
+        return segmentExists(sessionId, segmentName);
+      }
+      if (System.nanoTime() - ceiling >= 0) {
+        return segmentExists(sessionId, segmentName);
       }
       try {
         Thread.sleep(POLL_INTERVAL.toMillis());
@@ -61,7 +80,6 @@ public class LocalSegmentStore implements SegmentStore {
         return false;
       }
     }
-    return segmentExists(sessionId, segmentName);
   }
 
   @Override

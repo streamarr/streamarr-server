@@ -108,7 +108,7 @@ class LocalSegmentStoreTest {
     var outputDir = store.getOutputDirectory(sessionId);
     Files.write(outputDir.resolve("segment0.ts"), "data".getBytes());
 
-    var result = store.waitForSegment(sessionId, "segment0.ts", Duration.ofSeconds(1));
+    var result = store.waitForSegment(sessionId, "segment0.ts", () -> true);
 
     assertThat(result).isTrue();
   }
@@ -119,7 +119,7 @@ class LocalSegmentStoreTest {
     var sessionId = UUID.randomUUID();
     store.getOutputDirectory(sessionId);
 
-    var result = store.waitForSegment(sessionId, "missing.ts", Duration.ofMillis(300));
+    var result = store.waitForSegment(sessionId, "missing.ts", () -> false);
 
     assertThat(result).isFalse();
   }
@@ -129,7 +129,7 @@ class LocalSegmentStoreTest {
   void shouldTimeOutInsteadOfThrowingWhenSessionHasNoOutputDirectory() {
     var sessionId = UUID.randomUUID();
 
-    var result = store.waitForSegment(sessionId, "segment0.ts", Duration.ofMillis(300));
+    var result = store.waitForSegment(sessionId, "segment0.ts", () -> false);
 
     assertThat(result).isFalse();
   }
@@ -145,10 +145,46 @@ class LocalSegmentStoreTest {
         200,
         TimeUnit.MILLISECONDS);
 
-    var result = store.waitForSegment(sessionId, "720p/segment0.ts", Duration.ofSeconds(5));
+    var result = store.waitForSegment(sessionId, "720p/segment0.ts", () -> true);
 
     assertThat(result).isTrue();
     executor.shutdown();
+  }
+
+  @Test
+  @DisplayName("Should keep waiting while producer is alive then return when segment appears")
+  void shouldWaitWhileProducerIsAliveThenReturnWhenSegmentAppears() throws InterruptedException {
+    var sessionId = UUID.randomUUID();
+    var publisher =
+        Thread.ofVirtual()
+            .start(
+                () -> {
+                  try {
+                    Thread.sleep(400);
+                  } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                  }
+                  store.storeSegment(sessionId, "segment0.ts", "late data".getBytes());
+                });
+
+    var result = store.waitForSegment(sessionId, "segment0.ts", () -> true);
+
+    assertThat(result).isTrue();
+    publisher.join();
+  }
+
+  @Test
+  @DisplayName("Should stop waiting promptly when producer is dead")
+  void shouldStopWaitingPromptlyWhenProducerIsDead() {
+    var sessionId = UUID.randomUUID();
+
+    var startedAt = System.nanoTime();
+    var result = store.waitForSegment(sessionId, "never.ts", () -> false);
+    var elapsed = Duration.ofNanos(System.nanoTime() - startedAt);
+
+    assertThat(result).isFalse();
+    assertThat(elapsed).isLessThan(Duration.ofSeconds(3));
   }
 
   @Test
@@ -252,7 +288,7 @@ class LocalSegmentStoreTest {
         200,
         TimeUnit.MILLISECONDS);
 
-    var result = store.waitForSegment(sessionId, "segment1.ts", Duration.ofSeconds(5));
+    var result = store.waitForSegment(sessionId, "segment1.ts", () -> true);
 
     assertThat(result).isTrue();
     executor.shutdown();

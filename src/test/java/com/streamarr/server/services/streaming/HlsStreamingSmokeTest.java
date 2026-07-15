@@ -233,7 +233,7 @@ class HlsStreamingSmokeTest {
     assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
 
     var segmentReady =
-        segmentStore.waitForSegment(session.getSessionId(), "segment0.ts", Duration.ofSeconds(30));
+        segmentStore.waitForSegment(session.getSessionId(), "segment0.ts", () -> true);
     assertThat(segmentReady).isTrue();
 
     var segmentData = segmentStore.readSegment(session.getSessionId(), "segment0.ts");
@@ -323,7 +323,7 @@ class HlsStreamingSmokeTest {
     var session = createSession(file.getId(), UUID.randomUUID(), options);
     var sessionId = session.getSessionId();
 
-    segmentStore.waitForSegment(sessionId, "segment0.ts", Duration.ofSeconds(30));
+    segmentStore.waitForSegment(sessionId, "segment0.ts", () -> true);
 
     var handle = session.getHandle();
     assertThat(handle).isNotNull();
@@ -350,7 +350,7 @@ class HlsStreamingSmokeTest {
     var session = createSession(file.getId(), UUID.randomUUID(), options);
     var sessionId = session.getSessionId();
 
-    segmentStore.waitForSegment(sessionId, "segment0.ts", Duration.ofSeconds(30));
+    segmentStore.waitForSegment(sessionId, "segment0.ts", () -> true);
 
     streamingService.destroySession(sessionId);
 

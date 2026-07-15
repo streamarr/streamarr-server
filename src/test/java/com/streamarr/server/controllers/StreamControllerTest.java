@@ -16,6 +16,7 @@ import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
+import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.TokenScope;
@@ -214,6 +215,28 @@ class StreamControllerTest {
     streamingService.setSession(buildMpegtsSession());
 
     mockMvc
+        .perform(get("/api/stream/{sessionId}/segment0.ts", SESSION_ID))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  @DisplayName("Should return 404 when segment vanishes between wait and read")
+  void shouldReturn404WhenSegmentVanishesBetweenWaitAndRead() throws Exception {
+    streamingService.setSession(buildMpegtsSession());
+    var throwingStore =
+        new FakeSegmentStore() {
+          @Override
+          public byte[] readSegment(UUID sessionId, String segmentName) {
+            throw new TranscodeException("Segment not found: " + segmentName);
+          }
+        };
+    throwingStore.addSegment(SESSION_ID, "segment0.ts", new byte[] {0x47});
+    var raceController =
+        new StreamController(
+            streamingService, playlistService, throwingStore, new BoundAuthorizationService());
+    var raceMockMvc = MockMvcBuilders.standaloneSetup(raceController).build();
+
+    raceMockMvc
         .perform(get("/api/stream/{sessionId}/segment0.ts", SESSION_ID))
         .andExpect(status().isNotFound());
   }

@@ -2,10 +2,10 @@ package com.streamarr.server.fakes;
 
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.streaming.SegmentStore;
-import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.BooleanSupplier;
 
 public class FakeSegmentStore implements SegmentStore {
 
@@ -25,7 +25,7 @@ public class FakeSegmentStore implements SegmentStore {
   }
 
   @Override
-  public boolean waitForSegment(UUID sessionId, String segmentName, Duration timeout) {
+  public boolean waitForSegment(UUID sessionId, String segmentName, BooleanSupplier producerAlive) {
     var segments = sessions.get(sessionId);
     return segments != null && segments.containsKey(segmentName);
   }
