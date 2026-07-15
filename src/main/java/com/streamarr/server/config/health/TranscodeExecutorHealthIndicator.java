@@ -21,6 +21,10 @@ public class TranscodeExecutorHealthIndicator implements HealthIndicator {
     if (!transcodeExecutor.isHealthy()) {
       return Health.down().withDetail("reason", "No transcode capacity available").build();
     }
-    return Health.up().withDetail("availableSlots", transcodeExecutor.availableSlots()).build();
+    var slots = transcodeExecutor.availableSlots();
+    if (slots == TranscodeExecutor.UNBOUNDED_SLOTS) {
+      return Health.up().withDetail("capacity", "unbounded").build();
+    }
+    return Health.up().withDetail("availableSlots", slots).build();
   }
 }
