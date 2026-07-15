@@ -77,16 +77,21 @@ public class LocalSegmentStore implements SegmentStore {
   public PreparedSegment prepareSegment(UUID sessionId, String segmentName, byte[] data) {
     try {
       Files.createDirectories(baseDir);
-      var temporary = Files.createTempFile(baseDir, ".upload-", ".tmp");
-      try {
-        Files.write(temporary, data);
-      } catch (IOException | RuntimeException e) {
-        deleteAfterFailedPreparation(temporary, e);
-        throw e;
-      }
+      var temporary = writeTemporarySegment(data);
       return new LocalPreparedSegment(sessionId, segmentName, temporary);
     } catch (IOException e) {
       throw new UncheckedIOException("Failed to prepare segment: " + segmentName, e);
+    }
+  }
+
+  private Path writeTemporarySegment(byte[] data) throws IOException {
+    var temporary = Files.createTempFile(baseDir, ".upload-", ".tmp");
+    try {
+      Files.write(temporary, data);
+      return temporary;
+    } catch (IOException | RuntimeException e) {
+      deleteAfterFailedPreparation(temporary, e);
+      throw e;
     }
   }
 

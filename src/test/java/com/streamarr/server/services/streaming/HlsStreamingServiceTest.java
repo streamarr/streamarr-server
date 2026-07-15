@@ -498,7 +498,8 @@ class HlsStreamingServiceTest {
     service = serviceWith(failingExecutor, runtimeRegistry);
     var file = seedMediaFile();
 
-    assertThatThrownBy(() -> createSession(file.getId(), UUID.randomUUID(), defaultOptions()))
+    var command = createStreamSessionCommand(file.getId(), UUID.randomUUID(), defaultOptions());
+    assertThatThrownBy(() -> service.createSession(command))
         .isInstanceOf(TranscodeException.class)
         .hasMessage("Simulated transcode startup failure");
 
@@ -522,7 +523,8 @@ class HlsStreamingServiceTest {
     service = serviceWith(failingExecutor, runtimeRegistry);
     var file = seedMediaFile();
 
-    assertThatThrownBy(() -> createSession(file.getId(), UUID.randomUUID(), defaultOptions()))
+    var command = createStreamSessionCommand(file.getId(), UUID.randomUUID(), defaultOptions());
+    assertThatThrownBy(() -> service.createSession(command))
         .isInstanceOf(TranscodeException.class)
         .hasMessage("Simulated transcode startup failure");
 

@@ -44,7 +44,10 @@ public class FakeSegmentStore implements SegmentStore {
       }
 
       @Override
-      public void close() {}
+      public void close() {
+        // Data remains owned by this object until publish(), so there is no staged resource to
+        // release.
+      }
     };
   }
 
