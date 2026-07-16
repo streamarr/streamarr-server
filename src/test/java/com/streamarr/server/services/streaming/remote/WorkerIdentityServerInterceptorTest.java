@@ -79,13 +79,19 @@ class WorkerIdentityServerInterceptorTest {
     }
 
     @Override
-    public void request(int numMessages) {}
+    public void request(int numMessages) {
+      throw new UnsupportedOperationException();
+    }
 
     @Override
-    public void sendHeaders(Metadata headers) {}
+    public void sendHeaders(Metadata headers) {
+      throw new UnsupportedOperationException();
+    }
 
     @Override
-    public void sendMessage(Object message) {}
+    public void sendMessage(Object message) {
+      throw new UnsupportedOperationException();
+    }
 
     @Override
     public void close(Status status, Metadata trailers) {

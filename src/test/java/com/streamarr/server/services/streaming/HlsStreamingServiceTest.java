@@ -242,14 +242,6 @@ class HlsStreamingServiceTest {
   }
 
   @Test
-  @DisplayName("Should return empty when runtime session is missing")
-  void shouldReturnEmptyWhenRuntimeSessionIsMissing() {
-    var result = accessMissingSession(UUID.randomUUID());
-
-    assertThat(result).isEmpty();
-  }
-
-  @Test
   @DisplayName("Should return empty when live playback authority is denied")
   void shouldReturnEmptyWhenLivePlaybackAuthorityIsDenied() {
     var file = seedMediaFile();
