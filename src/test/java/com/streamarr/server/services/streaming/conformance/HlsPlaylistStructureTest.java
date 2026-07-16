@@ -15,7 +15,6 @@ import java.util.OptionalLong;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
@@ -24,19 +23,19 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 /**
- * Spec-cited HLS conformance suite. Each case parses a playlist actually produced by {@link
+ * Spec-cited HLS playlist structure suite. Each case parses a playlist actually produced by {@link
  * HlsPlaylistService} and asserts a structural obligation from RFC 8216 (and its 8216bis revision),
  * citing the relevant section in its {@code @DisplayName} and an inline comment.
  *
  * <p>Tagged {@code HlsConformance} in addition to {@code UnitTest} so it runs inside the standard
- * {@code ./mvnw verify} CI gate. The single intentional deviation from the standard — advertise
- * ahead of lazy segment production — is pinned as a {@code @Disabled} {@code known-deviation} case
- * that references ADR 0019 rather than left as tribal knowledge.
+ * {@code ./mvnw verify} CI gate. ADR 0019 records the intentional advertise-ahead deviation;
+ * delivery and recovery behavior is tracked separately because a generated playlist alone cannot
+ * prove that its segment URIs are downloadable.
  */
 @Tag("UnitTest")
 @Tag("HlsConformance")
-@DisplayName("HLS RFC 8216 Conformance")
-class HlsPlaylistConformanceTest {
+@DisplayName("HLS RFC 8216 Playlist Structure")
+class HlsPlaylistStructureTest {
 
   private static final String TOKEN = "conformance-token";
   private static final int TARGET_SEGMENT_SECONDS = 6;
@@ -222,41 +221,6 @@ class HlsPlaylistConformanceTest {
     }
   }
 
-  @Nested
-  @DisplayName("Documented deviations")
-  class DocumentedDeviations {
-
-    // RFC 8216 §6.2.1: every Media Segment listed in a playlist MUST be immediately available to
-    // clients — a server MUST NOT advertise a segment URI it cannot deliver on request. Streamarr's
-    // on-demand delivery INTENTIONALLY deviates: it advertises the whole timeline up front (for
-    // instant start and arbitrary seek) while FFmpeg produces each segment lazily behind the
-    // playhead. This is a tracked, documented deviation, not a defect — see ADR 0019
-    // (0019-recoverable-jit-hls-segment-delivery.adoc). Pinned as a skipped case so the deviation
-    // is
-    // an explicit, reviewable assertion rather than an unrecorded gap. If the delivery model ever
-    // changes to advertise only produced segments, remove @Disabled and this must pass.
-    @Test
-    @Tag("known-deviation")
-    @Disabled(
-        "Intentional JIT deviation — see ADR 0019; segments advertised ahead of lazy production")
-    @DisplayName("Should make every advertised segment immediately downloadable (§6.2.1)")
-    void shouldMakeEveryAdvertisedSegmentImmediatelyDownloadable() {
-      var playlist =
-          MediaPlaylist.parse(
-              service.generateMediaPlaylist(mediaSession(ContainerFormat.MPEGTS, 120), TOKEN));
-
-      // A spec-conformant server would have produced every advertised segment before listing it.
-      // Under JIT delivery no segment exists at generation time, so the set of immediately
-      // downloadable segments is empty while the playlist advertises the full timeline.
-      var immediatelyDownloadable = List.<String>of();
-
-      assertThat(playlist.segmentUris())
-          .as("§6.2.1 requires every listed segment to be immediately downloadable")
-          .isNotEmpty()
-          .allMatch(immediatelyDownloadable::contains);
-    }
-  }
-
   /** Minimal parser over the media playlist text Streamarr produces, for spec assertions. */
   private record MediaPlaylist(List<String> lines) {
 
@@ -309,10 +273,6 @@ class HlsPlaylistConformanceTest {
           .filter(Matcher::matches)
           .map(matcher -> Double.parseDouble(matcher.group(1)))
           .toList();
-    }
-
-    List<String> segmentUris() {
-      return lines.stream().filter(line -> !line.isBlank() && !line.startsWith("#")).toList();
     }
 
     /** Lowest EXT-X-VERSION the tags actually present require, per RFC 8216 §7. */
