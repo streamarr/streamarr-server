@@ -38,9 +38,7 @@ final class WorkerIdentityServerInterceptor implements ServerInterceptor {
         return reject(call, "no X.509 peer certificate");
       }
       workerId = identityMapper.workerId(leaf);
-    } catch (SSLPeerUnverifiedException | WorkerIdentityException e) {
-      return reject(call, e.getMessage());
-    } catch (RuntimeException e) {
+    } catch (SSLPeerUnverifiedException | RuntimeException e) {
       return reject(call, e.getMessage());
     }
     return Contexts.interceptCall(
