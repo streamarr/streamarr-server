@@ -8,6 +8,11 @@ Proposed
 
 This ADR narrows the "RFC 8216 compliance" consequence of link:0008-server-generated-hls-playlists.adoc[ADR 0008] and refines link:0018-live-playback-authority-and-outbound-workers.adoc[ADR 0018] by un-deferring its request-driven recovery slice while leaving 0018's multi-control-plane failover and durable job recovery deferred.
 
+=== Implementation status
+
+The liveness-bounded segment wait is implemented.
+On-demand producer recovery — restarting or re-dispatching a dead producer at the requested segment — is tracked in https://github.com/streamarr/streamarr-server/issues/252[issue #252].
+
 == Context
 
 Streamarr transcodes on-demand library files and serves them as HLS, generating the media playlist from the source's probed duration rather than from produced output.
