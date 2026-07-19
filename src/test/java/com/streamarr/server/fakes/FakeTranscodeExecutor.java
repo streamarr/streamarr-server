@@ -37,15 +37,14 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
       new LinkedHashSet<>(Set.of(ExecutionTargetId.LOCAL));
   private int availableSlots = Integer.MAX_VALUE;
   private boolean healthy = true;
+  private volatile boolean failUntargetedStarts;
 
   @Override
   public TranscodeHandle start(TranscodeRequest request) {
-    startedRequests.add(request);
-    var key = new ProcessKey(request.sessionId(), request.variantLabel());
-    running.add(key);
-    started.add(key);
-    return new TranscodeHandle(
-        1L, request.attemptId(), TranscodeStatus.ACTIVE, request.startSequenceNumber());
+    if (failUntargetedStarts) {
+      throw new TranscodeException("No connected transcode worker can run this variant");
+    }
+    return doStart(request);
   }
 
   @Override
@@ -54,7 +53,24 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
       throw new TranscodeException("Target " + target.value() + " refused the transcode");
     }
     startedTargets.add(target);
-    return start(request);
+    return doStart(request);
+  }
+
+  private TranscodeHandle doStart(TranscodeRequest request) {
+    startedRequests.add(request);
+    var key = new ProcessKey(request.sessionId(), request.variantLabel());
+    running.add(key);
+    started.add(key);
+    return new TranscodeHandle(
+        1L, request.attemptId(), TranscodeStatus.ACTIVE, request.startSequenceNumber());
+  }
+
+  /**
+   * Untargeted (first-fit) starts fail as when no worker is connected; targeted starts still honor
+   * per-target refusals independently.
+   */
+  public void failUntargetedStarts() {
+    failUntargetedStarts = true;
   }
 
   @Override
