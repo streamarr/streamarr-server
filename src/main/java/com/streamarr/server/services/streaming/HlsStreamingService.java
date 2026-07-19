@@ -121,7 +121,9 @@ public class HlsStreamingService implements StreamingService {
 
   @Override
   public void destroySession(UUID sessionId) {
-    runtimeRegistry.removeById(sessionId).ifPresent(session -> cleanUpDestroyed(sessionId));
+    if (producerLifecycle.removeSession(sessionId)) {
+      cleanUpDestroyed(sessionId);
+    }
   }
 
   private void cleanUpDestroyed(UUID sessionId) {

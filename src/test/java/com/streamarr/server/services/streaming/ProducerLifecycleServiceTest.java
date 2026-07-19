@@ -388,15 +388,72 @@ class ProducerLifecycleServiceTest {
   }
 
   @Test
-  @DisplayName("Should stop an alive producer before replacing it")
-  void shouldStopAliveProducerBeforeReplacingIt() {
+  @DisplayName("Should stop an alive producer before replacing it when the caller observed a stall")
+  void shouldStopAliveProducerBeforeReplacingItWhenTheCallerObservedStall() {
     var session = startedSession();
 
-    var result = lifecycle.replaceProducer(replaceCommand(session).build());
+    var result =
+        lifecycle.replaceProducer(
+            replaceCommand(session)
+                .reason(ProducerLifecycleService.ReplacementReason.STALLED)
+                .build());
 
     assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.Replaced.class);
     assertThat(transcodeExecutor.getStoppedVariants())
         .contains(session.getSessionId() + "/" + StreamSession.defaultVariant());
+  }
+
+  @Test
+  @DisplayName("Should supersede a death claim when the producer is actually running")
+  void shouldSupersedeDeathClaimWhenTheProducerIsActuallyRunning() {
+    var session = startedSession();
+    var attemptBefore = session.getHandle().attemptId();
+
+    var result =
+        lifecycle.replaceProducer(
+            replaceCommand(session)
+                .reason(ProducerLifecycleService.ReplacementReason.DEAD)
+                .build());
+
+    // A stale death observation — e.g. against another waiter's healthy replacement — must
+    // re-observe, never kill.
+    assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.Superseded.class);
+    assertThat(transcodeExecutor.getStoppedVariants()).isEmpty();
+    assertThat(session.getHandle().attemptId()).isEqualTo(attemptBefore);
+    assertThat(transcodeExecutor.isRunning(session.getSessionId())).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should replace a suspended handle when the caller's resume attempt failed")
+  void shouldReplaceSuspendedHandleWhenTheCallersResumeAttemptFailed() {
+    var session = startedSession();
+    lifecycle.suspend(session);
+
+    var result =
+        lifecycle.replaceProducer(
+            replaceCommand(session)
+                .reason(ProducerLifecycleService.ReplacementReason.RESUME_FAILED)
+                .build());
+
+    assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.Replaced.class);
+    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
+  }
+
+  @Test
+  @DisplayName("Should exhaust a suspended handle when the expected attempt matches")
+  void shouldExhaustSuspendedHandleWhenTheExpectedAttemptMatches() {
+    var session = startedSession();
+    lifecycle.suspend(session);
+
+    var result =
+        lifecycle.markExhausted(
+            session.getSessionId(),
+            StreamSession.defaultVariant(),
+            session.getHandle().attemptId());
+
+    // Reached only when nothing — not even a resume — can produce the segment.
+    assertThat(result).isInstanceOf(ProducerLifecycleService.ExhaustResult.Exhausted.class);
+    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.FAILED);
   }
 
   @Test
@@ -504,8 +561,8 @@ class ProducerLifecycleServiceTest {
   }
 
   @Test
-  @DisplayName("Should mark the variant failed when exhausting the expected attempt")
-  void shouldMarkTheVariantFailedWhenExhaustingTheExpectedAttempt() {
+  @DisplayName("Should mark the variant failed and stop its live producer when exhausting")
+  void shouldMarkTheVariantFailedAndStopItsLiveProducerWhenExhausting() {
     var session = startedSession();
 
     var result =
@@ -516,6 +573,10 @@ class ProducerLifecycleServiceTest {
 
     assertThat(result).isInstanceOf(ProducerLifecycleService.ExhaustResult.Exhausted.class);
     assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.FAILED);
+    // FAILED promises "no producer": the final stalled-but-alive attempt must not keep running.
+    assertThat(transcodeExecutor.getStoppedVariants())
+        .contains(session.getSessionId() + "/" + StreamSession.defaultVariant());
+    assertThat(transcodeExecutor.isRunning(session.getSessionId())).isFalse();
   }
 
   @Test

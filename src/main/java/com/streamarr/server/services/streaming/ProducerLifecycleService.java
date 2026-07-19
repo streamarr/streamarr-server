@@ -34,6 +34,17 @@ public class ProducerLifecycleService {
   private final RuntimeStreamSessionRegistry runtimeRegistry;
   private final MutexFactory<UUID> sessionMutex;
 
+  /**
+   * The coordinator's classification of the producer being replaced. The observation is re-verified
+   * under the mutex: a DEAD claim against a producer that is actually running is a stale view and
+   * must supersede, never kill.
+   */
+  public enum ReplacementReason {
+    DEAD,
+    STALLED,
+    RESUME_FAILED
+  }
+
   @Builder
   public record ReplaceProducerCommand(
       UUID sessionId,
@@ -41,7 +52,13 @@ public class ProducerLifecycleService {
       String segmentName,
       int segmentIndex,
       UUID expectedAttemptId,
-      ExecutionTargetId target) {}
+      ReplacementReason reason,
+      ExecutionTargetId target) {
+
+    public ReplaceProducerCommand {
+      reason = reason != null ? reason : ReplacementReason.DEAD;
+    }
+  }
 
   public sealed interface ReplaceResult {
     record Replaced(UUID newAttemptId) implements ReplaceResult {}
@@ -115,6 +132,22 @@ public class ProducerLifecycleService {
   }
 
   /**
+   * Removes the session from the registry under the session mutex, so an in-flight replace either
+   * completes (and its saved session is removed here) or observes the removal — a destroyed session
+   * can never be resurrected by a racing save.
+   */
+  public boolean removeSession(UUID sessionId) {
+    var lock = sessionMutex.getMutex(sessionId);
+    lock.lock();
+
+    try {
+      return runtimeRegistry.removeById(sessionId).isPresent();
+    } finally {
+      lock.unlock();
+    }
+  }
+
+  /**
    * Stops every producer of a session already removed from the registry. Taking the mutex closes
    * the window where a concurrent replace could start a producer for a destroyed session.
    */
@@ -157,11 +190,19 @@ public class ProducerLifecycleService {
     }
 
     var handle = session.getVariantHandle(command.variantLabel());
-    if (isSupersededHandle(handle, command.expectedAttemptId())) {
+    if (handle == null
+        || !handle.attemptId().equals(command.expectedAttemptId())
+        || !isReplaceableStatus(handle, session, command.reason())) {
       return new ReplaceResult.Superseded();
     }
 
     if (transcodeExecutor.isRunning(command.sessionId(), command.variantLabel())) {
+      // Only a stall observation licenses stopping a live producer; a caller claiming death
+      // against a producer that is running holds a stale view (e.g. another waiter's healthy
+      // replacement) and must re-observe instead.
+      if (command.reason() != ReplacementReason.STALLED) {
+        return new ReplaceResult.Superseded();
+      }
       transcodeExecutor.stopVariant(command.sessionId(), command.variantLabel());
     }
 
@@ -195,8 +236,11 @@ public class ProducerLifecycleService {
       return new ExhaustResult.Superseded();
     }
 
+    // SUSPENDED is exhaustible here: with a healthy suspension every replacement supersedes
+    // instead of consuming a target, so exhaustion is only ever reached when nothing — not even a
+    // resume — can produce the segment (e.g. no eligible targets after a failed resume).
     var handle = session.getVariantHandle(variantLabel);
-    if (isSupersededHandle(handle, expectedAttemptId)) {
+    if (handle == null || !handle.attemptId().equals(expectedAttemptId)) {
       return new ExhaustResult.Superseded();
     }
 
@@ -211,15 +255,18 @@ public class ProducerLifecycleService {
   }
 
   /**
-   * SUSPENDED is the planned-suspension fence and never replaceable here; FAILED stays replaceable
-   * so the new-target reset can revive the exhausted attempt.
+   * A suspended handle is the planned-suspension fence: replaceable only when the caller's resume
+   * attempt just failed (recovery is then the only path back to a producer) or when the session is
+   * merely part-suspended (a partial resume failure). FAILED stays replaceable so the new-target
+   * reset can revive the exhausted attempt.
    */
-  private static boolean isSupersededHandle(TranscodeHandle handle, UUID expectedAttemptId) {
-    if (handle == null || !handle.attemptId().equals(expectedAttemptId)) {
-      return true;
-    }
-
-    return handle.status() != TranscodeStatus.ACTIVE && handle.status() != TranscodeStatus.FAILED;
+  private static boolean isReplaceableStatus(
+      TranscodeHandle handle, StreamSession session, ReplacementReason reason) {
+    return switch (handle.status()) {
+      case ACTIVE, FAILED -> true;
+      case SUSPENDED -> reason == ReplacementReason.RESUME_FAILED || !session.isSuspended();
+      case STARTING, SEEKING, STOPPED -> false;
+    };
   }
 
   private TranscodeRequest replacementRequest(

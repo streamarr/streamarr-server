@@ -9,6 +9,7 @@ import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.streaming.ProducerLifecycleService.ExhaustResult;
 import com.streamarr.server.services.streaming.ProducerLifecycleService.ReplaceProducerCommand;
 import com.streamarr.server.services.streaming.ProducerLifecycleService.ReplaceResult;
+import com.streamarr.server.services.streaming.ProducerLifecycleService.ReplacementReason;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -48,10 +49,6 @@ public class SegmentDeliveryCoordinator {
       new ConcurrentHashMap<>();
 
   public SegmentDelivery deliver(UUID sessionId, String variantLabel, String segmentName) {
-    var state =
-        states.computeIfAbsent(
-            new VariantKey(sessionId, variantLabel), _ -> new VariantDeliveryState());
-
     while (true) {
       var ready = tryRead(sessionId, segmentName);
       if (ready != null) {
@@ -68,16 +65,25 @@ public class SegmentDeliveryCoordinator {
         return new SegmentDelivery.SessionEnded();
       }
 
+      // Bookkeeping is created only for validated requests, so post-destroy retries cannot
+      // re-grow state that forgetSession already dropped.
+      var state =
+          states.computeIfAbsent(
+              new VariantKey(sessionId, variantLabel), _ -> new VariantDeliveryState());
+
       if (handle.status() == TranscodeStatus.FAILED) {
         var pending = pendingSegment(sessionId, variantLabel, segmentName, handle);
         var outcome = resolveFailedVariant(state, session, handle, pending);
         if (outcome != null) {
           return outcome;
         }
+        if (!sleepOnePoll()) {
+          return new SegmentDelivery.Cancelled();
+        }
         continue;
       }
 
-      ensurePositionedForMediaSegment(session, segmentName);
+      var positioned = tryEnsurePositioned(session, segmentName);
       handle = session.getVariantHandle(variantLabel);
       if (handle == null) {
         return new SegmentDelivery.SessionEnded();
@@ -94,11 +100,27 @@ public class SegmentDeliveryCoordinator {
         continue;
       }
 
-      var outcome = recover(state, pending, producerAlive);
+      var outcome = recover(state, pending, replacementReason(producerAlive, positioned, session));
       if (outcome != null) {
         return outcome;
       }
+      // A pass that neither replaced nor terminated (superseded, or another waiter's healthy
+      // replacement) must re-observe at poll cadence, never in a hot loop.
+      if (!sleepOnePoll()) {
+        return new SegmentDelivery.Cancelled();
+      }
     }
+  }
+
+  private static ReplacementReason replacementReason(
+      boolean producerAlive, boolean positioned, StreamSession session) {
+    if (producerAlive) {
+      return ReplacementReason.STALLED;
+    }
+    if (!positioned && session.isSuspended()) {
+      return ReplacementReason.RESUME_FAILED;
+    }
+    return ReplacementReason.DEAD;
   }
 
   private static PendingSegment pendingSegment(
@@ -138,10 +160,26 @@ public class SegmentDeliveryCoordinator {
    * Positioning follows media-segment indices; an init request must never relocate a mid-timeline
    * producer to index 0. A suspended session still resumes so a lone init request cannot wait on a
    * producer nothing will start.
+   *
+   * <p>Returns false when positioning could not start a producer (e.g. a resume with no eligible
+   * worker): the failure is folded into recovery classification instead of escaping as a raw server
+   * error.
    */
-  private void ensurePositionedForMediaSegment(StreamSession session, String segmentName) {
-    if (SegmentNames.indexOf(segmentName).isPresent() || session.isSuspended()) {
+  private boolean tryEnsurePositioned(StreamSession session, String segmentName) {
+    if (SegmentNames.indexOf(segmentName).isEmpty() && !session.isSuspended()) {
+      return true;
+    }
+
+    try {
       producerLifecycle.ensurePositioned(session.getSessionId(), segmentName);
+      return true;
+    } catch (TranscodeException e) {
+      log.warn(
+          "Positioning failed for session {} segment {}: {}",
+          session.getSessionId(),
+          segmentName,
+          e.getMessage());
+      return false;
     }
   }
 
@@ -204,7 +242,7 @@ public class SegmentDeliveryCoordinator {
    * or a terminal outcome.
    */
   private SegmentDelivery recover(
-      VariantDeliveryState state, PendingSegment pending, boolean producerAlive) {
+      VariantDeliveryState state, PendingSegment pending, ReplacementReason reason) {
     RecoveryCycle cycle;
     UUID endedAttemptId;
     synchronized (state) {
@@ -215,14 +253,25 @@ public class SegmentDeliveryCoordinator {
       cycle = state.cycle;
       endedAttemptId = cycle.currentAttemptId();
     }
-    logProducerEnd(pending, endedAttemptId, producerAlive);
+    logProducerEnd(pending, endedAttemptId, reason);
 
-    return attemptReplacements(state, cycle, pending);
+    return attemptReplacements(state, cycle, pending, reason);
   }
 
   private SegmentDelivery attemptReplacements(
-      VariantDeliveryState state, RecoveryCycle cycle, PendingSegment pending) {
+      VariantDeliveryState state,
+      RecoveryCycle cycle,
+      PendingSegment pending,
+      ReplacementReason reason) {
     while (true) {
+      // A producer that is alive and within its stall budget — typically another waiter's fresh
+      // replacement — means recovery is not (or no longer) needed; never dispatch or exhaust
+      // underneath it.
+      if (transcodeExecutor.isRunning(pending.sessionId(), pending.variantLabel())
+          && !hasStalled(state)) {
+        return null;
+      }
+
       UUID expectedAttemptId;
       ExecutionTargetId target;
       synchronized (state) {
@@ -230,12 +279,6 @@ public class SegmentDeliveryCoordinator {
         target = cycle.firstUnattempted();
       }
       if (target == null) {
-        // Another waiter's replacement may be alive and within its stall budget; recovery is
-        // still in flight then, and a live producer must never be exhausted underneath it.
-        if (transcodeExecutor.isRunning(pending.sessionId(), pending.variantLabel())
-            && !hasStalled(state)) {
-          return null;
-        }
         return exhaust(state, cycle, pending, expectedAttemptId);
       }
 
@@ -247,6 +290,7 @@ public class SegmentDeliveryCoordinator {
                   .segmentName(pending.segmentName())
                   .segmentIndex(pending.requestedIndex())
                   .expectedAttemptId(expectedAttemptId)
+                  .reason(reason)
                   .target(target)
                   .build());
 
@@ -268,7 +312,7 @@ public class SegmentDeliveryCoordinator {
               newAttemptId);
           return null;
         }
-        case ReplaceResult.Refused(String reason) -> {
+        case ReplaceResult.Refused(String refusal) -> {
           synchronized (state) {
             cycle.markAttempted(target);
           }
@@ -277,7 +321,7 @@ public class SegmentDeliveryCoordinator {
               target.value(),
               pending.sessionId(),
               pending.variantLabel(),
-              reason);
+              refusal);
         }
         case ReplaceResult.Superseded() -> {
           return null;
@@ -312,8 +356,11 @@ public class SegmentDeliveryCoordinator {
     }
 
     synchronized (state) {
-      // The exhausted cycle is retained: its snapshot is the baseline for the new-target reset.
-      if (state.cycle == null) {
+      // The exhausted cycle is retained as the baseline for the new-target reset — but only while
+      // this cycle's attempt is still the tracked one. A planned restart (e.g. a seek revival)
+      // that raced in owns the state now; resurrecting the stale cycle over it would wedge the
+      // variant behind an exhausted snapshot no death ever opened.
+      if (state.cycle == null && expectedAttemptId.equals(state.trackedAttemptId)) {
         state.cycle = cycle;
       }
     }
@@ -336,7 +383,7 @@ public class SegmentDeliveryCoordinator {
       StreamSession session,
       TranscodeHandle handle,
       PendingSegment pending) {
-    ensurePositionedForMediaSegment(session, pending.segmentName());
+    tryEnsurePositioned(session, pending.segmentName());
     var refreshed = session.getVariantHandle(pending.variantLabel());
     if (refreshed == null) {
       return new SegmentDelivery.SessionEnded();
@@ -371,7 +418,8 @@ public class SegmentDeliveryCoordinator {
         state,
         resetCycle,
         pendingSegment(
-            pending.sessionId(), pending.variantLabel(), pending.segmentName(), refreshed));
+            pending.sessionId(), pending.variantLabel(), pending.segmentName(), refreshed),
+        ReplacementReason.DEAD);
   }
 
   /**
@@ -389,8 +437,8 @@ public class SegmentDeliveryCoordinator {
     return fresh;
   }
 
-  private void logProducerEnd(PendingSegment pending, UUID attemptId, boolean producerAlive) {
-    if (producerAlive) {
+  private void logProducerEnd(PendingSegment pending, UUID attemptId, ReplacementReason reason) {
+    if (reason == ReplacementReason.STALLED) {
       log.warn(
           "Producer classified {} for session {} variant {} (attempt {}): no publication within {}",
           ProducerEnd.EndKind.STALLED,
@@ -398,6 +446,16 @@ public class SegmentDeliveryCoordinator {
           pending.variantLabel(),
           attemptId,
           properties.producerStallThreshold());
+      return;
+    }
+
+    if (reason == ReplacementReason.RESUME_FAILED) {
+      log.warn(
+          "Resume could not start a producer for session {} variant {} (attempt {}); recovering"
+              + " across execution targets",
+          pending.sessionId(),
+          pending.variantLabel(),
+          attemptId);
       return;
     }
 
