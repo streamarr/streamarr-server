@@ -70,6 +70,10 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
       shutdownManagedProcess(processes.remove(key), sessionId);
     }
 
+    // A planned session stop is the end of the line for its evidence: nothing consumes it after
+    // teardown, and unconsumed entries would otherwise outlive the session for the JVM lifetime.
+    retainedExits.keySet().removeIf(key -> key.sessionId().equals(sessionId));
+
     if (!keysToRemove.isEmpty()) {
       log.info("Stopped FFmpeg process(es) for session {}", sessionId);
     }
@@ -77,8 +81,10 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
 
   @Override
   public void stopProcess(UUID sessionId, String variantLabel) {
-    var managed = processes.remove(new ProcessKey(sessionId, variantLabel));
+    var key = new ProcessKey(sessionId, variantLabel);
+    var managed = processes.remove(key);
     shutdownManagedProcess(managed, sessionId);
+    retainedExits.remove(key);
     if (managed != null) {
       log.info("Stopped FFmpeg process for session {} variant {}", sessionId, variantLabel);
     }
@@ -90,6 +96,7 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
     }
 
     if (!managed.process().isAlive()) {
+      logUnobservedExit(managed, sessionId);
       managed.drainer().close();
       return;
     }
@@ -97,6 +104,23 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
     sendQuitSignal(managed.process(), sessionId);
     awaitGracefulShutdown(managed.process(), sessionId);
     managed.drainer().close();
+  }
+
+  /** A corpse disposed of on a planned stop still gets its crash detail into the log. */
+  private void logUnobservedExit(ManagedProcess managed, UUID sessionId) {
+    try {
+      var exitCode = managed.process().exitValue();
+      if (exitCode == 0) {
+        return;
+      }
+      log.warn(
+          "FFmpeg had already exited with code {} for session {} before its planned stop: {}",
+          exitCode,
+          sessionId,
+          exitDetail(exitCode, managed.drainer().getRecentOutput()));
+    } catch (Exception e) {
+      log.debug("Could not read FFmpeg exit details for session {}", sessionId, e);
+    }
   }
 
   private void sendQuitSignal(Process process, UUID sessionId) {
@@ -148,7 +172,10 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
       return Optional.empty();
     }
 
-    retainedExits.remove(key, retained);
+    // Consume-once must be atomic: only the caller whose remove wins receives the evidence.
+    if (!retainedExits.remove(key, retained)) {
+      return Optional.empty();
+    }
     return Optional.of(retained);
   }
 
@@ -185,8 +212,9 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
               .detail(detail)
               .at(Instant.now())
               .build());
-    } catch (Exception _) {
-      log.debug("Could not read FFmpeg exit details for session {}", key.sessionId());
+    } catch (Exception e) {
+      // This guard sits on the sole producer of local death evidence; surface why it failed.
+      log.warn("Could not retain FFmpeg exit evidence for session {}", key.sessionId(), e);
     }
   }
 

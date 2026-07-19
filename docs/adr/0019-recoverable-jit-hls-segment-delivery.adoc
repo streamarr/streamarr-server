@@ -35,6 +35,7 @@ The advertise-ahead deviation from §6.2.1 is intentional and is recorded here r
 === Segment waits are bounded by producer liveness, not a wall clock
 
 A request for an advertised-but-unproduced segment waits while a producer for that segment is alive and making progress; a producer that publishes nothing within the configured stall threshold is classified stalled and replaced.
+The threshold applies uniformly, including a fresh producer's cold start (seek plus first-segment encode): hardware that cannot publish a first segment inside the default 10 seconds cannot sustain just-in-time playback either, and the degradation path — replacement attempts, then a terminal failure that pushes the player's adaptive-bitrate switch — is the designed reaction; deployments with slower encoders tune `streaming.producer-stall-threshold` rather than receiving a separate cold-start budget.
 Segments are published atomically (a temporary file moved into its final name), so a segment that exists is complete — existence is readiness, and no successor-segment inference is needed or permitted.
 The wait ends when the segment is ready, when no producer can be made to produce it, or on request cancellation — never on a fixed wall-clock timeout.
 A slow or resource-starved transcode must not surface to the client as a missing segment.
@@ -50,7 +51,7 @@ A seek is a planned restart, not recovery: a relocation-distance request revives
 === Distributed producers are the recovery redundancy
 
 When the transcode executor is distributed, a variant whose producer fails is re-dispatched, on the next request that needs it, to another available worker for the same source namespace; the pool of workers is the recovery redundancy.
-Recovery is attempt-bounded, never wall-clock-bounded: one recovery cycle snapshots the eligible execution targets at the moment of failure and tries each at most once — locally the single local runner, remotely each live worker connection (its `worker_session_id`, per ADR 0018's live-connection fence).
+Recovery is attempt-bounded, never wall-clock-bounded: one recovery cycle snapshots the eligible execution targets when recovery begins — at the first request that observes the failure — and tries each at most once: locally the single local runner, remotely each live worker connection (its `worker_session_id`, per ADR 0018's live-connection fence).
 Only when every snapshotted target has been tried does the failure surface, as a terminal `503 Service Unavailable` with no body and no `Retry-After`; the client's own retry budget and its adaptive-bitrate switch to a healthy variant are the last-resort recovery.
 The terminal state is sticky for same-window retries and cleared by exactly two events: a currently eligible target outside the exhausted cycle's snapshot (a reconnecting worker is a new target by construction), or a genuine seek's planned restart.
 Worst-case pre-terminal latency is `targets × stall threshold` plus dispatch overhead; in a large worker pool that can exceed one viewer's patience, which is accepted — every attempt is a genuine recovery chance and the player's variant switch proceeds in parallel.
