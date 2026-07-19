@@ -36,6 +36,7 @@ public class HlsStreamingService implements StreamingService {
   private final PlaybackAuthorityGate authorityGate;
   private final RuntimeStreamSessionRegistry runtimeRegistry;
   private final ProducerLifecycleService producerLifecycle;
+  private final SegmentDeliveryCoordinator deliveryCoordinator;
 
   @Override
   public StreamSession createSession(CreateStreamSessionCommand command) {
@@ -120,18 +121,21 @@ public class HlsStreamingService implements StreamingService {
 
   @Override
   public void destroySession(UUID sessionId) {
-    runtimeRegistry
-        .removeById(sessionId)
-        .ifPresent(
-            session -> {
-              try {
-                transcodeExecutor.stop(sessionId);
-              } finally {
-                // The session is already unreachable; a failed stop must not orphan its segments.
-                segmentStore.deleteSession(sessionId);
-              }
-              log.info("Destroyed streaming session {}", sessionId);
-            });
+    runtimeRegistry.removeById(sessionId).ifPresent(session -> cleanUpDestroyed(sessionId));
+  }
+
+  private void cleanUpDestroyed(UUID sessionId) {
+    try {
+      producerLifecycle.stopForDestroy(sessionId);
+    } finally {
+      try {
+        // The session is already unreachable; a failed stop must not orphan its segments.
+        segmentStore.deleteSession(sessionId);
+      } finally {
+        deliveryCoordinator.forgetSession(sessionId);
+      }
+    }
+    log.info("Destroyed streaming session {}", sessionId);
   }
 
   @Override
@@ -150,11 +154,6 @@ public class HlsStreamingService implements StreamingService {
   }
 
   @Override
-  public boolean isTranscodeActive(UUID sessionId, String variantLabel) {
-    return transcodeExecutor.isRunning(sessionId, variantLabel);
-  }
-
-  @Override
   public Collection<StreamSession> getAllSessions() {
     return runtimeRegistry.findAll();
   }
@@ -162,11 +161,6 @@ public class HlsStreamingService implements StreamingService {
   @Override
   public int getActiveSessionCount() {
     return runtimeRegistry.count();
-  }
-
-  @Override
-  public void resumeSessionIfNeeded(UUID sessionId, String segmentName) {
-    producerLifecycle.ensurePositioned(sessionId, segmentName);
   }
 
   private List<QualityVariant> resolveVariants(

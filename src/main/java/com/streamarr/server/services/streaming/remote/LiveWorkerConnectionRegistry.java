@@ -3,6 +3,8 @@ package com.streamarr.server.services.streaming.remote;
 import static com.streamarr.transcode.protocol.ProtoUuid.fromProto;
 import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
 
+import com.streamarr.server.domain.streaming.ProducerEnd;
+import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import com.streamarr.transcode.v1.StartVariantCommand;
@@ -14,18 +16,28 @@ import com.streamarr.transcode.v1.WorkerRegistration;
 import com.streamarr.transcode.v1.WorkerSessionAccepted;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
-import java.util.HashMap;
+import java.time.Instant;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
+import lombok.Builder;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 final class LiveWorkerConnectionRegistry {
 
+  private record AttemptEndKey(UUID streamSessionId, String variantLabel) {}
+
   private final ConcurrentHashMap<UUID, WorkerConnection> connections = new ConcurrentHashMap<>();
+
+  // Terminal evidence per variant, scoped to the attempt that ended; consumed once by recovery.
+  private final ConcurrentHashMap<AttemptEndKey, ProducerEnd> attemptEnds =
+      new ConcurrentHashMap<>();
 
   synchronized UUID register(
       UUID workerId,
@@ -39,12 +51,13 @@ final class LiveWorkerConnectionRegistry {
       return connection.workerSessionId();
     }
 
-    var abandonedVariants = replaced.closeAsReplaced();
+    var abandonedJobs = replaced.closeAsReplaced();
+    abandonedJobs.forEach(job -> retainEnd(job, ProducerEnd.EndKind.DISCONNECTED, "replaced"));
     log.warn(
         "Worker {} reconnected; abandoning {} active variant job(s) from its previous"
             + " connection",
         workerId,
-        abandonedVariants);
+        abandonedJobs.size());
     return connection.workerSessionId();
   }
 
@@ -53,6 +66,9 @@ final class LiveWorkerConnectionRegistry {
     if (connection != null
         && connection.workerSessionId().equals(workerSessionId)
         && connections.remove(workerId, connection)) {
+      connection
+          .drainActiveVariants()
+          .forEach(job -> retainEnd(job, ProducerEnd.EndKind.DISCONNECTED, "disconnected"));
       log.info("Worker {} disconnected", workerId);
     }
   }
@@ -66,6 +82,23 @@ final class LiveWorkerConnectionRegistry {
     return false;
   }
 
+  boolean dispatchTo(ExecutionTargetId target, VariantJob job) {
+    for (var connection : connections.values()) {
+      if (connection.workerSessionId().toString().equals(target.value())) {
+        return connection.tryDispatch(job);
+      }
+    }
+    return false;
+  }
+
+  Set<ExecutionTargetId> eligibleWorkers(UUID sourceNamespaceId) {
+    var sourceNamespace = toProto(sourceNamespaceId);
+    return connections.values().stream()
+        .filter(connection -> connection.canAccessSourceNamespace(sourceNamespace))
+        .map(connection -> new ExecutionTargetId(connection.workerSessionId().toString()))
+        .collect(Collectors.toCollection(LinkedHashSet::new));
+  }
+
   boolean stopVariant(UUID jobAttemptId) {
     for (var connection : connections.values()) {
       if (connection.tryStop(jobAttemptId)) {
@@ -75,8 +108,52 @@ final class LiveWorkerConnectionRegistry {
     return false;
   }
 
+  boolean stopVariant(UUID streamSessionId, String variantLabel) {
+    for (var connection : connections.values()) {
+      if (connection.stopVariant(streamSessionId, variantLabel)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   void stopStreamSession(UUID streamSessionId) {
     connections.values().forEach(connection -> connection.stopStreamSession(streamSessionId));
+    attemptEnds.keySet().removeIf(key -> key.streamSessionId().equals(streamSessionId));
+  }
+
+  /**
+   * Releases the worker's claim on the attempt and, when the attempt was still owned, retains its
+   * terminal evidence for recovery classification.
+   */
+  Optional<VariantJob> recordAttemptEnd(AttemptEndEvent event) {
+    var released =
+        releaseJobAttempt(event.workerId(), event.workerSessionId(), event.jobAttemptId());
+    released.ifPresent(job -> retainEnd(job, event.kind(), event.detail()));
+    return released;
+  }
+
+  Optional<ProducerEnd> consumeEnd(
+      UUID streamSessionId, String variantLabel, UUID expectedAttemptId) {
+    var key = new AttemptEndKey(streamSessionId, variantLabel);
+    var end = attemptEnds.get(key);
+    if (end == null || !expectedAttemptId.equals(end.attemptId())) {
+      return Optional.empty();
+    }
+
+    attemptEnds.remove(key, end);
+    return Optional.of(end);
+  }
+
+  private void retainEnd(VariantJob job, ProducerEnd.EndKind kind, String detail) {
+    attemptEnds.put(
+        new AttemptEndKey(fromProto(job.getStreamSessionId()), job.getVariant().getVariantLabel()),
+        ProducerEnd.builder()
+            .attemptId(fromProto(job.getJobAttemptId()))
+            .kind(kind)
+            .detail(detail)
+            .at(Instant.now())
+            .build());
   }
 
   boolean isRunning(UUID streamSessionId) {
@@ -111,6 +188,14 @@ final class LiveWorkerConnectionRegistry {
     return connection.releaseJobAttempt(jobAttemptId);
   }
 
+  @Builder
+  record AttemptEndEvent(
+      UUID workerId,
+      UUID workerSessionId,
+      UUID jobAttemptId,
+      ProducerEnd.EndKind kind,
+      String detail) {}
+
   boolean authorizesUpload(UUID authenticatedWorkerId, SegmentUploadMetadata metadata) {
     var connection = connections.get(authenticatedWorkerId);
     return connection != null && connection.authorizesUpload(metadata);
@@ -133,7 +218,10 @@ final class LiveWorkerConnectionRegistry {
     private final Set<Uuid> sourceNamespaceIds;
     private final int maximumActiveVariants;
     private final StreamObserver<EstablishWorkerSessionResponse> responseObserver;
-    private final Map<UUID, VariantJob> activeVariants = new HashMap<>();
+
+    // Concurrent so a disconnect can drain abandoned jobs without taking the connection monitor,
+    // which an in-progress segment publication may hold for the duration of a filesystem move.
+    private final Map<UUID, VariantJob> activeVariants = new ConcurrentHashMap<>();
 
     private WorkerConnection(
         UUID workerSessionId,
@@ -192,6 +280,18 @@ final class LiveWorkerConnectionRegistry {
               .build();
       trySend(EstablishWorkerSessionResponse.newBuilder().setStopVariant(command).build());
       return true;
+    }
+
+    private synchronized boolean stopVariant(UUID streamSessionId, String variantLabel) {
+      return activeVariants.entrySet().stream()
+          .filter(
+              entry ->
+                  fromProto(entry.getValue().getStreamSessionId()).equals(streamSessionId)
+                      && entry.getValue().getVariant().getVariantLabel().equals(variantLabel))
+          .map(Map.Entry::getKey)
+          .findFirst()
+          .map(this::tryStop)
+          .orElse(false);
     }
 
     /** A send can fail when the worker call died but its disconnect has not been reaped yet. */
@@ -256,16 +356,21 @@ final class LiveWorkerConnectionRegistry {
       return true;
     }
 
-    private synchronized int closeAsReplaced() {
-      var abandonedVariants = activeVariants.size();
+    private List<VariantJob> drainActiveVariants() {
+      var drained = List.copyOf(activeVariants.values());
       activeVariants.clear();
+      return drained;
+    }
+
+    private synchronized List<VariantJob> closeAsReplaced() {
+      var abandonedJobs = drainActiveVariants();
       try {
         responseObserver.onError(
             Status.ABORTED.withDescription("Worker connection replaced").asRuntimeException());
       } catch (RuntimeException _) {
         // The previous call is already dead; the replacement proceeds regardless.
       }
-      return abandonedVariants;
+      return abandonedJobs;
     }
   }
 }

@@ -3,15 +3,16 @@ package com.streamarr.server.controllers;
 import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.exceptions.InvalidSegmentPathException;
-import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
 import com.streamarr.server.services.streaming.PlaybackRequest;
-import com.streamarr.server.services.streaming.SegmentStore;
+import com.streamarr.server.services.streaming.SegmentDelivery;
+import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
 import com.streamarr.server.services.streaming.StreamingService;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -32,7 +33,7 @@ public class StreamController {
 
   private final StreamingService streamingService;
   private final HlsPlaylistService playlistService;
-  private final SegmentStore segmentStore;
+  private final SegmentDeliveryCoordinator deliveryCoordinator;
   private final AuthorizationService authorizationService;
 
   // RFC 8216bis renamed Master Playlist to Multivariant Playlist; the master.m3u8 route stays
@@ -80,7 +81,7 @@ public class StreamController {
       return ResponseEntity.notFound().build();
     }
 
-    return serveSegment(session.get(), sessionId, StreamSession.defaultVariant(), segmentName);
+    return serveSegment(sessionId, StreamSession.defaultVariant(), segmentName);
   }
 
   @GetMapping("/{sessionId}/{variantLabel}/stream.m3u8")
@@ -138,7 +139,7 @@ public class StreamController {
 
     var qualifiedName = variantLabel + "/" + segmentName;
 
-    return serveSegment(s, sessionId, variantLabel, qualifiedName);
+    return serveSegment(sessionId, variantLabel, qualifiedName);
   }
 
   private ResponseEntity<byte[]> serveInitSegment(
@@ -147,33 +148,28 @@ public class StreamController {
       return ResponseEntity.notFound().build();
     }
 
-    streamingService.resumeSessionIfNeeded(sessionId, segmentName);
-    if (!segmentStore.waitForSegment(
-        sessionId,
-        segmentName,
-        () -> streamingService.isTranscodeActive(sessionId, variantLabel))) {
-      return ResponseEntity.notFound().build();
-    }
-
-    var data = segmentStore.readSegment(sessionId, segmentName);
-
-    return ResponseEntity.ok().contentType(MP4_MEDIA_TYPE).body(data);
+    return respond(
+        deliveryCoordinator.deliver(sessionId, variantLabel, segmentName), MP4_MEDIA_TYPE);
   }
 
   private ResponseEntity<byte[]> serveSegment(
-      StreamSession session, UUID sessionId, String variantLabel, String segmentName) {
-    streamingService.resumeSessionIfNeeded(sessionId, segmentName);
-    if (!segmentStore.waitForSegment(
-        sessionId,
-        segmentName,
-        () -> streamingService.isTranscodeActive(sessionId, variantLabel))) {
-      return ResponseEntity.notFound().build();
-    }
-
-    var data = segmentStore.readSegment(sessionId, segmentName);
+      UUID sessionId, String variantLabel, String segmentName) {
     var contentType = segmentName.endsWith(".ts") ? MPEGTS_MEDIA_TYPE : MP4_MEDIA_TYPE;
 
-    return ResponseEntity.ok().contentType(contentType).body(data);
+    return respond(deliveryCoordinator.deliver(sessionId, variantLabel, segmentName), contentType);
+  }
+
+  private static ResponseEntity<byte[]> respond(SegmentDelivery delivery, MediaType contentType) {
+    return switch (delivery) {
+      case SegmentDelivery.Ready(byte[] data) ->
+          ResponseEntity.ok().contentType(contentType).body(data);
+      case SegmentDelivery.SessionEnded() -> ResponseEntity.notFound().build();
+      case SegmentDelivery.Cancelled() -> ResponseEntity.notFound().build();
+      // Terminal: recovery tried every snapshotted execution target. No Retry-After, no body —
+      // the player's own retry/ABR machinery is the designed reaction (ADR 0019).
+      case SegmentDelivery.Unrecoverable() ->
+          ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+    };
   }
 
   private boolean hasNoVariant(StreamSession session, String variantLabel) {
@@ -215,12 +211,5 @@ public class StreamController {
   @ExceptionHandler(InvalidSegmentPathException.class)
   public ResponseEntity<Void> handleInvalidSegmentPath() {
     return ResponseEntity.badRequest().build();
-  }
-
-  // A segment can vanish between the wait succeeding and the read — a concurrent session destroy
-  // wins the race. That is a miss, not a server error, so map it to 404 rather than propagate 500.
-  @ExceptionHandler(TranscodeException.class)
-  public ResponseEntity<Void> handleMissingSegment() {
-    return ResponseEntity.notFound().build();
   }
 }

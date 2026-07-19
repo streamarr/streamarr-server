@@ -1,26 +1,40 @@
 package com.streamarr.server.fakes;
 
+import com.streamarr.server.domain.streaming.ProducerEnd;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.exceptions.TranscodeException;
+import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
 import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 public class FakeTranscodeExecutor implements TranscodeExecutor {
 
   private record ProcessKey(UUID sessionId, String variantLabel) {}
 
-  private final Set<ProcessKey> running = new HashSet<>();
-  private final Set<ProcessKey> started = new HashSet<>();
-  private final Set<UUID> stopped = new HashSet<>();
-  private final Set<UUID> failingOnStop = new HashSet<>();
-  private final List<TranscodeRequest> startedRequests = new ArrayList<>();
+  private final Set<ProcessKey> running = ConcurrentHashMap.newKeySet();
+  private final Set<ProcessKey> started = ConcurrentHashMap.newKeySet();
+  private final Set<UUID> stopped = ConcurrentHashMap.newKeySet();
+  private final Set<UUID> failingOnStop = ConcurrentHashMap.newKeySet();
+  private final List<TranscodeRequest> startedRequests =
+      java.util.Collections.synchronizedList(new ArrayList<>());
+  private final List<ExecutionTargetId> startedTargets =
+      java.util.Collections.synchronizedList(new ArrayList<>());
+  private final List<String> stoppedVariants =
+      java.util.Collections.synchronizedList(new ArrayList<>());
+  private final Set<ExecutionTargetId> refusingTargets = ConcurrentHashMap.newKeySet();
+  private final Map<ProcessKey, ProducerEnd> evidence = new ConcurrentHashMap<>();
+  private Set<ExecutionTargetId> executionTargets =
+      new LinkedHashSet<>(Set.of(ExecutionTargetId.LOCAL));
   private int availableSlots = Integer.MAX_VALUE;
   private boolean healthy = true;
 
@@ -35,12 +49,31 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   }
 
   @Override
+  public TranscodeHandle start(TranscodeRequest request, ExecutionTargetId target) {
+    if (refusingTargets.contains(target)) {
+      throw new TranscodeException("Target " + target.value() + " refused the transcode");
+    }
+    startedTargets.add(target);
+    return start(request);
+  }
+
+  @Override
   public void stop(UUID sessionId) {
     if (failingOnStop.contains(sessionId)) {
       throw new TranscodeException("Simulated stop failure for session: " + sessionId);
     }
     running.removeIf(key -> key.sessionId().equals(sessionId));
     stopped.add(sessionId);
+  }
+
+  @Override
+  public void stopVariant(UUID sessionId, String variantLabel) {
+    running.remove(new ProcessKey(sessionId, variantLabel));
+    stoppedVariants.add(sessionId + "/" + variantLabel);
+  }
+
+  public List<String> getStoppedVariants() {
+    return List.copyOf(stoppedVariants);
   }
 
   public void failOnStop(UUID sessionId) {
@@ -75,6 +108,43 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     this.availableSlots = availableSlots;
   }
 
+  @Override
+  public Set<ExecutionTargetId> executionTargets() {
+    return new LinkedHashSet<>(executionTargets);
+  }
+
+  public void setExecutionTargets(List<ExecutionTargetId> targets) {
+    executionTargets = new LinkedHashSet<>(targets);
+  }
+
+  public void refuseTarget(ExecutionTargetId target) {
+    refusingTargets.add(target);
+  }
+
+  public void acceptTarget(ExecutionTargetId target) {
+    refusingTargets.remove(target);
+  }
+
+  @Override
+  public Optional<ProducerEnd> deathEvidence(
+      UUID sessionId, String variantLabel, UUID expectedAttemptId) {
+    var key = new ProcessKey(sessionId, variantLabel);
+    var end = evidence.get(key);
+    if (end == null || !expectedAttemptId.equals(end.attemptId())) {
+      return Optional.empty();
+    }
+    evidence.remove(key, end);
+    return Optional.of(end);
+  }
+
+  public void recordEvidence(UUID sessionId, String variantLabel, ProducerEnd end) {
+    evidence.put(new ProcessKey(sessionId, variantLabel), end);
+  }
+
+  public boolean hasUnconsumedEvidence(UUID sessionId, String variantLabel) {
+    return evidence.containsKey(new ProcessKey(sessionId, variantLabel));
+  }
+
   public Set<UUID> getStarted() {
     return started.stream().map(ProcessKey::sessionId).collect(Collectors.toUnmodifiableSet());
   }
@@ -103,10 +173,16 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     return List.copyOf(startedRequests);
   }
 
+  public List<ExecutionTargetId> getStartedTargets() {
+    return List.copyOf(startedTargets);
+  }
+
   public void reset() {
     running.clear();
     started.clear();
     stopped.clear();
     startedRequests.clear();
+    startedTargets.clear();
+    evidence.clear();
   }
 }

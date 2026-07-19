@@ -33,6 +33,7 @@ import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.services.concurrency.MutexFactory;
+import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -77,6 +78,7 @@ class HlsStreamingServiceTest {
             .targetSegmentDuration(Duration.ofSeconds(6))
             .sessionTimeout(Duration.ofSeconds(60))
             .build();
+    var lifecycle = lifecycleWith(executor, registry, properties);
     return new HlsStreamingService(
         mediaFileRepository,
         executor,
@@ -87,7 +89,15 @@ class HlsStreamingServiceTest {
         properties,
         authorityGate,
         registry,
-        lifecycleWith(executor, registry, properties));
+        lifecycle,
+        SegmentDeliveryCoordinator.builder()
+            .runtimeRegistry(registry)
+            .segmentStore(segmentStore)
+            .transcodeExecutor(executor)
+            .producerLifecycle(lifecycle)
+            .properties(properties)
+            .clock(Clock.systemUTC())
+            .build());
   }
 
   private ProducerLifecycleService lifecycleWith(
@@ -740,6 +750,7 @@ class HlsStreamingServiceTest {
             .build();
     var limitedExecutor = new FakeTranscodeExecutor();
     var limitedRegistry = new FakeRuntimeStreamSessionRegistry();
+    var limitedLifecycle = lifecycleWith(limitedExecutor, limitedRegistry, properties);
     var limitedService =
         new HlsStreamingService(
             mediaFileRepository,
@@ -751,7 +762,15 @@ class HlsStreamingServiceTest {
             properties,
             authorityGate,
             limitedRegistry,
-            lifecycleWith(limitedExecutor, limitedRegistry, properties));
+            limitedLifecycle,
+            SegmentDeliveryCoordinator.builder()
+                .runtimeRegistry(limitedRegistry)
+                .segmentStore(segmentStore)
+                .transcodeExecutor(limitedExecutor)
+                .producerLifecycle(limitedLifecycle)
+                .properties(properties)
+                .clock(Clock.systemUTC())
+                .build());
 
     ffprobeService.setDefaultProbe(
         MediaProbe.builder()

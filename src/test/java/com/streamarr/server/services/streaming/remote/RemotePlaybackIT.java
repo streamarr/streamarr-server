@@ -8,6 +8,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.controllers.StreamController;
 import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.HouseholdRole;
@@ -21,11 +22,15 @@ import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.fakes.FakeFfmpegProcessManager;
+import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentProducingFfmpegProcessManager;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.TokenScope;
 import com.streamarr.server.services.authorization.AuthorizationService;
+import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
+import com.streamarr.server.services.streaming.ProducerLifecycleService;
+import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
 import com.streamarr.server.services.streaming.StreamingService;
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegCommandBuilder;
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegTranscodeEngine;
@@ -37,6 +42,8 @@ import com.streamarr.transcode.worker.TranscodeWorkerConfiguration;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -85,7 +92,7 @@ class RemotePlaybackIT extends AbstractIntegrationTest {
       await()
           .atMost(2, TimeUnit.SECONDS)
           .until(() -> segmentStore.segmentExists(streamSessionId, "segment1.ts"));
-      var streamController = controller(streamSessionId, segmentStore);
+      var streamController = rig(streamSessionId, segmentStore, executor).controller();
       var first = streamController.getSegment(streamSessionId, "segment0.ts");
       var second = streamController.getSegment(streamSessionId, "segment1.ts");
 
@@ -122,7 +129,8 @@ class RemotePlaybackIT extends AbstractIntegrationTest {
       await()
           .atMost(2, TimeUnit.SECONDS)
           .until(() -> segmentStore.segmentExists(streamSessionId, "segment0.m4s"));
-      var streamController = controller(streamSessionId, segmentStore, ContainerFormat.FMP4);
+      var streamController =
+          rig(streamSessionId, segmentStore, executor, ContainerFormat.FMP4).controller();
       var initialization = streamController.getInitSegment(streamSessionId);
       var media = streamController.getSegment(streamSessionId, "segment0.m4s");
 
@@ -147,10 +155,11 @@ class RemotePlaybackIT extends AbstractIntegrationTest {
       server.start();
       worker.start("localhost", server.port());
       var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot);
-      var streamController = controller(streamSessionId, segmentStore);
+      var playback = rig(streamSessionId, segmentStore, executor);
 
-      executor.start(transcodeRequest(streamSessionId, mediaFile));
-      var response = streamController.getSegment(streamSessionId, "segment0.ts");
+      var handle = executor.start(transcodeRequest(streamSessionId, mediaFile));
+      playback.session().setHandle(handle);
+      var response = playback.controller().getSegment(streamSessionId, "segment0.ts");
 
       assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
       assertThat(response.getBody()).isEqualTo(segments.get("segment0.ts"));
@@ -282,23 +291,56 @@ class RemotePlaybackIT extends AbstractIntegrationTest {
     return new TranscodeWorker(configuration, engine);
   }
 
-  private StreamController controller(UUID streamSessionId, LocalSegmentStore segmentStore) {
-    return controller(streamSessionId, segmentStore, ContainerFormat.MPEGTS);
+  private record PlaybackRig(StreamController controller, StreamSession session) {}
+
+  private PlaybackRig rig(
+      UUID streamSessionId, LocalSegmentStore segmentStore, RemoteTranscodeExecutor executor) {
+    return rig(streamSessionId, segmentStore, executor, ContainerFormat.MPEGTS);
   }
 
-  private StreamController controller(
-      UUID streamSessionId, LocalSegmentStore segmentStore, ContainerFormat containerFormat) {
-    var streamingService = mock(StreamingService.class);
+  private PlaybackRig rig(
+      UUID streamSessionId,
+      LocalSegmentStore segmentStore,
+      RemoteTranscodeExecutor executor,
+      ContainerFormat containerFormat) {
     var session =
         StreamSession.builder()
             .sessionId(streamSessionId)
             .transcodeDecision(transcodeDecision(containerFormat))
             .build();
+    var streamingService = mock(StreamingService.class);
     when(streamingService.accessSession(any())).thenReturn(Optional.of(session));
+    var registry = new FakeRuntimeStreamSessionRegistry();
+    registry.save(session);
+    var properties =
+        StreamingProperties.builder()
+            .targetSegmentDuration(Duration.ofSeconds(6))
+            .producerStallThreshold(Duration.ofSeconds(5))
+            .build();
+    var lifecycle =
+        ProducerLifecycleService.builder()
+            .transcodeExecutor(executor)
+            .segmentStore(segmentStore)
+            .properties(properties)
+            .runtimeRegistry(registry)
+            .sessionMutex(new MutexFactory<>())
+            .build();
+    var coordinator =
+        SegmentDeliveryCoordinator.builder()
+            .runtimeRegistry(registry)
+            .segmentStore(segmentStore)
+            .transcodeExecutor(executor)
+            .producerLifecycle(lifecycle)
+            .properties(properties)
+            .clock(Clock.systemUTC())
+            .pollInterval(Duration.ofMillis(50))
+            .build();
     var authorizationService = mock(AuthorizationService.class);
     when(authorizationService.currentIdentity()).thenReturn(identity(streamSessionId));
-    return new StreamController(
-        streamingService, mock(HlsPlaylistService.class), segmentStore, authorizationService);
+    var controller =
+        new StreamController(
+            streamingService, mock(HlsPlaylistService.class), coordinator, authorizationService);
+    return new PlaybackRig(controller, session);
   }
 
   private TranscodeRequest transcodeRequest(UUID streamSessionId, Path mediaFile) {

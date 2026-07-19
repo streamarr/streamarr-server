@@ -34,6 +34,7 @@ import org.springframework.test.context.bean.override.convention.TestBean;
 class HlsStreamingServiceIT extends AbstractIntegrationTest {
 
   @Autowired private StreamingService streamingService;
+  @Autowired private ProducerLifecycleService producerLifecycle;
   @Autowired private MediaFileRepository mediaFileRepository;
   @Autowired private LibraryRepository libraryRepository;
 
@@ -145,7 +146,7 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
     session.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
     FAKE_EXECUTOR.markDead(session.getSessionId());
 
-    streamingService.resumeSessionIfNeeded(session.getSessionId(), "segment0.ts");
+    producerLifecycle.ensurePositioned(session.getSessionId(), "segment0.ts");
 
     assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
     assertThat(FAKE_EXECUTOR.isRunning(session.getSessionId())).isTrue();

@@ -1,9 +1,12 @@
 package com.streamarr.server.services.streaming.ffmpeg;
 
+import com.streamarr.server.domain.streaming.ProducerEnd;
 import com.streamarr.server.exceptions.TranscodeException;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -15,23 +18,36 @@ import org.springframework.stereotype.Component;
 public class LocalFfmpegProcessManager implements FfmpegProcessManager {
 
   private static final long GRACEFUL_SHUTDOWN_SECONDS = 5;
+  private static final int STDERR_TAIL_LIMIT = 2000;
 
   private record ProcessKey(UUID sessionId, String variantLabel) {}
 
-  private record ManagedProcess(Process process, StderrDrainer drainer) {}
+  private record ManagedProcess(Process process, StderrDrainer drainer, UUID attemptId) {}
 
   private final ConcurrentHashMap<ProcessKey, ManagedProcess> processes = new ConcurrentHashMap<>();
+
+  // Exit evidence survives the death transition until recovery consumes it (or the next attempt's
+  // death overwrites it). Planned stops never write here.
+  private final ConcurrentHashMap<ProcessKey, ProducerEnd> retainedExits =
+      new ConcurrentHashMap<>();
 
   @Override
   public Process startProcess(
       UUID sessionId, String variantLabel, List<String> command, Path workingDir) {
+    return startProcess(sessionId, variantLabel, null, command, workingDir);
+  }
+
+  @Override
+  public Process startProcess(
+      UUID sessionId, String variantLabel, UUID attemptId, List<String> command, Path workingDir) {
     try {
       var processBuilder = new ProcessBuilder(command);
       processBuilder.directory(workingDir.toFile());
 
       var process = processBuilder.start();
       var drainer = new StderrDrainer(process.getErrorStream());
-      processes.put(new ProcessKey(sessionId, variantLabel), new ManagedProcess(process, drainer));
+      processes.put(
+          new ProcessKey(sessionId, variantLabel), new ManagedProcess(process, drainer, attemptId));
 
       log.info(
           "Started FFmpeg process (PID {}) for session {} variant {}",
@@ -123,9 +139,22 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
     return isAliveOrCleanup(key, managed);
   }
 
+  @Override
+  public Optional<ProducerEnd> consumeExit(
+      UUID sessionId, String variantLabel, UUID expectedAttemptId) {
+    var key = new ProcessKey(sessionId, variantLabel);
+    var retained = retainedExits.get(key);
+    if (retained == null || !expectedAttemptId.equals(retained.attemptId())) {
+      return Optional.empty();
+    }
+
+    retainedExits.remove(key, retained);
+    return Optional.of(retained);
+  }
+
   private boolean isAliveOrCleanup(ProcessKey key, ManagedProcess managed) {
     if (!managed.process().isAlive()) {
-      logExitDetails(key, managed);
+      retainExitEvidence(key, managed);
       managed.drainer().close();
       processes.remove(key);
       return false;
@@ -134,21 +163,40 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
     return true;
   }
 
-  private void logExitDetails(ProcessKey key, ManagedProcess managed) {
+  private void retainExitEvidence(ProcessKey key, ManagedProcess managed) {
     try {
       var exitCode = managed.process().exitValue();
-      var recentLines = managed.drainer().getRecentOutput();
-      if (!recentLines.isEmpty()) {
-        var stderr = String.join("\n", recentLines);
-        log.warn(
-            "FFmpeg exited with code {} for session {} variant {}: {}",
-            exitCode,
-            key.sessionId(),
-            key.variantLabel(),
-            stderr.substring(0, Math.min(stderr.length(), 2000)));
+      var detail = exitDetail(exitCode, managed.drainer().getRecentOutput());
+      log.warn(
+          "FFmpeg exited with code {} for session {} variant {}: {}",
+          exitCode,
+          key.sessionId(),
+          key.variantLabel(),
+          detail);
+      if (managed.attemptId() == null) {
+        return;
       }
+
+      retainedExits.put(
+          key,
+          ProducerEnd.builder()
+              .attemptId(managed.attemptId())
+              .kind(ProducerEnd.EndKind.PROCESS_EXIT)
+              .detail(detail)
+              .at(Instant.now())
+              .build());
     } catch (Exception _) {
       log.debug("Could not read FFmpeg exit details for session {}", key.sessionId());
     }
+  }
+
+  private static String exitDetail(int exitCode, List<String> recentLines) {
+    var detail = "exit code " + exitCode;
+    if (recentLines.isEmpty()) {
+      return detail;
+    }
+
+    var stderr = String.join("\n", recentLines);
+    return detail + ": " + stderr.substring(0, Math.min(stderr.length(), STDERR_TAIL_LIMIT));
   }
 }
