@@ -17,8 +17,9 @@ import lombok.extern.slf4j.Slf4j;
 
 /**
  * Owns every producer (transcode process) mutation for a stream session: initial start, resume of a
- * suspended session, relocation to a distant segment, and suspension. All mutations serialize on
- * the per-session mutex this service holds.
+ * suspended session, relocation to a distant segment, replacement, and suspension. Mutations of a
+ * published session serialize on the per-session mutex this service holds; the initial {@link
+ * #startAll} runs before the session is reachable by waiters and takes no lock.
  */
 @Slf4j
 @Builder
