@@ -69,7 +69,8 @@ public class SegmentDeliveryCoordinator {
       }
 
       if (handle.status() == TranscodeStatus.FAILED) {
-        var outcome = resolveFailedVariant(state, session, handle, variantLabel, segmentName);
+        var pending = pendingSegment(sessionId, variantLabel, segmentName, handle);
+        var outcome = resolveFailedVariant(state, session, handle, pending);
         if (outcome != null) {
           return outcome;
         }
@@ -82,8 +83,8 @@ public class SegmentDeliveryCoordinator {
         return new SegmentDelivery.SessionEnded();
       }
 
-      var requestedIndex = requestedIndex(segmentName, handle);
-      syncProgress(state, sessionId, handle, segmentName, requestedIndex);
+      var pending = pendingSegment(sessionId, variantLabel, segmentName, handle);
+      syncProgress(state, handle, pending);
 
       var producerAlive = transcodeExecutor.isRunning(sessionId, variantLabel);
       if (producerAlive && !hasStalled(state)) {
@@ -93,12 +94,17 @@ public class SegmentDeliveryCoordinator {
         continue;
       }
 
-      var outcome =
-          recover(state, sessionId, variantLabel, segmentName, requestedIndex, producerAlive);
+      var outcome = recover(state, pending, producerAlive);
       if (outcome != null) {
         return outcome;
       }
     }
+  }
+
+  private static PendingSegment pendingSegment(
+      UUID sessionId, String variantLabel, String segmentName, TranscodeHandle handle) {
+    return new PendingSegment(
+        sessionId, variantLabel, segmentName, requestedIndex(segmentName, handle));
   }
 
   /** Drops all delivery bookkeeping for a destroyed session. */
@@ -146,11 +152,7 @@ public class SegmentDeliveryCoordinator {
    * current run newly published — is the one success signal that ends recovery.
    */
   private void syncProgress(
-      VariantDeliveryState state,
-      UUID sessionId,
-      TranscodeHandle handle,
-      String segmentName,
-      int requestedIndex) {
+      VariantDeliveryState state, TranscodeHandle handle, PendingSegment pending) {
     synchronized (state) {
       if (!handle.attemptId().equals(state.trackedAttemptId)) {
         var ownReplacement =
@@ -164,9 +166,10 @@ public class SegmentDeliveryCoordinator {
       }
 
       var advanced = false;
-      while (state.frontier < requestedIndex
+      while (state.frontier < pending.requestedIndex()
           && segmentStore.segmentExists(
-              sessionId, SegmentNames.siblingName(segmentName, state.frontier))) {
+              pending.sessionId(),
+              SegmentNames.siblingName(pending.segmentName(), state.frontier))) {
         state.frontier++;
         advanced = true;
       }
@@ -201,12 +204,7 @@ public class SegmentDeliveryCoordinator {
    * or a terminal outcome.
    */
   private SegmentDelivery recover(
-      VariantDeliveryState state,
-      UUID sessionId,
-      String variantLabel,
-      String segmentName,
-      int requestedIndex,
-      boolean producerAlive) {
+      VariantDeliveryState state, PendingSegment pending, boolean producerAlive) {
     RecoveryCycle cycle;
     UUID endedAttemptId;
     synchronized (state) {
@@ -217,18 +215,13 @@ public class SegmentDeliveryCoordinator {
       cycle = state.cycle;
       endedAttemptId = cycle.currentAttemptId();
     }
-    logProducerEnd(sessionId, variantLabel, endedAttemptId, producerAlive);
+    logProducerEnd(pending, endedAttemptId, producerAlive);
 
-    return attemptReplacements(state, cycle, sessionId, variantLabel, segmentName, requestedIndex);
+    return attemptReplacements(state, cycle, pending);
   }
 
   private SegmentDelivery attemptReplacements(
-      VariantDeliveryState state,
-      RecoveryCycle cycle,
-      UUID sessionId,
-      String variantLabel,
-      String segmentName,
-      int requestedIndex) {
+      VariantDeliveryState state, RecoveryCycle cycle, PendingSegment pending) {
     while (true) {
       UUID expectedAttemptId;
       ExecutionTargetId target;
@@ -239,19 +232,20 @@ public class SegmentDeliveryCoordinator {
       if (target == null) {
         // Another waiter's replacement may be alive and within its stall budget; recovery is
         // still in flight then, and a live producer must never be exhausted underneath it.
-        if (transcodeExecutor.isRunning(sessionId, variantLabel) && !hasStalled(state)) {
+        if (transcodeExecutor.isRunning(pending.sessionId(), pending.variantLabel())
+            && !hasStalled(state)) {
           return null;
         }
-        return exhaust(state, cycle, sessionId, variantLabel, segmentName, expectedAttemptId);
+        return exhaust(state, cycle, pending, expectedAttemptId);
       }
 
       var result =
           producerLifecycle.replaceProducer(
               ReplaceProducerCommand.builder()
-                  .sessionId(sessionId)
-                  .variantLabel(variantLabel)
-                  .segmentName(segmentName)
-                  .segmentIndex(requestedIndex)
+                  .sessionId(pending.sessionId())
+                  .variantLabel(pending.variantLabel())
+                  .segmentName(pending.segmentName())
+                  .segmentIndex(pending.requestedIndex())
                   .expectedAttemptId(expectedAttemptId)
                   .target(target)
                   .build());
@@ -262,15 +256,15 @@ public class SegmentDeliveryCoordinator {
             cycle.markAttempted(target);
             cycle.trackReplacement(newAttemptId);
             state.trackedAttemptId = newAttemptId;
-            state.frontier = requestedIndex;
+            state.frontier = pending.requestedIndex();
             state.lastProgressAt = clock.instant();
           }
           log.info(
               "Replaced producer for session {} variant {} on target {} at segment {} (attempt {})",
-              sessionId,
-              variantLabel,
+              pending.sessionId(),
+              pending.variantLabel(),
               target.value(),
-              requestedIndex,
+              pending.requestedIndex(),
               newAttemptId);
           return null;
         }
@@ -281,8 +275,8 @@ public class SegmentDeliveryCoordinator {
           log.warn(
               "Execution target {} refused replacement for session {} variant {}: {}",
               target.value(),
-              sessionId,
-              variantLabel,
+              pending.sessionId(),
+              pending.variantLabel(),
               reason);
         }
         case ReplaceResult.Superseded() -> {
@@ -298,16 +292,21 @@ public class SegmentDeliveryCoordinator {
   private SegmentDelivery exhaust(
       VariantDeliveryState state,
       RecoveryCycle cycle,
-      UUID sessionId,
-      String variantLabel,
-      String segmentName,
+      PendingSegment pending,
       UUID expectedAttemptId) {
-    var result = producerLifecycle.markExhausted(sessionId, variantLabel, expectedAttemptId);
-    if (result instanceof ExhaustResult.Superseded) {
-      return null;
+    var result =
+        producerLifecycle.markExhausted(
+            pending.sessionId(), pending.variantLabel(), expectedAttemptId);
+    switch (result) {
+      case ExhaustResult.Superseded() -> {
+        return null;
+      }
+      case ExhaustResult.Exhausted() -> {
+        // fall through to the terminal checks below
+      }
     }
 
-    if (segmentStore.segmentExists(sessionId, segmentName)) {
+    if (segmentStore.segmentExists(pending.sessionId(), pending.segmentName())) {
       // A last-gasp publication raced the exhaustion; serve it on the next iteration.
       return null;
     }
@@ -320,8 +319,8 @@ public class SegmentDeliveryCoordinator {
     }
     log.warn(
         "Recovery exhausted for session {} variant {}: every execution target in {} was tried",
-        sessionId,
-        variantLabel,
+        pending.sessionId(),
+        pending.variantLabel(),
         cycle.eligibleTargets().stream().map(ExecutionTargetId::value).toList());
     return new SegmentDelivery.Unrecoverable();
   }
@@ -336,12 +335,9 @@ public class SegmentDeliveryCoordinator {
       VariantDeliveryState state,
       StreamSession session,
       TranscodeHandle handle,
-      String variantLabel,
-      String segmentName) {
-    var sessionId = session.getSessionId();
-
-    ensurePositionedForMediaSegment(session, segmentName);
-    var refreshed = session.getVariantHandle(variantLabel);
+      PendingSegment pending) {
+    ensurePositionedForMediaSegment(session, pending.segmentName());
+    var refreshed = session.getVariantHandle(pending.variantLabel());
     if (refreshed == null) {
       return new SegmentDelivery.SessionEnded();
     }
@@ -362,8 +358,8 @@ public class SegmentDeliveryCoordinator {
       log.info(
           "New execution target(s) {} reset recovery for session {} variant {}",
           freshTargets.stream().map(ExecutionTargetId::value).toList(),
-          sessionId,
-          variantLabel);
+          pending.sessionId(),
+          pending.variantLabel());
       resetCycle = new RecoveryCycle(eligibleNow, refreshed.attemptId());
       state.cycle = resetCycle;
       state.trackedAttemptId = refreshed.attemptId();
@@ -374,10 +370,8 @@ public class SegmentDeliveryCoordinator {
     return attemptReplacements(
         state,
         resetCycle,
-        sessionId,
-        variantLabel,
-        segmentName,
-        requestedIndex(segmentName, refreshed));
+        pendingSegment(
+            pending.sessionId(), pending.variantLabel(), pending.segmentName(), refreshed));
   }
 
   /**
@@ -395,37 +389,40 @@ public class SegmentDeliveryCoordinator {
     return fresh;
   }
 
-  private void logProducerEnd(
-      UUID sessionId, String variantLabel, UUID attemptId, boolean producerAlive) {
+  private void logProducerEnd(PendingSegment pending, UUID attemptId, boolean producerAlive) {
     if (producerAlive) {
       log.warn(
           "Producer classified {} for session {} variant {} (attempt {}): no publication within {}",
           ProducerEnd.EndKind.STALLED,
-          sessionId,
-          variantLabel,
+          pending.sessionId(),
+          pending.variantLabel(),
           attemptId,
           properties.producerStallThreshold());
       return;
     }
 
     transcodeExecutor
-        .deathEvidence(sessionId, variantLabel, attemptId)
+        .deathEvidence(pending.sessionId(), pending.variantLabel(), attemptId)
         .ifPresentOrElse(
             end ->
                 log.warn(
                     "Producer ended for session {} variant {} (attempt {}): {} — {}",
-                    sessionId,
-                    variantLabel,
+                    pending.sessionId(),
+                    pending.variantLabel(),
                     attemptId,
                     end.kind(),
                     end.detail()),
             () ->
                 log.warn(
                     "Producer died without retained evidence for session {} variant {} (attempt {})",
-                    sessionId,
-                    variantLabel,
+                    pending.sessionId(),
+                    pending.variantLabel(),
                     attemptId));
   }
+
+  /** One advertised segment being pursued: where it belongs and the index it maps to. */
+  private record PendingSegment(
+      UUID sessionId, String variantLabel, String segmentName, int requestedIndex) {}
 
   private record VariantKey(UUID sessionId, String variantLabel) {}
 

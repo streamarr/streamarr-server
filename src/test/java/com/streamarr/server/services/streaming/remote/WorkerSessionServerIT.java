@@ -816,8 +816,8 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should retain completed and stopped evidence with their own end kinds")
-  void shouldRetainCompletedAndStoppedEvidenceWithTheirOwnEndKinds() throws Exception {
+  @DisplayName("Should retain completed evidence but none for a server-initiated planned stop")
+  void shouldRetainCompletedEvidenceButNoneForServerInitiatedPlannedStop() throws Exception {
     try (var server = server()) {
       server.start();
       var channel = workerChannel(server.port());
