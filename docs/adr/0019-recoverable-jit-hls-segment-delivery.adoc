@@ -10,8 +10,9 @@ This ADR narrows the "RFC 8216 compliance" consequence of link:0008-server-gener
 
 === Implementation status
 
-The liveness-bounded segment wait is implemented.
-On-demand producer recovery — restarting or re-dispatching a dead producer at the requested segment — is tracked in https://github.com/streamarr/streamarr-server/issues/252[issue #252].
+Implemented.
+`SegmentDeliveryCoordinator` owns the liveness-and-progress-bounded wait and the recovery cycle; `ProducerLifecycleService` owns every producer mutation under the per-session mutex (https://github.com/streamarr/streamarr-server/issues/252[issue #252]).
+Worker-side upload back-pressure retry and the worker's stall-bounded segment wait are tracked in https://github.com/streamarr/streamarr-server/issues/253[issue #253].
 
 == Context
 
@@ -33,7 +34,8 @@ The advertise-ahead deviation from §6.2.1 is intentional and is recorded here r
 
 === Segment waits are bounded by producer liveness, not a wall clock
 
-A request for an advertised-but-unproduced segment waits while a producer for that segment is alive and making progress, and additionally waits until the following segment exists so a partially written segment is never served.
+A request for an advertised-but-unproduced segment waits while a producer for that segment is alive and making progress; a producer that publishes nothing within the configured stall threshold is classified stalled and replaced.
+Segments are published atomically (a temporary file moved into its final name), so a segment that exists is complete — existence is readiness, and no successor-segment inference is needed or permitted.
 The wait ends when the segment is ready, when no producer can be made to produce it, or on request cancellation — never on a fixed wall-clock timeout.
 A slow or resource-starved transcode must not surface to the client as a missing segment.
 
@@ -41,14 +43,18 @@ A slow or resource-starved transcode must not surface to the client as a missing
 
 When an advertised segment is requested and no live producer covers it, the server starts a fresh producer seeking to that segment; recovery is pull-based, triggered by the segment request, not a supervised push loop.
 A recovered producer emits a contiguous run of segments from the requested index and never a single isolated segment, so audio and video boundaries stay continuous.
+Presentation timestamps continue the absolute timeline across a replacement producer (`-copyts`, input seek, `-start_number`); MPEG-TS continuity counters reset at the replacement boundary — an accepted, documented deviation from RFC 8216 §3's uninterrupted-counter requirement, shared with comparable JIT servers, because a static playlist cannot signal a discontinuity after the fact.
 Seeking uses this same mechanism: a request beyond the produced window restarts a producer at the requested offset, and because segment numbering derives from the offset the playlist never changes.
+A seek is a planned restart, not recovery: a relocation-distance request revives even a variant whose recovery has been exhausted.
 
 === Distributed producers are the recovery redundancy
 
 When the transcode executor is distributed, a variant whose producer fails is re-dispatched, on the next request that needs it, to another available worker for the same source namespace; the pool of workers is the recovery redundancy.
-Only when no worker can produce the variant does the failure surface, and the client's adaptive-bitrate switch to a healthy variant is the last-resort recovery.
-A variant with no producible source degrades at a bounded, documented boundary; it is not retried without limit, and the coincident-multi-failure case is accepted rather than engineered against.
-Transient upload back-pressure is a self-classifying condition: the producer retries the affected segment with bounded back-off rather than failing the whole variant.
+Recovery is attempt-bounded, never wall-clock-bounded: one recovery cycle snapshots the eligible execution targets at the moment of failure and tries each at most once — locally the single local runner, remotely each live worker connection (its `worker_session_id`, per ADR 0018's live-connection fence).
+Only when every snapshotted target has been tried does the failure surface, as a terminal `503 Service Unavailable` with no body and no `Retry-After`; the client's own retry budget and its adaptive-bitrate switch to a healthy variant are the last-resort recovery.
+The terminal state is sticky for same-window retries and cleared by exactly two events: a currently eligible target outside the exhausted cycle's snapshot (a reconnecting worker is a new target by construction), or a genuine seek's planned restart.
+Worst-case pre-terminal latency is `targets × stall threshold` plus dispatch overhead; in a large worker pool that can exceed one viewer's patience, which is accepted — every attempt is a genuine recovery chance and the player's variant switch proceeds in parallel.
+Transient upload back-pressure is a self-classifying condition: the producer retries the affected segment with bounded back-off rather than failing the whole variant (worker-side retry tracked in https://github.com/streamarr/streamarr-server/issues/253[issue #253]; until it lands, a back-pressure failure consumes one recovery target attempt).
 
 === A conformance suite gates the delivery contract
 

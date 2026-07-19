@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
+import com.streamarr.server.domain.streaming.ProducerEnd;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.exceptions.TranscodeException;
 import java.nio.file.Path;
@@ -195,8 +196,71 @@ class LocalFfmpegProcessManagerTest {
 
     await().pollDelay(Duration.ofMillis(200)).until(() -> true);
 
-    // isRunning triggers cleanup + logExitDetails — should not throw
+    // isRunning triggers cleanup + exit-detail logging — should not throw
     assertThatNoException().isThrownBy(() -> manager.isRunning(sessionId));
     assertThat(manager.isRunning(sessionId)).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should retain attempt-scoped exit evidence exactly once at the death transition")
+  void shouldRetainAttemptScopedExitEvidenceExactlyOnceAtTheDeathTransition() throws Exception {
+    var sessionId = UUID.randomUUID();
+    var attemptId = UUID.randomUUID();
+
+    var process =
+        manager.startProcess(
+            sessionId,
+            StreamSession.defaultVariant(),
+            attemptId,
+            List.of("bash", "-c", "echo 'boom' >&2; exit 1"),
+            tempDir);
+    process.waitFor();
+    await().pollDelay(Duration.ofMillis(200)).until(() -> true);
+    assertThat(manager.isRunning(sessionId, StreamSession.defaultVariant())).isFalse();
+
+    var evidence = manager.consumeExit(sessionId, StreamSession.defaultVariant(), attemptId);
+
+    assertThat(evidence).isPresent();
+    assertThat(evidence.get().attemptId()).isEqualTo(attemptId);
+    assertThat(evidence.get().kind()).isEqualTo(ProducerEnd.EndKind.PROCESS_EXIT);
+    assertThat(evidence.get().detail()).contains("exit code 1").contains("boom");
+    assertThat(manager.consumeExit(sessionId, StreamSession.defaultVariant(), attemptId)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should never attribute retained exit evidence to a different attempt")
+  void shouldNeverAttributeRetainedExitEvidenceToDifferentAttempt() throws Exception {
+    var sessionId = UUID.randomUUID();
+    var attemptId = UUID.randomUUID();
+
+    var process =
+        manager.startProcess(
+            sessionId,
+            StreamSession.defaultVariant(),
+            attemptId,
+            List.of("bash", "-c", "exit 1"),
+            tempDir);
+    process.waitFor();
+    await().pollDelay(Duration.ofMillis(200)).until(() -> true);
+    assertThat(manager.isRunning(sessionId, StreamSession.defaultVariant())).isFalse();
+
+    assertThat(manager.consumeExit(sessionId, StreamSession.defaultVariant(), UUID.randomUUID()))
+        .isEmpty();
+    // The mismatch must not consume the evidence owed to the attempt it belongs to.
+    assertThat(manager.consumeExit(sessionId, StreamSession.defaultVariant(), attemptId))
+        .isPresent();
+  }
+
+  @Test
+  @DisplayName("Should retain no exit evidence when the process is stopped on purpose")
+  void shouldRetainNoExitEvidenceWhenTheProcessIsStoppedOnPurpose() {
+    var sessionId = UUID.randomUUID();
+    var attemptId = UUID.randomUUID();
+
+    manager.startProcess(
+        sessionId, StreamSession.defaultVariant(), attemptId, List.of("sleep", "30"), tempDir);
+    manager.stopProcess(sessionId);
+
+    assertThat(manager.consumeExit(sessionId, StreamSession.defaultVariant(), attemptId)).isEmpty();
   }
 }

@@ -23,8 +23,4 @@ public interface StreamingService {
   Collection<StreamSession> getAllSessions();
 
   int getActiveSessionCount();
-
-  void resumeSessionIfNeeded(UUID sessionId, String segmentName);
-
-  boolean isTranscodeActive(UUID sessionId, String variantLabel);
 }

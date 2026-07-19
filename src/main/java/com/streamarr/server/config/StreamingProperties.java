@@ -18,6 +18,9 @@ public record StreamingProperties(
     // Session retention contributes the playback token's pause/slow-playback slack; reject a
     // non-positive value at startup rather than minting unusable tokens.
     @NotNull @DurationMin(seconds = 0, inclusive = false) Duration sessionRetention,
+    // A producer that publishes nothing for this long is classified stalled and replaced; the
+    // recovery budget is attempt-bounded (targets × threshold), never a wall clock.
+    Duration producerStallThreshold,
     String segmentBasePath,
     String ffmpegPath,
     String ffprobePath) {
@@ -37,6 +40,10 @@ public record StreamingProperties(
 
     if (sessionRetention == null) {
       sessionRetention = Duration.ofHours(24);
+    }
+
+    if (producerStallThreshold == null) {
+      producerStallThreshold = Duration.ofSeconds(10);
     }
 
     if (segmentBasePath == null || segmentBasePath.isBlank()) {

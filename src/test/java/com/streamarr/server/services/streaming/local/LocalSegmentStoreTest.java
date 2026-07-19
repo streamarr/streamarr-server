@@ -9,10 +9,7 @@ import com.streamarr.server.exceptions.TranscodeException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Duration;
 import java.util.UUID;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -102,89 +99,23 @@ class LocalSegmentStoreTest {
   }
 
   @Test
-  @DisplayName("Should return true immediately when waiting for existing segment")
-  void shouldReturnTrueImmediatelyWhenWaitingForExistingSegment() throws IOException {
+  @DisplayName("Should report a missing segment when session has no output directory")
+  void shouldReportMissingSegmentWhenSessionHasNoOutputDirectory() {
     var sessionId = UUID.randomUUID();
-    var outputDir = store.getOutputDirectory(sessionId);
-    Files.write(outputDir.resolve("segment0.ts"), "data".getBytes());
 
-    var result = store.waitForSegment(sessionId, "segment0.ts", () -> true);
-
-    assertThat(result).isTrue();
+    // In remote mode nothing creates the directory until a worker's first upload; the miss must
+    // read as "not yet present", never as an error.
+    assertThat(store.segmentExists(sessionId, "segment0.ts")).isFalse();
   }
 
   @Test
-  @DisplayName("Should timeout when segment never appears")
-  void shouldTimeoutWhenSegmentNeverAppears() {
-    var sessionId = UUID.randomUUID();
-    store.getOutputDirectory(sessionId);
-
-    var result = store.waitForSegment(sessionId, "missing.ts", () -> false);
-
-    assertThat(result).isFalse();
-  }
-
-  @Test
-  @DisplayName("Should time out instead of throwing when session has no output directory")
-  void shouldTimeOutInsteadOfThrowingWhenSessionHasNoOutputDirectory() {
+  @DisplayName("Should report an existing segment after the first upload creates the directory")
+  void shouldReportExistingSegmentAfterFirstUploadCreatesTheDirectory() {
     var sessionId = UUID.randomUUID();
 
-    var result = store.waitForSegment(sessionId, "segment0.ts", () -> false);
+    store.storeSegment(sessionId, "720p/segment0.ts", "uploaded".getBytes());
 
-    assertThat(result).isFalse();
-  }
-
-  @Test
-  @DisplayName("Should return true when first upload creates the session directory during wait")
-  void shouldReturnTrueWhenFirstUploadCreatesSessionDirectoryDuringWait() {
-    var sessionId = UUID.randomUUID();
-
-    var executor = Executors.newSingleThreadScheduledExecutor();
-    executor.schedule(
-        () -> store.storeSegment(sessionId, "720p/segment0.ts", "uploaded".getBytes()),
-        200,
-        TimeUnit.MILLISECONDS);
-
-    var result = store.waitForSegment(sessionId, "720p/segment0.ts", () -> true);
-
-    assertThat(result).isTrue();
-    executor.shutdown();
-  }
-
-  @Test
-  @DisplayName("Should keep waiting while producer is alive then return when segment appears")
-  void shouldWaitWhileProducerIsAliveThenReturnWhenSegmentAppears() throws InterruptedException {
-    var sessionId = UUID.randomUUID();
-    var publisher =
-        Thread.ofVirtual()
-            .start(
-                () -> {
-                  try {
-                    Thread.sleep(400);
-                  } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    return;
-                  }
-                  store.storeSegment(sessionId, "segment0.ts", "late data".getBytes());
-                });
-
-    var result = store.waitForSegment(sessionId, "segment0.ts", () -> true);
-
-    assertThat(result).isTrue();
-    publisher.join();
-  }
-
-  @Test
-  @DisplayName("Should stop waiting promptly when producer is dead")
-  void shouldStopWaitingPromptlyWhenProducerIsDead() {
-    var sessionId = UUID.randomUUID();
-
-    var startedAt = System.nanoTime();
-    var result = store.waitForSegment(sessionId, "never.ts", () -> false);
-    var elapsed = Duration.ofNanos(System.nanoTime() - startedAt);
-
-    assertThat(result).isFalse();
-    assertThat(elapsed).isLessThan(Duration.ofSeconds(3));
+    assertThat(store.segmentExists(sessionId, "720p/segment0.ts")).isTrue();
   }
 
   @Test
@@ -268,30 +199,6 @@ class LocalSegmentStoreTest {
 
     assertThatThrownBy(() -> store.storeSegment(sessionId, "../../escaped.ts", segmentData))
         .isInstanceOf(InvalidSegmentPathException.class);
-  }
-
-  @Test
-  @DisplayName("Should return true when segment is created by background thread")
-  void shouldReturnTrueWhenSegmentIsCreatedByBackgroundThread() {
-    var sessionId = UUID.randomUUID();
-    var outputDir = store.getOutputDirectory(sessionId);
-
-    var executor = Executors.newSingleThreadScheduledExecutor();
-    executor.schedule(
-        () -> {
-          try {
-            Files.write(outputDir.resolve("segment1.ts"), "delayed data".getBytes());
-          } catch (IOException e) {
-            throw new RuntimeException(e);
-          }
-        },
-        200,
-        TimeUnit.MILLISECONDS);
-
-    var result = store.waitForSegment(sessionId, "segment1.ts", () -> true);
-
-    assertThat(result).isTrue();
-    executor.shutdown();
   }
 
   @Test

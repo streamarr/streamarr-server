@@ -2,6 +2,7 @@ package com.streamarr.server.services.streaming.remote;
 
 import static com.streamarr.transcode.protocol.ProtoUuid.fromProto;
 
+import com.streamarr.server.domain.streaming.ProducerEnd;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
@@ -158,8 +159,16 @@ final class WorkerSessionGrpcService
                 authenticatedWorkerId,
                 fromProto(request.getJobAttemptStarted().getJobAttemptId()));
         case JOB_ATTEMPT_FAILED -> reportFailedJobAttempt(request.getJobAttemptFailed());
-        case JOB_ATTEMPT_COMPLETED -> finish(request.getJobAttemptCompleted().getJobAttemptId());
-        case JOB_ATTEMPT_STOPPED -> finish(request.getJobAttemptStopped().getJobAttemptId());
+        case JOB_ATTEMPT_COMPLETED ->
+            finish(
+                request.getJobAttemptCompleted().getJobAttemptId(),
+                ProducerEnd.EndKind.COMPLETED,
+                "completed");
+        case JOB_ATTEMPT_STOPPED ->
+            finish(
+                request.getJobAttemptStopped().getJobAttemptId(),
+                ProducerEnd.EndKind.STOPPED,
+                "stopped");
         default ->
             log.warn(
                 "Ignoring unexpected {} event on established session of worker {}",
@@ -169,7 +178,8 @@ final class WorkerSessionGrpcService
     }
 
     private void reportFailedJobAttempt(JobAttemptFailed failed) {
-      finish(failed.getJobAttemptId())
+      var failure = failed.getFailure().name();
+      finish(failed.getJobAttemptId(), ProducerEnd.EndKind.FAILED, failure)
           .ifPresentOrElse(
               job ->
                   log.warn(
@@ -186,9 +196,16 @@ final class WorkerSessionGrpcService
                       failed.getFailure()));
     }
 
-    private Optional<VariantJob> finish(Uuid jobAttemptId) {
-      return workerConnections.releaseJobAttempt(
-          authenticatedWorkerId, workerSessionId, fromProto(jobAttemptId));
+    private Optional<VariantJob> finish(
+        Uuid jobAttemptId, ProducerEnd.EndKind kind, String detail) {
+      return workerConnections.recordAttemptEnd(
+          LiveWorkerConnectionRegistry.AttemptEndEvent.builder()
+              .workerId(authenticatedWorkerId)
+              .workerSessionId(workerSessionId)
+              .jobAttemptId(fromProto(jobAttemptId))
+              .kind(kind)
+              .detail(detail)
+              .build());
     }
 
     private void reject(Status status) {
