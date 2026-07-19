@@ -63,6 +63,30 @@ class LiveWorkerConnectionRegistryTest {
   }
 
   @Test
+  @DisplayName("Should report dispatch failure when a disconnect completes mid-dispatch")
+  void shouldReportDispatchFailureWhenDisconnectCompletesMidDispatch() throws Exception {
+    var registry = new LiveWorkerConnectionRegistry();
+    var observer = new GatedDispatchObserver();
+    var workerSessionId = registry.register(WORKER_ID, registration(), observer);
+    var job = variantJob();
+    var streamSessionId = fromProto(job.getStreamSessionId());
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var dispatching = executor.submit(() -> registry.dispatch(job));
+      // The dispatcher is inside tryDispatch, mid-send, before its bookkeeping put.
+      assertThat(observer.dispatchReached.await(5, TimeUnit.SECONDS)).isTrue();
+
+      registry.disconnect(WORKER_ID, workerSessionId);
+      observer.dispatchRelease.countDown();
+
+      // The job must not be reported as dispatched while tracked nowhere: the race resolves to
+      // an honest dispatch failure and recovery moves on to another target.
+      assertThat(dispatching.get(5, TimeUnit.SECONDS)).isFalse();
+      assertThat(registry.isRunning(streamSessionId)).isFalse();
+    }
+  }
+
+  @Test
   @DisplayName(
       "Should report dispatch failure when the worker call is cancelled but not yet reaped")
   void shouldReportDispatchFailureWhenWorkerCallIsCancelledButNotYetReaped() {
@@ -216,6 +240,37 @@ class LiveWorkerConnectionRegistryTest {
         throw new AssertionError("Replacement worker should remain connected");
       }
     };
+  }
+
+  /** Holds the dispatcher inside its StartVariant send until the test releases it. */
+  private static final class GatedDispatchObserver
+      implements StreamObserver<EstablishWorkerSessionResponse> {
+
+    private final CountDownLatch dispatchReached = new CountDownLatch(1);
+    private final CountDownLatch dispatchRelease = new CountDownLatch(1);
+
+    @Override
+    public void onNext(EstablishWorkerSessionResponse value) {
+      if (!value.hasStartVariant()) {
+        return;
+      }
+      dispatchReached.countDown();
+      try {
+        dispatchRelease.await(5, TimeUnit.SECONDS);
+      } catch (InterruptedException _) {
+        Thread.currentThread().interrupt();
+      }
+    }
+
+    @Override
+    public void onError(Throwable throwable) {
+      // The connection under test is closed by the registry; nothing to assert here.
+    }
+
+    @Override
+    public void onCompleted() {
+      // The connection under test is closed by the registry; nothing to assert here.
+    }
   }
 
   private static final class CancellableObserver

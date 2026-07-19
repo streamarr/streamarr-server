@@ -7,8 +7,10 @@ import static org.awaitility.Awaitility.await;
 import com.google.protobuf.ByteString;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.streaming.ProducerEnd;
+import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.fakes.BlockingSegmentStore;
 import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.transcode.tls.PemTlsIdentity;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
@@ -761,6 +763,42 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
             .isFalse();
         assertThat(server.dispatchTo(expectedTarget, job)).isTrue();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
+      } finally {
+        shutdown(channel);
+      }
+    }
+  }
+
+  @Test
+  @DisplayName("Should dispatch jobs carrying the handle's attempt identity end to end")
+  void shouldDispatchJobsCarryingTheHandlesAttemptIdentityEndToEnd() throws Exception {
+    try (var server = server()) {
+      server.start();
+      var channel = workerChannel(server.port());
+
+      try (var worker = connect(channel, AUTHENTICATED_WORKER_ID)) {
+        assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
+        var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, Path.of("/media"));
+        var request =
+            TranscodeRequest.builder()
+                .sessionId(UUID.randomUUID())
+                .sourcePath(Path.of("/media/movie.mkv"))
+                .targetSegmentDuration(6)
+                .framerate(23.976)
+                .transcodeDecision(StreamSessionFixture.remuxMpegtsDecision())
+                .width(1920)
+                .height(1080)
+                .bitrate(5_000_000)
+                .variantLabel("720p")
+                .build();
+
+        var handle = executor.start(request);
+
+        // The attempt identity is minted once, upstream: the dispatched job, the returned handle,
+        // and any later failure evidence all name the same attempt.
+        var job = worker.nextResponse().getStartVariant().getJob();
+        assertThat(uuid(job.getJobAttemptId())).isEqualTo(handle.attemptId());
+        assertThat(handle.attemptId()).isEqualTo(request.attemptId());
       } finally {
         shutdown(channel);
       }

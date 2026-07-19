@@ -75,7 +75,7 @@ final class LiveWorkerConnectionRegistry {
 
   boolean dispatch(VariantJob job) {
     for (var connection : connections.values()) {
-      if (connection.tryDispatch(job)) {
+      if (dispatchGuardingDisconnect(connection, job)) {
         return true;
       }
     }
@@ -85,10 +85,26 @@ final class LiveWorkerConnectionRegistry {
   boolean dispatchTo(ExecutionTargetId target, VariantJob job) {
     for (var connection : connections.values()) {
       if (connection.workerSessionId().toString().equals(target.value())) {
-        return connection.tryDispatch(job);
+        return dispatchGuardingDisconnect(connection, job);
       }
     }
     return false;
+  }
+
+  /**
+   * A disconnect can drain the connection between this dispatcher's send and its bookkeeping put;
+   * the job would then be tracked nowhere with no terminal evidence. Re-checking registration after
+   * the put and undoing turns that race into an honest dispatch failure.
+   */
+  private boolean dispatchGuardingDisconnect(WorkerConnection connection, VariantJob job) {
+    if (!connection.tryDispatch(job)) {
+      return false;
+    }
+    if (!connections.containsValue(connection)) {
+      connection.releaseJobAttempt(fromProto(job.getJobAttemptId()));
+      return false;
+    }
+    return true;
   }
 
   Set<ExecutionTargetId> eligibleWorkers(UUID sourceNamespaceId) {
@@ -141,7 +157,10 @@ final class LiveWorkerConnectionRegistry {
       return Optional.empty();
     }
 
-    attemptEnds.remove(key, end);
+    // Consume-once must be atomic: only the caller whose remove wins receives the evidence.
+    if (!attemptEnds.remove(key, end)) {
+      return Optional.empty();
+    }
     return Optional.of(end);
   }
 

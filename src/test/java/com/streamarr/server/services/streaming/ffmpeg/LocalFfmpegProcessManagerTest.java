@@ -5,6 +5,10 @@ import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.streamarr.server.domain.streaming.ProducerEnd;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.exceptions.TranscodeException;
@@ -12,10 +16,16 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.slf4j.LoggerFactory;
 
 @Tag("UnitTest")
 @DisplayName("Local FFmpeg Process Manager Tests")
@@ -262,5 +272,115 @@ class LocalFfmpegProcessManagerTest {
     manager.stopProcess(sessionId);
 
     assertThat(manager.consumeExit(sessionId, StreamSession.defaultVariant(), attemptId)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should purge retained exit evidence when the session is torn down")
+  void shouldPurgeRetainedExitEvidenceWhenTheSessionIsTornDown() throws Exception {
+    var sessionId = UUID.randomUUID();
+    var attemptId = UUID.randomUUID();
+    var process =
+        manager.startProcess(
+            sessionId,
+            StreamSession.defaultVariant(),
+            attemptId,
+            List.of("bash", "-c", "exit 1"),
+            tempDir);
+    process.waitFor();
+    await().pollDelay(Duration.ofMillis(200)).until(() -> true);
+    assertThat(manager.isRunning(sessionId, StreamSession.defaultVariant())).isFalse();
+
+    // The destroy path: nothing consumes evidence after teardown, so it must not outlive it.
+    manager.stopProcess(sessionId);
+
+    assertThat(manager.consumeExit(sessionId, StreamSession.defaultVariant(), attemptId)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should purge retained exit evidence when only the variant is stopped")
+  void shouldPurgeRetainedExitEvidenceWhenOnlyTheVariantIsStopped() throws Exception {
+    var sessionId = UUID.randomUUID();
+    var attemptId = UUID.randomUUID();
+    var process =
+        manager.startProcess(
+            sessionId, "720p", attemptId, List.of("bash", "-c", "exit 1"), tempDir);
+    process.waitFor();
+    await().pollDelay(Duration.ofMillis(200)).until(() -> true);
+    assertThat(manager.isRunning(sessionId, "720p")).isFalse();
+
+    manager.stopProcess(sessionId, "720p");
+
+    assertThat(manager.consumeExit(sessionId, "720p", attemptId)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should log the crash detail when disposing an already-dead process")
+  void shouldLogTheCrashDetailWhenDisposingAnAlreadyDeadProcess() throws Exception {
+    var sessionId = UUID.randomUUID();
+    var process =
+        manager.startProcess(
+            sessionId,
+            StreamSession.defaultVariant(),
+            UUID.randomUUID(),
+            List.of("bash", "-c", "echo 'crash detail' >&2; exit 1"),
+            tempDir);
+    process.waitFor();
+    await().pollDelay(Duration.ofMillis(200)).until(() -> true);
+
+    var logger = (Logger) LoggerFactory.getLogger(LocalFfmpegProcessManager.class);
+    var appender = new ListAppender<ILoggingEvent>();
+    appender.start();
+    logger.addAppender(appender);
+    try {
+      // Nobody observed the death (no isRunning call); the planned stop disposes of the corpse.
+      manager.stopProcess(sessionId);
+    } finally {
+      logger.detachAppender(appender);
+    }
+
+    assertThat(appender.list)
+        .filteredOn(event -> event.getLevel() == Level.WARN)
+        .extracting(ILoggingEvent::getFormattedMessage)
+        .anyMatch(
+            message -> message.contains("already exited") && message.contains("crash detail"));
+  }
+
+  @Test
+  @DisplayName("Should serve retained exit evidence to exactly one concurrent consumer")
+  void shouldServeRetainedExitEvidenceToExactlyOneConcurrentConsumer() throws Exception {
+    var consumers = 8;
+
+    try (var executor = Executors.newFixedThreadPool(consumers)) {
+      for (var round = 0; round < 20; round++) {
+        var sessionId = UUID.randomUUID();
+        var attemptId = UUID.randomUUID();
+        var process =
+            manager.startProcess(
+                sessionId, StreamSession.defaultVariant(), attemptId, List.of("false"), tempDir);
+        process.waitFor();
+        assertThat(manager.isRunning(sessionId, StreamSession.defaultVariant())).isFalse();
+
+        var barrier = new CyclicBarrier(consumers);
+        var consumed = new AtomicInteger();
+        var tasks =
+            IntStream.range(0, consumers)
+                .mapToObj(
+                    _ ->
+                        executor.submit(
+                            () -> {
+                              barrier.await(5, TimeUnit.SECONDS);
+                              manager
+                                  .consumeExit(sessionId, StreamSession.defaultVariant(), attemptId)
+                                  .ifPresent(_ -> consumed.incrementAndGet());
+                              return null;
+                            }))
+                .toList();
+        for (var task : tasks) {
+          task.get(5, TimeUnit.SECONDS);
+        }
+
+        assertThat(consumed.get()).isEqualTo(1);
+      }
+    }
   }
 }
