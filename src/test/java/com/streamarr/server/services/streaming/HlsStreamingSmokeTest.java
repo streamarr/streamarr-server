@@ -116,6 +116,15 @@ class HlsStreamingSmokeTest {
             .build();
 
     mediaFileRepository = new FakeMediaFileRepository();
+    var sessionRegistry = new InMemoryStreamSessionRegistry();
+    var producerLifecycle =
+        ProducerLifecycleService.builder()
+            .transcodeExecutor(transcodeExecutor)
+            .segmentStore(segmentStore)
+            .properties(properties)
+            .runtimeRegistry(sessionRegistry)
+            .sessionMutex(new MutexFactory<>())
+            .build();
     streamingService =
         new HlsStreamingService(
             mediaFileRepository,
@@ -126,8 +135,8 @@ class HlsStreamingSmokeTest {
             qualityLadderService,
             properties,
             _ -> true,
-            new InMemoryStreamSessionRegistry(),
-            new MutexFactory<>());
+            sessionRegistry,
+            producerLifecycle);
 
     playlistService = new HlsPlaylistService(properties);
   }

@@ -5,6 +5,7 @@ import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.streaming.FfprobeService;
 import com.streamarr.server.services.streaming.HlsStreamingService;
 import com.streamarr.server.services.streaming.PlaybackAuthorityGate;
+import com.streamarr.server.services.streaming.ProducerLifecycleService;
 import com.streamarr.server.services.streaming.QualityLadderService;
 import com.streamarr.server.services.streaming.RuntimeStreamSessionRegistry;
 import com.streamarr.server.services.streaming.SegmentStore;
@@ -103,6 +104,22 @@ public class StreamingConfig {
   }
 
   @Bean
+  public ProducerLifecycleService producerLifecycleService(
+      TranscodeExecutor transcodeExecutor,
+      SegmentStore segmentStore,
+      StreamingProperties properties,
+      RuntimeStreamSessionRegistry runtimeRegistry,
+      MutexFactoryProvider mutexFactoryProvider) {
+    return ProducerLifecycleService.builder()
+        .transcodeExecutor(transcodeExecutor)
+        .segmentStore(segmentStore)
+        .properties(properties)
+        .runtimeRegistry(runtimeRegistry)
+        .sessionMutex(mutexFactoryProvider.getMutexFactory())
+        .build();
+  }
+
+  @Bean
   public StreamingService streamingService(
       MediaFileRepository mediaFileRepository,
       TranscodeExecutor transcodeExecutor,
@@ -113,7 +130,7 @@ public class StreamingConfig {
       StreamingProperties properties,
       PlaybackAuthorityGate authorityGate,
       RuntimeStreamSessionRegistry runtimeRegistry,
-      MutexFactoryProvider mutexFactoryProvider) {
+      ProducerLifecycleService producerLifecycleService) {
     return new HlsStreamingService(
         mediaFileRepository,
         transcodeExecutor,
@@ -124,6 +141,6 @@ public class StreamingConfig {
         properties,
         authorityGate,
         runtimeRegistry,
-        mutexFactoryProvider.getMutexFactory());
+        producerLifecycleService);
   }
 }

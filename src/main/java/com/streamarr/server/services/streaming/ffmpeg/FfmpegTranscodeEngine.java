@@ -41,7 +41,7 @@ public class FfmpegTranscodeEngine {
         process.pid());
 
     return new TranscodeHandle(
-        process.pid(), TranscodeStatus.ACTIVE, request.startSequenceNumber());
+        process.pid(), request.attemptId(), TranscodeStatus.ACTIVE, request.startSequenceNumber());
   }
 
   public void stop(UUID sessionId) {
