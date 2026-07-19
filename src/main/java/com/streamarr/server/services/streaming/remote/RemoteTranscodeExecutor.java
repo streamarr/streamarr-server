@@ -26,7 +26,8 @@ public final class RemoteTranscodeExecutor implements TranscodeExecutor {
     if (!workerServer.dispatch(jobMapper.map(request))) {
       throw new TranscodeException("No connected transcode worker can run this variant");
     }
-    return new TranscodeHandle(0, TranscodeStatus.ACTIVE, request.startSequenceNumber());
+    return new TranscodeHandle(
+        0, request.attemptId(), TranscodeStatus.ACTIVE, request.startSequenceNumber());
   }
 
   @Override

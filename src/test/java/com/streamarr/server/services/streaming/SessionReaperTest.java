@@ -9,8 +9,10 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
+import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.StreamSessionFixture;
+import com.streamarr.server.services.concurrency.MutexFactory;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -41,9 +43,18 @@ class SessionReaperTest {
             .sessionTimeout(Duration.ofSeconds(60))
             .sessionRetention(Duration.ofHours(24))
             .build();
+    var runtimeRegistry = new FakeRuntimeStreamSessionRegistry();
+    var producerLifecycle =
+        ProducerLifecycleService.builder()
+            .transcodeExecutor(executor)
+            .segmentStore(new FakeSegmentStore())
+            .properties(properties)
+            .runtimeRegistry(runtimeRegistry)
+            .sessionMutex(new MutexFactory<>())
+            .build();
     reaper =
         new SessionReaper(
-            streamingService, executor, properties, new FakeRuntimeStreamSessionRegistry());
+            streamingService, executor, properties, runtimeRegistry, producerLifecycle);
   }
 
   @Test
