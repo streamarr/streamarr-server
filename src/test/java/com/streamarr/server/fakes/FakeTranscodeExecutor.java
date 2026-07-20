@@ -8,6 +8,7 @@ import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -15,6 +16,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 public class FakeTranscodeExecutor implements TranscodeExecutor {
@@ -26,15 +28,15 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   private final Set<UUID> stopped = ConcurrentHashMap.newKeySet();
   private final Set<UUID> failingOnStop = ConcurrentHashMap.newKeySet();
   private final List<TranscodeRequest> startedRequests =
-      java.util.Collections.synchronizedList(new ArrayList<>());
+      Collections.synchronizedList(new ArrayList<>());
   private final List<ExecutionTargetId> startedTargets =
-      java.util.Collections.synchronizedList(new ArrayList<>());
-  private final List<String> stoppedVariants =
-      java.util.Collections.synchronizedList(new ArrayList<>());
+      Collections.synchronizedList(new ArrayList<>());
+  private final List<String> stoppedVariants = Collections.synchronizedList(new ArrayList<>());
   private final Set<ExecutionTargetId> refusingTargets = ConcurrentHashMap.newKeySet();
   private final Map<ProcessKey, ProducerEnd> evidence = new ConcurrentHashMap<>();
   private Set<ExecutionTargetId> executionTargets =
       new LinkedHashSet<>(Set.of(ExecutionTargetId.LOCAL));
+  private final AtomicLong livenessChecks = new AtomicLong();
   private int availableSlots = Integer.MAX_VALUE;
   private boolean healthy = true;
   private volatile boolean failUntargetedStarts;
@@ -103,7 +105,17 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
 
   @Override
   public boolean isRunning(UUID sessionId, String variantLabel) {
+    livenessChecks.incrementAndGet();
     return running.contains(new ProcessKey(sessionId, variantLabel));
+  }
+
+  /**
+   * Per-variant liveness checks observed so far. The delivery coordinator calls this once per poll
+   * iteration (after {@code syncProgress}), so awaiting an increment is a deterministic signal that
+   * a poll cycle has completed — replacing wall-clock sleeps in timing tests.
+   */
+  public long livenessChecks() {
+    return livenessChecks.get();
   }
 
   @Override
