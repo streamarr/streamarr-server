@@ -138,6 +138,21 @@ class SegmentDeliveryCoordinatorTest {
         () -> coordinator.deliver(sessionId, variantLabel, segmentName));
   }
 
+  /**
+   * Waits until the coordinator has completed {@code count} further poll iterations. Each iteration
+   * runs {@code syncProgress} then one liveness check, so awaiting the liveness counter to advance
+   * is a deterministic "a poll cycle observed the current state" signal — the sleep-free
+   * replacement for choreographing waits against a frozen clock.
+   */
+  private void awaitPolls(FakeTranscodeExecutor executor, int count) {
+    var target = executor.livenessChecks() + count;
+    await().atMost(2, TimeUnit.SECONDS).until(() -> executor.livenessChecks() >= target);
+  }
+
+  private void awaitPolls(int count) {
+    awaitPolls(transcodeExecutor, count);
+  }
+
   @Test
   @DisplayName("Should serve a segment the moment it exists without waiting for its successor")
   void shouldServeSegmentTheMomentItExistsWithoutWaitingForItsSuccessor() {
@@ -168,7 +183,7 @@ class SegmentDeliveryCoordinatorTest {
 
     var delivery = deliverAsync(session.getSessionId(), "segment1.ts");
     // Several poll cycles pass with no publication; the frozen clock means no stall is declared.
-    Thread.sleep(150);
+    awaitPolls(3);
     assertThat(delivery).isNotDone();
     segmentStore.addSegment(session.getSessionId(), "segment1.ts", new byte[] {1});
 
@@ -226,7 +241,9 @@ class SegmentDeliveryCoordinatorTest {
     var startsBefore = transcodeExecutor.getStartedRequests().size();
 
     var delivery = deliverAsync(session.getSessionId(), "segment0.ts");
-    Thread.sleep(80);
+    // The producer records its baseline before the clock advances, so the stall is measured from a
+    // real starting point rather than racing the delivery thread's first poll.
+    awaitPolls(1);
     clock.advance(STALL_THRESHOLD.plusMillis(50));
     await()
         .atMost(2, TimeUnit.SECONDS)
@@ -245,16 +262,15 @@ class SegmentDeliveryCoordinatorTest {
     var startsBefore = transcodeExecutor.getStartedRequests().size();
 
     var delivery = deliverAsync(session.getSessionId(), "segment2.ts");
-    Thread.sleep(80);
-    // Progress at the frontier arrives just before each stall verdict; no replacement happens.
+    // Each earlier segment is published, then a poll cycle advances the frontier past it — which
+    // resets the stall clock — before time advances by a sub-threshold gap. The reset keeps those
+    // gaps from ever accumulating into a stall, so no replacement happens.
     segmentStore.addSegment(session.getSessionId(), "segment0.ts", new byte[] {1});
-    Thread.sleep(60);
+    awaitPolls(2);
     clock.advance(STALL_THRESHOLD.minusMillis(50));
-    Thread.sleep(60);
     segmentStore.addSegment(session.getSessionId(), "segment1.ts", new byte[] {1});
-    Thread.sleep(60);
+    awaitPolls(2);
     clock.advance(STALL_THRESHOLD.minusMillis(50));
-    Thread.sleep(60);
     segmentStore.addSegment(session.getSessionId(), "segment2.ts", new byte[] {2});
 
     assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
@@ -268,7 +284,8 @@ class SegmentDeliveryCoordinatorTest {
     var startsBefore = transcodeExecutor.getStartedRequests().size();
 
     var delivery = deliverAsync(session.getSessionId(), "segment2.ts");
-    Thread.sleep(80);
+    // Let the delivery reach its wait loop, then suspend the session out from under it.
+    awaitPolls(1);
     lifecycle.suspend(session);
     await()
         .atMost(2, TimeUnit.SECONDS)
@@ -461,7 +478,9 @@ class SegmentDeliveryCoordinatorTest {
     await()
         .atMost(2, TimeUnit.SECONDS)
         .until(() -> transcodeExecutor.getStartedRequests().size() == startsBefore + 1);
-    Thread.sleep(100);
+    // Give the losing waiter its own recovery pass (superseded by the mutex predicate) before
+    // publishing, so the "exactly one start" assertion covers the second waiter's attempt.
+    awaitPolls(2);
     segmentStore.addSegment(sessionId, "segment0.ts", new byte[] {1});
 
     assertThat(first.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
@@ -475,7 +494,8 @@ class SegmentDeliveryCoordinatorTest {
     var session = startedSession();
 
     var delivery = deliverAsync(session.getSessionId(), "segment1.ts");
-    Thread.sleep(60);
+    // Let the delivery reach its wait loop, then remove the session; it must wake within one poll.
+    awaitPolls(1);
     runtimeRegistry.removeById(session.getSessionId());
 
     assertThat(delivery.get(1, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.SessionEnded.class);
@@ -496,7 +516,9 @@ class SegmentDeliveryCoordinatorTest {
               interruptRestored.set(Thread.currentThread().isInterrupted());
             });
     waiter.start();
-    Thread.sleep(80);
+    // The waiter is polling (in or between sleeps) once it has run a liveness check; interrupting
+    // then must surface as Cancelled with the interrupt flag restored.
+    awaitPolls(1);
 
     waiter.interrupt();
     waiter.join(2000);
@@ -593,7 +615,9 @@ class SegmentDeliveryCoordinatorTest {
     var attemptY = session.getHandle().attemptId();
 
     gatingExecutor.releaseDeathEvidence();
-    Thread.sleep(300);
+    // The released lagging waiter runs its now-superseded recovery pass and returns to polling; a
+    // couple of its poll cycles must go by without it starting a second target.
+    awaitPolls(gatingExecutor, 2);
 
     // One death, one replacement: the healthy producer was neither stopped nor replaced again.
     assertThat(gatingExecutor.getStartedTargets()).containsExactly(TARGET_A);
@@ -647,7 +671,9 @@ class SegmentDeliveryCoordinatorTest {
     await()
         .atMost(2, TimeUnit.SECONDS)
         .until(() -> session.getHandle().status() == TranscodeStatus.ACTIVE);
-    Thread.sleep(200);
+    // The seeker revived the variant and now polls for segment50; let it settle into that wait
+    // before interrupting so the outcome is a clean Cancelled.
+    awaitPolls(1);
     seeker.interrupt();
     seeker.join(2000);
     assertThat(seekerOutcome.get()).isInstanceOf(SegmentDelivery.Cancelled.class);
@@ -718,9 +744,17 @@ class SegmentDeliveryCoordinatorTest {
                             .build()));
     gatingExecutor.awaitTargetedStartEntered();
 
-    // Destroy must serialize with the in-flight replace instead of losing to its save.
-    var destroy = CompletableFuture.runAsync(() -> streamingService.destroySession(sessionId));
-    Thread.sleep(200);
+    // Destroy must serialize with the in-flight replace instead of losing to its save. The latch
+    // proves the destroy thread is running before the replace is released; the session mutex then
+    // orders removal and save deterministically regardless of which reaches the lock first.
+    var destroyStarted = new CountDownLatch(1);
+    var destroy =
+        CompletableFuture.runAsync(
+            () -> {
+              destroyStarted.countDown();
+              streamingService.destroySession(sessionId);
+            });
+    assertThat(destroyStarted.await(5, TimeUnit.SECONDS)).isTrue();
     gatingExecutor.releaseTargetedStarts();
     replace.get(5, TimeUnit.SECONDS);
     destroy.get(5, TimeUnit.SECONDS);
