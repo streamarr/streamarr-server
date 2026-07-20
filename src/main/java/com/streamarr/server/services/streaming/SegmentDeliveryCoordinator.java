@@ -52,66 +52,65 @@ public class SegmentDeliveryCoordinator {
 
   public SegmentDelivery deliver(UUID sessionId, String variantLabel, String segmentName) {
     while (true) {
-      var ready = tryRead(sessionId, segmentName);
-      if (ready != null) {
-        return ready;
-      }
-
-      var session = runtimeRegistry.findById(sessionId).orElse(null);
-      if (session == null) {
-        return new SegmentDelivery.SessionEnded();
-      }
-
-      var handle = session.getVariantHandle(variantLabel);
-      if (handle == null) {
-        return new SegmentDelivery.SessionEnded();
-      }
-
-      // Bookkeeping is created only for validated requests, so post-destroy retries cannot
-      // re-grow state that forgetSession already dropped.
-      var state =
-          states.computeIfAbsent(
-              new VariantKey(sessionId, variantLabel), _ -> new VariantDeliveryState());
-
-      if (handle.status() == TranscodeStatus.FAILED) {
-        var pending = pendingSegment(sessionId, variantLabel, segmentName, handle);
-        var outcome = resolveFailedVariant(state, session, handle, pending);
-        if (outcome != null) {
-          return outcome;
-        }
-        if (!sleepOnePoll()) {
-          return new SegmentDelivery.Cancelled();
-        }
-        continue;
-      }
-
-      var positioned = tryEnsurePositioned(session, segmentName);
-      handle = session.getVariantHandle(variantLabel);
-      if (handle == null) {
-        return new SegmentDelivery.SessionEnded();
-      }
-
-      var pending = pendingSegment(sessionId, variantLabel, segmentName, handle);
-      syncProgress(state, handle, pending);
-
-      var producerAlive = transcodeExecutor.isRunning(sessionId, variantLabel);
-      if (producerAlive && !hasStalled(state)) {
-        if (!sleepOnePoll()) {
-          return new SegmentDelivery.Cancelled();
-        }
-        continue;
-      }
-
-      var outcome = recover(state, pending, replacementReason(producerAlive, positioned, session));
+      var outcome = deliverOnce(sessionId, variantLabel, segmentName);
       if (outcome != null) {
         return outcome;
       }
-      // A pass that neither replaced nor terminated (superseded, or another waiter's healthy
-      // replacement) must re-observe at poll cadence, never in a hot loop.
+      // Every non-terminal pass — waiting on a live producer, a superseded recovery attempt, or a
+      // FAILED variant awaiting revival — re-observes at poll cadence, never in a hot loop. The
+      // loop owns the one wait and the one interrupt check.
       if (!sleepOnePoll()) {
         return new SegmentDelivery.Cancelled();
       }
     }
+  }
+
+  /**
+   * One delivery pass. Returns a terminal {@link SegmentDelivery} outcome, or {@code null} to mean
+   * "re-observe after one poll interval".
+   */
+  private SegmentDelivery deliverOnce(UUID sessionId, String variantLabel, String segmentName) {
+    var ready = tryRead(sessionId, segmentName);
+    if (ready != null) {
+      return ready;
+    }
+
+    var session = runtimeRegistry.findById(sessionId).orElse(null);
+    if (session == null) {
+      return new SegmentDelivery.SessionEnded();
+    }
+
+    var handle = session.getVariantHandle(variantLabel);
+    if (handle == null) {
+      return new SegmentDelivery.SessionEnded();
+    }
+
+    // Bookkeeping is created only for validated requests, so post-destroy retries cannot
+    // re-grow state that forgetSession already dropped.
+    var state =
+        states.computeIfAbsent(
+            new VariantKey(sessionId, variantLabel), _ -> new VariantDeliveryState());
+
+    if (handle.status() == TranscodeStatus.FAILED) {
+      return resolveFailedVariant(
+          state, session, handle, pendingSegment(sessionId, variantLabel, segmentName, handle));
+    }
+
+    var positioned = tryEnsurePositioned(session, segmentName);
+    handle = session.getVariantHandle(variantLabel);
+    if (handle == null) {
+      return new SegmentDelivery.SessionEnded();
+    }
+
+    var pending = pendingSegment(sessionId, variantLabel, segmentName, handle);
+    syncProgress(state, handle, pending);
+
+    var producerAlive = transcodeExecutor.isRunning(sessionId, variantLabel);
+    if (producerAlive && !hasStalled(state)) {
+      return null;
+    }
+
+    return recover(state, pending, replacementReason(producerAlive, positioned, session));
   }
 
   private static ReplacementReason replacementReason(
