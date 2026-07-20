@@ -15,6 +15,7 @@ import com.streamarr.server.domain.streaming.TranscodeDecision;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
+import com.streamarr.server.fixtures.StreamSessionFixture;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -53,6 +54,7 @@ class HlsPlaylistServiceTest {
         StreamSession.builder()
             .sessionId(UUID.randomUUID())
             .mediaFileId(UUID.randomUUID())
+            .authority(StreamSessionFixture.playbackAuthorityFor(UUID.randomUUID()))
             .sourcePath(Path.of("/media/test.mkv"))
             .mediaProbe(
                 MediaProbe.builder()
@@ -86,6 +88,7 @@ class HlsPlaylistServiceTest {
         StreamSession.builder()
             .sessionId(UUID.randomUUID())
             .mediaFileId(UUID.randomUUID())
+            .authority(StreamSessionFixture.playbackAuthorityFor(UUID.randomUUID()))
             .sourcePath(Path.of("/media/test.mkv"))
             .mediaProbe(
                 MediaProbe.builder()
@@ -119,6 +122,7 @@ class HlsPlaylistServiceTest {
         StreamSession.builder()
             .sessionId(UUID.randomUUID())
             .mediaFileId(UUID.randomUUID())
+            .authority(StreamSessionFixture.playbackAuthorityFor(UUID.randomUUID()))
             .sourcePath(Path.of("/media/test.mkv"))
             .mediaProbe(
                 MediaProbe.builder()
@@ -175,6 +179,7 @@ class HlsPlaylistServiceTest {
         StreamSession.builder()
             .sessionId(UUID.randomUUID())
             .mediaFileId(UUID.randomUUID())
+            .authority(StreamSessionFixture.playbackAuthorityFor(UUID.randomUUID()))
             .sourcePath(Path.of("/media/test.mkv"))
             .mediaProbe(
                 MediaProbe.builder()
@@ -620,6 +625,7 @@ class HlsPlaylistServiceTest {
           StreamSession.builder()
               .sessionId(UUID.randomUUID())
               .mediaFileId(UUID.randomUUID())
+              .authority(StreamSessionFixture.playbackAuthorityFor(UUID.randomUUID()))
               .sourcePath(Path.of("/media/test.mkv"))
               .mediaProbe(
                   MediaProbe.builder()

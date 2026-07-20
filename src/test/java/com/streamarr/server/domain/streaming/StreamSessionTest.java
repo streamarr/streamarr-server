@@ -13,6 +13,16 @@ import org.junit.jupiter.api.Test;
 class StreamSessionTest {
 
   @Test
+  @DisplayName("Should reject a null playback authority")
+  void shouldRejectNullPlaybackAuthority() {
+    var builder = StreamSession.builder();
+
+    assertThatThrownBy(() -> builder.authority(null))
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining("authority");
+  }
+
+  @Test
   @DisplayName("Should reject direct mutation of the exposed variant handle map")
   void shouldRejectDirectMutationOfExposedVariantHandleMap() {
     var session = buildMpegtsSession();

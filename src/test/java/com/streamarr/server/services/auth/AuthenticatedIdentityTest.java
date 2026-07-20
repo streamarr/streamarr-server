@@ -4,10 +4,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.HouseholdRole;
+import com.streamarr.server.exceptions.AuthenticationRequiredException;
+import com.streamarr.server.exceptions.ProfileRequiredException;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.oauth2.jwt.Jwt;
 
 @Tag("UnitTest")
 @DisplayName("Authenticated Identity Tests")
@@ -89,5 +93,47 @@ class AuthenticatedIdentityTest {
             .streamSessionId(UUID.randomUUID());
 
     assertThatThrownBy(identity::build).isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject a token missing the roles claim")
+  void shouldRejectTokenMissingRolesClaim() {
+    var jwt =
+        Jwt.withTokenValue("token")
+            .header("alg", "none")
+            .subject(UUID.randomUUID().toString())
+            .claim(TokenClaims.SESSION_ID, UUID.randomUUID().toString())
+            .build();
+
+    assertThatThrownBy(() -> AuthenticatedIdentity.fromJwt(jwt))
+        .isInstanceOf(AuthenticationRequiredException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject a token with an empty roles claim")
+  void shouldRejectTokenWithEmptyRolesClaim() {
+    var jwt =
+        Jwt.withTokenValue("token")
+            .header("alg", "none")
+            .subject(UUID.randomUUID().toString())
+            .claim(TokenClaims.ROLES, List.of())
+            .build();
+
+    assertThatThrownBy(() -> AuthenticatedIdentity.fromJwt(jwt))
+        .isInstanceOf(AuthenticationRequiredException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject building a playback authority for an account-scoped identity")
+  void shouldRejectPlaybackAuthorityForAccountScopedIdentity() {
+    var identity =
+        AuthenticatedIdentity.builder()
+            .accountId(UUID.randomUUID())
+            .role(AccountRole.USER)
+            .authSessionId(UUID.randomUUID())
+            .scope(TokenScope.ACCOUNT)
+            .build();
+
+    assertThatThrownBy(identity::playbackAuthority).isInstanceOf(ProfileRequiredException.class);
   }
 }

@@ -100,17 +100,6 @@ class PlaybackTokenIssuerTest {
   }
 
   @Test
-  @DisplayName("Should refuse issuance when session has no owner")
-  void shouldRefuseIssuanceWhenSessionHasNoOwner() {
-    var identity = profileIdentity();
-    var unownedSession = StreamSession.builder().sessionId(UUID.randomUUID()).build();
-    var ttl = Duration.ofHours(1);
-
-    assertThatThrownBy(() -> issuer.issue(identity, unownedSession, ttl))
-        .isInstanceOf(SessionNotFoundException.class);
-  }
-
-  @Test
   @DisplayName("Should refuse issuance when session not owned by identity")
   void shouldRefuseIssuanceWhenSessionNotOwnedByIdentity() {
     var identity = profileIdentity();

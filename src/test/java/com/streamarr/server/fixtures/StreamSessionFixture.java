@@ -114,8 +114,7 @@ public final class StreamSessionFixture {
   }
 
   public static StreamSession buildMpegtsSessionOwnedBy(UUID profileId) {
-    var authority = profileId == null ? null : playbackAuthorityFor(profileId);
-    var session = defaultSessionBuilder().authority(authority).build();
+    var session = defaultSessionBuilder().authority(playbackAuthorityFor(profileId)).build();
     session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
     return session;
   }
