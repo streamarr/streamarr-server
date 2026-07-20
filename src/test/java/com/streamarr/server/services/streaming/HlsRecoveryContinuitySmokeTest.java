@@ -288,13 +288,9 @@ class HlsRecoveryContinuitySmokeTest {
 
     @Override
     public Process startProcess(
-        UUID sessionId,
-        String variantLabel,
-        UUID attemptId,
-        List<String> command,
-        Path workingDir) {
+        UUID sessionId, String variantLabel, List<String> command, Path workingDir) {
       lastCommands.put(sessionId, List.copyOf(command));
-      return super.startProcess(sessionId, variantLabel, attemptId, command, workingDir);
+      return super.startProcess(sessionId, variantLabel, command, workingDir);
     }
 
     private Optional<List<String>> lastCommandFor(UUID sessionId) {

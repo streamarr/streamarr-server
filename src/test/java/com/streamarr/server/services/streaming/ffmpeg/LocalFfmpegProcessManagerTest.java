@@ -9,18 +9,12 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
-import com.streamarr.server.domain.streaming.ProducerEnd;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.exceptions.TranscodeException;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.CyclicBarrier;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.IntStream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -206,111 +200,21 @@ class LocalFfmpegProcessManagerTest {
 
     await().pollDelay(Duration.ofMillis(200)).until(() -> true);
 
-    // isRunning triggers cleanup + exit-detail logging — should not throw
-    assertThatNoException().isThrownBy(() -> manager.isRunning(sessionId));
-    assertThat(manager.isRunning(sessionId)).isFalse();
-  }
+    var logger = (Logger) LoggerFactory.getLogger(LocalFfmpegProcessManager.class);
+    var appender = new ListAppender<ILoggingEvent>();
+    appender.start();
+    logger.addAppender(appender);
+    try {
+      // The observed death is the site that owns the crash detail; nothing downstream re-reads it.
+      assertThat(manager.isRunning(sessionId)).isFalse();
+    } finally {
+      logger.detachAppender(appender);
+    }
 
-  @Test
-  @DisplayName("Should retain attempt-scoped exit evidence exactly once at the death transition")
-  void shouldRetainAttemptScopedExitEvidenceExactlyOnceAtTheDeathTransition() throws Exception {
-    var sessionId = UUID.randomUUID();
-    var attemptId = UUID.randomUUID();
-
-    var process =
-        manager.startProcess(
-            sessionId,
-            StreamSession.defaultVariant(),
-            attemptId,
-            List.of("bash", "-c", "echo 'boom' >&2; exit 1"),
-            tempDir);
-    process.waitFor();
-    await().pollDelay(Duration.ofMillis(200)).until(() -> true);
-    assertThat(manager.isRunning(sessionId, StreamSession.defaultVariant())).isFalse();
-
-    var evidence = manager.consumeExit(sessionId, StreamSession.defaultVariant(), attemptId);
-
-    assertThat(evidence).isPresent();
-    assertThat(evidence.get().attemptId()).isEqualTo(attemptId);
-    assertThat(evidence.get().kind()).isEqualTo(ProducerEnd.EndKind.PROCESS_EXIT);
-    assertThat(evidence.get().detail()).contains("exit code 1").contains("boom");
-    assertThat(manager.consumeExit(sessionId, StreamSession.defaultVariant(), attemptId)).isEmpty();
-  }
-
-  @Test
-  @DisplayName("Should never attribute retained exit evidence to a different attempt")
-  void shouldNeverAttributeRetainedExitEvidenceToDifferentAttempt() throws Exception {
-    var sessionId = UUID.randomUUID();
-    var attemptId = UUID.randomUUID();
-
-    var process =
-        manager.startProcess(
-            sessionId,
-            StreamSession.defaultVariant(),
-            attemptId,
-            List.of("bash", "-c", "exit 1"),
-            tempDir);
-    process.waitFor();
-    await().pollDelay(Duration.ofMillis(200)).until(() -> true);
-    assertThat(manager.isRunning(sessionId, StreamSession.defaultVariant())).isFalse();
-
-    assertThat(manager.consumeExit(sessionId, StreamSession.defaultVariant(), UUID.randomUUID()))
-        .isEmpty();
-    // The mismatch must not consume the evidence owed to the attempt it belongs to.
-    assertThat(manager.consumeExit(sessionId, StreamSession.defaultVariant(), attemptId))
-        .isPresent();
-  }
-
-  @Test
-  @DisplayName("Should retain no exit evidence when the process is stopped on purpose")
-  void shouldRetainNoExitEvidenceWhenTheProcessIsStoppedOnPurpose() {
-    var sessionId = UUID.randomUUID();
-    var attemptId = UUID.randomUUID();
-
-    manager.startProcess(
-        sessionId, StreamSession.defaultVariant(), attemptId, List.of("sleep", "30"), tempDir);
-    manager.stopProcess(sessionId);
-
-    assertThat(manager.consumeExit(sessionId, StreamSession.defaultVariant(), attemptId)).isEmpty();
-  }
-
-  @Test
-  @DisplayName("Should purge retained exit evidence when the session is torn down")
-  void shouldPurgeRetainedExitEvidenceWhenTheSessionIsTornDown() throws Exception {
-    var sessionId = UUID.randomUUID();
-    var attemptId = UUID.randomUUID();
-    var process =
-        manager.startProcess(
-            sessionId,
-            StreamSession.defaultVariant(),
-            attemptId,
-            List.of("bash", "-c", "exit 1"),
-            tempDir);
-    process.waitFor();
-    await().pollDelay(Duration.ofMillis(200)).until(() -> true);
-    assertThat(manager.isRunning(sessionId, StreamSession.defaultVariant())).isFalse();
-
-    // The destroy path: nothing consumes evidence after teardown, so it must not outlive it.
-    manager.stopProcess(sessionId);
-
-    assertThat(manager.consumeExit(sessionId, StreamSession.defaultVariant(), attemptId)).isEmpty();
-  }
-
-  @Test
-  @DisplayName("Should purge retained exit evidence when only the variant is stopped")
-  void shouldPurgeRetainedExitEvidenceWhenOnlyTheVariantIsStopped() throws Exception {
-    var sessionId = UUID.randomUUID();
-    var attemptId = UUID.randomUUID();
-    var process =
-        manager.startProcess(
-            sessionId, "720p", attemptId, List.of("bash", "-c", "exit 1"), tempDir);
-    process.waitFor();
-    await().pollDelay(Duration.ofMillis(200)).until(() -> true);
-    assertThat(manager.isRunning(sessionId, "720p")).isFalse();
-
-    manager.stopProcess(sessionId, "720p");
-
-    assertThat(manager.consumeExit(sessionId, "720p", attemptId)).isEmpty();
+    assertThat(appender.list)
+        .filteredOn(event -> event.getLevel() == Level.WARN)
+        .extracting(ILoggingEvent::getFormattedMessage)
+        .anyMatch(message -> message.contains("exit code 1") && message.contains("error output"));
   }
 
   @Test
@@ -321,7 +225,6 @@ class LocalFfmpegProcessManagerTest {
         manager.startProcess(
             sessionId,
             StreamSession.defaultVariant(),
-            UUID.randomUUID(),
             List.of("bash", "-c", "echo 'crash detail' >&2; exit 1"),
             tempDir);
     process.waitFor();
@@ -343,44 +246,5 @@ class LocalFfmpegProcessManagerTest {
         .extracting(ILoggingEvent::getFormattedMessage)
         .anyMatch(
             message -> message.contains("already exited") && message.contains("crash detail"));
-  }
-
-  @Test
-  @DisplayName("Should serve retained exit evidence to exactly one concurrent consumer")
-  void shouldServeRetainedExitEvidenceToExactlyOneConcurrentConsumer() throws Exception {
-    var consumers = 8;
-
-    try (var executor = Executors.newFixedThreadPool(consumers)) {
-      for (var round = 0; round < 20; round++) {
-        var sessionId = UUID.randomUUID();
-        var attemptId = UUID.randomUUID();
-        var process =
-            manager.startProcess(
-                sessionId, StreamSession.defaultVariant(), attemptId, List.of("false"), tempDir);
-        process.waitFor();
-        assertThat(manager.isRunning(sessionId, StreamSession.defaultVariant())).isFalse();
-
-        var barrier = new CyclicBarrier(consumers);
-        var consumed = new AtomicInteger();
-        var tasks =
-            IntStream.range(0, consumers)
-                .mapToObj(
-                    _ ->
-                        executor.submit(
-                            () -> {
-                              barrier.await(5, TimeUnit.SECONDS);
-                              manager
-                                  .consumeExit(sessionId, StreamSession.defaultVariant(), attemptId)
-                                  .ifPresent(_ -> consumed.incrementAndGet());
-                              return null;
-                            }))
-                .toList();
-        for (var task : tasks) {
-          task.get(5, TimeUnit.SECONDS);
-        }
-
-        assertThat(consumed.get()).isEqualTo(1);
-      }
-    }
   }
 }

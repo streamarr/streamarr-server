@@ -1,6 +1,5 @@
 package com.streamarr.server.fakes;
 
-import com.streamarr.server.domain.streaming.ProducerEnd;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
@@ -11,8 +10,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -33,7 +30,6 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
       Collections.synchronizedList(new ArrayList<>());
   private final List<String> stoppedVariants = Collections.synchronizedList(new ArrayList<>());
   private final Set<ExecutionTargetId> refusingTargets = ConcurrentHashMap.newKeySet();
-  private final Map<ProcessKey, ProducerEnd> evidence = new ConcurrentHashMap<>();
   private Set<ExecutionTargetId> executionTargets =
       new LinkedHashSet<>(Set.of(ExecutionTargetId.LOCAL));
   private final AtomicLong livenessChecks = new AtomicLong();
@@ -153,26 +149,6 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     refusingTargets.remove(target);
   }
 
-  @Override
-  public Optional<ProducerEnd> deathEvidence(
-      UUID sessionId, String variantLabel, UUID expectedAttemptId) {
-    var key = new ProcessKey(sessionId, variantLabel);
-    var end = evidence.get(key);
-    if (end == null || !expectedAttemptId.equals(end.attemptId())) {
-      return Optional.empty();
-    }
-    evidence.remove(key, end);
-    return Optional.of(end);
-  }
-
-  public void recordEvidence(UUID sessionId, String variantLabel, ProducerEnd end) {
-    evidence.put(new ProcessKey(sessionId, variantLabel), end);
-  }
-
-  public boolean hasUnconsumedEvidence(UUID sessionId, String variantLabel) {
-    return evidence.containsKey(new ProcessKey(sessionId, variantLabel));
-  }
-
   public Set<UUID> getStarted() {
     return started.stream().map(ProcessKey::sessionId).collect(Collectors.toUnmodifiableSet());
   }
@@ -211,6 +187,5 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
     stopped.clear();
     startedRequests.clear();
     startedTargets.clear();
-    evidence.clear();
   }
 }

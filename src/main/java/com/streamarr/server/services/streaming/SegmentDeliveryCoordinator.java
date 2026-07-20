@@ -1,7 +1,6 @@
 package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.config.StreamingProperties;
-import com.streamarr.server.domain.streaming.ProducerEnd;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
@@ -363,8 +362,7 @@ public class SegmentDeliveryCoordinator {
   private void logProducerEnd(PendingSegment pending, UUID attemptId, ReplacementReason reason) {
     if (reason == ReplacementReason.STALLED) {
       log.warn(
-          "Producer classified {} for session {} variant {} (attempt {}): no publication within {}",
-          ProducerEnd.EndKind.STALLED,
+          "Producer stalled for session {} variant {} (attempt {}): no publication within {}",
           pending.sessionId(),
           pending.variantLabel(),
           attemptId,
@@ -382,23 +380,13 @@ public class SegmentDeliveryCoordinator {
       return;
     }
 
-    transcodeExecutor
-        .deathEvidence(pending.sessionId(), pending.variantLabel(), attemptId)
-        .ifPresentOrElse(
-            end ->
-                log.warn(
-                    "Producer ended for session {} variant {} (attempt {}): {} — {}",
-                    pending.sessionId(),
-                    pending.variantLabel(),
-                    attemptId,
-                    end.kind(),
-                    end.detail()),
-            () ->
-                log.warn(
-                    "Producer died without retained evidence for session {} variant {} (attempt {})",
-                    pending.sessionId(),
-                    pending.variantLabel(),
-                    attemptId));
+    // The death site (process manager or worker registry) has already logged its own detail.
+    log.warn(
+        "Producer died for session {} variant {} (attempt {}); recovering across execution"
+            + " targets",
+        pending.sessionId(),
+        pending.variantLabel(),
+        attemptId);
   }
 
   /** One advertised segment being pursued: where it belongs and the index it maps to. */

@@ -6,7 +6,6 @@ import static org.awaitility.Awaitility.await;
 
 import com.google.protobuf.ByteString;
 import com.streamarr.server.AbstractIntegrationTest;
-import com.streamarr.server.domain.streaming.ProducerEnd;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.fakes.BlockingSegmentStore;
 import com.streamarr.server.fakes.FakeSegmentStore;
@@ -806,8 +805,8 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should retain attempt-scoped evidence and reject stale uploads after a failure")
-  void shouldRetainAttemptScopedEvidenceAndRejectStaleUploadsAfterFailure() throws Exception {
+  @DisplayName("Should reject stale uploads after a reported failure")
+  void shouldRejectStaleUploadsAfterReportedFailure() throws Exception {
     var segmentStore = new FakeSegmentStore();
     try (var server = server(segmentStore)) {
       server.start();
@@ -818,7 +817,6 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
         var workerSession = worker.nextResponse().getSessionAccepted();
         var job = variantJob();
         var streamSessionId = uuid(job.getStreamSessionId());
-        var attemptId = uuid(job.getJobAttemptId());
         assertThat(server.dispatch(job)).isTrue();
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
 
@@ -830,14 +828,6 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
                         .setFailure(JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED))
                 .build());
         await().atMost(5, TimeUnit.SECONDS).until(() -> !server.isRunning(streamSessionId, "720p"));
-
-        assertThat(server.consumeEnd(streamSessionId, "wrong-variant", attemptId)).isEmpty();
-        assertThat(server.consumeEnd(streamSessionId, "720p", UUID.randomUUID())).isEmpty();
-        var evidence = server.consumeEnd(streamSessionId, "720p", attemptId);
-        assertThat(evidence).isPresent();
-        assertThat(evidence.get().kind()).isEqualTo(ProducerEnd.EndKind.FAILED);
-        assertThat(evidence.get().detail()).contains("TRANSCODE_FAILED");
-        assertThat(server.consumeEnd(streamSessionId, "720p", attemptId)).isEmpty();
 
         // The failed attempt no longer authorizes uploads: its data plane is fenced too.
         var stale = "stale".getBytes();
@@ -854,8 +844,8 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should retain completed evidence but none for a server-initiated planned stop")
-  void shouldRetainCompletedEvidenceButNoneForServerInitiatedPlannedStop() throws Exception {
+  @DisplayName("Should release attempts on completion and tolerate planned-stop confirmations")
+  void shouldReleaseAttemptsOnCompletionAndToleratePlannedStopConfirmations() throws Exception {
     try (var server = server()) {
       server.start();
       var channel = workerChannel(server.port());
@@ -875,10 +865,6 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
         await()
             .atMost(5, TimeUnit.SECONDS)
             .until(() -> !server.isRunning(completedSession, "720p"));
-        var completedEnd =
-            server.consumeEnd(completedSession, "720p", uuid(completedJob.getJobAttemptId()));
-        assertThat(completedEnd).isPresent();
-        assertThat(completedEnd.get().kind()).isEqualTo(ProducerEnd.EndKind.COMPLETED);
 
         var stoppedJob = variantJob();
         var stoppedSession = uuid(stoppedJob.getStreamSessionId());
@@ -891,11 +877,10 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
                 .setJobAttemptStopped(
                     JobAttemptStopped.newBuilder().setJobAttemptId(stoppedJob.getJobAttemptId()))
                 .build());
-        // The server-side stop already released the attempt, so the worker's confirmation finds
-        // nothing to release and no evidence is retained for the planned stop.
+        // The server-side stop already released the attempt; the worker's confirmation finds
+        // nothing to release and must be tolerated without error.
         await().pollDelay(Duration.ofMillis(200)).until(() -> true);
-        assertThat(server.consumeEnd(stoppedSession, "720p", uuid(stoppedJob.getJobAttemptId())))
-            .isEmpty();
+        assertThat(server.isRunning(stoppedSession, "720p")).isFalse();
       } finally {
         shutdown(channel);
       }
@@ -903,8 +888,8 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should retain disconnected evidence for jobs abandoned by a closing worker")
-  void shouldRetainDisconnectedEvidenceForJobsAbandonedByClosingWorker() throws Exception {
+  @DisplayName("Should release jobs abandoned by a closing worker")
+  void shouldReleaseJobsAbandonedByClosingWorker() throws Exception {
     try (var server = server()) {
       server.start();
       var channel = workerChannel(server.port());
@@ -918,11 +903,8 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
         assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
 
         worker.close();
-        await().atMost(5, TimeUnit.SECONDS).until(() -> !server.isRunning(streamSessionId, "720p"));
 
-        var evidence = server.consumeEnd(streamSessionId, "720p", uuid(job.getJobAttemptId()));
-        assertThat(evidence).isPresent();
-        assertThat(evidence.get().kind()).isEqualTo(ProducerEnd.EndKind.DISCONNECTED);
+        await().atMost(5, TimeUnit.SECONDS).until(() -> !server.isRunning(streamSessionId, "720p"));
       } finally {
         shutdown(channel);
       }

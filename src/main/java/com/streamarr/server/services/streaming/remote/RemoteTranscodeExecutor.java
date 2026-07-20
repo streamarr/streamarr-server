@@ -1,6 +1,5 @@
 package com.streamarr.server.services.streaming.remote;
 
-import com.streamarr.server.domain.streaming.ProducerEnd;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
@@ -8,7 +7,6 @@ import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.TranscodeExecutor;
 import java.nio.file.Path;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -80,11 +78,5 @@ public final class RemoteTranscodeExecutor implements TranscodeExecutor {
   @Override
   public Set<ExecutionTargetId> executionTargets() {
     return workerServer.eligibleWorkers(sourceNamespaceId);
-  }
-
-  @Override
-  public Optional<ProducerEnd> deathEvidence(
-      UUID sessionId, String variantLabel, UUID expectedAttemptId) {
-    return workerServer.consumeEnd(sessionId, variantLabel, expectedAttemptId);
   }
 }

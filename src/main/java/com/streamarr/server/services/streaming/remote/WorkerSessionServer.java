@@ -1,6 +1,5 @@
 package com.streamarr.server.services.streaming.remote;
 
-import com.streamarr.server.domain.streaming.ProducerEnd;
 import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.SegmentStore;
 import com.streamarr.transcode.v1.VariantJob;
@@ -11,7 +10,6 @@ import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder;
 import io.grpc.netty.shaded.io.netty.handler.ssl.ClientAuth;
 import java.io.IOException;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
@@ -107,14 +105,6 @@ public final class WorkerSessionServer implements AutoCloseable {
       return false;
     }
     return workerConnections.stopVariant(streamSessionId, variantLabel);
-  }
-
-  public synchronized Optional<ProducerEnd> consumeEnd(
-      UUID streamSessionId, String variantLabel, UUID expectedAttemptId) {
-    if (server == null) {
-      return Optional.empty();
-    }
-    return workerConnections.consumeEnd(streamSessionId, variantLabel, expectedAttemptId);
   }
 
   public synchronized void stopStreamSession(UUID streamSessionId) {

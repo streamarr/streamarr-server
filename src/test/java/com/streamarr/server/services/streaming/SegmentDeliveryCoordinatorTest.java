@@ -6,7 +6,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 import com.streamarr.server.config.StreamingProperties;
-import com.streamarr.server.domain.streaming.ProducerEnd;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
@@ -21,7 +20,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.List;
-import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -299,47 +298,6 @@ class SegmentDeliveryCoordinatorTest {
   }
 
   @Test
-  @DisplayName("Should consume death evidence only for the attempt it belongs to")
-  void shouldConsumeDeathEvidenceOnlyForTheAttemptItBelongsTo() throws Exception {
-    var session = startedSession();
-    var sessionId = session.getSessionId();
-    var deadAttempt = session.getHandle().attemptId();
-    transcodeExecutor.recordEvidence(
-        sessionId,
-        StreamSession.defaultVariant(),
-        ProducerEnd.builder()
-            .attemptId(deadAttempt)
-            .kind(ProducerEnd.EndKind.PROCESS_EXIT)
-            .detail("exit code 137")
-            .at(Instant.now())
-            .build());
-    transcodeExecutor.markDead(sessionId);
-    var startsBefore = transcodeExecutor.getStartedRequests().size();
-
-    var delivery = deliverAsync(sessionId, "segment0.ts");
-    await()
-        .atMost(2, TimeUnit.SECONDS)
-        .until(() -> transcodeExecutor.getStartedRequests().size() == startsBefore + 1);
-    assertThat(transcodeExecutor.hasUnconsumedEvidence(sessionId, StreamSession.defaultVariant()))
-        .isFalse();
-
-    // A late end from an attempt nobody tracks anymore is never attributed to the replacement.
-    transcodeExecutor.recordEvidence(
-        sessionId,
-        StreamSession.defaultVariant(),
-        ProducerEnd.builder()
-            .attemptId(UUID.randomUUID())
-            .kind(ProducerEnd.EndKind.STOPPED)
-            .detail("stale")
-            .at(Instant.now())
-            .build());
-    segmentStore.addSegment(sessionId, "segment0.ts", new byte[] {1});
-    assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
-    assertThat(transcodeExecutor.hasUnconsumedEvidence(sessionId, StreamSession.defaultVariant()))
-        .isTrue();
-  }
-
-  @Test
   @DisplayName("Should try each snapshotted target at most once when replacements keep dying")
   void shouldTryEachSnapshottedTargetAtMostOnceWhenReplacementsKeepDying() throws Exception {
     var session = startedSession();
@@ -441,15 +399,6 @@ class SegmentDeliveryCoordinatorTest {
   void shouldReplaceOnceThenExhaustWhenRunsCompleteWithoutTheAdvertisedSegment() throws Exception {
     var session = startedSession();
     var sessionId = session.getSessionId();
-    transcodeExecutor.recordEvidence(
-        sessionId,
-        StreamSession.defaultVariant(),
-        ProducerEnd.builder()
-            .attemptId(session.getHandle().attemptId())
-            .kind(ProducerEnd.EndKind.COMPLETED)
-            .detail("completed")
-            .at(Instant.now())
-            .build());
     transcodeExecutor.markDead(sessionId);
     var startsBefore = transcodeExecutor.getStartedRequests().size();
 
@@ -596,14 +545,14 @@ class SegmentDeliveryCoordinatorTest {
     rig.lifecycle().startAll(session, 0, 0);
     gatingExecutor.markDead(sessionId);
 
-    // The lagging waiter observes the death and blocks inside evidence consumption.
-    gatingExecutor.blockFirstDeathEvidence();
+    // The lagging waiter observes the death and blocks entering recovery (pre-lock).
+    gatingExecutor.blockFirstRecoveryEntry();
     var laggingWaiter =
         CompletableFuture.supplyAsync(
             () ->
                 rig.coordinator()
                     .deliver(sessionId, StreamSession.defaultVariant(), "segment1.ts"));
-    await().atMost(2, TimeUnit.SECONDS).until(gatingExecutor::firstDeathEvidenceBlocked);
+    await().atMost(2, TimeUnit.SECONDS).until(gatingExecutor::firstRecoveryEntryBlocked);
 
     // A second waiter completes the full recovery: healthy replacement Y on TARGET_A.
     var promptWaiter =
@@ -614,7 +563,7 @@ class SegmentDeliveryCoordinatorTest {
     await().atMost(2, TimeUnit.SECONDS).until(() -> gatingExecutor.getStartedTargets().size() == 1);
     var attemptY = session.getHandle().attemptId();
 
-    gatingExecutor.releaseDeathEvidence();
+    gatingExecutor.releaseRecoveryEntry();
     // The released lagging waiter runs its now-superseded recovery pass and returns to polling; a
     // couple of its poll cycles must go by without it starting a second target.
     awaitPolls(gatingExecutor, 2);
@@ -804,25 +753,25 @@ class SegmentDeliveryCoordinatorTest {
     }
   }
 
-  /** Gates evidence consumption and targeted starts so races can be held open deterministically. */
+  /** Gates recovery entry and targeted starts so races can be held open deterministically. */
   private static final class EvidenceGatingExecutor extends FakeTranscodeExecutor {
 
-    private volatile CountDownLatch deathEvidenceGate;
-    private final AtomicBoolean deathEvidenceGateTaken = new AtomicBoolean();
-    private volatile boolean deathEvidenceBlocked;
+    private volatile CountDownLatch recoveryEntryGate;
+    private final AtomicBoolean recoveryEntryGateTaken = new AtomicBoolean();
+    private volatile boolean recoveryEntryBlocked;
     private volatile CountDownLatch targetedStartEntered;
     private volatile CountDownLatch targetedStartGate;
 
-    private void blockFirstDeathEvidence() {
-      deathEvidenceGate = new CountDownLatch(1);
+    private void blockFirstRecoveryEntry() {
+      recoveryEntryGate = new CountDownLatch(1);
     }
 
-    private boolean firstDeathEvidenceBlocked() {
-      return deathEvidenceBlocked;
+    private boolean firstRecoveryEntryBlocked() {
+      return recoveryEntryBlocked;
     }
 
-    private void releaseDeathEvidence() {
-      deathEvidenceGate.countDown();
+    private void releaseRecoveryEntry() {
+      recoveryEntryGate.countDown();
     }
 
     private void holdTargetedStarts() {
@@ -849,14 +798,13 @@ class SegmentDeliveryCoordinatorTest {
     }
 
     @Override
-    public Optional<ProducerEnd> deathEvidence(
-        UUID sessionId, String variantLabel, UUID expectedAttemptId) {
-      var gate = deathEvidenceGate;
-      if (gate != null && deathEvidenceGateTaken.compareAndSet(false, true)) {
-        deathEvidenceBlocked = true;
+    public Set<ExecutionTargetId> executionTargets() {
+      var gate = recoveryEntryGate;
+      if (gate != null && recoveryEntryGateTaken.compareAndSet(false, true)) {
+        recoveryEntryBlocked = true;
         awaitQuietly(gate);
       }
-      return super.deathEvidence(sessionId, variantLabel, expectedAttemptId);
+      return super.executionTargets();
     }
 
     private static void awaitQuietly(CountDownLatch latch) {
