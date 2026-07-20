@@ -3,6 +3,7 @@ package com.streamarr.server.services.library;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.streaming.StreamSession;
+import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.services.library.events.LibraryRemovedEvent;
 import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
 import com.streamarr.server.services.streaming.PlaybackRequest;
@@ -68,7 +69,11 @@ class StreamingSessionCleanupListenerTest {
   }
 
   private StreamSession buildSessionForMediaFile(UUID mediaFileId) {
-    return StreamSession.builder().sessionId(UUID.randomUUID()).mediaFileId(mediaFileId).build();
+    return StreamSession.builder()
+        .sessionId(UUID.randomUUID())
+        .mediaFileId(mediaFileId)
+        .authority(StreamSessionFixture.playbackAuthorityFor(UUID.randomUUID()))
+        .build();
   }
 
   private static class FakeStreamingService implements StreamingService {

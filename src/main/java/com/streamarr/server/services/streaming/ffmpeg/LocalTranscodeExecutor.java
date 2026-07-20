@@ -60,7 +60,7 @@ public class LocalTranscodeExecutor implements TranscodeExecutor {
 
   @Override
   public int availableSlots() {
-    return Integer.MAX_VALUE;
+    return UNBOUNDED_SLOTS;
   }
 
   @Override

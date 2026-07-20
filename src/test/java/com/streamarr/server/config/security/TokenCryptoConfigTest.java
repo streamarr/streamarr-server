@@ -25,9 +25,12 @@ import java.util.function.Consumer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.oauth2.core.OAuth2Error;
+import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.JwsHeader;
+import org.springframework.security.oauth2.jwt.JwtClaimNames;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
@@ -250,13 +253,22 @@ class TokenCryptoConfigTest {
   }
 
   @Test
-  @DisplayName("Should reject token without the expected audience")
-  void shouldRejectTokenWithoutExpectedAudience() {
+  @DisplayName("Should reject token with an empty audience claim")
+  void shouldRejectTokenWithEmptyAudience() {
     var keys = config.tokenSigningKeys(properties(KEY_A, List.of()));
     var token = mint(config.jwtEncoder(keys), claims -> claims.audience(List.of()));
-    var jwtDecoder = decoder(keys);
 
-    assertThatThrownBy(() -> jwtDecoder.decode(token)).isInstanceOf(JwtValidationException.class);
+    assertRejectedAsInvalidToken(decoder(keys), token);
+  }
+
+  @Test
+  @DisplayName("Should reject token when the audience claim is absent")
+  void shouldRejectTokenWhenAudienceClaimAbsent() {
+    var keys = config.tokenSigningKeys(properties(KEY_A, List.of()));
+    var token =
+        mint(config.jwtEncoder(keys), claims -> claims.claims(c -> c.remove(JwtClaimNames.AUD)));
+
+    assertRejectedAsInvalidToken(decoder(keys), token);
   }
 
   @Test
@@ -264,9 +276,18 @@ class TokenCryptoConfigTest {
   void shouldRejectTokenAddressedToDifferentAudience() {
     var keys = config.tokenSigningKeys(properties(KEY_A, List.of()));
     var token = mint(config.jwtEncoder(keys), claims -> claims.audience(List.of("other-service")));
-    var jwtDecoder = decoder(keys);
 
-    assertThatThrownBy(() -> jwtDecoder.decode(token)).isInstanceOf(JwtValidationException.class);
+    assertRejectedAsInvalidToken(decoder(keys), token);
+  }
+
+  private void assertRejectedAsInvalidToken(JwtDecoder jwtDecoder, String token) {
+    assertThatThrownBy(() -> jwtDecoder.decode(token))
+        .isInstanceOfSatisfying(
+            JwtValidationException.class,
+            ex ->
+                assertThat(ex.getErrors())
+                    .extracting(OAuth2Error::getErrorCode)
+                    .contains(OAuth2ErrorCodes.INVALID_TOKEN));
   }
 
   @Test

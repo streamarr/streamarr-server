@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming.remote;
 
 import static com.streamarr.server.fixtures.StreamSessionFixture.defaultProbeBuilder;
+import static com.streamarr.server.fixtures.StreamSessionFixture.playbackAuthorityFor;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
@@ -136,6 +137,7 @@ class RemoteRecoveryIT extends AbstractIntegrationTest {
     var session =
         StreamSession.builder()
             .sessionId(streamSessionId)
+            .authority(playbackAuthorityFor(UUID.randomUUID()))
             .sourcePath(mediaFile)
             .mediaProbe(defaultProbeBuilder().build())
             .transcodeDecision(transcodeDecision())

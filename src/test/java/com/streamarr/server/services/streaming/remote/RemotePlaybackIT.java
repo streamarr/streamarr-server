@@ -24,6 +24,7 @@ import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.fakes.FakeFfmpegProcessManager;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentProducingFfmpegProcessManager;
+import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.TokenScope;
 import com.streamarr.server.services.authorization.AuthorizationService;
@@ -306,6 +307,7 @@ class RemotePlaybackIT extends AbstractIntegrationTest {
     var session =
         StreamSession.builder()
             .sessionId(streamSessionId)
+            .authority(StreamSessionFixture.playbackAuthorityFor(UUID.randomUUID()))
             .transcodeDecision(transcodeDecision(containerFormat))
             .build();
     var streamingService = mock(StreamingService.class);

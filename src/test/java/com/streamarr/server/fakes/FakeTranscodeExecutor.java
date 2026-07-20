@@ -37,7 +37,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   private Set<ExecutionTargetId> executionTargets =
       new LinkedHashSet<>(Set.of(ExecutionTargetId.LOCAL));
   private final AtomicLong livenessChecks = new AtomicLong();
-  private int availableSlots = Integer.MAX_VALUE;
+  private int availableSlots = TranscodeExecutor.UNBOUNDED_SLOTS;
   private boolean healthy = true;
   private volatile boolean failUntargetedStarts;
 

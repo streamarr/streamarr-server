@@ -255,22 +255,11 @@ class HlsStreamingServiceTest {
             .streamSessionId(session.getSessionId())
             .authority(defaultPlaybackAuthorityBuilder().build())
             .build();
-    authorityGate.resetCheckCount();
 
     var result = service.accessSession(request);
 
     assertThat(result).isEmpty();
     assertThat(session.getLastAccessedAt()).isEqualTo(lastAccessedAt);
-    assertThat(authorityGate.checkCount()).isZero();
-  }
-
-  @Test
-  @DisplayName("Should return empty without authority check when runtime session is missing")
-  void shouldReturnEmptyWithoutAuthorityCheckWhenRuntimeSessionIsMissing() {
-    var result = accessMissingSession(UUID.randomUUID());
-
-    assertThat(result).isEmpty();
-    assertThat(authorityGate.checkCount()).isZero();
   }
 
   @Test

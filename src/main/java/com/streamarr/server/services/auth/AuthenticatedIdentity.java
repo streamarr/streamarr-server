@@ -3,6 +3,8 @@ package com.streamarr.server.services.auth;
 import com.streamarr.server.domain.auth.AccountRole;
 import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.streaming.PlaybackAuthority;
+import com.streamarr.server.exceptions.AuthenticationRequiredException;
+import com.streamarr.server.exceptions.ProfileRequiredException;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
@@ -53,7 +55,7 @@ public record AuthenticatedIdentity(
   public static AuthenticatedIdentity fromJwt(Jwt jwt) {
     return AuthenticatedIdentity.builder()
         .accountId(UUID.fromString(jwt.getSubject()))
-        .role(AccountRole.valueOf(jwt.getClaimAsStringList(TokenClaims.ROLES).getFirst()))
+        .role(roleClaim(jwt))
         .authSessionId(UUID.fromString(jwt.getClaimAsString(TokenClaims.SESSION_ID)))
         .scope(TokenScope.valueOf(jwt.getClaimAsString(TokenClaims.SCOPE).toUpperCase(Locale.ROOT)))
         .householdId(uuidClaim(jwt, TokenClaims.HOUSEHOLD_ID))
@@ -64,12 +66,23 @@ public record AuthenticatedIdentity(
   }
 
   public PlaybackAuthority playbackAuthority() {
+    if (householdId == null || profileId == null) {
+      throw new ProfileRequiredException();
+    }
     return PlaybackAuthority.builder()
         .authSessionId(authSessionId)
         .accountId(accountId)
         .householdId(householdId)
         .profileId(profileId)
         .build();
+  }
+
+  private static AccountRole roleClaim(Jwt jwt) {
+    var roles = jwt.getClaimAsStringList(TokenClaims.ROLES);
+    if (roles == null || roles.isEmpty()) {
+      throw new AuthenticationRequiredException();
+    }
+    return AccountRole.valueOf(roles.getFirst());
   }
 
   private static UUID uuidClaim(Jwt jwt, String claim) {
