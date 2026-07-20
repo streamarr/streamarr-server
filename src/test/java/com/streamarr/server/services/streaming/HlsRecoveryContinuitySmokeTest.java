@@ -200,8 +200,8 @@ class HlsRecoveryContinuitySmokeTest {
     assertThat(replacementCommand)
         .containsSubsequence("-ss", String.valueOf(SEGMENT_DURATION_SECONDS))
         .containsSubsequence("-start_number", "1")
-        .containsSubsequence("-hls_fmp4_init_filename", "init.mp4");
-    assertThat(replacementCommand).anyMatch(argument -> argument.contains("frag_discont"));
+        .containsSubsequence("-hls_fmp4_init_filename", "init.mp4")
+        .anyMatch(argument -> argument.contains("frag_discont"));
     assertThat(segmentStore.segmentExists(sessionId, "init.mp4")).isTrue();
   }
 

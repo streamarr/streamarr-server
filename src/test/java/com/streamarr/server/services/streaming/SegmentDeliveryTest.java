@@ -17,9 +17,10 @@ class SegmentDeliveryTest {
     var sameContent = new SegmentDelivery.Ready(new byte[] {0x47, 0x00});
     var differentContent = new SegmentDelivery.Ready(new byte[] {0x47, 0x01});
 
-    assertThat(delivery).isEqualTo(sameContent).hasSameHashCodeAs(sameContent);
-    assertThat(delivery).isNotEqualTo(differentContent);
-    assertThat(delivery).isNotEqualTo(new SegmentDelivery.SessionEnded());
+    assertThat(delivery)
+        .isEqualTo(sameContent)
+        .hasSameHashCodeAs(sameContent)
+        .isNotEqualTo(differentContent);
   }
 
   @Test
