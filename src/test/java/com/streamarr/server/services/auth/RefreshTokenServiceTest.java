@@ -126,8 +126,8 @@ class RefreshTokenServiceTest {
   }
 
   @Test
-  @DisplayName("Should classify expired successor as superseded replay within grace")
-  void shouldClassifyExpiredSuccessorAsSupersededReplayWithinGrace() {
+  @DisplayName("Should classify expired successor as superseded retry within grace")
+  void shouldClassifyExpiredSuccessorAsSupersededRetryWithinGrace() {
     var shortLivedService =
         serviceWith(
             AuthTokenProperties.builder()

@@ -27,6 +27,7 @@ final class WorkerIdentityServerInterceptor implements ServerInterceptor {
   @Override
   public <R, S> ServerCall.Listener<R> interceptCall(
       ServerCall<R, S> call, Metadata headers, ServerCallHandler<R, S> next) {
+    UUID workerId;
     try {
       var sslSession = call.getAttributes().get(Grpc.TRANSPORT_ATTR_SSL_SESSION);
       if (sslSession == null) {
@@ -36,12 +37,12 @@ final class WorkerIdentityServerInterceptor implements ServerInterceptor {
       if (certificates.length == 0 || !(certificates[0] instanceof X509Certificate leaf)) {
         return reject(call, "no X.509 peer certificate");
       }
-      var workerId = identityMapper.workerId(leaf);
-      return Contexts.interceptCall(
-          Context.current().withValue(AUTHENTICATED_WORKER_ID, workerId), call, headers, next);
-    } catch (SSLPeerUnverifiedException | WorkerIdentityException e) {
+      workerId = identityMapper.workerId(leaf);
+    } catch (SSLPeerUnverifiedException | RuntimeException e) {
       return reject(call, e.getMessage());
     }
+    return Contexts.interceptCall(
+        Context.current().withValue(AUTHENTICATED_WORKER_ID, workerId), call, headers, next);
   }
 
   private <R, S> ServerCall.Listener<R> reject(ServerCall<R, S> call, String reason) {

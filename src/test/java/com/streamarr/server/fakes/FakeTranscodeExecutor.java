@@ -21,7 +21,7 @@ public class FakeTranscodeExecutor implements TranscodeExecutor {
   private final Set<UUID> stopped = new HashSet<>();
   private final Set<UUID> failingOnStop = new HashSet<>();
   private final List<TranscodeRequest> startedRequests = new ArrayList<>();
-  private int availableSlots = Integer.MAX_VALUE;
+  private int availableSlots = TranscodeExecutor.UNBOUNDED_SLOTS;
   private boolean healthy = true;
 
   @Override
