@@ -11,7 +11,7 @@ This ADR narrows the "RFC 8216 compliance" consequence of link:0008-server-gener
 === Implementation status
 
 Implemented.
-`SegmentDeliveryCoordinator` owns the liveness-and-progress-bounded wait and the recovery cycle; `ProducerLifecycleService` owns every producer mutation under the per-session mutex (https://github.com/streamarr/streamarr-server/issues/252[issue #252]).
+`SegmentDeliveryCoordinator` owns the liveness-and-progress-bounded wait and the bounded replacement budget; `ProducerLifecycleService` owns every producer mutation under the per-session mutex, with the attempt fence at the replacement write (https://github.com/streamarr/streamarr-server/issues/252[issue #252]).
 Worker-side upload back-pressure retry and the worker's stall-bounded segment wait are tracked in https://github.com/streamarr/streamarr-server/issues/253[issue #253].
 
 == Context
@@ -51,11 +51,15 @@ A seek is a planned restart, not recovery: a relocation-distance request revives
 === Distributed producers are the recovery redundancy
 
 When the transcode executor is distributed, a variant whose producer fails is re-dispatched, on the next request that needs it, to another available worker for the same source namespace; the pool of workers is the recovery redundancy.
-Recovery is attempt-bounded, never wall-clock-bounded: one recovery cycle snapshots the eligible execution targets when recovery begins — at the first request that observes the failure — and tries each at most once: locally the single local runner, remotely each live worker connection (its `worker_session_id`, per ADR 0018's live-connection fence).
-Only when every snapshotted target has been tried does the failure surface, as a terminal `503 Service Unavailable` with no body and no `Retry-After`; the client's own retry budget and its adaptive-bitrate switch to a healthy variant are the last-resort recovery.
-The terminal state is sticky for same-window retries and cleared by exactly two events: a currently eligible target outside the exhausted cycle's snapshot (a reconnecting worker is a new target by construction), or a genuine seek's planned restart.
-Worst-case pre-terminal latency is `targets × stall threshold` plus dispatch overhead; in a large worker pool that can exceed one viewer's patience, which is accepted — every attempt is a genuine recovery chance and the player's variant switch proceeds in parallel.
-Transient upload back-pressure is a self-classifying condition: the producer retries the affected segment with bounded back-off rather than failing the whole variant (worker-side retry tracked in https://github.com/streamarr/streamarr-server/issues/253[issue #253]; until it lands, a back-pressure failure consumes one recovery target attempt).
+Recovery is attempt-bounded, never wall-clock-bounded: each variant carries a replacement budget sized by the currently eligible execution targets — locally the single local runner, remotely each live worker connection (its `worker_session_id`, per ADR 0018's live-connection fence).
+Every replacement consults the live target set at dispatch time; no snapshot of fleet membership is retained across the recovery window.
+The budget resets on publication progress (the frontier advancing is the one success signal) and whenever the eligible-target set changes.
+Only when the budget is exhausted does the failure surface, as a terminal `503 Service Unavailable` with no body and no `Retry-After`; the client's own retry budget and its adaptive-bitrate switch to a healthy variant are the last-resort recovery.
+The terminal state is sticky for same-window retries and cleared by exactly two events: the eligible-target set differing from the set recorded when the variant failed (a reconnecting worker is a new target by construction), or a genuine seek's planned restart.
+Within one death window the budget does not guarantee each target is tried at most once — a target that accepts and immediately dies again may consume more than one attempt; this is accepted because it requires two or more remote workers churning within a single recovery window and self-corrects through the target-set-change reset.
+Attempt identity is a write-point fence, not per-request bookkeeping: `ProducerLifecycleService`'s mutex-guarded predicate compares the expected attempt exactly once, at the replacement write, so a late or superseded replacement can never clobber a newer producer's state.
+Worst-case pre-terminal latency is `budget × stall threshold` plus dispatch overhead; in a large worker pool that can exceed one viewer's patience, which is accepted — every attempt is a genuine recovery chance and the player's variant switch proceeds in parallel.
+Transient upload back-pressure is a self-classifying condition: the producer retries the affected segment with bounded back-off rather than failing the whole variant (worker-side retry tracked in https://github.com/streamarr/streamarr-server/issues/253[issue #253]; until it lands, a back-pressure failure consumes one replacement attempt).
 
 === A conformance suite gates the delivery contract
 
@@ -85,6 +89,9 @@ The costs are added producer-lifecycle and liveness logic in the streaming layer
 * A fixed wall-clock segment-wait timeout returning a distinct terminal status — converts slow production into spurious failures and papers over the missing recovery instead of providing it.
 * Signaling a dead variant to the player through a distinct HTTP status or an advertised playlist gap — the standard forbids withdrawing a listed segment and the client cannot reconstruct or skip an advertised segment URL, so an advertised segment must be delivered, not annotated.
 * Per-segment isolated transcoding on demand — independent single-segment encodes glitch at audio and video boundaries; a contiguous run per producer is required.
+* A per-cycle snapshot of eligible execution targets with at-most-once-per-target replacement — the snapshot is a retained copy of live fleet state that must be defended against every concurrent mutation (supersession fences, exhausted-cycle retention, new-target set-difference); review found two high-severity staleness-of-the-copy defects in exactly that machinery, and its only behavioral difference from the live-consulted budget requires two or more remote workers churning within a single recovery window.
+* Producer lifetime driven by subscription-style demand handles (a producer runs only while a delivery holds a handle) — stateless HLS clients hold no standing connection to hang a handle on; last-request-time reaping is the honest demand signal for HTTP delivery.
+* A push-based media transport (Media over QUIC) in place of HLS — dissolves the wait-for-segment inference class entirely, but clients speak HLS; per the settled transport-experiment rule this belongs on a spike branch, revisited when WebTransport reaches consumer playback devices.
 
 == References
 
