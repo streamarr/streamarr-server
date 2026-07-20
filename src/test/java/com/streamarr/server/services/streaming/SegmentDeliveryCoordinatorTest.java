@@ -298,8 +298,8 @@ class SegmentDeliveryCoordinatorTest {
   }
 
   @Test
-  @DisplayName("Should try each snapshotted target at most once when replacements keep dying")
-  void shouldTryEachSnapshottedTargetAtMostOnceWhenReplacementsKeepDying() throws Exception {
+  @DisplayName("Should try each eligible target at most once when replacements keep dying")
+  void shouldTryEachEligibleTargetAtMostOnceWhenReplacementsKeepDying() throws Exception {
     var session = startedSession();
     var sessionId = session.getSessionId();
     transcodeExecutor.setExecutionTargets(List.of(TARGET_A, TARGET_B));
@@ -309,7 +309,7 @@ class SegmentDeliveryCoordinatorTest {
     await()
         .atMost(2, TimeUnit.SECONDS)
         .until(() -> transcodeExecutor.getStartedTargets().size() == 1);
-    // The first replacement dies before publishing anything: the cycle continues, A is not
+    // The first replacement dies before publishing anything: recovery continues, A is not
     // retried, and target B is next.
     transcodeExecutor.markDead(sessionId);
     await()
@@ -355,8 +355,8 @@ class SegmentDeliveryCoordinatorTest {
   }
 
   @Test
-  @DisplayName("Should open a fresh cycle when a target outside the exhausted snapshot appears")
-  void shouldOpenFreshCycleWhenTargetOutsideTheExhaustedSnapshotAppears() throws Exception {
+  @DisplayName("Should reopen recovery when a never-attempted target becomes eligible")
+  void shouldReopenRecoveryWhenNeverAttemptedTargetBecomesEligible() throws Exception {
     var session = startedSession();
     var sessionId = session.getSessionId();
     exhaustRecovery(session);
@@ -579,8 +579,8 @@ class SegmentDeliveryCoordinatorTest {
   }
 
   @Test
-  @DisplayName("Should open a fresh cycle after a seek revival races an exhausting waiter")
-  void shouldOpenFreshCycleAfterSeekRevivalRacesExhaustingWaiter() throws Exception {
+  @DisplayName("Should keep a seek revival healthy while an exhausting waiter races it")
+  void shouldKeepSeekRevivalHealthyWhileExhaustingWaiterRacesIt() throws Exception {
     var trapStore = new TrapSegmentStore();
     var rig = rigWith(transcodeExecutor, trapStore);
     var session = defaultSessionBuilder().build();
@@ -593,8 +593,8 @@ class SegmentDeliveryCoordinatorTest {
     transcodeExecutor.refuseTarget(TARGET_B);
     transcodeExecutor.markDead(sessionId);
 
-    // The exhauster gets trapped between markExhausted (variant now FAILED) and the tail write
-    // that would retain its cycle.
+    // The exhauster gets trapped between markExhausted (variant now FAILED) and its return, the
+    // window where a racing revival must not be clobbered or wedged.
     var exhausterOutcome = new AtomicReference<SegmentDelivery>();
     var exhauster =
         new Thread(

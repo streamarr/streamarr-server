@@ -13,6 +13,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -22,11 +23,12 @@ import lombok.Builder;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Owns the segment wait loop and the recovery cycle (ADR 0019, issue #252). A request for an
+ * Owns the segment wait loop and producer recovery (ADR 0019, issue #252). A request for an
  * advertised-but-missing segment waits on producer liveness and publication progress — never a wall
- * clock — and a dead or stalled producer is replaced at the requested segment's offset across a
- * snapshot of execution targets. Only when every snapshotted target has been tried does the variant
- * become terminally {@code FAILED}; a target outside that snapshot, or a genuine seek, revives it.
+ * clock — and a dead or stalled producer is replaced at the requested segment's offset, trying each
+ * currently eligible execution target at most once since the last publication progress. Only when
+ * no eligible target remains untried does the variant become terminally {@code FAILED}; a target
+ * never attempted in the failed window, or a genuine seek, revives it.
  *
  * <p>Coordinator state is bookkeeping only, guarded by each variant state's own monitor. Producer
  * mutation is serialized by {@link ProducerLifecycleService}'s per-session mutex, whose atomic
@@ -209,23 +211,17 @@ public class SegmentDeliveryCoordinator {
   }
 
   /**
-   * The producer is dead or stalled: open a recovery cycle if none is active — snapshotting the
-   * eligible targets once — and try the first unattempted target. Returns null to resume polling,
-   * or a terminal outcome.
+   * The producer is dead or stalled: try the first live execution target not yet attempted since
+   * the last publication progress. Returns null to resume polling, or a terminal outcome.
    */
   private SegmentDelivery recover(
       VariantDeliveryState state, PendingSegment pending, ReplacementReason reason) {
-    var opened = state.openOrCurrentCycle(transcodeExecutor.executionTargets());
-    logProducerEnd(pending, opened.currentAttemptId(), reason);
-
-    return attemptReplacements(state, opened.cycle(), pending, reason);
+    logProducerEnd(pending, state.trackedAttempt(), reason);
+    return attemptReplacements(state, pending, reason);
   }
 
   private SegmentDelivery attemptReplacements(
-      VariantDeliveryState state,
-      RecoveryCycle cycle,
-      PendingSegment pending,
-      ReplacementReason reason) {
+      VariantDeliveryState state, PendingSegment pending, ReplacementReason reason) {
     while (true) {
       // A producer that is alive and within its stall budget — typically another waiter's fresh
       // replacement — means recovery is not (or no longer) needed; never dispatch or exhaust
@@ -235,11 +231,11 @@ public class SegmentDeliveryCoordinator {
         return null;
       }
 
-      var ticket = state.nextTicket(cycle);
+      var ticket = state.nextTicket(transcodeExecutor.executionTargets());
       var expectedAttemptId = ticket.expectedAttemptId();
       var target = ticket.target();
       if (target == null) {
-        return exhaust(state, cycle, pending, expectedAttemptId);
+        return exhaust(state, pending, expectedAttemptId);
       }
 
       var result =
@@ -256,8 +252,7 @@ public class SegmentDeliveryCoordinator {
 
       switch (result) {
         case ReplaceResult.Replaced(UUID newAttemptId) -> {
-          state.recordReplacement(
-              cycle, target, newAttemptId, pending.requestedIndex(), clock.instant());
+          state.recordReplacement(target, newAttemptId, pending.requestedIndex(), clock.instant());
           log.info(
               "Replaced producer for session {} variant {} on target {} at segment {} (attempt {})",
               pending.sessionId(),
@@ -268,7 +263,7 @@ public class SegmentDeliveryCoordinator {
           return null;
         }
         case ReplaceResult.Refused(String refusal) -> {
-          state.recordRefusal(cycle, target);
+          state.recordRefusal(target);
           log.warn(
               "Execution target {} refused replacement for session {} variant {}: {}",
               target.value(),
@@ -287,10 +282,7 @@ public class SegmentDeliveryCoordinator {
   }
 
   private SegmentDelivery exhaust(
-      VariantDeliveryState state,
-      RecoveryCycle cycle,
-      PendingSegment pending,
-      UUID expectedAttemptId) {
+      VariantDeliveryState state, PendingSegment pending, UUID expectedAttemptId) {
     var result =
         producerLifecycle.markExhausted(
             pending.sessionId(), pending.variantLabel(), expectedAttemptId);
@@ -308,20 +300,20 @@ public class SegmentDeliveryCoordinator {
       return null;
     }
 
-    state.retainExhaustedCycle(cycle, expectedAttemptId);
     log.warn(
-        "Recovery exhausted for session {} variant {}: every execution target in {} was tried",
+        "Recovery exhausted for session {} variant {}: every eligible execution target in {} was"
+            + " tried",
         pending.sessionId(),
         pending.variantLabel(),
-        cycle.eligibleTargets().stream().map(ExecutionTargetId::value).toList());
+        state.attemptedTargets().stream().map(ExecutionTargetId::value).toList());
     return new SegmentDelivery.Unrecoverable();
   }
 
   /**
    * A {@code FAILED} variant is terminal for same-window retries. Two things revive it: a genuine
    * seek (relocation distance — a planned restart per ADR 0019's seek clause), or a currently
-   * eligible target outside the exhausted cycle's snapshot (the new-target reset). Returns null to
-   * continue the delivery loop, or the terminal 503 outcome.
+   * eligible target never attempted in the failed window (a reconnecting worker is a new target by
+   * construction). Returns null to continue the delivery loop, or the terminal 503 outcome.
    */
   private SegmentDelivery resolveFailedVariant(
       VariantDeliveryState state,
@@ -348,12 +340,11 @@ public class SegmentDeliveryCoordinator {
 
     log.info(
         "New execution target(s) {} reset recovery for session {} variant {}",
-        reset.get().freshTargets().stream().map(ExecutionTargetId::value).toList(),
+        reset.get().stream().map(ExecutionTargetId::value).toList(),
         pending.sessionId(),
         pending.variantLabel());
     return attemptReplacements(
         state,
-        reset.get().cycle(),
         pendingSegment(
             pending.sessionId(), pending.variantLabel(), pending.segmentName(), refreshed),
         ReplacementReason.DEAD);
@@ -395,29 +386,29 @@ public class SegmentDeliveryCoordinator {
 
   private record VariantKey(UUID sessionId, String variantLabel) {}
 
-  private record OpenedCycle(RecoveryCycle cycle, UUID currentAttemptId) {}
-
   private record ReplacementTicket(UUID expectedAttemptId, ExecutionTargetId target) {}
-
-  private record CycleReset(RecoveryCycle cycle, Set<ExecutionTargetId> freshTargets) {}
 
   /**
    * Bookkeeping for one variant's deliveries. The instance owns its monitor: every read or write of
-   * the tracked attempt, frontier, stall clock, or recovery cycle goes through a synchronized
+   * the tracked attempt, frontier, stall clock, or attempted-target log goes through a synchronized
    * method here.
+   *
+   * <p>{@code attemptedSinceProgress} is a log of this coordinator's own replacement actions since
+   * the last publication progress — never a snapshot of fleet membership. Every pass compares it
+   * against the live target set, so a target appearing mid-recovery is simply tried and a departed
+   * one stops mattering.
    */
   private static final class VariantDeliveryState {
 
     private UUID trackedAttemptId;
     private int frontier;
     private Instant lastProgressAt = Instant.EPOCH;
-    private RecoveryCycle cycle;
+    private final Set<ExecutionTargetId> attemptedSinceProgress = new LinkedHashSet<>();
 
     /**
-     * Tracks the producer run the requests are waiting on. A new attempt installed by this cycle's
-     * own replacement keeps the cycle open (so a target is never retried within one cycle); any
-     * other new attempt is a planned restart and closes it. Advancing the frontier — a segment of
-     * the current run newly published — is the one success signal that ends recovery.
+     * Tracks the producer run the requests are waiting on. An attempt this state did not itself
+     * record is a planned restart and clears the attempted log; advancing the frontier — a segment
+     * of the current run newly published — is the one success signal that ends recovery.
      */
     private synchronized void syncProgress(
         TranscodeHandle handle,
@@ -425,10 +416,7 @@ public class SegmentDeliveryCoordinator {
         IntPredicate frontierSegmentExists,
         Instant now) {
       if (!handle.attemptId().equals(trackedAttemptId)) {
-        var ownReplacement = cycle != null && handle.attemptId().equals(cycle.currentAttemptId());
-        if (!ownReplacement) {
-          cycle = null;
-        }
+        attemptedSinceProgress.clear();
         trackedAttemptId = handle.attemptId();
         frontier = handle.startSequenceNumber();
         lastProgressAt = now;
@@ -441,7 +429,7 @@ public class SegmentDeliveryCoordinator {
       }
       if (advanced) {
         lastProgressAt = now;
-        cycle = null;
+        attemptedSinceProgress.clear();
       }
     }
 
@@ -449,110 +437,54 @@ public class SegmentDeliveryCoordinator {
       return Duration.between(lastProgressAt, now).compareTo(stallThreshold) >= 0;
     }
 
-    private synchronized OpenedCycle openOrCurrentCycle(Set<ExecutionTargetId> eligibleTargets) {
-      if (cycle == null) {
-        cycle = new RecoveryCycle(eligibleTargets, trackedAttemptId);
-      }
-      return new OpenedCycle(cycle, cycle.currentAttemptId());
+    private synchronized UUID trackedAttempt() {
+      return trackedAttemptId;
     }
 
-    private synchronized ReplacementTicket nextTicket(RecoveryCycle activeCycle) {
-      return new ReplacementTicket(activeCycle.currentAttemptId(), activeCycle.firstUnattempted());
+    private synchronized List<ExecutionTargetId> attemptedTargets() {
+      return List.copyOf(attemptedSinceProgress);
+    }
+
+    /** The first live target not yet attempted since the last progress; null means exhausted. */
+    private synchronized ReplacementTicket nextTicket(Set<ExecutionTargetId> liveTargets) {
+      var target =
+          liveTargets.stream()
+              .filter(candidate -> !attemptedSinceProgress.contains(candidate))
+              .findFirst()
+              .orElse(null);
+      return new ReplacementTicket(trackedAttemptId, target);
     }
 
     private synchronized void recordReplacement(
-        RecoveryCycle activeCycle,
-        ExecutionTargetId target,
-        UUID newAttemptId,
-        int requestedIndex,
-        Instant now) {
-      activeCycle.markAttempted(target);
-      activeCycle.trackReplacement(newAttemptId);
+        ExecutionTargetId target, UUID newAttemptId, int requestedIndex, Instant now) {
+      attemptedSinceProgress.add(target);
       trackedAttemptId = newAttemptId;
       frontier = requestedIndex;
       lastProgressAt = now;
     }
 
-    private synchronized void recordRefusal(RecoveryCycle activeCycle, ExecutionTargetId target) {
-      activeCycle.markAttempted(target);
+    private synchronized void recordRefusal(ExecutionTargetId target) {
+      attemptedSinceProgress.add(target);
     }
 
     /**
-     * The exhausted cycle is retained as the baseline for the new-target reset — but only while its
-     * attempt is still the tracked one. A planned restart (e.g. a seek revival) that raced in owns
-     * the state now; resurrecting the stale cycle over it would wedge the variant behind an
-     * exhausted snapshot no death ever opened.
+     * Revives a {@code FAILED} variant when a currently eligible target was never attempted in the
+     * failed window; with no such target the variant stays terminal for same-window retries. A
+     * revival reopens recovery across every currently eligible target.
      */
-    private synchronized void retainExhaustedCycle(
-        RecoveryCycle exhaustedCycle, UUID expectedAttemptId) {
-      if (cycle == null && expectedAttemptId.equals(trackedAttemptId)) {
-        cycle = exhaustedCycle;
-      }
-    }
-
-    /**
-     * Opens a reset cycle when the eligible targets contain an identity outside the exhausted
-     * cycle's snapshot. With no memory of the exhausted cycle the variant stays terminal (fail
-     * closed): a missing snapshot must not read as "everything is a new target".
-     */
-    private synchronized Optional<CycleReset> resetForFreshTargets(
+    private synchronized Optional<Set<ExecutionTargetId>> resetForFreshTargets(
         Set<ExecutionTargetId> eligibleNow, TranscodeHandle refreshed, Instant now) {
-      if (cycle == null) {
-        return Optional.empty();
-      }
-
       var freshTargets = new LinkedHashSet<>(eligibleNow);
-      freshTargets.removeAll(cycle.eligibleTargets());
+      freshTargets.removeAll(attemptedSinceProgress);
       if (freshTargets.isEmpty()) {
         return Optional.empty();
       }
 
-      cycle = new RecoveryCycle(eligibleNow, refreshed.attemptId());
+      attemptedSinceProgress.clear();
       trackedAttemptId = refreshed.attemptId();
       frontier = refreshed.startSequenceNumber();
       lastProgressAt = now;
-      return Optional.of(new CycleReset(cycle, Set.copyOf(freshTargets)));
-    }
-  }
-
-  /**
-   * One bounded pass over the execution targets that were eligible when the producer died. The
-   * snapshot is fixed at cycle start — a target connecting mid-cycle joins the next cycle via the
-   * new-target reset — and the cycle survives its own replacements so a target is attempted at most
-   * once per cycle.
-   */
-  private static final class RecoveryCycle {
-
-    private final Set<ExecutionTargetId> eligibleTargets;
-    private final Set<ExecutionTargetId> attempted = new LinkedHashSet<>();
-    private UUID currentAttemptId;
-
-    private RecoveryCycle(Set<ExecutionTargetId> eligibleTargets, UUID supersededAttemptId) {
-      this.eligibleTargets = new LinkedHashSet<>(eligibleTargets);
-      currentAttemptId = supersededAttemptId;
-    }
-
-    private ExecutionTargetId firstUnattempted() {
-      return eligibleTargets.stream()
-          .filter(target -> !attempted.contains(target))
-          .findFirst()
-          .orElse(null);
-    }
-
-    private void markAttempted(ExecutionTargetId target) {
-      attempted.add(target);
-    }
-
-    private void trackReplacement(UUID newAttemptId) {
-      currentAttemptId = newAttemptId;
-    }
-
-    private UUID currentAttemptId() {
-      return currentAttemptId;
-    }
-
-    private Set<ExecutionTargetId> eligibleTargets() {
-      return eligibleTargets;
+      return Optional.of(Set.copyOf(freshTargets));
     }
   }
 }
