@@ -1,13 +1,11 @@
 package com.streamarr.server.services.streaming.ffmpeg;
 
-import com.streamarr.server.domain.streaming.ProducerEnd;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeJob;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import java.nio.file.Path;
-import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -33,11 +31,7 @@ public class FfmpegTranscodeEngine {
 
     var process =
         processManager.startProcess(
-            request.sessionId(),
-            request.variantLabel(),
-            request.attemptId(),
-            command,
-            job.outputDir());
+            request.sessionId(), request.variantLabel(), command, job.outputDir());
 
     log.info(
         "Started transcode for session {} variant {} (encoder: {}, PID: {})",
@@ -68,11 +62,6 @@ public class FfmpegTranscodeEngine {
 
   public boolean isHealthy() {
     return capabilityService.isFfmpegAvailable();
-  }
-
-  public Optional<ProducerEnd> consumeExit(
-      UUID sessionId, String variantLabel, UUID expectedAttemptId) {
-    return processManager.consumeExit(sessionId, variantLabel, expectedAttemptId);
   }
 
   private String resolveEncoder(TranscodeRequest request) {

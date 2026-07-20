@@ -1,12 +1,9 @@
 package com.streamarr.server.services.streaming.ffmpeg;
 
-import com.streamarr.server.domain.streaming.ProducerEnd;
 import com.streamarr.server.exceptions.TranscodeException;
 import java.io.IOException;
 import java.nio.file.Path;
-import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -22,32 +19,20 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
 
   private record ProcessKey(UUID sessionId, String variantLabel) {}
 
-  private record ManagedProcess(Process process, StderrDrainer drainer, UUID attemptId) {}
+  private record ManagedProcess(Process process, StderrDrainer drainer) {}
 
   private final ConcurrentHashMap<ProcessKey, ManagedProcess> processes = new ConcurrentHashMap<>();
-
-  // Exit evidence survives the death transition until recovery consumes it (or the next attempt's
-  // death overwrites it). Planned stops never write here.
-  private final ConcurrentHashMap<ProcessKey, ProducerEnd> retainedExits =
-      new ConcurrentHashMap<>();
 
   @Override
   public Process startProcess(
       UUID sessionId, String variantLabel, List<String> command, Path workingDir) {
-    return startProcess(sessionId, variantLabel, null, command, workingDir);
-  }
-
-  @Override
-  public Process startProcess(
-      UUID sessionId, String variantLabel, UUID attemptId, List<String> command, Path workingDir) {
     try {
       var processBuilder = new ProcessBuilder(command);
       processBuilder.directory(workingDir.toFile());
 
       var process = processBuilder.start();
       var drainer = new StderrDrainer(process.getErrorStream());
-      processes.put(
-          new ProcessKey(sessionId, variantLabel), new ManagedProcess(process, drainer, attemptId));
+      processes.put(new ProcessKey(sessionId, variantLabel), new ManagedProcess(process, drainer));
 
       log.info(
           "Started FFmpeg process (PID {}) for session {} variant {}",
@@ -70,10 +55,6 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
       shutdownManagedProcess(processes.remove(key), sessionId);
     }
 
-    // A planned session stop is the end of the line for its evidence: nothing consumes it after
-    // teardown, and unconsumed entries would otherwise outlive the session for the JVM lifetime.
-    retainedExits.keySet().removeIf(key -> key.sessionId().equals(sessionId));
-
     if (!keysToRemove.isEmpty()) {
       log.info("Stopped FFmpeg process(es) for session {}", sessionId);
     }
@@ -84,7 +65,6 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
     var key = new ProcessKey(sessionId, variantLabel);
     var managed = processes.remove(key);
     shutdownManagedProcess(managed, sessionId);
-    retainedExits.remove(key);
     if (managed != null) {
       log.info("Stopped FFmpeg process for session {} variant {}", sessionId, variantLabel);
     }
@@ -163,25 +143,9 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
     return isAliveOrCleanup(key, managed);
   }
 
-  @Override
-  public Optional<ProducerEnd> consumeExit(
-      UUID sessionId, String variantLabel, UUID expectedAttemptId) {
-    var key = new ProcessKey(sessionId, variantLabel);
-    var retained = retainedExits.get(key);
-    if (retained == null || !expectedAttemptId.equals(retained.attemptId())) {
-      return Optional.empty();
-    }
-
-    // Consume-once must be atomic: only the caller whose remove wins receives the evidence.
-    if (!retainedExits.remove(key, retained)) {
-      return Optional.empty();
-    }
-    return Optional.of(retained);
-  }
-
   private boolean isAliveOrCleanup(ProcessKey key, ManagedProcess managed) {
     if (!managed.process().isAlive()) {
-      retainExitEvidence(key, managed);
+      logObservedExit(key, managed);
       managed.drainer().close();
       processes.remove(key);
       return false;
@@ -190,31 +154,18 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
     return true;
   }
 
-  private void retainExitEvidence(ProcessKey key, ManagedProcess managed) {
+  /** The death site logs its own crash detail; nothing downstream needs to reconstruct it. */
+  private void logObservedExit(ProcessKey key, ManagedProcess managed) {
     try {
       var exitCode = managed.process().exitValue();
-      var detail = exitDetail(exitCode, managed.drainer().getRecentOutput());
       log.warn(
           "FFmpeg exited with code {} for session {} variant {}: {}",
           exitCode,
           key.sessionId(),
           key.variantLabel(),
-          detail);
-      if (managed.attemptId() == null) {
-        return;
-      }
-
-      retainedExits.put(
-          key,
-          ProducerEnd.builder()
-              .attemptId(managed.attemptId())
-              .kind(ProducerEnd.EndKind.PROCESS_EXIT)
-              .detail(detail)
-              .at(Instant.now())
-              .build());
+          exitDetail(exitCode, managed.drainer().getRecentOutput()));
     } catch (Exception e) {
-      // This guard sits on the sole producer of local death evidence; surface why it failed.
-      log.warn("Could not retain FFmpeg exit evidence for session {}", key.sessionId(), e);
+      log.warn("Could not read FFmpeg exit details for session {}", key.sessionId(), e);
     }
   }
 
