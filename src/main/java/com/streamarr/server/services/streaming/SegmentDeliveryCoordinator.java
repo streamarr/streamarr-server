@@ -14,6 +14,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -279,7 +280,7 @@ public class SegmentDeliveryCoordinator {
           return null;
         }
         case ReplaceResult.Refused(String refusal) -> {
-          state.recordRefusal(target);
+          state.recordRefusal(target, expectedAttemptId);
           log.warn(
               "Execution target {} refused replacement for session {} variant {}: {}",
               target.value(),
@@ -477,7 +478,15 @@ public class SegmentDeliveryCoordinator {
       lastProgressAt = now;
     }
 
-    private synchronized void recordRefusal(ExecutionTargetId target) {
+    /**
+     * Fenced like every other recovery action: between {@code replaceProducer} returning and this
+     * call, a planned restart can install and sync a new attempt, and recording the old refusal
+     * against the new window could wrongly exhaust its only eligible target.
+     */
+    private synchronized void recordRefusal(ExecutionTargetId target, UUID expectedAttemptId) {
+      if (!Objects.equals(trackedAttemptId, expectedAttemptId)) {
+        return;
+      }
       attemptedSinceProgress.add(target);
     }
 
