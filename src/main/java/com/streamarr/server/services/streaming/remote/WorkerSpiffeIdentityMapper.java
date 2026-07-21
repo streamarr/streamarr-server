@@ -28,17 +28,20 @@ public final class WorkerSpiffeIdentityMapper {
     requireLeafConstraints(certificate);
     var uriNames = uriSubjectAlternativeNames(certificate);
     if (uriNames.size() != 1) {
-      throw new WorkerIdentityException();
+      throw new WorkerIdentityException(
+          "certificate must carry exactly one URI subject alternative name, found "
+              + uriNames.size());
     }
 
     var identity = uriNames.getFirst();
     if (!identity.startsWith(workerIdentityPrefix)) {
-      throw new WorkerIdentityException();
+      throw new WorkerIdentityException(
+          "SPIFFE identity is outside the worker namespace " + workerIdentityPrefix);
     }
 
     var workerId = parseWorkerId(identity.substring(workerIdentityPrefix.length()));
     if (!identity.equals(workerIdentityPrefix + workerId)) {
-      throw new WorkerIdentityException();
+      throw new WorkerIdentityException("SPIFFE identity is not in canonical form");
     }
 
     return workerId;
@@ -47,11 +50,11 @@ public final class WorkerSpiffeIdentityMapper {
   /** X509-SVID §5.2: a signing certificate must never authenticate as a workload. */
   private static void requireLeafConstraints(X509Certificate certificate) {
     if (certificate.getBasicConstraints() != -1) {
-      throw new WorkerIdentityException();
+      throw new WorkerIdentityException("certificate carries CA basic constraints");
     }
     var keyUsage = certificate.getKeyUsage();
     if (keyUsage != null && (keyUsage[KEY_USAGE_KEY_CERT_SIGN] || keyUsage[KEY_USAGE_CRL_SIGN])) {
-      throw new WorkerIdentityException();
+      throw new WorkerIdentityException("certificate key usage permits certificate or CRL signing");
     }
   }
 
@@ -59,25 +62,25 @@ public final class WorkerSpiffeIdentityMapper {
     try {
       var subjectAlternativeNames = certificate.getSubjectAlternativeNames();
       if (subjectAlternativeNames == null) {
-        throw new WorkerIdentityException();
+        throw new WorkerIdentityException("certificate has no subject alternative names");
       }
 
       var uriNames = new ArrayList<String>();
       for (var name : subjectAlternativeNames) {
         if (name.isEmpty()) {
-          throw new WorkerIdentityException();
+          throw new WorkerIdentityException("malformed subject alternative name entry");
         }
         if (!URI_SUBJECT_ALTERNATIVE_NAME.equals(name.getFirst())) {
           continue;
         }
         if (name.size() < 2 || !(name.get(1) instanceof String uriName)) {
-          throw new WorkerIdentityException();
+          throw new WorkerIdentityException("malformed URI subject alternative name entry");
         }
         uriNames.add(uriName);
       }
       return List.copyOf(uriNames);
     } catch (CertificateParsingException _) {
-      throw new WorkerIdentityException();
+      throw new WorkerIdentityException("certificate subject alternative names are unparseable");
     }
   }
 
@@ -85,7 +88,7 @@ public final class WorkerSpiffeIdentityMapper {
     try {
       return UUID.fromString(value);
     } catch (IllegalArgumentException _) {
-      throw new WorkerIdentityException();
+      throw new WorkerIdentityException("SPIFFE identity path is not a worker UUID");
     }
   }
 
