@@ -25,6 +25,32 @@ class StreamSessionTest {
   }
 
   @Test
+  @DisplayName("Should reject construction when the session id is missing")
+  void shouldRejectConstructionWhenTheSessionIdIsMissing() {
+    var builder =
+        StreamSession.builder()
+            .authority(defaultPlaybackAuthorityBuilder().build())
+            .mediaFileId(UUID.randomUUID());
+
+    assertThatThrownBy(builder::build)
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining("sessionId");
+  }
+
+  @Test
+  @DisplayName("Should reject construction when the media file id is missing")
+  void shouldRejectConstructionWhenTheMediaFileIdIsMissing() {
+    var builder =
+        StreamSession.builder()
+            .authority(defaultPlaybackAuthorityBuilder().build())
+            .sessionId(UUID.randomUUID());
+
+    assertThatThrownBy(builder::build)
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining("mediaFileId");
+  }
+
+  @Test
   @DisplayName("Should reject direct mutation of the exposed variant handle map")
   void shouldRejectDirectMutationOfExposedVariantHandleMap() {
     var session = buildMpegtsSession();
