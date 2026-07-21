@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming.ffmpeg;
 import com.streamarr.server.exceptions.TranscodeException;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -97,7 +98,7 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
           "FFmpeg had already exited with code {} for session {} before its planned stop: {}",
           exitCode,
           sessionId,
-          exitDetail(exitCode, managed.drainer().getRecentOutput()));
+          exitDetail(exitCode, recentStderr(managed)));
     } catch (Exception e) {
       log.debug("Could not read FFmpeg exit details for session {}", sessionId, e);
     }
@@ -109,7 +110,7 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
       outputStream.write('q');
       outputStream.flush();
     } catch (IOException e) {
-      log.debug("Failed to write quit signal to FFmpeg stdin for session {}", sessionId);
+      log.debug("Failed to write quit signal to FFmpeg stdin for session {}", sessionId, e);
     }
   }
 
@@ -158,15 +159,24 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
   private void logObservedExit(ProcessKey key, ManagedProcess managed) {
     try {
       var exitCode = managed.process().exitValue();
+      if (exitCode == 0) {
+        log.info("FFmpeg completed for session {} variant {}", key.sessionId(), key.variantLabel());
+        return;
+      }
       log.warn(
           "FFmpeg exited with code {} for session {} variant {}: {}",
           exitCode,
           key.sessionId(),
           key.variantLabel(),
-          exitDetail(exitCode, managed.drainer().getRecentOutput()));
+          exitDetail(exitCode, recentStderr(managed)));
     } catch (Exception e) {
       log.warn("Could not read FFmpeg exit details for session {}", key.sessionId(), e);
     }
+  }
+
+  /** The process is dead, so end-of-stream is imminent; waiting avoids a truncated stderr tail. */
+  private static List<String> recentStderr(ManagedProcess managed) {
+    return managed.drainer().awaitRecentOutput(Duration.ofSeconds(1));
   }
 
   private static String exitDetail(int exitCode, List<String> recentLines) {
