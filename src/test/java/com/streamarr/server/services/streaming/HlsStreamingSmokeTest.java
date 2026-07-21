@@ -262,7 +262,7 @@ class HlsStreamingSmokeTest {
   }
 
   @Test
-  @DisplayName("Should start master playlist with EXTM3U and no BOM when session is active")
+  @DisplayName("Should start multivariant playlist with EXTM3U and no BOM when session is active")
   void shouldStartMasterPlaylistWithExtm3uAndNoBomWhenSessionIsActive() {
     var file = seedMediaFile();
     var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
@@ -272,7 +272,7 @@ class HlsStreamingSmokeTest {
   }
 
   @Test
-  @DisplayName("Should include stream variant info in master playlist when session is active")
+  @DisplayName("Should include stream variant info in multivariant playlist when session is active")
   void shouldIncludeStreamVariantInfoInMasterPlaylistWhenSessionIsActive() {
     var file = seedMediaFile();
     var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());

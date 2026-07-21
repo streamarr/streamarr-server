@@ -117,14 +117,15 @@ class StreamControllerTest {
   }
 
   @Test
-  @DisplayName("Should return master playlist with correct content type when session exists")
-  void shouldReturnMasterPlaylistWithCorrectContentTypeWhenSessionExists() throws Exception {
+  @DisplayName("Should return multivariant playlist with correct content type when session exists")
+  void shouldReturnMultivariantPlaylistWithCorrectContentTypeWhenSessionExists() throws Exception {
     streamingService.setSession(buildMpegtsSession());
 
     var result =
         mockMvc
             .perform(
-                get("/api/stream/{sessionId}/master.m3u8", SESSION_ID).param("t", "unit-token"))
+                get("/api/stream/{sessionId}/multivariant.m3u8", SESSION_ID)
+                    .param("t", "unit-token"))
             .andExpect(status().isOk())
             .andReturn();
 
@@ -133,8 +134,18 @@ class StreamControllerTest {
     assertThat(result.getResponse().getContentAsString()).contains("#EXT-X-STREAM-INF:");
   }
 
+  @Test
+  @DisplayName("Should return 404 for the retired master playlist alias")
+  void shouldReturn404ForTheRetiredMasterPlaylistAlias() throws Exception {
+    streamingService.setSession(buildMpegtsSession());
+
+    mockMvc
+        .perform(get("/api/stream/{sessionId}/master.m3u8", SESSION_ID).param("t", "unit-token"))
+        .andExpect(status().isNotFound());
+  }
+
   @ParameterizedTest
-  @ValueSource(strings = {"master.m3u8", "stream.m3u8"})
+  @ValueSource(strings = {"multivariant.m3u8", "stream.m3u8"})
   @DisplayName(
       "Should embed the validated token in playlists when the request parameter is spoofed")
   void shouldEmbedValidatedTokenInPlaylistsWhenRequestParameterIsSpoofed(String path)
@@ -173,7 +184,7 @@ class StreamControllerTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"master.m3u8", "stream.m3u8", "segment0.ts", "init.mp4"})
+  @ValueSource(strings = {"multivariant.m3u8", "stream.m3u8", "segment0.ts", "init.mp4"})
   @DisplayName("Should reject stream request when token is bound to another stream session")
   void shouldRejectStreamRequestWhenTokenIsBoundToAnotherStreamSession(String path) {
     streamingService.setSession(buildMpegtsSession());
@@ -189,7 +200,7 @@ class StreamControllerTest {
   @ParameterizedTest
   @ValueSource(
       strings = {
-        "master.m3u8",
+        "multivariant.m3u8",
         "stream.m3u8",
         "segment0.ts",
         "init.mp4",

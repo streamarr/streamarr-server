@@ -112,16 +112,18 @@ class StreamControllerIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should keep serving the master playlist alias for existing clients")
-  void shouldKeepServingMasterPlaylistAliasForExistingClients() throws Exception {
+  @DisplayName("Should return 404 for the retired master playlist alias")
+  void shouldReturn404ForTheRetiredMasterPlaylistAlias() throws Exception {
     var session = StreamSessionFixture.buildMpegtsSession();
     STUB_SERVICE.addSession(session);
 
+    // The pre-release master.m3u8 alias was removed deliberately: sessions are in-memory and
+    // playback tokens minutes-lived, so no minted URL can outlive a deploy — nothing to alias for.
     mockMvc
         .perform(
             get("/api/stream/{id}/master.m3u8", session.getSessionId())
                 .param("t", playbackToken(session.getSessionId())))
-        .andExpect(status().isOk());
+        .andExpect(status().isNotFound());
   }
 
   @Test
@@ -130,7 +132,7 @@ class StreamControllerIT extends AbstractIntegrationTest {
     var missingSessionId = UUID.randomUUID();
     mockMvc
         .perform(
-            get("/api/stream/{id}/master.m3u8", missingSessionId)
+            get("/api/stream/{id}/multivariant.m3u8", missingSessionId)
                 .param("t", playbackToken(missingSessionId)))
         .andExpect(status().isNotFound());
   }
@@ -196,7 +198,7 @@ class StreamControllerIT extends AbstractIntegrationTest {
     STUB_SERVICE.addSession(session);
 
     mockMvc
-        .perform(get("/api/stream/{id}/master.m3u8", session.getSessionId()))
+        .perform(get("/api/stream/{id}/multivariant.m3u8", session.getSessionId()))
         .andExpect(status().isUnauthorized());
   }
 
@@ -208,7 +210,7 @@ class StreamControllerIT extends AbstractIntegrationTest {
 
     // An empty ?t= is no credential at all — it must not reach the decoder as one.
     mockMvc
-        .perform(get("/api/stream/{id}/master.m3u8", session.getSessionId()).param("t", ""))
+        .perform(get("/api/stream/{id}/multivariant.m3u8", session.getSessionId()).param("t", ""))
         .andExpect(status().isUnauthorized());
   }
 
@@ -223,7 +225,7 @@ class StreamControllerIT extends AbstractIntegrationTest {
     // A captured URL is worth exactly one stream session — never a different one.
     mockMvc
         .perform(
-            get("/api/stream/{id}/master.m3u8", sessionB.getSessionId())
+            get("/api/stream/{id}/multivariant.m3u8", sessionB.getSessionId())
                 .param("t", playbackToken(sessionA.getSessionId())))
         .andExpect(status().isForbidden());
   }
