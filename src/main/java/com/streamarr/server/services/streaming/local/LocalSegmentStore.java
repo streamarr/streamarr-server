@@ -11,15 +11,12 @@ import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 public class LocalSegmentStore implements SegmentStore {
-
-  private static final Duration POLL_INTERVAL = Duration.ofMillis(100);
 
   private final Path baseDir;
   private final ConcurrentHashMap<UUID, Path> sessionDirs = new ConcurrentHashMap<>();
@@ -43,27 +40,9 @@ public class LocalSegmentStore implements SegmentStore {
 
   /**
    * A session without an output directory reads as "segment not yet present" rather than an error:
-   * in remote mode nothing creates the directory until a worker's first upload, so the wait must
-   * bridge that window exactly as it bridges encoder startup.
+   * in remote mode nothing creates the directory until a worker's first upload, so a waiting
+   * delivery must bridge that window exactly as it bridges encoder startup.
    */
-  @Override
-  public boolean waitForSegment(UUID sessionId, String segmentName, Duration timeout) {
-    var deadline = System.nanoTime() + timeout.toNanos();
-
-    while (System.nanoTime() < deadline) {
-      if (segmentExists(sessionId, segmentName)) {
-        return true;
-      }
-      try {
-        Thread.sleep(POLL_INTERVAL.toMillis());
-      } catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-        return false;
-      }
-    }
-    return segmentExists(sessionId, segmentName);
-  }
-
   @Override
   public boolean segmentExists(UUID sessionId, String segmentName) {
     try {

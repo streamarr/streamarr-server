@@ -8,6 +8,7 @@ import lombok.Builder;
 @Builder
 public record TranscodeRequest(
     UUID sessionId,
+    UUID attemptId,
     Path sourcePath,
     int seekPosition,
     int targetSegmentDuration,
@@ -24,5 +25,6 @@ public record TranscodeRequest(
     Objects.requireNonNull(sourcePath, "sourcePath is required");
     Objects.requireNonNull(transcodeDecision, "transcodeDecision is required");
     variantLabel = variantLabel != null ? variantLabel : StreamSession.defaultVariant();
+    attemptId = attemptId != null ? attemptId : UUID.randomUUID();
   }
 }

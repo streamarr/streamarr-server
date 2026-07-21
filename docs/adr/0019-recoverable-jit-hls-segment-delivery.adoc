@@ -1,0 +1,101 @@
+// DRAFT — Proposed. Re-check the 0019 number against main before merging;
+// parallel branches collide on ADR numbers the same way the two V039 migrations did.
+= ADR 0019: Recoverable Just-In-Time HLS Segment Delivery
+
+== Status
+
+Proposed
+
+This ADR narrows the "RFC 8216 compliance" consequence of link:0008-server-generated-hls-playlists.adoc[ADR 0008] and refines link:0018-live-playback-authority-and-outbound-workers.adoc[ADR 0018] by un-deferring its request-driven recovery slice while leaving 0018's multi-control-plane failover and durable job recovery deferred.
+
+=== Implementation status
+
+Implemented.
+`SegmentDeliveryCoordinator` owns the liveness-and-progress-bounded wait and the bounded replacement budget; `ProducerLifecycleService` owns every producer mutation under the per-session mutex, with the attempt fence at the replacement write (https://github.com/streamarr/streamarr-server/issues/252[issue #252]).
+Worker-side upload back-pressure retry and the worker's stall-bounded segment wait are tracked in https://github.com/streamarr/streamarr-server/issues/253[issue #253].
+
+== Context
+
+Streamarr transcodes on-demand library files and serves them as HLS, generating the media playlist from the source's probed duration rather than from produced output.
+The playlist advertises every segment up front and closes with `EXT-X-ENDLIST`, while FFmpeg produces those segments lazily behind it.
+A request for an advertised-but-unproduced segment currently waits on a fixed wall-clock budget and then returns `404`, and a failed transcode is not recovered: the outbound-worker path abandons the variant with no re-dispatch, and the player cannot distinguish a permanently dead segment from one that is merely slow.
+
+RFC 8216 §6.2.1 requires that any segment listed in a playlist be immediately downloadable, and forbids removing or altering a segment once it has been advertised.
+Advertising the whole timeline up front is the price of instant start and arbitrary seek; it is an intentional deviation from §6.2.1's immediate-availability requirement, and it converts every advertised segment into a standing obligation to deliver — a listed segment cannot later be withdrawn, gapped, or answered with a distinct terminal status.
+Robust playback under that obligation is therefore not optional polish; having promised every segment, the server must be able to produce any of them.
+
+== Decision
+
+=== The advertised playlist is a delivery obligation
+
+On-demand media playlists continue to advertise every segment computed from source duration, close with `EXT-X-ENDLIST`, and embed each segment's own seek offset in its URI so any segment is independently re-producible.
+A listed segment is an obligation, not a hint: the server never un-advertises, gaps, substitutes, or returns a distinct terminal status for an advertised segment — the only correct response to an advertised segment is to deliver its bytes.
+The advertise-ahead deviation from §6.2.1 is intentional and is recorded here rather than hidden; it is pinned by the conformance suite below as a documented, tracked deviation, not a defect.
+
+=== Segment waits are bounded by producer liveness, not a wall clock
+
+A request for an advertised-but-unproduced segment waits while a producer for that segment is alive and making progress; a producer that publishes nothing within the configured stall threshold is classified stalled and replaced.
+The threshold applies uniformly, including a fresh producer's cold start (seek plus first-segment encode): hardware that cannot publish a first segment inside the default 10 seconds cannot sustain just-in-time playback either, and the degradation path — replacement attempts, then a terminal failure that pushes the player's adaptive-bitrate switch — is the designed reaction; deployments with slower encoders tune `streaming.producer-stall-threshold` rather than receiving a separate cold-start budget.
+Segments are published atomically (a temporary file moved into its final name), so a segment that exists is complete — existence is readiness, and no successor-segment inference is needed or permitted.
+The wait ends when the segment is ready, when no producer can be made to produce it, or on request cancellation — never on a fixed wall-clock timeout.
+A slow or resource-starved transcode must not surface to the client as a missing segment.
+
+=== Producers are recovered on demand, driven by the request
+
+When an advertised segment is requested and no live producer covers it, the server starts a fresh producer seeking to that segment; recovery is pull-based, triggered by the segment request, not a supervised push loop.
+A recovered producer emits a contiguous run of segments from the requested index and never a single isolated segment, so audio and video boundaries stay continuous.
+Presentation timestamps continue the absolute timeline across a replacement producer (`-copyts`, input seek, `-start_number`); MPEG-TS continuity counters reset at the replacement boundary — an accepted, documented deviation from RFC 8216 §3's uninterrupted-counter requirement, shared with comparable JIT servers, because a static playlist cannot signal a discontinuity after the fact.
+Seeking uses this same mechanism: a request beyond the produced window restarts a producer at the requested offset, and because segment numbering derives from the offset the playlist never changes.
+A seek is a planned restart, not recovery: a relocation-distance request revives even a variant whose recovery has been exhausted.
+
+=== Distributed producers are the recovery redundancy
+
+When the transcode executor is distributed, a variant whose producer fails is re-dispatched, on the next request that needs it, to another available worker for the same source namespace; the pool of workers is the recovery redundancy.
+Recovery is attempt-bounded, never wall-clock-bounded: each variant carries a replacement budget sized by the currently eligible execution targets — locally the single local runner, remotely each live worker connection (its `worker_session_id`, per ADR 0018's live-connection fence).
+Every replacement consults the live target set at dispatch time; no snapshot of fleet membership is retained across the recovery window.
+The budget resets on publication progress (the frontier advancing is the one success signal) and whenever the eligible-target set changes.
+Only when the budget is exhausted does the failure surface, as a terminal `503 Service Unavailable` with no body and no `Retry-After`; the client's own retry budget and its adaptive-bitrate switch to a healthy variant are the last-resort recovery.
+The terminal state is sticky for same-window retries and cleared by exactly two events: the eligible-target set differing from the set recorded when the variant failed (a reconnecting worker is a new target by construction), or a genuine seek's planned restart.
+Within one death window the budget does not guarantee each target is tried at most once — a target that accepts and immediately dies again may consume more than one attempt; this is accepted because it requires two or more remote workers churning within a single recovery window and self-corrects through the target-set-change reset.
+Attempt identity is a write-point fence, not per-request bookkeeping: `ProducerLifecycleService`'s mutex-guarded predicate compares the expected attempt exactly once, at the replacement write, so a late or superseded replacement can never clobber a newer producer's state.
+Worst-case pre-terminal latency is `budget × stall threshold` plus dispatch overhead; in a large worker pool that can exceed one viewer's patience, which is accepted — every attempt is a genuine recovery chance and the player's variant switch proceeds in parallel.
+Transient upload back-pressure is a self-classifying condition: the producer retries the affected segment with bounded back-off rather than failing the whole variant (worker-side retry tracked in https://github.com/streamarr/streamarr-server/issues/253[issue #253]; until it lands, a back-pressure failure consumes one replacement attempt).
+
+=== A conformance suite gates the delivery contract
+
+An in-repo HLS conformance suite runs inside the standard build and the continuous-integration gate, asserting playlist structure and the delivery obligations above against generated playlists and a controllable segment-producing fake.
+Intentional deviations from the standard — advertise-ahead first among them — are recorded as explicit, non-gating cases that carry this ADR's reference, so a deviation is a tracked assertion rather than tribal knowledge.
+A deeper platform-specific stream validator remains an optional local check outside the portable gate.
+
+* Explicitly deferred:
+** cross-worker session affinity, durable job recovery, and multiple control-plane replicas — deferred by ADR 0018 and unchanged here;
+** low-latency HLS (partial segments, blocking playlist reload, preload hints, delta playlist updates, rendition reports) — it targets live-edge latency, presumes a growing playlist, and is incompatible with the on-demand static-playlist contract; it would be revisited only if true live streaming is introduced, under its own ADR;
+** a growing or event-type media playlist for on-demand content; and
+** object-store delivery and any worker-to-client segment path.
+
+== Consequences
+
+The static-playlist obligation makes recovery mandatory rather than optional, and the decision states that obligation as a first-class contract.
+Liveness-bounded waits remove the spurious-timeout failure mode under load and slow start for both local and distributed execution.
+Pull-based recovery makes a failed producer invisible to the viewer in the common case: a brief stall while a fresh producer catches up, not a dead stream, and no distinct error status to invent or interpret.
+The conformance suite converts implicit protocol assumptions into always-on checks and turns intentional deviations into documented, reviewable reds.
+ADR 0008's blanket "RFC 8216 compliance" consequence is narrowed: server-generated playlists remain fully controlled, but on-demand delivery intentionally deviates from §6.2.1 immediate-availability as recorded here.
+The costs are added producer-lifecycle and liveness logic in the streaming layer, per-request liveness evaluation on the segment path, and additional build and continuous-integration time for the conformance suite.
+
+== Rejected Alternatives
+
+* Growing or event-type media playlist advertising only produced segments — satisfies §6.2.1 but forfeits instant whole-timeline seek, makes segment production stateful, and complicates recovery for no viewer-visible gain.
+* Low-latency HLS blocking playlist reload as the segment-wait mechanism — presumes a growing live playlist, does not apply to a static on-demand playlist, and specifies no error path for a segment that cannot be produced.
+* A fixed wall-clock segment-wait timeout returning a distinct terminal status — converts slow production into spurious failures and papers over the missing recovery instead of providing it.
+* Signaling a dead variant to the player through a distinct HTTP status or an advertised playlist gap — the standard forbids withdrawing a listed segment and the client cannot reconstruct or skip an advertised segment URL, so an advertised segment must be delivered, not annotated.
+* Per-segment isolated transcoding on demand — independent single-segment encodes glitch at audio and video boundaries; a contiguous run per producer is required.
+* A per-cycle snapshot of eligible execution targets with at-most-once-per-target replacement — the snapshot is a retained copy of live fleet state that must be defended against every concurrent mutation (supersession fences, exhausted-cycle retention, new-target set-difference); review found two high-severity staleness-of-the-copy defects in exactly that machinery, and its only behavioral difference from the live-consulted budget requires two or more remote workers churning within a single recovery window.
+* Producer lifetime driven by subscription-style demand handles (a producer runs only while a delivery holds a handle) — stateless HLS clients hold no standing connection to hang a handle on; last-request-time reaping is the honest demand signal for HTTP delivery.
+* A push-based media transport (Media over QUIC) in place of HLS — dissolves the wait-for-segment inference class entirely, but clients speak HLS; per the settled transport-experiment rule this belongs on a spike branch, revisited when WebTransport reaches consumer playback devices.
+
+== References
+
+* https://www.rfc-editor.org/rfc/rfc8216[RFC 8216 — HTTP Live Streaming] (§6.2.1 immediate availability and advertised-segment immutability; §4.3.3.5 VOD playlist immutability)
+* https://datatracker.ietf.org/doc/html/draft-pantos-hls-rfc8216bis[RFC 8216bis — HTTP Live Streaming 2nd Edition]
+* link:0008-server-generated-hls-playlists.adoc[ADR 0008: Server-Generated HLS Playlists] — compliance consequence narrowed here
+* link:0018-live-playback-authority-and-outbound-workers.adoc[ADR 0018: Live Playback Authority and Outbound Transcode Workers] — request-driven recovery slice un-deferred here

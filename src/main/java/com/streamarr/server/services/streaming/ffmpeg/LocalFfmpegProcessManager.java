@@ -15,6 +15,7 @@ import org.springframework.stereotype.Component;
 public class LocalFfmpegProcessManager implements FfmpegProcessManager {
 
   private static final long GRACEFUL_SHUTDOWN_SECONDS = 5;
+  private static final int STDERR_TAIL_LIMIT = 2000;
 
   private record ProcessKey(UUID sessionId, String variantLabel) {}
 
@@ -61,7 +62,8 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
 
   @Override
   public void stopProcess(UUID sessionId, String variantLabel) {
-    var managed = processes.remove(new ProcessKey(sessionId, variantLabel));
+    var key = new ProcessKey(sessionId, variantLabel);
+    var managed = processes.remove(key);
     shutdownManagedProcess(managed, sessionId);
     if (managed != null) {
       log.info("Stopped FFmpeg process for session {} variant {}", sessionId, variantLabel);
@@ -74,6 +76,7 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
     }
 
     if (!managed.process().isAlive()) {
+      logUnobservedExit(managed, sessionId);
       managed.drainer().close();
       return;
     }
@@ -81,6 +84,23 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
     sendQuitSignal(managed.process(), sessionId);
     awaitGracefulShutdown(managed.process(), sessionId);
     managed.drainer().close();
+  }
+
+  /** A corpse disposed of on a planned stop still gets its crash detail into the log. */
+  private void logUnobservedExit(ManagedProcess managed, UUID sessionId) {
+    try {
+      var exitCode = managed.process().exitValue();
+      if (exitCode == 0) {
+        return;
+      }
+      log.warn(
+          "FFmpeg had already exited with code {} for session {} before its planned stop: {}",
+          exitCode,
+          sessionId,
+          exitDetail(exitCode, managed.drainer().getRecentOutput()));
+    } catch (Exception e) {
+      log.debug("Could not read FFmpeg exit details for session {}", sessionId, e);
+    }
   }
 
   private void sendQuitSignal(Process process, UUID sessionId) {
@@ -125,7 +145,7 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
 
   private boolean isAliveOrCleanup(ProcessKey key, ManagedProcess managed) {
     if (!managed.process().isAlive()) {
-      logExitDetails(key, managed);
+      logObservedExit(key, managed);
       managed.drainer().close();
       processes.remove(key);
       return false;
@@ -134,21 +154,28 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
     return true;
   }
 
-  private void logExitDetails(ProcessKey key, ManagedProcess managed) {
+  /** The death site logs its own crash detail; nothing downstream needs to reconstruct it. */
+  private void logObservedExit(ProcessKey key, ManagedProcess managed) {
     try {
       var exitCode = managed.process().exitValue();
-      var recentLines = managed.drainer().getRecentOutput();
-      if (!recentLines.isEmpty()) {
-        var stderr = String.join("\n", recentLines);
-        log.warn(
-            "FFmpeg exited with code {} for session {} variant {}: {}",
-            exitCode,
-            key.sessionId(),
-            key.variantLabel(),
-            stderr.substring(0, Math.min(stderr.length(), 2000)));
-      }
-    } catch (Exception _) {
-      log.debug("Could not read FFmpeg exit details for session {}", key.sessionId());
+      log.warn(
+          "FFmpeg exited with code {} for session {} variant {}: {}",
+          exitCode,
+          key.sessionId(),
+          key.variantLabel(),
+          exitDetail(exitCode, managed.drainer().getRecentOutput()));
+    } catch (Exception e) {
+      log.warn("Could not read FFmpeg exit details for session {}", key.sessionId(), e);
     }
+  }
+
+  private static String exitDetail(int exitCode, List<String> recentLines) {
+    var detail = "exit code " + exitCode;
+    if (recentLines.isEmpty()) {
+      return detail;
+    }
+
+    var stderr = String.join("\n", recentLines);
+    return detail + ": " + stderr.substring(0, Math.min(stderr.length(), STDERR_TAIL_LIMIT));
   }
 }
