@@ -42,6 +42,7 @@ class PlaybackTokenRevocationIT extends AbstractIntegrationTest {
       var streamSession =
           StreamSession.builder()
               .sessionId(UUID.randomUUID())
+              .mediaFileId(UUID.randomUUID())
               .authority(staleIdentity.playbackAuthority())
               .build();
       var playbackTtl = Duration.ofHours(1);

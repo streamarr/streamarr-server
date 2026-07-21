@@ -41,6 +41,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -119,27 +120,35 @@ class TranscodeWorkerIT {
   }
 
   @Test
-  @DisplayName("Should log the unreported job failure when the worker closes with a parked upload")
-  void shouldLogTheUnreportedJobFailureWhenTheWorkerClosesWithAParkedUpload() throws Exception {
+  @DisplayName("Should log the unreported job failure when the worker closes mid-upload")
+  void shouldLogTheUnreportedJobFailureWhenTheWorkerClosesMidUpload() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
     Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
-    var processManager = new FakeFfmpegProcessManager();
+    var processManager =
+        new FakeSegmentProducingFfmpegProcessManager("segment0.ts", "segment".getBytes());
+    var uploadEntered = new CountDownLatch(1);
+    var releaseUpload = new CountDownLatch(1);
+    var blockingStore =
+        new BlockingSegmentStore(tempDir.resolve("server-segments"), uploadEntered, releaseUpload);
     var streamSessionId = UUID.randomUUID();
     var appender = attachWorkerAppender();
 
-    try (var server = server();
+    try (var server = server(blockingStore);
         var worker = worker(processManager, mediaRoot)) {
       server.start();
       worker.start("localhost", server.port());
-      assertThat(server.dispatch(variantJob(streamSessionId))).isTrue();
-      await()
-          .atMost(5, TimeUnit.SECONDS)
-          .until(() -> processManager.getStarted().contains(streamSessionId));
+      assertThat(
+              server.dispatch(
+                  variantJob(streamSessionId, "720p", ContainerFormat.CONTAINER_FORMAT_MPEG_TS)))
+          .isTrue();
+      // The worker has streamed the segment and is awaiting the server's acknowledgement, which
+      // the blocked store withholds — the upload can no longer end cleanly.
+      assertThat(uploadEntered.await(5, TimeUnit.SECONDS)).isTrue();
 
       worker.close();
 
-      // The upload thread parked on a segment that never arrives is interrupted by close(); its
-      // failure report races the closed control stream and must be logged, never swallowed.
+      // close() tears down the channel under the in-flight upload; the resulting failure report
+      // races the already-closed control stream and must be logged, never swallowed.
       await()
           .atMost(5, TimeUnit.SECONDS)
           .untilAsserted(
@@ -150,6 +159,7 @@ class TranscodeWorkerIT {
                               assertThat(event.getFormattedMessage())
                                   .contains("Could not report job attempt failure")));
     } finally {
+      releaseUpload.countDown();
       detachWorkerAppender(appender);
     }
   }
@@ -703,6 +713,29 @@ class TranscodeWorkerIT {
     public Process startProcess(
         UUID sessionId, String variantLabel, List<String> command, Path workingDirectory) {
       throw new IllegalStateException("FFmpeg failed to start");
+    }
+  }
+
+  private static final class BlockingSegmentStore extends LocalSegmentStore {
+
+    private final CountDownLatch entered;
+    private final CountDownLatch release;
+
+    private BlockingSegmentStore(Path baseDir, CountDownLatch entered, CountDownLatch release) {
+      super(baseDir);
+      this.entered = entered;
+      this.release = release;
+    }
+
+    @Override
+    public PreparedSegment prepareSegment(UUID sessionId, String segmentName, byte[] data) {
+      entered.countDown();
+      try {
+        release.await(10, TimeUnit.SECONDS);
+      } catch (InterruptedException _) {
+        Thread.currentThread().interrupt();
+      }
+      return super.prepareSegment(sessionId, segmentName, data);
     }
   }
 
