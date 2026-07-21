@@ -410,6 +410,7 @@ public final class TranscodeWorker implements AutoCloseable {
     requests.onNext(request);
   }
 
+  @SuppressWarnings("java:S3398") // Job lifecycle belongs to the worker, not its gRPC observer.
   private synchronized void logAbandonedAttempts() {
     if (activeVariants.isEmpty()) {
       return;

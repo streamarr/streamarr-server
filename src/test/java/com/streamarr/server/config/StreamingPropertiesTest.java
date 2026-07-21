@@ -39,7 +39,9 @@ class StreamingPropertiesTest {
   @Test
   @DisplayName("Should reject max concurrent transcodes when negative")
   void shouldRejectMaxConcurrentTranscodesWhenNegative() {
-    assertThatThrownBy(() -> StreamingProperties.builder().maxConcurrentTranscodes(-1).build())
+    var builder = StreamingProperties.builder().maxConcurrentTranscodes(-1);
+
+    assertThatThrownBy(builder::build)
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("max-concurrent-transcodes");
   }
