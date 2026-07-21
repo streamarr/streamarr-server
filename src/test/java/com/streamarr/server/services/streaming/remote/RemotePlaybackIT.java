@@ -396,7 +396,8 @@ class RemotePlaybackIT extends AbstractIntegrationTest {
       // The thrown refusal is what recovery classifies as ReplaceResult.Refused — the exact
       // contract that moves it to the next execution target.
       assertThatThrownBy(() -> executor.start(request)).isInstanceOf(TranscodeException.class);
-      assertThatThrownBy(() -> executor.start(request, new ExecutionTargetId("ghost-worker")))
+      var ghostWorker = new ExecutionTargetId("ghost-worker");
+      assertThatThrownBy(() -> executor.start(request, ghostWorker))
           .isInstanceOf(TranscodeException.class)
           .hasMessageContaining("ghost-worker");
     }
