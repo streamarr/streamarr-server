@@ -27,6 +27,7 @@ import com.streamarr.server.services.auth.TokenScope;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
+import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
 import com.streamarr.server.services.streaming.PlaybackRequest;
 import com.streamarr.server.services.streaming.ProducerLifecycleService;
@@ -377,6 +378,27 @@ class RemotePlaybackIT extends AbstractIntegrationTest {
     @Override
     public boolean canViewActivityOf(UUID profileId) {
       return true;
+    }
+  }
+
+  @Test
+  @DisplayName("Should refuse dispatch when no worker connection can run the variant")
+  void shouldRefuseDispatchWhenNoWorkerConnectionCanRunTheVariant() throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+    Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
+
+    try (var server = server(segmentStore)) {
+      server.start();
+      var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, mediaRoot);
+      var request = transcodeRequest(UUID.randomUUID(), mediaRoot.resolve("movie.mkv"));
+
+      // The thrown refusal is what recovery classifies as ReplaceResult.Refused — the exact
+      // contract that moves it to the next execution target.
+      assertThatThrownBy(() -> executor.start(request)).isInstanceOf(TranscodeException.class);
+      assertThatThrownBy(() -> executor.start(request, new ExecutionTargetId("ghost-worker")))
+          .isInstanceOf(TranscodeException.class)
+          .hasMessageContaining("ghost-worker");
     }
   }
 

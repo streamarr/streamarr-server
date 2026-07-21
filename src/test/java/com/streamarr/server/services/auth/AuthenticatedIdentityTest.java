@@ -18,6 +18,58 @@ import org.springframework.security.oauth2.jwt.Jwt;
 class AuthenticatedIdentityTest {
 
   @Test
+  @DisplayName("Should reject account scope carrying household or profile identity")
+  void shouldRejectAccountScopeCarryingHouseholdOrProfileIdentity() {
+    var identity =
+        AuthenticatedIdentity.builder()
+            .accountId(UUID.randomUUID())
+            .role(AccountRole.USER)
+            .authSessionId(UUID.randomUUID())
+            .scope(TokenScope.ACCOUNT)
+            .householdId(UUID.randomUUID())
+            .householdRole(HouseholdRole.MEMBER);
+
+    assertThatThrownBy(identity::build)
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("Account scope");
+  }
+
+  @Test
+  @DisplayName("Should reject household scope carrying profile identity")
+  void shouldRejectHouseholdScopeCarryingProfileIdentity() {
+    var identity =
+        AuthenticatedIdentity.builder()
+            .accountId(UUID.randomUUID())
+            .role(AccountRole.USER)
+            .authSessionId(UUID.randomUUID())
+            .scope(TokenScope.HOUSEHOLD)
+            .householdId(UUID.randomUUID())
+            .householdRole(HouseholdRole.MEMBER)
+            .profileId(UUID.randomUUID());
+
+    assertThatThrownBy(identity::build)
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("Household scope");
+  }
+
+  @Test
+  @DisplayName("Should reject profile scope without profile identity")
+  void shouldRejectProfileScopeWithoutProfileIdentity() {
+    var identity =
+        AuthenticatedIdentity.builder()
+            .accountId(UUID.randomUUID())
+            .role(AccountRole.USER)
+            .authSessionId(UUID.randomUUID())
+            .scope(TokenScope.PROFILE)
+            .householdId(UUID.randomUUID())
+            .householdRole(HouseholdRole.MEMBER);
+
+    assertThatThrownBy(identity::build)
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("Profile scope");
+  }
+
+  @Test
   @DisplayName("Should reject profile identity without household context")
   void shouldRejectProfileIdentityWithoutHouseholdContext() {
     var identity =

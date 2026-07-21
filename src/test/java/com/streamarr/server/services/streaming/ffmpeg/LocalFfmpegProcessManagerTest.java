@@ -184,6 +184,29 @@ class LocalFfmpegProcessManagerTest {
   }
 
   @Test
+  @DisplayName("Should force-kill the process when the stopping thread is interrupted")
+  void shouldForceKillTheProcessWhenTheStoppingThreadIsInterrupted() throws Exception {
+    var sessionId = UUID.randomUUID();
+    var process =
+        manager.startProcess(
+            sessionId, StreamSession.defaultVariant(), List.of("sleep", "30"), tempDir);
+
+    var stopper =
+        new Thread(
+            () -> {
+              // A pre-set interrupt makes the graceful waitFor abort immediately; shutdown must
+              // fall through to destroyForcibly instead of leaving the process running.
+              Thread.currentThread().interrupt();
+              manager.stopProcess(sessionId);
+            });
+    stopper.start();
+    stopper.join(5000);
+
+    await().atMost(Duration.ofSeconds(5)).until(() -> !process.isAlive());
+    assertThat(manager.isRunning(sessionId)).isFalse();
+  }
+
+  @Test
   @DisplayName("Should log completion without warning when a clean exit is observed")
   void shouldLogCompletionWithoutWarningWhenACleanExitIsObserved() throws Exception {
     var sessionId = UUID.randomUUID();

@@ -99,6 +99,47 @@ class WorkerIdentityServerInterceptorTest {
             });
   }
 
+  @Test
+  @DisplayName("Should reject the call when the transport carries no TLS session")
+  void shouldRejectTheCallWhenTheTransportCarriesNoTlsSession() {
+    var call = new RecordingServerCall(Attributes.newBuilder().build());
+    var interceptor =
+        new WorkerIdentityServerInterceptor(new WorkerSpiffeIdentityMapper("streamarr.test"));
+
+    interceptor.interceptCall(call, new Metadata(), (_, _) -> new ServerCall.Listener<>() {});
+
+    assertThat(call.closedStatus().getCode()).isEqualTo(Status.Code.UNAUTHENTICATED);
+  }
+
+  @Test
+  @DisplayName("Should reject the call when the peer presents no X509 certificate")
+  void shouldRejectTheCallWhenThePeerPresentsNoX509Certificate() {
+    var attributes =
+        Attributes.newBuilder()
+            .set(Grpc.TRANSPORT_ATTR_SSL_SESSION, sslSession(new Certificate[0]))
+            .build();
+    var call = new RecordingServerCall(attributes);
+    var interceptor =
+        new WorkerIdentityServerInterceptor(new WorkerSpiffeIdentityMapper("streamarr.test"));
+
+    interceptor.interceptCall(call, new Metadata(), (_, _) -> new ServerCall.Listener<>() {});
+
+    assertThat(call.closedStatus().getCode()).isEqualTo(Status.Code.UNAUTHENTICATED);
+  }
+
+  private static SSLSession sslSession(Certificate[] chain) {
+    return (SSLSession)
+        Proxy.newProxyInstance(
+            SSLSession.class.getClassLoader(),
+            new Class<?>[] {SSLSession.class},
+            (_, method, _) -> {
+              if (method.getName().equals("getPeerCertificates")) {
+                return chain;
+              }
+              throw new UnsupportedOperationException(method.getName());
+            });
+  }
+
   private static ListAppender<ILoggingEvent> attachAppender() {
     var logger = (Logger) LoggerFactory.getLogger(WorkerIdentityServerInterceptor.class);
     var appender = new ListAppender<ILoggingEvent>();

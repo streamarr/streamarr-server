@@ -187,7 +187,16 @@ class StreamControllerTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"master.m3u8", "stream.m3u8", "segment0.ts", "init.mp4"})
+  @ValueSource(
+      strings = {
+        "master.m3u8",
+        "stream.m3u8",
+        "segment0.ts",
+        "init.mp4",
+        "720p/stream.m3u8",
+        "720p/init.mp4",
+        "720p/segment0.ts"
+      })
   @DisplayName("Should return 404 when session not found")
   void shouldReturn404WhenSessionNotFound(String path) throws Exception {
     var missingId = UUID.randomUUID();
