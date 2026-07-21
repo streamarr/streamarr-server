@@ -19,8 +19,8 @@ public class StreamSession {
 
   private static final String DEFAULT_VARIANT = "default";
 
-  private final UUID sessionId;
-  private final UUID mediaFileId;
+  @NonNull private final UUID sessionId;
+  @NonNull private final UUID mediaFileId;
   @NonNull private final PlaybackAuthority authority;
   private final Path sourcePath;
   private final MediaProbe mediaProbe;
