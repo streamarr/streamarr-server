@@ -169,7 +169,20 @@ public final class TranscodeWorker implements AutoCloseable {
       return;
     }
 
-    executor.submit(() -> uploadVariant(job, outputDirectory));
+    // execute + a terminal catch instead of submit: a throwable escaping the handlers below would
+    // otherwise be captured in a Future nobody reads and vanish.
+    executor.execute(
+        () -> {
+          try {
+            uploadVariant(job, outputDirectory);
+          } catch (RuntimeException e) {
+            log.error(
+                "Upload loop for variant {} of stream session {} died unexpectedly",
+                job.getVariant().getVariantLabel(),
+                fromProto(job.getStreamSessionId()),
+                e);
+          }
+        });
   }
 
   private void uploadVariant(VariantJob job, Path outputDirectory) {
@@ -177,6 +190,10 @@ public final class TranscodeWorker implements AutoCloseable {
       uploadProducedSegments(job, outputDirectory);
     } catch (InterruptedException _) {
       Thread.currentThread().interrupt();
+      log.info(
+          "Upload of variant {} for stream session {} interrupted; failing the attempt",
+          job.getVariant().getVariantLabel(),
+          fromProto(job.getStreamSessionId()));
       failVariant(job, JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED);
     } catch (IOException | ExecutionException | TimeoutException | RuntimeException e) {
       log.error(
@@ -325,7 +342,18 @@ public final class TranscodeWorker implements AutoCloseable {
     if (variant != null) {
       engine.stop(variant.streamSessionId(), variant.variantLabel());
     }
-    sendFailure(job, failure);
+    try {
+      sendFailure(job, failure);
+    } catch (RuntimeException e) {
+      // The control stream is gone (shutdown or connection loss). The server learns of the
+      // attempt's end from the disconnect itself, so the lost report costs precision, not safety —
+      // but it must be visible, not swallowed by the upload task.
+      log.debug(
+          "Could not report job attempt failure for variant {} of stream session {}",
+          job.getVariant().getVariantLabel(),
+          fromProto(job.getStreamSessionId()),
+          e);
+    }
   }
 
   private synchronized void finishEndedVariant(VariantJob job, boolean uploadedMediaSegment) {
@@ -376,7 +404,20 @@ public final class TranscodeWorker implements AutoCloseable {
   }
 
   private synchronized void send(EstablishWorkerSessionRequest request) {
+    if (requests == null) {
+      throw new IllegalStateException("Worker session is closed");
+    }
     requests.onNext(request);
+  }
+
+  private synchronized void logAbandonedAttempts() {
+    if (activeVariants.isEmpty()) {
+      return;
+    }
+    log.warn(
+        "Worker session ended with {} abandoned job attempt(s): {}",
+        activeVariants.size(),
+        activeVariants.keySet());
   }
 
   private synchronized void stopActiveVariants() {
@@ -400,7 +441,9 @@ public final class TranscodeWorker implements AutoCloseable {
     }
     channel.shutdownNow();
     try {
-      channel.awaitTermination(CONNECTION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      if (!channel.awaitTermination(CONNECTION_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+        log.warn("gRPC channel did not terminate within {}s", CONNECTION_TIMEOUT_SECONDS);
+      }
     } catch (InterruptedException _) {
       Thread.currentThread().interrupt();
     }
@@ -439,6 +482,7 @@ public final class TranscodeWorker implements AutoCloseable {
 
     @Override
     public void onError(Throwable throwable) {
+      logAbandonedAttempts();
       stopActiveVariants();
       disconnected.completeExceptionally(throwable);
       accepted.completeExceptionally(throwable);
@@ -446,6 +490,7 @@ public final class TranscodeWorker implements AutoCloseable {
 
     @Override
     public void onCompleted() {
+      logAbandonedAttempts();
       stopActiveVariants();
       disconnected.complete(null);
       if (!accepted.isDone()) {

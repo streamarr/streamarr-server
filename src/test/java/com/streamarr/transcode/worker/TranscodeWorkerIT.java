@@ -4,6 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.StreamarrServerApplication;
 import com.streamarr.server.fakes.FakeFfmpegProcessManager;
@@ -44,6 +48,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.test.context.SpringBootTest;
 
 @Tag("IntegrationTest")
@@ -114,6 +119,73 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
       worker.close();
 
       assertThat(processManager.getStopped()).contains(streamSessionId);
+    }
+  }
+
+  @Test
+  @DisplayName("Should log the unreported job failure when the worker closes with a parked upload")
+  void shouldLogTheUnreportedJobFailureWhenTheWorkerClosesWithAParkedUpload() throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+    Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var processManager = new FakeFfmpegProcessManager();
+    var streamSessionId = UUID.randomUUID();
+    var appender = attachWorkerAppender();
+
+    try (var server = server();
+        var worker = worker(processManager, mediaRoot)) {
+      server.start();
+      worker.start("localhost", server.port());
+      assertThat(server.dispatch(variantJob(streamSessionId))).isTrue();
+      await()
+          .atMost(5, TimeUnit.SECONDS)
+          .until(() -> processManager.getStarted().contains(streamSessionId));
+
+      worker.close();
+
+      // The upload thread parked on a segment that never arrives is interrupted by close(); its
+      // failure report races the closed control stream and must be logged, never swallowed.
+      await()
+          .atMost(5, TimeUnit.SECONDS)
+          .untilAsserted(
+              () ->
+                  assertThat(appender.list)
+                      .anySatisfy(
+                          event ->
+                              assertThat(event.getFormattedMessage())
+                                  .contains("Could not report job attempt failure")));
+    } finally {
+      detachWorkerAppender(appender);
+    }
+  }
+
+  @Test
+  @DisplayName("Should log abandoned job attempts when the control plane disconnects")
+  void shouldLogAbandonedJobAttemptsWhenTheControlPlaneDisconnects() throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+    Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var processManager = new FakeFfmpegProcessManager();
+    var streamSessionId = UUID.randomUUID();
+    var appender = attachWorkerAppender();
+
+    try (var server = server();
+        var worker = worker(processManager, mediaRoot)) {
+      server.start();
+      worker.start("localhost", server.port());
+      assertThat(server.dispatch(variantJob(streamSessionId))).isTrue();
+      await()
+          .atMost(5, TimeUnit.SECONDS)
+          .until(() -> processManager.getStarted().contains(streamSessionId));
+
+      server.close();
+
+      await()
+          .atMost(5, TimeUnit.SECONDS)
+          .until(() -> processManager.getStopped().contains(streamSessionId));
+      assertThat(appender.list)
+          .anySatisfy(
+              event -> assertThat(event.getFormattedMessage()).contains("abandoned job attempt"));
+    } finally {
+      detachWorkerAppender(appender);
     }
   }
 
@@ -548,6 +620,21 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
   private Path resource(String name) throws URISyntaxException {
     var url = Objects.requireNonNull(getClass().getResource("/tls/" + name));
     return Path.of(url.toURI());
+  }
+
+  private static ListAppender<ILoggingEvent> attachWorkerAppender() {
+    var logger = (Logger) LoggerFactory.getLogger(TranscodeWorker.class);
+    logger.setLevel(Level.DEBUG);
+    var appender = new ListAppender<ILoggingEvent>();
+    appender.start();
+    logger.addAppender(appender);
+    return appender;
+  }
+
+  private static void detachWorkerAppender(ListAppender<ILoggingEvent> appender) {
+    var logger = (Logger) LoggerFactory.getLogger(TranscodeWorker.class);
+    logger.detachAppender(appender);
+    logger.setLevel(null);
   }
 
   private static final class StartupFailingProcessManager extends FakeFfmpegProcessManager {
