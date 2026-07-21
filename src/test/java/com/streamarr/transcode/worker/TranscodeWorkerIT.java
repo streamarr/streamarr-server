@@ -8,8 +8,6 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
-import com.streamarr.server.AbstractIntegrationTest;
-import com.streamarr.server.StreamarrServerApplication;
 import com.streamarr.server.fakes.FakeFfmpegProcessManager;
 import com.streamarr.server.fakes.FakeSegmentProducingFfmpegProcessManager;
 import com.streamarr.server.services.streaming.SegmentStore;
@@ -49,12 +47,10 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.test.context.SpringBootTest;
 
 @Tag("IntegrationTest")
 @DisplayName("Transcode Worker Integration Tests")
-@SpringBootTest(classes = StreamarrServerApplication.class)
-class TranscodeWorkerIT extends AbstractIntegrationTest {
+class TranscodeWorkerIT {
 
   private static final UUID WORKER_ID = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
   private static final UUID SOURCE_NAMESPACE_ID =

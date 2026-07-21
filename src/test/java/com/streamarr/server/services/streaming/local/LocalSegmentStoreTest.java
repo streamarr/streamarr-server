@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 @Tag("UnitTest")
+@DisplayName("Local Segment Store Tests")
 class LocalSegmentStoreTest {
 
   @TempDir Path tempDir;

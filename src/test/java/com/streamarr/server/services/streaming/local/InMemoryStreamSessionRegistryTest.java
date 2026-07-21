@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 @Tag("UnitTest")
+@DisplayName("In-Memory Stream Session Registry Tests")
 class InMemoryStreamSessionRegistryTest {
 
   private InMemoryStreamSessionRegistry registry;

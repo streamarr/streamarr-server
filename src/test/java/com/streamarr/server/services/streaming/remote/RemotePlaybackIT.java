@@ -3,9 +3,6 @@ package com.streamarr.server.services.streaming.remote;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.config.StreamingProperties;
@@ -29,7 +26,9 @@ import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.TokenScope;
 import com.streamarr.server.services.authorization.AuthorizationService;
 import com.streamarr.server.services.concurrency.MutexFactory;
+import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
+import com.streamarr.server.services.streaming.PlaybackRequest;
 import com.streamarr.server.services.streaming.ProducerLifecycleService;
 import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
 import com.streamarr.server.services.streaming.StreamingService;
@@ -45,6 +44,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -292,6 +293,93 @@ class RemotePlaybackIT extends AbstractIntegrationTest {
     return new TranscodeWorker(configuration, engine);
   }
 
+  private record FixedSessionStreamingService(StreamSession session) implements StreamingService {
+
+    @Override
+    public StreamSession createSession(CreateStreamSessionCommand command) {
+      throw new UnsupportedOperationException("Sessions are prebuilt in remote playback tests");
+    }
+
+    @Override
+    public Optional<StreamSession> accessSession(PlaybackRequest request) {
+      return Optional.of(session);
+    }
+
+    @Override
+    public void destroySession(UUID sessionId) {
+      // Session lifecycle is owned by the test rig.
+    }
+
+    @Override
+    public void destroySession(UUID sessionId, UUID profileId) {
+      // Session lifecycle is owned by the test rig.
+    }
+
+    @Override
+    public Collection<StreamSession> getAllSessions() {
+      return List.of(session);
+    }
+
+    @Override
+    public int getActiveSessionCount() {
+      return 1;
+    }
+  }
+
+  private record BoundAuthorizationService(AuthenticatedIdentity identity)
+      implements AuthorizationService {
+
+    @Override
+    public AuthenticatedIdentity currentIdentity() {
+      return identity;
+    }
+
+    @Override
+    public String currentTokenValue() {
+      return "it-token";
+    }
+
+    @Override
+    public Instant currentTokenExpiry() {
+      return Instant.now().plusSeconds(3600);
+    }
+
+    @Override
+    public UUID requireAccountId() {
+      return identity.accountId();
+    }
+
+    @Override
+    public UUID requireHousehold() {
+      return identity.householdId();
+    }
+
+    @Override
+    public UUID requireProfile() {
+      return identity.profileId();
+    }
+
+    @Override
+    public boolean isServerAdmin() {
+      return false;
+    }
+
+    @Override
+    public void requireServerAdmin() {
+      throw new UnsupportedOperationException("Not an admin surface");
+    }
+
+    @Override
+    public void requireHouseholdRole(HouseholdRole minimum) {
+      // Playback tests carry a full playback identity.
+    }
+
+    @Override
+    public boolean canViewActivityOf(UUID profileId) {
+      return true;
+    }
+  }
+
   private record PlaybackRig(StreamController controller, StreamSession session) {}
 
   private PlaybackRig rig(
@@ -310,8 +398,7 @@ class RemotePlaybackIT extends AbstractIntegrationTest {
             .authority(StreamSessionFixture.playbackAuthorityFor(UUID.randomUUID()))
             .transcodeDecision(transcodeDecision(containerFormat))
             .build();
-    var streamingService = mock(StreamingService.class);
-    when(streamingService.accessSession(any())).thenReturn(Optional.of(session));
+    var streamingService = new FixedSessionStreamingService(session);
     var registry = new FakeRuntimeStreamSessionRegistry();
     registry.save(session);
     var properties =
@@ -337,11 +424,13 @@ class RemotePlaybackIT extends AbstractIntegrationTest {
             .clock(Clock.systemUTC())
             .pollInterval(Duration.ofMillis(50))
             .build();
-    var authorizationService = mock(AuthorizationService.class);
-    when(authorizationService.currentIdentity()).thenReturn(identity(streamSessionId));
+    var authorizationService = new BoundAuthorizationService(identity(streamSessionId));
     var controller =
         new StreamController(
-            streamingService, mock(HlsPlaylistService.class), coordinator, authorizationService);
+            streamingService,
+            new HlsPlaylistService(properties),
+            coordinator,
+            authorizationService);
     return new PlaybackRig(controller, session);
   }
 
