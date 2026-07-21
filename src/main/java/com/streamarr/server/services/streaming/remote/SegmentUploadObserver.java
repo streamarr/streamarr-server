@@ -26,11 +26,10 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
   private final LiveWorkerConnectionRegistry workerConnections;
   private final SegmentStore segmentStore;
   private final StreamObserver<UploadSegmentResponse> responseObserver;
-  @NonNull private final SegmentUploadAdmission uploadAdmission;
+  @NonNull private final SegmentUploadAdmission.Ticket uploadTicket;
 
   private SegmentUploadMetadata metadata;
   private ByteArrayOutputStream data;
-  private long reservedBytes;
   private boolean closed;
 
   @Override
@@ -65,13 +64,12 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
       reject(Status.INVALID_ARGUMENT.withDescription("Segment metadata is invalid"));
       return;
     }
-    if (!uploadAdmission.tryReserve(incoming.getContentLengthBytes())) {
+    if (!uploadTicket.tryReserve(incoming.getContentLengthBytes())) {
       reject(Status.RESOURCE_EXHAUSTED.withDescription("Segment upload byte budget reached"));
       return;
     }
 
     metadata = incoming;
-    reservedBytes = incoming.getContentLengthBytes();
     data = new ByteArrayOutputStream();
   }
 
@@ -178,7 +176,6 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
     }
     closed = true;
     data = null;
-    uploadAdmission.release(reservedBytes);
-    reservedBytes = 0;
+    uploadTicket.close();
   }
 }

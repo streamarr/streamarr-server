@@ -30,7 +30,7 @@ class SegmentUploadObserverTest {
           SegmentUploadObserver.builder()
               .authenticatedWorkerId(UUID.randomUUID())
               .responseObserver(noOpResponseObserver())
-              .uploadAdmission(new SegmentUploadAdmission(1, 1024))
+              .uploadTicket(new SegmentUploadAdmission(1, 1024).tryAdmit().orElseThrow())
               .build();
 
       observer.onError(new RuntimeException("worker connection reset mid-upload"));
