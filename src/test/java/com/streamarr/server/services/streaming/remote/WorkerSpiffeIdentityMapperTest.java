@@ -42,19 +42,19 @@ class WorkerSpiffeIdentityMapperTest {
   void shouldRejectCertificateWithoutUriSan() throws Exception {
     var certificate = certificate(List.of(List.of(2, "worker.test")));
 
-    assertRejected(certificate);
+    assertRejected(certificate, "exactly one URI subject alternative name");
   }
 
   @Test
   @DisplayName("Should reject a certificate without subject alternative names")
   void shouldRejectCertificateWithoutSubjectAlternativeNames() throws Exception {
-    assertRejected(certificate(null));
+    assertRejected(certificate(null), "no subject alternative names");
   }
 
   @Test
   @DisplayName("Should reject a malformed URI SAN value")
   void shouldRejectMalformedUriSanValue() throws Exception {
-    assertRejected(certificate(List.of(List.of(6, 42))));
+    assertRejected(certificate(List.of(List.of(6, 42))), "malformed URI subject alternative name");
   }
 
   @Test
@@ -69,7 +69,7 @@ class WorkerSpiffeIdentityMapperTest {
                     "spiffe://streamarr.test/streamarr/worker/"
                         + UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"))));
 
-    assertRejected(certificate);
+    assertRejected(certificate, "exactly one URI subject alternative name");
   }
 
   @ParameterizedTest
@@ -83,7 +83,7 @@ class WorkerSpiffeIdentityMapperTest {
       })
   @DisplayName("Should reject a URI SAN outside the configured worker identity path")
   void shouldRejectUriSanOutsideConfiguredWorkerIdentityPath(String uri) throws Exception {
-    assertRejected(certificate(List.of(List.of(6, uri))));
+    assertRejected(certificate(List.of(List.of(6, uri))), "SPIFFE identity");
   }
 
   @Test
@@ -94,7 +94,7 @@ class WorkerSpiffeIdentityMapperTest {
     when(certificate.getSubjectAlternativeNames())
         .thenThrow(new CertificateParsingException("malformed"));
 
-    assertRejected(certificate);
+    assertRejected(certificate, "unparseable");
   }
 
   @Test
@@ -103,7 +103,7 @@ class WorkerSpiffeIdentityMapperTest {
     var certificate = certificate(List.of(List.of(6, workerIdentity())));
     when(certificate.getBasicConstraints()).thenReturn(0);
 
-    assertRejected(certificate);
+    assertRejected(certificate, "CA basic constraints");
   }
 
   @Test
@@ -112,7 +112,7 @@ class WorkerSpiffeIdentityMapperTest {
     var certificate = certificate(List.of(List.of(6, workerIdentity())));
     when(certificate.getKeyUsage()).thenReturn(keyUsage(5));
 
-    assertRejected(certificate);
+    assertRejected(certificate, "key usage");
   }
 
   @Test
@@ -121,7 +121,7 @@ class WorkerSpiffeIdentityMapperTest {
     var certificate = certificate(List.of(List.of(6, workerIdentity())));
     when(certificate.getKeyUsage()).thenReturn(keyUsage(6));
 
-    assertRejected(certificate);
+    assertRejected(certificate, "key usage");
   }
 
   @Test
@@ -132,13 +132,13 @@ class WorkerSpiffeIdentityMapperTest {
             List.of(
                 List.of(), List.of(6, "spiffe://streamarr.test/streamarr/worker/" + WORKER_ID)));
 
-    assertRejected(certificate);
+    assertRejected(certificate, "malformed subject alternative name");
   }
 
   @Test
   @DisplayName("Should reject a URI subject alternative name without a value")
   void shouldRejectUriSubjectAlternativeNameWithoutValue() throws Exception {
-    assertRejected(certificate(List.of(List.of(6))));
+    assertRejected(certificate(List.of(List.of(6))), "malformed URI subject alternative name");
   }
 
   @ParameterizedTest
@@ -177,9 +177,9 @@ class WorkerSpiffeIdentityMapperTest {
     return certificate;
   }
 
-  private void assertRejected(X509Certificate certificate) {
+  private void assertRejected(X509Certificate certificate, String messageFragment) {
     assertThatThrownBy(() -> mapper.workerId(certificate))
         .isInstanceOf(WorkerIdentityException.class)
-        .hasMessage("Worker certificate does not contain one allowed SPIFFE identity");
+        .hasMessageContaining(messageFragment);
   }
 }

@@ -38,8 +38,13 @@ final class WorkerIdentityServerInterceptor implements ServerInterceptor {
         return reject(call, "no X.509 peer certificate");
       }
       workerId = identityMapper.workerId(leaf);
-    } catch (SSLPeerUnverifiedException | RuntimeException e) {
+    } catch (SSLPeerUnverifiedException | WorkerIdentityException e) {
       return reject(call, e.getMessage());
+    } catch (RuntimeException e) {
+      // Not an identity-check verdict but a bug in the authentication path itself: keep the full
+      // stack trace instead of collapsing it into a one-line rejection reason. Still fail closed.
+      log.error("Unexpected failure while authenticating worker call", e);
+      return reject(call, "unexpected authentication failure");
     }
     return Contexts.interceptCall(
         Context.current().withValue(AUTHENTICATED_WORKER_ID, workerId), call, headers, next);
