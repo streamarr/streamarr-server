@@ -508,6 +508,35 @@ class ProducerLifecycleServiceTest {
   }
 
   @Test
+  @DisplayName("Should replace a suspended variant when its siblings keep the session live")
+  void shouldReplaceASuspendedVariantWhenItsSiblingsKeepTheSessionLive() {
+    var session = startedAbrSession();
+    var suspended =
+        session.getVariantHandle("1080p").orElseThrow().withStatus(TranscodeStatus.SUSPENDED);
+    session.setVariantHandle("1080p", suspended);
+    transcodeExecutor.markDead(session.getSessionId(), "1080p");
+
+    var result =
+        lifecycle.replaceProducer(
+            ProducerLifecycleService.ReplaceProducerCommand.builder()
+                .sessionId(session.getSessionId())
+                .variantLabel("1080p")
+                .segmentName("1080p/segment2.ts")
+                .segmentIndex(2)
+                .expectedAttemptId(suspended.attemptId())
+                .reason(ProducerLifecycleService.ReplacementReason.DEAD)
+                .target(ExecutionTargetId.LOCAL)
+                .build());
+
+    // A partial resume failure leaves one variant SUSPENDED while its siblings run; the planned-
+    // suspension fence must not apply, or the variant is permanently unreplaceable and every
+    // request for it polls forever.
+    assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.Replaced.class);
+    assertThat(session.getVariantHandle("1080p").orElseThrow().status())
+        .isEqualTo(TranscodeStatus.ACTIVE);
+  }
+
+  @Test
   @DisplayName("Should replace a failed handle with a matching attempt for the new-target reset")
   void shouldReplaceFailedHandleWithMatchingAttemptForTheNewTargetReset() {
     var session = startedSession();

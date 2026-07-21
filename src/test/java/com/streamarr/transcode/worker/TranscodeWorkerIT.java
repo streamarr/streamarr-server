@@ -363,6 +363,70 @@ class TranscodeWorkerIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should upload the init segment and media segments for an fMP4 variant")
+  void shouldUploadTheInitSegmentAndMediaSegmentsForAnFmp4Variant() throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+    Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var initData = "fmp4 init".getBytes();
+    var mediaData = "fmp4 media".getBytes();
+    var processManager =
+        new EndingFfmpegProcessManager(Map.of("init.mp4", initData, "segment0.m4s", mediaData));
+    var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
+    var streamSessionId = UUID.randomUUID();
+    var job = variantJob(streamSessionId, "720p", ContainerFormat.CONTAINER_FORMAT_FMP4);
+
+    try (var server = server(segmentStore);
+        var worker = worker(processManager, mediaRoot)) {
+      server.start();
+      worker.start("localhost", server.port());
+
+      assertThat(server.dispatch(job)).isTrue();
+
+      await()
+          .atMost(5, TimeUnit.SECONDS)
+          .until(() -> segmentStore.segmentExists(streamSessionId, "720p/segment0.m4s"));
+      assertThat(segmentStore.readSegment(streamSessionId, "720p/init.mp4")).isEqualTo(initData);
+      assertThat(segmentStore.readSegment(streamSessionId, "720p/segment0.m4s"))
+          .isEqualTo(mediaData);
+      await().atMost(5, TimeUnit.SECONDS).until(() -> !server.isRunning(streamSessionId));
+    }
+  }
+
+  @Test
+  @DisplayName("Should number uploads from the job's start sequence when resuming mid-timeline")
+  void shouldNumberUploadsFromTheJobsStartSequenceWhenResumingMidTimeline() throws Exception {
+    var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
+    Files.writeString(mediaRoot.resolve("movie.mkv"), "test media");
+    var segmentData = "resumed segment".getBytes();
+    var processManager = new EndingFfmpegProcessManager(Map.of("segment7.ts", segmentData));
+    var segmentStore = new LocalSegmentStore(tempDir.resolve("server-segments"));
+    var streamSessionId = UUID.randomUUID();
+    var job = variantJob(streamSessionId, "720p", ContainerFormat.CONTAINER_FORMAT_MPEG_TS);
+    var resumedJob =
+        job.toBuilder()
+            .setExecution(job.getExecution().toBuilder().setStartSequenceNumber(7))
+            .build();
+
+    try (var server = server(segmentStore);
+        var worker = worker(processManager, mediaRoot)) {
+      server.start();
+      worker.start("localhost", server.port());
+
+      assertThat(server.dispatch(resumedJob)).isTrue();
+
+      // A recovery re-dispatch that uploaded segment0 instead of segmentN would corrupt playlist
+      // continuity — the exact bug class ADR 0019 exists to prevent.
+      await()
+          .atMost(5, TimeUnit.SECONDS)
+          .until(() -> segmentStore.segmentExists(streamSessionId, "720p/segment7.ts"));
+      assertThat(segmentStore.readSegment(streamSessionId, "720p/segment7.ts"))
+          .isEqualTo(segmentData);
+      assertThat(segmentStore.segmentExists(streamSessionId, "720p/segment0.ts")).isFalse();
+      await().atMost(5, TimeUnit.SECONDS).until(() -> !server.isRunning(streamSessionId));
+    }
+  }
+
+  @Test
   @DisplayName("Should stop a variant when the control plane rejects segment storage")
   void shouldStopVariantWhenControlPlaneRejectsSegmentStorage() throws Exception {
     var mediaRoot = Files.createDirectory(tempDir.resolve("media"));
