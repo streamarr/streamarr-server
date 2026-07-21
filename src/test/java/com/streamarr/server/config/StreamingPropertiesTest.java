@@ -1,6 +1,7 @@
 package com.streamarr.server.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
@@ -26,6 +27,30 @@ class StreamingPropertiesTest {
   @Configuration(proxyBeanMethods = false)
   @EnableConfigurationProperties(StreamingProperties.class)
   static class StreamingPropertiesConfiguration {}
+
+  @Test
+  @DisplayName("Should default max concurrent transcodes to 8 when unset")
+  void shouldDefaultMaxConcurrentTranscodesToEightWhenUnset() {
+    var properties = StreamingProperties.builder().build();
+
+    assertThat(properties.maxConcurrentTranscodes()).isEqualTo(8);
+  }
+
+  @Test
+  @DisplayName("Should reject max concurrent transcodes when negative")
+  void shouldRejectMaxConcurrentTranscodesWhenNegative() {
+    assertThatThrownBy(() -> StreamingProperties.builder().maxConcurrentTranscodes(-1).build())
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("max-concurrent-transcodes");
+  }
+
+  @Test
+  @DisplayName("Should fail startup when configured max concurrent transcodes is negative")
+  void shouldFailStartupWhenConfiguredMaxConcurrentTranscodesIsNegative() {
+    CONTEXT_RUNNER
+        .withPropertyValues("streaming.max-concurrent-transcodes=-1")
+        .run(context -> assertThat(context).hasFailed());
+  }
 
   @Test
   @DisplayName("Should default segment duration to 6 seconds when null")
