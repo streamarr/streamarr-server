@@ -1,6 +1,7 @@
 package com.streamarr.server.services.streaming.remote;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.fakes.FakeSegmentStore;
@@ -45,8 +46,9 @@ class WorkerSessionServerTest {
   @DisplayName("Should require a started server when dispatch capability is demanded")
   void shouldRequireAStartedServerWhenDispatchCapabilityIsDemanded() {
     var server = unstartedServer();
+    var sourceNamespaceId = UUID.randomUUID();
 
-    assertThatThrownBy(() -> server.availableSlots(UUID.randomUUID()))
+    assertThatThrownBy(() -> server.availableSlots(sourceNamespaceId))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("not started");
   }
@@ -56,7 +58,11 @@ class WorkerSessionServerTest {
   void shouldCloseIdempotentlyWhenTheServerWasNeverStarted() {
     var server = unstartedServer();
 
-    server.close();
-    server.close();
+    assertThatNoException()
+        .isThrownBy(
+            () -> {
+              server.close();
+              server.close();
+            });
   }
 }
