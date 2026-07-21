@@ -395,6 +395,7 @@ class RemotePlaybackIT extends AbstractIntegrationTest {
     var session =
         StreamSession.builder()
             .sessionId(streamSessionId)
+            .mediaFileId(UUID.randomUUID())
             .authority(StreamSessionFixture.playbackAuthorityFor(UUID.randomUUID()))
             .transcodeDecision(transcodeDecision(containerFormat))
             .build();

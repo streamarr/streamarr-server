@@ -139,6 +139,7 @@ class RemoteRecoveryIT extends AbstractIntegrationTest {
     var session =
         StreamSession.builder()
             .sessionId(streamSessionId)
+            .mediaFileId(UUID.randomUUID())
             .authority(playbackAuthorityFor(UUID.randomUUID()))
             .sourcePath(mediaFile)
             .mediaProbe(defaultProbeBuilder().build())
