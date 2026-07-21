@@ -197,6 +197,23 @@ class LiveWorkerConnectionRegistryTest {
     }
   }
 
+  @Test
+  @DisplayName("Should ignore a stale disconnect after the worker connection was replaced")
+  void shouldIgnoreAStaleDisconnectAfterTheWorkerConnectionWasReplaced() {
+    var registry = new LiveWorkerConnectionRegistry();
+    var staleObserver = new CancellableObserver();
+    var staleSessionId = registry.register(WORKER_ID, registration(), staleObserver);
+    var freshResponses = new CopyOnWriteArrayList<EstablishWorkerSessionResponse>();
+    registry.register(WORKER_ID, registration(), collecting(freshResponses));
+
+    // The stale connection's server-side cancellation races the replacement registration; its
+    // late disconnect must not evict the fresh connection or its jobs.
+    registry.disconnect(WORKER_ID, staleSessionId);
+
+    assertThat(registry.hasConnectedWorker(SOURCE_NAMESPACE_ID)).isTrue();
+    assertThat(registry.dispatch(variantJob())).isTrue();
+  }
+
   private static WorkerRegistration registration() {
     return WorkerRegistration.newBuilder()
         .setWorker(
