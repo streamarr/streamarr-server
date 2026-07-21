@@ -74,8 +74,6 @@ class LocalFfmpegProcessManagerTest {
             sessionId, StreamSession.defaultVariant(), List.of("echo", "done"), tempDir);
     process.waitFor();
 
-    await().pollDelay(Duration.ofMillis(100)).until(() -> true);
-
     assertThat(manager.isRunning(sessionId)).isFalse();
   }
 
@@ -186,6 +184,32 @@ class LocalFfmpegProcessManagerTest {
   }
 
   @Test
+  @DisplayName("Should log completion without warning when a clean exit is observed")
+  void shouldLogCompletionWithoutWarningWhenACleanExitIsObserved() throws Exception {
+    var sessionId = UUID.randomUUID();
+    var process =
+        manager.startProcess(
+            sessionId, StreamSession.defaultVariant(), List.of("echo", "done"), tempDir);
+    process.waitFor();
+
+    var logger = (Logger) LoggerFactory.getLogger(LocalFfmpegProcessManager.class);
+    var appender = new ListAppender<ILoggingEvent>();
+    appender.start();
+    logger.addAppender(appender);
+    try {
+      assertThat(manager.isRunning(sessionId)).isFalse();
+    } finally {
+      logger.detachAppender(appender);
+    }
+
+    assertThat(appender.list).noneMatch(event -> event.getLevel() == Level.WARN);
+    assertThat(appender.list)
+        .filteredOn(event -> event.getLevel() == Level.INFO)
+        .extracting(ILoggingEvent::getFormattedMessage)
+        .anyMatch(message -> message.contains("completed"));
+  }
+
+  @Test
   @DisplayName("Should capture stderr in exit details when process exits naturally")
   void shouldCaptureStderrInExitDetailsWhenProcessExitsNaturally() throws Exception {
     var sessionId = UUID.randomUUID();
@@ -197,8 +221,6 @@ class LocalFfmpegProcessManagerTest {
             List.of("bash", "-c", "echo 'error output' >&2; exit 1"),
             tempDir);
     process.waitFor();
-
-    await().pollDelay(Duration.ofMillis(200)).until(() -> true);
 
     var logger = (Logger) LoggerFactory.getLogger(LocalFfmpegProcessManager.class);
     var appender = new ListAppender<ILoggingEvent>();
@@ -228,7 +250,6 @@ class LocalFfmpegProcessManagerTest {
             List.of("bash", "-c", "echo 'crash detail' >&2; exit 1"),
             tempDir);
     process.waitFor();
-    await().pollDelay(Duration.ofMillis(200)).until(() -> true);
 
     var logger = (Logger) LoggerFactory.getLogger(LocalFfmpegProcessManager.class);
     var appender = new ListAppender<ILoggingEvent>();
