@@ -181,6 +181,55 @@ class SegmentDeliveryCoordinatorTest {
   }
 
   @Test
+  @DisplayName("Should return session ended when the variant is unknown on a live session")
+  void shouldReturnSessionEndedWhenTheVariantIsUnknownOnALiveSession() {
+    var session = startedSession();
+
+    var delivery = coordinator.deliver(session.getSessionId(), "1080p", "1080p/segment0.ts");
+
+    assertThat(delivery).isInstanceOf(SegmentDelivery.SessionEnded.class);
+    assertThat(transcodeExecutor.isRunning(session.getSessionId(), StreamSession.defaultVariant()))
+        .isTrue();
+  }
+
+  @Test
+  @DisplayName("Should serve a last-gasp publication that races the exhaustion")
+  void shouldServeALastGaspPublicationThatRacesTheExhaustion() throws Exception {
+    var trapStore = new TrapSegmentStore();
+    var rig = rigWith(transcodeExecutor, trapStore);
+    var session = defaultSessionBuilder().build();
+    var sessionId = session.getSessionId();
+    runtimeRegistry.save(session);
+    rig.lifecycle().startAll(session, 0, 0);
+    transcodeExecutor.setExecutionTargets(List.of(TARGET_A, TARGET_B));
+    transcodeExecutor.refuseTarget(TARGET_A);
+    transcodeExecutor.refuseTarget(TARGET_B);
+    transcodeExecutor.markDead(sessionId);
+
+    // Trap the exhauster between markExhausted (variant now FAILED) and its terminal check; a
+    // publication landing in that window must be served, never reported unrecoverable.
+    var outcome = new AtomicReference<SegmentDelivery>();
+    var exhauster =
+        new Thread(
+            () ->
+                outcome.set(
+                    rig.coordinator()
+                        .deliver(sessionId, StreamSession.defaultVariant(), "segment0.ts")),
+            "last-gasp-exhauster");
+    trapStore.armTrap(
+        exhauster, () -> session.getHandle().orElseThrow().status() == TranscodeStatus.FAILED);
+    exhauster.start();
+    assertThat(trapStore.reachedTrap.await(5, TimeUnit.SECONDS)).isTrue();
+
+    trapStore.addSegment(sessionId, "segment0.ts", new byte[] {0x47});
+    trapStore.releaseTrap.countDown();
+    exhauster.join(5000);
+
+    assertThat(outcome.get()).isInstanceOf(SegmentDelivery.Ready.class);
+    assertThat(((SegmentDelivery.Ready) outcome.get()).data()).containsExactly(0x47);
+  }
+
+  @Test
   @DisplayName(
       "Should reject a segment name matching no naming scheme without disturbing the producer")
   void shouldRejectSegmentNameMatchingNoNamingSchemeWithoutDisturbingTheProducer()

@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.streamarr.server.exceptions.InvalidSegmentPathException;
 import com.streamarr.server.exceptions.TranscodeException;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.UUID;
@@ -190,6 +191,21 @@ class LocalSegmentStoreTest {
     assertThatThrownBy(() -> store.prepareSegment(sessionId, "segment0.ts", null))
         .isInstanceOf(NullPointerException.class);
     assertThat(tempDir).isEmptyDirectory();
+  }
+
+  @Test
+  @DisplayName("Should escalate an IO failure as unchecked rather than an absent segment")
+  void shouldEscalateAnIoFailureAsUncheckedRatherThanAnAbsentSegment() throws Exception {
+    var sessionId = UUID.randomUUID();
+    // A plain file squatting on the session directory path makes every write fail as real IO.
+    Files.createDirectories(tempDir);
+    Files.writeString(tempDir.resolve(sessionId.toString()), "not a directory");
+
+    // Deliberately NOT TranscodeException: the delivery loop swallows that type as a destroy
+    // race, so a genuine storage failure must surface as UncheckedIOException instead.
+    assertThatThrownBy(() -> store.storeSegment(sessionId, "segment0.ts", new byte[] {0x47}))
+        .isInstanceOf(UncheckedIOException.class)
+        .hasMessageContaining("session directory");
   }
 
   @Test

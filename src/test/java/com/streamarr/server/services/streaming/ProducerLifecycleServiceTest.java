@@ -508,6 +508,44 @@ class ProducerLifecycleServiceTest {
   }
 
   @Test
+  @DisplayName("Should supersede exhaustion when the session was destroyed")
+  void shouldSupersedeExhaustionWhenTheSessionWasDestroyed() {
+    var result =
+        lifecycle.markExhausted(
+            UUID.randomUUID(), StreamSession.defaultVariant(), UUID.randomUUID());
+
+    // A destroy racing recovery must never be reported as a fresh exhaustion.
+    assertThat(result).isInstanceOf(ProducerLifecycleService.ExhaustResult.Superseded.class);
+  }
+
+  @Test
+  @DisplayName("Should supersede replacement when the handle is mid planned transition")
+  void shouldSupersedeReplacementWhenTheHandleIsMidPlannedTransition() {
+    var session = startedSession();
+    var stopped = session.getHandle().orElseThrow().withStatus(TranscodeStatus.STOPPED);
+    session.setHandle(stopped);
+    transcodeExecutor.markDead(session.getSessionId());
+    var startsBefore = transcodeExecutor.getStartedRequests().size();
+
+    var result =
+        lifecycle.replaceProducer(
+            ProducerLifecycleService.ReplaceProducerCommand.builder()
+                .sessionId(session.getSessionId())
+                .variantLabel(StreamSession.defaultVariant())
+                .segmentName("segment2.ts")
+                .segmentIndex(2)
+                .expectedAttemptId(stopped.attemptId())
+                .reason(ProducerLifecycleService.ReplacementReason.DEAD)
+                .target(ExecutionTargetId.LOCAL)
+                .build());
+
+    // STOPPED/STARTING/SEEKING are planned transitions another actor owns; recovery must
+    // re-observe instead of starting a competing producer.
+    assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.Superseded.class);
+    assertThat(transcodeExecutor.getStartedRequests()).hasSize(startsBefore);
+  }
+
+  @Test
   @DisplayName("Should replace a suspended variant when its siblings keep the session live")
   void shouldReplaceASuspendedVariantWhenItsSiblingsKeepTheSessionLive() {
     var session = startedAbrSession();
