@@ -26,7 +26,14 @@ public record StreamingProperties(
     String ffprobePath) {
 
   public StreamingProperties {
-    if (maxConcurrentTranscodes <= 0) {
+    // 0 is the unset primitive; a negative value is a configured mistake, so fail startup like
+    // session-retention does instead of silently running with the default.
+    if (maxConcurrentTranscodes < 0) {
+      throw new IllegalArgumentException(
+          "streaming.max-concurrent-transcodes must be positive, got " + maxConcurrentTranscodes);
+    }
+
+    if (maxConcurrentTranscodes == 0) {
       maxConcurrentTranscodes = 8;
     }
 
