@@ -173,10 +173,13 @@ class HlsStreamingServiceTest {
   @DisplayName("Should propagate authority failure and start no transcode when creating a session")
   void shouldPropagateAuthorityFailureWhenCreatingSession() {
     var file = seedMediaFile();
+    var fileId = file.getId();
+    var profileId = UUID.randomUUID();
+    var options = defaultOptions();
     authorityGate.failWith(
         new DataAccessResourceFailureException("authority database unavailable"));
 
-    assertThatThrownBy(() -> createSession(file.getId(), UUID.randomUUID(), defaultOptions()))
+    assertThatThrownBy(() -> createSession(fileId, profileId, options))
         .isInstanceOf(DataAccessException.class);
     assertThat(transcodeExecutor.getStarted()).isEmpty();
   }

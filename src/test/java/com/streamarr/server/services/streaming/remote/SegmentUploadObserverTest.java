@@ -46,13 +46,19 @@ class SegmentUploadObserverTest {
   private static StreamObserver<UploadSegmentResponse> noOpResponseObserver() {
     return new StreamObserver<>() {
       @Override
-      public void onNext(UploadSegmentResponse value) {}
+      public void onNext(UploadSegmentResponse value) {
+        // no-op for test fake
+      }
 
       @Override
-      public void onError(Throwable throwable) {}
+      public void onError(Throwable throwable) {
+        // no-op for test fake
+      }
 
       @Override
-      public void onCompleted() {}
+      public void onCompleted() {
+        // no-op for test fake
+      }
     };
   }
 }
