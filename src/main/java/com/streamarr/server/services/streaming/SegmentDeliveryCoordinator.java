@@ -330,7 +330,8 @@ public class SegmentDeliveryCoordinator {
    * A {@code FAILED} variant is terminal for same-window retries. Two things revive it: a genuine
    * seek (relocation distance — a planned restart per ADR 0019's seek clause), or a currently
    * eligible target never attempted in the failed window (a reconnecting worker is a new target by
-   * construction). Returns null to continue the delivery loop, or the terminal 503 outcome.
+   * construction). Returns null to continue the delivery loop, or a terminal outcome: 503 when no
+   * revival is possible, 404 when the session or variant disappears mid-resolution.
    */
   private SegmentDelivery resolveFailedVariant(
       VariantDeliveryState state,
