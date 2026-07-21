@@ -71,6 +71,16 @@ public class SegmentDeliveryCoordinator {
    * "re-observe after one poll interval".
    */
   private SegmentDelivery deliverOnce(UUID sessionId, String variantLabel, String segmentName) {
+    if (matchesNoNamingScheme(segmentName)) {
+      // Waiting on a name no run can produce would misread the frontier and stall-kill a healthy
+      // producer; an unknown name is a 404, never a recovery trigger.
+      log.debug(
+          "Rejected segment request matching no naming scheme: session {} name {}",
+          sessionId,
+          segmentName);
+      return new SegmentDelivery.SessionEnded();
+    }
+
     var ready = tryRead(sessionId, segmentName);
     if (ready != null) {
       return ready;
@@ -123,6 +133,10 @@ public class SegmentDeliveryCoordinator {
       return ReplacementReason.RESUME_FAILED;
     }
     return ReplacementReason.DEAD;
+  }
+
+  private static boolean matchesNoNamingScheme(String segmentName) {
+    return SegmentNames.indexOf(segmentName).isEmpty() && !SegmentNames.isInitSegment(segmentName);
   }
 
   private static PendingSegment pendingSegment(
