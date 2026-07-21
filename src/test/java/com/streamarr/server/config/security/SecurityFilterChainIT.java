@@ -138,10 +138,7 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
     // The contract is reachability, not health: a DOWN indicator answers 503, never 401/403.
     mockMvc
         .perform(get("/actuator/health"))
-        .andExpect(
-            result ->
-                org.assertj.core.api.Assertions.assertThat(result.getResponse().getStatus())
-                    .isNotIn(401, 403));
+        .andExpect(result -> assertThat(result.getResponse().getStatus()).isNotIn(401, 403));
   }
 
   @Test

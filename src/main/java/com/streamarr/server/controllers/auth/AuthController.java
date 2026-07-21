@@ -14,6 +14,7 @@ import com.streamarr.server.services.auth.SetupCommand;
 import com.streamarr.server.services.auth.SetupService;
 import com.streamarr.server.services.auth.TokenRefreshService;
 import com.streamarr.server.services.authorization.AuthorizationService;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.Arrays;
@@ -21,6 +22,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -41,7 +43,7 @@ public class AuthController {
   private final PasswordChangeService passwordChangeService;
   private final AuthCookieWriter cookieWriter;
 
-  @org.springframework.web.bind.annotation.GetMapping("/status")
+  @GetMapping("/status")
   public StatusResponse status() {
     return new StatusResponse(setupService.isSetupComplete());
   }
@@ -172,7 +174,7 @@ public class AuthController {
 
     return Arrays.stream(cookies)
         .filter(cookie -> AuthCookieWriter.REFRESH_COOKIE.equals(cookie.getName()))
-        .map(jakarta.servlet.http.Cookie::getValue)
+        .map(Cookie::getValue)
         .findFirst()
         .map(rawToken -> new RefreshCarrier(rawToken, true))
         .orElseThrow(InvalidRefreshTokenException::new);
