@@ -19,11 +19,11 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import lombok.RequiredArgsConstructor;
+import lombok.Builder;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
-@RequiredArgsConstructor
+@Builder
 public class HlsStreamingService implements StreamingService {
 
   private final MediaFileRepository mediaFileRepository;

@@ -151,17 +151,18 @@ public class StreamingConfig {
       RuntimeStreamSessionRegistry runtimeRegistry,
       ProducerLifecycleService producerLifecycleService,
       SegmentDeliveryCoordinator segmentDeliveryCoordinator) {
-    return new HlsStreamingService(
-        mediaFileRepository,
-        transcodeExecutor,
-        segmentStore,
-        ffprobeService,
-        transcodeDecisionService,
-        qualityLadderService,
-        properties,
-        authorityGate,
-        runtimeRegistry,
-        producerLifecycleService,
-        segmentDeliveryCoordinator);
+    return HlsStreamingService.builder()
+        .mediaFileRepository(mediaFileRepository)
+        .transcodeExecutor(transcodeExecutor)
+        .segmentStore(segmentStore)
+        .ffprobeService(ffprobeService)
+        .transcodeDecisionService(transcodeDecisionService)
+        .qualityLadderService(qualityLadderService)
+        .properties(properties)
+        .authorityGate(authorityGate)
+        .runtimeRegistry(runtimeRegistry)
+        .producerLifecycle(producerLifecycleService)
+        .deliveryCoordinator(segmentDeliveryCoordinator)
+        .build();
   }
 }

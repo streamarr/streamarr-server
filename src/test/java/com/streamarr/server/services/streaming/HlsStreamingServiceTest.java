@@ -79,25 +79,27 @@ class HlsStreamingServiceTest {
             .sessionTimeout(Duration.ofSeconds(60))
             .build();
     var lifecycle = lifecycleWith(executor, registry, properties);
-    return new HlsStreamingService(
-        mediaFileRepository,
-        executor,
-        segmentStore,
-        ffprobeService,
-        new TranscodeDecisionService(),
-        new QualityLadderService(),
-        properties,
-        authorityGate,
-        registry,
-        lifecycle,
-        SegmentDeliveryCoordinator.builder()
-            .runtimeRegistry(registry)
-            .segmentStore(segmentStore)
-            .transcodeExecutor(executor)
-            .producerLifecycle(lifecycle)
-            .properties(properties)
-            .clock(Clock.systemUTC())
-            .build());
+    return HlsStreamingService.builder()
+        .mediaFileRepository(mediaFileRepository)
+        .transcodeExecutor(executor)
+        .segmentStore(segmentStore)
+        .ffprobeService(ffprobeService)
+        .transcodeDecisionService(new TranscodeDecisionService())
+        .qualityLadderService(new QualityLadderService())
+        .properties(properties)
+        .authorityGate(authorityGate)
+        .runtimeRegistry(registry)
+        .producerLifecycle(lifecycle)
+        .deliveryCoordinator(
+            SegmentDeliveryCoordinator.builder()
+                .runtimeRegistry(registry)
+                .segmentStore(segmentStore)
+                .transcodeExecutor(executor)
+                .producerLifecycle(lifecycle)
+                .properties(properties)
+                .clock(Clock.systemUTC())
+                .build())
+        .build();
   }
 
   private ProducerLifecycleService lifecycleWith(
@@ -744,25 +746,27 @@ class HlsStreamingServiceTest {
     var limitedRegistry = new FakeRuntimeStreamSessionRegistry();
     var limitedLifecycle = lifecycleWith(limitedExecutor, limitedRegistry, properties);
     var limitedService =
-        new HlsStreamingService(
-            mediaFileRepository,
-            limitedExecutor,
-            segmentStore,
-            ffprobeService,
-            new TranscodeDecisionService(),
-            new QualityLadderService(),
-            properties,
-            authorityGate,
-            limitedRegistry,
-            limitedLifecycle,
-            SegmentDeliveryCoordinator.builder()
-                .runtimeRegistry(limitedRegistry)
-                .segmentStore(segmentStore)
-                .transcodeExecutor(limitedExecutor)
-                .producerLifecycle(limitedLifecycle)
-                .properties(properties)
-                .clock(Clock.systemUTC())
-                .build());
+        HlsStreamingService.builder()
+            .mediaFileRepository(mediaFileRepository)
+            .transcodeExecutor(limitedExecutor)
+            .segmentStore(segmentStore)
+            .ffprobeService(ffprobeService)
+            .transcodeDecisionService(new TranscodeDecisionService())
+            .qualityLadderService(new QualityLadderService())
+            .properties(properties)
+            .authorityGate(authorityGate)
+            .runtimeRegistry(limitedRegistry)
+            .producerLifecycle(limitedLifecycle)
+            .deliveryCoordinator(
+                SegmentDeliveryCoordinator.builder()
+                    .runtimeRegistry(limitedRegistry)
+                    .segmentStore(segmentStore)
+                    .transcodeExecutor(limitedExecutor)
+                    .producerLifecycle(limitedLifecycle)
+                    .properties(properties)
+                    .clock(Clock.systemUTC())
+                    .build())
+            .build();
 
     ffprobeService.setDefaultProbe(
         MediaProbe.builder()

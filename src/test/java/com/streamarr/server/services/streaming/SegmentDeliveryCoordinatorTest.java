@@ -737,18 +737,14 @@ class SegmentDeliveryCoordinatorTest {
     var attemptX = session.getHandle().orElseThrow().attemptId();
     gatingExecutor.markDead(sessionId);
     var streamingService =
-        new HlsStreamingService(
-            null,
-            gatingExecutor,
-            segmentStore,
-            null,
-            null,
-            null,
-            properties,
-            null,
-            runtimeRegistry,
-            rig.lifecycle(),
-            rig.coordinator());
+        HlsStreamingService.builder()
+            .transcodeExecutor(gatingExecutor)
+            .segmentStore(segmentStore)
+            .properties(properties)
+            .runtimeRegistry(runtimeRegistry)
+            .producerLifecycle(rig.lifecycle())
+            .deliveryCoordinator(rig.coordinator())
+            .build();
 
     gatingExecutor.holdTargetedStarts();
     var replace =
