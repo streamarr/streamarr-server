@@ -30,6 +30,6 @@ public sealed interface SegmentDelivery {
   /** Recovery exhausted every snapshotted execution target; the request maps to 503. */
   record Unrecoverable() implements SegmentDelivery {}
 
-  /** The waiting thread was interrupted (server lifecycle); the response is moot. */
+  /** The waiting thread was interrupted (server lifecycle); the request maps to 503. */
   record Cancelled() implements SegmentDelivery {}
 }
