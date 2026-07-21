@@ -235,6 +235,7 @@ class LocalFfmpegProcessManagerTest {
               sessionId, StreamSession.defaultVariant(), List.of("sleep", "30"), tempDir);
       gate.release.countDown();
       cleanup.join(5000);
+      assertThat(cleanup.isAlive()).as("cleanup thread must have completed its removal").isFalse();
 
       assertThat(manager.isRunning(sessionId, StreamSession.defaultVariant()))
           .as("corpse cleanup must not unregister the live replacement")

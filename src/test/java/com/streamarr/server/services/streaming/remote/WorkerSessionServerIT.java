@@ -878,9 +878,12 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
                     JobAttemptStopped.newBuilder().setJobAttemptId(stoppedJob.getJobAttemptId()))
                 .build());
         // The server-side stop already released the attempt; the worker's confirmation finds
-        // nothing to release and must be tolerated without error.
-        await().pollDelay(Duration.ofMillis(200)).until(() -> true);
-        assertThat(server.isRunning(stoppedSession, "720p")).isFalse();
+        // nothing to release and must be tolerated without error — the variant stays stopped
+        // throughout the window in which the late confirmation lands.
+        await()
+            .during(Duration.ofMillis(200))
+            .atMost(Duration.ofSeconds(2))
+            .until(() -> !server.isRunning(stoppedSession, "720p"));
       } finally {
         shutdown(channel);
       }
