@@ -127,25 +127,27 @@ class HlsStreamingSmokeTest {
             .sessionMutex(new MutexFactory<>())
             .build();
     streamingService =
-        new HlsStreamingService(
-            mediaFileRepository,
-            transcodeExecutor,
-            segmentStore,
-            ffprobeService,
-            decisionService,
-            qualityLadderService,
-            properties,
-            _ -> true,
-            sessionRegistry,
-            producerLifecycle,
-            SegmentDeliveryCoordinator.builder()
-                .runtimeRegistry(sessionRegistry)
-                .segmentStore(segmentStore)
-                .transcodeExecutor(transcodeExecutor)
-                .producerLifecycle(producerLifecycle)
-                .properties(properties)
-                .clock(Clock.systemUTC())
-                .build());
+        HlsStreamingService.builder()
+            .mediaFileRepository(mediaFileRepository)
+            .transcodeExecutor(transcodeExecutor)
+            .segmentStore(segmentStore)
+            .ffprobeService(ffprobeService)
+            .transcodeDecisionService(decisionService)
+            .qualityLadderService(qualityLadderService)
+            .properties(properties)
+            .authorityGate(_ -> true)
+            .runtimeRegistry(sessionRegistry)
+            .producerLifecycle(producerLifecycle)
+            .deliveryCoordinator(
+                SegmentDeliveryCoordinator.builder()
+                    .runtimeRegistry(sessionRegistry)
+                    .segmentStore(segmentStore)
+                    .transcodeExecutor(transcodeExecutor)
+                    .producerLifecycle(producerLifecycle)
+                    .properties(properties)
+                    .clock(Clock.systemUTC())
+                    .build())
+            .build();
 
     playlistService = new HlsPlaylistService(properties);
   }
