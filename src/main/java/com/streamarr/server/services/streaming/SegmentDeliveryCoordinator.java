@@ -108,10 +108,9 @@ public class SegmentDeliveryCoordinator {
     }
 
     var positioned = tryEnsurePositioned(session, segmentName);
-    handle = session.getVariantHandle(variantLabel).orElse(null);
-    if (handle == null) {
-      return new SegmentDelivery.SessionEnded();
-    }
+    // Re-read because positioning may have replaced the handle; it cannot have vanished — handles
+    // are only ever added, and a destroyed session is caught by the registry lookup instead.
+    handle = session.getVariantHandle(variantLabel).orElseThrow();
 
     var pending = pendingSegment(sessionId, variantLabel, segmentName, handle);
     syncProgress(state, handle, pending);
@@ -330,8 +329,8 @@ public class SegmentDeliveryCoordinator {
    * A {@code FAILED} variant is terminal for same-window retries. Two things revive it: a genuine
    * seek (relocation distance — a planned restart per ADR 0019's seek clause), or a currently
    * eligible target never attempted in the failed window (a reconnecting worker is a new target by
-   * construction). Returns null to continue the delivery loop, or a terminal outcome: 503 when no
-   * revival is possible, 404 when the session or variant disappears mid-resolution.
+   * construction). Returns null to continue the delivery loop, or the terminal 503 outcome when no
+   * revival is possible.
    */
   private SegmentDelivery resolveFailedVariant(
       VariantDeliveryState state,
@@ -339,10 +338,7 @@ public class SegmentDeliveryCoordinator {
       TranscodeHandle handle,
       PendingSegment pending) {
     tryEnsurePositioned(session, pending.segmentName());
-    var refreshed = session.getVariantHandle(pending.variantLabel()).orElse(null);
-    if (refreshed == null) {
-      return new SegmentDelivery.SessionEnded();
-    }
+    var refreshed = session.getVariantHandle(pending.variantLabel()).orElseThrow();
     if (!refreshed.attemptId().equals(handle.attemptId())
         || refreshed.status() != TranscodeStatus.FAILED) {
       // The planned seek restart (or another actor) revived the variant; re-observe.
