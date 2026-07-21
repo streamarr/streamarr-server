@@ -6,12 +6,18 @@ import static org.awaitility.Awaitility.await;
 
 import com.google.protobuf.ByteString;
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.fakes.BlockingSegmentStore;
 import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.fixtures.StreamSessionFixture;
+import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.transcode.tls.PemTlsIdentity;
 import com.streamarr.transcode.v1.EstablishWorkerSessionRequest;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.JobAttemptCompleted;
+import com.streamarr.transcode.v1.JobAttemptFailed;
+import com.streamarr.transcode.v1.JobAttemptFailure;
+import com.streamarr.transcode.v1.JobAttemptStopped;
 import com.streamarr.transcode.v1.MediaSourceRef;
 import com.streamarr.transcode.v1.SegmentContentType;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
@@ -730,6 +736,176 @@ class WorkerSessionServerIT extends AbstractIntegrationTest {
             .isFalse();
       } finally {
         segmentStore.continuePreparation();
+        shutdown(channel);
+      }
+    }
+  }
+
+  @Test
+  @DisplayName("Should expose live worker connections as execution targets for their namespace")
+  void shouldExposeLiveWorkerConnectionsAsExecutionTargetsForTheirNamespace() throws Exception {
+    try (var server = server()) {
+      server.start();
+      assertThat(server.eligibleWorkers(SOURCE_NAMESPACE_ID)).isEmpty();
+      var channel = workerChannel(server.port());
+
+      try (var worker = connect(channel, AUTHENTICATED_WORKER_ID)) {
+        var workerSession = worker.nextResponse().getSessionAccepted();
+        var expectedTarget =
+            new ExecutionTargetId(uuid(workerSession.getWorkerSessionId()).toString());
+
+        assertThat(server.eligibleWorkers(SOURCE_NAMESPACE_ID)).containsExactly(expectedTarget);
+        assertThat(server.eligibleWorkers(UUID.randomUUID())).isEmpty();
+
+        var job = variantJob();
+        assertThat(server.dispatchTo(new ExecutionTargetId(UUID.randomUUID().toString()), job))
+            .isFalse();
+        assertThat(server.dispatchTo(expectedTarget, job)).isTrue();
+        assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
+      } finally {
+        shutdown(channel);
+      }
+    }
+  }
+
+  @Test
+  @DisplayName("Should dispatch jobs carrying the handle's attempt identity end to end")
+  void shouldDispatchJobsCarryingTheHandlesAttemptIdentityEndToEnd() throws Exception {
+    try (var server = server()) {
+      server.start();
+      var channel = workerChannel(server.port());
+
+      try (var worker = connect(channel, AUTHENTICATED_WORKER_ID)) {
+        assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
+        var executor = new RemoteTranscodeExecutor(server, SOURCE_NAMESPACE_ID, Path.of("/media"));
+        var request =
+            TranscodeRequest.builder()
+                .sessionId(UUID.randomUUID())
+                .sourcePath(Path.of("/media/movie.mkv"))
+                .targetSegmentDuration(6)
+                .framerate(23.976)
+                .transcodeDecision(StreamSessionFixture.remuxMpegtsDecision())
+                .width(1920)
+                .height(1080)
+                .bitrate(5_000_000)
+                .variantLabel("720p")
+                .build();
+
+        var handle = executor.start(request);
+
+        // The attempt identity is minted once, upstream: the dispatched job, the returned handle,
+        // and any later failure evidence all name the same attempt.
+        var job = worker.nextResponse().getStartVariant().getJob();
+        assertThat(uuid(job.getJobAttemptId())).isEqualTo(handle.attemptId());
+        assertThat(handle.attemptId()).isEqualTo(request.attemptId());
+      } finally {
+        shutdown(channel);
+      }
+    }
+  }
+
+  @Test
+  @DisplayName("Should reject stale uploads after a reported failure")
+  void shouldRejectStaleUploadsAfterReportedFailure() throws Exception {
+    var segmentStore = new FakeSegmentStore();
+    try (var server = server(segmentStore)) {
+      server.start();
+      var channel = workerChannel(server.port());
+
+      var identity = workerIdentity(UUID.randomUUID());
+      try (var worker = connect(channel, identity)) {
+        var workerSession = worker.nextResponse().getSessionAccepted();
+        var job = variantJob();
+        var streamSessionId = uuid(job.getStreamSessionId());
+        assertThat(server.dispatch(job)).isTrue();
+        assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
+
+        worker.send(
+            EstablishWorkerSessionRequest.newBuilder()
+                .setJobAttemptFailed(
+                    JobAttemptFailed.newBuilder()
+                        .setJobAttemptId(job.getJobAttemptId())
+                        .setFailure(JobAttemptFailure.JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED))
+                .build());
+        await().atMost(5, TimeUnit.SECONDS).until(() -> !server.isRunning(streamSessionId, "720p"));
+
+        // The failed attempt no longer authorizes uploads: its data plane is fenced too.
+        var stale = "stale".getBytes();
+        var metadata =
+            segmentMetadata(workerSession, identity, job)
+                .setContentLengthBytes(stale.length)
+                .build();
+        assertUploadRejected(upload(channel, metadata, stale), Status.Code.PERMISSION_DENIED);
+        assertThat(segmentStore.segmentExists(streamSessionId, "720p/segment0.ts")).isFalse();
+      } finally {
+        shutdown(channel);
+      }
+    }
+  }
+
+  @Test
+  @DisplayName("Should release attempts on completion and tolerate planned-stop confirmations")
+  void shouldReleaseAttemptsOnCompletionAndToleratePlannedStopConfirmations() throws Exception {
+    try (var server = server()) {
+      server.start();
+      var channel = workerChannel(server.port());
+
+      try (var worker = connect(channel, AUTHENTICATED_WORKER_ID)) {
+        assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
+        var completedJob = variantJob();
+        var completedSession = uuid(completedJob.getStreamSessionId());
+        assertThat(server.dispatch(completedJob)).isTrue();
+        assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(completedJob);
+        worker.send(
+            EstablishWorkerSessionRequest.newBuilder()
+                .setJobAttemptCompleted(
+                    JobAttemptCompleted.newBuilder()
+                        .setJobAttemptId(completedJob.getJobAttemptId()))
+                .build());
+        await()
+            .atMost(5, TimeUnit.SECONDS)
+            .until(() -> !server.isRunning(completedSession, "720p"));
+
+        var stoppedJob = variantJob();
+        var stoppedSession = uuid(stoppedJob.getStreamSessionId());
+        assertThat(server.dispatch(stoppedJob)).isTrue();
+        assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(stoppedJob);
+        assertThat(server.stopVariant(stoppedSession, "720p")).isTrue();
+        assertThat(worker.nextResponse().hasStopVariant()).isTrue();
+        worker.send(
+            EstablishWorkerSessionRequest.newBuilder()
+                .setJobAttemptStopped(
+                    JobAttemptStopped.newBuilder().setJobAttemptId(stoppedJob.getJobAttemptId()))
+                .build());
+        // The server-side stop already released the attempt; the worker's confirmation finds
+        // nothing to release and must be tolerated without error.
+        await().pollDelay(Duration.ofMillis(200)).until(() -> true);
+        assertThat(server.isRunning(stoppedSession, "720p")).isFalse();
+      } finally {
+        shutdown(channel);
+      }
+    }
+  }
+
+  @Test
+  @DisplayName("Should release jobs abandoned by a closing worker")
+  void shouldReleaseJobsAbandonedByClosingWorker() throws Exception {
+    try (var server = server()) {
+      server.start();
+      var channel = workerChannel(server.port());
+
+      try {
+        var worker = connect(channel, AUTHENTICATED_WORKER_ID);
+        assertThat(worker.nextResponse().hasSessionAccepted()).isTrue();
+        var job = variantJob();
+        var streamSessionId = uuid(job.getStreamSessionId());
+        assertThat(server.dispatch(job)).isTrue();
+        assertThat(worker.nextResponse().getStartVariant().getJob()).isEqualTo(job);
+
+        worker.close();
+
+        await().atMost(5, TimeUnit.SECONDS).until(() -> !server.isRunning(streamSessionId, "720p"));
+      } finally {
         shutdown(channel);
       }
     }
