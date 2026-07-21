@@ -164,7 +164,10 @@ public class StreamController {
       case SegmentDelivery.Ready(byte[] data) ->
           ResponseEntity.ok().contentType(contentType).body(data);
       case SegmentDelivery.SessionEnded() -> ResponseEntity.notFound().build();
-      case SegmentDelivery.Cancelled() -> ResponseEntity.notFound().build();
+      // The wait was interrupted by server lifecycle, not by anything wrong with the session —
+      // 503 tells the player to retry rather than treat a live session as gone.
+      case SegmentDelivery.Cancelled() ->
+          ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
       // Terminal: recovery tried every snapshotted execution target. No Retry-After, no body —
       // the player's own retry/ABR machinery is the designed reaction (ADR 0019).
       case SegmentDelivery.Unrecoverable() ->

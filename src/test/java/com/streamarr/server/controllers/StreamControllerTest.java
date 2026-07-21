@@ -48,6 +48,8 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -281,6 +283,29 @@ class StreamControllerTest {
 
     assertThat(transcodeExecutor.getStoppedVariants()).isEmpty();
     assertThat(transcodeExecutor.isRunning(SESSION_ID)).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should return 503 when delivery is cancelled by server shutdown")
+  void shouldReturn503WhenDeliveryIsCancelledByServerShutdown() throws Exception {
+    var session = buildMpegtsSession();
+    streamingService.setSession(session);
+    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
+    runtimeRegistry.save(session);
+
+    var response = new AtomicReference<ResponseEntity<byte[]>>();
+    var worker =
+        new Thread(
+            () -> {
+              // A pre-set interrupt makes the first delivery wait observe the shutdown signal.
+              Thread.currentThread().interrupt();
+              response.set(controller.getSegment(SESSION_ID, "segment1.ts"));
+            });
+    worker.start();
+    worker.join(Duration.ofSeconds(2).toMillis());
+
+    assertThat(response.get()).isNotNull();
+    assertThat(response.get().getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
   }
 
   @Test
