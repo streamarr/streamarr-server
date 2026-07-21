@@ -27,6 +27,7 @@ public final class WorkerSessionServer implements AutoCloseable {
   private static final int KEEPALIVE_TIME_SECONDS = 30;
   private static final int KEEPALIVE_TIMEOUT_SECONDS = 10;
   private static final int PERMITTED_CLIENT_KEEPALIVE_SECONDS = 10;
+  private static final int SHUTDOWN_TIMEOUT_SECONDS = 5;
 
   private final WorkerSessionServerConfiguration configuration;
   private final SegmentStore segmentStore;
@@ -147,8 +148,9 @@ public final class WorkerSessionServer implements AutoCloseable {
 
     server.shutdownNow();
     try {
-      if (!server.awaitTermination(5, TimeUnit.SECONDS)) {
-        log.warn("Worker session gRPC server did not terminate within 5s");
+      if (!server.awaitTermination(SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+        log.warn(
+            "Worker session gRPC server did not terminate within {}s", SHUTDOWN_TIMEOUT_SECONDS);
       }
     } catch (InterruptedException _) {
       Thread.currentThread().interrupt();
