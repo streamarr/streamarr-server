@@ -157,9 +157,12 @@ public class SegmentDeliveryCoordinator {
 
     try {
       return new SegmentDelivery.Ready(segmentStore.readSegment(sessionId, segmentName));
-    } catch (TranscodeException _) {
+    } catch (TranscodeException e) {
       // A concurrent destroy can win between the existence check and the read; the next
-      // iteration classifies the session state instead of surfacing a server error.
+      // iteration classifies the session state instead of surfacing a server error. Logged so a
+      // store failing for any other reason stays observable in this poll loop.
+      log.debug(
+          "Segment read raced a concurrent destroy: session {} name {}", sessionId, segmentName, e);
       return null;
     }
   }

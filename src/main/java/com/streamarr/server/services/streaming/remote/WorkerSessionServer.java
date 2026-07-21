@@ -15,7 +15,9 @@ import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 public final class WorkerSessionServer implements AutoCloseable {
 
   private static final int MAXIMUM_CONCURRENT_CALLS_PER_CONNECTION = 33;
@@ -145,7 +147,9 @@ public final class WorkerSessionServer implements AutoCloseable {
 
     server.shutdownNow();
     try {
-      server.awaitTermination(5, TimeUnit.SECONDS);
+      if (!server.awaitTermination(5, TimeUnit.SECONDS)) {
+        log.warn("Worker session gRPC server did not terminate within 5s");
+      }
     } catch (InterruptedException _) {
       Thread.currentThread().interrupt();
     }

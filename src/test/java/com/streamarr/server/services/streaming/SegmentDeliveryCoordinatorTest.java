@@ -5,11 +5,16 @@ import static com.streamarr.server.fixtures.StreamSessionFixture.defaultVariantB
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
+import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
@@ -32,6 +37,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 @Tag("UnitTest")
 @DisplayName("Segment Delivery Coordinator Tests")
@@ -187,6 +193,42 @@ class SegmentDeliveryCoordinatorTest {
     assertThat(transcodeExecutor.isRunning(session.getSessionId(), StreamSession.defaultVariant()))
         .isTrue();
     assertThat(transcodeExecutor.getStoppedVariants()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should log the swallowed read race when a destroy wins between existence and read")
+  void shouldLogTheSwallowedReadRaceWhenADestroyWinsBetweenExistenceAndRead() {
+    var throwingStore =
+        new FakeSegmentStore() {
+          @Override
+          public byte[] readSegment(UUID sessionId, String segmentName) {
+            throw new TranscodeException("Segment not found: " + segmentName);
+          }
+        };
+    var sessionId = UUID.randomUUID();
+    throwingStore.addSegment(sessionId, "segment0.ts", new byte[] {0x47});
+    var rig = rigWith(transcodeExecutor, throwingStore);
+    var logger = (Logger) LoggerFactory.getLogger(SegmentDeliveryCoordinator.class);
+    logger.setLevel(Level.DEBUG);
+    var appender = new ListAppender<ILoggingEvent>();
+    appender.start();
+    logger.addAppender(appender);
+
+    try {
+      var delivery =
+          rig.coordinator().deliver(sessionId, StreamSession.defaultVariant(), "segment0.ts");
+
+      assertThat(delivery).isInstanceOf(SegmentDelivery.SessionEnded.class);
+      assertThat(appender.list)
+          .anySatisfy(
+              event -> {
+                assertThat(event.getLevel()).isEqualTo(Level.DEBUG);
+                assertThat(event.getFormattedMessage()).contains("raced");
+              });
+    } finally {
+      logger.detachAppender(appender);
+      logger.setLevel(null);
+    }
   }
 
   @Test
