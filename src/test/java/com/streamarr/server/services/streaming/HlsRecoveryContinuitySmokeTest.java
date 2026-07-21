@@ -224,7 +224,7 @@ class HlsRecoveryContinuitySmokeTest {
    */
   private void killProducerAndDropSegmentsFrom(
       StreamSession session, int firstMissingIndex, String extension) throws IOException {
-    ProcessHandle.of(session.getHandle().orElseThrow().processId())
+    ProcessHandle.of(session.getHandle().orElseThrow().processId().orElseThrow())
         .ifPresent(ProcessHandle::destroyForcibly);
     await()
         .atMost(10, TimeUnit.SECONDS)
