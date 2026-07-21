@@ -47,7 +47,8 @@ final class WorkerSessionGrpcService
   @Override
   public StreamObserver<UploadSegmentRequest> uploadSegment(
       StreamObserver<UploadSegmentResponse> responseObserver) {
-    if (!segmentUploadAdmission.tryAcquireSlot()) {
+    var ticket = segmentUploadAdmission.tryAdmit();
+    if (ticket.isEmpty()) {
       log.warn(
           "Rejecting segment upload from worker {}: concurrent upload limit reached",
           WorkerIdentityServerInterceptor.AUTHENTICATED_WORKER_ID.get());
@@ -62,7 +63,7 @@ final class WorkerSessionGrpcService
         .workerConnections(workerConnections)
         .segmentStore(segmentStore)
         .responseObserver(responseObserver)
-        .uploadAdmission(segmentUploadAdmission)
+        .uploadTicket(ticket.get())
         .build();
   }
 
