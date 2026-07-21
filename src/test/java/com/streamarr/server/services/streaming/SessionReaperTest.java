@@ -147,7 +147,7 @@ class SessionReaperTest {
 
     // Dead-producer detection and recovery happen at request time, never on the reaper's timer.
     assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
-    assertThat(session.getHandle().orElseThrow().processId()).isEqualTo(1234L);
+    assertThat(session.getHandle().orElseThrow().processId()).hasValue(1234L);
   }
 
   @Test

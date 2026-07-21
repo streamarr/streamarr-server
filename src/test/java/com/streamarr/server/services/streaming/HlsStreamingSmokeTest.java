@@ -350,7 +350,7 @@ class HlsStreamingSmokeTest {
 
     streamingService.destroySession(sessionId);
 
-    var processHandle = ProcessHandle.of(handle.processId());
+    var processHandle = ProcessHandle.of(handle.processId().orElseThrow());
     assertThat(processHandle)
         .satisfiesAnyOf(
             ph -> assertThat(ph).isEmpty(), ph -> assertThat(ph.get().isAlive()).isFalse());

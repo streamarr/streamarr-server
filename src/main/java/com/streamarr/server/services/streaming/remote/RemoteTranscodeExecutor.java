@@ -41,8 +41,8 @@ public final class RemoteTranscodeExecutor implements TranscodeExecutor {
   }
 
   private static TranscodeHandle handleFor(TranscodeRequest request) {
-    return new TranscodeHandle(
-        0, request.attemptId(), TranscodeStatus.ACTIVE, request.startSequenceNumber());
+    return TranscodeHandle.remoteDispatch(
+        request.attemptId(), TranscodeStatus.ACTIVE, request.startSequenceNumber());
   }
 
   @Override
