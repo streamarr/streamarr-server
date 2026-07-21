@@ -41,7 +41,7 @@ class PlaybackTokenTraceRedactionTest {
     var telemetryFilter = SpringWebMvcTelemetry.create(openTelemetry).createServletFilter();
     var request =
         new MockHttpServletRequest(
-            "GET", "/api/stream/21a268d7-6e6a-48fd-a9cc-93bbc1ee85de/master.m3u8");
+            "GET", "/api/stream/21a268d7-6e6a-48fd-a9cc-93bbc1ee85de/multivariant.m3u8");
     request.setQueryString("quality=auto&t=secret-playback-token&offset=12");
     request.addParameter("quality", "auto");
     request.addParameter("t", "secret-playback-token");

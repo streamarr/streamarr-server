@@ -37,9 +37,10 @@ public class StreamController {
   private final SegmentDeliveryCoordinator deliveryCoordinator;
   private final AuthorizationService authorizationService;
 
-  // RFC 8216bis renamed Master Playlist to Multivariant Playlist; the master.m3u8 route stays
-  // as an alias for players holding previously minted URLs.
-  @GetMapping({"/{sessionId}/multivariant.m3u8", "/{sessionId}/master.m3u8"})
+  // Multivariant Playlist per RFC 8216bis (the artist formerly known as Master Playlist). The
+  // legacy master.m3u8 alias was retired pre-release: sessions are in-memory and playback tokens
+  // minutes-lived, so no previously minted URL can outlive a deploy.
+  @GetMapping("/{sessionId}/multivariant.m3u8")
   public ResponseEntity<String> getMultivariantPlaylist(@PathVariable UUID sessionId) {
     var session = findSession(sessionId);
     if (session.isEmpty()) {
