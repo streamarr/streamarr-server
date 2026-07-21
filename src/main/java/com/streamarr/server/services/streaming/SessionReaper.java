@@ -2,7 +2,6 @@ package com.streamarr.server.services.streaming;
 
 import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.streaming.StreamSession;
-import com.streamarr.server.domain.streaming.TranscodeStatus;
 import java.time.Instant;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -15,9 +14,7 @@ import org.springframework.stereotype.Component;
 public class SessionReaper {
 
   private final StreamingService streamingService;
-  private final TranscodeExecutor transcodeExecutor;
   private final StreamingProperties properties;
-  private final RuntimeStreamSessionRegistry runtimeRegistry;
   private final ProducerLifecycleService producerLifecycle;
 
   @Scheduled(fixedDelayString = "${streaming.reaper-interval-ms:15000}")
@@ -32,6 +29,8 @@ public class SessionReaper {
     }
   }
 
+  // Dead producers are not the reaper's concern: detection and recovery happen at request time in
+  // SegmentDeliveryCoordinator, and a dead producer nobody watches is just an idle session.
   private void processSession(StreamSession session, Instant now) {
     if (isExpired(session, now)) {
       log.info("Reaping expired session {}", session.getSessionId());
@@ -42,10 +41,7 @@ public class SessionReaper {
     if (isIdle(session, now) && session.hasActiveTranscodes()) {
       log.info("Suspending idle session {}", session.getSessionId());
       producerLifecycle.suspend(session);
-      return;
     }
-
-    handleDeadProcesses(session);
   }
 
   private boolean isExpired(StreamSession session, Instant now) {
@@ -56,24 +52,5 @@ public class SessionReaper {
   private boolean isIdle(StreamSession session, Instant now) {
     var idleSeconds = now.getEpochSecond() - session.getLastAccessedAt().getEpochSecond();
     return idleSeconds > properties.sessionTimeout().toSeconds();
-  }
-
-  private void handleDeadProcesses(StreamSession session) {
-    for (var entry : session.getVariantHandles().entrySet()) {
-      var label = entry.getKey();
-      var handle = entry.getValue();
-
-      if (handle.status() != TranscodeStatus.ACTIVE) {
-        continue;
-      }
-
-      if (transcodeExecutor.isRunning(session.getSessionId(), label)) {
-        continue;
-      }
-
-      log.warn("FFmpeg process died for session {} variant {}", session.getSessionId(), label);
-      session.setVariantHandle(label, handle.withStatus(TranscodeStatus.FAILED));
-      runtimeRegistry.save(session);
-    }
   }
 }

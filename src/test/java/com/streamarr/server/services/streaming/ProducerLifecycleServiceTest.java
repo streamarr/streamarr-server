@@ -354,4 +354,256 @@ class ProducerLifecycleServiceTest {
 
     assertThat(session.getHandle().attemptId()).isEqualTo(attemptId);
   }
+
+  private ProducerLifecycleService.ReplaceProducerCommand.ReplaceProducerCommandBuilder
+      replaceCommand(StreamSession session) {
+    var handle = session.getHandle();
+    return ProducerLifecycleService.ReplaceProducerCommand.builder()
+        .sessionId(session.getSessionId())
+        .variantLabel(StreamSession.defaultVariant())
+        .segmentName("segment2.ts")
+        .segmentIndex(2)
+        .expectedAttemptId(handle == null ? null : handle.attemptId())
+        .target(ExecutionTargetId.LOCAL);
+  }
+
+  @Test
+  @DisplayName("Should install a fresh attempt at the requested offset when replacing a producer")
+  void shouldInstallFreshAttemptAtTheRequestedOffsetWhenReplacingProducer() {
+    var session = startedSession();
+    var deadAttempt = session.getHandle().attemptId();
+    transcodeExecutor.markDead(session.getSessionId());
+
+    var result = lifecycle.replaceProducer(replaceCommand(session).build());
+
+    assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.Replaced.class);
+    var handle = session.getHandle();
+    assertThat(handle.status()).isEqualTo(TranscodeStatus.ACTIVE);
+    assertThat(handle.attemptId()).isNotEqualTo(deadAttempt);
+    assertThat(handle.startSequenceNumber()).isEqualTo(2);
+    var request = transcodeExecutor.getStartedRequests().getLast();
+    assertThat(request.seekPosition()).isEqualTo(12);
+    assertThat(request.startSequenceNumber()).isEqualTo(2);
+    assertThat(request.attemptId()).isEqualTo(handle.attemptId());
+  }
+
+  @Test
+  @DisplayName("Should stop an alive producer before replacing it when the caller observed a stall")
+  void shouldStopAliveProducerBeforeReplacingItWhenTheCallerObservedStall() {
+    var session = startedSession();
+
+    var result =
+        lifecycle.replaceProducer(
+            replaceCommand(session)
+                .reason(ProducerLifecycleService.ReplacementReason.STALLED)
+                .build());
+
+    assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.Replaced.class);
+    assertThat(transcodeExecutor.getStoppedVariants())
+        .contains(session.getSessionId() + "/" + StreamSession.defaultVariant());
+  }
+
+  @Test
+  @DisplayName("Should supersede a death claim when the producer is actually running")
+  void shouldSupersedeDeathClaimWhenTheProducerIsActuallyRunning() {
+    var session = startedSession();
+    var attemptBefore = session.getHandle().attemptId();
+
+    var result =
+        lifecycle.replaceProducer(
+            replaceCommand(session)
+                .reason(ProducerLifecycleService.ReplacementReason.DEAD)
+                .build());
+
+    // A stale death observation — e.g. against another waiter's healthy replacement — must
+    // re-observe, never kill.
+    assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.Superseded.class);
+    assertThat(transcodeExecutor.getStoppedVariants()).isEmpty();
+    assertThat(session.getHandle().attemptId()).isEqualTo(attemptBefore);
+    assertThat(transcodeExecutor.isRunning(session.getSessionId())).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should replace a suspended handle when the caller's resume attempt failed")
+  void shouldReplaceSuspendedHandleWhenTheCallersResumeAttemptFailed() {
+    var session = startedSession();
+    lifecycle.suspend(session);
+
+    var result =
+        lifecycle.replaceProducer(
+            replaceCommand(session)
+                .reason(ProducerLifecycleService.ReplacementReason.RESUME_FAILED)
+                .build());
+
+    assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.Replaced.class);
+    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
+  }
+
+  @Test
+  @DisplayName("Should exhaust a suspended handle when the expected attempt matches")
+  void shouldExhaustSuspendedHandleWhenTheExpectedAttemptMatches() {
+    var session = startedSession();
+    lifecycle.suspend(session);
+
+    var result =
+        lifecycle.markExhausted(
+            session.getSessionId(),
+            StreamSession.defaultVariant(),
+            session.getHandle().attemptId());
+
+    // Reached only when nothing — not even a resume — can produce the segment.
+    assertThat(result).isInstanceOf(ProducerLifecycleService.ExhaustResult.Exhausted.class);
+    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.FAILED);
+  }
+
+  @Test
+  @DisplayName("Should build the replacement from the variant's own geometry for ABR sessions")
+  void shouldBuildReplacementFromTheVariantsOwnGeometryForAbrSessions() {
+    var session = startedAbrSession();
+    transcodeExecutor.markDead(session.getSessionId(), "720p");
+    var command =
+        replaceCommand(session)
+            .variantLabel("720p")
+            .segmentName("720p/segment2.ts")
+            .expectedAttemptId(session.getVariantHandle("720p").attemptId())
+            .build();
+
+    var result = lifecycle.replaceProducer(command);
+
+    assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.Replaced.class);
+    var request = transcodeExecutor.getStartedRequests().getLast();
+    assertThat(request.variantLabel()).isEqualTo("720p");
+    assertThat(request.width()).isEqualTo(1280);
+    assertThat(request.height()).isEqualTo(720);
+    assertThat(request.bitrate()).isEqualTo(3_000_000L);
+  }
+
+  @Test
+  @DisplayName("Should report session gone when replacing in a destroyed session")
+  void shouldReportSessionGoneWhenReplacingInDestroyedSession() {
+    var session = startedSession();
+    var command = replaceCommand(session).build();
+    runtimeRegistry.removeById(session.getSessionId());
+
+    var result = lifecycle.replaceProducer(command);
+
+    assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.SessionGone.class);
+  }
+
+  @Test
+  @DisplayName("Should report superseded when the requested segment already exists")
+  void shouldReportSupersededWhenTheRequestedSegmentAlreadyExists() {
+    var session = startedSession();
+    segmentStore.addSegment(session.getSessionId(), "segment2.ts", new byte[] {1});
+
+    var result = lifecycle.replaceProducer(replaceCommand(session).build());
+
+    assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.Superseded.class);
+  }
+
+  @Test
+  @DisplayName("Should report superseded when the handle carries a different attempt")
+  void shouldReportSupersededWhenTheHandleCarriesDifferentAttempt() {
+    var session = startedSession();
+    var command = replaceCommand(session).expectedAttemptId(UUID.randomUUID()).build();
+    var startsBefore = transcodeExecutor.getStartedRequests().size();
+
+    var result = lifecycle.replaceProducer(command);
+
+    assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.Superseded.class);
+    assertThat(transcodeExecutor.getStartedRequests()).hasSize(startsBefore);
+  }
+
+  @Test
+  @DisplayName("Should report superseded when a planned suspension fenced the replacement")
+  void shouldReportSupersededWhenPlannedSuspensionFencedTheReplacement() {
+    var session = startedSession();
+    var command = replaceCommand(session).build();
+    lifecycle.suspend(session);
+    var startsBefore = transcodeExecutor.getStartedRequests().size();
+
+    var result = lifecycle.replaceProducer(command);
+
+    // The suspension kept the attempt id; the status fence alone must reject the replacement.
+    assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.Superseded.class);
+    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.SUSPENDED);
+    assertThat(transcodeExecutor.getStartedRequests()).hasSize(startsBefore);
+  }
+
+  @Test
+  @DisplayName("Should replace a failed handle with a matching attempt for the new-target reset")
+  void shouldReplaceFailedHandleWithMatchingAttemptForTheNewTargetReset() {
+    var session = startedSession();
+    var exhausted =
+        lifecycle.markExhausted(
+            session.getSessionId(),
+            StreamSession.defaultVariant(),
+            session.getHandle().attemptId());
+    assertThat(exhausted).isInstanceOf(ProducerLifecycleService.ExhaustResult.Exhausted.class);
+
+    var result = lifecycle.replaceProducer(replaceCommand(session).build());
+
+    assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.Replaced.class);
+    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
+  }
+
+  @Test
+  @DisplayName("Should report refused when the execution target cannot start the producer")
+  void shouldReportRefusedWhenTheExecutionTargetCannotStartTheProducer() {
+    var session = startedSession();
+    transcodeExecutor.markDead(session.getSessionId());
+    transcodeExecutor.refuseTarget(ExecutionTargetId.LOCAL);
+
+    var result = lifecycle.replaceProducer(replaceCommand(session).build());
+
+    assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.Refused.class);
+    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
+  }
+
+  @Test
+  @DisplayName("Should mark the variant failed and stop its live producer when exhausting")
+  void shouldMarkTheVariantFailedAndStopItsLiveProducerWhenExhausting() {
+    var session = startedSession();
+
+    var result =
+        lifecycle.markExhausted(
+            session.getSessionId(),
+            StreamSession.defaultVariant(),
+            session.getHandle().attemptId());
+
+    assertThat(result).isInstanceOf(ProducerLifecycleService.ExhaustResult.Exhausted.class);
+    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.FAILED);
+    // FAILED promises "no producer": the final stalled-but-alive attempt must not keep running.
+    assertThat(transcodeExecutor.getStoppedVariants())
+        .contains(session.getSessionId() + "/" + StreamSession.defaultVariant());
+    assertThat(transcodeExecutor.isRunning(session.getSessionId())).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should not exhaust when a planned restart superseded the attempt")
+  void shouldNotExhaustWhenPlannedRestartSupersededTheAttempt() {
+    var session = startedSession();
+    var staleAttempt = session.getHandle().attemptId();
+    lifecycle.suspend(session);
+    lifecycle.ensurePositioned(session.getSessionId(), "segment5.ts");
+
+    var result =
+        lifecycle.markExhausted(
+            session.getSessionId(), StreamSession.defaultVariant(), staleAttempt);
+
+    // The resumed producer must never inherit a stale 503.
+    assertThat(result).isInstanceOf(ProducerLifecycleService.ExhaustResult.Superseded.class);
+    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
+  }
+
+  @Test
+  @DisplayName("Should stop every producer under the session mutex when destroying")
+  void shouldStopEveryProducerUnderTheSessionMutexWhenDestroying() {
+    var session = startedSession();
+
+    lifecycle.stopForDestroy(session.getSessionId());
+
+    assertThat(transcodeExecutor.getStopped()).contains(session.getSessionId());
+    assertThat(transcodeExecutor.isRunning(session.getSessionId())).isFalse();
+  }
 }
