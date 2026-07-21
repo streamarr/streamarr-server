@@ -3,8 +3,6 @@ package com.streamarr.transcode.worker;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
-import com.streamarr.server.AbstractIntegrationTest;
-import com.streamarr.server.StreamarrServerApplication;
 import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServer;
 import com.streamarr.server.services.streaming.remote.WorkerSessionServerConfiguration;
@@ -24,12 +22,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.springframework.boot.test.context.SpringBootTest;
 
 @Tag("IntegrationTest")
 @DisplayName("Transcode Worker Application Integration Tests")
-@SpringBootTest(classes = StreamarrServerApplication.class)
-class TranscodeWorkerApplicationIT extends AbstractIntegrationTest {
+class TranscodeWorkerApplicationIT {
 
   private static final UUID WORKER_ID = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
   private static final UUID SOURCE_NAMESPACE_ID =
