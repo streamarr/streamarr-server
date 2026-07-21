@@ -6,12 +6,19 @@ on:
       - main
   pull_request:
     types: [ opened, synchronize, reopened ]
+  # The HLS smoke tests (@Tag("SmokeTest")) are excluded from every regular build; without this
+  # job the ADR 0019 end-to-end guarantees (PTS continuity across producer replacement, fMP4
+  # init rewrite) are never exercised in CI.
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch: {}
 
 permissions:
   contents: read
 
 jobs:
   build:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
 
     env:
@@ -65,3 +72,25 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./mvnw --batch-mode org.sonarsource.scanner.maven:sonar-maven-plugin:sonar
+
+  smoke:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5
+        with:
+          java-version: '25'
+          distribution: 'zulu'
+          cache: maven
+
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+
+      - name: Run HLS smoke tests
+        run: ./mvnw --batch-mode test -Dsurefire.excludedGroups= -Dgroups=SmokeTest
