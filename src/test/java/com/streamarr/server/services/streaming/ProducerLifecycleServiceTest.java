@@ -22,6 +22,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 @Tag("UnitTest")
 @DisplayName("Producer Lifecycle Service Tests")
@@ -154,46 +156,20 @@ class ProducerLifecycleServiceTest {
     assertThat(session.getLastAccessedAt()).isAfter(oldAccessTime);
   }
 
-  @Test
-  @DisplayName("Should resume with correct start number when segment is TS format")
-  void shouldResumeWithCorrectStartNumberWhenSegmentIsTsFormat() {
+  @ParameterizedTest(name = "{0} → startNumber={1}, seek={2}")
+  @DisplayName("Should resume with correct start number when segment name encodes an index")
+  @CsvSource({"segment5.ts, 5, 30", "segment12.m4s, 12, 72", "720p/segment3.ts, 3, 18"})
+  void shouldResumeWithCorrectStartNumberWhenSegmentNameEncodesIndex(
+      String segmentName, int startNumber, int seekPosition) {
     var session = startedSession();
     suspendHandle(session);
 
-    lifecycle.ensurePositioned(session.getSessionId(), "segment5.ts");
+    lifecycle.ensurePositioned(session.getSessionId(), segmentName);
 
     assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
     var lastRequest = transcodeExecutor.getStartedRequests().getLast();
-    assertThat(lastRequest.startSequenceNumber()).isEqualTo(5);
-    assertThat(lastRequest.seekPosition()).isEqualTo(30);
-  }
-
-  @Test
-  @DisplayName("Should resume with correct start number when segment is fMP4 format")
-  void shouldResumeWithCorrectStartNumberWhenSegmentIsFmp4Format() {
-    var session = startedSession();
-    suspendHandle(session);
-
-    lifecycle.ensurePositioned(session.getSessionId(), "segment12.m4s");
-
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
-    var lastRequest = transcodeExecutor.getStartedRequests().getLast();
-    assertThat(lastRequest.startSequenceNumber()).isEqualTo(12);
-    assertThat(lastRequest.seekPosition()).isEqualTo(72);
-  }
-
-  @Test
-  @DisplayName("Should resume with correct start number when segment includes variant path")
-  void shouldResumeWithCorrectStartNumberWhenSegmentIncludesVariantPath() {
-    var session = startedSession();
-    suspendHandle(session);
-
-    lifecycle.ensurePositioned(session.getSessionId(), "720p/segment3.ts");
-
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
-    var lastRequest = transcodeExecutor.getStartedRequests().getLast();
-    assertThat(lastRequest.startSequenceNumber()).isEqualTo(3);
-    assertThat(lastRequest.seekPosition()).isEqualTo(18);
+    assertThat(lastRequest.startSequenceNumber()).isEqualTo(startNumber);
+    assertThat(lastRequest.seekPosition()).isEqualTo(seekPosition);
   }
 
   @Test
