@@ -31,6 +31,8 @@ message WorkerRegistration {
   // This worker describes itself; target is reserved for server commands addressed to a worker.
   WorkerIdentity worker = 1;
   WorkerCapabilities capabilities = 2;
+  // Configured slot capacity for this connection, fixed at registration; the server derives
+  // remaining capacity from its own active-attempt accounting.
   uint32 available_slots = 3;
 }
 
