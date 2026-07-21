@@ -5,6 +5,10 @@ import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.exceptions.TranscodeException;
 import java.nio.file.Path;
@@ -15,6 +19,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.slf4j.LoggerFactory;
 
 @Tag("UnitTest")
 @DisplayName("Local FFmpeg Process Manager Tests")
@@ -195,8 +200,51 @@ class LocalFfmpegProcessManagerTest {
 
     await().pollDelay(Duration.ofMillis(200)).until(() -> true);
 
-    // isRunning triggers cleanup + logExitDetails — should not throw
-    assertThatNoException().isThrownBy(() -> manager.isRunning(sessionId));
-    assertThat(manager.isRunning(sessionId)).isFalse();
+    var logger = (Logger) LoggerFactory.getLogger(LocalFfmpegProcessManager.class);
+    var appender = new ListAppender<ILoggingEvent>();
+    appender.start();
+    logger.addAppender(appender);
+    try {
+      // The observed death is the site that owns the crash detail; nothing downstream re-reads it.
+      assertThat(manager.isRunning(sessionId)).isFalse();
+    } finally {
+      logger.detachAppender(appender);
+    }
+
+    assertThat(appender.list)
+        .filteredOn(event -> event.getLevel() == Level.WARN)
+        .extracting(ILoggingEvent::getFormattedMessage)
+        .anyMatch(message -> message.contains("exit code 1") && message.contains("error output"));
+  }
+
+  @Test
+  @DisplayName("Should log the crash detail when disposing an already-dead process")
+  void shouldLogTheCrashDetailWhenDisposingAnAlreadyDeadProcess() throws Exception {
+    var sessionId = UUID.randomUUID();
+    var process =
+        manager.startProcess(
+            sessionId,
+            StreamSession.defaultVariant(),
+            List.of("bash", "-c", "echo 'crash detail' >&2; exit 1"),
+            tempDir);
+    process.waitFor();
+    await().pollDelay(Duration.ofMillis(200)).until(() -> true);
+
+    var logger = (Logger) LoggerFactory.getLogger(LocalFfmpegProcessManager.class);
+    var appender = new ListAppender<ILoggingEvent>();
+    appender.start();
+    logger.addAppender(appender);
+    try {
+      // Nobody observed the death (no isRunning call); the planned stop disposes of the corpse.
+      manager.stopProcess(sessionId);
+    } finally {
+      logger.detachAppender(appender);
+    }
+
+    assertThat(appender.list)
+        .filteredOn(event -> event.getLevel() == Level.WARN)
+        .extracting(ILoggingEvent::getFormattedMessage)
+        .anyMatch(
+            message -> message.contains("already exited") && message.contains("crash detail"));
   }
 }

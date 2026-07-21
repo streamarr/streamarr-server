@@ -158,8 +158,10 @@ final class WorkerSessionGrpcService
                 authenticatedWorkerId,
                 fromProto(request.getJobAttemptStarted().getJobAttemptId()));
         case JOB_ATTEMPT_FAILED -> reportFailedJobAttempt(request.getJobAttemptFailed());
-        case JOB_ATTEMPT_COMPLETED -> finish(request.getJobAttemptCompleted().getJobAttemptId());
-        case JOB_ATTEMPT_STOPPED -> finish(request.getJobAttemptStopped().getJobAttemptId());
+        case JOB_ATTEMPT_COMPLETED ->
+            finish(request.getJobAttemptCompleted().getJobAttemptId(), "completed");
+        case JOB_ATTEMPT_STOPPED ->
+            finish(request.getJobAttemptStopped().getJobAttemptId(), "stopped");
         default ->
             log.warn(
                 "Ignoring unexpected {} event on established session of worker {}",
@@ -169,7 +171,7 @@ final class WorkerSessionGrpcService
     }
 
     private void reportFailedJobAttempt(JobAttemptFailed failed) {
-      finish(failed.getJobAttemptId())
+      finish(failed.getJobAttemptId(), failed.getFailure().name())
           .ifPresentOrElse(
               job ->
                   log.warn(
@@ -186,9 +188,20 @@ final class WorkerSessionGrpcService
                       failed.getFailure()));
     }
 
-    private Optional<VariantJob> finish(Uuid jobAttemptId) {
-      return workerConnections.releaseJobAttempt(
-          authenticatedWorkerId, workerSessionId, fromProto(jobAttemptId));
+    private Optional<VariantJob> finish(Uuid jobAttemptId, String detail) {
+      var released =
+          workerConnections.releaseJobAttempt(
+              authenticatedWorkerId, workerSessionId, fromProto(jobAttemptId));
+      released.ifPresent(
+          job ->
+              log.debug(
+                  "Worker {} ended job attempt {} for stream session {} variant {} ({})",
+                  authenticatedWorkerId,
+                  fromProto(jobAttemptId),
+                  fromProto(job.getStreamSessionId()),
+                  job.getVariant().getVariantLabel(),
+                  detail));
+      return released;
     }
 
     private void reject(Status status) {

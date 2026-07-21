@@ -496,16 +496,6 @@ class StreamingResolverTest {
     public int getActiveSessionCount() {
       return nextResult != null ? 1 : 0;
     }
-
-    @Override
-    public void resumeSessionIfNeeded(UUID sessionId, String segmentName) {
-      // no-op for test fake
-    }
-
-    @Override
-    public boolean isTranscodeActive(UUID sessionId, String variantLabel) {
-      return false;
-    }
   }
 
   private static class NoopSessionProgressService extends SessionProgressService {

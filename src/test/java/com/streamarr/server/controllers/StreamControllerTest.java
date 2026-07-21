@@ -16,15 +16,23 @@ import com.streamarr.server.domain.auth.HouseholdRole;
 import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
+import com.streamarr.server.domain.streaming.TranscodeHandle;
+import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.exceptions.TranscodeException;
+import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSegmentStore;
+import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.services.auth.AuthenticatedIdentity;
 import com.streamarr.server.services.auth.TokenScope;
 import com.streamarr.server.services.authorization.AuthorizationService;
+import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.streaming.CreateStreamSessionCommand;
 import com.streamarr.server.services.streaming.HlsPlaylistService;
 import com.streamarr.server.services.streaming.PlaybackRequest;
+import com.streamarr.server.services.streaming.ProducerLifecycleService;
+import com.streamarr.server.services.streaming.SegmentDeliveryCoordinator;
 import com.streamarr.server.services.streaming.StreamingService;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Collection;
@@ -55,6 +63,9 @@ class StreamControllerTest {
   private final AtomicReference<UUID> boundStreamSession = new AtomicReference<>(SESSION_ID);
   private StubStreamingService streamingService;
   private FakeSegmentStore segmentStore;
+  private FakeRuntimeStreamSessionRegistry runtimeRegistry;
+  private FakeTranscodeExecutor transcodeExecutor;
+  private StreamingProperties properties;
   private HlsPlaylistService playlistService;
   private StreamController controller;
 
@@ -62,18 +73,43 @@ class StreamControllerTest {
   void setUp() {
     streamingService = new StubStreamingService();
     segmentStore = new FakeSegmentStore();
-    playlistService =
-        new HlsPlaylistService(
-            StreamingProperties.builder()
-                .maxConcurrentTranscodes(8)
-                .targetSegmentDuration(Duration.ofSeconds(6))
-                .sessionTimeout(Duration.ofSeconds(60))
-                .build());
+    runtimeRegistry = new FakeRuntimeStreamSessionRegistry();
+    transcodeExecutor = new FakeTranscodeExecutor();
+    properties =
+        StreamingProperties.builder()
+            .maxConcurrentTranscodes(8)
+            .targetSegmentDuration(Duration.ofSeconds(6))
+            .sessionTimeout(Duration.ofSeconds(60))
+            .build();
+    playlistService = new HlsPlaylistService(properties);
     boundStreamSession.set(SESSION_ID);
     controller =
         new StreamController(
-            streamingService, playlistService, segmentStore, new BoundAuthorizationService());
+            streamingService,
+            playlistService,
+            coordinatorOver(segmentStore),
+            new BoundAuthorizationService());
     mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
+  }
+
+  private SegmentDeliveryCoordinator coordinatorOver(FakeSegmentStore store) {
+    var lifecycle =
+        ProducerLifecycleService.builder()
+            .transcodeExecutor(transcodeExecutor)
+            .segmentStore(store)
+            .properties(properties)
+            .runtimeRegistry(runtimeRegistry)
+            .sessionMutex(new MutexFactory<>())
+            .build();
+    return SegmentDeliveryCoordinator.builder()
+        .runtimeRegistry(runtimeRegistry)
+        .segmentStore(store)
+        .transcodeExecutor(transcodeExecutor)
+        .producerLifecycle(lifecycle)
+        .properties(properties)
+        .clock(Clock.systemUTC())
+        .pollInterval(Duration.ofMillis(10))
+        .build();
   }
 
   @Test
@@ -210,8 +246,8 @@ class StreamControllerTest {
   }
 
   @Test
-  @DisplayName("Should return 404 when segment not ready within timeout")
-  void shouldReturn404WhenSegmentNotReadyWithinTimeout() throws Exception {
+  @DisplayName("Should return 404 when the runtime session has ended and the segment is missing")
+  void shouldReturn404WhenTheRuntimeSessionHasEndedAndTheSegmentIsMissing() throws Exception {
     streamingService.setSession(buildMpegtsSession());
 
     mockMvc
@@ -220,8 +256,8 @@ class StreamControllerTest {
   }
 
   @Test
-  @DisplayName("Should return 404 when segment vanishes between wait and read")
-  void shouldReturn404WhenSegmentVanishesBetweenWaitAndRead() throws Exception {
+  @DisplayName("Should return 404 when segment vanishes between the existence check and the read")
+  void shouldReturn404WhenSegmentVanishesBetweenTheExistenceCheckAndTheRead() throws Exception {
     streamingService.setSession(buildMpegtsSession());
     var throwingStore =
         new FakeSegmentStore() {
@@ -233,12 +269,33 @@ class StreamControllerTest {
     throwingStore.addSegment(SESSION_ID, "segment0.ts", new byte[] {0x47});
     var raceController =
         new StreamController(
-            streamingService, playlistService, throwingStore, new BoundAuthorizationService());
+            streamingService,
+            playlistService,
+            coordinatorOver(throwingStore),
+            new BoundAuthorizationService());
     var raceMockMvc = MockMvcBuilders.standaloneSetup(raceController).build();
 
     raceMockMvc
         .perform(get("/api/stream/{sessionId}/segment0.ts", SESSION_ID))
         .andExpect(status().isNotFound());
+  }
+
+  @Test
+  @DisplayName("Should return 503 with no body when recovery is exhausted")
+  void shouldReturn503WithNoBodyWhenRecoveryExhausted() throws Exception {
+    var session = buildMpegtsSession();
+    streamingService.setSession(session);
+    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.FAILED));
+    runtimeRegistry.save(session);
+
+    var result =
+        mockMvc
+            .perform(get("/api/stream/{sessionId}/segment0.ts", SESSION_ID))
+            .andExpect(status().isServiceUnavailable())
+            .andReturn();
+
+    assertThat(result.getResponse().getContentLength()).isZero();
+    assertThat(result.getResponse().getHeader("Retry-After")).isNull();
   }
 
   @Test
@@ -549,16 +606,6 @@ class StreamControllerTest {
     @Override
     public int getActiveSessionCount() {
       return session != null ? 1 : 0;
-    }
-
-    @Override
-    public void resumeSessionIfNeeded(UUID sessionId, String segmentName) {
-      // no-op for test fake
-    }
-
-    @Override
-    public boolean isTranscodeActive(UUID sessionId, String variantLabel) {
-      return session != null && session.getSessionId().equals(sessionId);
     }
   }
 }

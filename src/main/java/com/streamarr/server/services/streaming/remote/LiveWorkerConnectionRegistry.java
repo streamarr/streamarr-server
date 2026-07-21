@@ -3,6 +3,7 @@ package com.streamarr.server.services.streaming.remote;
 import static com.streamarr.transcode.protocol.ProtoUuid.fromProto;
 import static com.streamarr.transcode.protocol.ProtoUuid.toProto;
 
+import com.streamarr.server.services.streaming.ExecutionTargetId;
 import com.streamarr.transcode.v1.EstablishWorkerSessionResponse;
 import com.streamarr.transcode.v1.SegmentUploadMetadata;
 import com.streamarr.transcode.v1.StartVariantCommand;
@@ -14,12 +15,14 @@ import com.streamarr.transcode.v1.WorkerRegistration;
 import com.streamarr.transcode.v1.WorkerSessionAccepted;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
-import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -39,12 +42,13 @@ final class LiveWorkerConnectionRegistry {
       return connection.workerSessionId();
     }
 
-    var abandonedVariants = replaced.closeAsReplaced();
+    var abandonedJobs = replaced.closeAsReplaced();
+    abandonedJobs.forEach(job -> logAbandoned(job, "replaced"));
     log.warn(
         "Worker {} reconnected; abandoning {} active variant job(s) from its previous"
             + " connection",
         workerId,
-        abandonedVariants);
+        abandonedJobs.size());
     return connection.workerSessionId();
   }
 
@@ -53,17 +57,51 @@ final class LiveWorkerConnectionRegistry {
     if (connection != null
         && connection.workerSessionId().equals(workerSessionId)
         && connections.remove(workerId, connection)) {
+      connection.drainActiveVariants().forEach(job -> logAbandoned(job, "disconnected"));
       log.info("Worker {} disconnected", workerId);
     }
   }
 
   boolean dispatch(VariantJob job) {
     for (var connection : connections.values()) {
-      if (connection.tryDispatch(job)) {
+      if (dispatchGuardingDisconnect(connection, job)) {
         return true;
       }
     }
     return false;
+  }
+
+  boolean dispatchTo(ExecutionTargetId target, VariantJob job) {
+    for (var connection : connections.values()) {
+      if (connection.workerSessionId().toString().equals(target.value())) {
+        return dispatchGuardingDisconnect(connection, job);
+      }
+    }
+    return false;
+  }
+
+  /**
+   * A disconnect can drain the connection between this dispatcher's send and its bookkeeping put;
+   * the job would then be tracked nowhere with no terminal evidence. Re-checking registration after
+   * the put and undoing turns that race into an honest dispatch failure.
+   */
+  private boolean dispatchGuardingDisconnect(WorkerConnection connection, VariantJob job) {
+    if (!connection.tryDispatch(job)) {
+      return false;
+    }
+    if (!connections.containsValue(connection)) {
+      connection.releaseJobAttempt(fromProto(job.getJobAttemptId()));
+      return false;
+    }
+    return true;
+  }
+
+  Set<ExecutionTargetId> eligibleWorkers(UUID sourceNamespaceId) {
+    var sourceNamespace = toProto(sourceNamespaceId);
+    return connections.values().stream()
+        .filter(connection -> connection.canAccessSourceNamespace(sourceNamespace))
+        .map(connection -> new ExecutionTargetId(connection.workerSessionId().toString()))
+        .collect(Collectors.toCollection(LinkedHashSet::new));
   }
 
   boolean stopVariant(UUID jobAttemptId) {
@@ -75,8 +113,27 @@ final class LiveWorkerConnectionRegistry {
     return false;
   }
 
+  boolean stopVariant(UUID streamSessionId, String variantLabel) {
+    for (var connection : connections.values()) {
+      if (connection.stopVariant(streamSessionId, variantLabel)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   void stopStreamSession(UUID streamSessionId) {
     connections.values().forEach(connection -> connection.stopStreamSession(streamSessionId));
+  }
+
+  /** The abandoned job's last trace is this log line; the death site owns its own detail. */
+  private void logAbandoned(VariantJob job, String reason) {
+    log.warn(
+        "Abandoning job attempt {} for stream session {} variant {} ({})",
+        fromProto(job.getJobAttemptId()),
+        fromProto(job.getStreamSessionId()),
+        job.getVariant().getVariantLabel(),
+        reason);
   }
 
   boolean isRunning(UUID streamSessionId) {
@@ -133,7 +190,10 @@ final class LiveWorkerConnectionRegistry {
     private final Set<Uuid> sourceNamespaceIds;
     private final int maximumActiveVariants;
     private final StreamObserver<EstablishWorkerSessionResponse> responseObserver;
-    private final Map<UUID, VariantJob> activeVariants = new HashMap<>();
+
+    // Concurrent so a disconnect can drain abandoned jobs without taking the connection monitor,
+    // which an in-progress segment publication may hold for the duration of a filesystem move.
+    private final Map<UUID, VariantJob> activeVariants = new ConcurrentHashMap<>();
 
     private WorkerConnection(
         UUID workerSessionId,
@@ -192,6 +252,18 @@ final class LiveWorkerConnectionRegistry {
               .build();
       trySend(EstablishWorkerSessionResponse.newBuilder().setStopVariant(command).build());
       return true;
+    }
+
+    private synchronized boolean stopVariant(UUID streamSessionId, String variantLabel) {
+      return activeVariants.entrySet().stream()
+          .filter(
+              entry ->
+                  fromProto(entry.getValue().getStreamSessionId()).equals(streamSessionId)
+                      && entry.getValue().getVariant().getVariantLabel().equals(variantLabel))
+          .map(Map.Entry::getKey)
+          .findFirst()
+          .map(this::tryStop)
+          .orElse(false);
     }
 
     /** A send can fail when the worker call died but its disconnect has not been reaped yet. */
@@ -256,16 +328,21 @@ final class LiveWorkerConnectionRegistry {
       return true;
     }
 
-    private synchronized int closeAsReplaced() {
-      var abandonedVariants = activeVariants.size();
+    private List<VariantJob> drainActiveVariants() {
+      var drained = List.copyOf(activeVariants.values());
       activeVariants.clear();
+      return drained;
+    }
+
+    private synchronized List<VariantJob> closeAsReplaced() {
+      var abandonedJobs = drainActiveVariants();
       try {
         responseObserver.onError(
             Status.ABORTED.withDescription("Worker connection replaced").asRuntimeException());
       } catch (RuntimeException _) {
         // The previous call is already dead; the replacement proceeds regardless.
       }
-      return abandonedVariants;
+      return abandonedJobs;
     }
   }
 }

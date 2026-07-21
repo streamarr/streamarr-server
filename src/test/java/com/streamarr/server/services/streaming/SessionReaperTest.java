@@ -9,8 +9,10 @@ import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
+import com.streamarr.server.fakes.FakeSegmentStore;
 import com.streamarr.server.fakes.FakeTranscodeExecutor;
 import com.streamarr.server.fixtures.StreamSessionFixture;
+import com.streamarr.server.services.concurrency.MutexFactory;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -41,9 +43,15 @@ class SessionReaperTest {
             .sessionTimeout(Duration.ofSeconds(60))
             .sessionRetention(Duration.ofHours(24))
             .build();
-    reaper =
-        new SessionReaper(
-            streamingService, executor, properties, new FakeRuntimeStreamSessionRegistry());
+    var producerLifecycle =
+        ProducerLifecycleService.builder()
+            .transcodeExecutor(executor)
+            .segmentStore(new FakeSegmentStore())
+            .properties(properties)
+            .runtimeRegistry(new FakeRuntimeStreamSessionRegistry())
+            .sessionMutex(new MutexFactory<>())
+            .build();
+    reaper = new SessionReaper(streamingService, properties, producerLifecycle);
   }
 
   @Test
@@ -128,8 +136,8 @@ class SessionReaperTest {
   }
 
   @Test
-  @DisplayName("Should update handle to failed when FFmpeg process dies")
-  void shouldUpdateHandleToFailedWhenFfmpegProcessDies() {
+  @DisplayName("Should leave dead producer handles untouched when session is recently accessed")
+  void shouldLeaveDeadProducerHandlesUntouchedWhenSessionIsRecentlyAccessed() {
     var session = buildSession(Instant.now().minusSeconds(10));
     session.setHandle(new TranscodeHandle(1234L, TranscodeStatus.ACTIVE));
     streamingService.addSession(session);
@@ -137,48 +145,9 @@ class SessionReaperTest {
 
     reaper.reapSessions();
 
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.FAILED);
-    assertThat(session.getHandle().processId()).isEqualTo(1234L);
-  }
-
-  @Test
-  @DisplayName("Should not change handle when FFmpeg process is running")
-  void shouldNotChangeHandleWhenFfmpegProcessIsRunning() {
-    var session = buildSession(Instant.now().minusSeconds(10));
-    session.setHandle(new TranscodeHandle(1234L, TranscodeStatus.ACTIVE));
-    streamingService.addSession(session);
-    executor.start(
-        com.streamarr.server.domain.streaming.TranscodeRequest.builder()
-            .sessionId(session.getSessionId())
-            .sourcePath(Path.of("/media/movie.mkv"))
-            .seekPosition(0)
-            .targetSegmentDuration(6)
-            .framerate(24.0)
-            .transcodeDecision(session.getTranscodeDecision())
-            .width(1920)
-            .height(1080)
-            .bitrate(5_000_000)
-            .build());
-
-    reaper.reapSessions();
-
+    // Dead-producer detection and recovery happen at request time, never on the reaper's timer.
     assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
-  }
-
-  @Test
-  @DisplayName("Should mark specific variant as failed when only that process dies")
-  void shouldMarkSpecificVariantAsFailedWhenOnlyThatProcessDies() {
-    var session = buildAbrSession(Instant.now().minusSeconds(10));
-    streamingService.addSession(session);
-
-    executor.markDead(session.getSessionId(), "1080p");
-
-    reaper.reapSessions();
-
-    assertThat(session.getVariantHandle("1080p").status()).isEqualTo(TranscodeStatus.FAILED);
-    assertThat(session.getVariantHandle("720p").status()).isEqualTo(TranscodeStatus.ACTIVE);
-    assertThat(executor.isRunning(session.getSessionId(), "720p")).isTrue();
-    assertThat(streamingService.accessSession(playbackRequest(session))).isPresent();
+    assertThat(session.getHandle().processId()).isEqualTo(1234L);
   }
 
   @Test
@@ -315,16 +284,6 @@ class SessionReaperTest {
     @Override
     public int getActiveSessionCount() {
       return sessions.size();
-    }
-
-    @Override
-    public void resumeSessionIfNeeded(UUID sessionId, String segmentName) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public boolean isTranscodeActive(UUID sessionId, String variantLabel) {
-      throw new UnsupportedOperationException();
     }
   }
 }

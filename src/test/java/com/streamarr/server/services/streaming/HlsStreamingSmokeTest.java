@@ -29,6 +29,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
@@ -116,6 +117,15 @@ class HlsStreamingSmokeTest {
             .build();
 
     mediaFileRepository = new FakeMediaFileRepository();
+    var sessionRegistry = new InMemoryStreamSessionRegistry();
+    var producerLifecycle =
+        ProducerLifecycleService.builder()
+            .transcodeExecutor(transcodeExecutor)
+            .segmentStore(segmentStore)
+            .properties(properties)
+            .runtimeRegistry(sessionRegistry)
+            .sessionMutex(new MutexFactory<>())
+            .build();
     streamingService =
         new HlsStreamingService(
             mediaFileRepository,
@@ -126,8 +136,16 @@ class HlsStreamingSmokeTest {
             qualityLadderService,
             properties,
             _ -> true,
-            new InMemoryStreamSessionRegistry(),
-            new MutexFactory<>());
+            sessionRegistry,
+            producerLifecycle,
+            SegmentDeliveryCoordinator.builder()
+                .runtimeRegistry(sessionRegistry)
+                .segmentStore(segmentStore)
+                .transcodeExecutor(transcodeExecutor)
+                .producerLifecycle(producerLifecycle)
+                .properties(properties)
+                .clock(Clock.systemUTC())
+                .build());
 
     playlistService = new HlsPlaylistService(properties);
   }
@@ -232,9 +250,9 @@ class HlsStreamingSmokeTest {
     assertThat(session.getHandle()).isNotNull();
     assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
 
-    var segmentReady =
-        segmentStore.waitForSegment(session.getSessionId(), "segment0.ts", () -> true);
-    assertThat(segmentReady).isTrue();
+    await()
+        .atMost(Duration.ofSeconds(30))
+        .until(() -> segmentStore.segmentExists(session.getSessionId(), "segment0.ts"));
 
     var segmentData = segmentStore.readSegment(session.getSessionId(), "segment0.ts");
     assertThat(segmentData).isNotNull().hasSizeGreaterThan(0);
@@ -323,7 +341,9 @@ class HlsStreamingSmokeTest {
     var session = createSession(file.getId(), UUID.randomUUID(), options);
     var sessionId = session.getSessionId();
 
-    segmentStore.waitForSegment(sessionId, "segment0.ts", () -> true);
+    await()
+        .atMost(Duration.ofSeconds(30))
+        .until(() -> segmentStore.segmentExists(sessionId, "segment0.ts"));
 
     var handle = session.getHandle();
     assertThat(handle).isNotNull();
@@ -350,7 +370,9 @@ class HlsStreamingSmokeTest {
     var session = createSession(file.getId(), UUID.randomUUID(), options);
     var sessionId = session.getSessionId();
 
-    segmentStore.waitForSegment(sessionId, "segment0.ts", () -> true);
+    await()
+        .atMost(Duration.ofSeconds(30))
+        .until(() -> segmentStore.segmentExists(sessionId, "segment0.ts"));
 
     streamingService.destroySession(sessionId);
 
