@@ -17,6 +17,7 @@ import com.streamarr.server.domain.streaming.ContainerFormat;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
+import com.streamarr.server.domain.streaming.TranscodeRequest;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
@@ -80,6 +81,7 @@ class StreamControllerTest {
             .maxConcurrentTranscodes(8)
             .targetSegmentDuration(Duration.ofSeconds(6))
             .sessionTimeout(Duration.ofSeconds(60))
+            .producerStallThreshold(Duration.ofMillis(200))
             .build();
     playlistService = new HlsPlaylistService(properties);
     boundStreamSession.set(SESSION_ID);
@@ -252,6 +254,45 @@ class StreamControllerTest {
 
     mockMvc
         .perform(get("/api/stream/{sessionId}/segment0.ts", SESSION_ID))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  @DisplayName(
+      "Should return 404 without disturbing the producer when the segment name matches no naming"
+          + " scheme")
+  void shouldReturn404WithoutDisturbingTheProducerWhenTheSegmentNameMatchesNoNamingScheme()
+      throws Exception {
+    var session = buildMpegtsSession();
+    streamingService.setSession(session);
+    var handle =
+        transcodeExecutor.start(
+            TranscodeRequest.builder()
+                .sessionId(SESSION_ID)
+                .sourcePath(session.getSourcePath())
+                .transcodeDecision(session.getTranscodeDecision())
+                .build());
+    session.setHandle(handle);
+    runtimeRegistry.save(session);
+
+    mockMvc
+        .perform(get("/api/stream/{sessionId}/foo.ts", SESSION_ID))
+        .andExpect(status().isNotFound());
+
+    assertThat(transcodeExecutor.getStoppedVariants()).isEmpty();
+    assertThat(transcodeExecutor.isRunning(SESSION_ID)).isTrue();
+  }
+
+  @Test
+  @DisplayName("Should return 404 when the segment index does not fit the naming scheme")
+  void shouldReturn404WhenTheSegmentIndexDoesNotFitTheNamingScheme() throws Exception {
+    var session = buildMpegtsSession();
+    streamingService.setSession(session);
+    session.setHandle(new TranscodeHandle(1L, TranscodeStatus.ACTIVE));
+    runtimeRegistry.save(session);
+
+    mockMvc
+        .perform(get("/api/stream/{sessionId}/segment99999999999999999999.ts", SESSION_ID))
         .andExpect(status().isNotFound());
   }
 

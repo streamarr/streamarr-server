@@ -9,7 +9,10 @@ import java.util.regex.Pattern;
  */
 public final class SegmentNames {
 
-  private static final Pattern SEGMENT_INDEX_PATTERN = Pattern.compile("segment(\\d+)");
+  // Nine digits keep every parsed index inside int range; a longer run of digits is not a
+  // media-segment name.
+  private static final Pattern MEDIA_SEGMENT_PATTERN =
+      Pattern.compile("segment(\\d{1,9})\\.(ts|m4s)");
 
   private SegmentNames() {}
 
@@ -18,23 +21,39 @@ public final class SegmentNames {
     return indexOf(segmentName).orElse(0);
   }
 
+  /** Whether the name is a run's init segment: a basename of exactly {@code init.mp4}. */
+  public static boolean isInitSegment(String segmentName) {
+    return "init.mp4".equals(basename(segmentName));
+  }
+
   public static OptionalInt indexOf(String segmentName) {
-    var matcher = SEGMENT_INDEX_PATTERN.matcher(basename(segmentName));
-    if (!matcher.find()) {
+    var matcher = MEDIA_SEGMENT_PATTERN.matcher(basename(segmentName));
+    if (!matcher.matches()) {
       return OptionalInt.empty();
     }
 
     return OptionalInt.of(Integer.parseInt(matcher.group(1)));
   }
 
-  /** The same run's media segment at {@code index}: same variant directory, same container. */
+  /**
+   * The same run's media segment at {@code index}: same variant directory, same container. A name
+   * matching no scheme throws rather than passing through unchanged — a fabricated sibling would
+   * point progress checks at a file no run can ever produce.
+   */
   public static String siblingName(String segmentName, int index) {
-    if (indexOf(segmentName).isPresent()) {
-      return SEGMENT_INDEX_PATTERN.matcher(segmentName).replaceFirst("segment" + index);
+    var base = basename(segmentName);
+    var directory = segmentName.substring(0, segmentName.length() - base.length());
+    var matcher = MEDIA_SEGMENT_PATTERN.matcher(base);
+    if (matcher.matches()) {
+      return directory + "segment" + index + "." + matcher.group(2);
     }
 
     // Only fMP4 runs have an init.mp4; their media segments are .m4s.
-    return segmentName.replace("init.mp4", "segment" + index + ".m4s");
+    if (isInitSegment(segmentName)) {
+      return directory + "segment" + index + ".m4s";
+    }
+
+    throw new IllegalArgumentException("Segment name matches no known scheme: " + segmentName);
   }
 
   private static String basename(String segmentName) {

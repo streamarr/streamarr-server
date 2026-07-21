@@ -175,6 +175,35 @@ class SegmentDeliveryCoordinatorTest {
   }
 
   @Test
+  @DisplayName(
+      "Should reject a segment name matching no naming scheme without disturbing the producer")
+  void shouldRejectSegmentNameMatchingNoNamingSchemeWithoutDisturbingTheProducer()
+      throws Exception {
+    var session = startedSession();
+
+    var delivery = deliverAsync(session.getSessionId(), "foo.ts");
+
+    assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.SessionEnded.class);
+    assertThat(transcodeExecutor.isRunning(session.getSessionId(), StreamSession.defaultVariant()))
+        .isTrue();
+    assertThat(transcodeExecutor.getStoppedVariants()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should reject a segment index that overflows the naming scheme")
+  void shouldRejectSegmentIndexThatOverflowsTheNamingScheme() {
+    var session = startedSession();
+
+    var delivery =
+        coordinator.deliver(
+            session.getSessionId(),
+            StreamSession.defaultVariant(),
+            "segment99999999999999999999.ts");
+
+    assertThat(delivery).isInstanceOf(SegmentDelivery.SessionEnded.class);
+  }
+
+  @Test
   @DisplayName("Should keep waiting without replacement while the producer is alive")
   void shouldKeepWaitingWithoutReplacementWhileTheProducerIsAlive() throws Exception {
     var session = startedSession();
