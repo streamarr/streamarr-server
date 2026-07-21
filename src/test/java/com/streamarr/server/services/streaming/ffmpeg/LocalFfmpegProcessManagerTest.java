@@ -207,6 +207,83 @@ class LocalFfmpegProcessManagerTest {
   }
 
   @Test
+  @DisplayName("Should keep tracking a live replacement when corpse cleanup races it")
+  void shouldKeepTrackingALiveReplacementWhenCorpseCleanupRacesIt() throws Exception {
+    var sessionId = UUID.randomUUID();
+    var leader =
+        manager.startProcess(
+            sessionId, StreamSession.defaultVariant(), List.of("bash", "-c", "exit 7"), tempDir);
+    leader.waitFor();
+
+    // Park the cleanup thread inside logObservedExit's warn — after it has read the corpse's map
+    // entry, before the removal — so recovery can install a replacement in that window.
+    var logger = (Logger) LoggerFactory.getLogger(LocalFfmpegProcessManager.class);
+    var gate = new LatchingWarnAppender("corpse-cleanup-race");
+    gate.start();
+    logger.addAppender(gate);
+    var cleanup =
+        new Thread(
+            () -> manager.isRunning(sessionId, StreamSession.defaultVariant()),
+            "corpse-cleanup-race");
+    Process replacement = null;
+    try {
+      cleanup.start();
+      assertThat(gate.reached.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+
+      replacement =
+          manager.startProcess(
+              sessionId, StreamSession.defaultVariant(), List.of("sleep", "30"), tempDir);
+      gate.release.countDown();
+      cleanup.join(5000);
+
+      assertThat(manager.isRunning(sessionId, StreamSession.defaultVariant()))
+          .as("corpse cleanup must not unregister the live replacement")
+          .isTrue();
+      manager.stopProcess(sessionId);
+      await().atMost(Duration.ofSeconds(10)).until(() -> !replacementAlive(sessionId));
+    } finally {
+      gate.release.countDown();
+      logger.detachAppender(gate);
+      if (replacement != null) {
+        replacement.destroyForcibly();
+      }
+    }
+  }
+
+  private boolean replacementAlive(UUID sessionId) {
+    return manager.isRunning(sessionId);
+  }
+
+  /** Blocks the named thread inside an observed-exit warn, exactly once. */
+  private static final class LatchingWarnAppender
+      extends ch.qos.logback.core.AppenderBase<ILoggingEvent> {
+
+    private final java.util.concurrent.CountDownLatch reached =
+        new java.util.concurrent.CountDownLatch(1);
+    private final java.util.concurrent.CountDownLatch release =
+        new java.util.concurrent.CountDownLatch(1);
+    private final String threadName;
+
+    private LatchingWarnAppender(String threadName) {
+      this.threadName = threadName;
+    }
+
+    @Override
+    protected void append(ILoggingEvent event) {
+      if (!threadName.equals(event.getThreadName())
+          || !event.getFormattedMessage().contains("FFmpeg exited with code")) {
+        return;
+      }
+      reached.countDown();
+      try {
+        release.await(10, java.util.concurrent.TimeUnit.SECONDS);
+      } catch (InterruptedException _) {
+        Thread.currentThread().interrupt();
+      }
+    }
+  }
+
+  @Test
   @DisplayName("Should log completion without warning when a clean exit is observed")
   void shouldLogCompletionWithoutWarningWhenACleanExitIsObserved() throws Exception {
     var sessionId = UUID.randomUUID();

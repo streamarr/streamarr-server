@@ -148,7 +148,9 @@ public class LocalFfmpegProcessManager implements FfmpegProcessManager {
     if (!managed.process().isAlive()) {
       logObservedExit(key, managed);
       managed.drainer().close();
-      processes.remove(key);
+      // Conditional: recovery may have replaced the entry while this thread was logging the old
+      // process's exit — an unconditional remove would unregister the live replacement.
+      processes.remove(key, managed);
       return false;
     }
 
