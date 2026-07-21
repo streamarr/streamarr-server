@@ -1,10 +1,8 @@
-// DRAFT — Proposed. Re-check the 0019 number against main before merging;
-// parallel branches collide on ADR numbers the same way the two V039 migrations did.
 = ADR 0019: Recoverable Just-In-Time HLS Segment Delivery
 
 == Status
 
-Proposed
+Accepted
 
 This ADR narrows the "RFC 8216 compliance" consequence of link:0008-server-generated-hls-playlists.adoc[ADR 0008] and refines link:0018-live-playback-authority-and-outbound-workers.adoc[ADR 0018] by un-deferring its request-driven recovery slice while leaving 0018's multi-control-plane failover and durable job recovery deferred.
 
