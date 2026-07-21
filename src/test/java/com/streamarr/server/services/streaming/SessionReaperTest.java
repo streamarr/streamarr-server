@@ -62,7 +62,7 @@ class SessionReaperTest {
 
     reaper.reapSessions();
 
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.SUSPENDED);
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.SUSPENDED);
   }
 
   @Test
@@ -96,7 +96,7 @@ class SessionReaperTest {
 
     reaper.reapSessions();
 
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.SUSPENDED);
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.SUSPENDED);
     assertThat(streamingService.accessSession(playbackRequest(session))).isPresent();
   }
 
@@ -109,7 +109,7 @@ class SessionReaperTest {
 
     reaper.reapSessions();
 
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.FAILED);
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.FAILED);
     assertThat(streamingService.accessSession(playbackRequest(session))).isPresent();
   }
 
@@ -146,8 +146,8 @@ class SessionReaperTest {
     reaper.reapSessions();
 
     // Dead-producer detection and recovery happen at request time, never on the reaper's timer.
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
-    assertThat(session.getHandle().processId()).isEqualTo(1234L);
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
+    assertThat(session.getHandle().orElseThrow().processId()).isEqualTo(1234L);
   }
 
   @Test
@@ -158,8 +158,10 @@ class SessionReaperTest {
 
     reaper.reapSessions();
 
-    assertThat(session.getVariantHandle("1080p").status()).isEqualTo(TranscodeStatus.ACTIVE);
-    assertThat(session.getVariantHandle("720p").status()).isEqualTo(TranscodeStatus.ACTIVE);
+    assertThat(session.getVariantHandle("1080p").orElseThrow().status())
+        .isEqualTo(TranscodeStatus.ACTIVE);
+    assertThat(session.getVariantHandle("720p").orElseThrow().status())
+        .isEqualTo(TranscodeStatus.ACTIVE);
   }
 
   @Test
@@ -187,8 +189,10 @@ class SessionReaperTest {
 
     reaper.reapSessions();
 
-    assertThat(session.getVariantHandle("1080p").status()).isEqualTo(TranscodeStatus.SUSPENDED);
-    assertThat(session.getVariantHandle("720p").status()).isEqualTo(TranscodeStatus.FAILED);
+    assertThat(session.getVariantHandle("1080p").orElseThrow().status())
+        .isEqualTo(TranscodeStatus.SUSPENDED);
+    assertThat(session.getVariantHandle("720p").orElseThrow().status())
+        .isEqualTo(TranscodeStatus.FAILED);
   }
 
   @Test

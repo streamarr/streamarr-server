@@ -189,7 +189,7 @@ public class ProducerLifecycleService {
       return new ReplaceResult.Superseded();
     }
 
-    var handle = session.getVariantHandle(command.variantLabel());
+    var handle = session.getVariantHandle(command.variantLabel()).orElse(null);
     if (handle == null
         || !handle.attemptId().equals(command.expectedAttemptId())
         || !isReplaceableStatus(handle, session, command.reason())) {
@@ -239,7 +239,7 @@ public class ProducerLifecycleService {
     // SUSPENDED is exhaustible here: with a healthy suspension every replacement supersedes
     // instead of consuming a target, so exhaustion is only ever reached when nothing — not even a
     // resume — can produce the segment (e.g. no eligible targets after a failed resume).
-    var handle = session.getVariantHandle(variantLabel);
+    var handle = session.getVariantHandle(variantLabel).orElse(null);
     if (handle == null || !handle.attemptId().equals(expectedAttemptId)) {
       return new ExhaustResult.Superseded();
     }

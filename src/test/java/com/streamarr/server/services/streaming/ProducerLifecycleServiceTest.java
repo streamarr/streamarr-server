@@ -110,7 +110,7 @@ class ProducerLifecycleServiceTest {
     lifecycle.ensurePositioned(session.getSessionId(), "segment5.ts");
 
     assertThat(transcodeExecutor.isRunning(session.getSessionId())).isTrue();
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
   }
 
   @Test
@@ -133,7 +133,7 @@ class ProducerLifecycleServiceTest {
 
     lifecycle.ensurePositioned(session.getSessionId(), "segment5.ts");
 
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.SUSPENDED);
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.SUSPENDED);
   }
 
   @Test
@@ -166,7 +166,7 @@ class ProducerLifecycleServiceTest {
 
     lifecycle.ensurePositioned(session.getSessionId(), segmentName);
 
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
     var lastRequest = transcodeExecutor.getStartedRequests().getLast();
     assertThat(lastRequest.startSequenceNumber()).isEqualTo(startNumber);
     assertThat(lastRequest.seekPosition()).isEqualTo(seekPosition);
@@ -180,7 +180,7 @@ class ProducerLifecycleServiceTest {
 
     lifecycle.ensurePositioned(session.getSessionId(), "init.mp4");
 
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
     var lastRequest = transcodeExecutor.getStartedRequests().getLast();
     assertThat(lastRequest.startSequenceNumber()).isZero();
     assertThat(lastRequest.seekPosition()).isZero();
@@ -194,7 +194,7 @@ class ProducerLifecycleServiceTest {
 
     lifecycle.ensurePositioned(session.getSessionId(), "segment0.ts");
 
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
     var lastRequest = transcodeExecutor.getStartedRequests().getLast();
     assertThat(lastRequest.startSequenceNumber()).isZero();
     assertThat(lastRequest.seekPosition()).isZero();
@@ -225,7 +225,8 @@ class ProducerLifecycleServiceTest {
         .extracting(TranscodeRequest::variantLabel)
         .containsExactlyInAnyOrderElementsOf(variantLabels);
     for (var label : variantLabels) {
-      assertThat(session.getVariantHandle(label).status()).isEqualTo(TranscodeStatus.ACTIVE);
+      assertThat(session.getVariantHandle(label).orElseThrow().status())
+          .isEqualTo(TranscodeStatus.ACTIVE);
     }
   }
 
@@ -317,23 +318,23 @@ class ProducerLifecycleServiceTest {
     lifecycle.suspend(session);
 
     assertThat(transcodeExecutor.getStopped()).contains(session.getSessionId());
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.SUSPENDED);
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.SUSPENDED);
   }
 
   @Test
   @DisplayName("Should preserve the attempt identity when suspending an active handle")
   void shouldPreserveTheAttemptIdentityWhenSuspendingAnActiveHandle() {
     var session = startedSession();
-    var attemptId = session.getHandle().attemptId();
+    var attemptId = session.getHandle().orElseThrow().attemptId();
 
     lifecycle.suspend(session);
 
-    assertThat(session.getHandle().attemptId()).isEqualTo(attemptId);
+    assertThat(session.getHandle().orElseThrow().attemptId()).isEqualTo(attemptId);
   }
 
   private ProducerLifecycleService.ReplaceProducerCommand.ReplaceProducerCommandBuilder
       replaceCommand(StreamSession session) {
-    var handle = session.getHandle();
+    var handle = session.getHandle().orElse(null);
     return ProducerLifecycleService.ReplaceProducerCommand.builder()
         .sessionId(session.getSessionId())
         .variantLabel(StreamSession.defaultVariant())
@@ -347,13 +348,13 @@ class ProducerLifecycleServiceTest {
   @DisplayName("Should install a fresh attempt at the requested offset when replacing a producer")
   void shouldInstallFreshAttemptAtTheRequestedOffsetWhenReplacingProducer() {
     var session = startedSession();
-    var deadAttempt = session.getHandle().attemptId();
+    var deadAttempt = session.getHandle().orElseThrow().attemptId();
     transcodeExecutor.markDead(session.getSessionId());
 
     var result = lifecycle.replaceProducer(replaceCommand(session).build());
 
     assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.Replaced.class);
-    var handle = session.getHandle();
+    var handle = session.getHandle().orElseThrow();
     assertThat(handle.status()).isEqualTo(TranscodeStatus.ACTIVE);
     assertThat(handle.attemptId()).isNotEqualTo(deadAttempt);
     assertThat(handle.startSequenceNumber()).isEqualTo(2);
@@ -383,7 +384,7 @@ class ProducerLifecycleServiceTest {
   @DisplayName("Should supersede a death claim when the producer is actually running")
   void shouldSupersedeDeathClaimWhenTheProducerIsActuallyRunning() {
     var session = startedSession();
-    var attemptBefore = session.getHandle().attemptId();
+    var attemptBefore = session.getHandle().orElseThrow().attemptId();
 
     var result =
         lifecycle.replaceProducer(
@@ -395,7 +396,7 @@ class ProducerLifecycleServiceTest {
     // re-observe, never kill.
     assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.Superseded.class);
     assertThat(transcodeExecutor.getStoppedVariants()).isEmpty();
-    assertThat(session.getHandle().attemptId()).isEqualTo(attemptBefore);
+    assertThat(session.getHandle().orElseThrow().attemptId()).isEqualTo(attemptBefore);
     assertThat(transcodeExecutor.isRunning(session.getSessionId())).isTrue();
   }
 
@@ -412,7 +413,7 @@ class ProducerLifecycleServiceTest {
                 .build());
 
     assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.Replaced.class);
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
   }
 
   @Test
@@ -425,11 +426,11 @@ class ProducerLifecycleServiceTest {
         lifecycle.markExhausted(
             session.getSessionId(),
             StreamSession.defaultVariant(),
-            session.getHandle().attemptId());
+            session.getHandle().orElseThrow().attemptId());
 
     // Reached only when nothing — not even a resume — can produce the segment.
     assertThat(result).isInstanceOf(ProducerLifecycleService.ExhaustResult.Exhausted.class);
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.FAILED);
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.FAILED);
   }
 
   @Test
@@ -441,7 +442,7 @@ class ProducerLifecycleServiceTest {
         replaceCommand(session)
             .variantLabel("720p")
             .segmentName("720p/segment2.ts")
-            .expectedAttemptId(session.getVariantHandle("720p").attemptId())
+            .expectedAttemptId(session.getVariantHandle("720p").orElseThrow().attemptId())
             .build();
 
     var result = lifecycle.replaceProducer(command);
@@ -502,7 +503,7 @@ class ProducerLifecycleServiceTest {
 
     // The suspension kept the attempt id; the status fence alone must reject the replacement.
     assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.Superseded.class);
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.SUSPENDED);
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.SUSPENDED);
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(startsBefore);
   }
 
@@ -514,13 +515,13 @@ class ProducerLifecycleServiceTest {
         lifecycle.markExhausted(
             session.getSessionId(),
             StreamSession.defaultVariant(),
-            session.getHandle().attemptId());
+            session.getHandle().orElseThrow().attemptId());
     assertThat(exhausted).isInstanceOf(ProducerLifecycleService.ExhaustResult.Exhausted.class);
 
     var result = lifecycle.replaceProducer(replaceCommand(session).build());
 
     assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.Replaced.class);
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
   }
 
   @Test
@@ -533,7 +534,7 @@ class ProducerLifecycleServiceTest {
     var result = lifecycle.replaceProducer(replaceCommand(session).build());
 
     assertThat(result).isInstanceOf(ProducerLifecycleService.ReplaceResult.Refused.class);
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
   }
 
   @Test
@@ -545,10 +546,10 @@ class ProducerLifecycleServiceTest {
         lifecycle.markExhausted(
             session.getSessionId(),
             StreamSession.defaultVariant(),
-            session.getHandle().attemptId());
+            session.getHandle().orElseThrow().attemptId());
 
     assertThat(result).isInstanceOf(ProducerLifecycleService.ExhaustResult.Exhausted.class);
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.FAILED);
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.FAILED);
     // FAILED promises "no producer": the final stalled-but-alive attempt must not keep running.
     assertThat(transcodeExecutor.getStoppedVariants())
         .contains(session.getSessionId() + "/" + StreamSession.defaultVariant());
@@ -559,7 +560,7 @@ class ProducerLifecycleServiceTest {
   @DisplayName("Should not exhaust when a planned restart superseded the attempt")
   void shouldNotExhaustWhenPlannedRestartSupersededTheAttempt() {
     var session = startedSession();
-    var staleAttempt = session.getHandle().attemptId();
+    var staleAttempt = session.getHandle().orElseThrow().attemptId();
     lifecycle.suspend(session);
     lifecycle.ensurePositioned(session.getSessionId(), "segment5.ts");
 
@@ -569,7 +570,7 @@ class ProducerLifecycleServiceTest {
 
     // The resumed producer must never inherit a stale 503.
     assertThat(result).isInstanceOf(ProducerLifecycleService.ExhaustResult.Superseded.class);
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
   }
 
   @Test

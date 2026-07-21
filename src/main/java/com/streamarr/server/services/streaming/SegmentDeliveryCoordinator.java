@@ -91,7 +91,7 @@ public class SegmentDeliveryCoordinator {
       return new SegmentDelivery.SessionEnded();
     }
 
-    var handle = session.getVariantHandle(variantLabel);
+    var handle = session.getVariantHandle(variantLabel).orElse(null);
     if (handle == null) {
       return new SegmentDelivery.SessionEnded();
     }
@@ -108,7 +108,7 @@ public class SegmentDeliveryCoordinator {
     }
 
     var positioned = tryEnsurePositioned(session, segmentName);
-    handle = session.getVariantHandle(variantLabel);
+    handle = session.getVariantHandle(variantLabel).orElse(null);
     if (handle == null) {
       return new SegmentDelivery.SessionEnded();
     }
@@ -338,7 +338,7 @@ public class SegmentDeliveryCoordinator {
       TranscodeHandle handle,
       PendingSegment pending) {
     tryEnsurePositioned(session, pending.segmentName());
-    var refreshed = session.getVariantHandle(pending.variantLabel());
+    var refreshed = session.getVariantHandle(pending.variantLabel()).orElse(null);
     if (refreshed == null) {
       return new SegmentDelivery.SessionEnded();
     }

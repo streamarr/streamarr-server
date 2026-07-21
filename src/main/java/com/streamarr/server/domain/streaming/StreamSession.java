@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
@@ -65,8 +66,8 @@ public class StreamSession {
     return Collections.unmodifiableMap(variantHandles);
   }
 
-  public TranscodeHandle getHandle() {
-    return variantHandles.get(DEFAULT_VARIANT);
+  public Optional<TranscodeHandle> getHandle() {
+    return getVariantHandle(DEFAULT_VARIANT);
   }
 
   public void setHandle(TranscodeHandle handle) {
@@ -77,8 +78,8 @@ public class StreamSession {
     variantHandles.put(variantLabel, handle);
   }
 
-  public TranscodeHandle getVariantHandle(String variantLabel) {
-    return variantHandles.get(variantLabel);
+  public Optional<TranscodeHandle> getVariantHandle(String variantLabel) {
+    return Optional.ofNullable(variantHandles.get(variantLabel));
   }
 
   public boolean isSuspended() {

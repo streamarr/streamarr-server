@@ -601,7 +601,7 @@ class HlsStreamingServiceTest {
     var session = createSession(file.getId(), UUID.randomUUID(), options);
 
     assertThat(session.getVariants()).isEmpty();
-    assertThat(session.getHandle()).isNotNull();
+    assertThat(session.getHandle()).isPresent();
   }
 
   @Test
@@ -628,7 +628,7 @@ class HlsStreamingServiceTest {
     var session = createSession(file.getId(), UUID.randomUUID(), options);
 
     assertThat(session.getVariants()).isEmpty();
-    assertThat(session.getHandle()).isNotNull();
+    assertThat(session.getHandle()).isPresent();
   }
 
   @Test
