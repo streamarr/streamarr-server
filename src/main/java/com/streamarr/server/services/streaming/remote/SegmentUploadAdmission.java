@@ -29,18 +29,6 @@ final class SegmentUploadAdmission {
     return Optional.of(new Ticket());
   }
 
-  private synchronized boolean tryReserveBytes(long bytes) {
-    if (reservedBytes > maximumBufferedBytes - bytes) {
-      return false;
-    }
-    reservedBytes += bytes;
-    return true;
-  }
-
-  private synchronized void releaseBytes(long bytes) {
-    reservedBytes -= bytes;
-  }
-
   /** Owns one upload slot and at most one byte reservation; close releases both exactly once. */
   final class Ticket implements AutoCloseable {
 
@@ -57,8 +45,13 @@ final class SegmentUploadAdmission {
       if (closed || heldBytes != 0) {
         throw new IllegalStateException("Ticket is closed or already holds a reservation");
       }
-      if (!tryReserveBytes(bytes)) {
-        return false;
+      // The byte budget is shared admission state; its monitor is taken after the ticket's,
+      // and nothing takes them in the opposite order.
+      synchronized (SegmentUploadAdmission.this) {
+        if (reservedBytes > maximumBufferedBytes - bytes) {
+          return false;
+        }
+        reservedBytes += bytes;
       }
 
       heldBytes = bytes;
@@ -72,7 +65,9 @@ final class SegmentUploadAdmission {
       }
 
       closed = true;
-      releaseBytes(heldBytes);
+      synchronized (SegmentUploadAdmission.this) {
+        reservedBytes -= heldBytes;
+      }
       heldBytes = 0;
       uploadSlots.release();
     }
