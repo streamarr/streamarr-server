@@ -1,9 +1,11 @@
 package com.streamarr.server.domain.streaming;
 
 import static com.streamarr.server.fixtures.StreamSessionFixture.buildMpegtsSession;
+import static com.streamarr.server.fixtures.StreamSessionFixture.defaultPlaybackAuthorityBuilder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -39,5 +41,19 @@ class StreamSessionTest {
     session.setVariantHandle("720p", new TranscodeHandle(7L, TranscodeStatus.ACTIVE));
 
     assertThat(session.getVariantHandles()).containsKey("720p");
+  }
+
+  @Test
+  @DisplayName("Should return an empty handle when the variant is unknown")
+  void shouldReturnAnEmptyHandleWhenTheVariantIsUnknown() {
+    var session =
+        StreamSession.builder()
+            .sessionId(UUID.randomUUID())
+            .mediaFileId(UUID.randomUUID())
+            .authority(defaultPlaybackAuthorityBuilder().build())
+            .build();
+
+    assertThat(session.getHandle()).isEmpty();
+    assertThat(session.getVariantHandle("nope")).isEmpty();
   }
 }

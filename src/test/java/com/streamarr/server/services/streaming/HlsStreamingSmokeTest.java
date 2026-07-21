@@ -247,8 +247,8 @@ class HlsStreamingSmokeTest {
 
     var session = createSession(file.getId(), UUID.randomUUID(), options);
 
-    assertThat(session.getHandle()).isNotNull();
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
+    assertThat(session.getHandle()).isPresent();
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
 
     await()
         .atMost(Duration.ofSeconds(30))
@@ -345,8 +345,7 @@ class HlsStreamingSmokeTest {
         .atMost(Duration.ofSeconds(30))
         .until(() -> segmentStore.segmentExists(sessionId, "segment0.ts"));
 
-    var handle = session.getHandle();
-    assertThat(handle).isNotNull();
+    var handle = session.getHandle().orElseThrow();
     assertThat(handle.status()).isEqualTo(TranscodeStatus.ACTIVE);
 
     streamingService.destroySession(sessionId);

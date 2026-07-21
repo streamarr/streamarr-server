@@ -279,8 +279,8 @@ class SegmentDeliveryCoordinatorTest {
     assertThat(replacement.seekPosition()).isEqualTo(12);
     assertThat(replacement.startSequenceNumber()).isEqualTo(2);
     assertThat(replacement.variantLabel()).isEqualTo(StreamSession.defaultVariant());
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
-    assertThat(session.getHandle().attemptId()).isEqualTo(replacement.attemptId());
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
+    assertThat(session.getHandle().orElseThrow().attemptId()).isEqualTo(replacement.attemptId());
   }
 
   @Test
@@ -301,7 +301,8 @@ class SegmentDeliveryCoordinatorTest {
     assertThat(replacement.variantLabel()).isEqualTo("1080p");
     assertThat(replacement.width()).isEqualTo(1920);
     assertThat(transcodeExecutor.isRunning(session.getSessionId(), "720p")).isTrue();
-    assertThat(session.getVariantHandle("720p").status()).isEqualTo(TranscodeStatus.ACTIVE);
+    assertThat(session.getVariantHandle("720p").orElseThrow().status())
+        .isEqualTo(TranscodeStatus.ACTIVE);
   }
 
   @Test
@@ -364,7 +365,7 @@ class SegmentDeliveryCoordinatorTest {
 
     assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
     // A planned suspension resumes through positioning; nothing is ever marked FAILED.
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
     assertThat(transcodeExecutor.getStartedTargets()).isEmpty();
   }
 
@@ -406,7 +407,7 @@ class SegmentDeliveryCoordinatorTest {
 
     // An immediate startup refusal consumes the target and exhausts to 503, never a 500.
     assertThat(delivery).isInstanceOf(SegmentDelivery.Unrecoverable.class);
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.FAILED);
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.FAILED);
   }
 
   @Test
@@ -422,7 +423,7 @@ class SegmentDeliveryCoordinatorTest {
 
     assertThat(retry).isInstanceOf(SegmentDelivery.Unrecoverable.class);
     assertThat(drifted).isInstanceOf(SegmentDelivery.Unrecoverable.class);
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.FAILED);
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.FAILED);
   }
 
   @Test
@@ -440,7 +441,7 @@ class SegmentDeliveryCoordinatorTest {
     segmentStore.addSegment(sessionId, "segment0.ts", new byte[] {1});
 
     assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
   }
 
   @Test
@@ -454,7 +455,7 @@ class SegmentDeliveryCoordinatorTest {
     var delivery = deliverAsync(sessionId, "segment50.ts");
     await()
         .atMost(2, TimeUnit.SECONDS)
-        .until(() -> session.getHandle().status() == TranscodeStatus.ACTIVE);
+        .until(() -> session.getHandle().orElseThrow().status() == TranscodeStatus.ACTIVE);
     segmentStore.addSegment(sessionId, "segment50.ts", new byte[] {1});
 
     assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
@@ -482,7 +483,7 @@ class SegmentDeliveryCoordinatorTest {
 
     assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Unrecoverable.class);
     assertThat(transcodeExecutor.getStartedRequests()).hasSize(startsBefore + 1);
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.FAILED);
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.FAILED);
   }
 
   @Test
@@ -586,7 +587,7 @@ class SegmentDeliveryCoordinatorTest {
 
     // A failed resume enters recovery instead of escaping as a raw server error.
     assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
   }
 
   @Test
@@ -601,7 +602,7 @@ class SegmentDeliveryCoordinatorTest {
         coordinator.deliver(session.getSessionId(), StreamSession.defaultVariant(), "segment1.ts");
 
     assertThat(delivery).isInstanceOf(SegmentDelivery.Unrecoverable.class);
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.FAILED);
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.FAILED);
   }
 
   @Test
@@ -632,7 +633,7 @@ class SegmentDeliveryCoordinatorTest {
                 rig.coordinator()
                     .deliver(sessionId, StreamSession.defaultVariant(), "segment1.ts"));
     await().atMost(2, TimeUnit.SECONDS).until(() -> gatingExecutor.getStartedTargets().size() == 1);
-    var attemptY = session.getHandle().attemptId();
+    var attemptY = session.getHandle().orElseThrow().attemptId();
 
     gatingExecutor.releaseRecoveryEntry();
     // The released lagging waiter runs its now-superseded recovery pass and returns to polling; a
@@ -642,7 +643,7 @@ class SegmentDeliveryCoordinatorTest {
     // One death, one replacement: the healthy producer was neither stopped nor replaced again.
     assertThat(gatingExecutor.getStartedTargets()).containsExactly(TARGET_A);
     assertThat(gatingExecutor.getStoppedVariants()).isEmpty();
-    assertThat(session.getHandle().attemptId()).isEqualTo(attemptY);
+    assertThat(session.getHandle().orElseThrow().attemptId()).isEqualTo(attemptY);
 
     segmentStore.addSegment(sessionId, "segment1.ts", new byte[] {1});
     assertThat(laggingWaiter.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
@@ -674,7 +675,8 @@ class SegmentDeliveryCoordinatorTest {
                     rig.coordinator()
                         .deliver(sessionId, StreamSession.defaultVariant(), "segment0.ts")),
             "exhauster");
-    trapStore.armTrap(exhauster, () -> session.getHandle().status() == TranscodeStatus.FAILED);
+    trapStore.armTrap(
+        exhauster, () -> session.getHandle().orElseThrow().status() == TranscodeStatus.FAILED);
     exhauster.start();
     assertThat(trapStore.reachedTrap.await(5, TimeUnit.SECONDS)).isTrue();
 
@@ -690,7 +692,7 @@ class SegmentDeliveryCoordinatorTest {
     seeker.start();
     await()
         .atMost(2, TimeUnit.SECONDS)
-        .until(() -> session.getHandle().status() == TranscodeStatus.ACTIVE);
+        .until(() -> session.getHandle().orElseThrow().status() == TranscodeStatus.ACTIVE);
     // The seeker revived the variant and now polls for segment50; let it settle into that wait
     // before interrupting so the outcome is a clean Cancelled.
     awaitPolls(1);
@@ -701,7 +703,7 @@ class SegmentDeliveryCoordinatorTest {
     trapStore.releaseTrap.countDown();
     exhauster.join(2000);
     assertThat(exhausterOutcome.get()).isInstanceOf(SegmentDelivery.Unrecoverable.class);
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
 
     // The revived attempt dies; targets now accept. The stale exhausted cycle must not survive:
     // a fresh cycle opens and recovery replaces the producer instead of spinning forever.
@@ -732,7 +734,7 @@ class SegmentDeliveryCoordinatorTest {
     var sessionId = session.getSessionId();
     runtimeRegistry.save(session);
     rig.lifecycle().startAll(session, 0, 0);
-    var attemptX = session.getHandle().attemptId();
+    var attemptX = session.getHandle().orElseThrow().attemptId();
     gatingExecutor.markDead(sessionId);
     var streamingService =
         new HlsStreamingService(
@@ -791,7 +793,7 @@ class SegmentDeliveryCoordinatorTest {
     var delivery =
         coordinator.deliver(session.getSessionId(), StreamSession.defaultVariant(), "segment0.ts");
     assertThat(delivery).isInstanceOf(SegmentDelivery.Unrecoverable.class);
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.FAILED);
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.FAILED);
   }
 
   /** Blocks one specific thread at segmentExists while the armed condition holds, exactly once. */

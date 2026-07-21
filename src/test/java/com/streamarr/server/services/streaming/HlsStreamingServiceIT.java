@@ -102,7 +102,7 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
 
     assertThat(session.getMediaProbe()).isNotNull();
     assertThat(session.getTranscodeDecision()).isNotNull();
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
   }
 
   @Test
@@ -141,14 +141,14 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   @DisplayName("Should resume transcode when segment requested from suspended session")
   void shouldResumeTranscodeWhenSegmentRequestedFromSuspendedSession() {
     var session = createSession(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
 
     session.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
     FAKE_EXECUTOR.markDead(session.getSessionId());
 
     producerLifecycle.ensurePositioned(session.getSessionId(), "segment0.ts");
 
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
     assertThat(FAKE_EXECUTOR.isRunning(session.getSessionId())).isTrue();
   }
 

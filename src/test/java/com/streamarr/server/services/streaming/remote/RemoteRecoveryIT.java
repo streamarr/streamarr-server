@@ -95,7 +95,8 @@ class RemoteRecoveryIT extends AbstractIntegrationTest {
 
         assertThat(delivery).isInstanceOf(SegmentDelivery.Ready.class);
         assertThat(((SegmentDelivery.Ready) delivery).data()).isEqualTo(segmentData);
-        assertThat(rig.session().getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
+        assertThat(rig.session().getHandle().orElseThrow().status())
+            .isEqualTo(TranscodeStatus.ACTIVE);
       }
     }
   }
@@ -123,7 +124,8 @@ class RemoteRecoveryIT extends AbstractIntegrationTest {
           rig.coordinator().deliver(streamSessionId, StreamSession.defaultVariant(), "segment0.ts");
 
       assertThat(delivery).isInstanceOf(SegmentDelivery.Unrecoverable.class);
-      assertThat(rig.session().getHandle().status()).isEqualTo(TranscodeStatus.FAILED);
+      assertThat(rig.session().getHandle().orElseThrow().status())
+          .isEqualTo(TranscodeStatus.FAILED);
     }
   }
 
