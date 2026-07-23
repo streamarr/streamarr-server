@@ -61,7 +61,7 @@ public class StreamSession {
         current -> new PlaybackSnapshot(current.positionSeconds(), current.state(), accessedAt));
   }
 
-  /** Live read-only view; all mutation goes through {@link #setVariantHandle}. */
+  /** Live view — reflects concurrent handle mutations; not a snapshot. */
   public Map<String, TranscodeHandle> getVariantHandles() {
     return Collections.unmodifiableMap(variantHandles);
   }
