@@ -148,6 +148,10 @@ public class FfmpegCommandBuilder {
     }
   }
 
+  /**
+   * One GOP (group of pictures — the keyframe interval) per segment, so every segment starts on a
+   * keyframe.
+   */
   private void addGopSizeArgs(List<String> cmd, TranscodeJob job) {
     var gopSize =
         (int) Math.ceil(job.request().targetSegmentDuration() * job.request().framerate());

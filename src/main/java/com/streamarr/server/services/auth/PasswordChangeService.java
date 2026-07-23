@@ -8,8 +8,10 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 /**
- * ADR 0016: password verification and hashing run outside a transaction. A short completion
- * transaction revokes every old session and creates replacement credentials for the caller.
+ * Password verification and hashing are deliberately slow, CPU-bound work; inside a transaction
+ * they would pin a pooled connection for their whole duration — the Hikari-exhaustion failure
+ * class. Only the short completion step transacts: revoke old sessions, mint replacements (ADR
+ * 0016).
  */
 @Service
 @RequiredArgsConstructor

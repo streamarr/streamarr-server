@@ -73,7 +73,6 @@ public class RefreshTokenService {
     return new IssuedRefreshToken(rawToken, session);
   }
 
-  /** Revokes the session and its whole refresh-token family. */
   @Transactional
   public void logout(java.util.UUID sessionId) {
     var now = clock.instant();
@@ -81,10 +80,9 @@ public class RefreshTokenService {
     tokenRepository.revokeAllForSession(sessionId, now);
   }
 
-  // Reuse detection must survive its own exception and any enclosing rollback: the family
-  // revocation is deferred to an after-completion REQUIRES_NEW transaction (TokenReuseRevoker),
-  // so it persists even though this exception rolls back the joined refresh transaction. The
-  // throw is only the caller's signal.
+  // The family revocation must outlive this method's rollback: TokenReuseRevoker applies it in
+  // an after-completion REQUIRES_NEW transaction; the thrown exception is only the caller's
+  // signal.
   @Transactional(noRollbackFor = TokenReuseDetectedException.class)
   public RefreshResult redeem(String rawToken) {
     var digest = digestOf(rawToken);
