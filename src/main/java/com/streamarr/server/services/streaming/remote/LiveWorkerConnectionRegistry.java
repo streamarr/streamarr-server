@@ -64,7 +64,7 @@ final class LiveWorkerConnectionRegistry {
 
   boolean dispatch(VariantJob job) {
     for (var connection : connections.values()) {
-      if (dispatchGuardingDisconnect(connection, job)) {
+      if (tryDispatchUnlessDisconnected(connection, job)) {
         return true;
       }
     }
@@ -74,18 +74,18 @@ final class LiveWorkerConnectionRegistry {
   boolean dispatchTo(ExecutionTargetId target, VariantJob job) {
     for (var connection : connections.values()) {
       if (connection.workerSessionId().toString().equals(target.value())) {
-        return dispatchGuardingDisconnect(connection, job);
+        return tryDispatchUnlessDisconnected(connection, job);
       }
     }
     return false;
   }
 
   /**
-   * A disconnect can drain the connection between this dispatcher's send and its bookkeeping put;
-   * the job would then be tracked nowhere with no terminal evidence. Re-checking registration after
-   * the put and undoing turns that race into an honest dispatch failure.
+   * {@code tryDispatch} is synchronized, but a disconnect drains {@code activeVariants} without
+   * that monitor, so the drain can land between the send and the put. The job would then be
+   * orphaned: held by a dropped connection, never logged as abandoned.
    */
-  private boolean dispatchGuardingDisconnect(WorkerConnection connection, VariantJob job) {
+  private boolean tryDispatchUnlessDisconnected(WorkerConnection connection, VariantJob job) {
     if (!connection.tryDispatch(job)) {
       return false;
     }
