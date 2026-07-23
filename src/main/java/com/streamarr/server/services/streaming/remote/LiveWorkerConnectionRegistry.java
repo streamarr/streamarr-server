@@ -57,7 +57,9 @@ final class LiveWorkerConnectionRegistry {
     if (connection != null
         && connection.workerSessionId().equals(workerSessionId)
         && connections.remove(workerId, connection)) {
-      connection.drainActiveVariants().forEach(job -> logAbandonedJob(job, "disconnected"));
+      connection
+          .abandonAllJobsWithoutWaiting()
+          .forEach(job -> logAbandonedJob(job, "disconnected"));
       log.info("Worker {} disconnected", workerId);
     }
   }
@@ -192,8 +194,6 @@ final class LiveWorkerConnectionRegistry {
     private final int maximumActiveVariants;
     private final StreamObserver<EstablishWorkerSessionResponse> responseObserver;
 
-    // Concurrent so a disconnect can drain abandoned jobs without taking the connection monitor,
-    // which an in-progress segment publication may hold for the duration of a filesystem move.
     private final Map<UUID, VariantJob> activeVariants = new ConcurrentHashMap<>();
 
     private WorkerConnection(
@@ -329,14 +329,19 @@ final class LiveWorkerConnectionRegistry {
       return true;
     }
 
-    private List<VariantJob> drainActiveVariants() {
+    /**
+     * Takes no connection monitor: a publish holds it across a filesystem move, and a disconnect
+     * must not wait for that. This is also why {@code activeVariants} is a {@code
+     * ConcurrentHashMap}.
+     */
+    private List<VariantJob> abandonAllJobsWithoutWaiting() {
       var drained = List.copyOf(activeVariants.values());
       activeVariants.clear();
       return drained;
     }
 
     private synchronized List<VariantJob> closeAsReplaced() {
-      var abandonedJobs = drainActiveVariants();
+      var abandonedJobs = abandonAllJobsWithoutWaiting();
       try {
         responseObserver.onError(
             Status.ABORTED.withDescription("Worker connection replaced").asRuntimeException());
