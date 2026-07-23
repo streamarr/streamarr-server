@@ -44,10 +44,20 @@ image:
 
 streaming:
   max-concurrent-transcodes: ${STREAMING_MAX_CONCURRENT_TRANSCODES:8}
-  segment-duration: ${STREAMING_SEGMENT_DURATION:6s}
+  target-segment-duration: ${STREAMING_TARGET_SEGMENT_DURATION:6s}
   session-timeout: ${STREAMING_SESSION_TIMEOUT:60s}
   session-retention: ${STREAMING_SESSION_RETENTION:24h}
+  producer-stall-threshold: ${STREAMING_PRODUCER_STALL_THRESHOLD:10s}
   segment-base-path: ${STREAMING_SEGMENT_BASE_PATH:}
+  remote:
+    enabled: ${STREAMING_REMOTE_ENABLED:false}
+    port: ${STREAMING_REMOTE_PORT:9090}
+    trust-domain: ${STREAMING_REMOTE_TRUST_DOMAIN:}
+    source-namespace-id: ${STREAMING_REMOTE_SOURCE_NAMESPACE_ID:}
+    source-root: ${STREAMING_REMOTE_SOURCE_ROOT:}
+    certificate: ${STREAMING_REMOTE_CERTIFICATE:}
+    private-key: ${STREAMING_REMOTE_PRIVATE_KEY:}
+    trust-bundle: ${STREAMING_REMOTE_TRUST_BUNDLE:}
   watch-progress:
     min-played-percent: ${STREAMING_WATCH_PROGRESS_MIN_RESUME_PERCENT:5.0}
     max-played-percent: ${STREAMING_WATCH_PROGRESS_MAX_RESUME_PERCENT:90.0}
@@ -66,6 +76,8 @@ server:
 auth:
   token:
     signing-key: ${AUTH_TOKEN_SIGNING_KEY:}
+    issuer: ${AUTH_TOKEN_ISSUER:streamarr}
+    audience: ${AUTH_TOKEN_AUDIENCE:streamarr}
     verification-keys: ${AUTH_TOKEN_VERIFICATION_KEYS:}
     access-token-ttl: ${AUTH_ACCESS_TOKEN_TTL:10m}
     refresh-token-ttl: ${AUTH_REFRESH_TOKEN_TTL:30d}
@@ -77,10 +89,6 @@ auth:
   throttle:
     max-attempts: ${AUTH_THROTTLE_MAX_ATTEMPTS:5}
     window: ${AUTH_THROTTLE_WINDOW:15m}
-  counter-listener:
-    jdbc-url: ${AUTH_COUNTER_LISTENER_JDBC_URL:}
-    username: ${AUTH_COUNTER_LISTENER_JDBC_USERNAME:}
-    password: ${AUTH_COUNTER_LISTENER_JDBC_PASSWORD:}
 
 otel:
   sdk:

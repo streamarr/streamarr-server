@@ -6,18 +6,18 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Path;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class FakeFfmpegProcessManager implements FfmpegProcessManager {
 
   private record ProcessKey(UUID sessionId, String variantLabel) {}
 
-  private final Set<ProcessKey> running = new HashSet<>();
-  private final Set<UUID> started = new HashSet<>();
-  private final Set<UUID> stopped = new HashSet<>();
+  private final Set<ProcessKey> running = ConcurrentHashMap.newKeySet();
+  private final Set<UUID> started = ConcurrentHashMap.newKeySet();
+  private final Set<UUID> stopped = ConcurrentHashMap.newKeySet();
 
   @Override
   public Process startProcess(
@@ -30,6 +30,12 @@ public class FakeFfmpegProcessManager implements FfmpegProcessManager {
   @Override
   public void stopProcess(UUID sessionId) {
     running.removeIf(key -> key.sessionId().equals(sessionId));
+    stopped.add(sessionId);
+  }
+
+  @Override
+  public void stopProcess(UUID sessionId, String variantLabel) {
+    running.remove(new ProcessKey(sessionId, variantLabel));
     stopped.add(sessionId);
   }
 

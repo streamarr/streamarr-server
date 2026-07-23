@@ -1,0 +1,213 @@
+syntax = "proto3";
+
+package streamarr.transcode.v1;
+
+option java_multiple_files = true;
+option java_outer_classname = "WorkerSessionProto";
+option java_package = "com.streamarr.transcode.v1";
+
+// UUID bits use the same most-significant/least-significant layout as java.util.UUID.
+message Uuid {
+  fixed64 most_significant_bits = 1;
+  fixed64 least_significant_bits = 2;
+}
+
+message WorkerIdentity {
+  Uuid worker_id = 1;
+  Uuid boot_id = 2;
+}
+
+enum ContainerFormat {
+  CONTAINER_FORMAT_UNSPECIFIED = 0;
+  CONTAINER_FORMAT_MPEG_TS = 1;
+  CONTAINER_FORMAT_FMP4 = 2;
+}
+
+message WorkerCapabilities {
+  repeated Uuid source_namespace_ids = 1;
+}
+
+message WorkerRegistration {
+  // This worker describes itself; target is reserved for server commands addressed to a worker.
+  WorkerIdentity worker = 1;
+  WorkerCapabilities capabilities = 2;
+  // Configured slot capacity for this connection, fixed at registration; the server derives
+  // remaining capacity from its own active-attempt accounting.
+  uint32 available_slots = 3;
+}
+
+enum TranscodeMode {
+  TRANSCODE_MODE_UNSPECIFIED = 0;
+  TRANSCODE_MODE_REMUX = 1;
+  TRANSCODE_MODE_AUDIO_TRANSCODE = 2;
+  TRANSCODE_MODE_VIDEO_TRANSCODE = 3;
+  TRANSCODE_MODE_FULL_TRANSCODE = 4;
+}
+
+enum AudioMode {
+  AUDIO_MODE_UNSPECIFIED = 0;
+  AUDIO_MODE_COPY = 1;
+  AUDIO_MODE_TRANSCODE = 2;
+  AUDIO_MODE_NONE = 3;
+}
+
+enum SubtitleMode {
+  SUBTITLE_MODE_UNSPECIFIED = 0;
+  SUBTITLE_MODE_EXCLUDE = 1;
+  SUBTITLE_MODE_BURN_IN = 2;
+  SUBTITLE_MODE_SIDECAR = 3;
+  SUBTITLE_MODE_HLS = 4;
+  SUBTITLE_MODE_EMBED = 5;
+}
+
+message AudioDecision {
+  AudioMode mode = 1;
+  optional string codec = 2;
+  uint32 channels = 3;
+  uint64 bitrate_bits_per_second = 4;
+}
+
+message SubtitleDecision {
+  SubtitleMode mode = 1;
+  optional string codec = 2;
+  optional uint32 stream_index = 3;
+  optional string language = 4;
+}
+
+message TranscodeDecision {
+  TranscodeMode mode = 1;
+  string video_codec_family = 2;
+  AudioDecision audio = 3;
+  SubtitleDecision subtitle = 4;
+  ContainerFormat container = 5;
+  bool align_keyframes_to_segments = 6;
+}
+
+// relative_key is an opaque installation-defined key. It is never a host path and must not be
+// percent-decoded or normalized before the selected namespace mapping resolves it.
+message MediaSourceRef {
+  Uuid source_namespace_id = 1;
+  string relative_key = 2;
+}
+
+message VariantSpec {
+  string variant_label = 1;
+  uint32 width = 2;
+  uint32 height = 3;
+  uint64 bitrate_bits_per_second = 4;
+}
+
+message TranscodeExecution {
+  uint32 seek_position_seconds = 1;
+  uint32 target_segment_duration_seconds = 2;
+  double framerate = 3;
+  uint32 start_sequence_number = 4;
+}
+
+message VariantJob {
+  Uuid stream_session_id = 1;
+  // job_id identifies one logical variant transcode for the stream session. job_attempt_id is
+  // freshly generated for every dispatch attempt and is never a monotonic generation counter.
+  Uuid job_id = 2;
+  Uuid job_attempt_id = 3;
+  MediaSourceRef source = 4;
+  TranscodeDecision decision = 5;
+  VariantSpec variant = 6;
+  TranscodeExecution execution = 7;
+}
+
+message JobAttemptStarted {
+  Uuid job_attempt_id = 1;
+}
+
+enum JobAttemptFailure {
+  JOB_ATTEMPT_FAILURE_UNSPECIFIED = 0;
+  JOB_ATTEMPT_FAILURE_SOURCE_UNAVAILABLE = 1;
+  JOB_ATTEMPT_FAILURE_INVALID_SPECIFICATION = 2;
+  JOB_ATTEMPT_FAILURE_STARTUP_FAILED = 3;
+  JOB_ATTEMPT_FAILURE_TRANSCODE_FAILED = 4;
+}
+
+message JobAttemptFailed {
+  Uuid job_attempt_id = 1;
+  JobAttemptFailure failure = 2;
+}
+
+message JobAttemptCompleted {
+  Uuid job_attempt_id = 1;
+}
+
+message JobAttemptStopped {
+  Uuid job_attempt_id = 1;
+}
+
+message EstablishWorkerSessionRequest {
+  oneof event {
+    WorkerRegistration registration = 1;
+    JobAttemptStarted job_attempt_started = 2;
+    JobAttemptFailed job_attempt_failed = 3;
+    JobAttemptCompleted job_attempt_completed = 4;
+    JobAttemptStopped job_attempt_stopped = 5;
+  }
+}
+
+message WorkerSessionAccepted {
+  // A fresh server-issued identifier for this live connection, used to fence segment uploads.
+  Uuid worker_session_id = 1;
+}
+
+message StartVariantCommand {
+  WorkerIdentity target = 1;
+  VariantJob job = 2;
+}
+
+message StopVariantCommand {
+  WorkerIdentity target = 1;
+  Uuid job_attempt_id = 2;
+}
+
+message EstablishWorkerSessionResponse {
+  oneof command {
+    WorkerSessionAccepted session_accepted = 1;
+    StartVariantCommand start_variant = 2;
+    StopVariantCommand stop_variant = 3;
+  }
+}
+
+enum SegmentContentType {
+  SEGMENT_CONTENT_TYPE_UNSPECIFIED = 0;
+  SEGMENT_CONTENT_TYPE_VIDEO_MP2T = 1;
+  SEGMENT_CONTENT_TYPE_VIDEO_MP4 = 2;
+}
+
+message SegmentUploadMetadata {
+  Uuid worker_session_id = 1;
+  // This worker describes itself; the live registry matches it to the authenticated connection.
+  WorkerIdentity worker = 2;
+  Uuid stream_session_id = 3;
+  Uuid job_id = 4;
+  Uuid job_attempt_id = 5;
+  string variant_label = 6;
+  string segment_name = 7;
+  SegmentContentType content_type = 8;
+  uint64 content_length_bytes = 9;
+}
+
+// The first frame carries metadata exactly once. Later frames carry bounded non-empty data chunks.
+message UploadSegmentRequest {
+  oneof frame {
+    SegmentUploadMetadata metadata = 1;
+    bytes data = 2;
+  }
+}
+
+message UploadSegmentResponse {
+  Uuid job_attempt_id = 1;
+  string segment_name = 2;
+  uint64 accepted_length_bytes = 3;
+}
+
+service TranscodeWorkerService {
+  rpc EstablishWorkerSession(stream EstablishWorkerSessionRequest) returns (stream EstablishWorkerSessionResponse) {}
+  rpc UploadSegment(stream UploadSegmentRequest) returns (UploadSegmentResponse) {}
+}

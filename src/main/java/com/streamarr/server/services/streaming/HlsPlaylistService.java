@@ -22,7 +22,7 @@ public class HlsPlaylistService {
 
   private final StreamingProperties properties;
 
-  public String generateMasterPlaylist(StreamSession session, String token) {
+  public String generateMultivariantPlaylist(StreamSession session, String token) {
     var decision = session.getTranscodeDecision();
     var audio = decision.audioDecision();
     var videoCodecString = CODEC_STRINGS.getOrDefault(decision.videoCodecFamily(), "avc1.640028");
@@ -35,7 +35,7 @@ public class HlsPlaylistService {
     sb.append("#EXTM3U\n");
 
     if (hasAudio) {
-      appendAudioMedia(sb, audio.channels());
+      appendAudioRendition(sb, audio.channels());
     }
 
     if (session.getVariants().isEmpty()) {
@@ -46,15 +46,15 @@ public class HlsPlaylistService {
     }
 
     for (var variant : session.getVariants()) {
-      var bandwidth = variant.videoBitrate() + audio.bitrate();
-      appendStreamInf(sb, bandwidth, variant.width(), variant.height(), codecs, hasAudio);
+      var averageBandwidth = variant.videoBitrate() + audio.bitrate();
+      appendStreamInf(sb, averageBandwidth, variant.width(), variant.height(), codecs, hasAudio);
       sb.append(variant.label()).append("/stream.m3u8?t=").append(token).append("\n");
     }
 
     return sb.toString();
   }
 
-  private void appendAudioMedia(StringBuilder sb, int audioChannels) {
+  private void appendAudioRendition(StringBuilder sb, int audioChannels) {
     sb.append("#EXT-X-MEDIA:");
     sb.append("TYPE=AUDIO");
     sb.append(",GROUP-ID=\"").append(AUDIO_GROUP_ID).append("\"");
@@ -65,10 +65,24 @@ public class HlsPlaylistService {
     sb.append("\n");
   }
 
+  // RFC 8216 §4.3.4.2: BANDWIDTH "represents the peak segment bit rate" and AVERAGE-BANDWIDTH
+  // "the average segment bit rate". The rates known here are averages — encoder targets for the
+  // ladder, the probed source rate for direct play — so BANDWIDTH adds headroom for container
+  // overhead and rate variation. Encoded variants are VBV-capped at their target (-maxrate),
+  // which keeps the padded peak honest; probe-derived values remain estimates.
+  private static final int PEAK_HEADROOM_PERCENT = 20;
+
   private void appendStreamInf(
-      StringBuilder sb, long bandwidth, int width, int height, String codecs, boolean hasAudio) {
+      StringBuilder sb,
+      long averageBandwidth,
+      int width,
+      int height,
+      String codecs,
+      boolean hasAudio) {
+    var peakBandwidth = averageBandwidth + averageBandwidth * PEAK_HEADROOM_PERCENT / 100;
     sb.append("#EXT-X-STREAM-INF:");
-    sb.append("BANDWIDTH=").append(bandwidth);
+    sb.append("BANDWIDTH=").append(peakBandwidth);
+    sb.append(",AVERAGE-BANDWIDTH=").append(averageBandwidth);
     sb.append(",RESOLUTION=").append(width).append("x").append(height);
     sb.append(",CODECS=\"").append(codecs).append("\"");
     if (hasAudio) {
@@ -79,23 +93,23 @@ public class HlsPlaylistService {
 
   /**
    * The playlist always covers the full media duration on an absolute timeline: segment {@code i}
-   * is media time {@code [i * segmentDuration, (i + 1) * segmentDuration)}, so player position and
-   * duration match real media time.
+   * is media time {@code [i * targetSegmentDuration, (i + 1) * targetSegmentDuration)}, so player
+   * position and duration match real media time.
    */
   public String generateMediaPlaylist(StreamSession session, String token) {
     var decision = session.getTranscodeDecision();
     var container = decision.containerFormat();
     var probe = session.getMediaProbe();
-    var segmentDuration = (int) properties.segmentDuration().toSeconds();
+    var targetSegmentDuration = (int) properties.targetSegmentDuration().toSeconds();
     var totalDurationMs = probe.duration().toMillis();
-    var segmentDurationMs = segmentDuration * 1000L;
+    var segmentDurationMs = targetSegmentDuration * 1000L;
     var segmentCount = (int) Math.ceil((double) totalDurationMs / segmentDurationMs);
     var extension = container.segmentExtension();
 
     var sb = new StringBuilder();
     sb.append("#EXTM3U\n");
     sb.append("#EXT-X-VERSION:").append(container.hlsVersion()).append("\n");
-    sb.append("#EXT-X-TARGETDURATION:").append(segmentDuration).append("\n");
+    sb.append("#EXT-X-TARGETDURATION:").append(targetSegmentDuration).append("\n");
     sb.append("#EXT-X-MEDIA-SEQUENCE:0\n");
     sb.append("#EXT-X-PLAYLIST-TYPE:VOD\n");
 

@@ -21,9 +21,12 @@
         <sonar.coverage.jacoco.xmlReportPaths>
             target/site/jacoco-merged-test-coverage-report/jacoco.xml
         </sonar.coverage.jacoco.xmlReportPaths>
-        <sonar.coverage.exclusions>**/pom.xml, **/StreamarrServerApplication.java</sonar.coverage.exclusions>
+        <sonar.coverage.exclusions>
+            **/pom.xml, **/StreamarrServerApplication.java, **/com/streamarr/transcode/v1/**
+        </sonar.coverage.exclusions>
         <sonar.test.inclusions>**/src/test/**</sonar.test.inclusions>
-        <sonar.exclusions>**/jooq/generated/**</sonar.exclusions>
+        <sonar.exclusions>**/jooq/generated/**, **/target/generated-sources/**</sonar.exclusions>
+        <sonar.cpd.exclusions>**/target/generated-sources/**</sonar.cpd.exclusions>
         <sonar.issue.ignore.multicriteria>e1,e2,e3,e4</sonar.issue.ignore.multicriteria>
         <!-- Google Java Format puts static imports first; S8445 wants them last -->
         <sonar.issue.ignore.multicriteria.e1.ruleKey>java:S8445</sonar.issue.ignore.multicriteria.e1.ruleKey>
@@ -71,6 +74,8 @@
         <checkstyle.version>13.8.0</checkstyle.version>
         <maven-checkstyle-plugin.version>3.6.0</maven-checkstyle-plugin.version>
         <archunit.version>1.4.2</archunit.version>
+        <grpc.version>1.82.2</grpc.version>
+        <protobuf-maven-plugin.version>5.1.7</protobuf-maven-plugin.version>
     </properties>
 
     <dependencies>
@@ -130,6 +135,23 @@
         <dependency>
             <groupId>com.netflix.graphql.dgs</groupId>
             <artifactId>graphql-dgs-pagination</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.google.protobuf</groupId>
+            <artifactId>protobuf-java</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-netty-shaded</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-protobuf</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-stub</artifactId>
         </dependency>
 
         <dependency>
@@ -278,6 +300,13 @@
     <dependencyManagement>
         <dependencies>
             <dependency>
+                <groupId>io.grpc</groupId>
+                <artifactId>grpc-bom</artifactId>
+                <version>${grpc.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
                 <groupId>io.opentelemetry.instrumentation</groupId>
                 <artifactId>opentelemetry-instrumentation-bom</artifactId>
                 <version>2.29.0</version>
@@ -327,6 +356,23 @@
                 </configuration>
             </plugin>
             <plugin>
+                <groupId>io.github.ascopes</groupId>
+                <artifactId>protobuf-maven-plugin</artifactId>
+                <version>${protobuf-maven-plugin.version}</version>
+                <configuration>
+                    <protoc kind="binary-maven">
+                        <version>${protobuf-java.version}</version>
+                    </protoc>
+                    <plugins>
+                        <plugin kind="binary-maven">
+                            <groupId>io.grpc</groupId>
+                            <artifactId>protoc-gen-grpc-java</artifactId>
+                            <version>${grpc.version}</version>
+                        </plugin>
+                    </plugins>
+                </configuration>
+            </plugin>
+            <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
@@ -345,6 +391,7 @@
                     <excludes>
                         <exclude>**/com/streamarr/server/jooq/generated/**</exclude>
                         <exclude>**/com/streamarr/server/config/DevDataInitializer.class</exclude>
+                        <exclude>**/com/streamarr/transcode/v1/**</exclude>
                     </excludes>
                 </configuration>
                 <executions>

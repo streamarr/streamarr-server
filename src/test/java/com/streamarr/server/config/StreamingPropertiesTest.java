@@ -1,6 +1,7 @@
 package com.streamarr.server.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
@@ -28,11 +29,39 @@ class StreamingPropertiesTest {
   static class StreamingPropertiesConfiguration {}
 
   @Test
+  @DisplayName("Should default max concurrent transcodes to 8 when unset")
+  void shouldDefaultMaxConcurrentTranscodesToEightWhenUnset() {
+    var properties = StreamingProperties.builder().build();
+
+    assertThat(properties.maxConcurrentTranscodes()).isEqualTo(8);
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {0, -1})
+  @DisplayName("Should reject max concurrent transcodes when not positive")
+  void shouldRejectMaxConcurrentTranscodesWhenNotPositive(int configured) {
+    var builder = StreamingProperties.builder().maxConcurrentTranscodes(configured);
+
+    assertThatThrownBy(builder::build)
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("max-concurrent-transcodes");
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {0, -1})
+  @DisplayName("Should fail startup when configured max concurrent transcodes is not positive")
+  void shouldFailStartupWhenConfiguredMaxConcurrentTranscodesIsNotPositive(int configured) {
+    CONTEXT_RUNNER
+        .withPropertyValues("streaming.max-concurrent-transcodes=" + configured)
+        .run(context -> assertThat(context).hasFailed());
+  }
+
+  @Test
   @DisplayName("Should default segment duration to 6 seconds when null")
   void shouldDefaultSegmentDurationToSixSecondsWhenNull() {
     var properties = StreamingProperties.builder().build();
 
-    assertThat(properties.segmentDuration()).isEqualTo(Duration.ofSeconds(6));
+    assertThat(properties.targetSegmentDuration()).isEqualTo(Duration.ofSeconds(6));
   }
 
   @Test

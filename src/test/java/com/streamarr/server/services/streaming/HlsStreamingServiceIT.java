@@ -1,11 +1,14 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommand;
+import static com.streamarr.server.fixtures.StreamSessionFixture.playbackRequest;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
+import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeHandle;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
@@ -31,12 +34,14 @@ import org.springframework.test.context.bean.override.convention.TestBean;
 class HlsStreamingServiceIT extends AbstractIntegrationTest {
 
   @Autowired private StreamingService streamingService;
+  @Autowired private ProducerLifecycleService producerLifecycle;
   @Autowired private MediaFileRepository mediaFileRepository;
   @Autowired private LibraryRepository libraryRepository;
 
   @TestBean TranscodeExecutor transcodeExecutor;
   @TestBean FfprobeService ffprobeService;
   @TestBean SegmentStore segmentStore;
+  @TestBean PlaybackAuthorityGate authorityGate;
 
   private static final FakeTranscodeExecutor FAKE_EXECUTOR = new FakeTranscodeExecutor();
   private static final FakeFfprobeService FAKE_FFPROBE = new FakeFfprobeService();
@@ -52,6 +57,10 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
 
   static SegmentStore segmentStore() {
     return FAKE_SEGMENT_STORE;
+  }
+
+  static PlaybackAuthorityGate authorityGate() {
+    return _ -> true;
   }
 
   private MediaFile savedMediaFile;
@@ -71,11 +80,15 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
     savedMediaFile = mediaFileRepository.saveAndFlush(file);
   }
 
+  private StreamSession createSession(UUID mediaFileId, UUID profileId, StreamingOptions options) {
+    return streamingService.createSession(
+        createStreamSessionCommand(mediaFileId, profileId, options));
+  }
+
   @Test
   @DisplayName("Should assign session identity when media file is valid")
   void shouldAssignSessionIdentityWhenMediaFileIsValid() {
-    var session =
-        streamingService.createSession(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
 
     assertThat(session).isNotNull();
     assertThat(session.getSessionId()).isNotNull();
@@ -85,21 +98,19 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should initialize transcode pipeline when media file is valid")
   void shouldInitializeTranscodePipelineWhenMediaFileIsValid() {
-    var session =
-        streamingService.createSession(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
 
     assertThat(session.getMediaProbe()).isNotNull();
     assertThat(session.getTranscodeDecision()).isNotNull();
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
   }
 
   @Test
   @DisplayName("Should retrieve session when session exists")
   void shouldRetrieveSessionWhenSessionExists() {
-    var session =
-        streamingService.createSession(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
 
-    var retrieved = streamingService.accessSession(session.getSessionId());
+    var retrieved = streamingService.accessSession(playbackRequest(session));
 
     assertThat(retrieved).isPresent();
     assertThat(retrieved.get().getSessionId()).isEqualTo(session.getSessionId());
@@ -108,12 +119,11 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
   @Test
   @DisplayName("Should remove session when session is destroyed")
   void shouldRemoveSessionWhenSessionIsDestroyed() {
-    var session =
-        streamingService.createSession(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
 
     streamingService.destroySession(session.getSessionId());
 
-    assertThat(streamingService.accessSession(session.getSessionId())).isEmpty();
+    assertThat(streamingService.accessSession(playbackRequest(session))).isEmpty();
   }
 
   @Test
@@ -123,23 +133,22 @@ class HlsStreamingServiceIT extends AbstractIntegrationTest {
     var profileId = UUID.randomUUID();
     var options = defaultOptions();
 
-    assertThatThrownBy(() -> streamingService.createSession(nonExistentId, profileId, options))
+    assertThatThrownBy(() -> createSession(nonExistentId, profileId, options))
         .isInstanceOf(MediaFileNotFoundException.class);
   }
 
   @Test
   @DisplayName("Should resume transcode when segment requested from suspended session")
   void shouldResumeTranscodeWhenSegmentRequestedFromSuspendedSession() {
-    var session =
-        streamingService.createSession(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
+    var session = createSession(savedMediaFile.getId(), UUID.randomUUID(), defaultOptions());
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
 
     session.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
     FAKE_EXECUTOR.markDead(session.getSessionId());
 
-    streamingService.resumeSessionIfNeeded(session.getSessionId(), "segment0.ts");
+    producerLifecycle.ensurePositioned(session.getSessionId(), "segment0.ts");
 
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
     assertThat(FAKE_EXECUTOR.isRunning(session.getSessionId())).isTrue();
   }
 

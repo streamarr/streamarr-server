@@ -31,7 +31,7 @@ class IdentityQueryServiceTest {
       new FakeHouseholdMembershipRepository();
   private final FakeHouseholdRepository householdRepository = new FakeHouseholdRepository();
   private final FakeAccountProfileRepository accountProfileRepository =
-      new FakeAccountProfileRepository(membershipRepository);
+      new FakeAccountProfileRepository();
   private final FakeProfileRepository profileRepository = new FakeProfileRepository();
 
   private final IdentityQueryService service =
@@ -133,7 +133,7 @@ class IdentityQueryServiceTest {
     return AuthenticatedIdentity.builder()
         .accountId(accountId)
         .role(AccountRole.USER)
-        .sessionId(UUID.randomUUID())
+        .authSessionId(UUID.randomUUID())
         .scope(TokenScope.ACCOUNT)
         .build();
   }
@@ -143,7 +143,7 @@ class IdentityQueryServiceTest {
     return AuthenticatedIdentity.builder()
         .accountId(accountId)
         .role(AccountRole.USER)
-        .sessionId(UUID.randomUUID())
+        .authSessionId(UUID.randomUUID())
         .scope(TokenScope.HOUSEHOLD)
         .householdId(householdId)
         .householdRole(householdRole)
@@ -154,7 +154,7 @@ class IdentityQueryServiceTest {
     return AuthenticatedIdentity.builder()
         .accountId(accountId)
         .role(AccountRole.USER)
-        .sessionId(UUID.randomUUID())
+        .authSessionId(UUID.randomUUID())
         .scope(TokenScope.PROFILE)
         .householdId(profile.getHouseholdId())
         .householdRole(HouseholdRole.OWNER)

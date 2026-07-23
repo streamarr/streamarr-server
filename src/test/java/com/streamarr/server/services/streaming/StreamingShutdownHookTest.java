@@ -3,7 +3,6 @@ package com.streamarr.server.services.streaming;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.domain.streaming.StreamSession;
-import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -17,6 +16,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 @Tag("UnitTest")
+@DisplayName("Streaming Shutdown Hook Tests")
 class StreamingShutdownHookTest {
 
   @Test
@@ -62,13 +62,13 @@ class StreamingShutdownHookTest {
     }
 
     @Override
-    public StreamSession createSession(UUID mediaFileId, UUID profileId, StreamingOptions options) {
+    public StreamSession createSession(CreateStreamSessionCommand command) {
       throw new UnsupportedOperationException();
     }
 
     @Override
-    public Optional<StreamSession> accessSession(UUID sessionId) {
-      return Optional.ofNullable(sessions.get(sessionId));
+    public Optional<StreamSession> accessSession(PlaybackRequest request) {
+      return Optional.ofNullable(sessions.get(request.streamSessionId()));
     }
 
     @Override
@@ -90,11 +90,6 @@ class StreamingShutdownHookTest {
     @Override
     public int getActiveSessionCount() {
       return sessions.size();
-    }
-
-    @Override
-    public void resumeSessionIfNeeded(UUID sessionId, String segmentName) {
-      throw new UnsupportedOperationException();
     }
   }
 }

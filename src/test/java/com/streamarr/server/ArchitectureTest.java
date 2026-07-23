@@ -39,6 +39,16 @@ class ArchitectureTest {
           .as("TMDB types must not be used outside metadata package");
 
   @ArchTest
+  static final ArchRule workerProtocolTypesMustNotLeakOutsideRemotePackage =
+      noClasses()
+          .that()
+          .resideOutsideOfPackage("..services.streaming.remote..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAnyPackage("com.streamarr.transcode.v1..", "com.streamarr.transcode.protocol..")
+          .as("Worker wire-protocol types must not be used outside services.streaming.remote");
+
+  @ArchTest
   static final ArchRule controllersMustNotDependOnRepositories =
       noClasses()
           .that()

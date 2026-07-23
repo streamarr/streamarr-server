@@ -7,9 +7,8 @@ import java.util.UUID;
 import org.springframework.data.repository.Repository;
 
 /**
- * Deliberately narrowed: every mutation must go through the invariant-preserving fragment methods,
- * which bump household_membership.membership_version in the same transaction. Inherited save/delete
- * would create or remove grants without invalidating issued tokens.
+ * Extends bare {@code Repository} on purpose — inheriting {@code JpaRepository} would add blind
+ * {@code save}/{@code delete}, bypassing the conditional operations that report their outcome.
  */
 public interface AccountProfileRepository
     extends Repository<AccountProfile, UUID>, AccountProfileRepositoryCustom {

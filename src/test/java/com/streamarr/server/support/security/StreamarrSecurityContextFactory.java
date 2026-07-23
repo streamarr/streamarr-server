@@ -19,14 +19,11 @@ final class StreamarrSecurityContextFactory {
         AuthenticatedIdentity.builder()
             .accountId(TestIdentityConstants.ACCOUNT_ID)
             .role(role)
-            .sessionId(TestIdentityConstants.SESSION_ID)
-            .sessionVersion(1L)
+            .authSessionId(TestIdentityConstants.SESSION_ID)
             .scope(scope)
             .householdId(scope == TokenScope.ACCOUNT ? null : TestIdentityConstants.HOUSEHOLD_ID)
             .householdRole(scope == TokenScope.ACCOUNT ? null : HouseholdRole.OWNER)
-            .membershipVersion(scope == TokenScope.ACCOUNT ? null : 1L)
             .profileId(scope == TokenScope.PROFILE ? TestIdentityConstants.PROFILE_ID : null)
-            .policyVersion(scope == TokenScope.PROFILE ? 1L : null)
             .build();
 
     var context = SecurityContextHolder.createEmptyContext();

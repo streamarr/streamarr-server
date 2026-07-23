@@ -41,14 +41,11 @@ class PasswordChangeServiceTest {
           clock,
           new TokenReuseRevoker(
               new TokenReuseRevocationWriter(sessionRepository, tokenRepository)));
+  private final PasswordChangeCompletionService completionService =
+      new PasswordChangeCompletionService(
+          accountRepository, sessionRepository, tokenRepository, refreshTokenService, clock);
   private final PasswordChangeService service =
-      new PasswordChangeService(
-          accountRepository,
-          sessionRepository,
-          tokenRepository,
-          refreshTokenService,
-          passwordEncoder,
-          clock);
+      new PasswordChangeService(accountRepository, completionService, passwordEncoder);
 
   @Test
   @DisplayName("Should fail closed without issuing a token when account is missing")

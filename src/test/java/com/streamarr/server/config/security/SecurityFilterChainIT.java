@@ -112,7 +112,7 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
     // Streams demand SCOPE_PLAYBACK carried in the ?t= parameter — headers and cookies never
     // reach them, and API tokens never authorize playback.
     mockMvc
-        .perform(get("/api/stream/{id}/master.m3u8", UUID.randomUUID()))
+        .perform(get("/api/stream/{id}/multivariant.m3u8", UUID.randomUUID()))
         .andExpect(status().isUnauthorized());
   }
 
@@ -138,10 +138,7 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
     // The contract is reachability, not health: a DOWN indicator answers 503, never 401/403.
     mockMvc
         .perform(get("/actuator/health"))
-        .andExpect(
-            result ->
-                org.assertj.core.api.Assertions.assertThat(result.getResponse().getStatus())
-                    .isNotIn(401, 403));
+        .andExpect(result -> assertThat(result.getResponse().getStatus()).isNotIn(401, 403));
   }
 
   @Test
@@ -215,7 +212,7 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
     var ownedSession =
         StreamSessionFixture.defaultSessionBuilder()
             .sessionId(streamSessionId)
-            .profileId(identity.profile().getId())
+            .authority(authenticatedIdentity.playbackAuthority())
             .build();
     return playbackTokenIssuer
         .issue(authenticatedIdentity, ownedSession, Duration.ofHours(1))

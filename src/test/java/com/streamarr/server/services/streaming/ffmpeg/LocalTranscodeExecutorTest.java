@@ -47,7 +47,9 @@ class LocalTranscodeExecutorTest {
     var capabilityService = createCapabilityService(true, hwCapability);
 
     executor =
-        new LocalTranscodeExecutor(commandBuilder, processManager, segmentStore, capabilityService);
+        new LocalTranscodeExecutor(
+            new FfmpegTranscodeEngine(commandBuilder, processManager, capabilityService),
+            segmentStore);
   }
 
   private TranscodeRequest createRequest(TranscodeMode mode, String codecFamily) {
@@ -60,7 +62,7 @@ class LocalTranscodeExecutorTest {
         .sessionId(UUID.randomUUID())
         .sourcePath(Path.of("/media/movie.mkv"))
         .seekPosition(0)
-        .segmentDuration(6)
+        .targetSegmentDuration(6)
         .framerate(23.976)
         .transcodeDecision(
             TranscodeDecision.builder()
@@ -77,6 +79,42 @@ class LocalTranscodeExecutorTest {
         .bitrate(5_000_000L)
         .variantLabel(variantLabel)
         .build();
+  }
+
+  @Test
+  @DisplayName("Should propagate attempt identity and start sequence when starting a producer")
+  void shouldPropagateAttemptIdentityAndStartSequenceWhenStartingAProducer() {
+    var attemptId = UUID.randomUUID();
+    var request =
+        TranscodeRequest.builder()
+            .sessionId(UUID.randomUUID())
+            .sourcePath(Path.of("/media/movie.mkv"))
+            .seekPosition(12)
+            .targetSegmentDuration(6)
+            .framerate(23.976)
+            .transcodeDecision(
+                TranscodeDecision.builder()
+                    .transcodeMode(TranscodeMode.FULL_TRANSCODE)
+                    .videoCodecFamily("h264")
+                    .audioDecision(AudioDecision.stereoAac())
+                    .subtitleDecision(SubtitleDecision.exclude())
+                    .containerFormat(ContainerFormat.MPEGTS)
+                    .needsKeyframeAlignment(false)
+                    .build())
+            .width(1920)
+            .height(1080)
+            .bitrate(5_000_000L)
+            .attemptId(attemptId)
+            .startSequenceNumber(2)
+            .build();
+
+    var handle = executor.start(request);
+
+    // Recovery fencing matches observed handles against the attempt the coordinator minted; a
+    // handle carrying a fresh random attemptId would break stale-producer detection invisibly.
+    assertThat(handle.attemptId()).isEqualTo(attemptId);
+    assertThat(handle.startSequenceNumber()).isEqualTo(2);
+    assertThat(handle.processId()).isPresent();
   }
 
   @Test
@@ -100,7 +138,9 @@ class LocalTranscodeExecutorTest {
 
     executor =
         new LocalTranscodeExecutor(
-            new FfmpegCommandBuilder("ffmpeg"), processManager, segmentStore, capabilityService);
+            new FfmpegTranscodeEngine(
+                new FfmpegCommandBuilder("ffmpeg"), processManager, capabilityService),
+            segmentStore);
 
     var request = createRequest(TranscodeMode.FULL_TRANSCODE, "av1");
 
@@ -153,7 +193,9 @@ class LocalTranscodeExecutorTest {
 
     executor =
         new LocalTranscodeExecutor(
-            new FfmpegCommandBuilder("ffmpeg"), processManager, segmentStore, capabilityService);
+            new FfmpegTranscodeEngine(
+                new FfmpegCommandBuilder("ffmpeg"), processManager, capabilityService),
+            segmentStore);
 
     assertThat(executor.isHealthy()).isFalse();
   }

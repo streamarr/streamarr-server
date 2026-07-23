@@ -5,6 +5,10 @@ import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.exceptions.TranscodeException;
 import java.nio.file.Path;
@@ -15,6 +19,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.slf4j.LoggerFactory;
 
 @Tag("UnitTest")
 @DisplayName("Local FFmpeg Process Manager Tests")
@@ -69,8 +74,6 @@ class LocalFfmpegProcessManagerTest {
             sessionId, StreamSession.defaultVariant(), List.of("echo", "done"), tempDir);
     process.waitFor();
 
-    await().pollDelay(Duration.ofMillis(100)).until(() -> true);
-
     assertThat(manager.isRunning(sessionId)).isFalse();
   }
 
@@ -114,6 +117,21 @@ class LocalFfmpegProcessManagerTest {
     assertThat(manager.isRunning(sessionId, "1080p")).isFalse();
     assertThat(manager.isRunning(sessionId, "720p")).isFalse();
     assertThat(manager.isRunning(sessionId, "480p")).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should stop only the requested variant")
+  void shouldStopOnlyRequestedVariant() {
+    var sessionId = UUID.randomUUID();
+
+    manager.startProcess(sessionId, "1080p", List.of("sleep", "30"), tempDir);
+    manager.startProcess(sessionId, "720p", List.of("sleep", "30"), tempDir);
+
+    manager.stopProcess(sessionId, "720p");
+
+    assertThat(manager.isRunning(sessionId, "720p")).isFalse();
+    assertThat(manager.isRunning(sessionId, "1080p")).isTrue();
+    manager.stopProcess(sessionId);
   }
 
   @Test
@@ -166,6 +184,133 @@ class LocalFfmpegProcessManagerTest {
   }
 
   @Test
+  @DisplayName("Should force-kill the process when the stopping thread is interrupted")
+  void shouldForceKillTheProcessWhenTheStoppingThreadIsInterrupted() throws Exception {
+    var sessionId = UUID.randomUUID();
+    var process =
+        manager.startProcess(
+            sessionId, StreamSession.defaultVariant(), List.of("sleep", "30"), tempDir);
+
+    var stopper =
+        new Thread(
+            () -> {
+              // A pre-set interrupt makes the graceful waitFor abort immediately; shutdown must
+              // fall through to destroyForcibly instead of leaving the process running.
+              Thread.currentThread().interrupt();
+              manager.stopProcess(sessionId);
+            });
+    stopper.start();
+    stopper.join(5000);
+
+    await().atMost(Duration.ofSeconds(5)).until(() -> !process.isAlive());
+    assertThat(manager.isRunning(sessionId)).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should keep tracking a live replacement when corpse cleanup races it")
+  void shouldKeepTrackingALiveReplacementWhenCorpseCleanupRacesIt() throws Exception {
+    var sessionId = UUID.randomUUID();
+    var leader =
+        manager.startProcess(
+            sessionId, StreamSession.defaultVariant(), List.of("bash", "-c", "exit 7"), tempDir);
+    leader.waitFor();
+
+    // Park the cleanup thread inside logObservedExit's warn — after it has read the corpse's map
+    // entry, before the removal — so recovery can install a replacement in that window.
+    var logger = (Logger) LoggerFactory.getLogger(LocalFfmpegProcessManager.class);
+    var gate = new LatchingWarnAppender("corpse-cleanup-race");
+    gate.start();
+    logger.addAppender(gate);
+    var cleanup =
+        new Thread(
+            () -> manager.isRunning(sessionId, StreamSession.defaultVariant()),
+            "corpse-cleanup-race");
+    Process replacement = null;
+    try {
+      cleanup.start();
+      assertThat(gate.reached.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+
+      replacement =
+          manager.startProcess(
+              sessionId, StreamSession.defaultVariant(), List.of("sleep", "30"), tempDir);
+      gate.release.countDown();
+      cleanup.join(5000);
+      assertThat(cleanup.isAlive()).as("cleanup thread must have completed its removal").isFalse();
+
+      assertThat(manager.isRunning(sessionId, StreamSession.defaultVariant()))
+          .as("corpse cleanup must not unregister the live replacement")
+          .isTrue();
+      manager.stopProcess(sessionId);
+      await().atMost(Duration.ofSeconds(10)).until(() -> !replacementAlive(sessionId));
+    } finally {
+      gate.release.countDown();
+      logger.detachAppender(gate);
+      if (replacement != null) {
+        replacement.destroyForcibly();
+      }
+    }
+  }
+
+  private boolean replacementAlive(UUID sessionId) {
+    return manager.isRunning(sessionId);
+  }
+
+  /** Blocks the named thread inside an observed-exit warn, exactly once. */
+  private static final class LatchingWarnAppender
+      extends ch.qos.logback.core.AppenderBase<ILoggingEvent> {
+
+    private final java.util.concurrent.CountDownLatch reached =
+        new java.util.concurrent.CountDownLatch(1);
+    private final java.util.concurrent.CountDownLatch release =
+        new java.util.concurrent.CountDownLatch(1);
+    private final String threadName;
+
+    private LatchingWarnAppender(String threadName) {
+      this.threadName = threadName;
+    }
+
+    @Override
+    protected void append(ILoggingEvent event) {
+      if (!threadName.equals(event.getThreadName())
+          || !event.getFormattedMessage().contains("FFmpeg exited with code")) {
+        return;
+      }
+      reached.countDown();
+      try {
+        release.await(10, java.util.concurrent.TimeUnit.SECONDS);
+      } catch (InterruptedException _) {
+        Thread.currentThread().interrupt();
+      }
+    }
+  }
+
+  @Test
+  @DisplayName("Should log completion without warning when a clean exit is observed")
+  void shouldLogCompletionWithoutWarningWhenACleanExitIsObserved() throws Exception {
+    var sessionId = UUID.randomUUID();
+    var process =
+        manager.startProcess(
+            sessionId, StreamSession.defaultVariant(), List.of("echo", "done"), tempDir);
+    process.waitFor();
+
+    var logger = (Logger) LoggerFactory.getLogger(LocalFfmpegProcessManager.class);
+    var appender = new ListAppender<ILoggingEvent>();
+    appender.start();
+    logger.addAppender(appender);
+    try {
+      assertThat(manager.isRunning(sessionId)).isFalse();
+    } finally {
+      logger.detachAppender(appender);
+    }
+
+    assertThat(appender.list).noneMatch(event -> event.getLevel() == Level.WARN);
+    assertThat(appender.list)
+        .filteredOn(event -> event.getLevel() == Level.INFO)
+        .extracting(ILoggingEvent::getFormattedMessage)
+        .anyMatch(message -> message.contains("completed"));
+  }
+
+  @Test
   @DisplayName("Should capture stderr in exit details when process exits naturally")
   void shouldCaptureStderrInExitDetailsWhenProcessExitsNaturally() throws Exception {
     var sessionId = UUID.randomUUID();
@@ -178,10 +323,50 @@ class LocalFfmpegProcessManagerTest {
             tempDir);
     process.waitFor();
 
-    await().pollDelay(Duration.ofMillis(200)).until(() -> true);
+    var logger = (Logger) LoggerFactory.getLogger(LocalFfmpegProcessManager.class);
+    var appender = new ListAppender<ILoggingEvent>();
+    appender.start();
+    logger.addAppender(appender);
+    try {
+      // The observed death is the site that owns the crash detail; nothing downstream re-reads it.
+      assertThat(manager.isRunning(sessionId)).isFalse();
+    } finally {
+      logger.detachAppender(appender);
+    }
 
-    // isRunning triggers cleanup + logExitDetails — should not throw
-    assertThatNoException().isThrownBy(() -> manager.isRunning(sessionId));
-    assertThat(manager.isRunning(sessionId)).isFalse();
+    assertThat(appender.list)
+        .filteredOn(event -> event.getLevel() == Level.WARN)
+        .extracting(ILoggingEvent::getFormattedMessage)
+        .anyMatch(message -> message.contains("exit code 1") && message.contains("error output"));
+  }
+
+  @Test
+  @DisplayName("Should log the crash detail when disposing an already-dead process")
+  void shouldLogTheCrashDetailWhenDisposingAnAlreadyDeadProcess() throws Exception {
+    var sessionId = UUID.randomUUID();
+    var process =
+        manager.startProcess(
+            sessionId,
+            StreamSession.defaultVariant(),
+            List.of("bash", "-c", "echo 'crash detail' >&2; exit 1"),
+            tempDir);
+    process.waitFor();
+
+    var logger = (Logger) LoggerFactory.getLogger(LocalFfmpegProcessManager.class);
+    var appender = new ListAppender<ILoggingEvent>();
+    appender.start();
+    logger.addAppender(appender);
+    try {
+      // Nobody observed the death (no isRunning call); the planned stop disposes of the corpse.
+      manager.stopProcess(sessionId);
+    } finally {
+      logger.detachAppender(appender);
+    }
+
+    assertThat(appender.list)
+        .filteredOn(event -> event.getLevel() == Level.WARN)
+        .extracting(ILoggingEvent::getFormattedMessage)
+        .anyMatch(
+            message -> message.contains("already exited") && message.contains("crash detail"));
   }
 }

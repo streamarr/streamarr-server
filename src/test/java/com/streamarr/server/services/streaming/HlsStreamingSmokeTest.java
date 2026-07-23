@@ -1,5 +1,7 @@
 package com.streamarr.server.services.streaming;
 
+import static com.streamarr.server.fixtures.StreamSessionFixture.createStreamSessionCommand;
+import static com.streamarr.server.fixtures.StreamSessionFixture.playbackRequest;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -8,6 +10,7 @@ import com.streamarr.server.config.StreamingProperties;
 import com.streamarr.server.domain.media.MediaFile;
 import com.streamarr.server.domain.media.MediaFileStatus;
 import com.streamarr.server.domain.streaming.ContainerFormat;
+import com.streamarr.server.domain.streaming.StreamSession;
 import com.streamarr.server.domain.streaming.StreamingOptions;
 import com.streamarr.server.domain.streaming.TranscodeMode;
 import com.streamarr.server.domain.streaming.TranscodeStatus;
@@ -15,16 +18,18 @@ import com.streamarr.server.domain.streaming.VideoQuality;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.streaming.ffmpeg.FfmpegCommandBuilder;
+import com.streamarr.server.services.streaming.ffmpeg.FfmpegTranscodeEngine;
 import com.streamarr.server.services.streaming.ffmpeg.LocalFfmpegProcessManager;
 import com.streamarr.server.services.streaming.ffmpeg.LocalFfprobeService;
 import com.streamarr.server.services.streaming.ffmpeg.LocalTranscodeExecutor;
 import com.streamarr.server.services.streaming.ffmpeg.TranscodeCapabilityService;
-import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRepository;
+import com.streamarr.server.services.streaming.local.InMemoryStreamSessionRegistry;
 import com.streamarr.server.services.streaming.local.LocalSegmentStore;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
@@ -98,29 +103,51 @@ class HlsStreamingSmokeTest {
     var commandBuilder = new FfmpegCommandBuilder("ffmpeg");
     var processManager = new LocalFfmpegProcessManager();
     var transcodeExecutor =
-        new LocalTranscodeExecutor(commandBuilder, processManager, segmentStore, capabilityService);
+        new LocalTranscodeExecutor(
+            new FfmpegTranscodeEngine(commandBuilder, processManager, capabilityService),
+            segmentStore);
 
     var decisionService = new TranscodeDecisionService();
     var qualityLadderService = new QualityLadderService();
     var properties =
         StreamingProperties.builder()
             .maxConcurrentTranscodes(3)
-            .segmentDuration(Duration.ofSeconds(6))
+            .targetSegmentDuration(Duration.ofSeconds(6))
             .sessionTimeout(Duration.ofSeconds(60))
             .build();
 
     mediaFileRepository = new FakeMediaFileRepository();
+    var sessionRegistry = new InMemoryStreamSessionRegistry();
+    var producerLifecycle =
+        ProducerLifecycleService.builder()
+            .transcodeExecutor(transcodeExecutor)
+            .segmentStore(segmentStore)
+            .properties(properties)
+            .runtimeRegistry(sessionRegistry)
+            .sessionMutex(new MutexFactory<>())
+            .build();
     streamingService =
-        new HlsStreamingService(
-            mediaFileRepository,
-            transcodeExecutor,
-            segmentStore,
-            ffprobeService,
-            decisionService,
-            qualityLadderService,
-            properties,
-            new InMemoryStreamSessionRepository(),
-            new MutexFactory<>());
+        HlsStreamingService.builder()
+            .mediaFileRepository(mediaFileRepository)
+            .transcodeExecutor(transcodeExecutor)
+            .segmentStore(segmentStore)
+            .ffprobeService(ffprobeService)
+            .transcodeDecisionService(decisionService)
+            .qualityLadderService(qualityLadderService)
+            .properties(properties)
+            .authorityGate(_ -> true)
+            .runtimeRegistry(sessionRegistry)
+            .producerLifecycle(producerLifecycle)
+            .deliveryCoordinator(
+                SegmentDeliveryCoordinator.builder()
+                    .runtimeRegistry(sessionRegistry)
+                    .segmentStore(segmentStore)
+                    .transcodeExecutor(transcodeExecutor)
+                    .producerLifecycle(producerLifecycle)
+                    .properties(properties)
+                    .clock(Clock.systemUTC())
+                    .build())
+            .build();
 
     playlistService = new HlsPlaylistService(properties);
   }
@@ -155,11 +182,16 @@ class HlsStreamingSmokeTest {
     return mediaFileRepository.save(file);
   }
 
+  private StreamSession createSession(UUID mediaFileId, UUID profileId, StreamingOptions options) {
+    return streamingService.createSession(
+        createStreamSessionCommand(mediaFileId, profileId, options));
+  }
+
   @Test
   @DisplayName("Should detect correct codecs when probing test video")
   void shouldDetectCorrectCodecsWhenProbingTestVideo() {
     var file = seedMediaFile();
-    var session = streamingService.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
 
     var probe = session.getMediaProbe();
     assertThat(probe.videoCodec()).isEqualTo("h264");
@@ -170,7 +202,7 @@ class HlsStreamingSmokeTest {
   @DisplayName("Should detect correct resolution when probing test video")
   void shouldDetectCorrectResolutionWhenProbingTestVideo() {
     var file = seedMediaFile();
-    var session = streamingService.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
 
     var probe = session.getMediaProbe();
     assertThat(probe.width()).isEqualTo(320);
@@ -181,7 +213,7 @@ class HlsStreamingSmokeTest {
   @DisplayName("Should detect valid duration and bitrate when probing test video")
   void shouldDetectValidDurationAndBitrateWhenProbingTestVideo() {
     var file = seedMediaFile();
-    var session = streamingService.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
 
     var probe = session.getMediaProbe();
     assertThat(probe.framerate()).isGreaterThan(0);
@@ -199,7 +231,7 @@ class HlsStreamingSmokeTest {
             .supportedCodecs(List.of("h264"))
             .build();
 
-    var session = streamingService.createSession(file.getId(), UUID.randomUUID(), options);
+    var session = createSession(file.getId(), UUID.randomUUID(), options);
 
     assertThat(session.getTranscodeDecision().transcodeMode()).isEqualTo(TranscodeMode.REMUX);
     assertThat(session.getTranscodeDecision().containerFormat()).isEqualTo(ContainerFormat.MPEGTS);
@@ -215,14 +247,14 @@ class HlsStreamingSmokeTest {
             .supportedCodecs(List.of("h264"))
             .build();
 
-    var session = streamingService.createSession(file.getId(), UUID.randomUUID(), options);
+    var session = createSession(file.getId(), UUID.randomUUID(), options);
 
-    assertThat(session.getHandle()).isNotNull();
-    assertThat(session.getHandle().status()).isEqualTo(TranscodeStatus.ACTIVE);
+    assertThat(session.getHandle()).isPresent();
+    assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.ACTIVE);
 
-    var segmentReady =
-        segmentStore.waitForSegment(session.getSessionId(), "segment0.ts", Duration.ofSeconds(30));
-    assertThat(segmentReady).isTrue();
+    await()
+        .atMost(Duration.ofSeconds(30))
+        .until(() -> segmentStore.segmentExists(session.getSessionId(), "segment0.ts"));
 
     var segmentData = segmentStore.readSegment(session.getSessionId(), "segment0.ts");
     assertThat(segmentData).isNotNull().hasSizeGreaterThan(0);
@@ -230,21 +262,21 @@ class HlsStreamingSmokeTest {
   }
 
   @Test
-  @DisplayName("Should start master playlist with EXTM3U and no BOM when session is active")
+  @DisplayName("Should start multivariant playlist with EXTM3U and no BOM when session is active")
   void shouldStartMasterPlaylistWithExtm3uAndNoBomWhenSessionIsActive() {
     var file = seedMediaFile();
-    var session = streamingService.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
-    var playlist = playlistService.generateMasterPlaylist(session, "smoke-token");
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var playlist = playlistService.generateMultivariantPlaylist(session, "smoke-token");
 
     assertThat(playlist).startsWith("#EXTM3U\n").doesNotContain("\uFEFF");
   }
 
   @Test
-  @DisplayName("Should include stream variant info in master playlist when session is active")
+  @DisplayName("Should include stream variant info in multivariant playlist when session is active")
   void shouldIncludeStreamVariantInfoInMasterPlaylistWhenSessionIsActive() {
     var file = seedMediaFile();
-    var session = streamingService.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
-    var playlist = playlistService.generateMasterPlaylist(session, "smoke-token");
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var playlist = playlistService.generateMultivariantPlaylist(session, "smoke-token");
 
     assertThat(playlist)
         .contains("#EXT-X-STREAM-INF:")
@@ -258,7 +290,7 @@ class HlsStreamingSmokeTest {
   @DisplayName("Should include required HLS tags in media playlist when session is active")
   void shouldIncludeRequiredHlsTagsInMediaPlaylistWhenSessionIsActive() {
     var file = seedMediaFile();
-    var session = streamingService.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
     var playlist = playlistService.generateMediaPlaylist(session, "smoke-token");
 
     assertThat(playlist)
@@ -276,7 +308,7 @@ class HlsStreamingSmokeTest {
   @DisplayName("Should generate valid segment entries in media playlist when session is active")
   void shouldGenerateValidSegmentEntriesInMediaPlaylistWhenSessionIsActive() {
     var file = seedMediaFile();
-    var session = streamingService.createSession(file.getId(), UUID.randomUUID(), defaultOptions());
+    var session = createSession(file.getId(), UUID.randomUUID(), defaultOptions());
     var playlist = playlistService.generateMediaPlaylist(session, "smoke-token");
 
     var extinfLines = playlist.lines().filter(l -> l.startsWith("#EXTINF:")).toList();
@@ -308,18 +340,19 @@ class HlsStreamingSmokeTest {
             .supportedCodecs(List.of("h264"))
             .build();
 
-    var session = streamingService.createSession(file.getId(), UUID.randomUUID(), options);
+    var session = createSession(file.getId(), UUID.randomUUID(), options);
     var sessionId = session.getSessionId();
 
-    segmentStore.waitForSegment(sessionId, "segment0.ts", Duration.ofSeconds(30));
+    await()
+        .atMost(Duration.ofSeconds(30))
+        .until(() -> segmentStore.segmentExists(sessionId, "segment0.ts"));
 
-    var handle = session.getHandle();
-    assertThat(handle).isNotNull();
+    var handle = session.getHandle().orElseThrow();
     assertThat(handle.status()).isEqualTo(TranscodeStatus.ACTIVE);
 
     streamingService.destroySession(sessionId);
 
-    var processHandle = ProcessHandle.of(handle.processId());
+    var processHandle = ProcessHandle.of(handle.processId().orElseThrow());
     assertThat(processHandle)
         .satisfiesAnyOf(
             ph -> assertThat(ph).isEmpty(), ph -> assertThat(ph.get().isAlive()).isFalse());
@@ -335,14 +368,16 @@ class HlsStreamingSmokeTest {
             .supportedCodecs(List.of("h264"))
             .build();
 
-    var session = streamingService.createSession(file.getId(), UUID.randomUUID(), options);
+    var session = createSession(file.getId(), UUID.randomUUID(), options);
     var sessionId = session.getSessionId();
 
-    segmentStore.waitForSegment(sessionId, "segment0.ts", Duration.ofSeconds(30));
+    await()
+        .atMost(Duration.ofSeconds(30))
+        .until(() -> segmentStore.segmentExists(sessionId, "segment0.ts"));
 
     streamingService.destroySession(sessionId);
 
-    assertThat(streamingService.accessSession(sessionId)).isEmpty();
+    assertThat(streamingService.accessSession(playbackRequest(session))).isEmpty();
   }
 
   @Test

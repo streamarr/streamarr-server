@@ -6,6 +6,7 @@ on:
       - main
   pull_request:
     types: [ opened, synchronize, reopened ]
+  workflow_dispatch: {}
 
 permissions:
   contents: read
@@ -30,8 +31,39 @@ jobs:
           distribution: 'zulu'
           cache: maven
 
+      - name: Set up Buf
+        uses: bufbuild/buf-action@fd21066df7214747548607aaa45548ba2b9bc1ff # v1.4.0
+        with:
+          version: '1.71.0'
+          setup_only: true
+
+      - name: Validate Protobuf contract
+        run: |
+          buf format --diff --exit-code
+          buf lint
+
+      - name: Detect breaking Protobuf changes
+        if: github.event_name == 'pull_request'
+        run: |
+          if git ls-tree -r --name-only "${{ github.event.pull_request.base.sha }}" -- src/main/protobuf | grep -q '\.proto$'; then
+            git branch --force buf-base "${{ github.event.pull_request.base.sha }}"
+            buf breaking --against '.git#branch=buf-base'
+          fi
+
       - name: Build and test
         run: ./mvnw --batch-mode verify
+
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+
+      # The SmokeTest group is excluded from the regular build (needs real FFmpeg) but is fast
+      # (~14 tests, seconds) and deterministic, so it gates every PR — it is the only check of
+      # ADR 0019's end-to-end guarantees (PTS continuity across producer replacement, fMP4 init
+      # rewrite). Kept as its own step so a smoke failure is legible at a glance.
+      - name: Run HLS smoke tests
+        run: >-
+          ./mvnw --batch-mode test -Dsurefire.excludedGroups= -Dgroups=SmokeTest
+          -Djacoco.skip=true -Dcheckstyle.skip=true -Dspotless.check.skip=true
 
       - name: Cache SonarCloud packages
         if: env.SONAR_TOKEN != ''
@@ -46,3 +78,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./mvnw --batch-mode org.sonarsource.scanner.maven:sonar-maven-plugin:sonar
+

@@ -1,0 +1,27 @@
+meta {
+  name: Get Multivariant Playlist
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{BASE_URL}}{{STREAM_URL}}
+  body: none
+  auth: none
+}
+
+docs {
+  Run GraphQL/Create Stream Session first: it captures STREAM_URL,
+  STREAM_SESSION_ID, and PLAYBACK_TOKEN. Stream routes authenticate
+  only through the short-lived ?t= playback token embedded in the
+  URL — never a bearer header.
+}
+
+tests {
+  test("Should return the multivariant playlist", function() {
+    expect(res.status).to.equal(200);
+    expect(res.headers["content-type"]).to.contain("application/vnd.apple.mpegurl");
+    expect(res.body).to.contain("#EXTM3U");
+    expect(res.body).to.contain("#EXT-X-STREAM-INF:");
+  });
+}

@@ -23,12 +23,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
-import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.crypto.Mac;
 import org.junit.jupiter.api.DisplayName;
@@ -93,7 +88,7 @@ class RefreshTokenServiceTest {
     var rotation = (RefreshResult.Rotated) service.redeem(issued.rawToken());
 
     advanceClock(Duration.ofSeconds(10));
-    var replay = (RefreshResult.Replayed) service.redeem(issued.rawToken());
+    var replay = (RefreshResult.GraceRetry) service.redeem(issued.rawToken());
 
     assertThat(replay.rawRefreshToken()).isEqualTo(rotation.rawRefreshToken());
     assertThat(replay.session().getId()).isEqualTo(issued.session().getId());
@@ -112,7 +107,7 @@ class RefreshTokenServiceTest {
     advanceClock(properties.rotationGrace());
     var replay = service.redeem(issued.rawToken());
 
-    assertThat(replay).isInstanceOf(RefreshResult.Replayed.class);
+    assertThat(replay).isInstanceOf(RefreshResult.GraceRetry.class);
     assertThat(replay.session().getRevokedAt()).isNull();
   }
 
@@ -125,14 +120,14 @@ class RefreshTokenServiceTest {
 
     var replay = service.redeem(issued.rawToken());
 
-    assertThat(replay).isInstanceOf(RefreshResult.SupersededReplay.class);
+    assertThat(replay).isInstanceOf(RefreshResult.SupersededRetry.class);
     assertThat(replay.session().getId()).isEqualTo(issued.session().getId());
     assertThat(replay.session().getRevokedAt()).isNull();
   }
 
   @Test
-  @DisplayName("Should classify expired successor as superseded replay within grace")
-  void shouldClassifyExpiredSuccessorAsSupersededReplayWithinGrace() {
+  @DisplayName("Should classify expired successor as superseded retry within grace")
+  void shouldClassifyExpiredSuccessorAsSupersededRetryWithinGrace() {
     var shortLivedService =
         serviceWith(
             AuthTokenProperties.builder()
@@ -149,7 +144,7 @@ class RefreshTokenServiceTest {
     var replay = shortLivedService.redeem(issued.rawToken());
     var successorToken = rotation.rawRefreshToken();
 
-    assertThat(replay).isInstanceOf(RefreshResult.SupersededReplay.class);
+    assertThat(replay).isInstanceOf(RefreshResult.SupersededRetry.class);
     assertThat(replay.session().getRevokedAt()).isNull();
     assertThatThrownBy(() -> shortLivedService.redeem(successorToken))
         .isInstanceOf(InvalidRefreshTokenException.class);
@@ -170,7 +165,6 @@ class RefreshTokenServiceTest {
     var session = sessionRepository.findById(issued.session().getId()).orElseThrow();
     assertThat(session.getRevokedAt()).isNotNull();
     assertThat(session.getRevokedReason()).isEqualTo(SessionRevocationReason.TOKEN_REUSE);
-    assertThat(session.getSessionVersion()).isEqualTo(1L);
 
     assertThat(tokenRepository.findAll())
         .allSatisfy(token -> assertThat(token.getStatus()).isEqualTo(RefreshTokenStatus.REVOKED));
@@ -278,7 +272,6 @@ class RefreshTokenServiceTest {
     var session = sessionRepository.findById(issued.session().getId()).orElseThrow();
     assertThat(session.getRevokedAt()).isNotNull();
     assertThat(session.getRevokedReason()).isEqualTo(SessionRevocationReason.TOKEN_REUSE);
-    assertThat(session.getSessionVersion()).isEqualTo(1L);
     assertThat(tokenRepository.findAll())
         .allSatisfy(token -> assertThat(token.getStatus()).isEqualTo(RefreshTokenStatus.REVOKED));
   }
@@ -296,41 +289,6 @@ class RefreshTokenServiceTest {
     assertThat(tokenRepository.findAll())
         .singleElement()
         .satisfies(token -> assertThat(token.getStatus()).isEqualTo(RefreshTokenStatus.ACTIVE));
-  }
-
-  @Test
-  @DisplayName("Should keep reissued session live when an earlier refresh finishes afterward")
-  void shouldKeepReissuedSessionLiveWhenEarlierRefreshFinishesAfterward() throws Exception {
-    var pausingSessions = new PausingAuthSessionRepository();
-    var tokens = new FakeRefreshTokenRepository();
-    var revoker = new TokenReuseRevoker(new TokenReuseRevocationWriter(pausingSessions, tokens));
-    var racingService =
-        new RefreshTokenService(pausingSessions, tokens, properties, clock, revoker);
-    var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
-    var issued = racingService.createSession(account, "test-device");
-
-    pausingSessions.pauseNextLock();
-    IssuedRefreshToken reissued;
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var refresh = executor.submit(() -> racingService.redeem(issued.rawToken()));
-      assertThat(pausingSessions.lockEntered.await(10, TimeUnit.SECONDS)).isTrue();
-
-      reissued = racingService.reissueFor(issued.session());
-      pausingSessions.releaseLock.countDown();
-
-      assertThatThrownBy(() -> refresh.get(10, TimeUnit.SECONDS))
-          .isInstanceOf(ExecutionException.class)
-          .hasCauseInstanceOf(InvalidRefreshTokenException.class);
-    } finally {
-      pausingSessions.releaseLock.countDown();
-    }
-
-    assertThat(pausingSessions.findById(issued.session().getId()).orElseThrow().getRevokedAt())
-        .isNull();
-    assertThat(tokens.findAll())
-        .filteredOn(token -> token.getStatus() == RefreshTokenStatus.ACTIVE)
-        .hasSize(1);
-    assertThat(racingService.redeem(reissued.rawToken())).isInstanceOf(RefreshResult.Rotated.class);
   }
 
   @Test
@@ -397,6 +355,26 @@ class RefreshTokenServiceTest {
         .isNull();
   }
 
+  @Test
+  @DisplayName("Should persist active selection when creating a session from a command")
+  void shouldPersistActiveSelectionWhenCreatingSessionFromCommand() {
+    var householdId = UUID.randomUUID();
+    var profileId = UUID.randomUUID();
+
+    var issued =
+        service.createSession(
+            CreateAuthSessionCommand.builder()
+                .accountId(UUID.randomUUID())
+                .deviceName("replacement-device")
+                .activeHouseholdId(householdId)
+                .activeProfileId(profileId)
+                .build());
+
+    var persisted = sessionRepository.findById(issued.session().getId()).orElseThrow();
+    assertThat(persisted.getActiveHouseholdId()).isEqualTo(householdId);
+    assertThat(persisted.getActiveProfileId()).isEqualTo(profileId);
+  }
+
   private IssuedRefreshToken issueSession() {
     var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
     return service.createSession(account, "test-device");
@@ -409,33 +387,5 @@ class RefreshTokenServiceTest {
   private RefreshTokenService serviceWith(AuthTokenProperties tokenProperties) {
     return new RefreshTokenService(
         sessionRepository, tokenRepository, tokenProperties, clock, tokenReuseRevoker);
-  }
-
-  private static final class PausingAuthSessionRepository extends FakeAuthSessionRepository {
-
-    private final CountDownLatch lockEntered = new CountDownLatch(1);
-    private final CountDownLatch releaseLock = new CountDownLatch(1);
-    private volatile boolean pause;
-
-    private void pauseNextLock() {
-      pause = true;
-    }
-
-    @Override
-    public Optional<com.streamarr.server.domain.auth.AuthSession> lockById(UUID sessionId) {
-      if (pause) {
-        pause = false;
-        lockEntered.countDown();
-        try {
-          if (!releaseLock.await(10, TimeUnit.SECONDS)) {
-            throw new AssertionError("refresh lock was not released");
-          }
-        } catch (InterruptedException _) {
-          Thread.currentThread().interrupt();
-          throw new AssertionError("refresh lock interrupted");
-        }
-      }
-      return super.lockById(sessionId);
-    }
   }
 }

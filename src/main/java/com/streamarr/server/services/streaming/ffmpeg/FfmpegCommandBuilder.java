@@ -148,8 +148,13 @@ public class FfmpegCommandBuilder {
     }
   }
 
+  /**
+   * One GOP (group of pictures — the keyframe interval) per segment, so every segment starts on a
+   * keyframe.
+   */
   private void addGopSizeArgs(List<String> cmd, TranscodeJob job) {
-    var gopSize = (int) Math.ceil(job.request().segmentDuration() * job.request().framerate());
+    var gopSize =
+        (int) Math.ceil(job.request().targetSegmentDuration() * job.request().framerate());
     cmd.addAll(
         List.of(
             "-g:v:0", String.valueOf(gopSize),
@@ -159,7 +164,8 @@ public class FfmpegCommandBuilder {
   private void addForceKeyframeExprArgs(List<String> cmd, TranscodeJob job) {
     cmd.addAll(
         List.of(
-            "-force_key_frames:0", "expr:gte(t,n_forced*" + job.request().segmentDuration() + ")"));
+            "-force_key_frames:0",
+            "expr:gte(t,n_forced*" + job.request().targetSegmentDuration() + ")"));
 
     if ("libx264".equals(job.videoEncoder())) {
       cmd.addAll(List.of("-sc_threshold:v:0", "0"));
@@ -174,12 +180,12 @@ public class FfmpegCommandBuilder {
     var extension = container.segmentExtension();
 
     cmd.addAll(List.of("-f", "hls"));
-    cmd.addAll(List.of("-hls_time", String.valueOf(request.segmentDuration())));
+    cmd.addAll(List.of("-hls_time", String.valueOf(request.targetSegmentDuration())));
     cmd.addAll(List.of("-hls_list_size", "0"));
     cmd.addAll(List.of("-hls_flags", "temp_file"));
 
-    if (request.startNumber() > 0) {
-      cmd.addAll(List.of("-start_number", String.valueOf(request.startNumber())));
+    if (request.startSequenceNumber() > 0) {
+      cmd.addAll(List.of("-start_number", String.valueOf(request.startSequenceNumber())));
     }
 
     switch (container) {

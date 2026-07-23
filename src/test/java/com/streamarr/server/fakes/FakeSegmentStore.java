@@ -2,14 +2,13 @@ package com.streamarr.server.fakes;
 
 import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.streaming.SegmentStore;
-import java.time.Duration;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class FakeSegmentStore implements SegmentStore {
 
-  private final Map<UUID, Map<String, byte[]>> sessions = new HashMap<>();
+  private final Map<UUID, Map<String, byte[]>> sessions = new ConcurrentHashMap<>();
 
   @Override
   public byte[] readSegment(UUID sessionId, String segmentName) {
@@ -25,14 +24,24 @@ public class FakeSegmentStore implements SegmentStore {
   }
 
   @Override
-  public boolean waitForSegment(UUID sessionId, String segmentName, Duration timeout) {
-    var segments = sessions.get(sessionId);
-    return segments != null && segments.containsKey(segmentName);
+  public boolean segmentExists(UUID sessionId, String segmentName) {
+    return sessions.getOrDefault(sessionId, Map.of()).containsKey(segmentName);
   }
 
   @Override
-  public boolean segmentExists(UUID sessionId, String segmentName) {
-    return sessions.getOrDefault(sessionId, Map.of()).containsKey(segmentName);
+  public PreparedSegment prepareSegment(UUID sessionId, String segmentName, byte[] data) {
+    return new PreparedSegment() {
+      @Override
+      public void publish() {
+        addSegment(sessionId, segmentName, data);
+      }
+
+      @Override
+      public void close() {
+        // Data remains owned by this object until publish(), so there is no staged resource to
+        // release.
+      }
+    };
   }
 
   @Override
@@ -41,6 +50,6 @@ public class FakeSegmentStore implements SegmentStore {
   }
 
   public void addSegment(UUID sessionId, String segmentName, byte[] data) {
-    sessions.computeIfAbsent(sessionId, id -> new HashMap<>()).put(segmentName, data);
+    sessions.computeIfAbsent(sessionId, id -> new ConcurrentHashMap<>()).put(segmentName, data);
   }
 }

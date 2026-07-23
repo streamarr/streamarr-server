@@ -2,13 +2,15 @@
 
 == Status
 
-Accepted
+Superseded by link:0018-live-playback-authority-and-outbound-workers.adoc[ADR 0018]
+
+NOTE: This record is retained as decision history and must not be implemented.
+ADR 0018 replaces it with runtime stream sessions and a live playback-authority query.
 
 === Implementation status
 
-* Nothing in this ADR is built yet: the lifecycle will be implemented by issue #211 (PR-A), atomic revocation integration follows in PR-B1, and the version-counter retirement completes the transition in PR-B2 (issue #213). PR-A/PR-B1/PR-B2 name the sequential delivery increments of those issues.
-* The single-streaming-instance boundary holds until the distributed control plane (issue #76); `PROVISIONING` here is a local admission state, not #76's distributed capacity reservation.
-* Media-deletion choreography and its restrictive foreign key land together in PR-A2 — a `RESTRICT` constraint never ships ahead of the deletion workflow that satisfies it.
+* The persisted playback lifecycle defined by this ADR did not merge. Issue #211 and its planned delivery increments were abandoned when ADR 0018 superseded this design.
+* ADR 0018 retains runtime stream sessions and one Streamarr control-plane process; issue #76 distributes transcoding work, not playback-session ownership.
 
 == Context
 

@@ -56,9 +56,9 @@ class StreamarrBearerTokenResolverTest {
   @Test
   @DisplayName("Should resolve playback query token when application has context path")
   void shouldResolvePlaybackQueryTokenWhenApplicationHasContextPath() {
-    var request = requestFor("/streamarr/api/stream/some-id/master.m3u8");
+    var request = requestFor("/streamarr/api/stream/some-id/multivariant.m3u8");
     request.setContextPath("/streamarr");
-    request.setServletPath("/api/stream/some-id/master.m3u8");
+    request.setServletPath("/api/stream/some-id/multivariant.m3u8");
     request.setParameter("t", "playback-token");
     var streamMatcher = PathPatternRequestMatcher.withDefaults().matcher("/api/stream/**");
 

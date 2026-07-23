@@ -26,6 +26,18 @@ body:graphql:vars {
   }
 }
 
+script:post-response {
+  const session = res.body.data && res.body.data.createStreamSession;
+  if (res.status === 200 && session) {
+    bru.setVar("STREAM_SESSION_ID", session.id);
+    bru.setVar("STREAM_URL", session.streamUrl);
+    const token = session.streamUrl.match(/[?&]t=([^&\s]+)/);
+    if (token) {
+      bru.setVar("PLAYBACK_TOKEN", token[1]);
+    }
+  }
+}
+
 tests {
   test("Should create a stream session", function() {
     expect(res.status).to.equal(200);

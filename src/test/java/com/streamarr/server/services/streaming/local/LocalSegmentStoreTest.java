@@ -7,12 +7,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.streamarr.server.exceptions.InvalidSegmentPathException;
 import com.streamarr.server.exceptions.TranscodeException;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Duration;
 import java.util.UUID;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -21,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 @Tag("UnitTest")
+@DisplayName("Local Segment Store Tests")
 class LocalSegmentStoreTest {
 
   @TempDir Path tempDir;
@@ -102,26 +101,23 @@ class LocalSegmentStoreTest {
   }
 
   @Test
-  @DisplayName("Should return true immediately when waiting for existing segment")
-  void shouldReturnTrueImmediatelyWhenWaitingForExistingSegment() throws IOException {
+  @DisplayName("Should report a missing segment when session has no output directory")
+  void shouldReportMissingSegmentWhenSessionHasNoOutputDirectory() {
     var sessionId = UUID.randomUUID();
-    var outputDir = store.getOutputDirectory(sessionId);
-    Files.write(outputDir.resolve("segment0.ts"), "data".getBytes());
 
-    var result = store.waitForSegment(sessionId, "segment0.ts", Duration.ofSeconds(1));
-
-    assertThat(result).isTrue();
+    // In remote mode nothing creates the directory until a worker's first upload; the miss must
+    // read as "not yet present", never as an error.
+    assertThat(store.segmentExists(sessionId, "segment0.ts")).isFalse();
   }
 
   @Test
-  @DisplayName("Should timeout when segment never appears")
-  void shouldTimeoutWhenSegmentNeverAppears() {
+  @DisplayName("Should report an existing segment after the first upload creates the directory")
+  void shouldReportExistingSegmentAfterFirstUploadCreatesTheDirectory() {
     var sessionId = UUID.randomUUID();
-    store.getOutputDirectory(sessionId);
 
-    var result = store.waitForSegment(sessionId, "missing.ts", Duration.ofMillis(300));
+    store.storeSegment(sessionId, "720p/segment0.ts", "uploaded".getBytes());
 
-    assertThat(result).isFalse();
+    assertThat(store.segmentExists(sessionId, "720p/segment0.ts")).isTrue();
   }
 
   @Test
@@ -149,27 +145,77 @@ class LocalSegmentStoreTest {
   }
 
   @Test
-  @DisplayName("Should return true when segment is created by background thread")
-  void shouldReturnTrueWhenSegmentIsCreatedByBackgroundThread() {
+  @DisplayName("Should store a complete segment in its variant directory")
+  void shouldStoreCompleteSegmentInVariantDirectory() {
     var sessionId = UUID.randomUUID();
-    var outputDir = store.getOutputDirectory(sessionId);
+    var segmentData = "remote segment".getBytes();
 
-    var executor = Executors.newSingleThreadScheduledExecutor();
-    executor.schedule(
-        () -> {
-          try {
-            Files.write(outputDir.resolve("segment1.ts"), "delayed data".getBytes());
-          } catch (IOException e) {
-            throw new RuntimeException(e);
-          }
-        },
-        200,
-        TimeUnit.MILLISECONDS);
+    store.storeSegment(sessionId, "720p/segment0.ts", segmentData);
 
-    var result = store.waitForSegment(sessionId, "segment1.ts", Duration.ofSeconds(5));
+    assertThat(store.readSegment(sessionId, "720p/segment0.ts")).isEqualTo(segmentData);
+  }
 
-    assertThat(result).isTrue();
-    executor.shutdown();
+  @Test
+  @DisplayName("Should not expose a prepared segment until it is published")
+  void shouldNotExposePreparedSegmentUntilItIsPublished() {
+    var sessionId = UUID.randomUUID();
+    var segmentData = "remote segment".getBytes();
+
+    try (var prepared = store.prepareSegment(sessionId, "720p/segment0.ts", segmentData)) {
+      assertThat(tempDir.resolve(sessionId.toString())).doesNotExist();
+      assertThat(store.segmentExists(sessionId, "720p/segment0.ts")).isFalse();
+
+      prepared.publish();
+    }
+
+    assertThat(store.readSegment(sessionId, "720p/segment0.ts")).isEqualTo(segmentData);
+  }
+
+  @Test
+  @DisplayName("Should discard a prepared segment when it is closed without publication")
+  void shouldDiscardPreparedSegmentWhenClosedWithoutPublication() {
+    var sessionId = UUID.randomUUID();
+
+    try (var _ = store.prepareSegment(sessionId, "720p/segment0.ts", "remote segment".getBytes())) {
+      assertThat(tempDir.resolve(sessionId.toString())).doesNotExist();
+    }
+
+    assertThat(tempDir).isEmptyDirectory();
+  }
+
+  @Test
+  @DisplayName("Should clean the temporary file when segment preparation fails")
+  void shouldCleanTemporaryFileWhenSegmentPreparationFails() {
+    var sessionId = UUID.randomUUID();
+
+    assertThatThrownBy(() -> store.prepareSegment(sessionId, "segment0.ts", null))
+        .isInstanceOf(NullPointerException.class);
+    assertThat(tempDir).isEmptyDirectory();
+  }
+
+  @Test
+  @DisplayName("Should escalate an IO failure as unchecked rather than an absent segment")
+  void shouldEscalateAnIoFailureAsUncheckedRatherThanAnAbsentSegment() throws Exception {
+    var sessionId = UUID.randomUUID();
+    // A plain file squatting on the session directory path makes every write fail as real IO.
+    Files.createDirectories(tempDir);
+    Files.writeString(tempDir.resolve(sessionId.toString()), "not a directory");
+
+    // Deliberately NOT TranscodeException: the delivery loop swallows that type as a destroy
+    // race, so a genuine storage failure must surface as UncheckedIOException instead.
+    assertThatThrownBy(() -> store.storeSegment(sessionId, "segment0.ts", new byte[] {0x47}))
+        .isInstanceOf(UncheckedIOException.class)
+        .hasMessageContaining("session directory");
+  }
+
+  @Test
+  @DisplayName("Should reject a stored segment that escapes its session directory")
+  void shouldRejectStoredSegmentThatEscapesSessionDirectory() {
+    var sessionId = UUID.randomUUID();
+    var segmentData = "data".getBytes();
+
+    assertThatThrownBy(() -> store.storeSegment(sessionId, "../../escaped.ts", segmentData))
+        .isInstanceOf(InvalidSegmentPathException.class);
   }
 
   @Test

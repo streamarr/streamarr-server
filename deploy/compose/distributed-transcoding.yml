@@ -1,0 +1,34 @@
+services:
+  streamarr-server:
+    environment:
+      STREAMING_REMOTE_ENABLED: "true"
+      STREAMING_REMOTE_PORT: 9090
+      STREAMING_REMOTE_TRUST_DOMAIN: ${STREAMARR_TRUST_DOMAIN:-streamarr.home}
+      STREAMING_REMOTE_SOURCE_NAMESPACE_ID: ${STREAMARR_SOURCE_NAMESPACE_ID:?Set a source namespace UUID}
+      STREAMING_REMOTE_SOURCE_ROOT: /media
+      STREAMING_REMOTE_CERTIFICATE: /run/secrets/streamarr/tls.crt
+      STREAMING_REMOTE_PRIVATE_KEY: /run/secrets/streamarr/tls.key
+      STREAMING_REMOTE_TRUST_BUNDLE: /run/secrets/streamarr/ca.crt
+    volumes:
+      - ${STREAMARR_MEDIA_PATH:?Set the host media path}:/media:ro
+      - ${STREAMARR_SERVER_TLS_PATH:?Set the server PEM directory}:/run/secrets/streamarr:ro
+
+  transcode-worker:
+    image: streamarr/streamarr-server:latest
+    entrypoint: worker
+    restart: unless-stopped
+    depends_on:
+      - streamarr-server
+    environment:
+      TRANSCODE_WORKER_CONTROL_PLANE_HOST: streamarr-server
+      TRANSCODE_WORKER_CONTROL_PLANE_PORT: 9090
+      TRANSCODE_WORKER_ID: ${STREAMARR_WORKER_ID:?Set the worker UUID from its certificate URI SAN}
+      TRANSCODE_WORKER_SOURCE_NAMESPACE_ID: ${STREAMARR_SOURCE_NAMESPACE_ID:?Set a source namespace UUID}
+      TRANSCODE_WORKER_SOURCE_ROOT: /media
+      TRANSCODE_WORKER_SLOTS: ${STREAMARR_WORKER_SLOTS:-1}
+      TRANSCODE_WORKER_TLS_CERTIFICATE: /run/secrets/streamarr/tls.crt
+      TRANSCODE_WORKER_TLS_PRIVATE_KEY: /run/secrets/streamarr/tls.key
+      TRANSCODE_WORKER_TLS_TRUST_BUNDLE: /run/secrets/streamarr/ca.crt
+    volumes:
+      - ${STREAMARR_MEDIA_PATH:?Set the host media path}:/media:ro
+      - ${STREAMARR_WORKER_TLS_PATH:?Set the worker PEM directory}:/run/secrets/streamarr:ro

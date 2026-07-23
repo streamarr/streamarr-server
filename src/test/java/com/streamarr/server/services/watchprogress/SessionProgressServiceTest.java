@@ -20,9 +20,9 @@ import com.streamarr.server.exceptions.SessionNotFoundException;
 import com.streamarr.server.fakes.CapturingEventPublisher;
 import com.streamarr.server.fakes.FakeEpisodeRepository;
 import com.streamarr.server.fakes.FakeMediaFileRepository;
+import com.streamarr.server.fakes.FakeRuntimeStreamSessionRegistry;
 import com.streamarr.server.fakes.FakeSeasonRepository;
 import com.streamarr.server.fakes.FakeSessionProgressRepository;
-import com.streamarr.server.fakes.FakeStreamSessionRepository;
 import com.streamarr.server.fakes.FakeWatchHistoryRepository;
 import com.streamarr.server.fixtures.StreamSessionFixture;
 import com.streamarr.server.services.watchprogress.events.ItemWatchedEvent;
@@ -45,7 +45,7 @@ import org.slf4j.LoggerFactory;
 @DisplayName("Session Progress Service Tests")
 class SessionProgressServiceTest {
 
-  private FakeStreamSessionRepository sessionRepository;
+  private FakeRuntimeStreamSessionRegistry runtimeRegistry;
   private FakeSessionProgressRepository sessionProgressRepository;
   private FakeWatchHistoryRepository watchHistoryRepository;
   private FakeMediaFileRepository mediaFileRepository;
@@ -59,7 +59,7 @@ class SessionProgressServiceTest {
 
   @BeforeEach
   void setUp() {
-    sessionRepository = new FakeStreamSessionRepository();
+    runtimeRegistry = new FakeRuntimeStreamSessionRegistry();
     sessionProgressRepository = new FakeSessionProgressRepository();
     watchHistoryRepository = new FakeWatchHistoryRepository();
     mediaFileRepository = new FakeMediaFileRepository();
@@ -77,7 +77,7 @@ class SessionProgressServiceTest {
     var properties = new WatchProgressProperties(5.0, 90.0, 300);
     service =
         new SessionProgressService(
-            sessionRepository,
+            runtimeRegistry,
             sessionProgressRepository,
             mediaFileRepository,
             properties,
@@ -87,7 +87,7 @@ class SessionProgressServiceTest {
 
   private StreamSession addSession() {
     var session = StreamSessionFixture.buildMpegtsSessionOwnedBy(PROFILE_ID);
-    sessionRepository.save(session);
+    runtimeRegistry.save(session);
     saveMediaFileForSession(session);
     return session;
   }
@@ -203,8 +203,11 @@ class SessionProgressServiceTest {
     @Test
     @DisplayName("Should return early when duration is zero")
     void shouldReturnEarlyWhenDurationIsZero() {
-      var session = StreamSessionFixture.zeroDurationSessionBuilder().profileId(PROFILE_ID).build();
-      sessionRepository.save(session);
+      var session =
+          StreamSessionFixture.zeroDurationSessionBuilder()
+              .authority(StreamSessionFixture.playbackAuthorityFor(PROFILE_ID))
+              .build();
+      runtimeRegistry.save(session);
 
       service.reportStreamSessionTimeline(
           PROFILE_ID, session.getSessionId(), 300, PlaybackState.PLAYING);
@@ -308,10 +311,10 @@ class SessionProgressServiceTest {
     }
 
     @Test
-    @DisplayName("Should treat session without owner profile as not found")
-    void shouldTreatSessionWithoutOwnerProfileAsNotFound() {
-      var session = StreamSessionFixture.buildMpegtsSessionOwnedBy(null);
-      sessionRepository.save(session);
+    @DisplayName("Should treat session owned by another profile as not found")
+    void shouldTreatSessionOwnedByAnotherProfileAsNotFound() {
+      var session = StreamSessionFixture.buildMpegtsSessionOwnedBy(UUID.randomUUID());
+      runtimeRegistry.save(session);
       saveMediaFileForSession(session);
 
       var sessionId = session.getSessionId();
@@ -407,9 +410,9 @@ class SessionProgressServiceTest {
         String description, int durationSeconds, int positionSeconds) {
       var session =
           StreamSessionFixture.sessionWithDurationBuilder(durationSeconds)
-              .profileId(PROFILE_ID)
+              .authority(StreamSessionFixture.playbackAuthorityFor(PROFILE_ID))
               .build();
-      sessionRepository.save(session);
+      runtimeRegistry.save(session);
       saveMediaFileForSession(session);
 
       service.reportStreamSessionTimeline(
@@ -448,9 +451,9 @@ class SessionProgressServiceTest {
         shouldNotMarkShortContentAsWatchedViaRemainingSecondsThresholdWhenDurationIsBelowMaxRemaining() {
       var shortSession =
           StreamSessionFixture.sessionWithDurationBuilder(120) // 2 min trailer
-              .profileId(PROFILE_ID)
+              .authority(StreamSessionFixture.playbackAuthorityFor(PROFILE_ID))
               .build();
-      sessionRepository.save(shortSession);
+      runtimeRegistry.save(shortSession);
       saveMediaFileForSession(shortSession);
 
       // Stop at 8.3% (10s / 120s) — above 5% min, 110s remaining < 300s maxRemaining
@@ -557,7 +560,7 @@ class SessionProgressServiceTest {
           PROFILE_ID, session.getSessionId(), 3600, PlaybackState.PLAYING);
 
       // Session destroyed without STOPPED report (client crash)
-      sessionRepository.removeById(session.getSessionId());
+      runtimeRegistry.removeById(session.getSessionId());
 
       // Progress should still be in DB
       var progress =
@@ -751,9 +754,9 @@ class SessionProgressServiceTest {
     var session =
         StreamSessionFixture.defaultSessionBuilder()
             .mediaFileId(mediaFileId)
-            .profileId(PROFILE_ID)
+            .authority(StreamSessionFixture.playbackAuthorityFor(PROFILE_ID))
             .build();
-    sessionRepository.save(session);
+    runtimeRegistry.save(session);
     return session;
   }
 }

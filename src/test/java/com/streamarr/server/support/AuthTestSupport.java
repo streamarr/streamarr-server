@@ -19,6 +19,7 @@ import com.streamarr.server.repositories.auth.HouseholdRepository;
 import com.streamarr.server.repositories.auth.ProfileRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import com.streamarr.server.services.auth.AccessTokenIssuer;
+import com.streamarr.server.services.auth.CreateAuthSessionCommand;
 import com.streamarr.server.services.auth.RefreshTokenService;
 import com.streamarr.server.services.auth.TokenContext;
 import java.time.Clock;
@@ -83,7 +84,14 @@ public class AuthTestSupport {
             .profileId(profile.getId())
             .build());
 
-    var issued = refreshTokenService.createSession(account, "auth-test-support");
+    var issued =
+        refreshTokenService.createSession(
+            CreateAuthSessionCommand.builder()
+                .accountId(account.getId())
+                .deviceName("auth-test-support")
+                .activeHouseholdId(household.getId())
+                .activeProfileId(profile.getId())
+                .build());
 
     return TestIdentity.builder()
         .account(account)

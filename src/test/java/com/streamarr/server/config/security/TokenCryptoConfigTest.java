@@ -12,13 +12,9 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.PlainJWT;
 import com.nimbusds.jwt.SignedJWT;
 import com.streamarr.server.domain.auth.AccountRole;
-import com.streamarr.server.fakes.FakeVersionCounterReader;
 import com.streamarr.server.services.auth.TokenClaims;
-import com.streamarr.server.services.auth.TokenContract;
 import com.streamarr.server.services.auth.TokenIdentityValidator;
 import com.streamarr.server.services.auth.TokenScope;
-import com.streamarr.server.services.auth.TokenVersionCache;
-import com.streamarr.server.services.auth.TokenVersionValidator;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
@@ -29,9 +25,12 @@ import java.util.function.Consumer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.oauth2.core.OAuth2Error;
+import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.JwsHeader;
+import org.springframework.security.oauth2.jwt.JwtClaimNames;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
@@ -55,7 +54,6 @@ class TokenCryptoConfigTest {
 
   private final TokenCryptoConfig config = new TokenCryptoConfig();
 
-  private final FakeVersionCounterReader reader = new FakeVersionCounterReader();
   private final UUID sessionId = UUID.randomUUID();
   private final UUID accountId = UUID.randomUUID();
 
@@ -165,7 +163,6 @@ class TokenCryptoConfigTest {
                 .issueTime(Date.from(Instant.now()))
                 .expirationTime(Date.from(Instant.now().plusSeconds(600)))
                 .claim(TokenClaims.SESSION_ID, sessionId.toString())
-                .claim(TokenClaims.SESSION_VERSION, 0L)
                 .build());
     hmacToken.sign(new MACSigner(new byte[32]));
     var token = hmacToken.serialize();
@@ -185,7 +182,6 @@ class TokenCryptoConfigTest {
                     .issueTime(Date.from(Instant.now()))
                     .expirationTime(Date.from(Instant.now().plusSeconds(600)))
                     .claim(TokenClaims.SESSION_ID, sessionId.toString())
-                    .claim(TokenClaims.SESSION_VERSION, 0L)
                     .build())
             .serialize();
 
@@ -218,12 +214,12 @@ class TokenCryptoConfigTest {
         new SignedJWT(
             new JWSHeader.Builder(JWSAlgorithm.ES256).keyID(keys.signingKey().getKeyID()).build(),
             new JWTClaimsSet.Builder()
-                .issuer(TokenContract.ISSUER)
+                .issuer("streamarr")
+                .audience("streamarr")
                 .subject(accountId.toString())
                 .issueTime(Date.from(Instant.now()))
-                .claim(TokenClaims.ROLE, AccountRole.USER.name())
+                .claim(TokenClaims.ROLES, List.of(AccountRole.USER.name()))
                 .claim(TokenClaims.SESSION_ID, sessionId.toString())
-                .claim(TokenClaims.SESSION_VERSION, 0L)
                 .claim(TokenClaims.SCOPE, TokenScope.ACCOUNT.claimValue())
                 .build());
     expiryFreeToken.sign(new ECDSASigner(keys.signingKey()));
@@ -254,6 +250,44 @@ class TokenCryptoConfigTest {
     var jwtDecoder = decoder(keys);
 
     assertThatThrownBy(() -> jwtDecoder.decode(token)).isInstanceOf(JwtValidationException.class);
+  }
+
+  @Test
+  @DisplayName("Should reject token with an empty audience claim")
+  void shouldRejectTokenWithEmptyAudience() {
+    var keys = config.tokenSigningKeys(properties(KEY_A, List.of()));
+    var token = mint(config.jwtEncoder(keys), claims -> claims.audience(List.of()));
+
+    assertRejectedAsInvalidToken(decoder(keys), token);
+  }
+
+  @Test
+  @DisplayName("Should reject token when the audience claim is absent")
+  void shouldRejectTokenWhenAudienceClaimAbsent() {
+    var keys = config.tokenSigningKeys(properties(KEY_A, List.of()));
+    var token =
+        mint(config.jwtEncoder(keys), claims -> claims.claims(c -> c.remove(JwtClaimNames.AUD)));
+
+    assertRejectedAsInvalidToken(decoder(keys), token);
+  }
+
+  @Test
+  @DisplayName("Should reject token addressed to a different audience")
+  void shouldRejectTokenAddressedToDifferentAudience() {
+    var keys = config.tokenSigningKeys(properties(KEY_A, List.of()));
+    var token = mint(config.jwtEncoder(keys), claims -> claims.audience(List.of("other-service")));
+
+    assertRejectedAsInvalidToken(decoder(keys), token);
+  }
+
+  private void assertRejectedAsInvalidToken(JwtDecoder jwtDecoder, String token) {
+    assertThatThrownBy(() -> jwtDecoder.decode(token))
+        .isInstanceOfSatisfying(
+            JwtValidationException.class,
+            ex ->
+                assertThat(ex.getErrors())
+                    .extracting(OAuth2Error::getErrorCode)
+                    .contains(OAuth2ErrorCodes.INVALID_TOKEN));
   }
 
   @Test
@@ -332,7 +366,7 @@ class TokenCryptoConfigTest {
   }
 
   private String mint(JwtEncoder encoder) {
-    return mint(encoder, TokenContract.ISSUER);
+    return mint(encoder, "streamarr");
   }
 
   private String mint(JwtEncoder encoder, String issuer) {
@@ -340,7 +374,7 @@ class TokenCryptoConfigTest {
   }
 
   private String mint(JwtEncoder encoder, Consumer<JwtClaimsSet.Builder> customizer) {
-    return mint(encoder, TokenContract.ISSUER, customizer);
+    return mint(encoder, "streamarr", customizer);
   }
 
   private String mint(
@@ -349,12 +383,12 @@ class TokenCryptoConfigTest {
     var claims =
         JwtClaimsSet.builder()
             .issuer(issuer)
+            .audience(List.of("streamarr"))
             .subject(accountId.toString())
             .issuedAt(now)
             .expiresAt(now.plusSeconds(600))
-            .claim(TokenClaims.ROLE, AccountRole.USER.name())
+            .claim(TokenClaims.ROLES, List.of(AccountRole.USER.name()))
             .claim(TokenClaims.SESSION_ID, sessionId.toString())
-            .claim(TokenClaims.SESSION_VERSION, 0L)
             .claim(TokenClaims.SCOPE, TokenScope.ACCOUNT.claimValue());
     customizer.accept(claims);
     return encoder
@@ -365,11 +399,7 @@ class TokenCryptoConfigTest {
   }
 
   private JwtDecoder decoder(TokenSigningKeys keys) {
-    reader.sessionVersions.put(sessionId, 0L);
-    return config.jwtDecoder(
-        keys,
-        new TokenIdentityValidator(),
-        new TokenVersionValidator(new TokenVersionCache(reader)));
+    return config.jwtDecoder(keys, new TokenIdentityValidator(), properties("", List.of()));
   }
 
   private static String tamperSignature(String token) {

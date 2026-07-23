@@ -48,6 +48,7 @@ runs:
             --builder paketobuildpacks/builder-jammy-full \
             --buildpack paketo-buildpacks/apt \
             --buildpack paketo-buildpacks/java \
+            --buildpack paketo-buildpacks/procfile \
             --env BP_JVM_VERSION=25 \
             --env BP_INCLUDE_FILES=.profile:Procfile \
             --path . \

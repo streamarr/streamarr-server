@@ -37,8 +37,6 @@ class RefreshTokenReuseRevocationIT extends AbstractIntegrationTest {
 
   @Autowired private PlatformTransactionManager transactionManager;
 
-  @Autowired private TokenVersionCache tokenVersionCache;
-
   private UserAccount account;
 
   @AfterEach
@@ -65,8 +63,6 @@ class RefreshTokenReuseRevocationIT extends AbstractIntegrationTest {
     var session = authSessionRepository.findById(sessionId).orElseThrow();
     assertThat(session.getRevokedAt()).isNotNull();
     assertThat(session.getRevokedReason()).isEqualTo(SessionRevocationReason.TOKEN_REUSE);
-    assertThat(session.getSessionVersion()).isEqualTo(1L);
-
     assertThat(refreshTokenRepository.findAll())
         .filteredOn(token -> sessionId.equals(token.getSessionId()))
         .isNotEmpty()
@@ -92,33 +88,10 @@ class RefreshTokenReuseRevocationIT extends AbstractIntegrationTest {
     var session = authSessionRepository.findById(sessionId).orElseThrow();
     assertThat(session.getRevokedAt()).isNotNull();
     assertThat(session.getRevokedReason()).isEqualTo(SessionRevocationReason.TOKEN_REUSE);
-    assertThat(session.getSessionVersion()).isEqualTo(1L);
     assertThat(refreshTokenRepository.findAll())
         .filteredOn(token -> sessionId.equals(token.getSessionId()))
         .isNotEmpty()
         .allSatisfy(token -> assertThat(token.getStatus()).isEqualTo(RefreshTokenStatus.REVOKED));
-  }
-
-  @Test
-  @DisplayName("Should propagate version bump to cache when reuse detected")
-  void shouldPropagateVersionBumpToCacheWhenReuseDetected() {
-    account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
-    var issued = refreshTokenService.createSession(account, "cache-propagation-device");
-    var sessionId = issued.session().getId();
-
-    refreshTokenService.redeem(issued.rawToken());
-    backdateRotatedTokenPastGrace(sessionId);
-
-    // Warm the cache with the pre-revocation version: from here on, only the reuse-detection
-    // chain (afterCompletion -> REQUIRES_NEW writer -> AFTER_COMMIT listener) can change what
-    // this instance serves for the session.
-    assertThat(tokenVersionCache.sessionVersion(sessionId)).contains(0L);
-
-    var replayedToken = issued.rawToken();
-    assertThatThrownBy(() -> refreshTokenService.redeem(replayedToken))
-        .isInstanceOf(TokenReuseDetectedException.class);
-
-    assertThat(tokenVersionCache.sessionVersion(sessionId)).contains(1L);
   }
 
   private void backdateRotatedTokenPastGrace(UUID sessionId) {

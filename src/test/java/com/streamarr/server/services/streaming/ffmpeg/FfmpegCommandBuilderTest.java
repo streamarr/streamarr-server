@@ -75,7 +75,7 @@ class FfmpegCommandBuilderTest {
                 .sessionId(UUID.randomUUID())
                 .sourcePath(Path.of("/media/movie.mkv"))
                 .seekPosition(seekPosition)
-                .segmentDuration(6)
+                .targetSegmentDuration(6)
                 .framerate(23.976)
                 .transcodeDecision(
                     TranscodeDecision.builder()
@@ -102,7 +102,7 @@ class FfmpegCommandBuilderTest {
       ContainerFormat container,
       String videoEncoder,
       boolean needsKeyframeAlignment,
-      int startNumber) {
+      int startSequenceNumber) {
     var audio = audioDecisionFor(mode, audioCodec);
     return TranscodeJob.builder()
         .request(
@@ -110,7 +110,7 @@ class FfmpegCommandBuilderTest {
                 .sessionId(UUID.randomUUID())
                 .sourcePath(Path.of("/media/movie.mkv"))
                 .seekPosition(0)
-                .segmentDuration(6)
+                .targetSegmentDuration(6)
                 .framerate(23.976)
                 .transcodeDecision(
                     TranscodeDecision.builder()
@@ -124,7 +124,7 @@ class FfmpegCommandBuilderTest {
                 .width(1920)
                 .height(1080)
                 .bitrate(5_000_000L)
-                .startNumber(startNumber)
+                .startSequenceNumber(startSequenceNumber)
                 .build())
         .videoEncoder(videoEncoder)
         .outputDir(Path.of("/tmp/session-123"))
@@ -150,7 +150,7 @@ class FfmpegCommandBuilderTest {
                 .sessionId(UUID.randomUUID())
                 .sourcePath(Path.of("/media/movie.mkv"))
                 .seekPosition(0)
-                .segmentDuration(6)
+                .targetSegmentDuration(6)
                 .framerate(23.976)
                 .transcodeDecision(
                     TranscodeDecision.builder()

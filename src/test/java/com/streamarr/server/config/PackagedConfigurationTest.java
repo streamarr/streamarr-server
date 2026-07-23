@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -63,5 +64,44 @@ class PackagedConfigurationTest {
           assertThat(properties.iterations()).isGreaterThanOrEqualTo(MIN_ITERATIONS);
           assertThat(properties.parallelism()).isGreaterThanOrEqualTo(MIN_PARALLELISM);
         });
+  }
+
+  @Test
+  @DisplayName("Should ship separate server and transcode worker process types")
+  void shouldShipSeparateServerAndTranscodeWorkerProcessTypes() throws IOException {
+    var processes = Set.copyOf(Files.readAllLines(Path.of("Procfile")));
+    var buildAction = Files.readString(Path.of(".github/actions/pack-build/action.yml"));
+
+    assertThat(processes)
+        .contains(
+            "web: java org.springframework.boot.loader.launch.JarLauncher",
+            "worker: java -Dloader.main=com.streamarr.transcode.worker.TranscodeWorkerApplication "
+                + "org.springframework.boot.loader.launch.PropertiesLauncher");
+    assertThat(buildAction).contains("--buildpack paketo-buildpacks/procfile");
+  }
+
+  @Test
+  @DisplayName("Should ship an opt-in Docker Compose worker path")
+  void shouldShipOptInDockerComposeWorkerPath() throws IOException {
+    var deployment = Files.readString(Path.of("deploy/compose/distributed-transcoding.yml"));
+
+    assertThat(deployment)
+        .contains(
+            "entrypoint: worker",
+            "STREAMING_REMOTE_ENABLED: \"true\"",
+            "TRANSCODE_WORKER_CONTROL_PLANE_HOST: streamarr-server");
+  }
+
+  @Test
+  @DisplayName("Should ship a single-server Kubernetes path with per-pod worker identity")
+  void shouldShipSingleServerKubernetesPathWithPerPodWorkerIdentity() throws IOException {
+    var deployment = Files.readString(Path.of("deploy/kubernetes/distributed-transcoding.yaml"));
+
+    assertThat(deployment)
+        .contains(
+            "replicas: 1",
+            "replicas: 2",
+            "fieldPath: metadata.uid",
+            "spiffe://streamarr.example/streamarr/worker/${POD_UID}");
   }
 }

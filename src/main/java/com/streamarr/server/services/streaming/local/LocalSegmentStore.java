@@ -5,19 +5,19 @@ import com.streamarr.server.exceptions.TranscodeException;
 import com.streamarr.server.services.streaming.SegmentStore;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
-import java.time.Duration;
+import java.nio.file.StandardCopyOption;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 public class LocalSegmentStore implements SegmentStore {
-
-  private static final Duration POLL_INTERVAL = Duration.ofMillis(100);
 
   private final Path baseDir;
   private final ConcurrentHashMap<UUID, Path> sessionDirs = new ConcurrentHashMap<>();
@@ -40,30 +40,71 @@ public class LocalSegmentStore implements SegmentStore {
   }
 
   @Override
-  public boolean waitForSegment(UUID sessionId, String segmentName, Duration timeout) {
-    var segmentPath = resolveSegmentPath(sessionId, segmentName);
-    var deadline = System.nanoTime() + timeout.toNanos();
-
-    while (System.nanoTime() < deadline) {
-      if (Files.exists(segmentPath)) {
-        return true;
-      }
-      try {
-        Thread.sleep(POLL_INTERVAL.toMillis());
-      } catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-        return false;
-      }
-    }
-    return Files.exists(segmentPath);
+  public boolean segmentExists(UUID sessionId, String segmentName) {
+    return findSegmentPath(sessionId, segmentName).filter(Files::exists).isPresent();
   }
 
   @Override
-  public boolean segmentExists(UUID sessionId, String segmentName) {
+  public PreparedSegment prepareSegment(UUID sessionId, String segmentName, byte[] data) {
     try {
-      return Files.exists(resolveSegmentPath(sessionId, segmentName));
-    } catch (TranscodeException e) {
-      return false;
+      Files.createDirectories(baseDir);
+      var temporary = writeTemporarySegment(data);
+      return new LocalPreparedSegment(sessionId, segmentName, temporary);
+    } catch (IOException e) {
+      throw new UncheckedIOException("Failed to prepare segment: " + segmentName, e);
+    }
+  }
+
+  private Path writeTemporarySegment(byte[] data) throws IOException {
+    var temporary = Files.createTempFile(baseDir, ".upload-", ".tmp");
+    try {
+      Files.write(temporary, data);
+      return temporary;
+    } catch (IOException | RuntimeException e) {
+      deleteAfterFailedPreparation(temporary, e);
+      throw e;
+    }
+  }
+
+  private static void deleteAfterFailedPreparation(Path temporary, Exception preparationFailure) {
+    try {
+      Files.deleteIfExists(temporary);
+    } catch (IOException cleanupFailure) {
+      preparationFailure.addSuppressed(cleanupFailure);
+    }
+  }
+
+  private final class LocalPreparedSegment implements PreparedSegment {
+
+    private final UUID sessionId;
+    private final String segmentName;
+    private final Path temporary;
+
+    private LocalPreparedSegment(UUID sessionId, String segmentName, Path temporary) {
+      this.sessionId = sessionId;
+      this.segmentName = segmentName;
+      this.temporary = temporary;
+    }
+
+    @Override
+    public void publish() {
+      getOutputDirectory(sessionId);
+      var segmentPath = resolveSegmentPath(sessionId, segmentName);
+      try {
+        Files.createDirectories(segmentPath.getParent());
+        moveIntoPlace(temporary, segmentPath);
+      } catch (IOException e) {
+        throw new UncheckedIOException("Failed to store segment: " + segmentName, e);
+      }
+    }
+
+    @Override
+    public void close() {
+      try {
+        Files.deleteIfExists(temporary);
+      } catch (IOException e) {
+        throw new UncheckedIOException("Failed to clean up segment upload: " + segmentName, e);
+      }
     }
   }
 
@@ -102,9 +143,18 @@ public class LocalSegmentStore implements SegmentStore {
   }
 
   private Path resolveSegmentPath(UUID sessionId, String segmentName) {
+    return findSegmentPath(sessionId, segmentName)
+        .orElseThrow(() -> new TranscodeException("No output directory for session: " + sessionId));
+  }
+
+  /**
+   * Empty until the session's first published segment creates the directory — in remote mode that's
+   * the worker's first upload, so absence is a normal pre-startup state, not an error.
+   */
+  private Optional<Path> findSegmentPath(UUID sessionId, String segmentName) {
     var dir = sessionDirs.get(sessionId);
     if (dir == null) {
-      throw new TranscodeException("No output directory for session: " + sessionId);
+      return Optional.empty();
     }
 
     var resolved = dir.resolve(segmentName).normalize();
@@ -112,7 +162,7 @@ public class LocalSegmentStore implements SegmentStore {
       throw new InvalidSegmentPathException(segmentName);
     }
 
-    return resolved;
+    return Optional.of(resolved);
   }
 
   private Path createSessionDirectory(UUID sessionId) {
@@ -123,6 +173,15 @@ public class LocalSegmentStore implements SegmentStore {
       return dir;
     } catch (IOException e) {
       throw new UncheckedIOException("Failed to create session directory", e);
+    }
+  }
+
+  private static void moveIntoPlace(Path source, Path target) throws IOException {
+    try {
+      Files.move(
+          source, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+    } catch (AtomicMoveNotSupportedException _) {
+      Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
     }
   }
 

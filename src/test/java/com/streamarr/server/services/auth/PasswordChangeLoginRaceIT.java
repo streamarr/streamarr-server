@@ -7,16 +7,21 @@ import static org.awaitility.Awaitility.await;
 import com.streamarr.server.AbstractIntegrationTest;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
 import com.streamarr.server.fixtures.AccountFixture;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
@@ -30,6 +35,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Tag("IntegrationTest")
 @DisplayName("Password Change Login Race Integration Tests")
@@ -48,10 +54,75 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
 
   @AfterEach
   void deleteAccountAndCascades() {
-    passwordEncoder.releaseLogin();
+    passwordEncoder.reset();
     if (account != null) {
       userAccountRepository.deleteById(account.getId());
     }
+  }
+
+  @Test
+  @DisplayName("Should verify and hash passwords without a transaction-bound connection")
+  void shouldVerifyAndHashPasswordsWithoutTransactionBoundConnection() {
+    var oldPassword = UUID.randomUUID().toString();
+    account =
+        userAccountRepository.save(
+            AccountFixture.defaultAccountBuilder()
+                .passwordHash(passwordEncoder.encode(oldPassword))
+                .build());
+    var caller = refreshTokenService.createSession(account, "password-change-device").session();
+    passwordEncoder.observeNextPasswordChange();
+
+    passwordChangeService.changePassword(
+        ChangePasswordCommand.builder()
+            .accountId(account.getId())
+            .sessionId(caller.getId())
+            .currentPassword(oldPassword)
+            .newPassword(UUID.randomUUID().toString())
+            .build());
+
+    assertThat(passwordEncoder.matchObservation()).isEqualTo(TransactionObservation.NONE);
+    assertThat(passwordEncoder.encodeObservation()).isEqualTo(TransactionObservation.NONE);
+  }
+
+  @Test
+  @DisplayName("Should produce exactly one replacement when password changes race")
+  void shouldProduceExactlyOneReplacementWhenPasswordChangesRace() throws Exception {
+    var oldPassword = UUID.randomUUID().toString();
+    account =
+        userAccountRepository.save(
+            AccountFixture.defaultAccountBuilder()
+                .passwordHash(passwordEncoder.encode(oldPassword))
+                .build());
+    var firstCaller = refreshTokenService.createSession(account, "first-device").session();
+    var secondCaller = refreshTokenService.createSession(account, "second-device").session();
+    passwordEncoder.pauseNextTwoEncodes();
+
+    var successes = new ArrayList<PasswordChangeResult>();
+    var failures = new ArrayList<Throwable>();
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var first =
+          executor.submit(
+              () -> changePassword(firstCaller.getId(), oldPassword, UUID.randomUUID().toString()));
+      var second =
+          executor.submit(
+              () ->
+                  changePassword(secondCaller.getId(), oldPassword, UUID.randomUUID().toString()));
+
+      passwordEncoder.awaitBothPasswordChangesHashed();
+      passwordEncoder.releasePasswordChanges();
+      collect(first, successes, failures);
+      collect(second, successes, failures);
+    } finally {
+      passwordEncoder.releasePasswordChanges();
+    }
+
+    assertThat(successes).hasSize(1);
+    assertThat(failures).singleElement().isInstanceOf(AuthenticationRequiredException.class);
+    assertThat(authSessionRepository.findByAccountId(account.getId()))
+        .filteredOn(session -> session.getRevokedAt() == null)
+        .singleElement()
+        .extracting("id")
+        .isEqualTo(successes.getFirst().session().getId());
   }
 
   @Test
@@ -83,22 +154,21 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
 
       passwordEncoder.awaitLoginVerified();
 
-      passwordChangeService.changePassword(
-          ChangePasswordCommand.builder()
-              .accountId(account.getId())
-              .sessionId(caller.getId())
-              .currentPassword(oldPassword)
-              .newPassword(newPassword)
-              .build());
+      var passwordChange =
+          passwordChangeService.changePassword(
+              ChangePasswordCommand.builder()
+                  .accountId(account.getId())
+                  .sessionId(caller.getId())
+                  .currentPassword(oldPassword)
+                  .newPassword(newPassword)
+                  .build());
 
       passwordEncoder.releaseLogin();
 
       assertThatThrownBy(() -> login.get(10, TimeUnit.SECONDS))
           .isInstanceOf(ExecutionException.class)
           .hasCauseInstanceOf(InvalidCredentialsException.class);
-      assertThat(authSessionRepository.findByAccountId(account.getId()))
-          .extracting("id")
-          .containsExactly(caller.getId());
+      assertCallerWasReplaced(caller.getId(), passwordChange.session().getId(), 2);
     } finally {
       passwordEncoder.releaseLogin();
     }
@@ -133,22 +203,21 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
 
       passwordEncoder.awaitLoginUpgradeChecked();
 
-      passwordChangeService.changePassword(
-          ChangePasswordCommand.builder()
-              .accountId(account.getId())
-              .sessionId(caller.getId())
-              .currentPassword(oldPassword)
-              .newPassword(newPassword)
-              .build());
+      var passwordChange =
+          passwordChangeService.changePassword(
+              ChangePasswordCommand.builder()
+                  .accountId(account.getId())
+                  .sessionId(caller.getId())
+                  .currentPassword(oldPassword)
+                  .newPassword(newPassword)
+                  .build());
 
       passwordEncoder.releaseLogin();
 
       assertThatThrownBy(() -> login.get(10, TimeUnit.SECONDS))
           .isInstanceOf(ExecutionException.class)
           .hasCauseInstanceOf(InvalidCredentialsException.class);
-      assertThat(authSessionRepository.findByAccountId(account.getId()))
-          .extracting("id")
-          .containsExactly(caller.getId());
+      assertCallerWasReplaced(caller.getId(), passwordChange.session().getId(), 2);
     } finally {
       passwordEncoder.releaseLogin();
     }
@@ -212,7 +281,7 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
 
       releaseTable.countDown();
       var loginResult = login.get(10, TimeUnit.SECONDS);
-      passwordChange.get(10, TimeUnit.SECONDS);
+      var passwordChangeResult = passwordChange.get(10, TimeUnit.SECONDS);
       blocker.get(10, TimeUnit.SECONDS);
 
       var racedSession =
@@ -220,10 +289,55 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
       assertThat(racedSession.getRevokedAt()).isNotNull();
       assertThat(racedSession.getRevokedReason())
           .isEqualTo(SessionRevocationReason.PASSWORD_CHANGE);
-      assertThat(authSessionRepository.findById(caller.getId()).orElseThrow().getRevokedAt())
-          .isNull();
+      assertCallerWasReplaced(caller.getId(), passwordChangeResult.session().getId(), 3);
     } finally {
       releaseTable.countDown();
+    }
+  }
+
+  private void assertCallerWasReplaced(
+      UUID callerSessionId, UUID replacementSessionId, int expectedSessionCount) {
+    var sessions = authSessionRepository.findByAccountId(account.getId());
+    assertThat(sessions).hasSize(expectedSessionCount);
+    assertThat(sessions)
+        .filteredOn(session -> session.getId().equals(callerSessionId))
+        .singleElement()
+        .satisfies(
+            caller -> {
+              assertThat(caller.getRevokedAt()).isNotNull();
+              assertThat(caller.getRevokedReason())
+                  .isEqualTo(SessionRevocationReason.PASSWORD_CHANGE);
+            });
+    assertThat(sessions)
+        .filteredOn(session -> session.getRevokedAt() == null)
+        .singleElement()
+        .satisfies(
+            replacement -> {
+              assertThat(replacement.getId()).isEqualTo(replacementSessionId);
+              assertThat(replacement.getId()).isNotEqualTo(callerSessionId);
+            });
+  }
+
+  private PasswordChangeResult changePassword(
+      UUID callerSessionId, String oldPassword, String newPassword) {
+    return passwordChangeService.changePassword(
+        ChangePasswordCommand.builder()
+            .accountId(account.getId())
+            .sessionId(callerSessionId)
+            .currentPassword(oldPassword)
+            .newPassword(newPassword)
+            .build());
+  }
+
+  private void collect(
+      Future<PasswordChangeResult> attempt,
+      List<PasswordChangeResult> successes,
+      List<Throwable> failures)
+      throws Exception {
+    try {
+      successes.add(attempt.get(10, TimeUnit.SECONDS));
+    } catch (ExecutionException exception) {
+      failures.add(exception.getCause());
     }
   }
 
@@ -287,21 +401,58 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
     @Bean
     @Primary
     PausingPasswordEncoder pausingPasswordEncoder(
-        @Qualifier("passwordEncoder") PasswordEncoder delegate) {
-      return new PausingPasswordEncoder(delegate);
+        @Qualifier("passwordEncoder") PasswordEncoder delegate, DataSource dataSource) {
+      return new PausingPasswordEncoder(delegate, dataSource);
     }
   }
 
   static final class PausingPasswordEncoder implements PasswordEncoder {
 
     private final PasswordEncoder delegate;
+    private final DataSource dataSource;
     private final ThreadLocal<PausePoint> pausePoint = new ThreadLocal<>();
     private final AtomicReference<PauseGate> pauseGate = new AtomicReference<>();
     private final AtomicReference<CountDownLatch> pausePrepared =
         new AtomicReference<>(new CountDownLatch(1));
+    private final AtomicBoolean observePasswordChange = new AtomicBoolean();
+    private final AtomicReference<TransactionObservation> matchObservation =
+        new AtomicReference<>();
+    private final AtomicReference<TransactionObservation> encodeObservation =
+        new AtomicReference<>();
+    private final AtomicReference<EncodeGate> encodeGate = new AtomicReference<>();
 
-    private PausingPasswordEncoder(PasswordEncoder delegate) {
+    private PausingPasswordEncoder(PasswordEncoder delegate, DataSource dataSource) {
       this.delegate = delegate;
+      this.dataSource = dataSource;
+    }
+
+    void observeNextPasswordChange() {
+      observePasswordChange.set(true);
+    }
+
+    TransactionObservation matchObservation() {
+      return matchObservation.get();
+    }
+
+    TransactionObservation encodeObservation() {
+      return encodeObservation.get();
+    }
+
+    void pauseNextTwoEncodes() {
+      encodeGate.set(new EncodeGate(new CountDownLatch(2), new CountDownLatch(1)));
+    }
+
+    void awaitBothPasswordChangesHashed() throws InterruptedException {
+      assertThat(currentEncodeGate().encoded().await(10, TimeUnit.SECONDS))
+          .as("both password changes should hash before completion starts")
+          .isTrue();
+    }
+
+    void releasePasswordChanges() {
+      var gate = encodeGate.getAndSet(null);
+      if (gate != null) {
+        gate.continueChanges().countDown();
+      }
     }
 
     void pauseAfterNextSuccessfulMatch() {
@@ -338,14 +489,30 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
       pausePrepared.set(new CountDownLatch(1));
     }
 
+    void reset() {
+      releaseLogin();
+      releasePasswordChanges();
+      observePasswordChange.set(false);
+      matchObservation.set(null);
+      encodeObservation.set(null);
+    }
+
     @Override
     public String encode(CharSequence rawPassword) {
-      return delegate.encode(rawPassword);
+      var encoded = delegate.encode(rawPassword);
+      if (observePasswordChange.compareAndSet(true, false)) {
+        encodeObservation.set(observeTransaction());
+      }
+      pauseEncodedPasswordChange();
+      return encoded;
     }
 
     @Override
     public boolean matches(CharSequence rawPassword, String encodedPassword) {
       var matches = delegate.matches(rawPassword, encodedPassword);
+      if (observePasswordChange.get()) {
+        matchObservation.set(observeTransaction());
+      }
       if (matches) {
         pauseIfRequested(PausePoint.SUCCESSFUL_MATCH);
       }
@@ -373,6 +540,36 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
       return gate;
     }
 
+    private EncodeGate currentEncodeGate() {
+      var gate = encodeGate.get();
+      if (gate == null) {
+        throw new AssertionError("no password-change encode gate has been prepared");
+      }
+      return gate;
+    }
+
+    private TransactionObservation observeTransaction() {
+      return new TransactionObservation(
+          TransactionSynchronizationManager.isActualTransactionActive(),
+          TransactionSynchronizationManager.hasResource(dataSource));
+    }
+
+    private void pauseEncodedPasswordChange() {
+      var gate = encodeGate.get();
+      if (gate == null) {
+        return;
+      }
+      gate.encoded().countDown();
+      try {
+        if (!gate.continueChanges().await(10, TimeUnit.SECONDS)) {
+          throw new AssertionError("password-change encode gate was never released");
+        }
+      } catch (InterruptedException exception) {
+        Thread.currentThread().interrupt();
+        throw new AssertionError("password-change encode gate was interrupted", exception);
+      }
+    }
+
     private void pauseIfRequested(PausePoint point) {
       if (pausePoint.get() != point) {
         return;
@@ -397,5 +594,12 @@ class PasswordChangeLoginRaceIT extends AbstractIntegrationTest {
     }
 
     private record PauseGate(CountDownLatch loginPaused, CountDownLatch continueLogin) {}
+
+    private record EncodeGate(CountDownLatch encoded, CountDownLatch continueChanges) {}
+  }
+
+  private record TransactionObservation(boolean transactionActive, boolean connectionBound) {
+
+    private static final TransactionObservation NONE = new TransactionObservation(false, false);
   }
 }
