@@ -32,7 +32,6 @@ public record TranscodeHandle(
     this(OptionalLong.of(processId), attemptId, status, startSequenceNumber);
   }
 
-  /** A producer dispatched to a remote worker: there is no local OS process to point at. */
   public static TranscodeHandle remoteDispatch(
       UUID attemptId, TranscodeStatus status, int startSequenceNumber) {
     return new TranscodeHandle(OptionalLong.empty(), attemptId, status, startSequenceNumber);

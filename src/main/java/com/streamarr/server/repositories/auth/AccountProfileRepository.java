@@ -7,8 +7,8 @@ import java.util.UUID;
 import org.springframework.data.repository.Repository;
 
 /**
- * Deliberately narrowed: link creation and revocation use explicit operations whose outcomes are
- * visible to callers instead of generic inherited mutations.
+ * Extends bare {@code Repository} on purpose — inheriting {@code JpaRepository} would add blind
+ * {@code save}/{@code delete}, bypassing the conditional operations that report their outcome.
  */
 public interface AccountProfileRepository
     extends Repository<AccountProfile, UUID>, AccountProfileRepositoryCustom {
