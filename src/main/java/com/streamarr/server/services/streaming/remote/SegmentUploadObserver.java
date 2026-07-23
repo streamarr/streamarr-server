@@ -57,10 +57,7 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
       reject(Status.PERMISSION_DENIED.withDescription("Segment upload is not connection-owned"));
       return;
     }
-    if (!validLength(incoming.getContentLengthBytes())
-        || !validName(incoming.getVariantLabel())
-        || !validName(incoming.getSegmentName())
-        || !contentTypeMatchesName(incoming.getContentType(), incoming.getSegmentName())) {
+    if (!isValidMetadata(incoming)) {
       reject(Status.INVALID_ARGUMENT.withDescription("Segment metadata is invalid"));
       return;
     }
@@ -78,11 +75,19 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
       reject(Status.INVALID_ARGUMENT.withDescription("Segment data must follow metadata"));
       return;
     }
-    if ((long) data.size() + request.getData().size() > metadata.getContentLengthBytes()) {
+    if (wouldExceedDeclaredLength(request)) {
       reject(Status.INVALID_ARGUMENT.withDescription("Segment data exceeds declared length"));
       return;
     }
     data.writeBytes(request.getData().toByteArray());
+  }
+
+  private boolean wouldExceedDeclaredLength(UploadSegmentRequest request) {
+    return (long) data.size() + request.getData().size() > metadata.getContentLengthBytes();
+  }
+
+  private boolean isComplete() {
+    return metadata != null && data.size() == metadata.getContentLengthBytes();
   }
 
   @Override
@@ -96,7 +101,7 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
     if (closed) {
       return;
     }
-    if (metadata == null || data.size() != metadata.getContentLengthBytes()) {
+    if (!isComplete()) {
       reject(Status.INVALID_ARGUMENT.withDescription("Segment upload is incomplete"));
       return;
     }
@@ -144,11 +149,18 @@ final class SegmentUploadObserver implements StreamObserver<UploadSegmentRequest
     return metadata.getVariantLabel() + "/" + metadata.getSegmentName();
   }
 
-  private static boolean validLength(long contentLength) {
+  private static boolean isValidMetadata(SegmentUploadMetadata metadata) {
+    return isValidLength(metadata.getContentLengthBytes())
+        && isValidName(metadata.getVariantLabel())
+        && isValidName(metadata.getSegmentName())
+        && contentTypeMatchesName(metadata.getContentType(), metadata.getSegmentName());
+  }
+
+  private static boolean isValidLength(long contentLength) {
     return contentLength > 0 && contentLength <= MAXIMUM_SEGMENT_BYTES;
   }
 
-  private static boolean validName(String value) {
+  private static boolean isValidName(String value) {
     return !value.isBlank()
         && !value.contains("..")
         && !value.contains("/")
