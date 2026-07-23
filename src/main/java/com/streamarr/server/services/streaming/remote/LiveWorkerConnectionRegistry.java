@@ -43,7 +43,7 @@ final class LiveWorkerConnectionRegistry {
     }
 
     var abandonedJobs = replaced.closeAsReplaced();
-    abandonedJobs.forEach(job -> logAbandoned(job, "replaced"));
+    abandonedJobs.forEach(job -> logAbandonedJob(job, "replaced"));
     log.warn(
         "Worker {} reconnected; abandoning {} active variant job(s) from its previous"
             + " connection",
@@ -57,7 +57,7 @@ final class LiveWorkerConnectionRegistry {
     if (connection != null
         && connection.workerSessionId().equals(workerSessionId)
         && connections.remove(workerId, connection)) {
-      connection.drainActiveVariants().forEach(job -> logAbandoned(job, "disconnected"));
+      connection.drainActiveVariants().forEach(job -> logAbandonedJob(job, "disconnected"));
       log.info("Worker {} disconnected", workerId);
     }
   }
@@ -126,8 +126,8 @@ final class LiveWorkerConnectionRegistry {
     connections.values().forEach(connection -> connection.stopStreamSession(streamSessionId));
   }
 
-  /** The abandoned job's last trace is this log line; the death site owns its own detail. */
-  private void logAbandoned(VariantJob job, String reason) {
+  /** This warn is the only record an abandoned job leaves — nothing else persists it. */
+  private void logAbandonedJob(VariantJob job, String reason) {
     log.warn(
         "Abandoning job attempt {} for stream session {} variant {} ({})",
         fromProto(job.getJobAttemptId()),
@@ -175,12 +175,13 @@ final class LiveWorkerConnectionRegistry {
 
   boolean publishIfAuthorized(
       UUID authenticatedWorkerId, SegmentUploadMetadata metadata, Runnable publication) {
-    // Not synchronized on the registry: the per-connection monitor plus the workerSessionId fence
-    // in WorkerConnection.publishIfAuthorized already make the check-then-publish atomic. Holding
-    // the registry monitor here would serialize every segment publish (a filesystem move) against
-    // worker register/disconnect. Contention stays scoped to the single owning connection.
+    // Unsynchronized on purpose: a segment publish is a filesystem move and must not queue
+    // behind worker register/disconnect. Stale lookups fail the connection's re-check.
     var connection = connections.get(authenticatedWorkerId);
-    return connection != null && connection.publishIfAuthorized(metadata, publication);
+    if (connection == null) {
+      return false;
+    }
+    return connection.publishIfStillAuthorized(metadata, publication);
   }
 
   private static final class WorkerConnection {
@@ -319,7 +320,7 @@ final class LiveWorkerConnectionRegistry {
           && job.getVariant().getVariantLabel().equals(metadata.getVariantLabel());
     }
 
-    private synchronized boolean publishIfAuthorized(
+    private synchronized boolean publishIfStillAuthorized(
         SegmentUploadMetadata metadata, Runnable publication) {
       if (!authorizesUpload(metadata)) {
         return false;
