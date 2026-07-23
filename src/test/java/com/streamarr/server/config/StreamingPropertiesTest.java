@@ -36,21 +36,23 @@ class StreamingPropertiesTest {
     assertThat(properties.maxConcurrentTranscodes()).isEqualTo(8);
   }
 
-  @Test
-  @DisplayName("Should reject max concurrent transcodes when negative")
-  void shouldRejectMaxConcurrentTranscodesWhenNegative() {
-    var builder = StreamingProperties.builder().maxConcurrentTranscodes(-1);
+  @ParameterizedTest
+  @ValueSource(ints = {0, -1})
+  @DisplayName("Should reject max concurrent transcodes when not positive")
+  void shouldRejectMaxConcurrentTranscodesWhenNotPositive(int configured) {
+    var builder = StreamingProperties.builder().maxConcurrentTranscodes(configured);
 
     assertThatThrownBy(builder::build)
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("max-concurrent-transcodes");
   }
 
-  @Test
-  @DisplayName("Should fail startup when configured max concurrent transcodes is negative")
-  void shouldFailStartupWhenConfiguredMaxConcurrentTranscodesIsNegative() {
+  @ParameterizedTest
+  @ValueSource(ints = {0, -1})
+  @DisplayName("Should fail startup when configured max concurrent transcodes is not positive")
+  void shouldFailStartupWhenConfiguredMaxConcurrentTranscodesIsNotPositive(int configured) {
     CONTEXT_RUNNER
-        .withPropertyValues("streaming.max-concurrent-transcodes=-1")
+        .withPropertyValues("streaming.max-concurrent-transcodes=" + configured)
         .run(context -> assertThat(context).hasFailed());
   }
 

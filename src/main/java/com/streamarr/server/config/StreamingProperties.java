@@ -12,7 +12,7 @@ import org.springframework.validation.annotation.Validated;
 @Validated
 @ConfigurationProperties(prefix = "streaming")
 public record StreamingProperties(
-    int maxConcurrentTranscodes,
+    Integer maxConcurrentTranscodes,
     Duration targetSegmentDuration,
     Duration sessionTimeout,
     // Session retention contributes the playback token's pause/slow-playback slack; reject a
@@ -26,15 +26,13 @@ public record StreamingProperties(
     String ffprobePath) {
 
   public StreamingProperties {
-    // 0 is the unset primitive; a negative value is a configured mistake, so fail startup like
-    // session-retention does instead of silently running with the default.
-    if (maxConcurrentTranscodes < 0) {
-      throw new IllegalArgumentException(
-          "streaming.max-concurrent-transcodes must be positive, got " + maxConcurrentTranscodes);
+    if (maxConcurrentTranscodes == null) {
+      maxConcurrentTranscodes = 8;
     }
 
-    if (maxConcurrentTranscodes == 0) {
-      maxConcurrentTranscodes = 8;
+    if (maxConcurrentTranscodes <= 0) {
+      throw new IllegalArgumentException(
+          "streaming.max-concurrent-transcodes must be positive, got " + maxConcurrentTranscodes);
     }
 
     if (targetSegmentDuration == null) {
