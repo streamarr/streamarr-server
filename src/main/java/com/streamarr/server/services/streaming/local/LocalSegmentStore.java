@@ -11,6 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.extern.slf4j.Slf4j;
@@ -38,18 +39,9 @@ public class LocalSegmentStore implements SegmentStore {
     }
   }
 
-  /**
-   * A session without an output directory reads as "segment not yet present" rather than an error:
-   * in remote mode nothing creates the directory until a worker's first upload, so a waiting
-   * delivery must bridge that window exactly as it bridges encoder startup.
-   */
   @Override
   public boolean segmentExists(UUID sessionId, String segmentName) {
-    try {
-      return Files.exists(resolveSegmentPath(sessionId, segmentName));
-    } catch (TranscodeException _) {
-      return false;
-    }
+    return findSegmentPath(sessionId, segmentName).filter(Files::exists).isPresent();
   }
 
   @Override
@@ -151,9 +143,18 @@ public class LocalSegmentStore implements SegmentStore {
   }
 
   private Path resolveSegmentPath(UUID sessionId, String segmentName) {
+    return findSegmentPath(sessionId, segmentName)
+        .orElseThrow(() -> new TranscodeException("No output directory for session: " + sessionId));
+  }
+
+  /**
+   * Empty until the session's first published segment creates the directory — in remote mode that's
+   * the worker's first upload, so absence is a normal pre-startup state, not an error.
+   */
+  private Optional<Path> findSegmentPath(UUID sessionId, String segmentName) {
     var dir = sessionDirs.get(sessionId);
     if (dir == null) {
-      throw new TranscodeException("No output directory for session: " + sessionId);
+      return Optional.empty();
     }
 
     var resolved = dir.resolve(segmentName).normalize();
@@ -161,7 +162,7 @@ public class LocalSegmentStore implements SegmentStore {
       throw new InvalidSegmentPathException(segmentName);
     }
 
-    return resolved;
+    return Optional.of(resolved);
   }
 
   private Path createSessionDirectory(UUID sessionId) {
