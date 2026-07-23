@@ -12,12 +12,11 @@ import java.util.concurrent.Semaphore;
 final class SegmentUploadAdmission {
 
   private final Semaphore uploadSlots;
-  private final long maximumBufferedBytes;
-  private long reservedBytes;
+  private final ByteBudget byteBudget;
 
   SegmentUploadAdmission(int maximumConcurrentUploads, long maximumBufferedBytes) {
     uploadSlots = new Semaphore(maximumConcurrentUploads);
-    this.maximumBufferedBytes = maximumBufferedBytes;
+    byteBudget = new ByteBudget(maximumBufferedBytes);
   }
 
   /** One admitted upload, or empty when the concurrent-upload limit is reached. */
@@ -29,6 +28,28 @@ final class SegmentUploadAdmission {
     return Optional.of(new Ticket());
   }
 
+  private static final class ByteBudget {
+
+    private final long maximumBytes;
+    private long reservedBytes;
+
+    private ByteBudget(long maximumBytes) {
+      this.maximumBytes = maximumBytes;
+    }
+
+    private synchronized boolean tryReserve(long bytes) {
+      if (reservedBytes > maximumBytes - bytes) {
+        return false;
+      }
+      reservedBytes += bytes;
+      return true;
+    }
+
+    private synchronized void release(long bytes) {
+      reservedBytes -= bytes;
+    }
+  }
+
   /** Owns one upload slot and at most one byte reservation; close releases both exactly once. */
   final class Ticket implements AutoCloseable {
 
@@ -37,24 +58,18 @@ final class SegmentUploadAdmission {
 
     private Ticket() {}
 
-    /** Reserves the declared segment length against the shared byte budget. */
-    synchronized boolean tryReserve(long bytes) {
-      if (bytes <= 0) {
-        throw new IllegalArgumentException("bytes must be positive, got " + bytes);
+    synchronized boolean tryReserve(long declaredBytes) {
+      if (declaredBytes <= 0) {
+        throw new IllegalArgumentException("declaredBytes must be positive, got " + declaredBytes);
       }
       if (closed || heldBytes != 0) {
         throw new IllegalStateException("Ticket is closed or already holds a reservation");
       }
-      // The byte budget is shared admission state; its monitor is taken after the ticket's,
-      // and nothing takes them in the opposite order.
-      synchronized (SegmentUploadAdmission.this) {
-        if (reservedBytes > maximumBufferedBytes - bytes) {
-          return false;
-        }
-        reservedBytes += bytes;
+      if (!byteBudget.tryReserve(declaredBytes)) {
+        return false;
       }
 
-      heldBytes = bytes;
+      heldBytes = declaredBytes;
       return true;
     }
 
@@ -65,9 +80,7 @@ final class SegmentUploadAdmission {
       }
 
       closed = true;
-      synchronized (SegmentUploadAdmission.this) {
-        reservedBytes -= heldBytes;
-      }
+      byteBudget.release(heldBytes);
       heldBytes = 0;
       uploadSlots.release();
     }
