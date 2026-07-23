@@ -219,9 +219,7 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private synchronized boolean tryDispatch(VariantJob job) {
-      if (!canAccessSource(job)
-          || maximumActiveVariants < 1
-          || activeVariants.size() >= maximumActiveVariants) {
+      if (!canAccessSource(job) || activeVariants.size() >= maximumActiveVariants) {
         return false;
       }
 
@@ -308,14 +306,20 @@ final class LiveWorkerConnectionRegistry {
     }
 
     private synchronized boolean authorizesUpload(SegmentUploadMetadata metadata) {
-      if (!toProto(workerSessionId).equals(metadata.getWorkerSessionId())
-          || !worker.equals(metadata.getWorker())) {
+      return isFromThisWorkerSession(metadata) && matchesAnActiveJob(metadata);
+    }
+
+    private boolean isFromThisWorkerSession(SegmentUploadMetadata metadata) {
+      return toProto(workerSessionId).equals(metadata.getWorkerSessionId())
+          && worker.equals(metadata.getWorker());
+    }
+
+    private boolean matchesAnActiveJob(SegmentUploadMetadata metadata) {
+      var job = activeVariants.get(fromProto(metadata.getJobAttemptId()));
+      if (job == null) {
         return false;
       }
-
-      var job = activeVariants.get(fromProto(metadata.getJobAttemptId()));
-      return job != null
-          && job.getStreamSessionId().equals(metadata.getStreamSessionId())
+      return job.getStreamSessionId().equals(metadata.getStreamSessionId())
           && job.getJobId().equals(metadata.getJobId())
           && job.getVariant().getVariantLabel().equals(metadata.getVariantLabel());
     }
