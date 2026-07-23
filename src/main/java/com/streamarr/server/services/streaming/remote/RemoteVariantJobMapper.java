@@ -33,8 +33,6 @@ final class RemoteVariantJobMapper {
     return VariantJob.newBuilder()
         .setStreamSessionId(toProto(request.sessionId()))
         .setJobId(toProto(logicalJobId(request)))
-        // The attempt identity is minted once, upstream, so the dispatched job, the returned
-        // handle, and the retained failure evidence all name the same attempt.
         .setJobAttemptId(toProto(request.attemptId()))
         .setSource(source(request.sourcePath()))
         .setDecision(decision(request))
