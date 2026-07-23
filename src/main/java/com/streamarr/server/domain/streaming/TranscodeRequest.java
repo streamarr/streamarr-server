@@ -24,7 +24,14 @@ public record TranscodeRequest(
     Objects.requireNonNull(sessionId, "sessionId is required");
     Objects.requireNonNull(sourcePath, "sourcePath is required");
     Objects.requireNonNull(transcodeDecision, "transcodeDecision is required");
-    variantLabel = variantLabel != null ? variantLabel : StreamSession.defaultVariant();
-    attemptId = attemptId != null ? attemptId : UUID.randomUUID();
+    if (variantLabel == null) {
+      variantLabel = StreamSession.defaultVariant();
+    }
+
+    // The attempt id is minted only here. Dispatched jobs, the TranscodeHandle, and
+    // stop/replace fencing all carry it verbatim.
+    if (attemptId == null) {
+      attemptId = UUID.randomUUID();
+    }
   }
 }
