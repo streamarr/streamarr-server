@@ -732,8 +732,12 @@ class TranscodeWorkerIT {
       entered.countDown();
       try {
         release.await(10, TimeUnit.SECONDS);
-      } catch (InterruptedException _) {
+      } catch (InterruptedException e) {
+        // Interrupted means server shutdown: throw instead of falling through to the real store —
+        // a write here races JUnit's @TempDir cleanup walker and fails the test after its body
+        // passed (DirectoryNotEmptyException on CI).
         Thread.currentThread().interrupt();
+        throw new IllegalStateException("Interrupted while blocking segment preparation", e);
       }
       return super.prepareSegment(sessionId, segmentName, data);
     }
