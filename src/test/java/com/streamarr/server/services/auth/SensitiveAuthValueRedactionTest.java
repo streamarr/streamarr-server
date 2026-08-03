@@ -7,6 +7,8 @@ import com.streamarr.server.controllers.auth.ChangePasswordRequest;
 import com.streamarr.server.controllers.auth.LoginRequest;
 import com.streamarr.server.controllers.auth.RefreshRequest;
 import com.streamarr.server.controllers.auth.SetupRequest;
+import com.streamarr.server.controllers.auth.device.DeviceCodeResponse;
+import com.streamarr.server.controllers.auth.device.DeviceTokenRequest;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.fixtures.AccountFixture;
 import java.time.Instant;
@@ -65,6 +67,24 @@ class SensitiveAuthValueRedactionTest {
         new ChangePasswordRequest(SECRET_MARKER, SECRET_MARKER),
         new RefreshRequest(SECRET_MARKER),
         new TokenRefreshService.RefreshedTokens(null, SECRET_MARKER),
+        // Pairing credentials: the device code is polled with, and the user code is low-entropy
+        // enough that a log line naming it is a guess an attacker never has to make.
+        new DeviceTokenRequest(SECRET_MARKER),
+        DeviceCodeResponse.builder()
+            .deviceCode(SECRET_MARKER)
+            .userCode(SECRET_MARKER)
+            .verificationUri("https://home.example.com/link")
+            .interval(5)
+            .expiresIn(600)
+            .build(),
+        IssuedDeviceCode.builder()
+            .deviceCode(SECRET_MARKER)
+            .userCode(SECRET_MARKER)
+            .verificationUri("https://home.example.com/link")
+            .interval(5)
+            .expiresIn(600)
+            .build(),
+        new DevicePollResult.Success(null, SECRET_MARKER),
         ChangePasswordCommand.builder().currentPassword(SECRET_MARKER).newPassword(SECRET_MARKER),
         PasswordChangeCompletionCommand.builder()
             .expectedPasswordHash(SECRET_MARKER)

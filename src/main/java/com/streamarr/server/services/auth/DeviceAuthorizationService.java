@@ -197,10 +197,12 @@ public class DeviceAuthorizationService {
       return new DevicePollResult.Pending();
     }
 
-    // RFC 8628 §3.5: each early poll costs five more seconds, cumulatively.
+    // RFC 8628 §3.5: each early poll costs five more seconds, cumulatively. Checked addition —
+    // the growth is caller-driven, so it must never wrap into a negative interval that would make
+    // every subsequent poll due immediately.
     reschedulePoll(
         authorization.getId(),
-        authorization.getPollIntervalSeconds() + SLOW_DOWN_INCREMENT_SECONDS,
+        Math.addExact(authorization.getPollIntervalSeconds(), SLOW_DOWN_INCREMENT_SECONDS),
         now);
     return new DevicePollResult.SlowDown();
   }
