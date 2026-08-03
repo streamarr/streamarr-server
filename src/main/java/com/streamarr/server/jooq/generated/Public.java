@@ -8,6 +8,7 @@ import com.streamarr.server.jooq.generated.tables.AccountProfile;
 import com.streamarr.server.jooq.generated.tables.AuthSession;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable;
 import com.streamarr.server.jooq.generated.tables.Company;
+import com.streamarr.server.jooq.generated.tables.DeviceAuthorization;
 import com.streamarr.server.jooq.generated.tables.Episode;
 import com.streamarr.server.jooq.generated.tables.ExternalIdentifier;
 import com.streamarr.server.jooq.generated.tables.FileProcessingTask;
@@ -81,6 +82,11 @@ public class Public extends SchemaImpl {
      * The table <code>public.company</code>.
      */
     public final Company COMPANY = Company.COMPANY;
+
+    /**
+     * The table <code>public.device_authorization</code>.
+     */
+    public final DeviceAuthorization DEVICE_AUTHORIZATION = DeviceAuthorization.DEVICE_AUTHORIZATION;
 
     /**
      * The table <code>public.episode</code>.
@@ -257,6 +263,7 @@ public class Public extends SchemaImpl {
             AuthSession.AUTH_SESSION,
             BaseCollectable.BASE_COLLECTABLE,
             Company.COMPANY,
+            DeviceAuthorization.DEVICE_AUTHORIZATION,
             Episode.EPISODE,
             ExternalIdentifier.EXTERNAL_IDENTIFIER,
             FileProcessingTask.FILE_PROCESSING_TASK,

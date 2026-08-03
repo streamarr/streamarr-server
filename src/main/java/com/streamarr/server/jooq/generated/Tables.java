@@ -8,6 +8,7 @@ import com.streamarr.server.jooq.generated.tables.AccountProfile;
 import com.streamarr.server.jooq.generated.tables.AuthSession;
 import com.streamarr.server.jooq.generated.tables.BaseCollectable;
 import com.streamarr.server.jooq.generated.tables.Company;
+import com.streamarr.server.jooq.generated.tables.DeviceAuthorization;
 import com.streamarr.server.jooq.generated.tables.Episode;
 import com.streamarr.server.jooq.generated.tables.ExternalIdentifier;
 import com.streamarr.server.jooq.generated.tables.FileProcessingTask;
@@ -66,6 +67,11 @@ public class Tables {
      * The table <code>public.company</code>.
      */
     public static final Company COMPANY = Company.COMPANY;
+
+    /**
+     * The table <code>public.device_authorization</code>.
+     */
+    public static final DeviceAuthorization DEVICE_AUTHORIZATION = DeviceAuthorization.DEVICE_AUTHORIZATION;
 
     /**
      * The table <code>public.episode</code>.
