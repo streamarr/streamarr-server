@@ -10,4 +10,20 @@ import lombok.Builder;
  */
 @Builder
 public record DeviceAuthorizationView(
-    String userCode, String deviceName, DeviceAuthorizationStatus status, Instant requestedAt) {}
+    String userCode, String deviceName, DeviceAuthorizationStatus status, Instant requestedAt) {
+
+  public static class DeviceAuthorizationViewBuilder {
+
+    @Override
+    public String toString() {
+      return "DeviceAuthorizationViewBuilder[userCode=REDACTED, deviceName=%s]"
+          .formatted(deviceName);
+    }
+  }
+
+  @Override
+  public String toString() {
+    return "DeviceAuthorizationView[userCode=REDACTED, deviceName=%s, status=%s]"
+        .formatted(deviceName, status);
+  }
+}

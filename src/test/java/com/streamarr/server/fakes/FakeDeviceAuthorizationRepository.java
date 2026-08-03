@@ -3,6 +3,7 @@ package com.streamarr.server.fakes;
 import com.streamarr.server.domain.auth.DeviceAuthorization;
 import com.streamarr.server.domain.auth.DeviceAuthorizationStatus;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationDecisionCommand;
+import com.streamarr.server.repositories.auth.DeviceAuthorizationInsertCommand;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
 import java.time.Instant;
 import java.util.Comparator;
@@ -78,6 +79,26 @@ public class FakeDeviceAuthorizationRepository extends FakeJpaRepository<DeviceA
   @Override
   public synchronized void markConsumed(UUID id, Instant now) {
     findById(id).ifPresent(a -> a.setStatus(DeviceAuthorizationStatus.CONSUMED));
+  }
+
+  /** Mirrors the advisory-locked count-and-insert: the cap is checked and taken indivisibly. */
+  @Override
+  public synchronized boolean tryInsertWithinCap(DeviceAuthorizationInsertCommand command) {
+    if (countOutstanding(command.now()) >= command.maxOutstanding()) {
+      return false;
+    }
+
+    save(
+        DeviceAuthorization.builder()
+            .deviceCodeDigest(command.deviceCodeDigest())
+            .userCode(command.userCode())
+            .status(DeviceAuthorizationStatus.PENDING)
+            .deviceName(command.deviceName())
+            .expiresAt(command.expiresAt())
+            .nextPollAt(command.nextPollAt())
+            .pollIntervalSeconds(command.pollIntervalSeconds())
+            .build());
+    return true;
   }
 
   @Override

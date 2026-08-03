@@ -7,10 +7,16 @@ import com.streamarr.server.controllers.auth.ChangePasswordRequest;
 import com.streamarr.server.controllers.auth.LoginRequest;
 import com.streamarr.server.controllers.auth.RefreshRequest;
 import com.streamarr.server.controllers.auth.SetupRequest;
+import com.streamarr.server.controllers.auth.device.DeviceAuthorizationResponse;
 import com.streamarr.server.controllers.auth.device.DeviceCodeResponse;
+import com.streamarr.server.controllers.auth.device.DeviceDecisionRequest;
+import com.streamarr.server.controllers.auth.device.DeviceLookupRequest;
 import com.streamarr.server.controllers.auth.device.DeviceTokenRequest;
 import com.streamarr.server.domain.auth.AuthSession;
+import com.streamarr.server.domain.auth.DeviceAuthorizationStatus;
 import com.streamarr.server.fixtures.AccountFixture;
+import com.streamarr.server.repositories.auth.DeviceAuthorizationDecisionCommand;
+import com.streamarr.server.repositories.auth.DeviceAuthorizationInsertCommand;
 import java.time.Instant;
 import java.util.UUID;
 import java.util.stream.Stream;
@@ -68,8 +74,49 @@ class SensitiveAuthValueRedactionTest {
         new RefreshRequest(SECRET_MARKER),
         new TokenRefreshService.RefreshedTokens(null, SECRET_MARKER),
         // Pairing credentials: the device code is polled with, and the user code is low-entropy
-        // enough that a log line naming it is a guess an attacker never has to make.
+        // enough that a log line naming it is a guess an attacker never has to make. Lombok's
+        // generated builder toString is its own leakage surface, so unbuilt builders are here too.
         new DeviceTokenRequest(SECRET_MARKER),
+        new DeviceLookupRequest(SECRET_MARKER),
+        new DeviceDecisionRequest(SECRET_MARKER, "APPROVE"),
+        DeviceCodeResponse.builder().deviceCode(SECRET_MARKER).userCode(SECRET_MARKER),
+        IssuedDeviceCode.builder().deviceCode(SECRET_MARKER).userCode(SECRET_MARKER),
+        DeviceAuthorizationResponse.builder().userCode(SECRET_MARKER).deviceName("Apple TV"),
+        DeviceAuthorizationResponse.builder()
+            .userCode(SECRET_MARKER)
+            .deviceName("Apple TV")
+            .status("PENDING")
+            .build(),
+        DeviceAuthorizationView.builder().userCode(SECRET_MARKER).deviceName("Apple TV"),
+        DeviceAuthorizationView.builder()
+            .userCode(SECRET_MARKER)
+            .deviceName("Apple TV")
+            .status(DeviceAuthorizationStatus.PENDING)
+            .build(),
+        DeviceDecisionCommand.builder().userCode(SECRET_MARKER).decision(DeviceDecision.APPROVE),
+        DeviceDecisionCommand.builder()
+            .userCode(SECRET_MARKER)
+            .decision(DeviceDecision.APPROVE)
+            .decidedByAccountId(UUID.randomUUID())
+            .build(),
+        DeviceAuthorizationDecisionCommand.builder()
+            .userCode(SECRET_MARKER)
+            .status(DeviceAuthorizationStatus.APPROVED),
+        DeviceAuthorizationDecisionCommand.builder()
+            .userCode(SECRET_MARKER)
+            .status(DeviceAuthorizationStatus.APPROVED)
+            .decidedByAccountId(UUID.randomUUID())
+            .now(Instant.now())
+            .build(),
+        DeviceAuthorizationInsertCommand.builder()
+            .deviceCodeDigest(SECRET_MARKER)
+            .userCode(SECRET_MARKER),
+        DeviceAuthorizationInsertCommand.builder()
+            .deviceCodeDigest(SECRET_MARKER)
+            .userCode(SECRET_MARKER)
+            .deviceName("Apple TV")
+            .expiresAt(Instant.now())
+            .build(),
         DeviceCodeResponse.builder()
             .deviceCode(SECRET_MARKER)
             .userCode(SECRET_MARKER)

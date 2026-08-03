@@ -32,6 +32,19 @@ public interface DeviceAuthorizationRepositoryCustom {
   int countOutstanding(Instant now);
 
   /**
+   * Counts and inserts as one indivisible unit, so the outstanding cap is a hard limit rather than
+   * a suggestion. Returns false when the cap is already full.
+   *
+   * <p>Counting in Java and then inserting is the check-then-act race AGENTS.md names: under READ
+   * COMMITTED every concurrent caller reads the same pre-commit count and every one of them
+   * inserts. A plain {@code INSERT ... SELECT WHERE (count) < cap} does not fix it either — the
+   * subquery takes its own snapshot and sees none of the in-flight inserts. Serializing issuance on
+   * a database advisory lock does, and issuance is a human pairing a TV, so the contention cost is
+   * nil.
+   */
+  boolean tryInsertWithinCap(DeviceAuthorizationInsertCommand command);
+
+  /**
    * The expiry of the oldest outstanding code: with a row-count cap there is no window to measure,
    * so this is the moment capacity provably frees.
    */

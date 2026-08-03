@@ -14,12 +14,17 @@ import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
+import org.jooq.impl.DSL;
 import org.springframework.data.domain.AuditorAware;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @RequiredArgsConstructor
 public class DeviceAuthorizationRepositoryCustomImpl
     implements DeviceAuthorizationRepositoryCustom {
+
+  /** Arbitrary but fixed: only issuance takes this lock, so it contends with nothing else. */
+  private static final long ISSUANCE_LOCK_KEY = 0x5354524D_44455601L;
 
   private final DSLContext dsl;
   private final AuditorAware<UUID> auditorAware;
@@ -82,6 +87,35 @@ public class DeviceAuthorizationRepositoryCustomImpl
   }
 
   @Override
+  @Transactional(propagation = Propagation.REQUIRES_NEW)
+  public boolean tryInsertWithinCap(DeviceAuthorizationInsertCommand command) {
+    // Held until this transaction ends, and shared across instances because it lives in the
+    // database. Every issuance passes through here, so the count below cannot go stale under it.
+    dsl.execute("SELECT pg_advisory_xact_lock(?)", ISSUANCE_LOCK_KEY);
+
+    if (countOutstanding(command.now()) >= command.maxOutstanding()) {
+      return false;
+    }
+
+    var nowOffset = offsetOf(command.now());
+    dsl.insertInto(DEVICE_AUTHORIZATION)
+        .set(DEVICE_AUTHORIZATION.DEVICE_CODE_DIGEST, command.deviceCodeDigest())
+        .set(DEVICE_AUTHORIZATION.USER_CODE, command.userCode())
+        .set(DEVICE_AUTHORIZATION.STATUS, DeviceAuthorizationStatus.PENDING)
+        .set(DEVICE_AUTHORIZATION.DEVICE_NAME, command.deviceName())
+        .set(DEVICE_AUTHORIZATION.EXPIRES_AT, offsetOf(command.expiresAt()))
+        .set(DEVICE_AUTHORIZATION.NEXT_POLL_AT, offsetOf(command.nextPollAt()))
+        .set(DEVICE_AUTHORIZATION.POLL_INTERVAL_SECONDS, command.pollIntervalSeconds())
+        .set(DEVICE_AUTHORIZATION.CREATED_ON, nowOffset)
+        .set(DEVICE_AUTHORIZATION.CREATED_BY, currentAuditor())
+        .set(DEVICE_AUTHORIZATION.LAST_MODIFIED_ON, nowOffset)
+        .set(DEVICE_AUTHORIZATION.LAST_MODIFIED_BY, currentAuditor())
+        .execute();
+
+    return true;
+  }
+
+  @Override
   public int countOutstanding(Instant now) {
     return dsl.fetchCount(
         DEVICE_AUTHORIZATION,
@@ -93,7 +127,7 @@ public class DeviceAuthorizationRepositoryCustomImpl
 
   @Override
   public Optional<Instant> findOldestOutstandingExpiry(Instant now) {
-    var oldestExpiry = DEVICE_AUTHORIZATION.EXPIRES_AT.min();
+    var oldestExpiry = DSL.min(DEVICE_AUTHORIZATION.EXPIRES_AT);
 
     return dsl.select(oldestExpiry)
         .from(DEVICE_AUTHORIZATION)

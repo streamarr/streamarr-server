@@ -11,6 +11,7 @@ import com.streamarr.server.exceptions.DeviceCodeNotPendingException;
 import com.streamarr.server.exceptions.DevicePairingNotConfiguredException;
 import com.streamarr.server.exceptions.TooManyDeviceAttemptsException;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationDecisionCommand;
+import com.streamarr.server.repositories.auth.DeviceAuthorizationInsertCommand;
 import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import java.nio.charset.StandardCharsets;
@@ -57,9 +58,8 @@ public class DeviceAuthorizationService {
   }
 
   /**
-   * Deliberately not transactional: the capacity count is advisory and the insert is a single
-   * statement, so a code-collision retry can start a clean transaction instead of retrying inside
-   * one already marked rollback-only.
+   * Deliberately not transactional: each attempt below opens its own transaction, so a code
+   * collision retries cleanly instead of retrying inside one already marked rollback-only.
    */
   public IssuedDeviceCode issue(String rawDeviceName) {
     if (!isPairingEnabled()) {
@@ -67,8 +67,6 @@ public class DeviceAuthorizationService {
     }
 
     var now = clock.instant();
-    requireIssuanceCapacity(now);
-
     var deviceCode = generateDeviceCode();
     var interval = properties.pollIntervalSeconds();
     var userCode = saveWithUniqueUserCode(deviceCode, rawDeviceName, interval, now);
@@ -249,21 +247,29 @@ public class DeviceAuthorizationService {
         .orElseGet(DeviceCodeNotFoundException::new);
   }
 
+  /**
+   * The cap is enforced inside the insert, not before it: counting here and inserting there is the
+   * check-then-act race that lets every concurrent caller past a cap none of them has filled yet.
+   */
   private String saveWithUniqueUserCode(
       String deviceCode, String rawDeviceName, int interval, Instant now) {
     for (var attempt = 0; attempt < USER_CODE_ATTEMPTS; attempt++) {
       var candidate = userCodeGenerator.generate();
       try {
-        authorizationRepository.saveAndFlush(
-            DeviceAuthorization.builder()
+        if (!authorizationRepository.tryInsertWithinCap(
+            DeviceAuthorizationInsertCommand.builder()
                 .deviceCodeDigest(digestOf(deviceCode))
                 .userCode(candidate)
-                .status(DeviceAuthorizationStatus.PENDING)
                 .deviceName(DeviceName.sanitize(rawDeviceName))
                 .expiresAt(now.plus(properties.codeTtl()))
                 .nextPollAt(now.plusSeconds(interval))
                 .pollIntervalSeconds(interval)
-                .build());
+                .maxOutstanding(properties.maxOutstandingCodes())
+                .now(now)
+                .build())) {
+          throw refusedForCapacity(now);
+        }
+        warnAsCapacityNears(now);
         return candidate;
       } catch (DataIntegrityViolationException _) {
         // A collision with an outstanding code. In a 20^8 space against a capped number of live
@@ -276,20 +282,17 @@ public class DeviceAuthorizationService {
         "Could not mint a unique pairing code in %d attempts.".formatted(USER_CODE_ATTEMPTS));
   }
 
-  private void requireIssuanceCapacity(Instant now) {
-    var outstanding = authorizationRepository.countOutstanding(now);
-    if (outstanding < properties.maxOutstandingCodes()) {
-      warnAsCapacityNears(outstanding);
-      return;
-    }
-
+  private TooManyDeviceAttemptsException refusedForCapacity(Instant now) {
     log.warn(
-        "Device pairing issuance refused: {} outstanding codes at the configured cap", outstanding);
-    throw new TooManyDeviceAttemptsException(waitUntilCapacityFrees(now));
+        "Device pairing issuance refused: {} outstanding codes at the configured cap of {}",
+        authorizationRepository.countOutstanding(now),
+        properties.maxOutstandingCodes());
+    return new TooManyDeviceAttemptsException(waitUntilCapacityFrees(now));
   }
 
   /** Approaching the cap is the attack signal operators can alert on. */
-  private void warnAsCapacityNears(int outstanding) {
+  private void warnAsCapacityNears(Instant now) {
+    var outstanding = authorizationRepository.countOutstanding(now);
     if (outstanding * 2 >= properties.maxOutstandingCodes()) {
       log.warn(
           "Device pairing issuance at {} of {} outstanding codes",
