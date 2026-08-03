@@ -16,25 +16,22 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class TmdbHealthIndicator implements HealthIndicator {
 
+  private static final URI CONFIGURATION_URI =
+      URI.create("https://api.themoviedb.org/3/configuration");
+
   @Qualifier("tmdb")
   private final HttpClient client;
 
   @Override
   public Health health() {
+    return probe();
+  }
+
+  private Health probe() {
     try {
-      var request =
-          HttpRequest.newBuilder()
-              .uri(URI.create("https://api.themoviedb.org/3/configuration"))
-              .GET()
-              .build();
+      var response = client.send(probeRequest(), HttpResponse.BodyHandlers.discarding());
 
-      var response = client.send(request, HttpResponse.BodyHandlers.discarding());
-
-      if (response.statusCode() == 200 || response.statusCode() == 401) {
-        return Health.up().withDetail("api", "reachable").build();
-      }
-
-      return Health.down().withDetail("statusCode", response.statusCode()).build();
+      return healthFor(response.statusCode());
     } catch (InterruptedException ex) {
       Thread.currentThread().interrupt();
       log.warn("TMDB health check interrupted", ex);
@@ -43,5 +40,19 @@ public class TmdbHealthIndicator implements HealthIndicator {
       log.warn("TMDB health check failed", ex);
       return Health.down().withException(ex).build();
     }
+  }
+
+  private HttpRequest probeRequest() {
+    return HttpRequest.newBuilder().uri(CONFIGURATION_URI).GET().build();
+  }
+
+  private Health healthFor(int statusCode) {
+    // 401 proves reachability: the probe carries no API token, so TMDB rejects it while still
+    // answering.
+    if (statusCode == 200 || statusCode == 401) {
+      return Health.up().withDetail("api", "reachable").build();
+    }
+
+    return Health.down().withDetail("statusCode", statusCode).build();
   }
 }
