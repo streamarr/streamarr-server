@@ -121,6 +121,64 @@ class FilepathCodecTest {
   }
 
   @Test
+  @DisplayName("Should decode the containing directory name when given a filepath URI")
+  void shouldDecodeContainingDirectoryNameWhenGivenFilepathUri() {
+    assertThat(
+            FilepathCodec.parentNameOf(
+                "file:///media/movies/D%C3%A9j%C3%A0%20Vu%20(2006)/movie.mkv"))
+        .contains("Déjà Vu (2006)");
+  }
+
+  @Test
+  @DisplayName("Should decode the grandparent directory name when given a filepath URI")
+  void shouldDecodeGrandparentDirectoryNameWhenGivenFilepathUri() {
+    assertThat(
+            FilepathCodec.grandparentNameOf(
+                "file:///media/Am%C3%A9lie%20(2001)/S%C3%A6son%203/episode.mkv"))
+        .contains("Amélie (2001)");
+  }
+
+  @Test
+  @DisplayName("Should return no parent name when the file sits at the filesystem root")
+  void shouldReturnNoParentNameWhenFileSitsAtFilesystemRoot() {
+    assertThat(FilepathCodec.parentNameOf("file:///movie.mkv")).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should return no grandparent name when nothing sits two directories above")
+  void shouldReturnNoGrandparentNameWhenNothingSitsTwoDirectoriesAbove() {
+    assertThat(FilepathCodec.grandparentNameOf("file:///media/movie.mkv")).isEmpty();
+  }
+
+  @Test
+  @DisplayName("Should ignore a trailing slash when naming the containing directory")
+  void shouldIgnoreTrailingSlashWhenNamingContainingDirectory() {
+    assertThat(FilepathCodec.parentNameOf("file:///media/movies/Am%C3%A9lie%20(2001)/"))
+        .contains("movies");
+  }
+
+  @Test
+  @DisplayName("Should name directories when given a plain path without a URI scheme")
+  void shouldNameDirectoriesWhenGivenPlainPathWithoutUriScheme() {
+    assertThat(FilepathCodec.parentNameOf("/media/movies/movie.mkv")).contains("movies");
+    assertThat(FilepathCodec.grandparentNameOf("/media/movies/movie.mkv")).contains("media");
+  }
+
+  @Test
+  @DisplayName("Should decode the whole path as UTF-8 when given a filepath URI")
+  void shouldDecodeWholePathAsUtf8WhenGivenFilepathUri() {
+    assertThat(FilepathCodec.pathOf("file:///media/D%C3%A9j%C3%A0%20Vu%20(2006)/movie.mkv"))
+        .isEqualTo("/media/Déjà Vu (2006)/movie.mkv");
+  }
+
+  @Test
+  @DisplayName("Should return the path unchanged when given a plain path without a URI scheme")
+  void shouldReturnPathUnchangedWhenGivenPlainPathWithoutUriScheme() {
+    assertThat(FilepathCodec.pathOf("/media/Déjà Vu (2006)/movie.mkv"))
+        .isEqualTo("/media/Déjà Vu (2006)/movie.mkv");
+  }
+
+  @Test
   @DisplayName("Should reject filepath URI when it has no final segment")
   void shouldRejectFilepathUriWhenItHasNoFinalSegment() {
     assertThatThrownBy(() -> FilepathCodec.filenameOf("file:///"))

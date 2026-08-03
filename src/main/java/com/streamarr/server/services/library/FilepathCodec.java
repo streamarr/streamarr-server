@@ -7,6 +7,7 @@ import java.nio.file.FileSystems;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 
 public final class FilepathCodec {
 
@@ -27,17 +28,53 @@ public final class FilepathCodec {
    * #encode(Path)} already carries the bytes verbatim.
    */
   public static String filenameOf(String filepathUri) {
-    var segments = segmentsOf(filepathUri);
+    return nameAbove(filepathUri, 0)
+        .orElseThrow(
+            () ->
+                new IllegalArgumentException("Filepath URI has no final segment: " + filepathUri));
+  }
 
-    if (segments.isEmpty()) {
-      throw new IllegalArgumentException("Filepath URI has no final segment: " + filepathUri);
+  /**
+   * Name of the directory holding the file a filepath URI denotes, percent-decoded as UTF-8. Empty
+   * when the file sits at the root.
+   *
+   * <p>Charset-independent for the same reason as {@link #filenameOf(String)}: {@code
+   * path.getParent().getFileName().toString()} would decode the raw filesystem bytes with {@code
+   * sun.jnu.encoding}.
+   */
+  public static Optional<String> parentNameOf(String filepathUri) {
+    return nameAbove(filepathUri, 1);
+  }
+
+  /**
+   * Name of the directory one level above {@link #parentNameOf(String)}, percent-decoded as UTF-8.
+   * Empty when no directory sits that far above the file.
+   */
+  public static Optional<String> grandparentNameOf(String filepathUri) {
+    return nameAbove(filepathUri, 2);
+  }
+
+  /**
+   * The whole path a filepath URI denotes, percent-decoded as UTF-8, as text rather than a {@link
+   * Path} whose {@code toString()} would run the raw bytes back through {@code sun.jnu.encoding}.
+   */
+  public static String pathOf(String filepathUri) {
+    return decodedPathComponentOf(filepathUri);
+  }
+
+  private static Optional<String> nameAbove(String filepathUri, int directoriesAboveTheFile) {
+    var segments = segmentsOf(filepathUri);
+    var index = segments.size() - 1 - directoriesAboveTheFile;
+
+    if (index < 0) {
+      return Optional.empty();
     }
 
-    return segments.getLast();
+    return Optional.of(segments.get(index));
   }
 
   private static List<String> segmentsOf(String filepathUri) {
-    return Arrays.stream(decodedPathComponentOf(filepathUri).split(String.valueOf(SEPARATOR)))
+    return Arrays.stream(pathOf(filepathUri).split(String.valueOf(SEPARATOR)))
         .filter(segment -> !segment.isEmpty())
         .toList();
   }
