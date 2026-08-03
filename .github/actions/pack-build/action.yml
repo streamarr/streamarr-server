@@ -43,12 +43,16 @@ runs:
           publish_flag="--publish"
         fi
 
+        # procfile is pinned because builder-jammy-full carries four copies of it (5.10.1,
+        # 5.13.2, 5.13.5, 5.13.6), pulled in transitively by other buildpacks, and an unversioned
+        # reference cannot resolve against more than one. apt and java need no pin: java appears
+        # exactly once, and apt is not in the builder at all — pack fetches it from the registry.
         pack build index.docker.io/streamarr/streamarr-server \
             ${tag_args} \
             --builder paketobuildpacks/builder-jammy-full \
             --buildpack paketo-buildpacks/apt \
             --buildpack paketo-buildpacks/java \
-            --buildpack paketo-buildpacks/procfile \
+            --buildpack paketo-buildpacks/procfile@5.13.6 \
             --env BP_JVM_VERSION=25 \
             --env BP_INCLUDE_FILES=.profile:Procfile \
             --path . \
