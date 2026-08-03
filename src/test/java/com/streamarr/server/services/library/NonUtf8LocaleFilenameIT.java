@@ -36,6 +36,11 @@ class NonUtf8LocaleFilenameIT {
   private static final String MOVIE_FOLDER = "Déjà Vu (2006)";
   private static final String MOVIE_FILENAME = "Déjà Vu (2006) - [BLURAY-1080p][DTS 5.1].mkv";
 
+  private static final String SERIES_ROOT = "/media/series";
+  private static final String SERIES_FOLDER = "Amélie Chronicles (2001)";
+  private static final String SEASON_FOLDER = "Sæson 3";
+  private static final String EPISODE_FILENAME = "Amelie.Chronicles.S03E05.mkv";
+
   // Path.toString() emits one U+FFFD per byte the platform charset cannot map, so an accented
   // character read back from UTF-8 bytes becomes two of them.
   private static final String REPLACEMENT_CHAR = Character.toString(0xFFFD);
@@ -46,8 +51,11 @@ class NonUtf8LocaleFilenameIT {
           + REPLACEMENT_CHAR.repeat(2)
           + " Vu (2006) - [BLURAY-1080p][DTS 5.1].mkv";
 
+  private static final String MANGLED_SEASON_FOLDER = "S" + REPLACEMENT_CHAR.repeat(2) + "son 3";
+
   private static GenericContainer<?> container;
   private static Map<String, String> movieReport;
+  private static Map<String, String> seriesReport;
 
   @BeforeAll
   static void probeFilenamesUnderAnAsciiLocale() throws Exception {
@@ -63,8 +71,10 @@ class NonUtf8LocaleFilenameIT {
     container.start();
 
     createFile(MOVIE_ROOT + "/" + MOVIE_FOLDER + "/" + MOVIE_FILENAME);
+    createFile(SERIES_ROOT + "/" + SERIES_FOLDER + "/" + SEASON_FOLDER + "/" + EPISODE_FILENAME);
 
     movieReport = probe(MOVIE_ROOT);
+    seriesReport = probe(SERIES_ROOT);
   }
 
   @AfterAll
@@ -103,6 +113,36 @@ class NonUtf8LocaleFilenameIT {
     assertThat(movieReport.get("codec.filename"))
         .doesNotContain(REPLACEMENT_CHAR)
         .isEqualTo(MOVIE_FILENAME);
+  }
+
+  @Test
+  @DisplayName("Should mangle directory names above the file when they are read through Path")
+  void shouldMangleDirectoryNamesAboveFileWhenTheyAreReadThroughPath() {
+    assertThat(seriesReport.get("path.parentName")).isEqualTo(MANGLED_SEASON_FOLDER);
+    assertThat(seriesReport.get("path.grandparentName")).contains(REPLACEMENT_CHAR);
+    assertThat(seriesReport.get("path.toString")).contains(REPLACEMENT_CHAR);
+  }
+
+  @Test
+  @DisplayName("Should name the directories above the file when deriving them from the URI")
+  void shouldNameDirectoriesAboveFileWhenDerivingThemFromUri() {
+    assertThat(seriesReport.get("codec.parentName")).isEqualTo(SEASON_FOLDER);
+    assertThat(seriesReport.get("codec.grandparentName")).isEqualTo(SERIES_FOLDER);
+    assertThat(seriesReport.get("codec.path"))
+        .isEqualTo(
+            SERIES_ROOT + "/" + SERIES_FOLDER + "/" + SEASON_FOLDER + "/" + EPISODE_FILENAME);
+  }
+
+  @Test
+  @DisplayName("Should read no season number when the season folder name came through Path")
+  void shouldReadNoSeasonNumberWhenSeasonFolderNameCameThroughPath() {
+    assertThat(seriesReport).containsEntry("season.fromPathName", "none/false");
+  }
+
+  @Test
+  @DisplayName("Should read the season number when the season folder name came from the URI")
+  void shouldReadSeasonNumberWhenSeasonFolderNameCameFromUri() {
+    assertThat(seriesReport).containsEntry("season.fromCodecName", "3/true");
   }
 
   /**

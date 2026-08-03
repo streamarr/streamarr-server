@@ -1,7 +1,7 @@
 package com.streamarr.server.services.parsers.show;
 
+import com.streamarr.server.services.library.FilepathCodec;
 import com.streamarr.server.services.parsers.MetadataParser;
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalInt;
@@ -25,7 +25,7 @@ public class SeasonPathMetadataParser implements MetadataParser<SeasonPathMetada
   }
 
   private Result getSeasonNumberFromPath(String path) {
-    var directoryName = Path.of(path).getFileName().toString().toLowerCase();
+    var directoryName = FilepathCodec.filenameOf(path).toLowerCase();
 
     var specialAliasResult = evaluatePathForSpecialAliases(directoryName);
 

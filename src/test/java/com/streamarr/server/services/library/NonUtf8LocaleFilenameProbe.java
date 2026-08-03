@@ -1,5 +1,6 @@
 package com.streamarr.server.services.library;
 
+import com.streamarr.server.services.parsers.show.SeasonPathMetadataParser;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -19,18 +20,40 @@ import java.util.Base64;
  */
 public final class NonUtf8LocaleFilenameProbe {
 
+  private static final SeasonPathMetadataParser SEASON_PARSER = new SeasonPathMetadataParser();
+
   private NonUtf8LocaleFilenameProbe() {}
 
   public static void main(String[] args) throws IOException {
     var file = firstRegularFileUnder(Path.of(args[0]));
     var uri = FilepathCodec.encode(file);
 
+    var pathParentName = file.getParent().getFileName().toString();
+    var codecParentName = FilepathCodec.parentNameOf(uri).orElseThrow();
+
     report("sun.jnu.encoding", System.getProperty("sun.jnu.encoding"));
     report("path.filename", file.getFileName().toString());
-    report("path.parentName", file.getParent().getFileName().toString());
+    report("path.parentName", pathParentName);
     report("path.grandparentName", file.getParent().getParent().getFileName().toString());
+    report("path.toString", file.toString());
     report("codec.uri", uri);
     report("codec.filename", FilepathCodec.filenameOf(uri));
+    report("codec.parentName", codecParentName);
+    report("codec.grandparentName", FilepathCodec.grandparentNameOf(uri).orElseThrow());
+    report("codec.path", FilepathCodec.pathOf(uri));
+    report("season.fromPathName", parseSeason(pathParentName));
+    report("season.fromCodecName", parseSeason(codecParentName));
+  }
+
+  private static String parseSeason(String directoryName) {
+    var result = SEASON_PARSER.parse(directoryName).orElseThrow();
+    var seasonNumber = "none";
+
+    if (result.seasonNumber().isPresent()) {
+      seasonNumber = String.valueOf(result.seasonNumber().getAsInt());
+    }
+
+    return seasonNumber + "/" + result.isSeasonFolder();
   }
 
   private static Path firstRegularFileUnder(Path root) throws IOException {
