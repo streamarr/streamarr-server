@@ -3,9 +3,12 @@ package com.streamarr.server.config.health;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.fakes.FakeHttpClient;
+import com.streamarr.server.fakes.MutableClock;
 import java.io.IOException;
 import java.net.http.HttpClient;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -16,6 +19,11 @@ import org.springframework.boot.health.contributor.Status;
 class TmdbHealthIndicatorTest {
 
   private static final Duration PROBE_TIMEOUT = Duration.ofMillis(200);
+  private static final Duration CACHE_TTL = Duration.ofSeconds(30);
+
+  private final AtomicReference<Instant> currentTime =
+      new AtomicReference<>(Instant.parse("2026-08-03T12:00:00Z"));
+  private final MutableClock clock = new MutableClock(currentTime);
 
   @Test
   @DisplayName("Should report UP when TMDB returns 200")
@@ -71,6 +79,33 @@ class TmdbHealthIndicatorTest {
   }
 
   @Test
+  @DisplayName("Should call TMDB once when probed twice within the cache TTL")
+  void shouldCallTmdbOnceWhenProbedTwiceWithinCacheTtl() {
+    var client = FakeHttpClient.respondingWith(200);
+    var indicator = indicatorFor(client);
+
+    indicator.health();
+    currentTime.set(currentTime.get().plus(CACHE_TTL.minusSeconds(1)));
+    var health = indicator.health();
+
+    assertThat(health.getStatus()).isEqualTo(Status.UP);
+    assertThat(client.sendCount()).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("Should call TMDB again when probed after the cache TTL expires")
+  void shouldCallTmdbAgainWhenProbedAfterCacheTtlExpires() {
+    var client = FakeHttpClient.respondingWith(200);
+    var indicator = indicatorFor(client);
+
+    indicator.health();
+    currentTime.set(currentTime.get().plus(CACHE_TTL));
+    indicator.health();
+
+    assertThat(client.sendCount()).isEqualTo(2);
+  }
+
+  @Test
   @DisplayName("Should re-interrupt thread when InterruptedException is thrown")
   void shouldReInterruptThreadWhenInterruptedExceptionThrown() {
     var indicator =
@@ -87,6 +122,8 @@ class TmdbHealthIndicatorTest {
 
   private TmdbHealthIndicator indicatorFor(HttpClient client) {
     return new TmdbHealthIndicator(
-        client, TmdbHealthProperties.builder().probeTimeout(PROBE_TIMEOUT).build());
+        client,
+        TmdbHealthProperties.builder().probeTimeout(PROBE_TIMEOUT).cacheTtl(CACHE_TTL).build(),
+        clock);
   }
 }

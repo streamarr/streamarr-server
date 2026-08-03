@@ -38,6 +38,7 @@ tmdb:
     request-timeout-seconds: ${TMDB_API_REQUEST_TIMEOUT_SECONDS:30}
   health:
     probe-timeout: ${TMDB_HEALTH_PROBE_TIMEOUT:2s}
+    cache-ttl: ${TMDB_HEALTH_CACHE_TTL:30s}
   image:
     base-url: ${TMDB_IMAGE_BASE_URL:https://image.tmdb.org/t/p/original}
 

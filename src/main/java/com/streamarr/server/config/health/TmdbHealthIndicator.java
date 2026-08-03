@@ -4,6 +4,9 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Clock;
+import java.time.Instant;
+import java.util.concurrent.atomic.AtomicReference;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -23,10 +26,23 @@ public class TmdbHealthIndicator implements HealthIndicator {
   private final HttpClient client;
 
   private final TmdbHealthProperties properties;
+  private final Clock clock;
+
+  private final AtomicReference<CachedProbe> lastProbe = new AtomicReference<>(CachedProbe.stale());
 
   @Override
   public Health health() {
-    return probe();
+    var now = clock.instant();
+    var cached = lastProbe.get();
+
+    if (cached.isFreshAt(now)) {
+      return cached.health();
+    }
+
+    var health = probe();
+    lastProbe.set(new CachedProbe(health, now.plus(properties.cacheTtl())));
+
+    return health;
   }
 
   private Health probe() {
@@ -62,5 +78,19 @@ public class TmdbHealthIndicator implements HealthIndicator {
     }
 
     return Health.down().withDetail("statusCode", statusCode).build();
+  }
+
+  // Deliberately unsynchronized: a concurrent burst may probe more than once, which costs one
+  // extra bounded request, whereas a lock would park every prober on an external dependency —
+  // the wait CLAUDE.md forbids holding a lock across.
+  private record CachedProbe(Health health, Instant expiresAt) {
+
+    private static CachedProbe stale() {
+      return new CachedProbe(Health.unknown().build(), Instant.MIN);
+    }
+
+    private boolean isFreshAt(Instant now) {
+      return now.isBefore(expiresAt);
+    }
   }
 }

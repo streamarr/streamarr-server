@@ -17,4 +17,8 @@ public record TmdbHealthProperties(
     // parked on a third party. Ten seconds is the ceiling because Spring Boot itself starts warning
     // about slow health contributors there.
     @NotNull @DurationMin(seconds = 0, inclusive = false) @DurationMax(seconds = 10)
-        Duration probeTimeout) {}
+        Duration probeTimeout,
+    // A probe that calls a third party on every hit is an amplifier: an uptime monitor polling
+    // every 10s becomes six TMDB requests a minute, forever. Serving a cached verdict keeps the
+    // signal without the traffic.
+    @NotNull @DurationMin(seconds = 0, inclusive = false) Duration cacheTtl) {}
