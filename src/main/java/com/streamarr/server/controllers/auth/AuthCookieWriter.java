@@ -39,8 +39,7 @@ public class AuthCookieWriter {
     return withDefaults(REFRESH_COOKIE, "", REFRESH_PATH, Duration.ZERO);
   }
 
-  private static ResponseCookie withDefaults(
-      String name, String value, String path, Duration maxAge) {
+  private ResponseCookie withDefaults(String name, String value, String path, Duration maxAge) {
     return ResponseCookie.from(name, value)
         .httpOnly(true)
         .secure(true)
