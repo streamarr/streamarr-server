@@ -23,8 +23,10 @@ class CanonicalBaseUrlConfigurationTest {
             .allowInsecureHttp(true)
             .build();
 
+    var production = environmentWith();
+
     // Both gates or neither: a single flag is one typo away from serving credentials in cleartext.
-    assertThatThrownBy(() -> configuration.canonicalBaseUrl(properties, environmentWith()))
+    assertThatThrownBy(() -> configuration.canonicalBaseUrl(properties, production))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("development or test profile");
   }
@@ -48,7 +50,9 @@ class CanonicalBaseUrlConfigurationTest {
   void shouldRefuseCleartextWhenDevelopmentProfileActiveWithoutFlag() {
     var properties = StreamarrServerProperties.builder().baseUrl("http://home.example.com").build();
 
-    assertThatThrownBy(() -> configuration.canonicalBaseUrl(properties, environmentWith("dev")))
+    var development = environmentWith("dev");
+
+    assertThatThrownBy(() -> configuration.canonicalBaseUrl(properties, development))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("must use https");
   }

@@ -290,8 +290,11 @@ class DeviceAuthorizationServiceTest {
 
     advanceClock(Duration.ofMinutes(11));
 
+    var userCode = issued.userCode();
+    var approverId = approver.getId();
+
     // A probe deserves no oracle detail; the poll answers expired_token for the same state.
-    assertThatThrownBy(() -> service.lookup(issued.userCode(), approver.getId()))
+    assertThatThrownBy(() -> service.lookup(userCode, approverId))
         .isInstanceOf(DeviceCodeNotFoundException.class);
   }
 
@@ -302,8 +305,9 @@ class DeviceAuthorizationServiceTest {
 
     advanceClock(Duration.ofMinutes(11));
 
-    assertThatThrownBy(() -> approve(issued.userCode()))
-        .isInstanceOf(DeviceCodeExpiredException.class);
+    var userCode = issued.userCode();
+
+    assertThatThrownBy(() -> approve(userCode)).isInstanceOf(DeviceCodeExpiredException.class);
   }
 
   @Test
@@ -312,14 +316,18 @@ class DeviceAuthorizationServiceTest {
     var issued = service.issue("Apple TV");
     approve(issued.userCode());
 
-    assertThatThrownBy(() -> decide(issued.userCode(), DeviceDecision.DENY))
+    var userCode = issued.userCode();
+
+    assertThatThrownBy(() -> decide(userCode, DeviceDecision.DENY))
         .isInstanceOf(DeviceCodeNotPendingException.class);
   }
 
   @Test
   @DisplayName("Should reject a malformed user code before looking anything up")
   void shouldRejectMalformedUserCodeBeforeLookingAnythingUp() {
-    assertThatThrownBy(() -> service.lookup("NOPE", approver.getId()))
+    var approverId = approver.getId();
+
+    assertThatThrownBy(() -> service.lookup("NOPE", approverId))
         .isInstanceOf(InvalidUserCodeException.class);
   }
 

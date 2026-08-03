@@ -70,7 +70,8 @@ class CanonicalBaseUrlTest {
   @Test
   @DisplayName("Should refuse to resolve a URL when no base is configured")
   void shouldRefuseToResolveUrlWhenNoBaseConfigured() {
-    assertThatThrownBy(() -> CanonicalBaseUrl.absent().resolve("/link"))
-        .isInstanceOf(IllegalStateException.class);
+    var absent = CanonicalBaseUrl.absent();
+
+    assertThatThrownBy(() -> absent.resolve("/link")).isInstanceOf(IllegalStateException.class);
   }
 }

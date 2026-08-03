@@ -59,7 +59,7 @@ class DeviceIssuanceCapConcurrencyIT extends AbstractIntegrationTest {
             try {
               startLatch.await();
               accepted.add(deviceAuthorizationService.issue("Racer"));
-            } catch (InterruptedException e) {
+            } catch (InterruptedException _) {
               Thread.currentThread().interrupt();
             } catch (Exception refusal) {
               refused.add(refusal);

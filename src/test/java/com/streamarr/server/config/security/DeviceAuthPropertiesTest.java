@@ -46,7 +46,9 @@ class DeviceAuthPropertiesTest {
   @ValueSource(strings = {"link", "/link?code=x", "/link#frag", "/../link"})
   @DisplayName("Should refuse a verification path that is not a bare absolute path")
   void shouldRefuseVerificationPathThatIsNotBareAbsolutePath(String verificationPath) {
-    assertThatThrownBy(() -> defaultProperties().verificationPath(verificationPath).build())
+    var properties = defaultProperties().verificationPath(verificationPath);
+
+    assertThatThrownBy(properties::build)
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("verification-path");
   }
