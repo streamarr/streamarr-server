@@ -162,6 +162,20 @@ public class RefreshTokenRecord extends UpdatableRecordImpl<RefreshTokenRecord> 
         return (OffsetDateTime) get(9);
     }
 
+    /**
+     * Setter for <code>public.refresh_token.predecessor_id</code>.
+     */
+    public void setPredecessorId(UUID value) {
+        set(10, value);
+    }
+
+    /**
+     * Getter for <code>public.refresh_token.predecessor_id</code>.
+     */
+    public UUID getPredecessorId() {
+        return (UUID) get(10);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -185,7 +199,7 @@ public class RefreshTokenRecord extends UpdatableRecordImpl<RefreshTokenRecord> 
     /**
      * Create a detached, initialised RefreshTokenRecord
      */
-    public RefreshTokenRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, UUID sessionId, String digest, RefreshTokenStatus status, OffsetDateTime expiresAt, OffsetDateTime rotatedAt) {
+    public RefreshTokenRecord(UUID id, OffsetDateTime createdOn, UUID createdBy, OffsetDateTime lastModifiedOn, UUID lastModifiedBy, UUID sessionId, String digest, RefreshTokenStatus status, OffsetDateTime expiresAt, OffsetDateTime rotatedAt, UUID predecessorId) {
         super(RefreshToken.REFRESH_TOKEN);
 
         setId(id);
@@ -198,6 +212,7 @@ public class RefreshTokenRecord extends UpdatableRecordImpl<RefreshTokenRecord> 
         setStatus(status);
         setExpiresAt(expiresAt);
         setRotatedAt(rotatedAt);
+        setPredecessorId(predecessorId);
         resetTouchedOnNotNull();
     }
 }

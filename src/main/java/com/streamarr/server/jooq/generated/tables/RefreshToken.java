@@ -9,6 +9,7 @@ import com.streamarr.server.jooq.generated.Keys;
 import com.streamarr.server.jooq.generated.Public;
 import com.streamarr.server.jooq.generated.enums.RefreshTokenStatus;
 import com.streamarr.server.jooq.generated.tables.AuthSession.AuthSessionPath;
+import com.streamarr.server.jooq.generated.tables.RefreshToken.RefreshTokenPath;
 import com.streamarr.server.jooq.generated.tables.records.RefreshTokenRecord;
 
 import java.time.OffsetDateTime;
@@ -113,6 +114,11 @@ public class RefreshToken extends TableImpl<RefreshTokenRecord> {
      */
     public final TableField<RefreshTokenRecord, OffsetDateTime> ROTATED_AT = createField(DSL.name("rotated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE(6), this, "");
 
+    /**
+     * The column <code>public.refresh_token.predecessor_id</code>.
+     */
+    public final TableField<RefreshTokenRecord, UUID> PREDECESSOR_ID = createField(DSL.name("predecessor_id"), SQLDataType.UUID, this, "");
+
     private RefreshToken(Name alias, Table<RefreshTokenRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -192,12 +198,25 @@ public class RefreshToken extends TableImpl<RefreshTokenRecord> {
 
     @Override
     public List<UniqueKey<RefreshTokenRecord>> getUniqueKeys() {
-        return Arrays.asList(Keys.UQ_REFRESH_TOKEN_DIGEST);
+        return Arrays.asList(Keys.UQ_REFRESH_TOKEN_DIGEST, Keys.UQ_REFRESH_TOKEN_PREDECESSOR);
     }
 
     @Override
     public List<ForeignKey<RefreshTokenRecord, ?>> getReferences() {
-        return Arrays.asList(Keys.REFRESH_TOKEN__FK_REFRESH_TOKEN_SESSION);
+        return Arrays.asList(Keys.REFRESH_TOKEN__FK_REFRESH_TOKEN_PREDECESSOR, Keys.REFRESH_TOKEN__FK_REFRESH_TOKEN_SESSION);
+    }
+
+    private transient RefreshTokenPath _refreshToken;
+
+    /**
+     * Get the implicit join path to the <code>public.refresh_token</code>
+     * table.
+     */
+    public RefreshTokenPath refreshToken() {
+        if (_refreshToken == null)
+            _refreshToken = new RefreshTokenPath(this, Keys.REFRESH_TOKEN__FK_REFRESH_TOKEN_PREDECESSOR, null);
+
+        return _refreshToken;
     }
 
     private transient AuthSessionPath _authSession;
