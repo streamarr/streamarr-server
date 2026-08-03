@@ -12,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.health.contributor.Health;
 import org.springframework.boot.health.contributor.HealthIndicator;
+import org.springframework.boot.health.contributor.Status;
 import org.springframework.stereotype.Component;
 
 @Slf4j
@@ -21,6 +22,11 @@ public class TmdbHealthIndicator implements HealthIndicator {
 
   private static final URI CONFIGURATION_URI =
       URI.create("https://api.themoviedb.org/3/configuration");
+
+  // Not DOWN: an unreachable TMDB degrades metadata enrichment while playback, auth and browsing
+  // keep serving. management.endpoint.health.status.order ranks DEGRADED below UP so it stays out
+  // of the aggregate verdict, and the metadata health group surfaces it on its own.
+  static final Status DEGRADED = new Status("DEGRADED", "TMDB is unreachable");
 
   @Qualifier("tmdb")
   private final HttpClient client;
@@ -53,10 +59,10 @@ public class TmdbHealthIndicator implements HealthIndicator {
     } catch (InterruptedException ex) {
       Thread.currentThread().interrupt();
       log.warn("TMDB health check interrupted", ex);
-      return Health.down().withException(ex).build();
+      return degraded(ex);
     } catch (Exception ex) {
       log.warn("TMDB health check failed", ex);
-      return Health.down().withException(ex).build();
+      return degraded(ex);
     }
   }
 
@@ -77,7 +83,11 @@ public class TmdbHealthIndicator implements HealthIndicator {
       return Health.up().withDetail("api", "reachable").build();
     }
 
-    return Health.down().withDetail("statusCode", statusCode).build();
+    return Health.status(DEGRADED).withDetail("statusCode", statusCode).build();
+  }
+
+  private Health degraded(Exception ex) {
+    return Health.status(DEGRADED).withException(ex).build();
   }
 
   // Deliberately unsynchronized: a concurrent burst may probe more than once, which costs one

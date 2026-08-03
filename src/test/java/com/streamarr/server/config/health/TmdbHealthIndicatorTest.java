@@ -46,35 +46,35 @@ class TmdbHealthIndicatorTest {
   }
 
   @Test
-  @DisplayName("Should report DOWN when TMDB returns non-200/401 status")
-  void shouldReportDownWhenTmdbReturnsUnexpectedStatus() {
+  @DisplayName("Should report DEGRADED when TMDB returns non-200/401 status")
+  void shouldReportDegradedWhenTmdbReturnsUnexpectedStatus() {
     var indicator = indicatorFor(FakeHttpClient.respondingWith(503));
 
     var health = indicator.health();
 
-    assertThat(health.getStatus()).isEqualTo(Status.DOWN);
+    assertThat(health.getStatus()).isEqualTo(TmdbHealthIndicator.DEGRADED);
   }
 
   @Test
-  @DisplayName("Should report DOWN when IOException is thrown")
-  void shouldReportDownWhenIOExceptionThrown() {
+  @DisplayName("Should report DEGRADED when IOException is thrown")
+  void shouldReportDegradedWhenIOExceptionThrown() {
     var indicator = indicatorFor(FakeHttpClient.failingWith(new IOException("connection refused")));
 
     var health = indicator.health();
 
-    assertThat(health.getStatus()).isEqualTo(Status.DOWN);
+    assertThat(health.getStatus()).isEqualTo(TmdbHealthIndicator.DEGRADED);
   }
 
   @Test
-  @DisplayName("Should report DOWN within the probe timeout when TMDB never responds")
-  void shouldReportDownWithinProbeTimeoutWhenTmdbNeverResponds() {
+  @DisplayName("Should report DEGRADED within the probe timeout when TMDB never responds")
+  void shouldReportDegradedWithinProbeTimeoutWhenTmdbNeverResponds() {
     var indicator = indicatorFor(FakeHttpClient.unresponsive());
 
     var startedAt = System.nanoTime();
     var health = indicator.health();
     var elapsed = Duration.ofNanos(System.nanoTime() - startedAt);
 
-    assertThat(health.getStatus()).isEqualTo(Status.DOWN);
+    assertThat(health.getStatus()).isEqualTo(TmdbHealthIndicator.DEGRADED);
     assertThat(elapsed).isLessThan(Duration.ofSeconds(5));
   }
 
@@ -113,7 +113,7 @@ class TmdbHealthIndicatorTest {
 
     var health = indicator.health();
 
-    assertThat(health.getStatus()).isEqualTo(Status.DOWN);
+    assertThat(health.getStatus()).isEqualTo(TmdbHealthIndicator.DEGRADED);
     assertThat(Thread.currentThread().isInterrupted()).isTrue();
 
     // Clear the interrupt flag to avoid polluting other tests
