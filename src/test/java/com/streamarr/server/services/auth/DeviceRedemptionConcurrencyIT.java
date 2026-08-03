@@ -123,6 +123,9 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
 
     var results = pollConcurrently(issued.deviceCode(), 4);
 
+    // Size first: a poller whose exception was swallowed would shorten the list, and allMatch
+    // over an empty list passes vacuously.
+    assertThat(results).hasSize(4);
     // Every poller is early, so each one pays the cumulative five-second penalty exactly once.
     assertThat(results).allMatch(DevicePollResult.SlowDown.class::isInstance);
     assertThat(intervalOf(issued.userCode())).isEqualTo(5 + 4 * 5);
@@ -133,6 +136,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
     var startLatch = new CountDownLatch(1);
     var doneLatch = new CountDownLatch(pollers);
     var results = new CopyOnWriteArrayList<DevicePollResult>();
+    var failures = new CopyOnWriteArrayList<Exception>();
 
     for (var poller = 0; poller < pollers; poller++) {
       executor.submit(
@@ -140,6 +144,11 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
             awaitStart(startLatch);
             try {
               results.add(deviceAuthorizationService.redeem(deviceCode));
+            } catch (Exception caught) {
+              // A submitted task's exception dies inside its Future. Captured here so a poller
+              // that blew up fails the test loudly, instead of just shortening the result list
+              // and letting a whole-collection assertion pass over what survived.
+              failures.add(caught);
             } finally {
               doneLatch.countDown();
             }
@@ -150,6 +159,7 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
     awaitCompletion(doneLatch);
     executor.shutdown();
 
+    assertThat(failures).isEmpty();
     return List.copyOf(results);
   }
 
