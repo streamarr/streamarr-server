@@ -5,6 +5,8 @@ import java.nio.file.FileSystem;
 import java.nio.file.FileSystemNotFoundException;
 import java.nio.file.FileSystems;
 import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.List;
 
 public final class FilepathCodec {
 
@@ -25,14 +27,19 @@ public final class FilepathCodec {
    * #encode(Path)} already carries the bytes verbatim.
    */
   public static String filenameOf(String filepathUri) {
-    var pathComponent = stripTrailingSeparator(decodedPathComponentOf(filepathUri));
-    var filename = pathComponent.substring(pathComponent.lastIndexOf(SEPARATOR) + 1);
+    var segments = segmentsOf(filepathUri);
 
-    if (filename.isEmpty()) {
+    if (segments.isEmpty()) {
       throw new IllegalArgumentException("Filepath URI has no final segment: " + filepathUri);
     }
 
-    return filename;
+    return segments.getLast();
+  }
+
+  private static List<String> segmentsOf(String filepathUri) {
+    return Arrays.stream(decodedPathComponentOf(filepathUri).split(String.valueOf(SEPARATOR)))
+        .filter(segment -> !segment.isEmpty())
+        .toList();
   }
 
   private static String decodedPathComponentOf(String filepathUri) {
@@ -45,14 +52,6 @@ public final class FilepathCodec {
       // fall through to raw path interpretation
     }
     return filepathUri;
-  }
-
-  private static String stripTrailingSeparator(String pathComponent) {
-    if (pathComponent.length() > 1
-        && pathComponent.charAt(pathComponent.length() - 1) == SEPARATOR) {
-      return pathComponent.substring(0, pathComponent.length() - 1);
-    }
-    return pathComponent;
   }
 
   public static Path decode(String filepathUri) {
