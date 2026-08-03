@@ -25,33 +25,33 @@ public class SeasonPathMetadataParser implements MetadataParser<SeasonPathMetada
   }
 
   private Result getSeasonNumberFromPath(String path) {
-    path = Path.of(path).getFileName().toString().toLowerCase();
+    var directoryName = Path.of(path).getFileName().toString().toLowerCase();
 
-    var specialAliasResult = evaluatePathForSpecialAliases(path);
+    var specialAliasResult = evaluatePathForSpecialAliases(directoryName);
 
     if (specialAliasResult.isPresent()) {
       return specialAliasResult.get();
     }
 
-    var numericFolderResult = evaluatePathForNumericSeasonFolders(path);
+    var numericFolderResult = evaluatePathForNumericSeasonFolders(directoryName);
 
     if (numericFolderResult.isPresent()) {
       return numericFolderResult.get();
     }
 
-    var shortNameResult = evaluatePathForOptimisticShortName(path);
+    var shortNameResult = evaluatePathForOptimisticShortName(directoryName);
 
     if (shortNameResult.isPresent()) {
       return shortNameResult.get();
     }
 
-    var folderEvaluationResult = evaluatePathUsingFolderNames(path);
+    var folderEvaluationResult = evaluatePathUsingFolderNames(directoryName);
 
     if (folderEvaluationResult.isPresent()) {
       return folderEvaluationResult.get();
     }
 
-    var parts = path.split("[._ -]", -1);
+    var parts = directoryName.split("[._ -]", -1);
     var partsEvaluationResult = evaluatePathUsingParts(parts);
 
     return partsEvaluationResult.orElseGet(
