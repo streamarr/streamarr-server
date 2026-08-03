@@ -603,6 +603,24 @@ class LibraryManagementServiceTest {
   }
 
   @Test
+  @DisplayName("Should persist filename decoded from the filepath URI when name is non-ASCII")
+  void shouldPersistFilenameDecodedFromFilepathUriWhenNameIsNonAscii() throws IOException {
+    var movieFilename = "Déjà Vu (2006) - [BLURAY-1080p][DTS 5.1].mkv";
+
+    var rootPath = createRootLibraryDirectory();
+    var moviePath = createMovieFile(rootPath, "Déjà Vu (2006)", movieFilename);
+
+    libraryManagementService.processDiscoveredFile(savedLibraryId, moviePath);
+
+    var mediaFile = fakeMediaFileRepository.findFirstByFilepathUri(FilepathCodec.encode(moviePath));
+
+    assertThat(mediaFile).isPresent();
+    assertThat(mediaFile.get().getFilename())
+        .isEqualTo(movieFilename)
+        .isEqualTo(FilepathCodec.filenameOf(mediaFile.get().getFilepathUri()));
+  }
+
+  @Test
   @DisplayName("Should throw when library not found for discovered file")
   void shouldThrowWhenLibraryNotFoundForDiscoveredFile() throws IOException {
     var rootPath = createRootLibraryDirectory();

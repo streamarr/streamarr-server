@@ -448,7 +448,7 @@ public class LibraryManagementService implements ActiveScanChecker {
     return mediaFileRepository.save(
         MediaFile.builder()
             .status(MediaFileStatus.UNMATCHED)
-            .filename(path.getFileName().toString())
+            .filename(FilepathCodec.filenameOf(absoluteFilepath))
             .filepathUri(absoluteFilepath)
             .size(fileSize)
             .libraryId(library.getId())
