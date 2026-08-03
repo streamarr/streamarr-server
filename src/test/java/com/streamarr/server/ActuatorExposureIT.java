@@ -43,6 +43,17 @@ class ActuatorExposureIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should serve the metadata health group when TMDB reachability queried")
+  void shouldServeMetadataHealthGroupWhenTmdbReachabilityQueried() throws Exception {
+    var response = mockMvc.perform(get("/actuator/health/metadata")).andReturn().getResponse();
+
+    // TMDB is kept out of the aggregate verdict, so this group is the only place its
+    // reachability surfaces: 200 where TMDB answers, 503 (DEGRADED) on a runner without egress.
+    assertThat(response.getStatus()).isIn(200, 503);
+    assertThat(response.getContentAsString()).contains("status");
+  }
+
+  @Test
   @DisplayName("Should not serve heap dump when actuator queried")
   void shouldNotServeHeapDumpWhenActuatorQueried() throws Exception {
     mockMvc.perform(get("/actuator/heapdump")).andExpect(status().isNotFound());
