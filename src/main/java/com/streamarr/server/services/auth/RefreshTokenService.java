@@ -6,6 +6,7 @@ import com.streamarr.server.domain.auth.RefreshToken;
 import com.streamarr.server.domain.auth.RefreshTokenStatus;
 import com.streamarr.server.domain.auth.SessionRevocationReason;
 import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.exceptions.InvalidRefreshProposalException;
 import com.streamarr.server.exceptions.InvalidRefreshTokenException;
 import com.streamarr.server.exceptions.TokenReuseDetectedException;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
@@ -23,6 +24,7 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -108,29 +110,104 @@ public class RefreshTokenService {
 
     // Rotation is a single conditional statement: exactly one caller can consume an ACTIVE token.
     if (tokenRepository.consumeActiveToken(digest, now) > 0) {
-      return rotate(rawToken, session, now);
+      return rotate(command, session, now);
     }
 
-    return handleUnconsumedToken(rawToken, session, now);
+    return handleUnconsumedToken(command, session, now);
   }
 
-  private RefreshResult rotate(String rawPredecessor, AuthSession session, Instant now) {
+  private RefreshResult rotate(RefreshCommand command, AuthSession session, Instant now) {
     var predecessor =
         tokenRepository
-            .findByDigest(digestOf(rawPredecessor))
+            .findByDigest(digestOf(command.refreshToken()))
             .orElseThrow(InvalidRefreshTokenException::new);
-    var rawSuccessor = deriveSuccessor(rawPredecessor, predecessor.getId());
+
+    if (command.carriesProposal()) {
+      return rotateToProposal(command.proposedSuccessor(), predecessor, session, now);
+    }
+
+    var rawSuccessor = deriveSuccessor(command.refreshToken(), predecessor.getId());
     tokenRepository.save(buildActiveToken(session, rawSuccessor, now));
 
     return new RefreshResult.Rotated(rawSuccessor, session);
   }
 
-  private RefreshResult handleUnconsumedToken(String rawToken, AuthSession session, Instant now) {
+  /**
+   * Records the client's own successor and the lineage link that later proves the pair. The
+   * proposal is stored only as a digest, exactly like a server-generated successor.
+   */
+  private RefreshResult rotateToProposal(
+      String proposal, RefreshToken predecessor, AuthSession session, Instant now) {
+    var successor = buildActiveToken(session, proposal, now);
+    successor.setPredecessorId(predecessor.getId());
+
+    try {
+      tokenRepository.saveAndFlush(successor);
+    } catch (DataIntegrityViolationException _) {
+      // The proposal collides with an existing digest or lineage row. Rolling the whole
+      // transaction back un-consumes the presented token, so the client can retry with a fresh
+      // proposal rather than losing its session to a bad guess.
+      throw new InvalidRefreshProposalException();
+    }
+
+    return new RefreshResult.Rotated(proposal, session);
+  }
+
+  private RefreshResult handleUnconsumedToken(
+      RefreshCommand command, AuthSession session, Instant now) {
     var token =
         tokenRepository
-            .findByDigest(digestOf(rawToken))
+            .findByDigest(digestOf(command.refreshToken()))
             .orElseThrow(InvalidRefreshTokenException::new);
 
+    if (command.carriesProposal()) {
+      return recoverProposedSuccessor(command.proposedSuccessor(), token, session, now);
+    }
+
+    return retryDerivedSuccessor(command.refreshToken(), token, session, now);
+  }
+
+  /**
+   * A proposal replaces the grace window entirely: possession of the successor already carries the
+   * authority grace was standing in for, so recovery works however long ago the rotation committed
+   * — and a proposal that was never this token's successor is theft at any timing.
+   */
+  private RefreshResult recoverProposedSuccessor(
+      String proposal, RefreshToken predecessor, AuthSession session, Instant now) {
+    if (predecessor.getStatus() != RefreshTokenStatus.ROTATED) {
+      // An expired ACTIVE token is stale. A REVOKED token may have lost a race to intentional
+      // family reissue. Only a consumed token can be reuse.
+      throw new InvalidRefreshTokenException();
+    }
+
+    var proposalDigest = digestOf(proposal);
+    var isProposalTheRecordedSuccessor =
+        tokenRepository
+            .findSuccessorDigest(predecessor.getId())
+            .filter(proposalDigest::equals)
+            .isPresent();
+
+    if (!isProposalTheRecordedSuccessor) {
+      // A consumed token presented with a successor it was never promised: only the legitimate
+      // client could know the real one.
+      revokeSessionForReuse(session, now);
+      throw new TokenReuseDetectedException();
+    }
+
+    if (tokenRepository.isActiveToken(session.getId(), proposalDigest, now)) {
+      return new RefreshResult.Recovered(proposal, session);
+    }
+
+    // The exact pair, but its successor has itself moved on. The client is behind, not hostile —
+    // so the family survives — and it learns nothing beyond the terminal answer every other
+    // unusable token gets.
+    log.info(
+        "Refresh pair is exact but superseded for session {}; no revocation.", session.getId());
+    throw new InvalidRefreshTokenException();
+  }
+
+  private RefreshResult retryDerivedSuccessor(
+      String rawToken, RefreshToken token, AuthSession session, Instant now) {
     // The session is not revoked (guarded above), so grace turns purely on token timing.
     if (isWithinGrace(token, now)) {
       var rawSuccessor = deriveSuccessor(rawToken, token.getId());

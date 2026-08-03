@@ -41,6 +41,14 @@ public class RefreshTokenRepositoryCustomImpl implements RefreshTokenRepositoryC
   }
 
   @Override
+  public Optional<String> findSuccessorDigest(UUID predecessorId) {
+    return dsl.select(REFRESH_TOKEN.DIGEST)
+        .from(REFRESH_TOKEN)
+        .where(REFRESH_TOKEN.PREDECESSOR_ID.eq(predecessorId))
+        .fetchOptional(REFRESH_TOKEN.DIGEST);
+  }
+
+  @Override
   public boolean isActiveToken(UUID sessionId, String digest, Instant now) {
     var nowOffset = now.atOffset(ZoneOffset.UTC);
 

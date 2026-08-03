@@ -41,6 +41,7 @@ public class TokenRefreshService {
         switch (result) {
           case RefreshResult.Rotated(String successor, _) -> successor;
           case RefreshResult.GraceRetry(String successor, _) -> successor;
+          case RefreshResult.Recovered(String successor, _) -> successor;
           case RefreshResult.SupersededRetry _ -> null;
         };
 

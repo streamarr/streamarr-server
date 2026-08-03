@@ -1,6 +1,7 @@
 package com.streamarr.server.controllers.auth;
 
 import com.streamarr.server.config.security.StreamarrBearerTokenResolver;
+import com.streamarr.server.exceptions.InvalidRefreshProposalException;
 import com.streamarr.server.exceptions.InvalidRefreshTokenException;
 import com.streamarr.server.services.auth.AccessToken;
 import com.streamarr.server.services.auth.AccessTokenIssuer;
@@ -20,6 +21,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.Arrays;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -152,7 +154,10 @@ public class AuthController {
 
     var refreshed =
         tokenRefreshService.refresh(
-            RefreshCommand.builder().refreshToken(carrier.refreshToken()).build());
+            RefreshCommand.builder()
+                .refreshToken(carrier.refreshToken())
+                .proposedSuccessor(carrier.proposedSuccessor())
+                .build());
 
     if (refreshed.carriesRefreshToken()) {
       return respond(
@@ -164,10 +169,18 @@ public class AuthController {
     return respondAccessOnly(refreshed.accessToken(), carrier.cookieMode());
   }
 
+  /** The carrier decides the mode: a body token means bearer, the refresh cookie means cookie. */
   private RefreshCarrier resolveRefreshCarrier(
       RefreshRequest request, HttpServletRequest httpRequest) {
-    if (request != null && request.refreshToken() != null && !request.refreshToken().isBlank()) {
-      return new RefreshCarrier(request.refreshToken(), false);
+    if (carriesBearerToken(request)) {
+      return new RefreshCarrier(request.refreshToken(), request.proposedRefreshToken(), false);
+    }
+
+    // Set-Cookie is already the browser's atomic persistence, so cookie rotation stays
+    // server-generated. A proposal here means the client misread the contract — say so rather
+    // than silently dropping the field it expects to get back.
+    if (request != null && request.proposedRefreshToken() != null) {
+      throw new InvalidRefreshProposalException();
     }
 
     var cookies = httpRequest.getCookies();
@@ -179,11 +192,16 @@ public class AuthController {
         .filter(cookie -> AuthCookieWriter.REFRESH_COOKIE.equals(cookie.getName()))
         .map(Cookie::getValue)
         .findFirst()
-        .map(rawToken -> new RefreshCarrier(rawToken, true))
+        .map(rawToken -> new RefreshCarrier(rawToken, null, true))
         .orElseThrow(InvalidRefreshTokenException::new);
   }
 
-  private record RefreshCarrier(String refreshToken, boolean cookieMode) {}
+  private static boolean carriesBearerToken(RefreshRequest request) {
+    return request != null && request.refreshToken() != null && !request.refreshToken().isBlank();
+  }
+
+  private record RefreshCarrier(
+      String refreshToken, String proposedSuccessor, boolean cookieMode) {}
 
   private static String deviceNameOf(HttpServletRequest httpRequest) {
     return httpRequest.getHeader(HttpHeaders.USER_AGENT);
@@ -197,11 +215,11 @@ public class AuthController {
             .scope(accessToken.scope().claimValue());
 
     if (!cookieMode) {
-      return ResponseEntity.status(status)
+      return noStore(ResponseEntity.status(status))
           .body(body.accessToken(accessToken.value()).refreshToken(rawRefreshToken).build());
     }
 
-    return ResponseEntity.status(status)
+    return noStore(ResponseEntity.status(status))
         .header(HttpHeaders.SET_COOKIE, cookieWriter.accessCookie(accessToken.value()).toString())
         .header(HttpHeaders.SET_COOKIE, cookieWriter.refreshCookie(rawRefreshToken).toString())
         .body(body.build());
@@ -216,11 +234,16 @@ public class AuthController {
             .scope(accessToken.scope().claimValue());
 
     if (!cookieMode) {
-      return ResponseEntity.ok(body.accessToken(accessToken.value()).build());
+      return noStore(ResponseEntity.ok()).body(body.accessToken(accessToken.value()).build());
     }
 
-    return ResponseEntity.ok()
+    return noStore(ResponseEntity.ok())
         .header(HttpHeaders.SET_COOKIE, cookieWriter.accessCookie(accessToken.value()).toString())
         .body(body.build());
+  }
+
+  // Tokens are credentials: no cache, however far down the chain, may keep a copy.
+  private static ResponseEntity.BodyBuilder noStore(ResponseEntity.BodyBuilder builder) {
+    return builder.cacheControl(CacheControl.noStore());
   }
 }

@@ -9,6 +9,7 @@ import com.streamarr.server.controllers.auth.RefreshRequest;
 import com.streamarr.server.controllers.auth.SetupRequest;
 import com.streamarr.server.domain.auth.AuthSession;
 import com.streamarr.server.fixtures.AccountFixture;
+import com.streamarr.server.fixtures.RefreshProposalFixture;
 import java.time.Instant;
 import java.util.UUID;
 import java.util.stream.Stream;
@@ -63,8 +64,13 @@ class SensitiveAuthValueRedactionTest {
         new LoginRequest("user@example.com", SECRET_MARKER, "device", false),
         new SetupRequest("user@example.com", "User", SECRET_MARKER, "Home", "Profile", false),
         new ChangePasswordRequest(SECRET_MARKER, SECRET_MARKER),
-        new RefreshRequest(SECRET_MARKER),
+        new RefreshRequest(SECRET_MARKER, SECRET_MARKER),
         new TokenRefreshService.RefreshedTokens(null, SECRET_MARKER),
+        RefreshCommand.builder().refreshToken(SECRET_MARKER).proposedSuccessor(SECRET_MARKER),
+        RefreshCommand.builder()
+            .refreshToken(SECRET_MARKER)
+            .proposedSuccessor(RefreshProposalFixture.proposal())
+            .build(),
         ChangePasswordCommand.builder().currentPassword(SECRET_MARKER).newPassword(SECRET_MARKER),
         PasswordChangeCompletionCommand.builder()
             .expectedPasswordHash(SECRET_MARKER)

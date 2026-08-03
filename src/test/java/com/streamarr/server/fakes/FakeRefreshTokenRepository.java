@@ -6,13 +6,49 @@ import com.streamarr.server.repositories.auth.RefreshTokenRepository;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
+import org.springframework.dao.DataIntegrityViolationException;
 
 public class FakeRefreshTokenRepository extends FakeJpaRepository<RefreshToken>
     implements RefreshTokenRepository {
 
+  /** Mirrors uq_refresh_token_digest and uq_refresh_token_predecessor. */
+  @Override
+  public synchronized <S extends RefreshToken> S save(S token) {
+    requireUnique(token, RefreshToken::getDigest, "uq_refresh_token_digest");
+    requireUnique(token, RefreshToken::getPredecessorId, "uq_refresh_token_predecessor");
+    return super.save(token);
+  }
+
+  private void requireUnique(
+      RefreshToken token, Function<RefreshToken, Object> column, String constraint) {
+    var value = column.apply(token);
+    if (value == null) {
+      return;
+    }
+
+    var conflicts =
+        database.values().stream()
+            .anyMatch(
+                existing ->
+                    !existing.getId().equals(token.getId())
+                        && value.equals(column.apply(existing)));
+    if (conflicts) {
+      throw new DataIntegrityViolationException(constraint);
+    }
+  }
+
   @Override
   public Optional<UUID> findSessionIdByDigest(String digest) {
     return findByDigest(digest).map(RefreshToken::getSessionId);
+  }
+
+  @Override
+  public Optional<String> findSuccessorDigest(UUID predecessorId) {
+    return database.values().stream()
+        .filter(token -> predecessorId.equals(token.getPredecessorId()))
+        .map(RefreshToken::getDigest)
+        .findFirst();
   }
 
   @Override

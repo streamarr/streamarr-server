@@ -24,4 +24,12 @@ public interface RefreshTokenRepositoryCustom {
 
   /** Returns whether the digest names an ACTIVE token that expires strictly after {@code now}. */
   boolean isActiveToken(UUID sessionId, String digest, Instant now);
+
+  /**
+   * Reads the digest of the token that recorded this one as its predecessor, if any. A scalar read
+   * for the same reason {@link #findSessionIdByDigest} is one: the caller only compares it against
+   * a proposal, and pulling the successor into the persistence context would risk a stale managed
+   * copy on a later read.
+   */
+  Optional<String> findSuccessorDigest(UUID predecessorId);
 }

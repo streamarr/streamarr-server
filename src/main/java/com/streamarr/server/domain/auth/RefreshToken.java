@@ -35,4 +35,7 @@ public class RefreshToken extends BaseAuditableEntity<RefreshToken> {
   private Instant expiresAt;
 
   private Instant rotatedAt;
+
+  /** The token this one replaced, when a bearer client proposed it; null for derived rotations. */
+  private UUID predecessorId;
 }

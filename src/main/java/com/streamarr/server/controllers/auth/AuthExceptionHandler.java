@@ -4,11 +4,13 @@ import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
 import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.InvalidCredentialsException;
+import com.streamarr.server.exceptions.InvalidRefreshProposalException;
 import com.streamarr.server.exceptions.InvalidRefreshTokenException;
 import com.streamarr.server.exceptions.ProfileAccessDeniedException;
 import com.streamarr.server.exceptions.SetupAlreadyCompletedException;
 import com.streamarr.server.exceptions.TokenReuseDetectedException;
 import com.streamarr.server.exceptions.TooManyLoginAttemptsException;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -41,6 +43,14 @@ public class AuthExceptionHandler {
     return respond(HttpStatus.UNAUTHORIZED, "INVALID_REFRESH_TOKEN", REFRESH_TOKEN_REJECTED);
   }
 
+  // A rejected proposal consumed nothing — the presented token is still active — so this is a
+  // retryable client error, not the terminal 401 above.
+  @ExceptionHandler(InvalidRefreshProposalException.class)
+  public ResponseEntity<AuthErrorResponse> handleInvalidRefreshProposal(
+      InvalidRefreshProposalException e) {
+    return respond(HttpStatus.BAD_REQUEST, "INVALID_REFRESH_PROPOSAL", e);
+  }
+
   @ExceptionHandler(AuthenticationRequiredException.class)
   public ResponseEntity<AuthErrorResponse> handleAuthenticationRequired(
       AuthenticationRequiredException e) {
@@ -69,6 +79,10 @@ public class AuthExceptionHandler {
 
   private static ResponseEntity<AuthErrorResponse> respond(
       HttpStatus status, String code, String message) {
-    return ResponseEntity.status(status).body(new AuthErrorResponse(code, message));
+    // Failures are as cache-hostile as the credentials they refuse: a cached 401 would outlive
+    // the condition that caused it.
+    return ResponseEntity.status(status)
+        .cacheControl(CacheControl.noStore())
+        .body(new AuthErrorResponse(code, message));
   }
 }
