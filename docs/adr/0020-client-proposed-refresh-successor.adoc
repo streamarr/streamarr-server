@@ -1,0 +1,98 @@
+= ADR 0020: Bearer Refresh Carries a Client-Proposed Successor
+
+== Status
+
+Proposed
+
+== Context
+
+link:0016-authentication-mechanisms-and-session-security.adoc[ADR 0016] rotates refresh tokens on every use, stores only the successor's digest, and treats redemption of an already-consumed token as theft.
+It tolerates exactly one honest race with a short rotation grace window: the server re-derives the successor with HMAC-SHA-256 keyed by the presented predecessor, and returns it again while that successor is still the session's active token.
+
+That mechanism recovers a lost rotation response only *inside* the grace window, and grace is deliberately short because it is the window in which stolen-token reuse looks innocent.
+A native client that loses the response outside the window is not recoverable.
+The failure is ordinary, not exotic: the server commits the rotation, the response is lost — a dropped connection, a killed app, a crash between the HTTP response and the Keychain write — and the client still holds the consumed predecessor.
+Its next refresh arrives at the natural cadence, roughly one access-token TTL later and far outside grace, where a consumed predecessor is by definition theft.
+The whole token family is revoked and a limited-input device (link:0021-device-pairing-over-streamarr-transport.adoc[ADR 0021]) must be re-paired by a person walking to another device.
+
+No client write ordering fixes this.
+Persisting before the request cannot work when the server has not yet chosen the successor, and the server transaction and the client's secure storage cannot be made atomic across the network.
+The recovery proof has to be something the client already holds *before* it sends the request, which means the wire contract has to carry it.
+
+Browsers do not have this problem: `Set-Cookie` is the browser's atomic persistence, and the successor lands in the cookie jar as part of receiving the response.
+
+== Decision
+
+=== Bearer refresh proposes its own successor
+
+A bearer-mode refresh request carries two token fields: the current refresh token and a `proposedRefreshToken` the client generated and persisted *before sending*.
+The proposal is 256 bits of client entropy in canonical unpadded base64url — the same shape and strength the server generates — and the server stores only its digest, exactly as before.
+
+The client-generated successor is itself the recovery proof, so there is no separate attempt id, request id, or server-side idempotency record.
+Possession of the pair `{predecessor, proposedSuccessor}` is possession of authority the client demonstrably held before the rotation committed.
+
+=== Idempotent on the exact pair, theft on any other
+
+Refresh is idempotent on the exact `{predecessor, proposedSuccessor}` pair while the proposed successor is the predecessor's active, unexpired, same-session immediate successor: the server returns a fresh access token and the same successor, and does *not* rotate a second time.
+This holds after the ordinary grace window has passed — possession of the successor already carries that authority, so grace has nothing left to decide.
+
+A consumed predecessor presented with any *different* proposal is theft at any timing, inside or outside grace: family revocation and the constant `401`.
+An attacker holding a stolen predecessor cannot know the successor the legitimate client proposed, so the recovery path is closed to them.
+
+Recovery re-issues; it does not re-rotate.
+Exactly one genuine rotation still happens per predecessor.
+
+=== One terminal envelope
+
+Every unusable pair — unknown token, expired token, reuse-revoked family, or an exact pair whose successor has itself since rotated, been revoked, or expired — returns the one constant `401 INVALID_REFRESH_TOKEN` with a byte-identical body.
+The client action is the same in all of them: discard the stored session and re-authenticate.
+
+The exact-but-stale pair is distinguished *server-side only*, and the distinction is a security classification, not a wire code: while lineage still identifies that pair, it is a client that fell behind, **not** theft evidence, so it must not revoke the family.
+Once lineage cleanup has removed the row the same pair simply reads as unknown, which is the same `401` through the not-found path — also without revocation.
+
+=== Lineage is a database column, not derivation
+
+The successor row records `predecessor_id`, unique so a predecessor can have at most one successor, and `ON DELETE SET NULL` — never `CASCADE`, which would let deleting a predecessor delete a live successor.
+Cleanup may not delete a predecessor while an active, unexpired immediate successor still references it, because that would erase the evidence that turns a recoverable retry into an indistinguishable `401`.
+
+Lineage replaces derivation on the bearer path: a server-derived successor can never equal a client proposal, so whenever a proposal is present the derived-successor path is unreachable, and an in-grace retry of an exact pair echoes the client's own successor.
+A leaked derived successor there would break a perfectly recoverable rotation, because clients treat a mismatched echo as a contract violation.
+
+=== Cookie mode is unchanged
+
+Cookie-mode refresh keeps server-generated rotation, the derived-successor grace window, and its access-only superseded behavior.
+It rejects `proposedRefreshToken` with `400 INVALID_REFRESH_PROPOSAL` rather than silently ignoring it.
+Cookie refresh is not crash-recoverable and is not described as such — `Set-Cookie` already solves for the browser what the proposal solves for native clients.
+
+=== Explicitly deferred
+
+* Sender-constrained refresh tokens (DPoP/mTLS), which bind possession rather than making loss recoverable.
+* Client-attested proposal entropy — weak client entropy harms only that client's own grant.
+* Any recovery for the *first* credential of a session; only rotation is recoverable, and a lost login or pairing response is answered by authenticating again.
+
+== Consequences
+
+* A native client survives losing a rotation response indefinitely, not merely for the grace window, and a lost response never forces re-pairing a TV.
+* The theft signal is sharpened, not weakened: the successor is now a shared secret between client and server, so a consumed predecessor with the wrong proposal is unambiguous.
+* The server stores one more digest-bearing column and one FK; no plaintext successor is ever persisted, so digest-at-rest survives intact.
+* Clients must persist the proposal before sending, and must generate 256 bits from a cryptographic source. A client that reuses a proposal across sessions gets `400`, not a silent wrong answer.
+* Two token-generation paths now exist (server-generated for cookie mode and first issuance, client-proposed for bearer rotation), which is real surface — the wire contract in `docs/auth-refresh-contract.adoc` and its golden fixtures are the single normative source.
+
+== Rejected Alternatives
+
+* A standard `Idempotency-Key` header with stored response replay — the canonical fix for a lost response to a non-idempotent mutation, and the reason it does not fit is precise: replaying a *rotation* response means storing the raw successor so it can be re-delivered, which breaks digest-at-rest, the property ADR 0016 built the whole rotation design around. The client-proposed successor is an idempotency key that doubles as the token value, so the server has only a digest and nothing to replay.
+* A server-side idempotency key or attempt id alongside a server-generated successor — the 256-bit successor is already a globally unique proof of the same attempt; a second identifier would add a column, a wire field, and a cleanup policy to re-derive what the token already carries.
+* Storing raw successors for re-delivery — same digest-at-rest violation, without the header ceremony.
+* A longer grace window — moves the boundary without removing it, and buys the extra recovery by widening exactly the window in which reuse looks innocent.
+* A distinct `409 REFRESH_SUPERSEDED` for the exact-but-stale pair — designed and cut: the client action was identical to the `401` (discard, re-authenticate), and lineage cleanup collapses the case to `401` anyway once the row ages out, so the code would have been wire surface distinguishing two states no client treats differently.
+* Naming the field for an existing OAuth concept — none exists. RFC 6749 and RFC 9700 rotation is always server-generated, so there is no canonical term to borrow. `proposedRefreshToken` is honest about being a composition of two established patterns: idempotency keys, and client-generated secrets with precedent in PKCE's `code_verifier` and WebAuthn key material.
+* Applying proposals to cookie mode — the browser has atomic persistence already, and script-generated entropy in a page is a worse source than the server's.
+
+== References
+
+* link:0016-authentication-mechanisms-and-session-security.adoc[ADR 0016: Authentication Mechanisms and Session Security]
+* link:0021-device-pairing-over-streamarr-transport.adoc[ADR 0021: Device Pairing over Streamarr Transport]
+* `docs/auth-refresh-contract.adoc` and `docs/contracts/auth-refresh/v1/` — the normative wire contract and its golden fixtures
+* https://datatracker.ietf.org/doc/html/rfc9700[RFC 9700: Best Current Practice for OAuth 2.0 Security]
+* https://datatracker.ietf.org/doc/html/draft-ietf-httpapi-idempotency-key-header[The Idempotency-Key HTTP Header Field (IETF draft)]
+* https://datatracker.ietf.org/doc/html/rfc7636[RFC 7636: Proof Key for Code Exchange]

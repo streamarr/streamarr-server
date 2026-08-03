@@ -1,0 +1,132 @@
+= Bearer Refresh Contract v1.1
+
+Normative wire contract for `POST /api/auth/refresh`.
+Rationale lives in link:adr/0020-client-proposed-refresh-successor.adoc[ADR 0020]; this document defines what clients encode.
+
+Golden fixtures under `contracts/auth-refresh/v1/` are part of the contract: server protocol tests assert against those exact files, so a fixture change is an explicit, reviewed contract change.
+If this prose and a fixture disagree, the fixture is fixed first and this document follows.
+
+== Carrier determines mode
+
+There is no `cookieMode` field.
+The server infers the mode from how the token arrived:
+
+* a refresh token in the request body -- *bearer mode*
+* the refresh cookie, with no body token -- *cookie mode*
+
+Bearer mode is for native clients holding tokens in platform-secure storage.
+Cookie mode is for browsers, where `Set-Cookie` is the atomic persistence.
+
+== Bearer mode
+
+=== Request
+
+Both fields are required.
+
+[source,json]
+----
+{
+  "refreshToken": "<current refresh token>",
+  "proposedRefreshToken": "<client-generated successor>"
+}
+----
+
+`proposedRefreshToken` grammar -- validated before decoding:
+
+* canonical unpadded base64url, exactly 43 ASCII characters, 32 decoded bytes
+* generated from a cryptographic random source
+* different from `refreshToken`
+* globally unique by digest
+
+The client *persists both tokens before sending the request*.
+The proposed successor is the recovery proof, so it must survive a crash between send and response.
+
+=== Success -- rotation
+
+`200` with the standard tokens response.
+`refreshToken` is the proposed successor, echoed back.
+
+[source,json]
+----
+include::contracts/auth-refresh/v1/rotation-success.json[]
+----
+
+=== Success -- recovery
+
+Re-sending the exact same `{refreshToken, proposedRefreshToken}` pair, while the proposal is the predecessor's *active, unexpired, same-session immediate successor*, returns a fresh access token and the *same* successor.
+No second rotation happens; no new token row is created.
+
+Recovery is valid *after* the ordinary rotation grace window has passed.
+Possession of the successor already carries that authority, so grace has nothing left to decide on this path.
+
+The response is shaped exactly like a rotation, with a fresh access token:
+
+[source,json]
+----
+include::contracts/auth-refresh/v1/recovery-success.json[]
+----
+
+The echoed `refreshToken` is *always the client's own proposal*.
+A server that echoes any other successor is violating this contract; clients treat a mismatched echo as terminal.
+
+=== Errors
+
+|===
+| Condition | Status | `code`
+
+| Malformed proposal, proposal equal to its predecessor, or a proposal whose digest already exists
+| `400`
+| `INVALID_REFRESH_PROPOSAL`
+
+| Every unusable pair: unknown token, expired token, reuse-revoked family, or an exact pair whose successor has itself rotated, been revoked, or expired
+| `401`
+| `INVALID_REFRESH_TOKEN`
+|===
+
+A `400 INVALID_REFRESH_PROPOSAL` leaves the current refresh token `ACTIVE` -- nothing was consumed, and the client may retry with a fresh proposal.
+
+[source,json]
+----
+include::contracts/auth-refresh/v1/invalid-proposal-error.json[]
+----
+
+The `401` body is *constant* across every terminal cause.
+Clients branch on the code alone and must not attempt to distinguish causes from the body.
+
+[source,json]
+----
+include::contracts/auth-refresh/v1/invalid-refresh-token-error.json[]
+----
+
+There is no `409`, and no distinct code for a superseded pair.
+The client action for every `401` is the same: discard the stored session and re-authenticate -- for a paired device, re-pair.
+
+=== Theft
+
+A consumed refresh token presented with any *different* proposal is reuse at any timing, inside or outside the grace window.
+The session's whole token family is revoked and the response is the constant `401`.
+
+An exact pair whose successor has itself since rotated is *not* theft.
+It is classified as a client that fell behind and does not revoke the family -- but it is indistinguishable from theft on the wire, by design.
+
+== Cookie mode
+
+Cookie mode is unchanged by this version and is *not* crash-recoverable.
+
+* The server generates the successor and writes it with `Set-Cookie`.
+* The rotation grace window and its access-token-only superseded behavior still apply.
+* `proposedRefreshToken` in cookie mode is rejected with `400 INVALID_REFRESH_PROPOSAL`.
+
+== Response headers and logging
+
+* Every refresh response carries `Cache-Control: no-store`.
+* Neither raw token field is ever logged, traced, or included in an exception message.
+
+== Client obligations
+
+. Generate 256 bits from a cryptographic source; encode canonical unpadded base64url.
+. Persist `{current, proposed}` durably *before* sending.
+. On `200`, verify the echoed `refreshToken` equals the proposal, then commit it as current and clear the pending record.
+. On a lost or ambiguous response, retry with the *identical* pair -- never a fresh proposal.
+. On `400 INVALID_REFRESH_PROPOSAL`, retry once with a newly generated proposal and the same current token.
+. On `401`, discard the session and re-authenticate.

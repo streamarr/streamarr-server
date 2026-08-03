@@ -1,0 +1,4 @@
+{
+  "refreshToken": "<current refresh token, 43 chars base64url>",
+  "proposedRefreshToken": "<client-generated successor, 43 chars base64url>"
+}

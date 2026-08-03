@@ -1,0 +1,4 @@
+{
+  "code": "INVALID_REFRESH_TOKEN",
+  "message": "The refresh token is unknown or expired."
+}

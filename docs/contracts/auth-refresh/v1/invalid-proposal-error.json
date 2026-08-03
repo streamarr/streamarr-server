@@ -1,0 +1,4 @@
+{
+  "code": "INVALID_REFRESH_PROPOSAL",
+  "message": "The proposed refresh token is not a usable successor."
+}

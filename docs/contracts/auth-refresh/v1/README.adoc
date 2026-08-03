@@ -1,0 +1,28 @@
+= Bearer Refresh Golden Fixtures v1
+
+Normative payload shapes for `POST /api/auth/refresh`, described in `docs/auth-refresh-contract.adoc`.
+
+These files are the contract, not illustrations.
+`AuthRefreshContractFixtureTest` asserts real controller responses against them, so changing a file here is an explicit contract change that clients must be told about.
+
+Values enclosed in angle brackets are placeholders: the *field names and JSON types* are pinned, the values vary per request.
+Every other value is literal and asserted byte-for-byte -- in particular both error bodies.
+
+|===
+| File | Pins
+
+| `bearer-rotation-request.json`
+| The bearer request shape: both token fields required, no `cookieMode` field.
+
+| `rotation-success.json`
+| The `200` body of a genuine rotation. `refreshToken` is the client's own proposal, echoed.
+
+| `recovery-success.json`
+| The `200` body of an exact-pair replay. Same shape as a rotation, fresh access token, same successor.
+
+| `invalid-proposal-error.json`
+| The exact `400` body for a malformed, duplicate, or predecessor-equal proposal.
+
+| `invalid-refresh-token-error.json`
+| The exact `401` body for *every* terminal cause -- unknown, expired, reuse-revoked, and exact-but-stale alike.
+|===
