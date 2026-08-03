@@ -1,0 +1,51 @@
+{
+  "accepted": [
+    {
+      "input": "https://home.example.com",
+      "normalized": { "scheme": "https", "host": "home.example.com", "effectivePort": 443, "basePath": "" }
+    },
+    {
+      "input": "https://home.example.com/",
+      "normalized": { "scheme": "https", "host": "home.example.com", "effectivePort": 443, "basePath": "" }
+    },
+    {
+      "input": "https://home.example.com:443/",
+      "normalized": { "scheme": "https", "host": "home.example.com", "effectivePort": 443, "basePath": "" }
+    },
+    {
+      "input": "HTTPS://Home.Example.COM/Streamarr/",
+      "normalized": { "scheme": "https", "host": "home.example.com", "effectivePort": 443, "basePath": "/Streamarr" }
+    },
+    {
+      "input": "http://192.168.1.10:8080",
+      "normalized": { "scheme": "http", "host": "192.168.1.10", "effectivePort": 8080, "basePath": "" }
+    },
+    {
+      "input": "http://192.168.1.10:80/media",
+      "normalized": { "scheme": "http", "host": "192.168.1.10", "effectivePort": 80, "basePath": "/media" }
+    },
+    {
+      "input": "https://[2001:db8::1]:8443/",
+      "normalized": { "scheme": "https", "host": "[2001:db8::1]", "effectivePort": 8443, "basePath": "" }
+    }
+  ],
+  "rejected": [
+    { "input": "home.example.com", "reason": "not absolute — scheme inference belongs to manual-input preprocessing, not this table" },
+    { "input": "//home.example.com", "reason": "protocol-relative is not absolute" },
+    { "input": "ftp://home.example.com", "reason": "unsupported scheme" },
+    { "input": "https://user:pass@home.example.com", "reason": "userinfo is never part of an endpoint" },
+    { "input": "https://home.example.com/?token=abc", "reason": "query is not part of an endpoint" },
+    { "input": "https://home.example.com/#frag", "reason": "fragment is not part of an endpoint" },
+    { "input": "https://home.example.com/a%2Fb", "reason": "percent-encoding rejected outright in v1" },
+    { "input": "https://home.example.com/a/../b", "reason": "dot segments are not resolved in v1" }
+  ],
+  "sameEndpoint": [
+    ["https://home.example.com", "https://home.example.com:443/"],
+    ["http://h.local:80/x", "HTTP://H.LOCAL/x/"]
+  ],
+  "differentEndpoint": [
+    ["https://home.example.com", "http://home.example.com"],
+    ["https://home.example.com", "https://home.example.com:8443"],
+    ["https://home.example.com/a", "https://home.example.com/b"]
+  ]
+}

@@ -1,0 +1,4 @@
+{
+  "code": "authorization_pending",
+  "message": "The device authorization has not been approved yet."
+}

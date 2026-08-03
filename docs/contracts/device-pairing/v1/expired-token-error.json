@@ -1,0 +1,4 @@
+{
+  "code": "expired_token",
+  "message": "The device code is unknown or no longer usable."
+}

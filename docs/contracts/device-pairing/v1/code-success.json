@@ -1,0 +1,7 @@
+{
+  "deviceCode": "<opaque 256-bit base64url, 43 chars>",
+  "userCode": "BCDF-GHJK",
+  "verificationUri": "https://home.example.com/link",
+  "interval": 5,
+  "expiresIn": 600
+}

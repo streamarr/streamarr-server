@@ -1,0 +1,152 @@
+= Device Pairing Contract v1
+
+Normative wire contract for `/api/auth/device/**` and the `devicePairingEnabled` status field.
+Rationale lives in link:adr/0021-device-pairing-over-streamarr-transport.adoc[ADR 0021]; this document defines what clients encode.
+
+Golden fixtures under `contracts/device-pairing/v1/` are part of the contract: server protocol tests assert against those exact files.
+If this prose and a fixture disagree, the fixture is fixed first and this document follows.
+
+== Flow
+
+The code travels *TV → person → web*. Nothing is typed into the TV.
+
+----
+TV  ──POST /device/code {deviceName}─────────▶ server        (row PENDING, TTL 10m)
+TV  ◀── deviceCode, userCode, verificationUri, interval, expiresIn
+TV  shows: "Go to home.example.com/link — enter BCDF-GHJK"
+TV  ──POST /device/token {deviceCode}───────▶ 400 authorization_pending   (loop)
+                      … person, signed in on web …
+web ──POST /device/authorizations/lookup {userCode}──▶ {deviceName, status: PENDING}
+web ──POST /device/authorizations/decision {userCode, APPROVE}──▶ 200
+TV  ──POST /device/token {deviceCode}───────▶ 200 tokens     (row CONSUMED)
+TV  branches on scope → picker or library
+----
+
+== Status bootstrap
+
+`GET /api/auth/status` (permitAll, `Cache-Control: no-store`).
+
+[source,json]
+----
+include::contracts/device-pairing/v1/status.json[]
+----
+
+Both booleans are *required* in v1; later versions may add fields.
+A client that receives a response missing either field treats the server as incompatible.
+`devicePairingEnabled` is false exactly when the canonical base URL is unconfigured.
+
+== Credential grammar
+
+`deviceCode`::
+Exactly 43 ASCII characters of canonical unpadded base64url (32 decoded bytes, 256-bit, cryptographic random). Opaque — clients never parse it. The server validates the shape before hashing, so a malformed code is indistinguishable from an unknown one.
+
+`userCode`::
+Alphabet exactly `BCDFGHJKLMNPQRSTVWXZ` (RFC 8628 §6.1: no vowels, no `0`/`O`/`1`/`I`). Length is fixed at 8 in v1. *Display form* groups of four joined by a single hyphen (`BCDF-GHJK`); *wire and storage form* is uppercase with no separators. Lookup and decision accept typed input case-insensitively, with or without separators and surrounding whitespace, then normalize and validate. The issuance response's `userCode` is authoritative for display, so clients never assume a length.
+
+`verificationUriComplete`::
+*Not emitted in v1.* The field name is reserved for the deferred QR accelerator. Clients tolerate its absence and ignore it if a future server emits it.
+
+== Timings
+
+`expiresIn` and `interval` are *server configuration*, returned on every issuance.
+Clients drive their loops from the response fields, never from hardcoded values.
+
+|===
+| Field | Default | Bounds
+
+| `expiresIn` | 600 | whole seconds, 60–1800
+| `interval` | 5 | 5–300
+|===
+
+The only contract constant is the `slow_down` increment: +5 seconds cumulative per occurrence (RFC 8628 §3.5), enforced by the server.
+
+== Issuance — `POST /api/auth/device/code` (permitAll)
+
+Request `{"deviceName": "Apple TV"}`. Success `200`:
+
+[source,json]
+----
+include::contracts/device-pairing/v1/code-success.json[]
+----
+
+`verificationUri` is always absolute, joined beneath the configured base URL.
+The server never invents a process-local or container address.
+
+Errors: `503 DEVICE_PAIRING_NOT_CONFIGURED` when no canonical base URL is configured · `429 TOO_MANY_ATTEMPTS` with `Retry-After` when outstanding-code capacity is exhausted.
+
+[source,json]
+----
+include::contracts/device-pairing/v1/not-configured-error.json[]
+----
+
+== Poll — `POST /api/auth/device/token` (permitAll)
+
+Request `{"deviceCode": "<opaque>"}`. Bearer mode is implicit; there is no `cookieMode`.
+
+Success `200` is the standard tokens response — for a newly paired session always `accessToken`, `refreshToken`, `accessTokenExpiresAt`, and `scope`:
+
+[source,json]
+----
+include::contracts/device-pairing/v1/token-success.json[]
+----
+
+Every grant-state non-success is *HTTP 400* with a lowercase code:
+
+|===
+| Outcome | `code` | Client action
+
+| Not yet decided | `authorization_pending` | keep polling at the current interval
+| Polled too soon | `slow_down` | add 5s cumulatively, keep polling
+| Unknown, expired, consumed, or race-lost | `expired_token` | stop; offer "get a new code"
+| Denied | `access_denied` | stop; show a distinct "request denied" state
+|===
+
+[source,json]
+----
+include::contracts/device-pairing/v1/authorization-pending-error.json[]
+----
+
+Uniform `400` is deliberate: no poll state uses `401` or `403`, so a generic networking layer can never mistake a pairing state for an auth failure.
+The lowercase codes are matched verbatim and never routed through a generic uppercase-code handler; `authorization_pending` is the normal every-poll response, not an error.
+
+A `429 TOO_MANY_ATTEMPTS` is contract-permitted for server protection and is separate from poll states. v1 ships no per-source poll limiter — the per-code cadence gate is the enforcement. Handle it by scheduling the next poll at `max(nextPollDeadline, now + retryAfter)`; a `429` does not change the authorization's interval.
+
+== Lookup — `POST /api/auth/device/authorizations/lookup` (`SCOPE_ACCOUNT`)
+
+Request `{"userCode": "BCDF-GHJK"}` — a POST body, never a path segment, so codes stay out of access logs.
+A pure read that *never* returns `409`.
+
+[source,json]
+----
+include::contracts/device-pairing/v1/lookup-success.json[]
+----
+
+`status` is one of `PENDING`, `APPROVED`, `DENIED`, `CONSUMED`. The response never reveals `deviceCode`.
+
+Errors: `400 INVALID_USER_CODE` (malformed after normalization) · `404 DEVICE_CODE_NOT_FOUND` (unknown *or expired* — both collapse to not-found, matching the poll's `expired_token`) · `429 TOO_MANY_ATTEMPTS` with `Retry-After`.
+
+== Decision — `POST /api/auth/device/authorizations/decision` (`SCOPE_ACCOUNT`)
+
+Request `{"userCode": "BCDF-GHJK", "decision": "APPROVE"}`. `decision` is required and is exactly `APPROVE` or `DENY`.
+`200` echoes the actual outcome:
+
+[source,json]
+----
+include::contracts/device-pairing/v1/decision-success.json[]
+----
+
+Errors: `400 INVALID_DECISION` (missing or unknown value — validated *before* any code lookup, so a malformed request never spends guessing budget or reveals whether a code exists) · `400 INVALID_USER_CODE` · `404 DEVICE_CODE_NOT_FOUND` · `400 DEVICE_CODE_EXPIRED` · `409 DEVICE_CODE_NOT_PENDING` (already decided or consumed) · `429 TOO_MANY_ATTEMPTS`.
+
+The asymmetry with lookup is deliberate: lookup collapses expired into `404` because a probe deserves no detail, but the decision caller is a signed-in person mid-flow on a code they demonstrably saw, and "it expired, get a fresh one on the TV" is actionable where a bare not-found reads as a typo.
+No enumeration value leaks — both endpoints share one account-keyed guessing budget, and reaching a decision implies a prior successful lookup in the normal flow.
+
+== Domain states are not failures
+
+An account with zero household memberships, or a household with zero selectable profiles, is a *valid* result of pairing.
+Clients render guidance ("no households yet — finish setup on the web", "no profiles") and never an error screen or an infinite picker.
+
+== Response headers
+
+* Every device endpoint response carries `Cache-Control: no-store`.
+* `429` responses carry `Retry-After` as integer delta-seconds, the ceiling of the remaining wait.
+* `/api/auth/**` never redirects. Deployments must not rewrite these paths.

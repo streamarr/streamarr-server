@@ -1,0 +1,6 @@
+{
+  "accessToken": "<signed ES256 JWT>",
+  "accessTokenExpiresAt": "<ISO-8601 instant>",
+  "scope": "<account | household | profile>",
+  "refreshToken": "<opaque refresh token>"
+}
