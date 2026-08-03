@@ -111,6 +111,21 @@ auth:
   throttle:
     max-attempts: ${AUTH_THROTTLE_MAX_ATTEMPTS:5}
     window: ${AUTH_THROTTLE_WINDOW:15m}
+  device:
+    code-ttl: ${AUTH_DEVICE_CODE_TTL:10m}
+    poll-interval-seconds: ${AUTH_DEVICE_POLL_INTERVAL_SECONDS:5}
+    verification-path: ${AUTH_DEVICE_VERIFICATION_PATH:/link}
+    max-outstanding-codes: ${AUTH_DEVICE_MAX_OUTSTANDING_CODES:50}
+    max-guess-attempts: ${AUTH_DEVICE_MAX_GUESS_ATTEMPTS:5}
+    guess-window: ${AUTH_DEVICE_GUESS_WINDOW:15m}
+    sweep-interval-ms: ${AUTH_DEVICE_SWEEP_INTERVAL_MS:900000}
+
+streamarr:
+  # The externally reachable base URL. Absent means device pairing is off and mDNS stays silent —
+  # the server never invents an address a container cannot know.
+  base-url: ${STREAMARR_BASE_URL:}
+  # Honored only together with a development or test profile.
+  allow-insecure-http: ${STREAMARR_ALLOW_INSECURE_HTTP:false}
 
 otel:
   sdk:

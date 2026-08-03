@@ -14,3 +14,9 @@ auth:
     memory-kib: 4096
     iterations: 1
     parallelism: 1
+
+streamarr:
+  # Set on the shared test profile rather than per-test: a @TestPropertySource here would fork
+  # the context cache. The unconfigured and cleartext-gate paths are unit-tested on
+  # CanonicalBaseUrl instead.
+  base-url: https://home.example.test

@@ -1,0 +1,205 @@
+package com.streamarr.server.services.auth;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
+
+import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.domain.auth.DeviceAuthorizationStatus;
+import com.streamarr.server.domain.auth.UserAccount;
+import com.streamarr.server.fixtures.AccountFixture;
+import com.streamarr.server.repositories.auth.AuthSessionRepository;
+import com.streamarr.server.repositories.auth.DeviceAuthorizationRepository;
+import com.streamarr.server.repositories.auth.UserAccountRepository;
+import java.time.Duration;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+
+@Tag("IntegrationTest")
+@DisplayName("Device Redemption Concurrency Integration Tests")
+class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
+
+  private static final int POLLERS = 8;
+
+  @Autowired private DeviceAuthorizationService deviceAuthorizationService;
+
+  @Autowired private DeviceAuthorizationRepository authorizationRepository;
+
+  @Autowired private UserAccountRepository userAccountRepository;
+
+  @Autowired private AuthSessionRepository sessionRepository;
+
+  private UUID accountId;
+
+  @AfterEach
+  void deleteSeededRows() {
+    authorizationRepository.deleteAll();
+    if (accountId != null) {
+      // FK cascades sweep auth_session and refresh_token rows.
+      userAccountRepository.deleteById(accountId);
+      accountId = null;
+    }
+  }
+
+  @Test
+  @DisplayName("Should create exactly one session when many pollers race an approved grant")
+  void shouldCreateExactlyOneSessionWhenManyPollersRaceApprovedGrant() {
+    var approver = seedApprover();
+    var issued = deviceAuthorizationService.issue("Apple TV");
+    approve(issued.userCode(), approver);
+
+    var results = pollConcurrently(issued.deviceCode(), POLLERS);
+
+    // The row lock serializes every poller: one wins the grant, the rest see a consumed row.
+    assertThat(results).filteredOn(DevicePollResult.Success.class::isInstance).hasSize(1);
+    assertThat(results).filteredOn(DevicePollResult.Expired.class::isInstance).hasSize(POLLERS - 1);
+    assertThat(sessionsOf(approver)).hasSize(1);
+    assertThat(statusOf(issued.userCode())).isEqualTo(DeviceAuthorizationStatus.CONSUMED);
+  }
+
+  @Test
+  @DisplayName("Should never report a live approved grant as expired when approval races a poll")
+  void shouldNeverReportLiveApprovedGrantAsExpiredWhenApprovalRacesPoll() {
+    var approver = seedApprover();
+    var issued = deviceAuthorizationService.issue("Apple TV");
+
+    var executor = Executors.newFixedThreadPool(2);
+    var startLatch = new CountDownLatch(1);
+    var doneLatch = new CountDownLatch(2);
+    var results = new CopyOnWriteArrayList<DevicePollResult>();
+
+    executor.submit(
+        () -> {
+          awaitStart(startLatch);
+          approve(issued.userCode(), approver);
+          doneLatch.countDown();
+        });
+    executor.submit(
+        () -> {
+          awaitStart(startLatch);
+          results.add(deviceAuthorizationService.redeem(issued.deviceCode()));
+          doneLatch.countDown();
+        });
+
+    startLatch.countDown();
+    awaitCompletion(doneLatch);
+    executor.shutdown();
+
+    // Either order is legitimate; what must never happen is a live grant classified as expired.
+    assertThat(results)
+        .singleElement()
+        .isNotInstanceOfAny(DevicePollResult.Expired.class, DevicePollResult.Denied.class);
+  }
+
+  @Test
+  @DisplayName("Should leave the grant approved when a poll wins but its transaction rolls back")
+  void shouldLeaveGrantApprovedWhenPollWinsButTransactionRollsBack() {
+    var approver = seedApprover();
+    var issued = deviceAuthorizationService.issue("Apple TV");
+    approve(issued.userCode(), approver);
+
+    // Deleting the approver mid-flow makes consumption fail; the row must stay retryable rather
+    // than burn the person's only code.
+    userAccountRepository.deleteById(approver.getId());
+    accountId = null;
+
+    assertThat(deviceAuthorizationService.redeem(issued.deviceCode()))
+        .isInstanceOf(DevicePollResult.Expired.class);
+    assertThat(statusOf(issued.userCode())).isEqualTo(DeviceAuthorizationStatus.APPROVED);
+  }
+
+  @Test
+  @DisplayName("Should advance the cadence exactly once per poll under concurrency")
+  void shouldAdvanceCadenceExactlyOncePerPollUnderConcurrency() {
+    seedApprover();
+    var issued = deviceAuthorizationService.issue("Apple TV");
+
+    var results = pollConcurrently(issued.deviceCode(), 4);
+
+    // Every poller is early, so each one pays the cumulative five-second penalty exactly once.
+    assertThat(results).allMatch(DevicePollResult.SlowDown.class::isInstance);
+    assertThat(intervalOf(issued.userCode())).isEqualTo(5 + 4 * 5);
+  }
+
+  private List<DevicePollResult> pollConcurrently(String deviceCode, int pollers) {
+    var executor = Executors.newFixedThreadPool(pollers);
+    var startLatch = new CountDownLatch(1);
+    var doneLatch = new CountDownLatch(pollers);
+    var results = new CopyOnWriteArrayList<DevicePollResult>();
+
+    for (var poller = 0; poller < pollers; poller++) {
+      executor.submit(
+          () -> {
+            awaitStart(startLatch);
+            try {
+              results.add(deviceAuthorizationService.redeem(deviceCode));
+            } finally {
+              doneLatch.countDown();
+            }
+          });
+    }
+
+    startLatch.countDown();
+    awaitCompletion(doneLatch);
+    executor.shutdown();
+
+    return List.copyOf(results);
+  }
+
+  private UserAccount seedApprover() {
+    var approver = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
+    accountId = approver.getId();
+    return approver;
+  }
+
+  private void approve(String userCode, UserAccount approver) {
+    deviceAuthorizationService.decide(
+        DeviceDecisionCommand.builder()
+            .userCode(userCode)
+            .decision(DeviceDecision.APPROVE)
+            .decidedByAccountId(approver.getId())
+            .build());
+  }
+
+  private DeviceAuthorizationStatus statusOf(String displayUserCode) {
+    return authorizationRepository
+        .findByUserCode(UserCode.normalize(displayUserCode))
+        .orElseThrow()
+        .getStatus();
+  }
+
+  private int intervalOf(String displayUserCode) {
+    return authorizationRepository
+        .findByUserCode(UserCode.normalize(displayUserCode))
+        .orElseThrow()
+        .getPollIntervalSeconds();
+  }
+
+  private List<com.streamarr.server.domain.auth.AuthSession> sessionsOf(UserAccount approver) {
+    return sessionRepository.findAll().stream()
+        .filter(session -> approver.getId().equals(session.getAccountId()))
+        .toList();
+  }
+
+  private static void awaitStart(CountDownLatch startLatch) {
+    try {
+      startLatch.await();
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException(e);
+    }
+  }
+
+  private static void awaitCompletion(CountDownLatch doneLatch) {
+    await()
+        .atMost(Duration.ofSeconds(20))
+        .untilAsserted(() -> assertThat(doneLatch.getCount()).isZero());
+  }
+}

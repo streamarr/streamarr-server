@@ -19,13 +19,19 @@ public final class StreamarrBearerTokenResolver implements BearerTokenResolver {
   private static final String CARRIER_ATTRIBUTE =
       StreamarrBearerTokenResolver.class.getName() + ".carrier";
 
-  /** The pre-auth surface, shared with the permit matrix so the two can never drift. */
+  /**
+   * The pre-auth surface, shared with the permit matrix so the two can never drift. Device issuance
+   * and polling belong here for the same reason login does: a TV has no session yet, and a stale
+   * {@code Path=/} access cookie must not 401 the endpoint that would give it one.
+   */
   public static final Set<String> UNAUTHENTICATED_PATHS =
       Set.of(
           "/api/auth/status",
           "/api/auth/setup",
           "/api/auth/login",
           "/api/auth/refresh",
+          "/api/auth/device/code",
+          "/api/auth/device/token",
           "/.well-known/jwks.json");
 
   private static final String HEALTH_PATH = "/actuator/health";
