@@ -22,6 +22,8 @@ public class TmdbHealthIndicator implements HealthIndicator {
   @Qualifier("tmdb")
   private final HttpClient client;
 
+  private final TmdbHealthProperties properties;
+
   @Override
   public Health health() {
     return probe();
@@ -43,7 +45,13 @@ public class TmdbHealthIndicator implements HealthIndicator {
   }
 
   private HttpRequest probeRequest() {
-    return HttpRequest.newBuilder().uri(CONFIGURATION_URI).GET().build();
+    // A per-request timeout wins over the client's requestTimeout, so the probe is bounded even
+    // though it shares the enrichment client.
+    return HttpRequest.newBuilder()
+        .uri(CONFIGURATION_URI)
+        .timeout(properties.probeTimeout())
+        .GET()
+        .build();
   }
 
   private Health healthFor(int statusCode) {

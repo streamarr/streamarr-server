@@ -36,6 +36,8 @@ tmdb:
     cache-size-mb: ${TMDB_API_CACHE_SIZE_MB:200}
     requests-per-second: ${TMDB_API_REQUESTS_PER_SECOND:35}
     request-timeout-seconds: ${TMDB_API_REQUEST_TIMEOUT_SECONDS:30}
+  health:
+    probe-timeout: ${TMDB_HEALTH_PROBE_TIMEOUT:2s}
   image:
     base-url: ${TMDB_IMAGE_BASE_URL:https://image.tmdb.org/t/p/original}
 
