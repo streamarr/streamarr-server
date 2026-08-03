@@ -8,6 +8,7 @@ import com.streamarr.server.services.auth.ChangePasswordCommand;
 import com.streamarr.server.services.auth.LoginCommand;
 import com.streamarr.server.services.auth.LoginService;
 import com.streamarr.server.services.auth.PasswordChangeService;
+import com.streamarr.server.services.auth.RefreshCommand;
 import com.streamarr.server.services.auth.RefreshTokenService;
 import com.streamarr.server.services.auth.SessionScopeService;
 import com.streamarr.server.services.auth.SetupCommand;
@@ -149,7 +150,9 @@ public class AuthController {
       @RequestBody(required = false) RefreshRequest request, HttpServletRequest httpRequest) {
     var carrier = resolveRefreshCarrier(request, httpRequest);
 
-    var refreshed = tokenRefreshService.refresh(carrier.refreshToken());
+    var refreshed =
+        tokenRefreshService.refresh(
+            RefreshCommand.builder().refreshToken(carrier.refreshToken()).build());
 
     if (refreshed.carriesRefreshToken()) {
       return respond(

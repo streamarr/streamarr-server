@@ -169,7 +169,10 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
     account = userAccountRepository.save(account);
     var rawToken = issued.rawToken();
 
-    assertThatThrownBy(() -> tokenRefreshService.refresh(rawToken))
+    assertThatThrownBy(
+            () ->
+                tokenRefreshService.refresh(
+                    RefreshCommand.builder().refreshToken(rawToken).build()))
         .isInstanceOf(InvalidRefreshTokenException.class);
 
     // The refusal must leave the client's token usable: rotation rolls back with the refused
@@ -185,12 +188,19 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
     gatedIssuer.failNextIssuance();
     var rawToken = issued.rawToken();
 
-    assertThatThrownBy(() -> tokenRefreshService.refresh(rawToken))
+    assertThatThrownBy(
+            () ->
+                tokenRefreshService.refresh(
+                    RefreshCommand.builder().refreshToken(rawToken).build()))
         .isInstanceOf(IllegalStateException.class);
 
     // Rotation and issuance are one unit: the client's original token must remain redeemable.
     assertThat(activeTokenCount(issued.session().getId())).isEqualTo(1);
-    assertThat(tokenRefreshService.refresh(issued.rawToken()).accessToken()).isNotNull();
+    assertThat(
+            tokenRefreshService
+                .refresh(RefreshCommand.builder().refreshToken(issued.rawToken()).build())
+                .accessToken())
+        .isNotNull();
   }
 
   @Test
@@ -202,7 +212,10 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
     refreshTokenService.logout(issued.session().getId());
     var rawToken = issued.rawToken();
 
-    assertThatThrownBy(() -> tokenRefreshService.refresh(rawToken))
+    assertThatThrownBy(
+            () ->
+                tokenRefreshService.refresh(
+                    RefreshCommand.builder().refreshToken(rawToken).build()))
         .isInstanceOf(TokenReuseDetectedException.class);
     assertThat(activeTokenCount(issued.session().getId())).isZero();
   }
@@ -213,7 +226,9 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
     account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
     var issued = refreshTokenService.createSession(account, "tx-device");
 
-    var refreshed = tokenRefreshService.refresh(issued.rawToken());
+    var refreshed =
+        tokenRefreshService.refresh(
+            RefreshCommand.builder().refreshToken(issued.rawToken()).build());
     assertThat(refreshed.carriesRefreshToken()).isTrue();
 
     refreshTokenService.logout(issued.session().getId());
@@ -239,7 +254,9 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
       executor.submit(
           () -> {
             try {
-              refreshResult.set(tokenRefreshService.refresh(issued.rawToken()));
+              refreshResult.set(
+                  tokenRefreshService.refresh(
+                      RefreshCommand.builder().refreshToken(issued.rawToken()).build()));
             } finally {
               refreshDone.countDown();
             }
@@ -278,7 +295,7 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
     var issued = refreshTokenService.createSession(account, "tx-device");
 
     // Rotate once, then age the rotation past grace so replaying the original proves reuse.
-    tokenRefreshService.refresh(issued.rawToken());
+    tokenRefreshService.refresh(RefreshCommand.builder().refreshToken(issued.rawToken()).build());
     dsl.update(REFRESH_TOKEN)
         .set(REFRESH_TOKEN.ROTATED_AT, OffsetDateTime.now().minus(Duration.ofMinutes(10)))
         .where(REFRESH_TOKEN.SESSION_ID.eq(issued.session().getId()))
@@ -286,7 +303,10 @@ class TokenRefreshTransactionIT extends AbstractIntegrationTest {
         .execute();
     var rawToken = issued.rawToken();
 
-    assertThatThrownBy(() -> tokenRefreshService.refresh(rawToken))
+    assertThatThrownBy(
+            () ->
+                tokenRefreshService.refresh(
+                    RefreshCommand.builder().refreshToken(rawToken).build()))
         .isInstanceOf(TokenReuseDetectedException.class);
 
     // The REQUIRES_NEW reuse writer fires after the outer transaction completes — under

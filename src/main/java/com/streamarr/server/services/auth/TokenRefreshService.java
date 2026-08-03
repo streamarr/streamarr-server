@@ -23,8 +23,8 @@ public class TokenRefreshService {
    * token encoding) rolls the rotation back instead of stranding the client's token family.
    */
   @Transactional
-  public RefreshedTokens refresh(String rawToken) {
-    var result = refreshTokenService.redeem(rawToken);
+  public RefreshedTokens refresh(RefreshCommand command) {
+    var result = refreshTokenService.redeem(command);
 
     var account =
         userAccountRepository

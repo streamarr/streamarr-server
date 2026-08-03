@@ -84,7 +84,8 @@ public class RefreshTokenService {
   // an after-completion REQUIRES_NEW transaction; the thrown exception is only the caller's
   // signal.
   @Transactional(noRollbackFor = TokenReuseDetectedException.class)
-  public RefreshResult redeem(String rawToken) {
+  public RefreshResult redeem(RefreshCommand command) {
+    var rawToken = command.refreshToken();
     var digest = digestOf(rawToken);
     var now = clock.instant();
 

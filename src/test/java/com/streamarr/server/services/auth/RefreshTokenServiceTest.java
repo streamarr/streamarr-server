@@ -63,7 +63,7 @@ class RefreshTokenServiceTest {
   void shouldRotateWhenActiveTokenRedeemed() {
     var issued = issueSession();
 
-    var result = service.redeem(issued.rawToken());
+    var result = service.redeem(RefreshCommand.builder().refreshToken(issued.rawToken()).build());
 
     assertThat(result).isInstanceOf(RefreshResult.Rotated.class);
     var rotated = (RefreshResult.Rotated) result;
@@ -85,10 +85,14 @@ class RefreshTokenServiceTest {
   @DisplayName("Should return same successor when rotated token redeemed within grace")
   void shouldReturnSameSuccessorWhenRotatedTokenRedeemedWithinGrace() {
     var issued = issueSession();
-    var rotation = (RefreshResult.Rotated) service.redeem(issued.rawToken());
+    var rotation =
+        (RefreshResult.Rotated)
+            service.redeem(RefreshCommand.builder().refreshToken(issued.rawToken()).build());
 
     advanceClock(Duration.ofSeconds(10));
-    var replay = (RefreshResult.GraceRetry) service.redeem(issued.rawToken());
+    var replay =
+        (RefreshResult.GraceRetry)
+            service.redeem(RefreshCommand.builder().refreshToken(issued.rawToken()).build());
 
     assertThat(replay.rawRefreshToken()).isEqualTo(rotation.rawRefreshToken());
     assertThat(replay.session().getId()).isEqualTo(issued.session().getId());
@@ -102,10 +106,10 @@ class RefreshTokenServiceTest {
   @DisplayName("Should treat exact rotation grace boundary as grace replay")
   void shouldTreatExactRotationGraceBoundaryAsGraceReplay() {
     var issued = issueSession();
-    service.redeem(issued.rawToken());
+    service.redeem(RefreshCommand.builder().refreshToken(issued.rawToken()).build());
 
     advanceClock(properties.rotationGrace());
-    var replay = service.redeem(issued.rawToken());
+    var replay = service.redeem(RefreshCommand.builder().refreshToken(issued.rawToken()).build());
 
     assertThat(replay).isInstanceOf(RefreshResult.GraceRetry.class);
     assertThat(replay.session().getRevokedAt()).isNull();
@@ -115,10 +119,12 @@ class RefreshTokenServiceTest {
   @DisplayName("Should not return stale successor when earlier token replayed within grace")
   void shouldNotReturnStaleSuccessorWhenEarlierTokenReplayedWithinGrace() {
     var issued = issueSession();
-    var firstRotation = (RefreshResult.Rotated) service.redeem(issued.rawToken());
-    service.redeem(firstRotation.rawRefreshToken());
+    var firstRotation =
+        (RefreshResult.Rotated)
+            service.redeem(RefreshCommand.builder().refreshToken(issued.rawToken()).build());
+    service.redeem(RefreshCommand.builder().refreshToken(firstRotation.rawRefreshToken()).build());
 
-    var replay = service.redeem(issued.rawToken());
+    var replay = service.redeem(RefreshCommand.builder().refreshToken(issued.rawToken()).build());
 
     assertThat(replay).isInstanceOf(RefreshResult.SupersededRetry.class);
     assertThat(replay.session().getId()).isEqualTo(issued.session().getId());
@@ -138,15 +144,22 @@ class RefreshTokenServiceTest {
                 .build());
     var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
     var issued = shortLivedService.createSession(account, "test-device");
-    var rotation = (RefreshResult.Rotated) shortLivedService.redeem(issued.rawToken());
+    var rotation =
+        (RefreshResult.Rotated)
+            shortLivedService.redeem(
+                RefreshCommand.builder().refreshToken(issued.rawToken()).build());
 
     advanceClock(Duration.ofSeconds(2));
-    var replay = shortLivedService.redeem(issued.rawToken());
+    var replay =
+        shortLivedService.redeem(RefreshCommand.builder().refreshToken(issued.rawToken()).build());
     var successorToken = rotation.rawRefreshToken();
 
     assertThat(replay).isInstanceOf(RefreshResult.SupersededRetry.class);
     assertThat(replay.session().getRevokedAt()).isNull();
-    assertThatThrownBy(() -> shortLivedService.redeem(successorToken))
+    assertThatThrownBy(
+            () ->
+                shortLivedService.redeem(
+                    RefreshCommand.builder().refreshToken(successorToken).build()))
         .isInstanceOf(InvalidRefreshTokenException.class);
   }
 
@@ -154,12 +167,13 @@ class RefreshTokenServiceTest {
   @DisplayName("Should revoke family when consumed token redeemed after grace")
   void shouldRevokeFamilyWhenConsumedTokenRedeemedAfterGrace() {
     var issued = issueSession();
-    service.redeem(issued.rawToken());
+    service.redeem(RefreshCommand.builder().refreshToken(issued.rawToken()).build());
 
     advanceClock(Duration.ofSeconds(31));
     var stolenToken = issued.rawToken();
 
-    assertThatThrownBy(() -> service.redeem(stolenToken))
+    assertThatThrownBy(
+            () -> service.redeem(RefreshCommand.builder().refreshToken(stolenToken).build()))
         .isInstanceOf(TokenReuseDetectedException.class);
 
     var session = sessionRepository.findById(issued.session().getId()).orElseThrow();
@@ -174,7 +188,7 @@ class RefreshTokenServiceTest {
   @DisplayName("Should log token reuse with a safe session identifier")
   void shouldLogTokenReuseWithSafeSessionIdentifier() {
     var issued = issueSession();
-    service.redeem(issued.rawToken());
+    service.redeem(RefreshCommand.builder().refreshToken(issued.rawToken()).build());
     advanceClock(Duration.ofSeconds(31));
     var replayedToken = issued.rawToken();
     var logger = (Logger) LoggerFactory.getLogger(RefreshTokenService.class);
@@ -183,7 +197,8 @@ class RefreshTokenServiceTest {
     logger.addAppender(appender);
 
     try {
-      assertThatThrownBy(() -> service.redeem(replayedToken))
+      assertThatThrownBy(
+              () -> service.redeem(RefreshCommand.builder().refreshToken(replayedToken).build()))
           .isInstanceOf(TokenReuseDetectedException.class);
     } finally {
       logger.detachAppender(appender);
@@ -203,7 +218,9 @@ class RefreshTokenServiceTest {
   @Test
   @DisplayName("Should reject redemption when token unknown")
   void shouldRejectRedemptionWhenTokenUnknown() {
-    assertThatThrownBy(() -> service.redeem("never-issued-token"))
+    assertThatThrownBy(
+            () ->
+                service.redeem(RefreshCommand.builder().refreshToken("never-issued-token").build()))
         .isInstanceOf(InvalidRefreshTokenException.class);
   }
 
@@ -215,7 +232,8 @@ class RefreshTokenServiceTest {
     advanceClock(Duration.ofDays(31));
     var expiredToken = issued.rawToken();
 
-    assertThatThrownBy(() -> service.redeem(expiredToken))
+    assertThatThrownBy(
+            () -> service.redeem(RefreshCommand.builder().refreshToken(expiredToken).build()))
         .isInstanceOf(InvalidRefreshTokenException.class);
 
     var session = sessionRepository.findById(issued.session().getId()).orElseThrow();
@@ -230,7 +248,8 @@ class RefreshTokenServiceTest {
         issued.session().getId(), SessionRevocationReason.LOGOUT, currentTime.get());
 
     var rawToken = issued.rawToken();
-    assertThatThrownBy(() -> service.redeem(rawToken))
+    assertThatThrownBy(
+            () -> service.redeem(RefreshCommand.builder().refreshToken(rawToken).build()))
         .isInstanceOf(TokenReuseDetectedException.class);
 
     // No successor is minted onto a revoked session, and nothing was rotated.
@@ -243,14 +262,15 @@ class RefreshTokenServiceTest {
   @DisplayName("Should treat grace replay as theft when session revoked")
   void shouldTreatGraceReplayAsTheftWhenSessionRevoked() {
     var issued = issueSession();
-    service.redeem(issued.rawToken());
+    service.redeem(RefreshCommand.builder().refreshToken(issued.rawToken()).build());
     sessionRepository.revoke(
         issued.session().getId(), SessionRevocationReason.ADMIN_REVOCATION, currentTime.get());
 
     advanceClock(Duration.ofSeconds(5));
     var replayedToken = issued.rawToken();
 
-    assertThatThrownBy(() -> service.redeem(replayedToken))
+    assertThatThrownBy(
+            () -> service.redeem(RefreshCommand.builder().refreshToken(replayedToken).build()))
         .isInstanceOf(TokenReuseDetectedException.class);
   }
 
@@ -259,14 +279,15 @@ class RefreshTokenServiceTest {
       "Should revoke family and treat rotated token as theft when rotation timestamp missing")
   void shouldRevokeFamilyAndTreatRotatedTokenAsTheftWhenRotationTimestampMissing() {
     var issued = issueSession();
-    service.redeem(issued.rawToken());
+    service.redeem(RefreshCommand.builder().refreshToken(issued.rawToken()).build());
     tokenRepository.findAll().stream()
         .filter(token -> token.getStatus() == RefreshTokenStatus.ROTATED)
         .forEach(token -> token.setRotatedAt(null));
 
     var replayedToken = issued.rawToken();
 
-    assertThatThrownBy(() -> service.redeem(replayedToken))
+    assertThatThrownBy(
+            () -> service.redeem(RefreshCommand.builder().refreshToken(replayedToken).build()))
         .isInstanceOf(TokenReuseDetectedException.class);
 
     var session = sessionRepository.findById(issued.session().getId()).orElseThrow();
@@ -283,7 +304,8 @@ class RefreshTokenServiceTest {
     sessionRepository.deleteById(issued.session().getId());
     var rawToken = issued.rawToken();
 
-    assertThatThrownBy(() -> service.redeem(rawToken))
+    assertThatThrownBy(
+            () -> service.redeem(RefreshCommand.builder().refreshToken(rawToken).build()))
         .isInstanceOf(InvalidRefreshTokenException.class);
 
     assertThat(tokenRepository.findAll())
@@ -299,7 +321,8 @@ class RefreshTokenServiceTest {
           .when(() -> MessageDigest.getInstance("SHA-256"))
           .thenThrow(new NoSuchAlgorithmException("unavailable"));
 
-      assertThatThrownBy(() -> service.redeem("raw-token"))
+      assertThatThrownBy(
+              () -> service.redeem(RefreshCommand.builder().refreshToken("raw-token").build()))
           .isInstanceOf(IllegalStateException.class)
           .hasMessageContaining("SHA-256");
     }
@@ -315,7 +338,8 @@ class RefreshTokenServiceTest {
           .thenThrow(new NoSuchAlgorithmException("unavailable"));
 
       var rawToken = issued.rawToken();
-      assertThatThrownBy(() -> service.redeem(rawToken))
+      assertThatThrownBy(
+              () -> service.redeem(RefreshCommand.builder().refreshToken(rawToken).build()))
           .isInstanceOf(IllegalStateException.class)
           .hasMessageContaining("HMAC-SHA256");
     }
@@ -349,7 +373,8 @@ class RefreshTokenServiceTest {
     advanceClock(Duration.ofDays(30));
 
     var boundaryToken = issued.rawToken();
-    assertThatThrownBy(() -> service.redeem(boundaryToken))
+    assertThatThrownBy(
+            () -> service.redeem(RefreshCommand.builder().refreshToken(boundaryToken).build()))
         .isInstanceOf(InvalidRefreshTokenException.class);
     assertThat(sessionRepository.findById(issued.session().getId()).orElseThrow().getRevokedAt())
         .isNull();

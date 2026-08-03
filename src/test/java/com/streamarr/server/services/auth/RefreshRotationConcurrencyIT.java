@@ -60,7 +60,9 @@ class RefreshRotationConcurrencyIT extends AbstractIntegrationTest {
           () -> {
             try {
               startLatch.await();
-              results.add(refreshTokenService.redeem(issued.rawToken()));
+              results.add(
+                  refreshTokenService.redeem(
+                      RefreshCommand.builder().refreshToken(issued.rawToken()).build()));
             } catch (Exception e) {
               exceptions.add(e);
             } finally {
@@ -116,10 +118,16 @@ class RefreshRotationConcurrencyIT extends AbstractIntegrationTest {
   void shouldNotRecoverConsumedSuccessorWhenEarlierTokenReplayedWithinGrace() {
     account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
     var issued = refreshTokenService.createSession(account, "late-response-device");
-    var firstRotation = (RefreshResult.Rotated) refreshTokenService.redeem(issued.rawToken());
-    refreshTokenService.redeem(firstRotation.rawRefreshToken());
+    var firstRotation =
+        (RefreshResult.Rotated)
+            refreshTokenService.redeem(
+                RefreshCommand.builder().refreshToken(issued.rawToken()).build());
+    refreshTokenService.redeem(
+        RefreshCommand.builder().refreshToken(firstRotation.rawRefreshToken()).build());
 
-    var replay = refreshTokenService.redeem(issued.rawToken());
+    var replay =
+        refreshTokenService.redeem(
+            RefreshCommand.builder().refreshToken(issued.rawToken()).build());
 
     assertThat(replay).isInstanceOf(RefreshResult.SupersededRetry.class);
     assertThat(replay.session().getId()).isEqualTo(issued.session().getId());

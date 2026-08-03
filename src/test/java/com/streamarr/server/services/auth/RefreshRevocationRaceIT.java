@@ -78,12 +78,18 @@ class RefreshRevocationRaceIT extends AbstractIntegrationTest {
     account = userAccountRepository.save(AccountFixture.defaultAccountBuilder().build());
     var issued = refreshTokenService.createSession(account, "sequential-device");
 
-    var rotated = (RefreshResult.Rotated) refreshTokenService.redeem(issued.rawToken());
+    var rotated =
+        (RefreshResult.Rotated)
+            refreshTokenService.redeem(
+                RefreshCommand.builder().refreshToken(issued.rawToken()).build());
     revokeAndSweep(issued.session().getId());
 
     // A successor handed out just before revocation must not keep the family alive.
     var successorToken = rotated.rawRefreshToken();
-    assertThatThrownBy(() -> refreshTokenService.redeem(successorToken))
+    assertThatThrownBy(
+            () ->
+                refreshTokenService.redeem(
+                    RefreshCommand.builder().refreshToken(successorToken).build()))
         .isInstanceOf(TokenReuseDetectedException.class);
     assertThat(activeTokenCountFor(issued.session().getId())).isZero();
   }
@@ -95,7 +101,13 @@ class RefreshRevocationRaceIT extends AbstractIntegrationTest {
       var errors = new CopyOnWriteArrayList<Throwable>();
 
       executor.submit(
-          guarded(startLatch, doneLatch, errors, () -> refreshTokenService.redeem(rawToken)));
+          guarded(
+              startLatch,
+              doneLatch,
+              errors,
+              () ->
+                  refreshTokenService.redeem(
+                      RefreshCommand.builder().refreshToken(rawToken).build())));
       executor.submit(guarded(startLatch, doneLatch, errors, () -> revokeAndSweep(sessionId)));
 
       startLatch.countDown();

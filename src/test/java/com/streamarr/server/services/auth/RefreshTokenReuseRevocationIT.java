@@ -53,11 +53,14 @@ class RefreshTokenReuseRevocationIT extends AbstractIntegrationTest {
     var issued = refreshTokenService.createSession(account, "reuse-device");
     var sessionId = issued.session().getId();
 
-    refreshTokenService.redeem(issued.rawToken());
+    refreshTokenService.redeem(RefreshCommand.builder().refreshToken(issued.rawToken()).build());
     backdateRotatedTokenPastGrace(sessionId);
 
     var replayedToken = issued.rawToken();
-    assertThatThrownBy(() -> refreshTokenService.redeem(replayedToken))
+    assertThatThrownBy(
+            () ->
+                refreshTokenService.redeem(
+                    RefreshCommand.builder().refreshToken(replayedToken).build()))
         .isInstanceOf(TokenReuseDetectedException.class);
 
     var session = authSessionRepository.findById(sessionId).orElseThrow();
@@ -76,13 +79,17 @@ class RefreshTokenReuseRevocationIT extends AbstractIntegrationTest {
     var issued = refreshTokenService.createSession(account, "nested-transaction-device");
     var sessionId = issued.session().getId();
 
-    refreshTokenService.redeem(issued.rawToken());
+    refreshTokenService.redeem(RefreshCommand.builder().refreshToken(issued.rawToken()).build());
     backdateRotatedTokenPastGrace(sessionId);
 
     var transaction = new TransactionTemplate(transactionManager);
     var replayedToken = issued.rawToken();
     assertThatThrownBy(
-            () -> transaction.executeWithoutResult(_ -> refreshTokenService.redeem(replayedToken)))
+            () ->
+                transaction.executeWithoutResult(
+                    _ ->
+                        refreshTokenService.redeem(
+                            RefreshCommand.builder().refreshToken(replayedToken).build())))
         .isInstanceOf(TokenReuseDetectedException.class);
 
     var session = authSessionRepository.findById(sessionId).orElseThrow();

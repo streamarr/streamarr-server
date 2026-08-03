@@ -51,12 +51,13 @@ class AuthSecurityEventLoggingTest {
                 new TokenReuseRevocationWriter(sessionRepository, tokenRepository)));
     var account = AccountFixture.defaultAccountBuilder().id(UUID.randomUUID()).build();
     var issued = service.createSession(account, "security-log-test");
-    service.redeem(issued.rawToken());
+    service.redeem(RefreshCommand.builder().refreshToken(issued.rawToken()).build());
     currentTime.updateAndGet(instant -> instant.plusSeconds(31));
     var replayedToken = issued.rawToken();
 
     try (var logs = LogCapture.forClass(RefreshTokenService.class)) {
-      assertThatThrownBy(() -> service.redeem(replayedToken))
+      assertThatThrownBy(
+              () -> service.redeem(RefreshCommand.builder().refreshToken(replayedToken).build()))
           .isInstanceOf(TokenReuseDetectedException.class);
 
       assertThat(logs.events()).anyMatch(event -> event.getLevel().isGreaterOrEqual(Level.WARN));
