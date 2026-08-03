@@ -27,11 +27,11 @@ public class SecurityConfig {
   private final AuthCookiePolicy cookiePolicy;
 
   /**
-   * The permit matrix: pre-auth endpoints and health stay open; non-health actuator endpoints are
-   * refused for everyone; streams demand SCOPE_PLAYBACK carried in the playback-URL token (outside
-   * the hierarchy); images demand SCOPE_PROFILE; everything else — GraphQL including introspection
-   * and future surfaces — demands SCOPE_ACCOUNT, which household and profile tokens satisfy through
-   * the scope hierarchy.
+   * The permit matrix: pre-auth endpoints (shared with the bearer resolver, so the two lists cannot
+   * drift) and health stay open; non-health actuator endpoints are refused for everyone; streams
+   * demand SCOPE_PLAYBACK carried in the playback-URL token (outside the hierarchy); images demand
+   * SCOPE_PROFILE; everything else — GraphQL including introspection and future surfaces — demands
+   * SCOPE_ACCOUNT, which household and profile tokens satisfy through the scope hierarchy.
    *
    * <p>CSRF (SPA shape: readable host-bound cookie, Xor rendering, header-only submission) protects
    * unsafe requests from the Streamarr cookie-carrying browser population. Explicitly insecure
@@ -47,11 +47,7 @@ public class SecurityConfig {
             authorize ->
                 authorize
                     .requestMatchers(
-                        "/api/auth/status",
-                        "/api/auth/setup",
-                        "/api/auth/login",
-                        "/api/auth/refresh",
-                        "/.well-known/jwks.json")
+                        StreamarrBearerTokenResolver.UNAUTHENTICATED_PATHS.toArray(String[]::new))
                     .permitAll()
                     .requestMatchers("/actuator/health/**", "/actuator/health")
                     .permitAll()

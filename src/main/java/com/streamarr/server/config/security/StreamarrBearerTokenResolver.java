@@ -19,13 +19,15 @@ public final class StreamarrBearerTokenResolver implements BearerTokenResolver {
   private static final String CARRIER_ATTRIBUTE =
       StreamarrBearerTokenResolver.class.getName() + ".carrier";
 
-  private static final Set<String> UNAUTHENTICATED_PATHS =
+  /** The pre-auth surface, shared with the permit matrix so the two can never drift. */
+  public static final Set<String> UNAUTHENTICATED_PATHS =
       Set.of(
           "/api/auth/status",
           "/api/auth/setup",
           "/api/auth/login",
           "/api/auth/refresh",
           "/.well-known/jwks.json");
+
   private static final String HEALTH_PATH = "/actuator/health";
 
   private final DefaultBearerTokenResolver headerResolver = new DefaultBearerTokenResolver();
