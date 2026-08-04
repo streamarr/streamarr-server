@@ -209,15 +209,22 @@ public class SegmentDeliveryCoordinator {
       VariantDeliveryState state, TranscodeHandle handle, PendingSegment pending) {
     state.syncProgress(
         handle,
-        pending,
         index ->
             segmentStore.segmentExists(
                 pending.sessionId(), SegmentNames.siblingName(pending.segmentName(), index)),
         clock.instant());
   }
 
+  /**
+   * A run that has not yet published its first segment is still encoding one, so it gets the
+   * steady-state threshold plus a whole segment of encoding time. Without that, a merely slow cold
+   * start is read as a hang and replaced by a byte-identical run that is no faster.
+   */
   private boolean hasStalled(VariantDeliveryState state) {
-    return state.hasStalled(properties.producerStallThreshold(), clock.instant());
+    return state.hasStalled(
+        properties.producerStallThreshold(),
+        properties.producerStallThreshold().plus(properties.targetSegmentDuration()),
+        clock.instant());
   }
 
   private boolean sleepOnePoll() {
@@ -419,6 +426,7 @@ public class SegmentDeliveryCoordinator {
   private static final class VariantDeliveryState {
 
     private UUID trackedAttemptId;
+    private int runStart;
     private int frontier;
     private Instant lastProgressAt = Instant.EPOCH;
     private final Set<ExecutionTargetId> attemptedSinceProgress = new LinkedHashSet<>();
@@ -427,21 +435,24 @@ public class SegmentDeliveryCoordinator {
      * Tracks the producer run the requests are waiting on. An attempt this state did not itself
      * record is a planned restart and clears the attempted log; advancing the frontier — a segment
      * of the current run newly published — is the one success signal that ends recovery.
+     *
+     * <p>The frontier follows the producer's own output rather than stopping at the requested
+     * index. A request for the run's first segment — every cold start, every seek, and every {@code
+     * init.mp4}, which resolves to the run's start — has nothing below it to observe, so bounding
+     * the scan there would leave those requests permanently unable to see progress.
      */
     private synchronized void syncProgress(
-        TranscodeHandle handle,
-        PendingSegment pending,
-        IntPredicate frontierSegmentExists,
-        Instant now) {
+        TranscodeHandle handle, IntPredicate frontierSegmentExists, Instant now) {
       if (!handle.attemptId().equals(trackedAttemptId)) {
         attemptedSinceProgress.clear();
         trackedAttemptId = handle.attemptId();
+        runStart = handle.startSequenceNumber();
         frontier = handle.startSequenceNumber();
         lastProgressAt = now;
       }
 
       var advanced = false;
-      while (frontier < pending.requestedIndex() && frontierSegmentExists.test(frontier)) {
+      while (frontierSegmentExists.test(frontier)) {
         frontier++;
         advanced = true;
       }
@@ -451,8 +462,15 @@ public class SegmentDeliveryCoordinator {
       }
     }
 
-    private synchronized boolean hasStalled(Duration stallThreshold, Instant now) {
-      return Duration.between(lastProgressAt, now).compareTo(stallThreshold) >= 0;
+    /** Whether this run has published at least one segment of its own. */
+    private synchronized boolean hasPublished() {
+      return frontier > runStart;
+    }
+
+    private synchronized boolean hasStalled(
+        Duration stallThreshold, Duration startupThreshold, Instant now) {
+      var budget = hasPublished() ? stallThreshold : startupThreshold;
+      return Duration.between(lastProgressAt, now).compareTo(budget) >= 0;
     }
 
     private synchronized UUID trackedAttempt() {
@@ -477,6 +495,7 @@ public class SegmentDeliveryCoordinator {
         ExecutionTargetId target, UUID newAttemptId, int requestedIndex, Instant now) {
       attemptedSinceProgress.add(target);
       trackedAttemptId = newAttemptId;
+      runStart = requestedIndex;
       frontier = requestedIndex;
       lastProgressAt = now;
     }

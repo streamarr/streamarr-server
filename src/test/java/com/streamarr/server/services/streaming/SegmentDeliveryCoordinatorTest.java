@@ -360,19 +360,67 @@ class SegmentDeliveryCoordinatorTest {
     var session = startedSession();
     var startsBefore = transcodeExecutor.getStartedRequests().size();
 
-    var delivery = deliverAsync(session.getSessionId(), "segment0.ts");
-    // The producer records its baseline before the clock advances, so the stall is measured from a
-    // real starting point rather than racing the delivery thread's first poll.
-    awaitPolls(1);
+    var delivery = deliverAsync(session.getSessionId(), "segment1.ts");
+    // Publishing segment0 takes the run out of startup, so the stall budget that follows is the
+    // steady-state threshold measured from a real publication.
+    segmentStore.addSegment(session.getSessionId(), "segment0.ts", new byte[] {1});
+    awaitPolls(2);
     clock.advance(STALL_THRESHOLD.plusMillis(50));
     await()
         .atMost(2, TimeUnit.SECONDS)
         .until(() -> transcodeExecutor.getStartedRequests().size() == startsBefore + 1);
-    segmentStore.addSegment(session.getSessionId(), "segment0.ts", new byte[] {1});
+    segmentStore.addSegment(session.getSessionId(), "segment1.ts", new byte[] {1});
 
     assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.Ready.class);
     assertThat(transcodeExecutor.getStoppedVariants())
         .contains(session.getSessionId() + "/" + StreamSession.defaultVariant());
+  }
+
+  @Test
+  @DisplayName(
+      "Should not replace a cold-starting producer that is still within its startup budget")
+  void shouldNotReplaceColdStartingProducerWithinItsStartupBudget() throws Exception {
+    var session = startedSession();
+    var startsBefore = transcodeExecutor.getStartedRequests().size();
+
+    var delivery = deliverAsync(session.getSessionId(), "segment0.ts");
+    awaitPolls(1);
+    // A run that has published nothing yet has to encode a whole segment before it can; the
+    // steady-state threshold alone would kill a healthy encoder and restart it identically.
+    clock.advance(STALL_THRESHOLD.plusMillis(50));
+    awaitPolls(3);
+
+    assertThat(transcodeExecutor.getStoppedVariants()).isEmpty();
+    assertThat(transcodeExecutor.getStartedRequests()).hasSize(startsBefore);
+    // End the wait deterministically: cancel(true) cannot interrupt the supplier thread, and an
+    // abandoned deliver would keep polling for the rest of the JVM.
+    runtimeRegistry.removeById(session.getSessionId());
+    assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.SessionEnded.class);
+  }
+
+  @Test
+  @DisplayName("Should observe the run's own output as progress for a request at its start index")
+  void shouldObserveRunsOwnOutputAsProgressForRequestAtItsStartIndex() throws Exception {
+    var session = defaultSessionBuilder().build();
+    runtimeRegistry.save(session);
+    lifecycle.startAll(session, 5400, 900);
+
+    // init.mp4 resolves to the run's start index, so no earlier segment can ever exist -- the
+    // producer's own output is the only progress this request can observe.
+    var delivery = deliverAsync(session.getSessionId(), "init.mp4");
+    segmentStore.addSegment(session.getSessionId(), "segment900.m4s", new byte[] {1});
+    awaitPolls(2);
+    // Past the steady-state threshold but far inside the startup budget. A replacement here can
+    // only mean the published sibling was counted, taking the run out of startup.
+    clock.advance(STALL_THRESHOLD.plusMillis(50));
+
+    await()
+        .atMost(2, TimeUnit.SECONDS)
+        .until(() -> !transcodeExecutor.getStoppedVariants().isEmpty());
+    // End the wait deterministically: cancel(true) cannot interrupt the supplier thread, and an
+    // abandoned deliver would keep polling for the rest of the JVM.
+    runtimeRegistry.removeById(session.getSessionId());
+    assertThat(delivery.get(2, TimeUnit.SECONDS)).isInstanceOf(SegmentDelivery.SessionEnded.class);
   }
 
   @Test
