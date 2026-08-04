@@ -27,6 +27,16 @@ class AuthCookiePolicyConfigurationTest {
   }
 
   @Test
+  @DisplayName("Should relax Secure when an allowed profile is active with unrelated profiles")
+  void shouldRelaxSecureWhenAllowedProfileIsActiveWithUnrelatedProfiles() {
+    var policy =
+        configuration.authCookiePolicy(
+            allowingInsecureCookies(), environmentWith("dev", "observability"));
+
+    assertThat(policy).isEqualTo(AuthCookiePolicy.INSECURE_DEVELOPMENT);
+  }
+
+  @Test
   @DisplayName("Should fail startup when the flag is set without a development profile")
   void shouldFailStartupWhenFlagIsSetWithoutDevelopmentProfile() {
     // Both gates or neither: silently ignoring the flag would leave an operator believing cookies

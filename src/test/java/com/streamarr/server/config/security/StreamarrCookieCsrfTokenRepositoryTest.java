@@ -9,7 +9,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -44,9 +44,10 @@ class StreamarrCookieCsrfTokenRepositoryTest {
   }
 
   @ParameterizedTest
-  @EnumSource(AuthCookiePolicy.class)
+  @CsvSource({"SECURE, __Host-XSRF-TOKEN, true", "INSECURE_DEVELOPMENT, XSRF-TOKEN, false"})
   @DisplayName("Should expire the policy-specific csrf cookie when removing its token")
-  void shouldExpirePolicySpecificCsrfCookieWhenRemovingItsToken(AuthCookiePolicy policy) {
+  void shouldExpirePolicySpecificCsrfCookieWhenRemovingItsToken(
+      AuthCookiePolicy policy, String expectedCookieName, boolean expectedSecure) {
     var repository = new StreamarrCookieCsrfTokenRepository(Duration.ofDays(30), policy);
     var response = new MockHttpServletResponse();
 
@@ -54,11 +55,11 @@ class StreamarrCookieCsrfTokenRepositoryTest {
 
     var header = response.getHeader(HttpHeaders.SET_COOKIE);
     assertThat(header)
-        .contains(policy.getCsrfCookieName() + "=")
+        .startsWith(expectedCookieName + "=")
         .contains("Max-Age=0")
         .contains("Path=/")
         .doesNotContain("Domain=");
-    assertThat(header.contains("; Secure")).isEqualTo(policy.isSecure());
+    assertThat(header.contains("; Secure")).isEqualTo(expectedSecure);
   }
 
   @Test
