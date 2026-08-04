@@ -28,6 +28,18 @@ class DeviceNameTest {
   }
 
   @Test
+  @DisplayName("Should normalize a decomposed device name to NFC")
+  void shouldNormalizeDecomposedDeviceNameToNfc() {
+    assertThat(DeviceName.sanitize("Cafe\u0301 TV")).isEqualTo("Café TV");
+  }
+
+  @Test
+  @DisplayName("Should trim surrounding whitespace without changing internal spacing")
+  void shouldTrimSurroundingWhitespaceWithoutChangingInternalSpacing() {
+    assertThat(DeviceName.sanitize("  Living Room TV  ")).isEqualTo("Living Room TV");
+  }
+
+  @Test
   @DisplayName("Should strip control characters that could forge log lines")
   void shouldStripControlCharactersThatCouldForgeLogLines() {
     assertThat(DeviceName.sanitize("Living\nRoom\tTV\0")).isEqualTo("LivingRoomTV");

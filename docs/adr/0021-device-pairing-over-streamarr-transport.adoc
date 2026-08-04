@@ -17,10 +17,11 @@ The load-bearing direction is *TV → person → web*. The TV asks the server fo
 
 === RFC 8628 semantics, Streamarr transport
 
-The device-authorization grant's *semantics* are adopted wholesale: a device code the device polls with, a user code a person reads and types, an interval the server controls, and the four poll states `authorization_pending`, `slow_down`, `expired_token`, `access_denied`.
+Streamarr adopts RFC 8628's code, polling-cadence, and terminal-state semantics: a device code the device polls with, a user code a person reads and types, an interval the server controls, and the four poll states `authorization_pending`, `slow_down`, `expired_token`, `access_denied`.
 
 Its *transport* is not. Requests and responses are Streamarr JSON with camelCase fields, not RFC form-encoding, because every other endpoint in this server is JSON and one endpoint family speaking `application/x-www-form-urlencoded` would be a parser and a client-side special case for no benefit.
 The RFC vocabulary rides the house error envelope as lowercase codes, on the poll endpoint only.
+This is therefore not an RFC 8628 wire-compatible OAuth grant: Streamarr deliberately has no `client_id`, `scope`, or device-code `grant_type` parameters and returns its ordinary token response rather than the RFC 6749 envelope.
 
 The RFC stops at the verification URI: it says only that the person goes there and approves, and defines no API behind it.
 `/api/auth/device/authorizations/lookup` and `.../decision` are therefore *outside* RFC 8628 rather than deviations from it — their request shapes, their `404`/`409` statuses, and their shared guessing budget answer to this server's conventions and to nothing in the spec.
@@ -30,7 +31,7 @@ A future reader should not try to conform them to a standard that does not cover
 
 The *device code* is a correlation handle the device polls with, **not** a credential a human types: 256 bits from `SecureRandom`, stored only as a SHA-256 digest, shape-validated before hashing so a malformed value is indistinguishable from an unknown one.
 
-The *user code* is a display handle, **not** a secret: eight characters from RFC 8628's twenty-consonant alphabet, roughly 34.6 bits, stored as normalized plaintext because the web lookup has to find it. Its safety comes from being single-use, short-lived, and behind a guessing budget — never from entropy.
+The *user code* is a display handle, **not** a secret: eight characters from Streamarr's twenty-consonant alphabet, chosen from RFC 8628 §6.1's non-normative usability example, roughly 34.6 bits, and stored as normalized plaintext because the web lookup has to find it. Its safety comes from being single-use, short-lived, and behind a guessing budget — never from entropy alone.
 
 === Every poll state is HTTP 400
 
@@ -59,6 +60,9 @@ An account with no memberships, or a household with no selectable profiles, is a
 Only *new issuance* is gated — a code already shown to a person is always looked up, decided, polled, and redeemed to its normal terminal result, so a configuration change never strands a code mid-flow.
 
 Production transport is HTTPS. `STREAMARR_ALLOW_INSECURE_HTTP` is honored only together with a development or test profile, because a single flag is one typo away from shipping cleartext credentials.
+RFC 8628 §3.1 makes TLS a device-request obligation. The server guarantees that the URI it advertises is HTTPS in production; the Streamarr client and deployment tests own proof that issuance and polling traverse TLS because TLS can terminate at a reverse proxy before the request reaches this process.
+
+RFC 8628 §3.3 makes the verification URI's human interaction part of the complete flow. This server owns the authenticated lookup and decision operations behind that page. The companion web client owns navigation to `/link`, code entry, device review, approve/deny presentation, and return-to-device guidance; that journey requires a cross-project system test before pairing is called user-complete.
 
 Contract endpoints never redirect: `/api/auth/**` and `/api/stream/**` return final responses, and deployments must not rewrite those paths, because clients reject 3xx on credential-bearing requests.
 
@@ -88,7 +92,7 @@ Contract endpoints never redirect: `/api/auth/**` and `/api/stream/**` return fi
 
 == Rejected Alternatives
 
-* GraphQL mutations for pairing — link:0002-graphql-over-rest.adoc[ADR 0002] already excepts token issuance from the GraphQL-only rule, and pairing mints tokens exactly as login and refresh do. RFC 8628 states are HTTP-status and header shaped (`Retry-After`, per-state codes) where GraphQL has one 200 envelope; issuance and polling are pre-auth, so anonymous GraphQL would mean opening `/graphql` to unauthenticated traffic for four small endpoints; and a TV polls with a dumb HTTP loop before it has any GraphQL session. Splitting one pairing contract across two transports would be worse than four coherent REST endpoints.
+* GraphQL mutations for pairing — link:0002-graphql-over-rest.adoc[ADR 0002] already excepts token issuance from the GraphQL-only rule, and pairing mints tokens exactly as login and refresh do. The adopted RFC 8628 states use distinct lowercase codes, while Streamarr's capacity and guessing extensions use HTTP `429` with `Retry-After`; GraphQL has one 200 envelope. Issuance and polling are pre-auth, so anonymous GraphQL would mean opening `/graphql` to unauthenticated traffic for four small endpoints; and a TV polls with a dumb HTTP loop before it has any GraphQL session. Splitting one pairing contract across two transports would be worse than four coherent REST endpoints.
 * Typed credentials on the TV — ADR 0016 already rejected lowering the bar for limited-input devices.
 * Spring Security's one-time-token login — heavier than a pending row plus a poll, and shaped for email delivery rather than a code read off a screen.
 * Creating the session at approval — persists a raw refresh token waiting for pickup, breaking digest-at-rest.

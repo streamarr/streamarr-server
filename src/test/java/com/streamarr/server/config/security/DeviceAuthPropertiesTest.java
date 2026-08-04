@@ -79,6 +79,34 @@ class DeviceAuthPropertiesTest {
     assertThat(validator.validate(properties)).isNotEmpty();
   }
 
+  @Test
+  @DisplayName("Should require positive issuance and guessing limits")
+  void shouldRequirePositiveIssuanceAndGuessingLimits() {
+    var noIssuanceCapacity = defaultProperties().maxOutstandingCodes(0).build();
+    var noGuessingBudget = defaultProperties().maxGuessAttempts(0).build();
+
+    assertThat(validator.validate(noIssuanceCapacity))
+        .extracting(violation -> violation.getPropertyPath().toString())
+        .containsExactly("maxOutstandingCodes");
+    assertThat(validator.validate(noGuessingBudget))
+        .extracting(violation -> violation.getPropertyPath().toString())
+        .containsExactly("maxGuessAttempts");
+  }
+
+  @Test
+  @DisplayName("Should require a typed guess window of at least one second")
+  void shouldRequireTypedGuessWindowOfAtLeastOneSecond() {
+    var missingWindow = defaultProperties().guessWindow(null).build();
+    var zeroWindow = defaultProperties().guessWindow(Duration.ZERO).build();
+
+    assertThat(validator.validate(missingWindow))
+        .extracting(violation -> violation.getPropertyPath().toString())
+        .containsExactly("guessWindow");
+    assertThat(validator.validate(zeroWindow))
+        .extracting(violation -> violation.getPropertyPath().toString())
+        .containsExactly("guessWindow");
+  }
+
   private static DeviceAuthProperties.DeviceAuthPropertiesBuilder defaultProperties() {
     return DeviceAuthProperties.builder()
         .codeTtl(Duration.ofMinutes(10))

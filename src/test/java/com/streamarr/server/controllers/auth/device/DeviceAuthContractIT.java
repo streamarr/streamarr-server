@@ -340,6 +340,24 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
   }
 
   @Test
+  @DisplayName("Should reject a malformed user code on decision with the pinned body")
+  void shouldRejectMalformedUserCodeOnDecisionWithPinnedBody() throws Exception {
+    var approver = seedAccount();
+
+    var body =
+        readJson(
+            mockMvc
+                .perform(
+                    authenticated(approver, post("/api/auth/device/authorizations/decision"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(decisionBody("NOPE", "APPROVE")))
+                .andExpect(status().isBadRequest())
+                .andExpect(uncacheable()));
+
+    assertThat(body).isEqualTo(fixture("invalid-user-code-error.json"));
+  }
+
+  @Test
   @DisplayName("Should collapse an unknown code into not-found on lookup")
   void shouldCollapseUnknownCodeIntoNotFoundOnLookup() throws Exception {
     var approver = seedAccount();
@@ -351,6 +369,24 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
                     authenticated(approver, post("/api/auth/device/authorizations/lookup"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(userCodeBody("BCDF-GHJK")))
+                .andExpect(status().isNotFound())
+                .andExpect(uncacheable()));
+
+    assertThat(body).isEqualTo(fixture("not-found-error.json"));
+  }
+
+  @Test
+  @DisplayName("Should collapse an unknown code into not-found on decision")
+  void shouldCollapseUnknownCodeIntoNotFoundOnDecision() throws Exception {
+    var approver = seedAccount();
+
+    var body =
+        readJson(
+            mockMvc
+                .perform(
+                    authenticated(approver, post("/api/auth/device/authorizations/decision"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(decisionBody("BCDF-GHJK", "APPROVE")))
                 .andExpect(status().isNotFound())
                 .andExpect(uncacheable()));
 

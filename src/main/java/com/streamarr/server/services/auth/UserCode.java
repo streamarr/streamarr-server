@@ -4,9 +4,9 @@ import com.streamarr.server.exceptions.InvalidUserCodeException;
 import java.util.Locale;
 
 /**
- * The display handle a person reads off a TV and types on the web. RFC 8628 §6.1's twenty-consonant
- * alphabet: no vowels, so no code spells a word, and no {@code 0}/{@code O} or {@code 1}/{@code I}
- * to misread across a room.
+ * The display handle a person reads off a TV and types on the web. Streamarr adopts the
+ * twenty-consonant alphabet from RFC 8628 §6.1's non-normative usability example: no vowels, so no
+ * code spells a word, and no {@code 0}/{@code O} or {@code 1}/{@code I} to misread across a room.
  *
  * <p>Two forms exist and must not be confused: the grouped display form a client shows ({@code
  * BCDF-GHJK}), and the normalized wire and storage form ({@code BCDFGHJK}).
