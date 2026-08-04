@@ -35,8 +35,8 @@ class AuthCookiePropertiesTest {
   }
 
   @Test
-  @DisplayName("Should enable insecure cookies when the documented environment variable is true")
-  void shouldEnableInsecureCookiesWhenDocumentedEnvironmentVariableIsTrue() {
+  @DisplayName("Should bind allow-insecure when the documented environment variable is true")
+  void shouldBindAllowInsecureWhenDocumentedEnvironmentVariableIsTrue() {
     CONTEXT_RUNNER
         .withSystemProperties("AUTH_COOKIES_ALLOW_INSECURE=true")
         .run(

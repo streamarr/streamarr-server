@@ -45,8 +45,8 @@ class StreamarrCookieCsrfTokenRepositoryTest {
 
   @ParameterizedTest
   @EnumSource(AuthCookiePolicy.class)
-  @DisplayName("Should expire the csrf cookie immediately when removing its token")
-  void shouldExpireCsrfCookieImmediatelyWhenRemovingItsToken(AuthCookiePolicy policy) {
+  @DisplayName("Should expire the policy-specific csrf cookie when removing its token")
+  void shouldExpirePolicySpecificCsrfCookieWhenRemovingItsToken(AuthCookiePolicy policy) {
     var repository = new StreamarrCookieCsrfTokenRepository(Duration.ofDays(30), policy);
     var response = new MockHttpServletResponse();
 
