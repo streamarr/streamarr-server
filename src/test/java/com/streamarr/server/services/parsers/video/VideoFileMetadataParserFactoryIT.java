@@ -26,20 +26,20 @@ class VideoFileMetadataParserFactoryIT {
   void shouldParseExternalId() {
     var result =
         videoFileMetadataParserFactory.parseMetadata(
-            "Nope (2022) [tmdb-762504][WEBDL-1080p][EAC3 5.1][h264]-EVO.mkv");
+            "Glint (2022) [tmdb-815339][WEBDL-1080p][EAC3 5.1][h264]-KLV.mkv");
 
     assertThat(result).isPresent();
-    assertThat(result.get().externalId()).isEqualTo("762504");
+    assertThat(result.get().externalId()).isEqualTo("815339");
     assertThat(result.get().externalSource()).isEqualTo(ExternalSourceType.TMDB);
   }
 
   @Test
   @DisplayName("Should parse video's name and year when given filename without an id tag")
   void shouldParseNameAndYear() {
-    var result = videoFileMetadataParserFactory.parseMetadata("Spider Man (2002)");
+    var result = videoFileMetadataParserFactory.parseMetadata("Garnet Vale (2002)");
 
     assertThat(result).isPresent();
-    assertThat(result.get().title()).isEqualTo("Spider Man");
+    assertThat(result.get().title()).isEqualTo("Garnet Vale");
     assertThat(result.get().year()).isEqualTo("2002");
   }
 }

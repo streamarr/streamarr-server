@@ -56,15 +56,18 @@ class EpisodePathMetadataParserTest {
               new TestCase("/server/anything_s01.e02", "anything", 1, 2),
               new TestCase("/server/anything_1x02", "anything", 1, 2),
               new TestCase("/server/anything_102", "anything", 1, 2),
-              new TestCase("/Running Man/Running Man S2017E368", "Running Man", 2017, 368),
-              new TestCase("/server/The Walking Dead 4x01", "The Walking Dead", 4, 1),
-              new TestCase("Series/LA X, Pt. 1_s06e32", "LA X, Pt. 1", 6, 32),
-              new TestCase("/server/the_simpsons-s02e01_18536.mp4", "the_simpsons", 2, 1),
+              new TestCase("/Harbor Relay/Harbor Relay S2017E368", "Harbor Relay", 2017, 368),
+              new TestCase("/server/The Wandering Peak 4x01", "The Wandering Peak", 4, 1),
+              new TestCase("Series/Bay Q, Pt. 1_s06e32", "Bay Q, Pt. 1", 6, 32),
+              new TestCase("/server/the_greenfields-s02e01_18536.mp4", "the_greenfields", 2, 1),
               new TestCase(
-                  "/Season 25/The Simpsons.S25E09.Steal this episode.mp4", "The Simpsons", 25, 9),
+                  "/Season 25/The Greenfields.S25E09.Mend this antenna.mp4",
+                  "The Greenfields",
+                  25,
+                  9),
               new TestCase(
-                  "/The Wonder Years/The.Wonder.Years.S04.PDTV.x264-JCH/The Wonder Years s04e07 Christmas Party NTSC PDTV.avi",
-                  "The Wonder Years",
+                  "/The Meadow Years/The.Meadow.Years.S04.PDTV.x264-VXK/The Meadow Years s04e07 Christmas Party NTSC PDTV.avi",
+                  "The Meadow Years",
                   4,
                   7),
               new TestCase(
@@ -73,13 +76,16 @@ class EpisodePathMetadataParserTest {
                   1,
                   4),
               new TestCase(
-                  "Love.Death.and.Robots.S01.1080p.NF.WEB-DL.DDP5.1.x264-NTG/Love.Death.and.Robots.S01E01.Sonnies.Edge.1080p.NF.WEB-DL.DDP5.1.x264-NTG.mkv",
-                  "Love.Death.and.Robots",
+                  "Rust.Dust.and.Orbits.S01.1080p.NF.WEB-DL.DDP5.1.x264-QRZ/Rust.Dust.and.Orbits.S01E01.Copper.Ledge.1080p.NF.WEB-DL.DDP5.1.x264-QRZ.mkv",
+                  "Rust.Dust.and.Orbits",
                   1,
                   1),
               new TestCase(
-                  "The Simpsons/The Simpsons.S25E08.Steal this episode.mp4", "The Simpsons", 25, 8),
-              new TestCase("Case Closed (1996-2007)/Case Closed - 317.mkv", "Case Closed", 3, 17),
+                  "The Greenfields/The Greenfields.S25E08.Mend this antenna.mp4",
+                  "The Greenfields",
+                  25,
+                  8),
+              new TestCase("Cold Ledger (1996-2007)/Cold Ledger - 317.mkv", "Cold Ledger", 3, 17),
 
               // Verbose "Season X Episode Y" format
               new TestCase("/media/My Show Season 1 Episode 3.mkv", "My Show", 1, 3),
@@ -119,8 +125,8 @@ class EpisodePathMetadataParserTest {
     Stream<DynamicNode> tests() {
       return Stream.of(
               new TestCase(
-                  "[YuiSubs] Tensura Nikki - Tensei Shitara Slime Datta Ken/[YuiSubs] Tensura Nikki - Tensei Shitara Slime Datta Ken - 12 (NVENC H.265 1080p).mkv",
-                  "Tensura Nikki - Tensei Shitara Slime Datta Ken",
+                  "[MokoSubs] Suzu Nikki - Yama no Machi no Hotaru/[MokoSubs] Suzu Nikki - Yama no Machi no Hotaru - 12 (NVENC H.265 1080p).mkv",
+                  "Suzu Nikki - Yama no Machi no Hotaru",
                   12),
               new TestCase(
                   "[Baz-Bar]Foo - 01 - 12[1080p][Multiple Subtitle]/[Baz-Bar] Foo - 05 [1080p][Multiple Subtitle].mkv",
@@ -132,25 +138,23 @@ class EpisodePathMetadataParserTest {
                   "Foo",
                   5),
               new TestCase(
-                  "Season 2 /[HorribleSubs] Hunter X Hunter - 136[720p].mkv",
-                  "Hunter X Hunter",
-                  136),
+                  "Season 2 /[QuietSubs] Falcon X Falcon - 136[720p].mkv", "Falcon X Falcon", 136),
               new TestCase("/Season 1/foo 06-06", "foo", 6),
 
               // Absolute episode number
-              new TestCase("The Simpsons/The Simpsons 12.avi", "The Simpsons", 12),
-              new TestCase("The Simpsons/The Simpsons 82.avi", "The Simpsons", 82),
-              new TestCase("The Simpsons/The Simpsons 112.avi", "The Simpsons", 112),
-              new TestCase("The Simpsons/The Simpsons 889.avi", "The Simpsons", 889),
-              new TestCase("The Simpsons/The Simpsons 101.avi", "The Simpsons", 101),
+              new TestCase("The Greenfields/The Greenfields 12.avi", "The Greenfields", 12),
+              new TestCase("The Greenfields/The Greenfields 82.avi", "The Greenfields", 82),
+              new TestCase("The Greenfields/The Greenfields 112.avi", "The Greenfields", 112),
+              new TestCase("The Greenfields/The Greenfields 889.avi", "The Greenfields", 889),
+              new TestCase("The Greenfields/The Greenfields 101.avi", "The Greenfields", 101),
 
               // Version marker (anime fansub releases)
-              new TestCase("/media/[SubsPlease] Show - 01v2 (1080p).mkv", "Show", 1),
+              new TestCase("/media/[SubsMoku] Show - 01v2 (1080p).mkv", "Show", 1),
 
               // Dot-separated anime bracket naming
               new TestCase(
-                  "/tv/Fullmetal Alchemist Brotherhood/Season 1/[QaS].Fullmetal.Alchemist.Brotherhood.-.01.[BD.1080p.HEVC.x265.10bit.Opus.5.1][Dual.Audio].mkv",
-                  "Fullmetal.Alchemist.Brotherhood",
+                  "/tv/Ironvale Tinker Fellowship/Season 1/[ZbW].Ironvale.Tinker.Fellowship.-.01.[BD.1080p.HEVC.x265.10bit.Opus.5.1][Dual.Audio].mkv",
+                  "Ironvale.Tinker.Fellowship",
                   1))
           .map(
               testCase ->
@@ -195,16 +199,17 @@ class EpisodePathMetadataParserTest {
               new TestCase("/server/1996.11.14", null, LocalDate.of(1996, 11, 14)),
 
               // Multi-word series name
-              new TestCase("/server/ABC News 2018-03-24", "ABC News", LocalDate.of(2018, 3, 24)),
+              new TestCase(
+                  "/server/Beacon News 2018-03-24", "Beacon News", LocalDate.of(2018, 3, 24)),
 
               // Filenames with file extensions (real-world paths from library scanning)
               new TestCase(
-                  "/tv/Jeopardy!/Jeopardy! - 2025-11-25.mkv",
-                  "Jeopardy!",
+                  "/tv/Quandary!/Quandary! - 2025-11-25.mkv",
+                  "Quandary!",
                   LocalDate.of(2025, 11, 25)),
               new TestCase(
-                  "/tv/Daily Show/Daily Show 2020.04.17.720p.mkv",
-                  "Daily Show",
+                  "/tv/Nightly Recap/Nightly Recap 2020.04.17.720p.mkv",
+                  "Nightly Recap",
                   LocalDate.of(2020, 4, 17)),
               new TestCase("/tv/anything_14.11.1996.avi", "anything", LocalDate.of(1996, 11, 14)))
           .map(
@@ -234,8 +239,8 @@ class EpisodePathMetadataParserTest {
     @TestFactory
     Stream<DynamicNode> tests() {
       return Stream.of(
-              new TestCase("Series/4-12 - The Woman.mp4", 4, 12),
-              new TestCase("Series/4x12 - The Woman", 4, 12),
+              new TestCase("Series/4-12 - The Lantern.mp4", 4, 12),
+              new TestCase("Series/4x12 - The Lantern", 4, 12),
               new TestCase("1-12 episode name", 1, 12),
               new TestCase("/server/Temp/S01E02 foo", 1, 2),
               new TestCase("Season 2009/2009x02 blah.avi", 2009, 2),
@@ -282,25 +287,25 @@ class EpisodePathMetadataParserTest {
     @TestFactory
     Stream<DynamicNode> tests() {
       return Stream.of(
-              new TestCase("The Simpsons/The Simpsons - 02 - Ep Name.avi", 2),
-              new TestCase("The Simpsons/02.avi", 2),
-              new TestCase("The Simpsons/02 - Ep Name.avi", 2),
-              new TestCase("The Simpsons/02-Ep Name.avi", 2),
-              new TestCase("The Simpsons/02.EpName.avi", 2),
-              new TestCase("The Simpsons/The Simpsons - 02.avi", 2),
-              new TestCase("The Simpsons/The Simpsons - 02 Ep Name.avi", 2),
-              new TestCase("GJ Club (2013)/GJ Club - 07.mkv", 7),
+              new TestCase("The Greenfields/The Greenfields - 02 - Ep Name.avi", 2),
+              new TestCase("The Greenfields/02.avi", 2),
+              new TestCase("The Greenfields/02 - Ep Name.avi", 2),
+              new TestCase("The Greenfields/02-Ep Name.avi", 2),
+              new TestCase("The Greenfields/02.EpName.avi", 2),
+              new TestCase("The Greenfields/The Greenfields - 02.avi", 2),
+              new TestCase("The Greenfields/The Greenfields - 02 Ep Name.avi", 2),
+              new TestCase("KV Circle (2013)/KV Circle - 07.mkv", 7),
 
               // Absolute episode number
-              new TestCase("The Simpsons/12.avi", 12),
-              new TestCase("The Simpsons/Foo_ep_02.avi", 2),
+              new TestCase("The Greenfields/12.avi", 12),
+              new TestCase("The Greenfields/Foo_ep_02.avi", 2),
 
               // Part number extraction
               new TestCase("/season 1/title_part_1.avi", 1),
               new TestCase("/season 1/title.part.2.avi", 2),
               new TestCase("/season 1/title-part-3.mkv", 3),
-              new TestCase("/Season 1/The.Night.Of.Part.7.1080p.BluRay.x264-DEPTH.mkv", 7),
-              new TestCase("/Season 1/Alias.Grace.Part.4.1080p.WEBRip.x264-aAF-xpost.mkv", 4),
+              new TestCase("/Season 1/The.Quiet.Rain.Part.7.1080p.BluRay.x264-MOSSFERN.mkv", 7),
+              new TestCase("/Season 1/Slate.Meridian.Part.4.1080p.WEBRip.x264-bQe-xpost.mkv", 4),
               new TestCase("/Season 1/Title.PART.5.720p.mkv", 5),
               new TestCase("/Season 1/Title.Pt.3.mkv", 3),
 
@@ -334,46 +339,49 @@ class EpisodePathMetadataParserTest {
     @TestFactory
     Stream<DynamicNode> tests() {
       return Stream.of(
-              new TestCase("Season 02/Elementary - 02x03x04x15 - Ep Name.mp4", "Elementary", 15),
+              new TestCase("Season 02/Rudimentary - 02x03x04x15 - Ep Name.mp4", "Rudimentary", 15),
               new TestCase(
-                  "Season 2/Elementary - 02x03 - 02x04 - 02x15 - Ep Name.mp4", "Elementary", 15),
+                  "Season 2/Rudimentary - 02x03 - 02x04 - 02x15 - Ep Name.mp4", "Rudimentary", 15),
               new TestCase("Season 2/02x03 - 02x04 - 02x15 - Ep Name.mp4", null, 15),
               new TestCase("Season 2/02x03-04-15 - Ep Name.mp4", null, 15),
-              new TestCase("Season 1/S01E23-E24-E26 - The Woman.mp4", null, 26),
+              new TestCase("Season 1/S01E23-E24-E26 - The Lantern.mp4", null, 26),
               new TestCase("Season 02/02x03-E15 - Ep Name.mp4", null, 15),
-              new TestCase("Season 2/Elementary - 02x03-04-15 - Ep Name.mp4", "Elementary", 15),
+              new TestCase("Season 2/Rudimentary - 02x03-04-15 - Ep Name.mp4", "Rudimentary", 15),
               new TestCase(
-                  "Season 1/Elementary - S01E23-E24-E26 - The Woman.mp4", "Elementary", 26),
-              new TestCase("Season 02/Elementary - 02x03-E15 - Ep Name.mp4", "Elementary", 15),
+                  "Season 1/Rudimentary - S01E23-E24-E26 - The Lantern.mp4", "Rudimentary", 26),
+              new TestCase("Season 02/Rudimentary - 02x03-E15 - Ep Name.mp4", "Rudimentary", 15),
               new TestCase("Season 02/02x03 - x04 - x15 - Ep Name.mp4", null, 15),
               new TestCase(
-                  "Season 02/Elementary - 02x03 - x04 - x15 - Ep Name.mp4", "Elementary", 15),
+                  "Season 02/Rudimentary - 02x03 - x04 - x15 - Ep Name.mp4", "Rudimentary", 15),
               new TestCase("Season 02/02x03x04x15 - Ep Name.mp4", null, 15),
               new TestCase(
-                  "Season 2009/Elementary - 2009x03x04x15 - Ep Name.mp4", "Elementary", 15),
+                  "Season 2009/Rudimentary - 2009x03x04x15 - Ep Name.mp4", "Rudimentary", 15),
               new TestCase(
-                  "Season 2009/Elementary - 2009x03 - 2009x04 - 2009x15 - Ep Name.mp4",
-                  "Elementary",
+                  "Season 2009/Rudimentary - 2009x03 - 2009x04 - 2009x15 - Ep Name.mp4",
+                  "Rudimentary",
                   15),
               new TestCase("Season 2009/2009x03 - 2009x04 - 2009x15 - Ep Name.mp4", null, 15),
               new TestCase("Season 2009/2009x03-04-15 - Ep Name.mp4", null, 15),
-              new TestCase("Season 2009/S2009E23-E24-E26 - The Woman.mp4", null, 26),
+              new TestCase("Season 2009/S2009E23-E24-E26 - The Lantern.mp4", null, 26),
               new TestCase("Season 2009/2009x03-E15 - Ep Name.mp4", null, 15),
               new TestCase(
-                  "Season 2009/Elementary - 2009x03-04-15 - Ep Name.mp4", "Elementary", 15),
+                  "Season 2009/Rudimentary - 2009x03-04-15 - Ep Name.mp4", "Rudimentary", 15),
               new TestCase(
-                  "Season 2009/Elementary - S2009E23-E24-E26 - The Woman.mp4", "Elementary", 26),
-              new TestCase("Season 2009/Elementary - 2009x03-E15 - Ep Name.mp4", "Elementary", 15),
+                  "Season 2009/Rudimentary - S2009E23-E24-E26 - The Lantern.mp4",
+                  "Rudimentary",
+                  26),
+              new TestCase(
+                  "Season 2009/Rudimentary - 2009x03-E15 - Ep Name.mp4", "Rudimentary", 15),
               new TestCase("Season 2009/2009x03 - x04 - x15 - Ep Name.mp4", null, 15),
               new TestCase(
-                  "Season 2009/Elementary - 2009x03 - x04 - x15 - Ep Name.mp4", "Elementary", 15),
+                  "Season 2009/Rudimentary - 2009x03 - x04 - x15 - Ep Name.mp4", "Rudimentary", 15),
               new TestCase("Season 2009/02x03x04x15 - Ep Name.mp4", null, 15),
               new TestCase("/Season 1/foo 03-06", "foo", 6),
               new TestCase("Season 1/02-03 - blah.avi", null, 3),
               new TestCase("Season 2/02-04 - blah 14 blah.avi", null, 4),
               new TestCase("Season 1/02-05 - blah-02 a.avi", null, 5),
               new TestCase("Season 2/02-04.avi", null, 4),
-              new TestCase("Season 1/MOONLIGHTING_s01e01-e04", "MOONLIGHTING", 4))
+              new TestCase("Season 1/WAYFARING_s01e01-e04", "WAYFARING", 4))
           .map(
               testCase ->
                   DynamicTest.dynamicTest(

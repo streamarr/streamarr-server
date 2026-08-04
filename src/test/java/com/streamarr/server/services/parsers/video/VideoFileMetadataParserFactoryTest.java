@@ -37,11 +37,11 @@ class VideoFileMetadataParserFactoryTest {
   @DisplayName("Should parse and return result from MetadataParser when provided valid filename")
   void shouldSuccessfullyParseFilename() {
     var fakeResult =
-        Optional.of(VideoFileParserResult.builder().title("Spider Man").year("2002").build());
+        Optional.of(VideoFileParserResult.builder().title("Garnet Vale").year("2002").build());
 
     when(mockDefaultVideoFileMetadataParser.parse(anyString())).thenReturn(fakeResult);
 
-    var result = videoFileMetadataParserFactory.parseMetadata("Spider Man (2002).mkv");
+    var result = videoFileMetadataParserFactory.parseMetadata("Garnet Vale (2002).mkv");
 
     assertThat(result).isPresent();
     assertThat(result.get().title()).isEqualTo(fakeResult.get().title());

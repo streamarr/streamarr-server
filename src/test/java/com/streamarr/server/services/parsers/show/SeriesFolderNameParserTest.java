@@ -20,20 +20,20 @@ class SeriesFolderNameParserTest {
   @Test
   @DisplayName("Should extract title, year, and IMDB external ID from folder name")
   void shouldExtractTitleYearAndImdbExternalIdFromFolderName() {
-    var result = parser.parse("Love, Death & Robots (2019) [imdb-tt9561862]");
+    var result = parser.parse("Rust, Dust & Orbits (2019) [imdb-tt9461738]");
 
-    assertThat(result.title()).isEqualTo("Love, Death & Robots");
+    assertThat(result.title()).isEqualTo("Rust, Dust & Orbits");
     assertThat(result.year()).isEqualTo("2019");
-    assertThat(result.externalId()).isEqualTo("tt9561862");
+    assertThat(result.externalId()).isEqualTo("tt9461738");
     assertThat(result.externalSource()).isEqualTo(ExternalSourceType.IMDB);
   }
 
   @Test
   @DisplayName("Should extract title and year when no external ID tag present")
   void shouldExtractTitleAndYearWhenNoExternalIdTagPresent() {
-    var result = parser.parse("Breaking Bad (2008)");
+    var result = parser.parse("Bending Oak (2008)");
 
-    assertThat(result.title()).isEqualTo("Breaking Bad");
+    assertThat(result.title()).isEqualTo("Bending Oak");
     assertThat(result.year()).isEqualTo("2008");
     assertThat(result.externalId()).isNull();
     assertThat(result.externalSource()).isNull();
@@ -42,22 +42,22 @@ class SeriesFolderNameParserTest {
   @Test
   @DisplayName("Should extract only title when no year or external ID present")
   void shouldExtractOnlyTitleWhenNoYearOrExternalIdPresent() {
-    var result = parser.parse("The Wire");
+    var result = parser.parse("The Loom");
 
-    assertThat(result.title()).isEqualTo("The Wire");
+    assertThat(result.title()).isEqualTo("The Loom");
     assertThat(result.year()).isNull();
     assertThat(result.externalId()).isNull();
     assertThat(result.externalSource()).isNull();
   }
 
   @Test
-  @DisplayName("Should extract title, year, and IMDB external ID from Hilda folder")
-  void shouldExtractTitleYearAndImdbExternalIdFromHildaFolder() {
-    var result = parser.parse("Hilda (2018) [imdb-tt6385540]");
+  @DisplayName("Should extract title, year, and IMDB external ID from single-word folder")
+  void shouldExtractTitleYearAndImdbExternalIdFromSingleWordFolder() {
+    var result = parser.parse("Brindle (2018) [imdb-tt6481553]");
 
-    assertThat(result.title()).isEqualTo("Hilda");
+    assertThat(result.title()).isEqualTo("Brindle");
     assertThat(result.year()).isEqualTo("2018");
-    assertThat(result.externalId()).isEqualTo("tt6385540");
+    assertThat(result.externalId()).isEqualTo("tt6481553");
     assertThat(result.externalSource()).isEqualTo(ExternalSourceType.IMDB);
   }
 
@@ -140,17 +140,17 @@ class SeriesFolderNameParserTest {
   @Test
   @DisplayName("Should extract title when country suffix present")
   void shouldExtractTitleWhenCountrySuffixPresent() {
-    var result = parser.parse("Euphoria (US)");
+    var result = parser.parse("Cadence (US)");
 
-    assertThat(result.title()).isEqualTo("Euphoria");
+    assertThat(result.title()).isEqualTo("Cadence");
   }
 
   @Test
   @DisplayName("Should extract title and year when country and year present")
   void shouldExtractTitleAndYearWhenCountryAndYearPresent() {
-    var result = parser.parse("The Office (UK) (2001)");
+    var result = parser.parse("The Branch (UK) (2001)");
 
-    assertThat(result.title()).isEqualTo("The Office");
+    assertThat(result.title()).isEqualTo("The Branch");
     assertThat(result.year()).isEqualTo("2001");
   }
 

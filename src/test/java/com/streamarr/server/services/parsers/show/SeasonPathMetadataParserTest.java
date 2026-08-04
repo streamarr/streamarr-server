@@ -43,7 +43,7 @@ class SeasonPathMetadataParserTest {
               new TestCase("2", 2, true),
               new TestCase("Season 2009", 2009, true),
               new TestCase("Season1", 1, true),
-              new TestCase("The.Wonder.Years.S04.PDTV.x264-JCH", 4, true),
+              new TestCase("The.Meadow.Years.S04.PDTV.x264-VXK", 4, true),
               new TestCase("Season 7 (2016)", 7, false),
               new TestCase("Staffel 7 (2016)", 7, false),
               new TestCase("Stagione 7 (2016)", 7, false),
@@ -56,7 +56,10 @@ class SeasonPathMetadataParserTest {
               new TestCase("Temporada 5", 5, true),
               new TestCase("Saison 2", 2, true),
               new TestCase("Series 4", 4, true),
-              new TestCase("Сезон 1", 1, true))
+              new TestCase("Сезон 1", 1, true),
+
+              // A bare numeric folder is trusted as a season, even when it looks like a year.
+              new TestCase("2009", 2009, true))
           .map(
               testCase ->
                   DynamicTest.dynamicTest(
@@ -84,8 +87,8 @@ class SeasonPathMetadataParserTest {
       return Stream.of(
               new TestCase("Season (8)", false),
               new TestCase("s06e05", false),
-              new TestCase(
-                  "The.Legend.of.Condor.Heroes.2017.V2.web-dl.1080p.h264.aac-hdctv", false))
+              new TestCase("2024-01-24 4070 ti overview", false),
+              new TestCase("The.Ballad.of.Marble.Wrens.2017.V2.web-dl.1080p.h264.aac-hdctv", false))
           .map(
               testCase ->
                   DynamicTest.dynamicTest(
