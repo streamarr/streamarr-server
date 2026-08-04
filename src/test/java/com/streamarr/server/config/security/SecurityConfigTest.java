@@ -1,11 +1,13 @@
 package com.streamarr.server.config.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.streamarr.server.services.auth.TokenScope;
 import jakarta.servlet.Filter;
 import jakarta.servlet.http.Cookie;
 import java.time.Duration;
@@ -19,6 +21,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -63,31 +66,31 @@ class SecurityConfigTest {
   }
 
   @Test
-  @DisplayName("Should not require csrf when no auth cookie is present")
-  void shouldNotRequireCsrfWhenNoAuthCookieIsPresent() throws Exception {
+  @DisplayName("Should not require csrf when no Streamarr cookie is present")
+  void shouldNotRequireCsrfWhenNoStreamarrCookieIsPresent() throws Exception {
     mockMvc.perform(post("/api/auth/login")).andExpect(status().isNoContent());
   }
 
   @Test
-  @DisplayName("Should not require csrf when bearer credential accompanies auth cookie")
-  void shouldNotRequireCsrfWhenBearerCredentialAccompaniesAuthCookie() throws Exception {
+  @DisplayName("Should require csrf when a bearer credential is ignored on login")
+  void shouldRequireCsrfWhenBearerCredentialIsIgnoredOnLogin() throws Exception {
     mockMvc
         .perform(
             post("/api/auth/login")
                 .cookie(new Cookie(AuthCookies.ACCESS_COOKIE, "ambient-credential"))
                 .header("Authorization", "Bearer opaque-token"))
-        .andExpect(status().isNoContent());
+        .andExpect(status().isForbidden());
   }
 
   @Test
-  @DisplayName("Should not require csrf when bearer scheme cased differently")
-  void shouldNotRequireCsrfWhenBearerSchemeCasedDifferently() throws Exception {
+  @DisplayName("Should require csrf when a differently cased bearer credential is ignored")
+  void shouldRequireCsrfWhenDifferentlyCasedBearerCredentialIsIgnored() throws Exception {
     mockMvc
         .perform(
             post("/api/auth/login")
                 .cookie(new Cookie(AuthCookies.ACCESS_COOKIE, "ambient-credential"))
                 .header("Authorization", "bearer opaque-token"))
-        .andExpect(status().isNoContent());
+        .andExpect(status().isForbidden());
   }
 
   @Test
@@ -126,15 +129,59 @@ class SecurityConfigTest {
   @DisplayName("Should accept cookie authenticated request when csrf cookie is echoed")
   void shouldAcceptCookieAuthenticatedRequestWhenCsrfCookieIsEchoed() throws Exception {
     var tokenCookie =
-        mockMvc.perform(get("/api/auth/login")).andReturn().getResponse().getCookie("XSRF-TOKEN");
+        mockMvc
+            .perform(get("/api/auth/login"))
+            .andReturn()
+            .getResponse()
+            .getCookie(AuthCookies.CSRF_COOKIE);
 
     assertThat(tokenCookie).isNotNull();
     mockMvc
         .perform(
             post("/api/auth/login")
                 .cookie(new Cookie(AuthCookies.ACCESS_COOKIE, "ambient-credential"), tokenCookie)
-                .header("X-XSRF-TOKEN", tokenCookie.getValue()))
+                .header(StreamarrCookieCsrfTokenRepository.HEADER_NAME, tokenCookie.getValue()))
         .andExpect(status().isNoContent());
+  }
+
+  @Test
+  @DisplayName("Should reject a cookie authenticated request when the csrf token is wrong")
+  void shouldRejectCookieAuthenticatedRequestWhenCsrfTokenIsWrong() throws Exception {
+    var tokenCookie =
+        mockMvc
+            .perform(get("/api/auth/login"))
+            .andReturn()
+            .getResponse()
+            .getCookie(AuthCookies.CSRF_COOKIE);
+    assertThat(tokenCookie).isNotNull();
+
+    mockMvc
+        .perform(
+            post("/api/auth/login")
+                .cookie(new Cookie(AuthCookies.ACCESS_COOKIE, "ambient-credential"), tokenCookie)
+                .header(StreamarrCookieCsrfTokenRepository.HEADER_NAME, "wrong-token"))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  @DisplayName("Should reject csrf before decoding an access cookie on a protected route")
+  void shouldRejectCsrfBeforeDecodingAccessCookieOnProtectedRoute() throws Exception {
+    mockMvc
+        .perform(
+            post("/graphql").cookie(new Cookie(AuthCookies.ACCESS_COOKIE, "ambient-credential")))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  @DisplayName("Should not expose the framework default logout endpoint")
+  void shouldNotExposeFrameworkDefaultLogoutEndpoint() throws Exception {
+    mockMvc
+        .perform(
+            get("/logout")
+                .with(
+                    user("test")
+                        .authorities(new SimpleGrantedAuthority(TokenScope.ACCOUNT.authority()))))
+        .andExpect(status().isNotFound());
   }
 
   @Configuration(proxyBeanMethods = false)
@@ -174,6 +221,11 @@ class SecurityConfigTest {
 
     @PostMapping("/api/auth/login")
     ResponseEntity<Void> post() {
+      return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/graphql")
+    ResponseEntity<Void> graphQl() {
       return ResponseEntity.noContent().build();
     }
   }

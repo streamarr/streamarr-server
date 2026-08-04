@@ -77,13 +77,24 @@ class StreamarrCookieCsrfMatcherTest {
   }
 
   @Test
-  @DisplayName("Should not require csrf when a bearer credential accompanies streamarr cookies")
+  @DisplayName(
+      "Should not require csrf when an accepted bearer credential accompanies streamarr cookies")
   void shouldNotRequireCsrfWhenBearerCredentialAccompaniesStreamarrCookies() {
-    var request = new MockHttpServletRequest("POST", "/api/auth/login");
+    var request = new MockHttpServletRequest("POST", "/graphql");
     request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer a-real-looking-token");
     request.setCookies(new Cookie(AuthCookies.CSRF_COOKIE, "csrf-value"));
 
     assertThat(matcher.matches(request)).isFalse();
+  }
+
+  @Test
+  @DisplayName("Should require csrf when a bearer header is ignored on login")
+  void shouldRequireCsrfWhenBearerHeaderIsIgnoredOnLogin() {
+    var request = new MockHttpServletRequest("POST", "/api/auth/login");
+    request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer ignored-token");
+    request.setCookies(new Cookie(AuthCookies.CSRF_COOKIE, "csrf-value"));
+
+    assertThat(matcher.matches(request)).isTrue();
   }
 
   @Test

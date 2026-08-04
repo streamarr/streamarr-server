@@ -60,6 +60,13 @@ public class StreamarrBearerTokenResolver implements BearerTokenResolver {
     return request.getAttribute(CARRIER_ATTRIBUTE) == CredentialCarrier.COOKIE;
   }
 
+  static boolean acceptsAuthorizationHeader(HttpServletRequest request) {
+    var path = pathWithinApplication(request);
+    return !UNAUTHENTICATED_PATHS.contains(path)
+        && !isHealthPath(path)
+        && !SecurityRequestMatchers.STREAM_PATHS.matches(request);
+  }
+
   private static String pathWithinApplication(HttpServletRequest request) {
     return request.getRequestURI().substring(request.getContextPath().length());
   }

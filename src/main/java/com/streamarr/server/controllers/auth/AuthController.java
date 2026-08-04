@@ -1,5 +1,7 @@
 package com.streamarr.server.controllers.auth;
 
+import static org.springframework.http.MediaType.APPLICATION_JSON_VALUE;
+
 import com.streamarr.server.config.security.StreamarrBearerTokenResolver;
 import com.streamarr.server.exceptions.InvalidRefreshTokenException;
 import com.streamarr.server.services.auth.AccessToken;
@@ -104,7 +106,7 @@ public class AuthController {
         StreamarrBearerTokenResolver.usedAccessCookie(httpRequest));
   }
 
-  @PostMapping("/setup")
+  @PostMapping(value = "/setup", consumes = APPLICATION_JSON_VALUE)
   public ResponseEntity<AuthTokensResponse> setup(
       @Valid @RequestBody SetupRequest request, HttpServletRequest httpRequest) {
     var result =
@@ -124,7 +126,7 @@ public class AuthController {
     return respond(HttpStatus.CREATED, accessToken, issued.rawToken(), request.cookieMode());
   }
 
-  @PostMapping("/login")
+  @PostMapping(value = "/login", consumes = APPLICATION_JSON_VALUE)
   public ResponseEntity<AuthTokensResponse> login(
       @Valid @RequestBody LoginRequest request, HttpServletRequest httpRequest) {
     var result =
@@ -142,7 +144,7 @@ public class AuthController {
     return respond(HttpStatus.OK, accessToken, result.rawRefreshToken(), request.cookieMode());
   }
 
-  @PostMapping("/refresh")
+  @PostMapping(value = "/refresh", consumes = APPLICATION_JSON_VALUE)
   public ResponseEntity<AuthTokensResponse> refresh(
       @RequestBody(required = false) RefreshRequest request, HttpServletRequest httpRequest) {
     var carrier = resolveRefreshCarrier(request, httpRequest);

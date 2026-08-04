@@ -8,18 +8,19 @@ import org.springframework.security.web.util.matcher.RequestMatcher;
 
 /**
  * CSRF protection applies to any unsafe request from a browser that already holds a Streamarr
- * cookie and presents no bearer credential.
+ * cookie and presents no bearer credential that the resolver can consume on that route.
  *
  * <p>Matching on the auth cookies alone protected only requests that ride an ambient credential,
  * which left login uncovered: login carries its credential in the body, so a fresh browser reaches
  * it with no auth cookie and the response mints the session. That is login CSRF — a victim silently
  * signed into the attacker's account, who then pairs a TV to it.
  *
- * <p>The XSRF-TOKEN cookie closes that: the filter writes it on the SPA's first request, so any
- * browser that has talked to this origin carries one before it can POST a login. A native client
- * carries none — the Apple clients build every session with cookie storage disabled — so
- * bearer-mode login and device pairing stay reachable with no CSRF token. An unrecognised
- * cookie-keeping client fails closed with a CSRF 403 rather than silently losing the protection.
+ * <p>The XSRF-TOKEN cookie closes that gap for returning browsers: the filter writes it on the
+ * SPA's first request, so any browser that has talked to this origin carries one before it can POST
+ * a login. First-contact safety also relies on JSON-only auth mutations and the absence of hostile
+ * CORS grants. A native client carries no cookies — the Apple clients disable cookie storage — so
+ * bearer-mode login and the planned device-pairing flow stay reachable with no CSRF token. An
+ * unrecognised cookie-keeping client fails closed with a CSRF 403.
  */
 public class StreamarrCookieCsrfMatcher implements RequestMatcher {
 
@@ -33,7 +34,8 @@ public class StreamarrCookieCsrfMatcher implements RequestMatcher {
     if (SAFE_METHODS.contains(request.getMethod())) {
       return false;
     }
-    if (hasBearerAuthorization(request)) {
+    if (hasBearerAuthorization(request)
+        && StreamarrBearerTokenResolver.acceptsAuthorizationHeader(request)) {
       return false;
     }
     return hasStreamarrCookie(request);

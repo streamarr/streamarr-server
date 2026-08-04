@@ -7,10 +7,10 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.security.access.hierarchicalroles.RoleHierarchy;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.annotation.web.configurers.CsrfConfigurer;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.header.HeaderWriterFilter;
 
@@ -32,10 +32,11 @@ public class SecurityConfig {
    * and future surfaces — demands SCOPE_ACCOUNT, which household and profile tokens satisfy through
    * the scope hierarchy.
    *
-   * <p>CSRF (SPA shape: readable XSRF-TOKEN cookie, Xor handler) protects exactly the
-   * cookie-authenticated requests. The filter is wired manually because the resource-server DSL
-   * exempts any request its bearer resolver finds a token on — and our resolver reads the access
-   * cookie, which is precisely the ambient credential CSRF must cover.
+   * <p>CSRF (SPA shape: readable XSRF-TOKEN cookie, Xor rendering, header-only submission) protects
+   * unsafe requests from the Streamarr cookie-carrying browser population. The filter is wired
+   * manually because the resource-server DSL exempts any request its bearer resolver finds a token
+   * on — and our resolver reads the access cookie, which is precisely the ambient credential CSRF
+   * must cover.
    */
   @Bean
   SecurityFilterChain securityFilterChain(HttpSecurity http) {
@@ -74,6 +75,7 @@ public class SecurityConfig {
                 exceptions
                     .authenticationEntryPoint(authenticationEntryPoint)
                     .accessDeniedHandler(accessDeniedHandler))
+        .logout(AbstractHttpConfigurer::disable)
         .build();
   }
 
@@ -87,13 +89,7 @@ public class SecurityConfig {
   // auth cookies remain httpOnly.
   @SuppressWarnings("java:S3330")
   private CsrfFilter cookieScopedCsrfFilter() {
-    var tokenRepository = CookieCsrfTokenRepository.withHttpOnlyFalse();
-    tokenRepository.setCookieName(AuthCookies.CSRF_COOKIE);
-    // The guard must not die before what it guards. Left at the default the token is session
-    // scoped, so closing the browser drops it while the auth cookies live on for the refresh TTL —
-    // and the next deep link to the login page posts a credential with no token to defend it.
-    // setCookieMaxAge is gone in Spring Security 7, so the lifetime rides the cookie customizer.
-    tokenRepository.setCookieCustomizer(cookie -> cookie.maxAge(tokenProperties.refreshTokenTtl()));
+    var tokenRepository = new StreamarrCookieCsrfTokenRepository(tokenProperties.refreshTokenTtl());
 
     var filter = new CsrfFilter(tokenRepository);
     filter.setRequireCsrfProtectionMatcher(new StreamarrCookieCsrfMatcher());
