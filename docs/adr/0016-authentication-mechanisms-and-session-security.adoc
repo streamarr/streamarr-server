@@ -113,6 +113,8 @@ Bearer-mode login — and the planned device-pairing flow — stays exempt only 
 A cookie-keeping client the server does not know about therefore fails closed with a CSRF `403`, never by silently losing the protection.
 The script-readable CSRF cookie is always `Secure`, `SameSite=Lax`, and path `/`; its lifetime comes from the same refresh-token property as the auth cookies.
 The repository renews that lifetime whenever the filter realizes a token, including login and refresh, so rotating credentials cannot outlive their guard; removing a token remains a distinct `Max-Age=0` operation.
+CSRF rejection returns the machine-readable `CSRF_TOKEN_REQUIRED` code and increments `streamarr.security.denials{reason="csrf"}`; other authorization denials retain `FORBIDDEN` and the `reason="access"` tag.
+Realizing the token happens before validation, so even a rejected response re-mints the readable cookie; the web client may retry that specific failure exactly once after re-reading the cookie, but never retries a generic `403`.
 `httpOnly` keeps scripts from reading the session cookie, and cross-site tracing cannot echo it back while HTTP `TRACE` stays disabled — embedded Tomcat's default, which must not be re-enabled.
 That narrows XSS rather than eliminating it: an injected script can still ride the session, so Spring Security's default security headers, a Content-Security-Policy, and output encoding remain required hygiene.
 Streaming is the third carrier: playlist-driven players — AVPlayer above all — cannot attach headers to the segment requests a playlist spawns, so issued manifest, playlist, and segment URLs embed a playback-scoped, stream-session-bound profile token the server validates exactly like a header token.
@@ -133,7 +135,8 @@ This makes a lost successful rotation response recoverable without storing plain
 If that successor has already rotated, the older predecessor is superseded: its grace replay may receive a fresh access token but no refresh token, so it cannot overwrite the current cookie with a consumed credential.
 Exactly one genuine rotation happens per predecessor, and reuse outside the window stays theft.
 On the web, a service worker owns renewal: one worker serves every tab of the origin, making it the natural single-flight point — it intercepts the app's API fetches, refreshes once when expiry nears or an expired-token response arrives, queues intercepted requests, and replays them once the successor cookies land.
-The worker coordinates timing but never handles the tokens themselves; the cookies stay `httpOnly` and ride its fetches automatically, and the page supplies the script-readable CSRF token the refresh `POST` needs, since workers cannot read `document.cookie`.
+The worker coordinates timing but never handles the auth tokens themselves; the cookies stay `httpOnly` and ride its fetches automatically, and the page supplies the script-readable CSRF token the refresh `POST` needs, since workers cannot read `document.cookie`.
+Because worker memory is disposable, every intercepted unsafe page request also lets a restarted worker relearn the echoed CSRF header before it attempts reactive refresh.
 Browsers kill idle workers and a first visit precedes registration, so correctness never rests on the worker: the grace window and expired-token retry keep a workerless tab correct, and the worker's job is making renewal invisible.
 
 Limited-input clients — Apple TV, Android TV, Nvidia Shield, smart-TV apps — pair rather than type credentials.
@@ -180,6 +183,7 @@ Explicitly deferred from v1:
 * MFA and device pairing are account/session concerns; profile selection stays a viewing-context concern.
 * Refresh-token revocation, rotation with reuse detection, digest-at-rest storage, and playback-authority revocation are required server features, not optional client behavior.
 * One token model has three carriers — bearer headers for native apps, `httpOnly` cookies plus CSRF protection for browsers, session-bound playback-URL tokens for streaming — and no carrier weakens validation.
+* The host-bound cookie rename is a coordinated deployment: the web bundle that understands `__Host-XSRF-TOKEN` is deployed and old cached assets are invalidated before the server begins issuing only that name. Production does not temporarily accept the unprefixed name because doing so would preserve the cookie-planting risk being removed.
 * Access-token `exp` is inviolable and the TTL ceiling is a security parameter: bounded API staleness is only sound while both hold.
 * API-surface revocation is bounded by the access-token TTL; instant revocation is a playback property, carried by the joint authority of link:0017-playback-enforcement-lifecycle.adoc[ADR 0017] once the counter transition completes.
 * Refresh races are resolved on the server — the rotation grace window — and merely smoothed by the web client's service worker, so a browser without a live worker degrades to slower renewal, never to spurious logout.

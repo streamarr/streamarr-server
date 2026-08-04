@@ -4,27 +4,31 @@ Review date: 2026-08-04
 
 Pull request: [#271 — Require CSRF for browser cookie-mode login](https://github.com/streamarr/streamarr-server/pull/271)
 
-Reviewed range: `1a10a8bb775b1bfb70cf236600a48707ee32b3f8..74f60092d05a7d868e7057a32cb91eb665d49019`
+Baseline reviewed range: `1a10a8bb775b1bfb70cf236600a48707ee32b3f8..74f60092d05a7d868e7057a32cb91eb665d49019`
+
+Remediation reviewed through: `d227171580c0bc2de1b08dbe95367cb954f3ec89`, followed by the 2026-08-04 TDD follow-up recorded below.
+
+Document status: historical baseline plus remediation record. The probe results and finding narratives below describe the baseline commit range, not the final implementation; current behavior is summarized in the remediation and rollout sections.
 
 ## Verdict
 
-The core fix is correct: treating any Streamarr cookie, including `XSRF-TOKEN`, as evidence of a cookie-keeping browser closes the previously uncovered login-CSRF population without blocking native clients that do not retain cookies.
+The core fix is correct: treating any Streamarr cookie, including the active CSRF marker, as evidence of a cookie-keeping browser closes the previously uncovered login-CSRF population without blocking native clients that do not retain cookies.
 
-Neither review established an exploitable cross-site login attack at this commit. A fresh browser has no CSRF marker and is exempt, but the two browser-sendable request media types tested (`text/plain` and `application/x-www-form-urlencoded`) are rejected with `415` by setup, login, and refresh. A JSON request requires preflight, and the application does not grant a hostile origin an `Access-Control-Allow-Origin` response. The original review's P1 exploit claim was therefore a false positive; its underlying observation is still a valuable regression warning because these protections are implicit and largely untested in the PR.
+Neither review established an exploitable cross-site login attack at the baseline commit. A fresh browser has no CSRF marker and is exempt, but all three browser-sendable form media types (`text/plain`, `application/x-www-form-urlencoded`, and `multipart/form-data`) are now pinned as `415` responses from setup, login, and refresh. A JSON request requires preflight, and the application does not grant a hostile origin an `Access-Control-Allow-Origin` response. The original review's P1 exploit claim was therefore a false positive; its underlying observation remains a valuable regression warning because these protections are load-bearing.
 
 The merged review does reproduce several real issues: missing explicit CSRF cookie attributes, fixed rather than sliding CSRF-cookie expiry, the Bruno collection regression, request-parameter token fallback, an over-broad Bearer exemption, the cookie-deletion customizer trap, and the framework's live `GET /logout` endpoint. The request-format boundary, cookie attributes, lifetime decision, regression coverage, and Bruno harness affect the merge decision; the rest are bounded hardening or maintenance risks.
 
 ## TDD remediation outcome
 
-All before-merge and immediate-hardening recommendations were implemented on 2026-08-04 with a red-green cycle for each behavioral defect. Passing review probes were retained as permanent regression tests. The optional HMAC-bound token and `__Host-` rename remain a separate coordinated server/web design decision, as originally classified.
+All before-merge and immediate-hardening recommendations were implemented on 2026-08-04 with a red-green cycle for each behavioral defect. Passing review probes were retained as permanent regression tests. The coordinated `__Host-XSRF-TOKEN` server/web change is implemented; HMAC binding remains a separate optional decision.
 
 | Finding | Resolution | Permanent proof |
 |---|---|---|
-| F1 | Setup, login, and refresh now explicitly consume JSON; bodyless cookie refresh remains supported. | Six non-JSON `415` cases, hostile-preflight test, existing bodyless-refresh IT |
+| F1 | Setup, login, and refresh now explicitly consume JSON; bodyless cookie refresh remains supported. | Nine non-JSON `415` cases, hostile-preflight test, existing bodyless-refresh IT |
 | F2 | The CSRF cookie is explicitly `Secure`, `SameSite=Lax`, script-readable, and path `/`. | Cookie-attribute integration test |
 | F3 | The repository reissues a loaded CSRF token with a fresh refresh-token lifetime. | Refresh-rotation lifecycle IT |
-| F4 | All identified negative and end-to-end gaps are now pinned. | Wrong-token, filter-order, GraphQL-cookie, setup-marker, media-type, CORS, attribute, and renewal tests |
-| F5 | Bruno login echoes a retained `XSRF-TOKEN` through its pre-request script. | Retained-cookie bearer-login IT; Bruno CLI execution still requires a configured local collection environment |
+| F4 | All identified negative and end-to-end gaps are now pinned, including rejected-response token re-minting. | Wrong-token, filter-order, GraphQL-cookie, setup-marker, media-type, CORS, attribute, renewal, and re-mint tests |
+| F5 | Bruno setup, login, and refresh echo either supported CSRF cookie name. | Retained-cookie bearer-login IT plus Bruno CLI 4.0 collection execution |
 | F6 | `_csrf` request parameters are ignored; only `X-XSRF-TOKEN` resolves. | Request-handler unit test (red returned `raw-token`, green returned `null`) |
 | F7 | Bearer exemption applies only where the resolver accepts the Authorization header. | Matcher and filter-chain tests for protected routes versus login |
 | F8 | A dedicated repository keeps deletion at `Max-Age=0`, independent of normal lifetime customization. | Repository unit test (original behavior reproduced `2592000`) |
@@ -32,13 +36,17 @@ All before-merge and immediate-hardening recommendations were implemented on 202
 | F10 | Javadocs, ADR claims, comments, names, and literals now describe the actual boundary and lifecycle. | Static review plus formatter/checkstyle |
 | F11 | No implementation change; remains optional defense-in-depth requiring coordinated client design. | Not applicable |
 
-Final repository verification:
+Final cross-repository verification:
 
 ```text
 ./mvnw spotless:apply  -> BUILD SUCCESS
 ./mvnw verify          -> BUILD SUCCESS
-Unit tests             -> 1,531 passed; 0 failures; 0 errors
-Integration tests      ->   469 passed; 0 failures; 0 errors
+Unit tests             -> 1,682 passed; 0 failures; 0 errors
+Integration tests      ->   473 passed; 0 failures; 0 errors
+streamarr-web tests     ->    74 passed; 0 failures
+streamarr-web typecheck -> SUCCESS
+streamarr-web build     -> SUCCESS
+Bruno CLI 4.0 (Linux)  -> status/setup 2/2; status/login/refresh 3/3
 ```
 
 ## How the claims were tested
@@ -48,7 +56,7 @@ Temporary tests were added one at a time, run in isolation, and then removed so 
 | ID | Probe | Expected contract | Observed at PR head | Assessment |
 |---|---|---|---|---|
 | P01 | Wrong `X-XSRF-TOKEN` beside the real cookie | `403` | `403` (`PASS`) | Coverage gap only; no bypass reproduced |
-| P02 | `text/plain` and form-urlencoded bodies against setup, login, and refresh | Six `415` responses | Six `415` responses (`PASS`) | No current simple-request login-CSRF vector; behavior is implicit |
+| P02 | All three form media types against setup, login, and refresh | Nine `415` responses | The original six responses passed; multipart coverage was added permanently | No current simple-request login-CSRF vector |
 | P03 | Hostile JSON login CORS preflight | No `Access-Control-Allow-Origin` | Header absent (`PASS`) | No current credentialed cross-origin JSON path |
 | P04 | CSRF cookie attributes from `GET /api/auth/status` | `Secure=true`, `SameSite=Lax` | `Secure=false`, `SameSite=null` (`RED`) | Confirmed configuration gap |
 | P05 | Rotate the refresh cookie, then inspect the same response for a renewed CSRF cookie | New `XSRF-TOKEN` cookie | No CSRF `Set-Cookie` (`RED`) | Confirms fixed-vs-sliding lifetime mismatch |
@@ -84,7 +92,9 @@ After removing the temporary probes, the PR's original focused suites were rerun
 
 Result: `BUILD SUCCESS`; 16 unit tests and 20 integration tests passed, with zero failures or errors.
 
-## Combined findings
+## Historical baseline findings
+
+The sections in this part intentionally describe the baseline range named at the top. Their present-tense wording is historical evidence and must not be read as a claim about the remediated branch.
 
 ### F1 — The fresh-browser path is safe today, but its boundary is implicit
 
@@ -208,7 +218,7 @@ HMAC-binding the token remains a separate deliberate hardening decision.
 1. [x] Make the request-format boundary explicit and retain P02/P03 as permanent integration tests.
 2. [x] Configure explicit `Secure` and `SameSite=Lax` attributes and test them.
 3. [x] Add the passing security regression tests from F4.
-4. [x] Repair Bruno login by echoing the retained cookie into `X-XSRF-TOKEN`; a configured collection run remains an environment-level verification step.
+4. [x] Repair Bruno login by echoing the retained cookie into `X-XSRF-TOKEN`; verify setup, login, and refresh through a retained-cookie Bruno CLI collection run.
 5. [x] Implement sliding CSRF-cookie renewal and replace the single-instant claim with lifecycle proof.
 6. [x] Correct the stale `SecurityConfig` javadoc and load-bearing ADR claims.
 
@@ -226,6 +236,17 @@ HMAC-binding the token remains a separate deliberate hardening decision.
 2. [ ] Evaluate HMAC-bound double-submit tokens independently.
 
 Keep the auth cookies `SameSite=Strict`; do not change the CSRF cookie to `SameSite=None` merely to make it accompany cross-site requests. Cross-site cookie delivery is not the protection objective.
+
+## Coordinated rollout
+
+The production cookie rename is intentionally not backward-compatible with an old web bundle. Accepting `XSRF-TOKEN` in production as a transition would restore the sibling-subdomain cookie-planting condition that the host prefix removes.
+
+1. Merge and deploy [streamarr-web #7](https://github.com/streamarr/streamarr-web/pull/7), which reads both the host-bound production name and the development fallback and retries one CSRF-specific `403` once.
+2. Invalidate any CDN/browser-served old web assets and wait at least the configured asset-cache lifetime before changing the server. The service worker does not intercept application assets, so ordinary HTTP cache policy is the relevant gate.
+3. Merge and deploy server #271. A CSRF-specific rejection re-mints the cookie, increments `streamarr.security.denials{reason="csrf"}`, and the new client retries once with the replacement.
+4. Merge [server #266](https://github.com/streamarr/streamarr-server/pull/266) after #271 when plain-HTTP Safari development is required. Its two-gate development profile emits only `XSRF-TOKEN`; production continues to emit and accept only `__Host-XSRF-TOKEN`.
+
+Rollback in reverse compatibility order: roll the server back before rolling the web client back.
 
 ## Confirmed strengths
 

@@ -7,9 +7,10 @@ request. Replace the non-secret resource IDs and local library path as needed.
 For a configured server, run `Auth/Public/Login` before protected requests. On a fresh
 server, run `Auth/Public/Setup (one time)` instead. Both requests keep the returned access and refresh
 tokens in Bruno runtime variables; issued tokens are never persisted in the collection.
-If Bruno's cookie jar contains the script-readable `__Host-XSRF-TOKEN` issued by the status
-request, the login pre-request script echoes it in `X-XSRF-TOKEN` as the browser contract
-requires. The script also recognizes the unprefixed development fallback.
+Use Bruno CLI 4.0 or newer. If its cookie jar contains the script-readable
+`__Host-XSRF-TOKEN` issued by the status request, every unsafe public auth request echoes it in
+`X-XSRF-TOKEN` as the browser contract requires. The scripts also recognize the unprefixed
+development fallback.
 `Auth/Public/Refresh Tokens` replaces the access token and captures a rotated refresh token when
 the response includes one.
 
