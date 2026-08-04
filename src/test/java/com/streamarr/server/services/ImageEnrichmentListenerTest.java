@@ -16,6 +16,7 @@ import com.streamarr.server.fakes.FakeTmdbHttpService;
 import com.streamarr.server.services.concurrency.MutexFactory;
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
 import com.streamarr.server.services.metadata.ImageVariantService;
+import com.streamarr.server.services.metadata.TmdbImageDownloader;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;
 import com.streamarr.server.services.metadata.events.MetadataEnrichedEvent;
 import java.nio.file.FileSystem;
@@ -23,6 +24,9 @@ import java.nio.file.Files;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantLock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -40,12 +44,7 @@ class ImageEnrichmentListenerTest {
     imageRepository = new FakeImageRepository();
     tmdbHttpService = new FakeTmdbHttpService();
     fileSystem = Jimfs.newFileSystem(Configuration.unix());
-    var imageProperties = new ImageProperties("/data/images");
-    var imageVariantService = new ImageVariantService();
-    var imageService =
-        new ImageService(imageRepository, imageVariantService, imageProperties, fileSystem);
-    listener =
-        new ImageEnrichmentListener(tmdbHttpService, imageService, new MutexFactoryProvider());
+    listener = createListener(tmdbHttpService, new MutexFactory<>());
   }
 
   @Test
@@ -265,20 +264,7 @@ class ImageEnrichmentListenerTest {
     var sharedFactory = new MutexFactory<String>();
     var mutex = sharedFactory.getMutex(entityId.toString());
 
-    var singleFactoryProvider =
-        new MutexFactoryProvider() {
-          @Override
-          @SuppressWarnings("unchecked")
-          public <K> MutexFactory<K> getMutexFactory() {
-            return (MutexFactory<K>) sharedFactory;
-          }
-        };
-
-    var imageProperties = new ImageProperties("/data/images");
-    var localImageService =
-        new ImageService(imageRepository, new ImageVariantService(), imageProperties, fileSystem);
-    var testListener =
-        new ImageEnrichmentListener(tmdbHttpService, localImageService, singleFactoryProvider);
+    var testListener = createListener(tmdbHttpService, sharedFactory);
 
     mutex.lock();
 
@@ -301,5 +287,113 @@ class ImageEnrichmentListenerTest {
                   imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE);
               assertThat(images).isNotEmpty();
             });
+  }
+
+  @Test
+  @DisplayName("Should enrich only once when concurrent events received for same entity")
+  void shouldEnrichOnlyOnceWhenConcurrentEventsReceivedForSameEntity() {
+    var entityId = UUID.randomUUID();
+    tmdbHttpService.setImageData(createTestImage(600, 900));
+    tmdbHttpService.setDelayMillis(500);
+
+    var downloadCount = new AtomicInteger();
+    TmdbImageDownloader countingDownloader =
+        path -> {
+          downloadCount.incrementAndGet();
+          return tmdbHttpService.downloadImage(path);
+        };
+    var sharedFactory = new MutexFactory<String>();
+    var mutex = sharedFactory.getMutex(entityId.toString());
+    var testListener = createListener(countingDownloader, sharedFactory);
+    var event =
+        new MetadataEnrichedEvent(
+            entityId,
+            ImageEntityType.MOVIE,
+            List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")));
+
+    testListener.onMetadataEnriched(event);
+    await().atMost(Duration.ofSeconds(5)).until(() -> downloadCount.get() == 1);
+
+    testListener.onMetadataEnriched(event);
+    await().atMost(Duration.ofSeconds(5)).until(mutex::hasQueuedThreads);
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .untilAsserted(
+            () -> {
+              assertThat(mutex.isLocked()).isFalse();
+              assertThat(mutex.hasQueuedThreads()).isFalse();
+              assertThat(
+                      imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
+                  .isNotEmpty();
+            });
+
+    assertThat(downloadCount).hasValue(1);
+  }
+
+  @Test
+  @DisplayName("Should stop enrichment when interrupted while waiting for entity lock")
+  void shouldStopEnrichmentWhenInterruptedWhileWaitingForEntityLock() {
+    var entityId = UUID.randomUUID();
+    tmdbHttpService.setImageData(createTestImage(600, 900));
+
+    var waitingThread = new AtomicReference<Thread>();
+    var mutex =
+        new ReentrantLock() {
+          @Override
+          public void lockInterruptibly() throws InterruptedException {
+            waitingThread.set(Thread.currentThread());
+            super.lockInterruptibly();
+          }
+        };
+    var sharedFactory =
+        new MutexFactory<String>() {
+          @Override
+          public ReentrantLock getMutex(String key) {
+            return mutex;
+          }
+        };
+    var testListener = createListener(tmdbHttpService, sharedFactory);
+    var event =
+        new MetadataEnrichedEvent(
+            entityId,
+            ImageEntityType.MOVIE,
+            List.of(new TmdbImageSource(ImageType.POSTER, "/poster.jpg")));
+
+    mutex.lock();
+    try {
+      testListener.onMetadataEnriched(event);
+
+      await().atMost(Duration.ofSeconds(5)).until(() -> waitingThread.get() != null);
+      waitingThread.get().interrupt();
+      await()
+          .atMost(Duration.ofSeconds(5))
+          .until(() -> waitingThread.get().getState() == Thread.State.TERMINATED);
+
+      assertThat(waitingThread.get().isInterrupted()).isTrue();
+    } finally {
+      mutex.unlock();
+    }
+
+    assertThat(imageRepository.findByEntityIdAndEntityType(entityId, ImageEntityType.MOVIE))
+        .isEmpty();
+  }
+
+  private ImageEnrichmentListener createListener(
+      TmdbImageDownloader imageDownloader, MutexFactory<String> mutexFactory) {
+    var mutexFactoryProvider =
+        new MutexFactoryProvider() {
+          @Override
+          @SuppressWarnings("unchecked")
+          public <K> MutexFactory<K> getMutexFactory() {
+            return (MutexFactory<K>) mutexFactory;
+          }
+        };
+    var imageService =
+        new ImageService(
+            imageRepository,
+            new ImageVariantService(),
+            new ImageProperties("/data/images"),
+            fileSystem);
+    return new ImageEnrichmentListener(imageDownloader, imageService, mutexFactoryProvider);
   }
 }
