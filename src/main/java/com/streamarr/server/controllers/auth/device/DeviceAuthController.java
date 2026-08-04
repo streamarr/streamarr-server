@@ -13,7 +13,6 @@ import jakarta.validation.Valid;
 import java.util.Arrays;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -39,7 +38,7 @@ public class DeviceAuthController {
       @Valid @RequestBody(required = false) DeviceCodeRequest request) {
     var issued = deviceAuthorizationService.issue(request == null ? null : request.deviceName());
 
-    return noStore(ResponseEntity.ok())
+    return CredentialCacheHeaders.nonCacheable(ResponseEntity.ok())
         .body(
             DeviceCodeResponse.builder()
                 .deviceCode(issued.deviceCode())
@@ -59,7 +58,7 @@ public class DeviceAuthController {
   public ResponseEntity<Object> poll(@Valid @RequestBody DeviceTokenRequest request) {
     return switch (deviceAuthorizationService.redeem(request.deviceCode())) {
       case DevicePollResult.Success(var accessToken, var rawRefreshToken) ->
-          noStore(ResponseEntity.ok())
+          CredentialCacheHeaders.nonCacheable(ResponseEntity.ok())
               .<Object>body(
                   AuthTokensResponse.builder()
                       .accessToken(accessToken.value())
@@ -85,7 +84,7 @@ public class DeviceAuthController {
         deviceAuthorizationService.lookup(
             request.userCode(), authorizationService.currentIdentity().accountId());
 
-    return noStore(ResponseEntity.ok())
+    return CredentialCacheHeaders.nonCacheable(ResponseEntity.ok())
         .body(
             DeviceAuthorizationResponse.builder()
                 .userCode(view.userCode())
@@ -106,7 +105,7 @@ public class DeviceAuthController {
                 .decidedByAccountId(authorizationService.currentIdentity().accountId())
                 .build());
 
-    return noStore(ResponseEntity.ok()).body(decisionResponseOf(view));
+    return CredentialCacheHeaders.nonCacheable(ResponseEntity.ok()).body(decisionResponseOf(view));
   }
 
   /**
@@ -129,11 +128,7 @@ public class DeviceAuthController {
   }
 
   private static ResponseEntity<Object> pollState(String code, String message) {
-    return noStore(ResponseEntity.status(HttpStatus.BAD_REQUEST))
+    return CredentialCacheHeaders.nonCacheable(ResponseEntity.status(HttpStatus.BAD_REQUEST))
         .body(new AuthErrorResponse(code, message));
-  }
-
-  private static ResponseEntity.BodyBuilder noStore(ResponseEntity.BodyBuilder builder) {
-    return builder.cacheControl(CacheControl.noStore());
   }
 }

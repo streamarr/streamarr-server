@@ -9,7 +9,6 @@ import com.streamarr.server.exceptions.InvalidDecisionException;
 import com.streamarr.server.exceptions.InvalidUserCodeException;
 import com.streamarr.server.exceptions.TooManyDeviceAttemptsException;
 import java.time.Duration;
-import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -57,7 +56,7 @@ public class DeviceAuthExceptionHandler {
 
   @ExceptionHandler(TooManyDeviceAttemptsException.class)
   public ResponseEntity<AuthErrorResponse> handleTooManyAttempts(TooManyDeviceAttemptsException e) {
-    return noStore(ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS))
+    return CredentialCacheHeaders.nonCacheable(ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS))
         .header(HttpHeaders.RETRY_AFTER, Long.toString(retryAfterSeconds(e.getRetryAfter())))
         .body(new AuthErrorResponse("TOO_MANY_ATTEMPTS", e.getMessage()));
   }
@@ -72,10 +71,7 @@ public class DeviceAuthExceptionHandler {
 
   private static ResponseEntity<AuthErrorResponse> respond(
       HttpStatus status, String code, RuntimeException e) {
-    return noStore(ResponseEntity.status(status)).body(new AuthErrorResponse(code, e.getMessage()));
-  }
-
-  private static ResponseEntity.BodyBuilder noStore(ResponseEntity.BodyBuilder builder) {
-    return builder.cacheControl(CacheControl.noStore());
+    return CredentialCacheHeaders.nonCacheable(ResponseEntity.status(status))
+        .body(new AuthErrorResponse(code, e.getMessage()));
   }
 }
