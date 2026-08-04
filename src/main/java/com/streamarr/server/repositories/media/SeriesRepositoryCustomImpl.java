@@ -133,6 +133,36 @@ public class SeriesRepositoryCustomImpl implements SeriesRepositoryCustom {
     return JooqQueryHelper.nativeQuery(entityManager, query, Series.class);
   }
 
+  public Optional<Series> findLetterJumpPredecessor(MediaFilter filter) {
+    var predecessorCondition =
+        JooqQueryHelper.letterJumpPredecessorCondition(
+            filter.getStartLetter(), filter.getSortDirection());
+    if (predecessorCondition.isEmpty()) {
+      return Optional.empty();
+    }
+
+    var reversed = JooqQueryHelper.reverseFilter(filter);
+    var orderByColumns =
+        new SortField[] {
+          buildOrderBy(reversed), Tables.BASE_COLLECTABLE.ID.sort(reversed.getSortDirection())
+        };
+
+    var query =
+        context
+            .select()
+            .from(Tables.SERIES)
+            .innerJoin(Tables.BASE_COLLECTABLE)
+            .on(Tables.SERIES.ID.eq(Tables.BASE_COLLECTABLE.ID))
+            .where(predecessorCondition.get())
+            .and(JooqQueryHelper.libraryCondition(filter.getLibraryId()))
+            .and(filterConditions(filter))
+            .orderBy(orderByColumns)
+            .limit(1);
+
+    var results = JooqQueryHelper.nativeQuery(entityManager, query, Series.class);
+    return results.isEmpty() ? Optional.empty() : Optional.of(results.getFirst());
+  }
+
   private Condition filterConditions(MediaFilter filter) {
     var condition = noCondition();
 

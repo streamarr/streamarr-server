@@ -480,6 +480,33 @@ class MovieServiceTest {
     }
 
     @Test
+    @DisplayName("Should report previous page when letter jump has titles above the anchor")
+    void shouldReportPreviousPageWhenLetterJumpHasTitlesAboveAnchor() {
+      var libraryId = UUID.randomUUID();
+      var library = Library.builder().id(libraryId).name("Movies").build();
+      movieRepository.save(
+          Movie.builder().title("Alpha").titleSort("Alpha").library(library).build());
+      movieRepository.save(
+          Movie.builder().title("Batman").titleSort("Batman").library(library).build());
+      movieRepository.save(
+          Movie.builder().title("Cherry").titleSort("Cherry").library(library).build());
+
+      var filter =
+          MediaFilter.builder()
+              .sortBy(OrderMediaBy.TITLE)
+              .sortDirection(SortOrder.ASC)
+              .libraryId(libraryId)
+              .startLetter(com.streamarr.server.domain.AlphabetLetter.B)
+              .build();
+
+      var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
+      var titles = result.items().stream().map(pi -> pi.item().getTitle()).toList();
+
+      assertThat(titles).containsExactly("Batman", "Cherry");
+      assertThat(result.hasPreviousPage()).isTrue();
+    }
+
+    @Test
     @DisplayName("Should filter by single genre when genreIds has one ID")
     void shouldFilterBySingleGenreWhenGenreIdsHasOneId() {
       var genreAction = Genre.builder().name("Action").sourceId("action").build();

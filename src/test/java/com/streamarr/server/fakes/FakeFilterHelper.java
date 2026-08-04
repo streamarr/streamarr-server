@@ -48,6 +48,19 @@ public class FakeFilterHelper {
     return firstChar <= Character.toLowerCase(letter.name().charAt(0));
   }
 
+  // True when the title sits above a TITLE-sort letter jump's landing page - the negation of the
+  // landing range. HASH never has rows above it: it lands at the top under ASC, and under DESC it
+  // matches two non-adjacent runs of the ordering so it has no single anchor to sit below.
+  public boolean isAboveLetterAnchor(String title, AlphabetLetter letter, SortOrder direction) {
+    if (letter == AlphabetLetter.HASH || title == null || title.isEmpty()) {
+      return false;
+    }
+    if (direction == SortOrder.DESC) {
+      return !matchesLetterDescRange(title, letter);
+    }
+    return !matchesLetterAscRange(title, letter);
+  }
+
   public MediaFilter reverseFilter(MediaFilter filter) {
     if (filter.getSortDirection().equals(SortOrder.DESC)) {
       return filter.toBuilder().sortDirection(SortOrder.ASC).build();

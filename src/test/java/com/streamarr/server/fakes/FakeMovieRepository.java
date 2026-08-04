@@ -70,6 +70,18 @@ public class FakeMovieRepository extends FakeJpaRepository<Movie> implements Mov
     return result;
   }
 
+  @Override
+  public Optional<Movie> findLetterJumpPredecessor(MediaFilter filter) {
+    var reversed = FakeFilterHelper.reverseFilter(filter);
+    return filterByLibrary(filter)
+        .filter(
+            m ->
+                FakeFilterHelper.isAboveLetterAnchor(
+                    m.getTitle(), filter.getStartLetter(), filter.getSortDirection()))
+        .sorted(comparatorFor(reversed, reversed.getSortDirection()))
+        .findFirst();
+  }
+
   private Stream<Movie> filterByLibrary(MediaFilter filter) {
     var libraryId = filter.getLibraryId();
 

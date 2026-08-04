@@ -19,6 +19,7 @@ import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.experimental.UtilityClass;
 import org.jooq.Condition;
@@ -56,6 +57,28 @@ public class JooqQueryHelper {
     return direction == SortOrder.DESC
         ? descLetterCondition(startLetter)
         : ascLetterCondition(startLetter);
+  }
+
+  // Matches the rows above a TITLE-sort letter jump's landing page - the exact negation of the
+  // landing condition. Empty when nothing can sit above the anchor: HASH lands at the top under
+  // ASC, Z at the top under DESC, and DESC HASH matches two non-adjacent runs of the ordering so
+  // it has no single anchor to sit below.
+  public Optional<Condition> letterJumpPredecessorCondition(
+      AlphabetLetter startLetter, SortOrder direction) {
+    if (startLetter == AlphabetLetter.HASH) {
+      return Optional.empty();
+    }
+
+    var firstCharLower = lower(left(Tables.BASE_COLLECTABLE.TITLE_SORT, 1));
+    var letterValue = inline(startLetter.name().toLowerCase());
+
+    if (direction == SortOrder.DESC) {
+      return startLetter == AlphabetLetter.Z
+          ? Optional.empty()
+          : Optional.of(firstCharLower.greaterThan(letterValue));
+    }
+
+    return Optional.of(firstCharLower.lessThan(letterValue));
   }
 
   // Under TITLE sort the letter is a seek anchor consumed by the landing page - on cursor pages

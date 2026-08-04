@@ -666,6 +666,23 @@ class SeriesServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("Should report previous page when letter jump has titles above the anchor")
+    void shouldReportPreviousPageWhenLetterJumpHasTitlesAboveAnchor() {
+      var filter =
+          MediaFilter.builder()
+              .libraryId(savedLibraryD.getId())
+              .startLetter(AlphabetLetter.B)
+              .build();
+
+      var landing = seriesService.getSeriesWithFilter(buildForwardOptions(2, filter));
+
+      var titles = landing.items().stream().map(pi -> pi.item().getTitle()).toList();
+      assertThat(titles).containsExactly("Batman Show", "Beta Show");
+      assertThat(landing.hasPreviousPage()).isTrue();
+      assertThat(landing.hasNextPage()).isTrue();
+    }
+
+    @Test
     @DisplayName("Should page backward past the start letter when sort is TITLE")
     void shouldPageBackwardPastStartLetterWhenSortIsTitle() {
       var filter =

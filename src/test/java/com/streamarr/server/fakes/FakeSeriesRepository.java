@@ -88,6 +88,18 @@ public class FakeSeriesRepository extends FakeJpaRepository<Series> implements S
     throw new UnsupportedOperationException("LAST_WATCHED not yet implemented in fake");
   }
 
+  @Override
+  public Optional<Series> findLetterJumpPredecessor(MediaFilter filter) {
+    var reversed = FakeFilterHelper.reverseFilter(filter);
+    return filterByLibrary(filter)
+        .filter(
+            s ->
+                FakeFilterHelper.isAboveLetterAnchor(
+                    s.getTitle(), filter.getStartLetter(), filter.getSortDirection()))
+        .sorted(comparatorFor(reversed, reversed.getSortDirection()))
+        .findFirst();
+  }
+
   private Stream<Series> filterByLibrary(MediaFilter filter) {
     var libraryId = filter.getLibraryId();
 
