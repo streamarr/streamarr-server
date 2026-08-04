@@ -1,6 +1,7 @@
 package com.streamarr.server.controllers;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.http.HttpHeaders.IF_NONE_MATCH;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -70,8 +71,8 @@ class ImageControllerTest {
   }
 
   @Test
-  @DisplayName("Should prevent caching when image exists")
-  void shouldPreventCachingWhenImageExists() throws Exception {
+  @DisplayName("Should allow private long-lived caching when image exists")
+  void shouldAllowPrivateLongLivedCachingWhenImageExists() throws Exception {
     var image = createImageWithFile(new byte[] {1, 2, 3});
 
     var result =
@@ -80,7 +81,70 @@ class ImageControllerTest {
             .andExpect(status().isOk())
             .andReturn();
 
-    assertThat(result.getResponse().getHeader("Cache-Control")).isEqualTo("no-store");
+    assertThat(result.getResponse().getHeader("Cache-Control"))
+        .isEqualTo("max-age=31536000, private, immutable");
+  }
+
+  @Test
+  @DisplayName("Should return 304 without a body when If-None-Match carries the current ETag")
+  void shouldReturn304WithoutBodyWhenIfNoneMatchCarriesCurrentETag() throws Exception {
+    var image = createImageWithFile(new byte[] {1, 2, 3});
+    var currentETag = quoted(image.getId());
+
+    var result =
+        mockMvc
+            .perform(get("/api/images/{imageId}", image.getId()).header(IF_NONE_MATCH, currentETag))
+            .andExpect(status().isNotModified())
+            .andReturn();
+
+    assertThat(result.getResponse().getContentAsByteArray()).isEmpty();
+    assertThat(result.getResponse().getHeaders("ETag")).containsExactly(currentETag);
+  }
+
+  @Test
+  @DisplayName("Should return the full image when If-None-Match carries a stale ETag")
+  void shouldReturnFullImageWhenIfNoneMatchCarriesStaleETag() throws Exception {
+    var imageData = new byte[] {1, 2, 3};
+    var image = createImageWithFile(imageData);
+
+    var result =
+        mockMvc
+            .perform(
+                get("/api/images/{imageId}", image.getId())
+                    .header(IF_NONE_MATCH, quoted(UUID.randomUUID())))
+            .andExpect(status().isOk())
+            .andReturn();
+
+    assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(imageData);
+  }
+
+  @Test
+  @DisplayName("Should keep the caching headers on a 304 so the client can revalidate again")
+  void shouldKeepCachingHeadersOnNotModified() throws Exception {
+    var image = createImageWithFile(new byte[] {1, 2, 3});
+
+    var result =
+        mockMvc
+            .perform(
+                get("/api/images/{imageId}", image.getId())
+                    .header(IF_NONE_MATCH, quoted(image.getId())))
+            .andExpect(status().isNotModified())
+            .andReturn();
+
+    assertThat(result.getResponse().getHeader("Cache-Control"))
+        .isEqualTo("max-age=31536000, private, immutable");
+  }
+
+  @Test
+  @DisplayName("Should revalidate without reading the image file")
+  void shouldRevalidateWithoutReadingTheImageFile() throws Exception {
+    var image = createImageWithoutFile();
+
+    mockMvc
+        .perform(
+            get("/api/images/{imageId}", image.getId())
+                .header(IF_NONE_MATCH, quoted(image.getId())))
+        .andExpect(status().isNotModified());
   }
 
   @Test
@@ -130,5 +194,9 @@ class ImageControllerTest {
             .height(278)
             .path("movie/" + entityId + "/poster/small.jpg")
             .build());
+  }
+
+  private static String quoted(UUID imageId) {
+    return "\"" + imageId + "\"";
   }
 }
