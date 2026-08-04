@@ -11,6 +11,7 @@ import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.HouseholdMembershipRepository;
 import com.streamarr.server.repositories.auth.UserAccountRepository;
 import java.time.Clock;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -43,12 +44,7 @@ public class SessionScopeService {
 
     var householdId = memberships.getFirst().getHouseholdId();
     session.setActiveHouseholdId(householdId);
-
-    var links =
-        accountProfileRepository.findByAccountIdAndHouseholdId(account.getId(), householdId);
-    if (links.size() == 1) {
-      session.setActiveProfileId(links.getFirst().getProfileId());
-    }
+    soleSelectableProfileId(account.getId(), householdId).ifPresent(session::setActiveProfileId);
 
     persistSelection(session);
 
@@ -119,12 +115,7 @@ public class SessionScopeService {
         .orElseThrow(HouseholdAccessDeniedException::new);
 
     session.setActiveHouseholdId(householdId);
-    session.setActiveProfileId(null);
-
-    var links = accountProfileRepository.findByAccountIdAndHouseholdId(accountId, householdId);
-    if (links.size() == 1) {
-      session.setActiveProfileId(links.getFirst().getProfileId());
-    }
+    session.setActiveProfileId(soleSelectableProfileId(accountId, householdId).orElse(null));
 
     sessionRepository.save(session);
 
@@ -181,6 +172,14 @@ public class SessionScopeService {
         .filter(session -> session.getAccountId().equals(accountId))
         .filter(session -> session.getRevokedAt() == null)
         .orElseThrow(AuthenticationRequiredException::new);
+  }
+
+  private Optional<UUID> soleSelectableProfileId(UUID accountId, UUID householdId) {
+    var links = accountProfileRepository.findByAccountIdAndHouseholdId(accountId, householdId);
+    if (links.size() != 1) {
+      return Optional.empty();
+    }
+    return Optional.of(links.getFirst().getProfileId());
   }
 
   private void clearSelection(AuthSession session, boolean includingHousehold) {
