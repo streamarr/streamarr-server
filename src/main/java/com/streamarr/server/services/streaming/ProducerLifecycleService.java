@@ -107,18 +107,23 @@ public class ProducerLifecycleService {
     relocateWithLock(sessionId, segmentName);
   }
 
-  public void suspend(StreamSession session) {
-    var lock = sessionMutex.getMutex(session.getSessionId());
+  public void suspend(UUID sessionId) {
+    var lock = sessionMutex.getMutex(sessionId);
     lock.lock();
 
     try {
-      doSuspend(session);
+      doSuspend(sessionId);
     } finally {
       lock.unlock();
     }
   }
 
-  private void doSuspend(StreamSession session) {
+  private void doSuspend(UUID sessionId) {
+    var session = runtimeRegistry.findById(sessionId).orElse(null);
+    if (session == null) {
+      return;
+    }
+
     transcodeExecutor.stop(session.getSessionId());
     for (var entry : session.getVariantHandles().entrySet()) {
       var handle = entry.getValue();
@@ -317,7 +322,7 @@ public class ProducerLifecycleService {
    * far ahead of produced output that waiting would stall the player longer than restarting.
    */
   private boolean requiresRelocation(StreamSession session, String segmentName) {
-    var requestedIndex = SegmentNames.parseIndex(segmentName);
+    var requestedIndex = requestedIndex(session, segmentName);
     var startSequenceNumber = activeStartSequenceNumber(session);
     if (requestedIndex < startSequenceNumber) {
       return true;
@@ -353,13 +358,22 @@ public class ProducerLifecycleService {
       return;
     }
 
-    var segmentIndex = SegmentNames.parseIndex(segmentName);
+    var segmentIndex = requestedIndex(session, segmentName);
     transcodeExecutor.stop(sessionId);
     startAll(session, segmentIndex * segmentDurationSeconds(), segmentIndex);
     session.setLastAccessedAt(Instant.now());
     runtimeRegistry.save(session);
 
     log.info("Relocated transcode for session {} to segment {}", sessionId, segmentIndex);
+  }
+
+  /**
+   * The requested segment's timeline index. A name carrying none — {@code init.mp4}, which every
+   * run rewrites — belongs to the current run, so it resolves to that run's start rather than to
+   * segment 0, which would drag a mid-timeline producer back to the top of the file.
+   */
+  private int requestedIndex(StreamSession session, String segmentName) {
+    return SegmentNames.indexOf(segmentName).orElseGet(() -> activeStartSequenceNumber(session));
   }
 
   private int activeStartSequenceNumber(StreamSession session) {
@@ -385,7 +399,7 @@ public class ProducerLifecycleService {
       return;
     }
 
-    var segmentIndex = SegmentNames.parseIndex(segmentName);
+    var segmentIndex = requestedIndex(session, segmentName);
     var resumeSeek = segmentIndex * segmentDurationSeconds();
 
     startAll(session, resumeSeek, segmentIndex);

@@ -406,7 +406,7 @@ class SegmentDeliveryCoordinatorTest {
     var delivery = deliverAsync(session.getSessionId(), "segment2.ts");
     // Let the delivery reach its wait loop, then suspend the session out from under it.
     awaitPolls(1);
-    lifecycle.suspend(session);
+    lifecycle.suspend(session.getSessionId());
     await()
         .atMost(2, TimeUnit.SECONDS)
         .until(() -> transcodeExecutor.getStartedRequests().size() == startsBefore + 1);
@@ -625,7 +625,7 @@ class SegmentDeliveryCoordinatorTest {
   void shouldRecoverThroughExecutionTargetsWhenSuspendedSessionFailsToResume() throws Exception {
     var session = startedSession();
     var sessionId = session.getSessionId();
-    lifecycle.suspend(session);
+    lifecycle.suspend(session.getSessionId());
     transcodeExecutor.failUntargetedStarts();
 
     var delivery = deliverAsync(sessionId, "segment1.ts");
@@ -643,7 +643,7 @@ class SegmentDeliveryCoordinatorTest {
   @DisplayName("Should exhaust to unrecoverable when a failed resume has no willing target")
   void shouldExhaustToUnrecoverableWhenFailedResumeHasNoWillingTarget() {
     var session = startedSession();
-    lifecycle.suspend(session);
+    lifecycle.suspend(session.getSessionId());
     transcodeExecutor.failUntargetedStarts();
     transcodeExecutor.refuseTarget(ExecutionTargetId.LOCAL);
 

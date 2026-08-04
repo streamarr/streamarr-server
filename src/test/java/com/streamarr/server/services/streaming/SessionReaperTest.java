@@ -17,10 +17,8 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -37,7 +35,8 @@ class SessionReaperTest {
   @BeforeEach
   void setUp() {
     executor = new FakeTranscodeExecutor();
-    streamingService = new InMemoryStreamingService();
+    var runtimeRegistry = new FakeRuntimeStreamSessionRegistry();
+    streamingService = new InMemoryStreamingService(runtimeRegistry);
     var properties =
         StreamingProperties.builder()
             .targetSegmentDuration(Duration.ofSeconds(6))
@@ -49,7 +48,7 @@ class SessionReaperTest {
             .transcodeExecutor(executor)
             .segmentStore(new FakeSegmentStore())
             .properties(properties)
-            .runtimeRegistry(new FakeRuntimeStreamSessionRegistry())
+            .runtimeRegistry(runtimeRegistry)
             .sessionMutex(new MutexFactory<>())
             .build();
     reaper = new SessionReaper(streamingService, properties, producerLifecycle);
@@ -253,12 +252,15 @@ class SessionReaperTest {
     return session;
   }
 
-  private static class InMemoryStreamingService implements StreamingService {
-
-    private final ConcurrentHashMap<UUID, StreamSession> sessions = new ConcurrentHashMap<>();
+  /**
+   * Backed by the same registry the producer lifecycle reads, as in production — the reaper hands
+   * the lifecycle a session id and the lifecycle re-fetches it under the session mutex.
+   */
+  private record InMemoryStreamingService(FakeRuntimeStreamSessionRegistry registry)
+      implements StreamingService {
 
     void addSession(StreamSession session) {
-      sessions.put(session.getSessionId(), session);
+      registry.save(session);
     }
 
     @Override
@@ -268,12 +270,12 @@ class SessionReaperTest {
 
     @Override
     public Optional<StreamSession> accessSession(PlaybackRequest request) {
-      return Optional.ofNullable(sessions.get(request.streamSessionId()));
+      return registry.findById(request.streamSessionId());
     }
 
     @Override
     public void destroySession(UUID sessionId) {
-      sessions.remove(sessionId);
+      registry.removeById(sessionId);
     }
 
     @Override
@@ -283,12 +285,12 @@ class SessionReaperTest {
 
     @Override
     public Collection<StreamSession> getAllSessions() {
-      return Collections.unmodifiableCollection(sessions.values());
+      return registry.findAll();
     }
 
     @Override
     public int getActiveSessionCount() {
-      return sessions.size();
+      return registry.count();
     }
   }
 }

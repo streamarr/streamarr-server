@@ -19,15 +19,15 @@ class SegmentNamesTest {
     assertThat(SegmentNames.indexOf("segment5.ts")).hasValue(5);
     assertThat(SegmentNames.indexOf("segment0.m4s")).hasValue(0);
     assertThat(SegmentNames.indexOf("720p/segment12.m4s")).hasValue(12);
-    assertThat(SegmentNames.parseIndex("720p/segment12.m4s")).isEqualTo(12);
   }
 
   @Test
-  @DisplayName("Should parse index zero when the name is an init segment")
-  void shouldParseIndexZeroWhenNameIsInitSegment() {
+  @DisplayName("Should carry no index when the name is an init segment")
+  void shouldCarryNoIndexWhenNameIsInitSegment() {
+    // Empty rather than zero: each caller must resolve init.mp4 against its own run, since
+    // defaulting to segment 0 relocates a mid-timeline producer to the top of the file.
     assertThat(SegmentNames.indexOf("init.mp4")).isEmpty();
     assertThat(SegmentNames.indexOf("720p/init.mp4")).isEmpty();
-    assertThat(SegmentNames.parseIndex("init.mp4")).isZero();
   }
 
   @ParameterizedTest

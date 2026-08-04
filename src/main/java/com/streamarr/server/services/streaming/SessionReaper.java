@@ -40,7 +40,7 @@ public class SessionReaper {
 
     if (isIdle(session, now) && session.hasActiveTranscodes()) {
       log.info("Suspending idle session {}", session.getSessionId());
-      producerLifecycle.suspend(session);
+      producerLifecycle.suspend(session.getSessionId());
     }
   }
 

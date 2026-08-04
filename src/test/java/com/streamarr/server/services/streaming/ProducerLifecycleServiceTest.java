@@ -84,6 +84,13 @@ class ProducerLifecycleServiceTest {
     return session;
   }
 
+  private StreamSession midTimelineSession() {
+    var session = defaultSessionBuilder().build();
+    runtimeRegistry.save(session);
+    lifecycle.startAll(session, 5400, 900);
+    return session;
+  }
+
   private void suspendHandle(StreamSession session) {
     session.setHandle(new TranscodeHandle(1L, TranscodeStatus.SUSPENDED));
     transcodeExecutor.markDead(session.getSessionId());
@@ -170,6 +177,32 @@ class ProducerLifecycleServiceTest {
     var lastRequest = transcodeExecutor.getStartedRequests().getLast();
     assertThat(lastRequest.startSequenceNumber()).isEqualTo(startNumber);
     assertThat(lastRequest.seekPosition()).isEqualTo(seekPosition);
+  }
+
+  @Test
+  @DisplayName("Should not relocate a mid-timeline producer when an init segment is requested")
+  void shouldNotRelocateMidTimelineProducerWhenInitSegmentIsRequested() {
+    var session = midTimelineSession();
+    var startedBefore = transcodeExecutor.getStartedRequests().size();
+
+    lifecycle.ensurePositioned(session.getSessionId(), "init.mp4");
+
+    // init.mp4 carries no index; it must never be read as segment 0 and drag the run to the top.
+    assertThat(transcodeExecutor.getStartedRequests()).hasSize(startedBefore);
+  }
+
+  @Test
+  @DisplayName("Should resume a mid-timeline session at its own start when an init is requested")
+  void shouldResumeMidTimelineSessionAtItsOwnStartWhenInitIsRequested() {
+    var session = midTimelineSession();
+    session.setHandle(session.getHandle().orElseThrow().withStatus(TranscodeStatus.SUSPENDED));
+    transcodeExecutor.markDead(session.getSessionId());
+
+    lifecycle.ensurePositioned(session.getSessionId(), "init.mp4");
+
+    var lastRequest = transcodeExecutor.getStartedRequests().getLast();
+    assertThat(lastRequest.startSequenceNumber()).isEqualTo(900);
+    assertThat(lastRequest.seekPosition()).isEqualTo(5400);
   }
 
   @Test
@@ -315,10 +348,23 @@ class ProducerLifecycleServiceTest {
   void shouldStopProducersAndMarkActiveHandlesSuspendedWhenSuspending() {
     var session = startedSession();
 
-    lifecycle.suspend(session);
+    lifecycle.suspend(session.getSessionId());
 
     assertThat(transcodeExecutor.getStopped()).contains(session.getSessionId());
     assertThat(session.getHandle().orElseThrow().status()).isEqualTo(TranscodeStatus.SUSPENDED);
+  }
+
+  @Test
+  @DisplayName("Should not resurrect a destroyed session when suspending it")
+  void shouldNotResurrectDestroyedSessionWhenSuspending() {
+    var session = startedSession();
+    var sessionId = session.getSessionId();
+    lifecycle.removeSession(sessionId);
+
+    // The reaper iterates a snapshot, so it can still hold a reference to a destroyed session.
+    lifecycle.suspend(session.getSessionId());
+
+    assertThat(runtimeRegistry.findById(sessionId)).isEmpty();
   }
 
   @Test
@@ -327,7 +373,7 @@ class ProducerLifecycleServiceTest {
     var session = startedSession();
     var attemptId = session.getHandle().orElseThrow().attemptId();
 
-    lifecycle.suspend(session);
+    lifecycle.suspend(session.getSessionId());
 
     assertThat(session.getHandle().orElseThrow().attemptId()).isEqualTo(attemptId);
   }
@@ -404,7 +450,7 @@ class ProducerLifecycleServiceTest {
   @DisplayName("Should replace a suspended handle when the caller's resume attempt failed")
   void shouldReplaceSuspendedHandleWhenTheCallersResumeAttemptFailed() {
     var session = startedSession();
-    lifecycle.suspend(session);
+    lifecycle.suspend(session.getSessionId());
 
     var result =
         lifecycle.replaceProducer(
@@ -420,7 +466,7 @@ class ProducerLifecycleServiceTest {
   @DisplayName("Should exhaust a suspended handle when the expected attempt matches")
   void shouldExhaustSuspendedHandleWhenTheExpectedAttemptMatches() {
     var session = startedSession();
-    lifecycle.suspend(session);
+    lifecycle.suspend(session.getSessionId());
 
     var result =
         lifecycle.markExhausted(
@@ -496,7 +542,7 @@ class ProducerLifecycleServiceTest {
   void shouldReportSupersededWhenPlannedSuspensionFencedTheReplacement() {
     var session = startedSession();
     var command = replaceCommand(session).build();
-    lifecycle.suspend(session);
+    lifecycle.suspend(session.getSessionId());
     var startsBefore = transcodeExecutor.getStartedRequests().size();
 
     var result = lifecycle.replaceProducer(command);
@@ -628,7 +674,7 @@ class ProducerLifecycleServiceTest {
   void shouldNotExhaustWhenPlannedRestartSupersededTheAttempt() {
     var session = startedSession();
     var staleAttempt = session.getHandle().orElseThrow().attemptId();
-    lifecycle.suspend(session);
+    lifecycle.suspend(session.getSessionId());
     lifecycle.ensurePositioned(session.getSessionId(), "segment5.ts");
 
     var result =

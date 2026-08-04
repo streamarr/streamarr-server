@@ -16,11 +16,6 @@ public final class SegmentNames {
 
   private SegmentNames() {}
 
-  /** The segment's timeline index, or 0 when the name carries none (e.g. {@code init.mp4}). */
-  public static int parseIndex(String segmentName) {
-    return indexOf(segmentName).orElse(0);
-  }
-
   /** Whether the name is a run's init segment: a basename of exactly {@code init.mp4}. */
   public static boolean isInitSegment(String segmentName) {
     return "init.mp4".equals(basename(segmentName));
