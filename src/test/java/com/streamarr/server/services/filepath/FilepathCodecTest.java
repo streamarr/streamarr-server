@@ -190,32 +190,32 @@ class FilepathCodecTest {
   }
 
   @Test
-  @DisplayName("Should reject malformed file URI containing an unescaped space")
-  void shouldRejectMalformedFileUriContainingUnescapedSpace() {
+  @DisplayName("Should reject malformed file URI when it contains an unescaped space")
+  void shouldRejectMalformedFileUriWhenItContainsUnescapedSpace() {
     assertThatThrownBy(() -> FilepathCodec.filenameOf("file:///media/My Movies/movie.mkv"))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("file:///media/My Movies/movie.mkv");
   }
 
   @Test
-  @DisplayName("Should reject filepath URI containing a query")
-  void shouldRejectFilepathUriContainingQuery() {
+  @DisplayName("Should reject filepath URI when it contains a query")
+  void shouldRejectFilepathUriWhenItContainsQuery() {
     assertThatThrownBy(() -> FilepathCodec.filenameOf("file:///media/movie.mkv?download=true"))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("file:///media/movie.mkv?download=true");
   }
 
   @Test
-  @DisplayName("Should reject filepath URI containing a fragment")
-  void shouldRejectFilepathUriContainingFragment() {
+  @DisplayName("Should reject filepath URI when it contains a fragment")
+  void shouldRejectFilepathUriWhenItContainsFragment() {
     assertThatThrownBy(() -> FilepathCodec.filenameOf("file:///media/movie#1.mkv"))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("file:///media/movie#1.mkv");
   }
 
   @Test
-  @DisplayName("Should reject opaque file URI")
-  void shouldRejectOpaqueFileUri() {
+  @DisplayName("Should reject file URI when it is opaque")
+  void shouldRejectFileUriWhenItIsOpaque() {
     assertThatThrownBy(() -> FilepathCodec.filenameOf("file:movie.mkv"))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("file:movie.mkv");
@@ -244,8 +244,8 @@ class FilepathCodecTest {
   }
 
   @Test
-  @DisplayName("Should reject filepath URI whose percent-encoded bytes are not valid UTF-8")
-  void shouldRejectFilepathUriWhosePercentEncodedBytesAreNotValidUtf8() {
+  @DisplayName("Should reject filepath URI when percent-encoded bytes are not valid UTF-8")
+  void shouldRejectFilepathUriWhenPercentEncodedBytesAreNotValidUtf8() {
     assertThatThrownBy(() -> FilepathCodec.filenameOf("file:///media/caf%E9.mkv"))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("file:///media/caf%E9.mkv");
@@ -262,8 +262,8 @@ class FilepathCodecTest {
   }
 
   @Test
-  @DisplayName("Should roundtrip percent, plus, and hash characters through filepath URI")
-  void shouldRoundtripPercentPlusAndHashCharactersThroughFilepathUri() {
+  @DisplayName("Should roundtrip percent, plus, and hash characters when using filepath URI")
+  void shouldRoundtripPercentPlusAndHashCharactersWhenUsingFilepathUri() {
     var filename = "100% Legit + Bonus #1.mkv";
 
     assertThat(FilepathCodec.filenameOf(FilepathCodec.encode(Path.of("/media", filename))))
@@ -271,8 +271,8 @@ class FilepathCodecTest {
   }
 
   @Test
-  @DisplayName("Should treat plain filename containing a colon as a legacy path")
-  void shouldTreatPlainFilenameContainingColonAsLegacyPath() {
+  @DisplayName("Should treat plain filename as a legacy path when it contains a colon")
+  void shouldTreatPlainFilenameAsLegacyPathWhenItContainsColon() {
     assertThat(FilepathCodec.filenameOf("Frost:Nixon.mkv")).isEqualTo("Frost:Nixon.mkv");
   }
 }

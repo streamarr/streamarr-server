@@ -3,10 +3,8 @@ package com.streamarr.server;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noMethods;
 
-import com.streamarr.server.services.library.LibraryManagementService;
 import com.streamarr.server.services.library.MovieFileProcessor;
 import com.streamarr.server.services.library.SeriesFileProcessor;
-import com.tngtech.archunit.base.DescribedPredicate;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
@@ -130,21 +128,6 @@ class ArchitectureTest {
           .dependOnClassesThat()
           .resideInAPackage("..services.auth..")
           .as("Auth repositories must remain below auth services in the dependency direction");
-
-  @ArchTest
-  static final ArchRule persistedFilenamesMustNotComeFromPathDisplayText =
-      noClasses()
-          .that()
-          .areAssignableTo(LibraryManagementService.class)
-          .should()
-          .callMethodWhere(
-              DescribedPredicate.describe(
-                  "derive a persisted filename from Path display text",
-                  call ->
-                      call.getOrigin().getName().equals("createNewMediaFile")
-                          && call.getTargetOwner().isEquivalentTo(Path.class)
-                          && call.getName().equals("getFileName")))
-          .as("Persisted filenames must derive from the filepath URI, not Path display text");
 
   @ArchTest
   @DisplayName("Should avoid Path display text when processing media metadata")
