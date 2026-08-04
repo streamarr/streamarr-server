@@ -3,6 +3,7 @@ package com.streamarr.server.config.security;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 
+import jakarta.servlet.http.Cookie;
 import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -41,6 +42,34 @@ class StreamarrCookieCsrfTokenRepositoryTest {
 
     assertThat(response.getHeader(HttpHeaders.SET_COOKIE))
         .contains(AuthCookies.CSRF_COOKIE + "=")
-        .contains("Max-Age=0");
+        .contains("Max-Age=0")
+        .contains("Path=/")
+        .contains("Secure")
+        .doesNotContain("Domain=");
+  }
+
+  @Test
+  @DisplayName("Should ignore the stale request cookie when its token was removed")
+  void shouldIgnoreStaleRequestCookieWhenTokenWasRemoved() {
+    var request = new MockHttpServletRequest();
+    request.setCookies(new Cookie(AuthCookies.CSRF_COOKIE, "stale-token"));
+
+    repository.saveToken(null, request, new MockHttpServletResponse());
+
+    assertThat(repository.loadToken(request)).isNull();
+  }
+
+  @Test
+  @DisplayName("Should generate a replacement when the cookie token is blank")
+  void shouldGenerateReplacementWhenCookieTokenIsBlank() {
+    var request = new MockHttpServletRequest();
+    request.setCookies(new Cookie(AuthCookies.CSRF_COOKIE, " "));
+    var response = new MockHttpServletResponse();
+
+    var token = repository.loadDeferredToken(request, response).get();
+
+    assertThat(token.getToken()).isNotBlank();
+    assertThat(response.getHeader(HttpHeaders.SET_COOKIE))
+        .contains(AuthCookies.CSRF_COOKIE + "=" + token.getToken());
   }
 }

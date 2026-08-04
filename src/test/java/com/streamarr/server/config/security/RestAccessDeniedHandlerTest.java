@@ -64,6 +64,23 @@ class RestAccessDeniedHandlerTest {
   }
 
   @Test
+  @DisplayName("Should count access denials when access is denied")
+  void shouldCountAccessDenialsWhenAccessIsDenied() {
+    handler.handle(
+        new MockHttpServletRequest(),
+        new MockHttpServletResponse(),
+        new AccessDeniedException("denied"));
+
+    assertThat(
+            meterRegistry
+                .get("streamarr.security.denials")
+                .tag("reason", "access")
+                .counter()
+                .count())
+        .isEqualTo(1);
+  }
+
+  @Test
   @DisplayName("Should keep status contract when response writer fails")
   void shouldKeepStatusContractWhenResponseWriterFails() {
     var response = new RestAuthenticationEntryPointTest.WriterlessResponse();
