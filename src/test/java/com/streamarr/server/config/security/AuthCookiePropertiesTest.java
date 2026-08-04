@@ -22,8 +22,8 @@ class AuthCookiePropertiesTest {
   }
 
   @Test
-  @DisplayName("Should keep cookies secure when nothing is configured")
-  void shouldKeepCookiesSecureWhenNothingIsConfigured() {
+  @DisplayName("Should default allow-insecure to false when nothing is configured")
+  void shouldDefaultAllowInsecureToFalseWhenNothingIsConfigured() {
     var properties = bind(Map.of());
 
     assertThat(properties.allowInsecure()).isFalse();

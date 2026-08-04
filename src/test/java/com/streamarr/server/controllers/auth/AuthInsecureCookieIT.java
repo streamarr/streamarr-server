@@ -25,8 +25,8 @@ class AuthInsecureCookieIT extends AbstractIntegrationTest {
   @Autowired private AuthTestSupport authTestSupport;
 
   @Test
-  @DisplayName("Should omit Secure only when insecure cookies are enabled in a test profile")
-  void shouldOmitSecureOnlyWhenInsecureCookiesEnabledInTestProfile() throws Exception {
+  @DisplayName("Should omit only Secure when insecure cookies are enabled in a test profile")
+  void shouldOmitOnlySecureWhenInsecureCookiesEnabledInTestProfile() throws Exception {
     var identity = authTestSupport.createIdentity();
 
     try {

@@ -8,8 +8,8 @@ import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.http.ResponseCookie;
 
@@ -17,22 +17,19 @@ import org.springframework.http.ResponseCookie;
 @DisplayName("Auth Cookie Writer Tests")
 class AuthCookieWriterTest {
 
-  @Test
-  @DisplayName("Should mark every cookie Secure when cookie security is secure")
-  void shouldMarkEveryCookieSecureWhenCookieSecurityIsSecure() {
-    var cookies = allCookiesFrom(writerWith(AuthCookiePolicy.SECURE));
-
-    assertThat(cookies).hasSize(4).allSatisfy(cookie -> assertThat(cookie.isSecure()).isTrue());
-  }
-
-  @Test
-  @DisplayName("Should omit Secure from every cookie when cookie security is insecure development")
-  void shouldOmitSecureFromEveryCookieWhenCookieSecurityIsInsecureDevelopment() {
+  @ParameterizedTest
+  @CsvSource({"SECURE, true", "INSECURE_DEVELOPMENT, false"})
+  @DisplayName(
+      "Should apply the configured Secure attribute to every cookie when cookie security varies")
+  void shouldApplyConfiguredSecureAttributeToEveryCookieWhenCookieSecurityVaries(
+      AuthCookiePolicy policy, boolean expectedSecure) {
     // Safari refuses to store or send a Secure cookie over http://localhost, so dropping the
     // attribute is the only way a cookie-mode session survives there.
-    var cookies = allCookiesFrom(writerWith(AuthCookiePolicy.INSECURE_DEVELOPMENT));
+    var cookies = allCookiesFrom(writerWith(policy));
 
-    assertThat(cookies).hasSize(4).allSatisfy(cookie -> assertThat(cookie.isSecure()).isFalse());
+    assertThat(cookies)
+        .hasSize(4)
+        .allSatisfy(cookie -> assertThat(cookie.isSecure()).isEqualTo(expectedSecure));
   }
 
   @ParameterizedTest
