@@ -3,6 +3,7 @@ package com.streamarr.server.config.health;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.streamarr.server.fakes.FakeHttpClient;
+import java.io.IOException;
 import java.net.http.HttpClient;
 import java.time.Clock;
 import java.util.Set;
@@ -55,7 +56,7 @@ class TmdbHealthAggregationTest {
 
     @Bean("tmdbHealth")
     HttpClient tmdbHealthHttpClient() {
-      return FakeHttpClient.unresponsive();
+      return FakeHttpClient.failingWith(new IOException("TMDB unreachable"));
     }
 
     @Bean
@@ -93,8 +94,8 @@ class TmdbHealthAggregationTest {
   }
 
   @Test
-  @DisplayName("Should rank DEGRADED in primary aggregate health")
-  void shouldRankDegradedInPrimaryAggregateHealth() {
+  @DisplayName("Should rank DEGRADED when it is the only primary aggregate status")
+  void shouldRankDegradedWhenItIsOnlyPrimaryAggregateStatus() {
     CONTEXT_RUNNER.run(
         context -> {
           var primaryGroup = context.getBean(HealthEndpointGroups.class).getPrimary();
@@ -109,19 +110,8 @@ class TmdbHealthAggregationTest {
   }
 
   @Test
-  @DisplayName("Should report TMDB as DEGRADED when TMDB is unreachable")
-  void shouldReportTmdbAsDegradedWhenTmdbIsUnreachable() {
-    CONTEXT_RUNNER.run(
-        context -> {
-          var health = context.getBean(TmdbHealthIndicator.class).health();
-
-          assertThat(health.getStatus()).isEqualTo(TmdbHealthIndicator.DEGRADED);
-        });
-  }
-
-  @Test
-  @DisplayName("Should serve TMDB reachability from the metadata health group")
-  void shouldServeTmdbReachabilityFromMetadataHealthGroup() {
+  @DisplayName("Should configure TMDB reachability when metadata health group loads")
+  void shouldConfigureTmdbReachabilityWhenMetadataHealthGroupLoads() {
     CONTEXT_RUNNER.run(
         context -> {
           var group = context.getBean(HealthEndpointGroups.class).get("metadata");

@@ -152,8 +152,8 @@ class TmdbHealthIndicatorTest {
   }
 
   @Test
-  @DisplayName("Should start cache TTL after slow probe completes")
-  void shouldStartCacheTtlAfterSlowProbeCompletes() throws Exception {
+  @DisplayName("Should start cache TTL when slow probe completes")
+  void shouldStartCacheTtlWhenSlowProbeCompletes() throws Exception {
     var responses = FakeHttpClient.respondingWithBlockedFirst(200, 200);
     var client = responses.client();
     var indicator = indicatorFor(client);
@@ -176,8 +176,8 @@ class TmdbHealthIndicatorTest {
   }
 
   @Test
-  @DisplayName("Should prevent older probe from overwriting a published verdict")
-  void shouldPreventOlderProbeFromOverwritingPublishedVerdict() throws Exception {
+  @DisplayName("Should preserve published verdict when older probe completes last")
+  void shouldPreservePublishedVerdictWhenOlderProbeCompletesLast() throws Exception {
     var responses = FakeHttpClient.respondingWithBlockedFirst(503, 200);
     var client = responses.client();
     var indicator = indicatorFor(client);

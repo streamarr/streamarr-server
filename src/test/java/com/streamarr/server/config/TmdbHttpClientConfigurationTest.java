@@ -2,8 +2,6 @@ package com.streamarr.server.config;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
-import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
-import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static com.github.tomakehurst.wiremock.stubbing.Scenario.STARTED;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -42,11 +40,19 @@ class TmdbHttpClientConfigurationTest {
   }
 
   @Test
-  @DisplayName("Should return first retryable response without retrying")
-  void shouldReturnFirstRetryableResponseWithoutRetrying() throws Exception {
+  @DisplayName("Should return first retryable response when health client receives 429")
+  void shouldReturnFirstRetryableResponseWhenHealthClientReceives429() throws Exception {
     wireMock.stubFor(
         get("/configuration")
-            .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "0")));
+            .inScenario("retry detection")
+            .whenScenarioStateIs(STARTED)
+            .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "0"))
+            .willSetStateTo("retried"));
+    wireMock.stubFor(
+        get("/configuration")
+            .inScenario("retry detection")
+            .whenScenarioStateIs("retried")
+            .willReturn(aResponse().withStatus(200)));
     var properties =
         TmdbHealthProperties.builder()
             .probeTimeout(LOCAL_SERVER_TIMEOUT)
@@ -63,12 +69,11 @@ class TmdbHttpClientConfigurationTest {
     var response = client.send(request, HttpResponse.BodyHandlers.discarding());
 
     assertThat(response.statusCode()).isEqualTo(429);
-    wireMock.verify(1, getRequestedFor(urlEqualTo("/configuration")));
   }
 
   @Test
-  @DisplayName("Should configure connect timeout from health probe timeout")
-  void shouldConfigureConnectTimeoutFromHealthProbeTimeout() {
+  @DisplayName("Should use health probe timeout when configuring connection establishment")
+  void shouldUseHealthProbeTimeoutWhenConfiguringConnectionEstablishment() {
     var properties =
         TmdbHealthProperties.builder()
             .probeTimeout(PROBE_TIMEOUT)
@@ -81,8 +86,8 @@ class TmdbHttpClientConfigurationTest {
   }
 
   @Test
-  @DisplayName("Should fetch each health probe response without using HTTP cache")
-  void shouldFetchEachHealthProbeResponseWithoutUsingHttpCache() throws Exception {
+  @DisplayName("Should fetch each response when health server supplies cache headers")
+  void shouldFetchEachResponseWhenHealthServerSuppliesCacheHeaders() throws Exception {
     wireMock.stubFor(
         get("/configuration")
             .inScenario("reachability changes")
@@ -112,6 +117,5 @@ class TmdbHttpClientConfigurationTest {
 
     assertThat(firstResponse.statusCode()).isEqualTo(200);
     assertThat(secondResponse.statusCode()).isEqualTo(503);
-    wireMock.verify(2, getRequestedFor(urlEqualTo("/configuration")));
   }
 }
