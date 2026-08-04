@@ -9,6 +9,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -19,13 +20,13 @@ import org.springframework.mock.web.MockHttpServletResponse;
 class StreamarrCookieCsrfTokenRepositoryTest {
 
   private final StreamarrCookieCsrfTokenRepository repository =
-      new StreamarrCookieCsrfTokenRepository(Duration.ofDays(30));
+      new StreamarrCookieCsrfTokenRepository(Duration.ofDays(30), AuthCookiePolicy.SECURE);
 
   @Test
   @DisplayName("Should reject a cookie lifetime when it is missing")
   void shouldRejectCookieLifetimeWhenMissing() {
     assertThatIllegalArgumentException()
-        .isThrownBy(() -> new StreamarrCookieCsrfTokenRepository(null))
+        .isThrownBy(() -> new StreamarrCookieCsrfTokenRepository(null, AuthCookiePolicy.SECURE))
         .withMessage("cookieLifetime must be positive");
   }
 
@@ -35,23 +36,29 @@ class StreamarrCookieCsrfTokenRepositoryTest {
   @ValueSource(longs = {0, -1})
   void shouldRejectCookieLifetimeWhenNonPositive(long seconds) {
     assertThatIllegalArgumentException()
-        .isThrownBy(() -> new StreamarrCookieCsrfTokenRepository(Duration.ofSeconds(seconds)))
+        .isThrownBy(
+            () ->
+                new StreamarrCookieCsrfTokenRepository(
+                    Duration.ofSeconds(seconds), AuthCookiePolicy.SECURE))
         .withMessage("cookieLifetime must be positive");
   }
 
-  @Test
+  @ParameterizedTest
+  @EnumSource(AuthCookiePolicy.class)
   @DisplayName("Should expire the csrf cookie immediately when removing its token")
-  void shouldExpireCsrfCookieImmediatelyWhenRemovingItsToken() {
+  void shouldExpireCsrfCookieImmediatelyWhenRemovingItsToken(AuthCookiePolicy policy) {
+    var repository = new StreamarrCookieCsrfTokenRepository(Duration.ofDays(30), policy);
     var response = new MockHttpServletResponse();
 
     repository.saveToken(null, new MockHttpServletRequest(), response);
 
-    assertThat(response.getHeader(HttpHeaders.SET_COOKIE))
-        .contains(AuthCookies.CSRF_COOKIE + "=")
+    var header = response.getHeader(HttpHeaders.SET_COOKIE);
+    assertThat(header)
+        .contains(policy.getCsrfCookieName() + "=")
         .contains("Max-Age=0")
         .contains("Path=/")
-        .contains("Secure")
         .doesNotContain("Domain=");
+    assertThat(header.contains("; Secure")).isEqualTo(policy.isSecure());
   }
 
   @Test

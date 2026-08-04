@@ -50,7 +50,8 @@ AUTH_COOKIES_ALLOW_INSECURE=true ./mvnw spring-boot:run
 ----
 
 The flag is honored only while a `dev`, `development`, or `test` profile is active; setting it anywhere else fails startup.
-It relaxes `Secure` and nothing else -- cookies stay `httpOnly` and `SameSite=Strict` -- so code that reads `document.cookie` still fails in development exactly as it would in production.
+It drops `Secure` from both credential and CSRF cookies. Credential cookies stay `httpOnly` and `SameSite=Strict`, so application code still cannot read the tokens.
+Because the `__Host-` prefix requires `Secure`, the script-readable CSRF cookie switches from `__Host-XSRF-TOKEN` to the development-only `XSRF-TOKEN`; the web client recognizes both names.
 
 == Running Tests
 
