@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import jakarta.servlet.Filter;
 import jakarta.servlet.http.Cookie;
+import java.time.Duration;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -151,6 +152,15 @@ class SecurityConfigTest {
       return _ -> {
         throw new AssertionError("CSRF must reject ambient cookies before token decoding");
       };
+    }
+
+    @Bean
+    AuthTokenProperties authTokenProperties() {
+      return AuthTokenProperties.builder()
+          .accessTokenTtl(Duration.ofMinutes(10))
+          .refreshTokenTtl(Duration.ofDays(30))
+          .rotationGrace(Duration.ofSeconds(30))
+          .build();
     }
   }
 

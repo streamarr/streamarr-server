@@ -307,6 +307,36 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
         .andExpect(jsonPath("$.accessToken").isNotEmpty());
   }
 
+  @Test
+  @DisplayName("Should not expire the csrf cookie before the auth cookies it guards")
+  void shouldNotExpireCsrfCookieBeforeAuthCookiesItGuards() throws Exception {
+    identity = authTestSupport.createIdentity();
+    var csrfCookie = freshCsrfCookie();
+
+    var response =
+        mockMvc
+            .perform(
+                post("/api/auth/login")
+                    .cookie(csrfCookie)
+                    .header(CSRF_HEADER, csrfCookie.getValue())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(loginBody(identity.account().getEmail(), true)))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse();
+
+    // A session-scoped guard outlived by a 30-day credential is the wedge: close the browser and
+    // the token dies while the auth cookies survive, so a deep link straight to /login posts a
+    // credential the page has no token to defend and eats a 403 on the first try.
+    var accessCookie = response.getCookie(AuthCookies.ACCESS_COOKIE);
+    var refreshCookie = response.getCookie(AuthCookies.REFRESH_COOKIE);
+    assertThat(accessCookie).isNotNull();
+    assertThat(refreshCookie).isNotNull();
+    assertThat(csrfCookie.getMaxAge())
+        .isGreaterThanOrEqualTo(accessCookie.getMaxAge())
+        .isGreaterThanOrEqualTo(refreshCookie.getMaxAge());
+  }
+
   private Cookie freshCsrfCookie() throws Exception {
     var cookie =
         mockMvc

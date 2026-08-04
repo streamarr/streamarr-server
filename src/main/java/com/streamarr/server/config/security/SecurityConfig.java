@@ -23,6 +23,7 @@ public class SecurityConfig {
   private final JwtIdentityConverter identityConverter;
   private final RestAuthenticationEntryPoint authenticationEntryPoint;
   private final RestAccessDeniedHandler accessDeniedHandler;
+  private final AuthTokenProperties tokenProperties;
 
   /**
    * The permit matrix: pre-auth endpoints and health stay open; non-health actuator endpoints are
@@ -88,6 +89,11 @@ public class SecurityConfig {
   private CsrfFilter cookieScopedCsrfFilter() {
     var tokenRepository = CookieCsrfTokenRepository.withHttpOnlyFalse();
     tokenRepository.setCookieName(AuthCookies.CSRF_COOKIE);
+    // The guard must not die before what it guards. Left at the default the token is session
+    // scoped, so closing the browser drops it while the auth cookies live on for the refresh TTL —
+    // and the next deep link to the login page posts a credential with no token to defend it.
+    // setCookieMaxAge is gone in Spring Security 7, so the lifetime rides the cookie customizer.
+    tokenRepository.setCookieCustomizer(cookie -> cookie.maxAge(tokenProperties.refreshTokenTtl()));
 
     var filter = new CsrfFilter(tokenRepository);
     filter.setRequireCsrfProtectionMatcher(new StreamarrCookieCsrfMatcher());
