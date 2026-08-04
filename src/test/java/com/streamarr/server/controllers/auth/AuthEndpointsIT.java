@@ -164,6 +164,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     assertThat(refreshCookie.getValue()).isNotBlank();
     assertThat(refreshCookie.getMaxAge())
         .isEqualTo(Math.toIntExact(tokenProperties.refreshTokenTtl().toSeconds()));
+    assertUncacheable(response);
   }
 
   @Test
@@ -448,6 +449,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
             .andReturn()
             .getResponse();
 
+    assertUncacheable(rotated);
     assertThat(rotated.getCookie("streamarr_access")).isNotNull();
     assertThat(rotated.getCookie("streamarr_refresh")).isNotNull();
     var successor = rotated.getCookie("streamarr_refresh").getValue();
@@ -650,18 +652,24 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     var accessCookie = loginResponse.getCookie("streamarr_access");
     var csrfCookie = loginResponse.getCookie("XSRF-TOKEN");
 
-    mockMvc
-        .perform(
-            post("/api/auth/select-profile")
-                .contentType(MediaType.APPLICATION_JSON)
-                .cookie(accessCookie, csrfCookie)
-                .header("X-XSRF-TOKEN", csrfCookie.getValue())
-                .content(
-                    "{\"profileId\": \"%s\", \"cookieMode\": false}".formatted(profile.getId())))
-        .andExpect(status().isOk())
-        .andExpect(cookie().exists("streamarr_access"))
-        .andExpect(cookie().doesNotExist("streamarr_refresh"))
-        .andExpect(jsonPath("$.accessToken").doesNotExist());
+    var response =
+        mockMvc
+            .perform(
+                post("/api/auth/select-profile")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .cookie(accessCookie, csrfCookie)
+                    .header("X-XSRF-TOKEN", csrfCookie.getValue())
+                    .content(
+                        "{\"profileId\": \"%s\", \"cookieMode\": false}"
+                            .formatted(profile.getId())))
+            .andExpect(status().isOk())
+            .andExpect(cookie().exists("streamarr_access"))
+            .andExpect(cookie().doesNotExist("streamarr_refresh"))
+            .andExpect(jsonPath("$.accessToken").doesNotExist())
+            .andReturn()
+            .getResponse();
+
+    assertUncacheable(response);
   }
 
   @Test
@@ -924,22 +932,27 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     var accessCookie = loginResponse.getCookie("streamarr_access");
     var csrfCookie = loginResponse.getCookie("XSRF-TOKEN");
 
-    mockMvc
-        .perform(
-            post("/api/auth/change-password")
-                .contentType(MediaType.APPLICATION_JSON)
-                .cookie(accessCookie, csrfCookie)
-                .header("X-XSRF-TOKEN", csrfCookie.getValue())
-                .content(
-                    """
-                    {"currentPassword": "%s", "newPassword": "%s", "cookieMode": false}
-                    """
-                        .formatted(PASSWORD, "a brand new passphrase!")))
-        .andExpect(status().isOk())
-        .andExpect(cookie().exists("streamarr_access"))
-        .andExpect(cookie().exists("streamarr_refresh"))
-        .andExpect(jsonPath("$.accessToken").doesNotExist())
-        .andExpect(jsonPath("$.refreshToken").doesNotExist());
+    var response =
+        mockMvc
+            .perform(
+                post("/api/auth/change-password")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .cookie(accessCookie, csrfCookie)
+                    .header("X-XSRF-TOKEN", csrfCookie.getValue())
+                    .content(
+                        """
+                        {"currentPassword": "%s", "newPassword": "%s", "cookieMode": false}
+                        """
+                            .formatted(PASSWORD, "a brand new passphrase!")))
+            .andExpect(status().isOk())
+            .andExpect(cookie().exists("streamarr_access"))
+            .andExpect(cookie().exists("streamarr_refresh"))
+            .andExpect(jsonPath("$.accessToken").doesNotExist())
+            .andExpect(jsonPath("$.refreshToken").doesNotExist())
+            .andReturn()
+            .getResponse();
+
+    assertUncacheable(response);
   }
 
   @Test
