@@ -156,7 +156,8 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
             mockMvc
                 .perform(pollRequest(issued.get("deviceCode").asString()))
                 .andExpect(status().isOk())
-                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store")));
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+                .andExpect(header().string(HttpHeaders.PRAGMA, "no-cache")));
 
     assertThat(fieldNamesOf(body)).isEqualTo(fieldNamesOf(fixture("token-success.json")));
     assertThat(body.get("scope").asString()).isEqualTo("account");
@@ -205,7 +206,8 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(userCodeBody(issued.get("userCode").asString())))
                 .andExpect(status().isOk())
-                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store")));
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+                .andExpect(header().string(HttpHeaders.PRAGMA, "no-cache")));
 
     assertThat(fieldNamesOf(body)).isEqualTo(fieldNamesOf(fixture("lookup-success.json")));
     assertThat(body.get("deviceName").asString()).isEqualTo("Living Room Apple TV");
@@ -286,7 +288,9 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
                     authenticated(approver, post("/api/auth/device/authorizations/lookup"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(userCodeBody("BCDF-GHJK")))
-                .andExpect(status().isNotFound()));
+                .andExpect(status().isNotFound())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+                .andExpect(header().string(HttpHeaders.PRAGMA, "no-cache")));
 
     assertThat(body).isEqualTo(fixture("not-found-error.json"));
   }
@@ -336,7 +340,8 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
                     .contentType(MediaType.APPLICATION_JSON)
                     .content("{\"deviceName\": \"%s\"}".formatted(deviceName)))
             .andExpect(status().isOk())
-            .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store")));
+            .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+            .andExpect(header().string(HttpHeaders.PRAGMA, "no-cache")));
   }
 
   private JsonNode pollExpectingBadRequest(String deviceCode) throws Exception {
@@ -344,7 +349,8 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
         mockMvc
             .perform(pollRequest(deviceCode))
             .andExpect(status().isBadRequest())
-            .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store")));
+            .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+            .andExpect(header().string(HttpHeaders.PRAGMA, "no-cache")));
   }
 
   private static MockHttpServletRequestBuilder pollRequest(String deviceCode) {
