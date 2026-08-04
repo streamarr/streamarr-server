@@ -5,8 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
 import com.streamarr.server.services.concurrency.MutexFactoryProvider;
-import com.streamarr.server.services.library.events.ItemProcessedEvent;
-import com.streamarr.server.services.library.events.ScanCompletedEvent;
+import com.streamarr.server.services.events.library.ItemProcessedEvent;
+import com.streamarr.server.services.events.library.ScanCompletedEvent;
 import java.util.UUID;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;

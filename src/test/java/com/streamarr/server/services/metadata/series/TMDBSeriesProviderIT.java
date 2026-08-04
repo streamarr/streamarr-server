@@ -14,7 +14,7 @@ import com.streamarr.server.domain.media.ImageType;
 import com.streamarr.server.domain.media.Series;
 import com.streamarr.server.fixtures.LibraryFixtureCreator;
 import com.streamarr.server.repositories.LibraryRepository;
-import com.streamarr.server.services.library.events.ScanEndedEvent;
+import com.streamarr.server.services.events.library.ScanEndedEvent;
 import com.streamarr.server.services.metadata.MetadataResult;
 import com.streamarr.server.services.metadata.RemoteSearchResult;
 import com.streamarr.server.services.metadata.events.ImageSource.TmdbImageSource;

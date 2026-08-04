@@ -1,7 +1,7 @@
 package com.streamarr.server.services.library;
 
 import com.streamarr.server.domain.streaming.StreamSession;
-import com.streamarr.server.services.library.events.LibraryRemovedEvent;
+import com.streamarr.server.services.events.library.LibraryRemovedEvent;
 import com.streamarr.server.services.streaming.StreamingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

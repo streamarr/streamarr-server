@@ -14,7 +14,7 @@ Use Spring Application Events to decouple side effects from core operations.
 
 * `LibraryManagementService` publishes `LibraryAddedEvent`, `LibraryRemovedEvent`, `ScanCompletedEvent`
 * Listeners use `@EventListener` (non-transactional publishers) or `@TransactionalEventListener(AFTER_COMMIT)` (transactional publishers)
-* Events are records in `services.library.events`, carrying only IDs and paths
+* Events are records carrying only IDs and paths. Library lifecycle events live in `services.events.library`, below the service domains, because `TMDBSeriesProvider` in `services.metadata` listens to them -- had they stayed under `services.library`, the listener's domain would import the publisher's domain, reinstating at package level the coupling the event removes at class level
 
 == Consequences
 
