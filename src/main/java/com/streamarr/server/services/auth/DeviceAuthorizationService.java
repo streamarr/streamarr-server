@@ -18,7 +18,6 @@ import com.streamarr.server.repositories.auth.UserCodeCollisionException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -46,12 +45,11 @@ public class DeviceAuthorizationService {
   private final SessionScopeService sessionScopeService;
   private final AccessTokenIssuer accessTokenIssuer;
   private final UserCodeGenerator userCodeGenerator;
+  private final DeviceCodeGenerator deviceCodeGenerator;
   private final DeviceGuessThrottle guessThrottle;
   private final DeviceAuthProperties properties;
   private final CanonicalBaseUrl baseUrl;
   private final Clock clock;
-
-  private final SecureRandom secureRandom = new SecureRandom();
 
   public boolean isPairingEnabled() {
     return baseUrl.isConfigured();
@@ -67,7 +65,7 @@ public class DeviceAuthorizationService {
     }
 
     var now = clock.instant();
-    var deviceCode = generateDeviceCode();
+    var deviceCode = deviceCodeGenerator.generate();
     var interval = properties.pollIntervalSeconds();
     var userCode = saveWithUniqueUserCode(deviceCode, rawDeviceName, interval, now);
 
@@ -341,12 +339,6 @@ public class DeviceAuthorizationService {
         .map(expiry -> Duration.between(now, expiry))
         .filter(wait -> wait.compareTo(Duration.ofSeconds(1)) > 0)
         .orElse(Duration.ofSeconds(1));
-  }
-
-  private String generateDeviceCode() {
-    var bytes = new byte[DEVICE_CODE_BYTES];
-    secureRandom.nextBytes(bytes);
-    return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
   }
 
   /** Validated before hashing, so a malformed code costs nothing and reveals nothing. */
