@@ -2,6 +2,7 @@ package com.streamarr.server;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noMethods;
+import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
 
 import com.streamarr.server.services.library.MovieFileProcessor;
 import com.streamarr.server.services.library.SeriesFileProcessor;
@@ -143,4 +144,15 @@ class ArchitectureTest {
         .as("Media metadata must derive text from the filepath URI, not Path display text")
         .check(classes);
   }
+
+  @ArchTest
+  static final ArchRule serviceSlicesMustBeFreeOfCycles =
+      slices()
+          .matching("..services.(*)..")
+          .should()
+          .beFreeOfCycles()
+          .as(
+              "Service domains must form a directed acyclic graph — a cycle means neither domain"
+                  + " can be understood, tested, or extracted without the other, and it lets a"
+                  + " change in one silently reach back through the other");
 }
