@@ -231,29 +231,32 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   }
 
   @Test
-  @DisplayName("Should issue a script-readable csrf cookie on an unauthenticated get")
-  void shouldIssueScriptReadableCsrfCookieOnUnauthenticatedGet() throws Exception {
-    // The SPA's boot request. Everything below depends on this: a browser holds an XSRF-TOKEN
-    // before it can ever POST a login, and a native client never asks for one.
+  @DisplayName("Should issue a host-bound script-readable csrf cookie on an unauthenticated get")
+  void shouldIssueHostBoundScriptReadableCsrfCookieOnUnauthenticatedGet() throws Exception {
+    // The SPA's boot request. Everything below depends on this: a browser holds the host-bound
+    // anti-CSRF nonce before it can ever POST a login, and a native client never asks for one.
     var cookie =
         mockMvc
             .perform(get("/api/auth/status"))
             .andExpect(status().isOk())
             .andReturn()
             .getResponse()
-            .getCookie(AuthCookies.CSRF_COOKIE);
+            .getCookie("__Host-XSRF-TOKEN");
 
     assertThat(cookie).isNotNull();
     assertThat(cookie.isHttpOnly()).isFalse();
   }
 
   @Test
-  @DisplayName("Should issue the csrf cookie with explicit secure and same site attributes")
-  void shouldIssueCsrfCookieWithExplicitSecureAndSameSiteAttributes() throws Exception {
+  @DisplayName("Should issue the csrf cookie with the host prefix contract")
+  void shouldIssueCsrfCookieWithHostPrefixContract() throws Exception {
     var cookie = freshCsrfCookie();
 
     assertAll(
+        () -> assertThat(cookie.getName()).isEqualTo("__Host-XSRF-TOKEN"),
         () -> assertThat(cookie.getSecure()).isTrue(),
+        () -> assertThat(cookie.getPath()).isEqualTo("/"),
+        () -> assertThat(cookie.getDomain()).isNull(),
         () -> assertThat(cookie.getAttribute("SameSite")).isEqualTo("Lax"));
   }
 
@@ -261,7 +264,7 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
   @DisplayName("Should reject a cookie-bearing login when no csrf token accompanies it")
   void shouldRejectCookieBearingLoginWhenNoCsrfTokenAccompaniesIt() throws Exception {
     // Login-CSRF: the credential is in the body, so no auth cookie rides the request — but the
-    // browser holds the origin's XSRF-TOKEN, and that is the population CSRF must cover.
+    // browser holds the origin's CSRF cookie, and that is the population CSRF must cover.
     mockMvc
         .perform(
             post("/api/auth/login")
@@ -282,6 +285,25 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
             post("/graphql")
                 .cookie(
                     new Cookie(AuthCookies.ACCESS_COOKIE, authTestSupport.accountBearer(identity)))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(ACCOUNT_QUERY))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+  }
+
+  @Test
+  @DisplayName("Should reject an unprefixed csrf cookie as the production token")
+  void shouldRejectUnprefixedCsrfCookieAsProductionToken() throws Exception {
+    identity = authTestSupport.createIdentity();
+    var attackerChosenToken = "attacker-chosen-token";
+
+    mockMvc
+        .perform(
+            post("/graphql")
+                .cookie(
+                    new Cookie(AuthCookies.ACCESS_COOKIE, authTestSupport.accountBearer(identity)),
+                    new Cookie("XSRF-TOKEN", attackerChosenToken))
+                .header(CSRF_HEADER, attackerChosenToken)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(ACCOUNT_QUERY))
         .andExpect(status().isForbidden())
@@ -348,7 +370,7 @@ class SecurityFilterChainIT extends AbstractIntegrationTest {
             .andReturn()
             .getResponse();
 
-    // The filter offers an XSRF-TOKEN to everyone, so the contract is that no *credential* cookie
+    // The filter offers a CSRF token to everyone, so the contract is that no *credential* cookie
     // is written: a native client that ignores Set-Cookie stays exempt on its next login.
     assertThat(response.getHeaders(HttpHeaders.SET_COOKIE))
         .noneSatisfy(header -> assertThat(header).startsWith(AuthCookies.ACCESS_COOKIE + "="))

@@ -195,11 +195,11 @@ Status: confirmed by static inspection.
 
 ### F11 — Signed double-submit and `__Host-` naming are optional hardening
 
-Status: not a current defect and not a merge blocker.
+Status: `__Host-` naming addressed in a coordinated follow-up; HMAC binding remains optional.
 
-The design uses a framework-generated, unsigned double-submit token and a non-`__Host-` cookie name. HMAC-binding the token and adopting a `__Host-` prefix would improve resistance to subdomain cookie tossing, but the present layered controls prevented a practical attack in this review. A cookie rename also requires coordination with the web client that reads it.
+The design still uses a framework-generated, unsigned double-submit token. The cookie now uses `__Host-XSRF-TOKEN`, and the real filter chain pins `Secure`, `Path=/`, no `Domain`, and rejection of an attacker-chosen unprefixed cookie. The web client recognizes the new name while retaining the unprefixed development fallback; the server remains authoritative about which name is valid in each mode.
 
-Track these as a deliberate hardening decision rather than mixing them into the correctness fix.
+HMAC-binding the token remains a separate deliberate hardening decision.
 
 ## Merged recommendations and disposition
 
@@ -222,7 +222,10 @@ Track these as a deliberate hardening decision rather than mixing them into the 
 
 ### Optional defense-in-depth
 
-Evaluate HMAC-bound double-submit tokens and a `__Host-` cookie prefix as a coordinated server/web change. Keep the auth cookies `SameSite=Strict`; do not change the CSRF cookie to `SameSite=None` merely to make it accompany cross-site requests. Cross-site cookie delivery is not the protection objective.
+1. [x] Adopt `__Host-XSRF-TOKEN` as a coordinated server/web change, with the unprefixed name reserved for explicitly insecure development.
+2. [ ] Evaluate HMAC-bound double-submit tokens independently.
+
+Keep the auth cookies `SameSite=Strict`; do not change the CSRF cookie to `SameSite=None` merely to make it accompany cross-site requests. Cross-site cookie delivery is not the protection objective.
 
 ## Confirmed strengths
 

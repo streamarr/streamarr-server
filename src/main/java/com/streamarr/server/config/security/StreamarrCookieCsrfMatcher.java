@@ -15,12 +15,12 @@ import org.springframework.security.web.util.matcher.RequestMatcher;
  * it with no auth cookie and the response mints the session. That is login CSRF — a victim silently
  * signed into the attacker's account, who then pairs a TV to it.
  *
- * <p>The XSRF-TOKEN cookie closes that gap for returning browsers: the filter writes it on the
- * SPA's first request, so any browser that has talked to this origin carries one before it can POST
- * a login. First-contact safety also relies on JSON-only auth mutations and the absence of hostile
- * CORS grants. A native client carries no cookies — the Apple clients disable cookie storage — so
- * bearer-mode login and the planned device-pairing flow stay reachable with no CSRF token. An
- * unrecognised cookie-keeping client fails closed with a CSRF 403.
+ * <p>The __Host-XSRF-TOKEN cookie closes that gap for returning browsers: the filter writes it on
+ * the SPA's first request, so any browser that has talked to this origin carries one before it can
+ * POST a login. First-contact safety also relies on JSON-only auth mutations and the absence of
+ * hostile CORS grants. A native client carries no cookies — the Apple clients disable cookie
+ * storage — so bearer-mode login and the planned device-pairing flow stay reachable with no CSRF
+ * token. An unrecognised cookie-keeping client fails closed with a CSRF 403.
  */
 public class StreamarrCookieCsrfMatcher implements RequestMatcher {
 

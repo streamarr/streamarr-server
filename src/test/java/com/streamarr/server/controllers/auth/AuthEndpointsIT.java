@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.streamarr.server.AbstractIntegrationTest;
+import com.streamarr.server.config.security.AuthCookies;
 import com.streamarr.server.config.security.AuthTokenProperties;
 import com.streamarr.server.config.security.TokenCryptoConfig;
 import com.streamarr.server.domain.auth.AccountProfile;
@@ -266,7 +267,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     seedSingleProfileIdentity();
     var loginResponse = cookieModeLogin();
     var predecessor = loginResponse.getCookie("streamarr_refresh");
-    var csrfCookie = loginResponse.getCookie("XSRF-TOKEN");
+    var csrfCookie = loginResponse.getCookie(AuthCookies.CSRF_COOKIE);
 
     var rotated =
         mockMvc
@@ -308,7 +309,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     var bodyRefreshToken = loginAndReadField("refreshToken");
     var cookieLogin = cookieModeLogin();
     var refreshCookie = cookieLogin.getCookie("streamarr_refresh");
-    var csrfCookie = cookieLogin.getCookie("XSRF-TOKEN");
+    var csrfCookie = cookieLogin.getCookie(AuthCookies.CSRF_COOKIE);
 
     mockMvc
         .perform(
@@ -427,7 +428,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
             .andReturn()
             .getResponse();
     var refreshCookie = loginResponse.getCookie("streamarr_refresh");
-    var csrfCookie = loginResponse.getCookie("XSRF-TOKEN");
+    var csrfCookie = loginResponse.getCookie(AuthCookies.CSRF_COOKIE);
 
     // Browsers attach the Path=/ access cookie to every request — including refresh. An expired
     // access credential must never deadlock renewal into logout.
@@ -646,7 +647,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
             .build());
     var loginResponse = cookieModeLogin();
     var accessCookie = loginResponse.getCookie("streamarr_access");
-    var csrfCookie = loginResponse.getCookie("XSRF-TOKEN");
+    var csrfCookie = loginResponse.getCookie(AuthCookies.CSRF_COOKIE);
 
     mockMvc
         .perform(
@@ -776,7 +777,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     seedSingleProfileIdentity();
     var loginResponse = cookieModeLogin();
     var accessCookie = loginResponse.getCookie("streamarr_access");
-    var csrfCookie = loginResponse.getCookie("XSRF-TOKEN");
+    var csrfCookie = loginResponse.getCookie(AuthCookies.CSRF_COOKIE);
 
     mockMvc
         .perform(
@@ -829,10 +830,10 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     seedSingleProfileIdentity();
     var loginResponse = cookieModeLogin();
     var refreshCookie = loginResponse.getCookie("streamarr_refresh");
-    var csrfCookie = loginResponse.getCookie("XSRF-TOKEN");
+    var csrfCookie = loginResponse.getCookie(AuthCookies.CSRF_COOKIE);
     assertThat(csrfCookie).isNotNull();
 
-    // The page reads the XSRF-TOKEN cookie and echoes its raw value — the SW contract.
+    // The page reads the CSRF cookie and echoes its raw value — the SW contract.
     mockMvc
         .perform(
             post("/api/auth/refresh")
@@ -920,7 +921,7 @@ class AuthEndpointsIT extends AbstractIntegrationTest {
     seedSingleProfileIdentity();
     var loginResponse = cookieModeLogin();
     var accessCookie = loginResponse.getCookie("streamarr_access");
-    var csrfCookie = loginResponse.getCookie("XSRF-TOKEN");
+    var csrfCookie = loginResponse.getCookie(AuthCookies.CSRF_COOKIE);
 
     mockMvc
         .perform(

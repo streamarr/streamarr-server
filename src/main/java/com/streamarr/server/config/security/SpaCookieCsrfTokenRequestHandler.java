@@ -10,8 +10,8 @@ import org.springframework.util.StringUtils;
 
 /**
  * The documented SPA shape: BREACH-protected (Xor) rendering with eager realisation so the readable
- * XSRF-TOKEN cookie is always written, and header-only resolution — the page reads the cookie and
- * echoes it as X-XSRF-TOKEN.
+ * __Host-XSRF-TOKEN cookie is always written, and header-only resolution — the page reads the
+ * cookie and echoes it as X-XSRF-TOKEN.
  */
 public class SpaCookieCsrfTokenRequestHandler implements CsrfTokenRequestHandler {
 
@@ -22,7 +22,7 @@ public class SpaCookieCsrfTokenRequestHandler implements CsrfTokenRequestHandler
   public void handle(
       HttpServletRequest request, HttpServletResponse response, Supplier<CsrfToken> csrfToken) {
     xorHandler.handle(request, response, csrfToken);
-    // Realise the deferred token so the cookie repository writes XSRF-TOKEN for the SPA.
+    // Realise the deferred token so the cookie repository writes __Host-XSRF-TOKEN for the SPA.
     csrfToken.get();
   }
 

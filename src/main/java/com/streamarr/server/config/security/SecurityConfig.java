@@ -32,11 +32,11 @@ public class SecurityConfig {
    * and future surfaces — demands SCOPE_ACCOUNT, which household and profile tokens satisfy through
    * the scope hierarchy.
    *
-   * <p>CSRF (SPA shape: readable XSRF-TOKEN cookie, Xor rendering, header-only submission) protects
-   * unsafe requests from the Streamarr cookie-carrying browser population. The filter is wired
-   * manually because the resource-server DSL exempts any request its bearer resolver finds a token
-   * on — and our resolver reads the access cookie, which is precisely the ambient credential CSRF
-   * must cover.
+   * <p>CSRF (SPA shape: readable __Host-XSRF-TOKEN cookie, Xor rendering, header-only submission)
+   * protects unsafe requests from the Streamarr cookie-carrying browser population. The filter is
+   * wired manually because the resource-server DSL exempts any request its bearer resolver finds a
+   * token on — and our resolver reads the access cookie, which is precisely the ambient credential
+   * CSRF must cover.
    */
   @Bean
   SecurityFilterChain securityFilterChain(HttpSecurity http) {

@@ -104,9 +104,10 @@ Native apps — iOS, Android, TV — send access tokens as `Authorization: Beare
 Browsers never touch tokens from script: both tokens travel as `httpOnly`, `Secure`, `SameSite` cookies, with the refresh cookie path-scoped to the refresh endpoint.
 Cookies are ambient credentials, so cookie-carrying requests keep CSRF protection — a manually wired `CsrfFilter` pairs BREACH-protected rendering with a cookie repository and accepts request tokens only through `X-XSRF-TOKEN`.
 Its matcher exempts a bearer-header request only on routes where the bearer resolver can consume that header; the `csrf.spa()` DSL was deliberately not used because it would exempt cookie-authenticated requests as well.
-That matcher keys on *any* Streamarr cookie — both auth cookies and the readable `XSRF-TOKEN` — not on whether the request is already cookie-authenticated.
+That matcher keys on *any* Streamarr cookie — both auth cookies and the readable `__Host-XSRF-TOKEN` — not on whether the request is already cookie-authenticated.
 Login is why: it carries its credential in the body, so a browser reaches it holding no auth cookie and the response mints the session, which is login CSRF — a victim silently signed into the attacker's account, who then pairs a TV to it.
-The `XSRF-TOKEN` cookie closes that gap for returning browsers: the filter writes one on a client's first request, so any browser that has already talked to this origin carries it before it can POST a login.
+The `__Host-XSRF-TOKEN` cookie closes that gap for returning browsers: the filter writes one on a client's first request, so any browser that has already talked to this origin carries it before it can POST a login.
+The browser-enforced prefix binds the double-submit cookie to the exact host: it requires `Secure`, `Path=/`, and no `Domain`, preventing a sibling subdomain from planting the token that Streamarr validates.
 A first-contact browser has no marker yet, so setup, login, and refresh explicitly accept only JSON and the deployment grants no hostile cross-origin CORS access; both constraints are load-bearing parts of the login-CSRF boundary.
 Bearer-mode login — and the planned device-pairing flow — stays exempt only because native clients keep no cookie jar at all: the Apple clients build every session with cookie storage, acceptance, and sending disabled, and that is a load-bearing client contract rather than an incidental property.
 A cookie-keeping client the server does not know about therefore fails closed with a CSRF `403`, never by silently losing the protection.
