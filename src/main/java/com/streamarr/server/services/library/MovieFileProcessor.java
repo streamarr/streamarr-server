@@ -119,14 +119,8 @@ public class MovieFileProcessor {
   }
 
   private Optional<VideoFileParserResult> parseFolderName(MediaFile mediaFile) {
-    var path = FilepathCodec.decode(fileSystem, mediaFile.getFilepathUri());
-    var parent = path.getParent();
-
-    if (parent == null || parent.getFileName() == null) {
-      return Optional.empty();
-    }
-
-    return defaultVideoFileMetadataParser.parse(parent.getFileName().toString());
+    return FilepathCodec.parentNameOf(mediaFile.getFilepathUri())
+        .flatMap(defaultVideoFileMetadataParser::parse);
   }
 
   private void enrichMovieMetadata(

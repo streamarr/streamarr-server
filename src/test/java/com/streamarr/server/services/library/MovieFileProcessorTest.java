@@ -157,6 +157,43 @@ class MovieFileProcessorTest {
   }
 
   @Test
+  @DisplayName("Should search with the accented folder title when filename lacks the year")
+  void shouldSearchWithAccentedFolderTitleWhenFilenameLacksTheYear() {
+    var library = LibraryFixtureCreator.buildFakeLibrary();
+
+    var mediaFile =
+        fakeMediaFileRepository.save(
+            MediaFile.builder()
+                .libraryId(library.getId())
+                .filepathUri("file:///library/Am%C3%A9lie%20(2001)/movie.mkv")
+                .filename("movie.mkv")
+                .status(MediaFileStatus.UNMATCHED)
+                .build());
+
+    when(tmdbMovieProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+
+    when(tmdbMovieProvider.search(any(VideoFileParserResult.class))).thenReturn(Optional.empty());
+
+    when(tmdbMovieProvider.search(
+            argThat(r -> "Amélie".equals(r.title()) && "2001".equals(r.year()))))
+        .thenReturn(
+            Optional.of(
+                RemoteSearchResult.builder()
+                    .title("Amélie")
+                    .externalId("194")
+                    .externalSourceType(ExternalSourceType.TMDB)
+                    .build()));
+
+    when(tmdbMovieProvider.getMetadata(any(RemoteSearchResult.class), any(Library.class)))
+        .thenReturn(Optional.empty());
+
+    movieFileProcessor.process(library, mediaFile);
+
+    assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
+        .isEqualTo(MediaFileStatus.UNMATCHED);
+  }
+
+  @Test
   @DisplayName("Should mark metadata parsing failed when filename is blank")
   void shouldMarkMetadataParsingFailedWhenFilenameIsBlank() {
     var library = LibraryFixtureCreator.buildFakeLibrary();

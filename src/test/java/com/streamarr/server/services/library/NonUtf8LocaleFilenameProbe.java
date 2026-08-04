@@ -1,6 +1,7 @@
 package com.streamarr.server.services.library;
 
 import com.streamarr.server.services.parsers.show.SeasonPathMetadataParser;
+import com.streamarr.server.services.parsers.show.SeriesFolderNameParser;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -21,6 +22,7 @@ import java.util.Base64;
 public final class NonUtf8LocaleFilenameProbe {
 
   private static final SeasonPathMetadataParser SEASON_PARSER = new SeasonPathMetadataParser();
+  private static final SeriesFolderNameParser SERIES_FOLDER_PARSER = new SeriesFolderNameParser();
 
   private NonUtf8LocaleFilenameProbe() {}
 
@@ -29,20 +31,24 @@ public final class NonUtf8LocaleFilenameProbe {
     var uri = FilepathCodec.encode(file);
 
     var pathParentName = file.getParent().getFileName().toString();
+    var pathGrandparentName = file.getParent().getParent().getFileName().toString();
     var codecParentName = FilepathCodec.parentNameOf(uri).orElseThrow();
+    var codecGrandparentName = FilepathCodec.grandparentNameOf(uri).orElseThrow();
 
     report("sun.jnu.encoding", System.getProperty("sun.jnu.encoding"));
     report("path.filename", file.getFileName().toString());
     report("path.parentName", pathParentName);
-    report("path.grandparentName", file.getParent().getParent().getFileName().toString());
+    report("path.grandparentName", pathGrandparentName);
     report("path.toString", file.toString());
     report("codec.uri", uri);
     report("codec.filename", FilepathCodec.filenameOf(uri));
     report("codec.parentName", codecParentName);
-    report("codec.grandparentName", FilepathCodec.grandparentNameOf(uri).orElseThrow());
+    report("codec.grandparentName", codecGrandparentName);
     report("codec.path", FilepathCodec.pathOf(uri));
     report("season.fromPathName", parseSeason(pathParentName));
     report("season.fromCodecName", parseSeason(codecParentName));
+    report("seriesTitle.fromPathName", SERIES_FOLDER_PARSER.parse(pathGrandparentName).title());
+    report("seriesTitle.fromCodecName", SERIES_FOLDER_PARSER.parse(codecGrandparentName).title());
   }
 
   private static String parseSeason(String directoryName) {

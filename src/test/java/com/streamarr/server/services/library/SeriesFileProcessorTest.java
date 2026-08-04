@@ -3,6 +3,7 @@ package com.streamarr.server.services.library;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
@@ -217,6 +218,44 @@ class SeriesFileProcessorTest {
 
     when(seriesMetadataProvider.getSeasonDetails(isNull(), eq("93544"), eq(4)))
         .thenReturn(Optional.empty());
+
+    seriesFileProcessor.process(library, mediaFile);
+
+    assertThat(fakeMediaFileRepository.findById(mediaFile.getId()).orElseThrow().getStatus())
+        .isEqualTo(MediaFileStatus.ENRICHMENT_FAILED);
+  }
+
+  @Test
+  @DisplayName("Should search with the accented series folder title when path has a season folder")
+  void shouldSearchWithAccentedSeriesFolderTitleWhenPathHasSeasonFolder() {
+    var library = LibraryFixtureCreator.buildFakeSeriesLibrary();
+
+    var mediaFile =
+        fakeMediaFileRepository.save(
+            MediaFile.builder()
+                .libraryId(library.getId())
+                .filepathUri(
+                    "file:///library/Am%C3%A9lie%20Chronicles/S%C3%A6son%203/"
+                        + "Amelie.Chronicles.S03E05.mkv")
+                .filename("Amelie.Chronicles.S03E05.mkv")
+                .status(MediaFileStatus.UNMATCHED)
+                .build());
+
+    when(seriesMetadataProvider.getAgentStrategy()).thenReturn(ExternalAgentStrategy.TMDB);
+
+    when(seriesMetadataProvider.search(any(VideoFileParserResult.class)))
+        .thenReturn(Optional.empty());
+
+    when(seriesMetadataProvider.search(argThat(r -> "Amélie Chronicles".equals(r.title()))))
+        .thenReturn(
+            Optional.of(
+                RemoteSearchResult.builder()
+                    .title("Amélie Chronicles")
+                    .externalId("777")
+                    .externalSourceType(ExternalSourceType.TMDB)
+                    .build()));
+
+    when(seriesService.findByTmdbId("777")).thenReturn(Optional.empty());
 
     seriesFileProcessor.process(library, mediaFile);
 

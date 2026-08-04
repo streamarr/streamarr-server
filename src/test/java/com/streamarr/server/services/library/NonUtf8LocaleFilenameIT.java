@@ -116,6 +116,13 @@ class NonUtf8LocaleFilenameIT {
   }
 
   @Test
+  @DisplayName("Should name the movie folder from the URI when Path mangles it")
+  void shouldNameMovieFolderFromUriWhenPathManglesIt() {
+    assertThat(movieReport.get("path.parentName")).contains(REPLACEMENT_CHAR);
+    assertThat(movieReport.get("codec.parentName")).isEqualTo(MOVIE_FOLDER);
+  }
+
+  @Test
   @DisplayName("Should mangle directory names above the file when they are read through Path")
   void shouldMangleDirectoryNamesAboveFileWhenTheyAreReadThroughPath() {
     assertThat(seriesReport.get("path.parentName")).isEqualTo(MANGLED_SEASON_FOLDER);
@@ -143,6 +150,18 @@ class NonUtf8LocaleFilenameIT {
   @DisplayName("Should read the season number when the season folder name came from the URI")
   void shouldReadSeasonNumberWhenSeasonFolderNameCameFromUri() {
     assertThat(seriesReport).containsEntry("season.fromCodecName", "3/true");
+  }
+
+  @Test
+  @DisplayName("Should hand out a mangled series title when the folder name came through Path")
+  void shouldHandOutMangledSeriesTitleWhenFolderNameCameThroughPath() {
+    assertThat(seriesReport.get("seriesTitle.fromPathName")).contains(REPLACEMENT_CHAR);
+  }
+
+  @Test
+  @DisplayName("Should hand out the real series title when the folder name came from the URI")
+  void shouldHandOutRealSeriesTitleWhenFolderNameCameFromUri() {
+    assertThat(seriesReport).containsEntry("seriesTitle.fromCodecName", "Amélie Chronicles");
   }
 
   /**
