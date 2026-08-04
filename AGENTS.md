@@ -97,7 +97,7 @@ Use Spring's `ApplicationEventPublisher` to decouple side effects from core oper
 
 **Conventions:**
 - Events are Java records in a `services.<domain>.events` package while every listener lives in that same domain
-- An event listened to from another service domain moves to `services.events.<domain>` (e.g. `services.events.library`), which sits below all domains — otherwise the listener's domain has to import the publisher's domain, which is the coupling the event was meant to remove, and it forms a package cycle (`ArchitectureTest.serviceSlicesMustBeFreeOfCycles`)
+- An event listened to from another service domain moves to `services.events.<domain>` (e.g. `services.events.library`), which sits below all domains — otherwise the listener's domain has to import the publisher's domain, which is the coupling the event was meant to remove, and it forms a package cycle (`ArchitectureTest.shouldKeepServiceDomainsAcyclicWhenDependenciesCrossDomainBoundaries`)
 - Events carry only the data listeners need (IDs, paths) — not full entities
 - Testing: use `CapturingEventPublisher` fake to assert events published; test listeners by direct method invocation
 

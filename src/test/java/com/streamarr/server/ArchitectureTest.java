@@ -3,11 +3,15 @@ package com.streamarr.server;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noMethods;
 import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.streamarr.server.services.RootServiceCycleFixture;
+import com.streamarr.server.services.architecturefixture.SubdomainServiceCycleFixture;
 import com.streamarr.server.services.library.MovieFileProcessor;
 import com.streamarr.server.services.library.SeriesFileProcessor;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
+import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
@@ -17,6 +21,7 @@ import com.tngtech.archunit.library.dependencies.SliceIdentifier;
 import java.nio.file.Path;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.springframework.transaction.annotation.Transactional;
 
 @Tag("UnitTest")
@@ -151,15 +156,34 @@ class ArchitectureTest {
   }
 
   @ArchTest
-  static final ArchRule serviceSlicesMustBeFreeOfCycles =
-      slices()
-          .assignedFrom(new ServiceDomainSliceAssignment())
-          .should()
-          .beFreeOfCycles()
-          .as(
-              "Service domains must form a directed acyclic graph — a cycle means neither domain"
-                  + " can be understood, tested, or extracted without the other, and it lets a"
-                  + " change in one silently reach back through the other");
+  @DisplayName("Should keep service domains acyclic when dependencies cross domain boundaries")
+  static void shouldKeepServiceDomainsAcyclicWhenDependenciesCrossDomainBoundaries(
+      JavaClasses classes) {
+    serviceDomainsMustBeFreeOfCycles().check(classes);
+  }
+
+  @Test
+  @DisplayName("Should reject service domain cycle when root service depends on subdomain")
+  void shouldRejectServiceDomainCycleWhenRootServiceDependsOnSubdomain() {
+    var cyclicServiceDomains =
+        new ClassFileImporter()
+            .importClasses(RootServiceCycleFixture.class, SubdomainServiceCycleFixture.class);
+
+    assertThatThrownBy(() -> serviceDomainsMustBeFreeOfCycles().check(cyclicServiceDomains))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("Cycle detected");
+  }
+
+  private static ArchRule serviceDomainsMustBeFreeOfCycles() {
+    return slices()
+        .assignedFrom(new ServiceDomainSliceAssignment())
+        .should()
+        .beFreeOfCycles()
+        .as(
+            "Service domains must form a directed acyclic graph — a cycle means neither domain"
+                + " can be understood, tested, or extracted without the other, and it lets a"
+                + " change in one silently reach back through the other");
+  }
 
   private static final class ServiceDomainSliceAssignment implements SliceAssignment {
 
