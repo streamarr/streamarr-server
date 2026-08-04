@@ -76,6 +76,11 @@ public class AuthSessionRepositoryCustomImpl implements AuthSessionRepositoryCus
   }
 
   @Override
+  public boolean hasRow(UUID sessionId) {
+    return dsl.fetchExists(dsl.selectOne().from(AUTH_SESSION).where(AUTH_SESSION.ID.eq(sessionId)));
+  }
+
+  @Override
   public Optional<AuthSession> lockById(UUID sessionId) {
     var query = dsl.selectFrom(AUTH_SESSION).where(AUTH_SESSION.ID.eq(sessionId)).forUpdate();
 

@@ -6,6 +6,7 @@ import com.streamarr.server.exceptions.AuthenticationRequiredException;
 import com.streamarr.server.exceptions.HouseholdAccessDeniedException;
 import com.streamarr.server.exceptions.HouseholdRequiredException;
 import com.streamarr.server.exceptions.ProfileAccessDeniedException;
+import com.streamarr.server.exceptions.UnwrittenAuthSessionException;
 import com.streamarr.server.repositories.auth.AccountProfileRepository;
 import com.streamarr.server.repositories.auth.AuthSessionRepository;
 import com.streamarr.server.repositories.auth.HouseholdMembershipRepository;
@@ -218,8 +219,24 @@ public class SessionScopeService {
   }
 
   private void persistSelection(AuthSession session) {
-    if (!sessionRepository.updateSelectionIfLive(session, clock.instant())) {
-      throw new AuthenticationRequiredException();
+    if (sessionRepository.updateSelectionIfLive(session, clock.instant())) {
+      return;
     }
+
+    throw classifyLostSelection(session.getId());
+  }
+
+  /**
+   * Zero rows updated has two causes and only one of them is an authentication failure: a revoked
+   * session is genuinely unauthenticated, while a session with no row at all is a caller whose
+   * insert is still queued behind this write. Answering the second as the first told a paired
+   * device to authenticate over a fault it could do nothing about.
+   */
+  private RuntimeException classifyLostSelection(UUID sessionId) {
+    if (sessionRepository.hasRow(sessionId)) {
+      return new AuthenticationRequiredException();
+    }
+
+    return new UnwrittenAuthSessionException(sessionId);
   }
 }

@@ -22,6 +22,14 @@ public interface AuthSessionRepositoryCustom {
   boolean updateSelectionIfLive(AuthSession session, Instant now);
 
   /**
+   * Asks the database whether the row exists, so a conditional update that matched nothing can say
+   * which of its two causes applied. Deliberately not JpaRepository.existsById: a JPA query
+   * auto-flushes the pending insert first and would answer about the persistence context rather
+   * than about what statements on this connection can already see.
+   */
+  boolean hasRow(UUID sessionId);
+
+  /**
    * Reads the session under a row-level write lock (SELECT … FOR UPDATE). Refresh acquires it
    * before touching tokens, in the same order revoke() locks, so refresh and revocation serialize
    * on the session row — a successor can never be inserted onto a just-revoked session.
