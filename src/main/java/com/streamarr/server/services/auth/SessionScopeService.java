@@ -33,7 +33,8 @@ public class SessionScopeService {
 
   /**
    * ADR 0016 auto-selection: a sole household is selected automatically, then a sole selectable
-   * profile within it.
+   * profile within it. The profile is set unconditionally from the resolved value, so a session
+   * arriving with a stale selection has it cleared rather than carried into the minted token.
    */
   @Transactional
   public TokenContext autoSelectContext(UserAccount account, AuthSession session) {
@@ -44,7 +45,7 @@ public class SessionScopeService {
 
     var householdId = memberships.getFirst().getHouseholdId();
     session.setActiveHouseholdId(householdId);
-    soleSelectableProfileId(account.getId(), householdId).ifPresent(session::setActiveProfileId);
+    session.setActiveProfileId(soleSelectableProfileId(account.getId(), householdId).orElse(null));
 
     persistSelection(session);
 
