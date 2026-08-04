@@ -111,7 +111,18 @@ class DeviceAuthContractIT extends AbstractIntegrationTest {
   void shouldAnswerUnapprovedPollWithPinnedPendingBodyOnBadRequest() throws Exception {
     var deviceCode = issueCode("Apple TV").get("deviceCode").asString();
 
-    // The first poll is early by construction, so slow_down comes before pending.
+    // RFC 8628 §3.2: the interval is the wait between polls, so the first one is never too soon.
+    assertThat(pollExpectingBadRequest(deviceCode))
+        .isEqualTo(fixture("authorization-pending-error.json"));
+  }
+
+  @Test
+  @DisplayName("Should answer a too-soon poll with the pinned slow-down body on HTTP 400")
+  void shouldAnswerTooSoonPollWithPinnedSlowDownBodyOnBadRequest() throws Exception {
+    var deviceCode = issueCode("Apple TV").get("deviceCode").asString();
+    pollExpectingBadRequest(deviceCode);
+
+    // The second poll lands well inside the interval the first one started.
     assertThat(pollExpectingBadRequest(deviceCode)).isEqualTo(fixture("slow-down-error.json"));
   }
 

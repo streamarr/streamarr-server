@@ -279,7 +279,9 @@ public class DeviceAuthorizationService {
                 .userCode(candidate)
                 .deviceName(DeviceName.sanitize(rawDeviceName))
                 .expiresAt(now.plus(properties.codeTtl()))
-                .nextPollAt(now.plusSeconds(interval))
+                // RFC 8628 §3.2: the interval is the wait between polls. Nothing precedes the
+                // first one, so the gate opens at issuance and governs from the second poll on.
+                .nextPollAt(now)
                 .pollIntervalSeconds(interval)
                 .maxOutstanding(properties.maxOutstandingCodes())
                 .now(now)

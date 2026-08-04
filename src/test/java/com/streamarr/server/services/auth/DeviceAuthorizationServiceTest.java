@@ -173,10 +173,25 @@ class DeviceAuthorizationServiceTest {
     assertThat(service.redeem(issued.deviceCode())).isInstanceOf(DevicePollResult.Pending.class);
   }
 
+  /**
+   * RFC 8628 §3.2 defines the interval as the wait <em>between</em> polling requests. Nothing
+   * precedes the first one, so a device that polls the moment it holds a code is conforming, and
+   * charging it a permanent cumulative penalty would halve how often it notices its own approval.
+   */
+  @Test
+  @DisplayName("Should allow the first poll immediately and leave the interval untouched")
+  void shouldAllowFirstPollImmediatelyAndLeaveIntervalUntouched() {
+    var issued = service.issue("Apple TV");
+
+    assertThat(service.redeem(issued.deviceCode())).isInstanceOf(DevicePollResult.Pending.class);
+    assertThat(storedInterval()).isEqualTo(5);
+  }
+
   @Test
   @DisplayName("Should slow down a caller that polls before the cadence allows")
   void shouldSlowDownCallerThatPollsBeforeCadenceAllows() {
     var issued = service.issue("Apple TV");
+    service.redeem(issued.deviceCode());
 
     assertThat(service.redeem(issued.deviceCode())).isInstanceOf(DevicePollResult.SlowDown.class);
   }
@@ -186,8 +201,7 @@ class DeviceAuthorizationServiceTest {
   void shouldRaiseIntervalFiveSecondsPerEarlyPollCumulatively() {
     var issued = service.issue("Apple TV");
 
-    // Issued at t=0 with interval 5, so the first due poll is t=5.
-    advanceClock(Duration.ofSeconds(5));
+    // Issued at t=0, and the gate opens on the poll before, so the first one is never early.
     assertThat(service.redeem(issued.deviceCode())).isInstanceOf(DevicePollResult.Pending.class);
     assertThat(storedInterval()).isEqualTo(5);
 

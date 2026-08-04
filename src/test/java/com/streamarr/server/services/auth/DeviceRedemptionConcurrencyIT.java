@@ -123,11 +123,14 @@ class DeviceRedemptionConcurrencyIT extends AbstractIntegrationTest {
 
     var results = pollConcurrently(issued.deviceCode(), 4);
 
-    // Size first: a poller whose exception was swallowed would shorten the list, and allMatch
-    // over an empty list passes vacuously. Every poller is early, so each one pays the
+    // Size first: a poller whose exception was swallowed would shorten the list, and a filtered
+    // assertion over an empty list passes vacuously. Whichever poller takes the row lock first is
+    // due at issuance; the other three land inside the interval it starts and each pays the
     // cumulative five-second penalty exactly once.
-    assertThat(results).hasSize(4).allMatch(DevicePollResult.SlowDown.class::isInstance);
-    assertThat(intervalOf(issued.userCode())).isEqualTo(5 + 4 * 5);
+    assertThat(results).hasSize(4);
+    assertThat(results).filteredOn(DevicePollResult.Pending.class::isInstance).hasSize(1);
+    assertThat(results).filteredOn(DevicePollResult.SlowDown.class::isInstance).hasSize(3);
+    assertThat(intervalOf(issued.userCode())).isEqualTo(5 + 3 * 5);
   }
 
   private List<DevicePollResult> pollConcurrently(String deviceCode, int pollers) {
