@@ -27,10 +27,17 @@ class ActuatorExposureIT extends AbstractIntegrationTest {
 
   @Autowired private WebApplicationContext webApplicationContext;
 
+  @TestBean(name = "tmdb")
+  HttpClient tmdbHttpClient;
+
   @TestBean(name = "tmdbHealth")
   HttpClient tmdbHealthHttpClient;
 
   private MockMvc mockMvc;
+
+  static HttpClient tmdbHttpClient() {
+    return FakeHttpClient.respondingWith(200);
+  }
 
   static HttpClient tmdbHealthHttpClient() {
     return FakeHttpClient.respondingWith(503);

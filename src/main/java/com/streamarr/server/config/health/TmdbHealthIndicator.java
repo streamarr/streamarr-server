@@ -24,8 +24,8 @@ public class TmdbHealthIndicator implements HealthIndicator {
       URI.create("https://api.themoviedb.org/3/configuration");
 
   // Not DOWN: an unreachable TMDB degrades metadata enrichment while playback, auth and browsing
-  // keep serving. management.endpoint.health.status.order ranks DEGRADED below UP so it stays out
-  // of the aggregate verdict, and the metadata health group surfaces it on its own.
+  // keep serving. management.endpoint.health.status.order ranks DEGRADED below UP so it cannot
+  // outrank an UP contributor in the aggregate, and the metadata health group surfaces it alone.
   static final Status DEGRADED = new Status("DEGRADED", "TMDB metadata service is unavailable");
 
   @Qualifier("tmdbHealth")

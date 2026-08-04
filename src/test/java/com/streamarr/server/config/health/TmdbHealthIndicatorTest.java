@@ -6,14 +6,10 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
-import com.github.mizosoft.methanol.Methanol;
-import com.github.mizosoft.methanol.RetryInterceptor;
-import com.github.mizosoft.methanol.RetryInterceptor.BackoffStrategy;
 import com.streamarr.server.fakes.FakeHttpClient;
 import com.streamarr.server.fakes.MutableClock;
 import java.io.IOException;
 import java.net.http.HttpClient;
-import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.Executors;
@@ -155,27 +151,25 @@ class TmdbHealthIndicatorTest {
 
   @Test
   @DisplayName("Should start cache TTL after slow probe completes")
-  void shouldStartCacheTtlAfterSlowProbeCompletes() {
-    var cacheTtl = Duration.ofMillis(50);
-    var backend = FakeHttpClient.respondingWith(429);
-    var retryingClient =
-        Methanol.newBuilder(backend)
-            .interceptor(
-                RetryInterceptor.newBuilder()
-                    .maxRetries(1)
-                    .onStatus(429)
-                    .backoff(BackoffStrategy.fixed(cacheTtl.multipliedBy(2)))
-                    .build())
-            .build();
-    var properties =
-        TmdbHealthProperties.builder().probeTimeout(PROBE_TIMEOUT).cacheTtl(cacheTtl).build();
-    var indicator = new TmdbHealthIndicator(retryingClient, properties, Clock.systemUTC());
+  void shouldStartCacheTtlAfterSlowProbeCompletes() throws Exception {
+    var responses = FakeHttpClient.respondingWithBlockedFirst(200, 200);
+    var client = responses.client();
+    var indicator = indicatorFor(client);
 
-    indicator.health();
-    var sendsAfterFirstProbe = backend.sendCount();
-    indicator.health();
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var probe = executor.submit(() -> indicator.health());
+      try {
+        assertThat(responses.awaitFirstRequest(Duration.ofSeconds(5))).isTrue();
+        currentTime.updateAndGet(instant -> instant.plus(CACHE_TTL));
+        responses.releaseFirstResponse();
+        assertThat(probe.get(5, TimeUnit.SECONDS).getStatus()).isEqualTo(Status.UP);
+      } finally {
+        responses.releaseFirstResponse();
+      }
+    }
 
-    assertThat(backend.sendCount()).isEqualTo(sendsAfterFirstProbe);
+    assertThat(indicator.health().getStatus()).isEqualTo(Status.UP);
+    assertThat(client.sendCount()).isEqualTo(1);
   }
 
   @Test

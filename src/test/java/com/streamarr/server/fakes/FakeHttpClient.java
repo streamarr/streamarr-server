@@ -44,8 +44,12 @@ public class FakeHttpClient extends HttpClient {
     return new FakeHttpClient(new Responding(statusCode));
   }
 
-  public static FakeHttpClient failingWith(Exception exception) {
-    return new FakeHttpClient(new Failing(exception));
+  public static FakeHttpClient failingWith(IOException exception) {
+    return new FakeHttpClient(new IoFailure(exception));
+  }
+
+  public static FakeHttpClient failingWith(InterruptedException exception) {
+    return new FakeHttpClient(new InterruptedFailure(exception));
   }
 
   public static FakeHttpClient unresponsive() {
@@ -74,7 +78,8 @@ public class FakeHttpClient extends HttpClient {
 
     return switch (outcome) {
       case Responding(int statusCode) -> new FakeHttpResponse<>(statusCode, request);
-      case Failing(Exception exception) -> throw asSendFailure(exception);
+      case IoFailure(IOException exception) -> throw exception;
+      case InterruptedFailure(InterruptedException exception) -> throw exception;
       case Unresponsive _ -> throw waitOutTimeout(request);
       case BlockedFirstResponse response -> response.answer(requestNumber, request);
     };
@@ -83,18 +88,6 @@ public class FakeHttpClient extends HttpClient {
   private IOException waitOutTimeout(HttpRequest request) throws InterruptedException {
     Thread.sleep(request.timeout().orElse(UNBOUNDED_WAIT));
     return new HttpTimeoutException("request timed out");
-  }
-
-  private IOException asSendFailure(Exception exception) throws InterruptedException {
-    if (exception instanceof InterruptedException interrupted) {
-      throw interrupted;
-    }
-
-    if (exception instanceof IOException failure) {
-      return failure;
-    }
-
-    throw new IllegalArgumentException("Only IOException and InterruptedException can be faked");
   }
 
   @Override
@@ -162,11 +155,13 @@ public class FakeHttpClient extends HttpClient {
   }
 
   private sealed interface Outcome
-      permits Responding, Failing, Unresponsive, BlockedFirstResponse {}
+      permits Responding, IoFailure, InterruptedFailure, Unresponsive, BlockedFirstResponse {}
 
   private record Responding(int statusCode) implements Outcome {}
 
-  private record Failing(Exception exception) implements Outcome {}
+  private record IoFailure(IOException exception) implements Outcome {}
+
+  private record InterruptedFailure(InterruptedException exception) implements Outcome {}
 
   private record Unresponsive() implements Outcome {}
 

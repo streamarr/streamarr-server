@@ -42,29 +42,42 @@ class TmdbHttpClientConfigurationTest {
   }
 
   @Test
-  @DisplayName("Should return first retryable response within health probe timeout")
-  void shouldReturnFirstRetryableResponseWithinHealthProbeTimeout() throws Exception {
-    wireMock.stubFor(get("/configuration").willReturn(aResponse().withStatus(429)));
+  @DisplayName("Should return first retryable response without retrying")
+  void shouldReturnFirstRetryableResponseWithoutRetrying() throws Exception {
+    wireMock.stubFor(
+        get("/configuration")
+            .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "0")));
     var properties =
         TmdbHealthProperties.builder()
-            .probeTimeout(PROBE_TIMEOUT)
+            .probeTimeout(LOCAL_SERVER_TIMEOUT)
             .cacheTtl(Duration.ofSeconds(30))
             .build();
     var client = new TmdbHttpClientConfiguration().tmdbHealthHttpClient(properties);
     var request =
         HttpRequest.newBuilder()
             .uri(URI.create(wireMock.baseUrl() + "/configuration"))
-            .timeout(PROBE_TIMEOUT)
+            .timeout(LOCAL_SERVER_TIMEOUT)
             .GET()
             .build();
 
-    var startedAt = System.nanoTime();
     var response = client.send(request, HttpResponse.BodyHandlers.discarding());
-    var elapsed = Duration.ofNanos(System.nanoTime() - startedAt);
 
     assertThat(response.statusCode()).isEqualTo(429);
-    assertThat(elapsed).isLessThan(PROBE_TIMEOUT.plusMillis(100));
     wireMock.verify(1, getRequestedFor(urlEqualTo("/configuration")));
+  }
+
+  @Test
+  @DisplayName("Should configure connect timeout from health probe timeout")
+  void shouldConfigureConnectTimeoutFromHealthProbeTimeout() {
+    var properties =
+        TmdbHealthProperties.builder()
+            .probeTimeout(PROBE_TIMEOUT)
+            .cacheTtl(Duration.ofSeconds(30))
+            .build();
+
+    var client = new TmdbHttpClientConfiguration().tmdbHealthHttpClient(properties);
+
+    assertThat(client.connectTimeout()).contains(PROBE_TIMEOUT);
   }
 
   @Test

@@ -41,7 +41,7 @@ Explicitly deferred:
 * Operators watching TMDB must watch `/actuator/health/metadata`; the root endpoint deliberately no longer tells them.
 * A custom status code exists in the health vocabulary, so anything parsing health JSON must tolerate `DEGRADED`.
 * The probe no longer exercises enrichment's retry, rate-limit or HTTP-cache path. It still uses Methanol with the platform's proxy and TLS defaults.
-* `TmdbHttpClientConfigurationTest` covers the dedicated client's timeout, retry and cache behaviour. `TmdbHealthIndicatorTest` covers cached verdict behaviour, and `TmdbHealthAggregationTest` loads the shipped `application.yml` so the aggregation rules under test are the ones that ship.
+* `TmdbHttpClientConfigurationTest` covers the dedicated client's connect-timeout configuration and no-retry/no-cache behaviour. `TmdbHealthIndicatorTest` covers the explicit request timeout and cached verdict behaviour, and `TmdbHealthAggregationTest` loads the shipped `application.yml` so the aggregation rules under test are the ones that ship.
 
 == Rejected Alternatives
 
@@ -57,5 +57,5 @@ Explicitly deferred:
 
 == References
 
-* link:0006-tmdb-metadata-abstraction.adoc[ADR 0006: TMDB Metadata Abstraction]
+* link:0006-tmdb-metadata-abstraction.adoc[ADR 0006: TMDB Metadata Provider Abstraction]
 * https://docs.spring.io/spring-boot/reference/actuator/endpoints.html#actuator.endpoints.health[Spring Boot Actuator: Health]
