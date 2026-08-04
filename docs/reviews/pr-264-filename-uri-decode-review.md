@@ -8,7 +8,7 @@ Base: `1a10a8bb775b1bfb70cf236600a48707ee32b3f8` (`main`)
 
 Reviewed head: `08978c0ca13ae7dd6b32c42164c2445e66873d9c`
 
-## Verdict
+## Historical verdict for reviewed head
 
 **Verdict for the reviewed head: request changes.** The core fix is sound: deriving display text from the percent-encoded filepath
 URI avoids the locale-dependent `Path.toString()` corruption, and the Linux container integration
@@ -20,11 +20,41 @@ The combined review also found two smaller production defects, a mutation-surviv
 several diagnostics/documentation issues. One suspected decoding defect (`%`, `+`, and `#` in a
 codec-generated URI) was disproved by an executable round-trip test.
 
-**TDD remediation status: complete in this worktree.** Every applicable confirmed finding now has
+**Initial TDD remediation status: complete.** Every applicable confirmed finding now has
 permanent regression coverage and an implementation. The broad invalid-library-path locale hint
 remains rejected as a false positive, and the optional `FilepathUri` value object remains rejected
-because it would be a shallow wrapper over the already-cohesive `FilepathCodec`. The local changes
-have not been committed or pushed.
+because it would be a shallow wrapper over the already-cohesive `FilepathCodec`. That remediation
+was pushed through commit `feb8aa4e`.
+
+## Re-review remediation
+
+The pushed remediation was re-reviewed at `feb8aa4e`. Four additional findings were assessed and
+addressed in vertical red-green cycles without changing the public codec or library-management
+interfaces.
+
+| ID | Assessment | Resolution | Permanent proof |
+|---|---|---|---|
+| R1 | Confirmed, P1 | V049 catches per-row decoding failures, retains those legacy filenames, continues valid updates, and logs row plus aggregate updated/skipped diagnostics. | `MediaFileFilenameMigrationIT#shouldMigrateValidRowsWhenAnotherFilepathUriCannotBeDecoded` failed by aborting on `%E9`, then passed with one skipped and one updated row. |
+| R2 | Confirmed, P1 | `FilepathCodec.decode` validates URI structure but no longer requires filesystem bytes to be valid UTF-8 text. Strict UTF-8 remains enforced by `filenameOf`, `parentNameOf`, `grandparentNameOf`, and `pathOf`. | The codec test failed with `IllegalArgumentException`, then matched the filesystem provider's `Path`; a mutation-checked `HlsStreamingServiceTest` proves session creation preserves the same URI bytes. |
+| R3 | Confirmed, P2 | Library scanning observes every submitted processing task and routes interruption or worker failure through the existing unhealthy-scan path. | `LibraryManagementServiceTest#shouldBecomeUnhealthyWhenFileProcessingTaskFailsDuringScan` failed with `HEALTHY`, then passed with `UNHEALTHY` and no `ScanCompletedEvent`. |
+| R4 | Future-hardening, P3 | The migration integration test is annotated `@Isolated` because it executes V049 across the shared `media_file` table. | JUnit isolation annotation plus the migration integration suite. |
+
+The re-review's ArchUnit string-name and helper-extraction notes remain non-blocking. Its request to
+split commits was already satisfied by the three pushed commits (`3ff72c3e`, `a0304ed5`, and
+`feb8aa4e`).
+
+**Current worktree verdict: ready to commit.** The live PR head remains `feb8aa4e` until these
+re-review remediations are committed and pushed.
+
+Re-review verification on 2026-08-04:
+
+- `./mvnw verify`: **BUILD SUCCESS** in 2m53s
+- Surefire reports: **1,569 passed**, 0 failures, 0 errors, 0 skipped
+- Failsafe reports: **464 passed**, 0 failures, 0 errors, 0 skipped
+- Checkstyle: **0 violations**
+- Flyway: **49 migrations validated and applied through V049**
+- Focused affected suites: **130 unit tests passed**
+- Isolated migration suite: **2 integration tests passed** against PostgreSQL 18
 
 ## TDD remediation record
 
@@ -38,11 +68,11 @@ reviewed implementation before the smallest corresponding production change was 
 | 3. Mutation-sensitive guard | Added a narrowly scoped ArchUnit rule at the persistence seam. | `ArchitectureTest.persistedFilenamesMustNotComeFromPathDisplayText` |
 | 4. PR description | Replaced the stale GitHub body with the actual Linux reproduction, repair/backfill behavior, compatibility contract, and verification evidence. | [PR #264](https://github.com/streamarr/streamarr-server/pull/264) |
 | 5. V036 policy | Restored V036's original import and retained a delegating compatibility facade in the old package. | Full Flyway chain validates and applies through V049. |
-| 6. Invalid `file:` values | Rejects malformed, opaque, query-bearing, fragment-bearing, and invalid-UTF-8 file URIs; scheme-less legacy values still work. | Eight focused codec boundary tests, including decode-to-`Path` coverage. |
+| 6. Invalid `file:` values | Rejects malformed, opaque, query-bearing, and fragment-bearing file URIs; scheme-less legacy values still work. Text extraction rejects invalid UTF-8 while path decoding preserves provider-decodable filesystem bytes. | Focused codec boundary and decode-to-`Path` coverage. |
 | 7. Root season layout | Removed the season folder itself as a series-title fallback. | `shouldUseFilenameTitleWhenRootSeasonFolderHasNoSeriesParent` |
 | 8. Diagnostics | Recommends `LC_ALL=C.UTF-8`, describes an unavailable charset clearly, and corrects macOS/stdout comments. | Two warning-log tests and the container integration suite. |
 | 9. Reserved characters and colon | Pinned the passing codec-generated `%`/`+`/`#` round trip and legacy `Frost:Nixon.mkv` behavior. | Two permanent codec tests. |
-| 10. Invalid UTF-8 policy | Chose fail-fast strict UTF-8 decoding for both text extraction and URI-to-`Path` conversion; narrowed Javadoc to that contract. | Two invalid-UTF-8 rejection tests. |
+| 10. Invalid UTF-8 policy | Text extraction fails fast on invalid UTF-8; URI-to-`Path` conversion preserves provider-decodable filesystem bytes without interpreting them as display text. | Invalid-UTF-8 text rejection plus byte-preserving path round-trip tests. |
 | 11. Season parser boundary | Parser now consumes a bare decoded folder name and handles blank input without depending on the codec. | `shouldReturnEmptySeasonResultWhenFolderNameIsBlank` plus the full parser suite. |
 | 12. Container hardening | Pinned the JDK image digest, uses charset equivalence, resolves class directories from code sources, and documents the integration-test boundary. | `NonUtf8LocaleFilenameIT`: 11 passing tests in the pinned Linux container. |
 | 13. `FilepathUri` value object | Deliberately not added. The existing static codec already hides URI parsing/decoding; a record forwarding the same methods would add surface area without deepening the module. | Design assessment; no behavioral defect remained uncovered by this non-change. |
@@ -288,9 +318,8 @@ seam and avoids encoding a misleading universal ban.
 
 ### Follow-up hardening
 
-10. Decide whether invalid UTF-8 URI bytes should fail fast or emit a once-per-path warning, and
-    narrow the `FilepathCodec` Javadoc so it does not imply arbitrary bytes can always become valid
-    UTF-8 text.
+10. Invalid UTF-8 text fails fast while path conversion remains byte-faithful; the codec Javadoc
+    records that distinction.
 11. Make `SeasonPathMetadataParser` parse a bare decoded folder name and restore its blank-input
     behavior.
 12. Pin the container image by digest, compare charsets by equivalence rather than one glibc alias,
@@ -303,8 +332,9 @@ seam and avoids encoding a misleading universal ban.
 
 These observations predate the PR and should be tracked separately rather than charged to #264:
 
-- The scan executor discards exceptions into unread `Future` instances. New fail-fast codec paths
-  would make that existing observability gap more noticeable.
+- The scan executor previously discarded exceptions into unread `Future` instances. R3 resolves
+  that observability gap by awaiting every processing task and marking the scan unhealthy on worker
+  failure.
 - `MovieFileProcessor`'s empty-metadata branch has questionable status behavior; the current tests
   encode it.
 - A tautological assertion in `LibraryManagementServiceTest` looks like regression coverage but
