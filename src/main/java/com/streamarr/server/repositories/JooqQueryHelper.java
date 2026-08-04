@@ -71,16 +71,13 @@ public class JooqQueryHelper {
       return Optional.empty();
     }
 
-    var firstCharLower = lower(left(Tables.BASE_COLLECTABLE.TITLE_SORT, 1));
-    var letterValue = inline(startLetter.name().toLowerCase());
-
     if (direction == SortOrder.DESC) {
       return startLetter == AlphabetLetter.Z
           ? Optional.empty()
-          : Optional.of(firstCharLower.greaterThan(letterValue));
+          : Optional.of(titleSortField().greaterOrEqual(nextLetterValue(startLetter)));
     }
 
-    return Optional.of(firstCharLower.lessThan(letterValue));
+    return Optional.of(titleSortField().lessThan(letterValue(startLetter)));
   }
 
   // Under TITLE sort the letter is a seek anchor consumed by the landing page - on cursor pages
@@ -94,13 +91,20 @@ public class JooqQueryHelper {
   }
 
   private Condition equalityLetterCondition(AlphabetLetter startLetter) {
-    var firstCharLower = lower(left(Tables.BASE_COLLECTABLE.TITLE_SORT, 1));
-
     if (startLetter == AlphabetLetter.HASH) {
-      return firstCharLower.lessThan(inline("a")).or(firstCharLower.greaterThan(inline("z")));
+      return hashLetterCondition();
     }
 
-    return firstCharLower.eq(inline(startLetter.name().toLowerCase()));
+    var titleSort = titleSortField();
+    if (startLetter == AlphabetLetter.Z) {
+      return titleSort
+          .greaterOrEqual(letterValue(startLetter))
+          .and(lower(left(Tables.BASE_COLLECTABLE.TITLE_SORT, 1)).eq(letterValue(startLetter)));
+    }
+
+    return titleSort
+        .greaterOrEqual(letterValue(startLetter))
+        .and(titleSort.lessThan(nextLetterValue(startLetter)));
   }
 
   private Condition ascLetterCondition(AlphabetLetter startLetter) {
@@ -108,8 +112,7 @@ public class JooqQueryHelper {
       return noCondition();
     }
 
-    var firstCharLower = lower(left(Tables.BASE_COLLECTABLE.TITLE_SORT, 1));
-    return firstCharLower.greaterOrEqual(inline(startLetter.name().toLowerCase()));
+    return titleSortField().greaterOrEqual(letterValue(startLetter));
   }
 
   private Condition descLetterCondition(AlphabetLetter startLetter) {
@@ -117,13 +120,24 @@ public class JooqQueryHelper {
       return noCondition();
     }
 
-    var firstCharLower = lower(left(Tables.BASE_COLLECTABLE.TITLE_SORT, 1));
-
     if (startLetter == AlphabetLetter.HASH) {
-      return firstCharLower.lessThan(inline("a")).or(firstCharLower.greaterThan(inline("z")));
+      return hashLetterCondition();
     }
 
-    return firstCharLower.lessOrEqual(inline(startLetter.name().toLowerCase()));
+    return titleSortField().lessThan(nextLetterValue(startLetter));
+  }
+
+  private Condition hashLetterCondition() {
+    var firstCharLower = lower(left(Tables.BASE_COLLECTABLE.TITLE_SORT, 1));
+    return firstCharLower.lessThan(inline("a")).or(firstCharLower.greaterThan(inline("z")));
+  }
+
+  private Field<String> letterValue(AlphabetLetter letter) {
+    return inline(letter.name().toLowerCase());
+  }
+
+  private Field<String> nextLetterValue(AlphabetLetter startLetter) {
+    return letterValue(AlphabetLetter.values()[startLetter.ordinal() + 1]);
   }
 
   public Condition libraryCondition(UUID libraryId) {

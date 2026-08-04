@@ -801,6 +801,29 @@ class MovieServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("Should return only Z movies when start letter is Z with ADDED sort")
+    void shouldReturnOnlyZMoviesWhenStartLetterIsZWithAddedSort() {
+      var library = libraryRepository.saveAndFlush(LibraryFixtureCreator.buildFakeLibrary());
+      movieRepository.saveAllAndFlush(
+          List.of(
+              Movie.builder().title("Alpha").titleSort("alpha").library(library).build(),
+              Movie.builder().title("Zorro").titleSort("zorro").library(library).build(),
+              Movie.builder().title("~Tilde").titleSort("~tilde").library(library).build()));
+      var filter =
+          MediaFilter.builder()
+              .libraryId(library.getId())
+              .startLetter(AlphabetLetter.Z)
+              .sortBy(OrderMediaBy.ADDED)
+              .build();
+
+      var result = movieService.getMoviesWithFilter(buildForwardOptions(10, filter));
+
+      assertThat(result.items())
+          .extracting(pageItem -> pageItem.item().getTitle())
+          .containsExactly("Zorro");
+    }
+
+    @Test
     @DisplayName("Should include title starting above z in HASH filter when sortBy is RELEASE_DATE")
     void shouldIncludeTitleStartingAboveZInHashFilterWhenSortByIsReleaseDate() {
 
